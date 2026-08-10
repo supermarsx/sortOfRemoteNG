@@ -122,8 +122,7 @@ pub async fn disconnect_ssh(
     state: tauri::State<'_, SshServiceState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut ssh = state.lock().await;
-    redact_result(ssh.disconnect_ssh(&session_id).await)
+    redact_result(super::service::disconnect_ssh_on_state(state.inner(), &session_id).await)
 }
 
 #[tauri::command]

@@ -114,6 +114,21 @@ pub fn build_remote_display(display_offset: u32, screen: u32) -> String {
 
 // ── Service methods ───────────────────────────────────────────────────
 
+pub(crate) fn stop_x11_forwarding(session_id: &str) -> Result<(), String> {
+    if let Ok(mut fwds) = X11_FORWARDS.lock() {
+        if let Some(state) = fwds.remove(session_id) {
+            state
+                .cancelled
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            if let Some(handle) = state.handle {
+                handle.abort();
+            }
+            log::info!("[{}] X11 forwarding disabled", session_id);
+        }
+    }
+    Ok(())
+}
+
 impl super::service::SshService {
     /// Enable X11 forwarding on an existing SSH session.
     ///
@@ -152,18 +167,7 @@ impl super::service::SshService {
 
     /// Disable X11 forwarding on a session.
     pub fn disable_x11_forwarding(&mut self, session_id: &str) -> Result<(), String> {
-        if let Ok(mut fwds) = X11_FORWARDS.lock() {
-            if let Some(state) = fwds.remove(session_id) {
-                state
-                    .cancelled
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                if let Some(h) = state.handle {
-                    h.abort();
-                }
-                log::info!("[{}] X11 forwarding disabled", session_id);
-            }
-        }
-        Ok(())
+        stop_x11_forwarding(session_id)
     }
 
     /// Get current X11 forward status for a session.

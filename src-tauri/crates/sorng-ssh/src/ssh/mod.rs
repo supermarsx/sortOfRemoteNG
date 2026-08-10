@@ -11,6 +11,7 @@ pub mod output_state;
 pub mod proxy_command;
 pub mod recording;
 pub mod service;
+mod shell_runtime;
 pub mod sk_keys;
 pub mod tunnels;
 pub mod types;

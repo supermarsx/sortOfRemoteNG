@@ -3,7 +3,9 @@ use secrecy::SecretString;
 use ssh2::Session;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::Mutex;
+
+pub use super::shell_runtime::{ShellMailboxSendError, ShellMailboxSender, SshShellCommand};
 
 use super::service::SshService;
 
@@ -550,42 +552,16 @@ pub struct SshSession {
 #[derive(Debug)]
 pub struct SshShellHandle {
     pub id: String,
-    pub sender: mpsc::UnboundedSender<SshShellCommand>,
+    pub sender: ShellMailboxSender,
     pub thread: std::thread::JoinHandle<()>,
     pub suspend_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    pub(crate) completion: std::sync::Arc<super::shell_runtime::ShellCompletion>,
+    pub(crate) generation: u64,
 }
 
 impl SshShellHandle {
     pub fn is_finished(&self) -> bool {
         self.thread.is_finished()
-    }
-}
-
-pub enum SshShellCommand {
-    Input(String),
-    SecretInput(zeroize::Zeroizing<String>),
-    Resize(u32, u32),
-    Close,
-}
-
-impl std::fmt::Debug for SshShellCommand {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Input(data) => formatter
-                .debug_tuple("Input")
-                .field(&format_args!("[REDACTED {} bytes]", data.len()))
-                .finish(),
-            Self::SecretInput(data) => formatter
-                .debug_tuple("SecretInput")
-                .field(&format_args!("[REDACTED {} bytes]", data.len()))
-                .finish(),
-            Self::Resize(cols, rows) => formatter
-                .debug_tuple("Resize")
-                .field(cols)
-                .field(rows)
-                .finish(),
-            Self::Close => formatter.write_str("Close"),
-        }
     }
 }
 
@@ -892,7 +868,7 @@ pub struct AutomationState {
     pub matches: Vec<AutomationMatch>,
     pub start_time: std::time::Instant,
     pub start_utc: DateTime<Utc>,
-    pub tx: mpsc::UnboundedSender<SshShellCommand>,
+    pub tx: ShellMailboxSender,
 }
 
 // ===============================

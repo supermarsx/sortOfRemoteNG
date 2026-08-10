@@ -340,8 +340,7 @@ impl ScriptService {
                                                         let _ = ssh_obj.set("disconnect", Function::new(ctx.clone(), Async(move |session_id: String| {
                                                             let ssh_service = ssh_service_clone.clone();
                                                             async move {
-                                                                let mut service = ssh_service.lock().await;
-                            service.disconnect_ssh(&session_id).await.map_err(|_e| rquickjs::Error::Exception)
+                            crate::ssh::service::disconnect_ssh_on_state(&ssh_service, &session_id).await.map_err(|_e| rquickjs::Error::Exception)
                                                             }
                                                         })));
 

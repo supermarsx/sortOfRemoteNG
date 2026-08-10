@@ -25,6 +25,12 @@ use super::output_state::{
     StreamingUtf8Decoder,
 };
 use super::recording::{record_input, record_output, record_resize};
+#[cfg(test)]
+use super::shell_runtime::DEFAULT_MAX_ACTIVE_SSH_SHELLS;
+use super::shell_runtime::{
+    process_shell_admission, shell_mailbox, ShellAdmission, ShellCleanupTarget, ShellCompletion,
+    ShellMailboxLimits, ShellWorkerCompletionGuard, ShellWorkerOutcome,
+};
 use super::types::*;
 use super::PENDING_HOST_KEY_PROMPTS;
 
@@ -38,6 +44,8 @@ const DEFAULT_TCP_KEEPALIVE_INTERVAL_SECS: u64 = 60;
 const MAX_TCP_KEEPALIVE_PROBES: u32 = 255;
 const LIBSSH2_ERROR_EAGAIN: i32 = -37;
 const SHELL_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const SHELL_INPUT_COMMANDS_PER_TICK: usize = 64;
+const SHELL_INPUT_BYTES_PER_TICK: usize = 64 * 1024;
 const SCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS: u32 = 5_000;
 const SCRIPT_OUTPUT_LIMIT_BYTES: usize = 4 * 1024 * 1024;
@@ -611,9 +619,9 @@ fn shell_closed_event(
     }
 }
 
-fn publish_shell_output(session_id: &str, raw_output: &str, emitter: &DynEventEmitter) {
+fn prepare_shell_output(session_id: &str, raw_output: &str) -> Option<SshShellOutput> {
     if raw_output.is_empty() {
-        return;
+        return None;
     }
 
     // Recording and automation consume the unhighlighted terminal text.
@@ -624,7 +632,7 @@ fn publish_shell_output(session_id: &str, raw_output: &str, emitter: &DynEventEm
     // their sequence offsets describe the exact bytes the renderer receives.
     let output = process_highlight_output(session_id, raw_output);
     let replay = append_terminal_output(session_id, &output).ok();
-    let payload = SshShellOutput {
+    Some(SshShellOutput {
         session_id: session_id.to_string(),
         data: output,
         generation: replay.map(|metadata| metadata.generation),
@@ -632,9 +640,28 @@ fn publish_shell_output(session_id: &str, raw_output: &str, emitter: &DynEventEm
         sequence_end: replay.map(|metadata| metadata.sequence_end),
         retained_start: replay.map(|metadata| metadata.retained_start),
         dropped_bytes: replay.map(|metadata| metadata.dropped_bytes),
-    };
+    })
+}
+
+fn emit_shell_output(payload: SshShellOutput, emitter: &DynEventEmitter) {
     let _ = emitter.emit_event(
         "ssh-output",
+        serde_json::to_value(&payload).unwrap_or_default(),
+    );
+}
+
+fn write_shell_input(channel: &mut ssh2::Channel, data: &[u8]) -> Result<(), String> {
+    channel.write_all(data).map_err(|error| error.to_string())?;
+    channel.flush().map_err(|error| error.to_string())
+}
+
+fn emit_shell_error(session_id: &str, message: &str, emitter: &DynEventEmitter) {
+    let payload = SshShellError {
+        session_id: session_id.to_string(),
+        message: message.to_string(),
+    };
+    let _ = emitter.emit_event(
+        "ssh-error",
         serde_json::to_value(&payload).unwrap_or_default(),
     );
 }
@@ -775,6 +802,214 @@ impl Drop for EstablishedSshConnection {
     }
 }
 
+struct DetachedShellCleanup {
+    session_id: String,
+    target: ShellCleanupTarget,
+    sender: Option<ShellMailboxSender>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl DetachedShellCleanup {
+    fn request_shutdown(&self) {
+        self.target.cancellation.store(true, Ordering::Release);
+        if let Some(sender) = &self.sender {
+            sender.request_close();
+        }
+    }
+
+    async fn finish(mut self, deadline: tokio::time::Instant) -> Result<(), String> {
+        let outcome = self
+            .target
+            .completion
+            .wait_until(deadline)
+            .await
+            .map_err(|_| {
+                format!(
+                    "Timed out waiting for SSH shell generation {} to stop for session {}; worker detached safely",
+                    self.target.generation, self.session_id
+                )
+            })?;
+
+        if let Some(thread) = self.thread.take() {
+            while !thread.is_finished() {
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(format!(
+                        "Timed out joining SSH shell generation {} for session {}; worker detached safely",
+                        self.target.generation, self.session_id
+                    ));
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            if thread.join().is_err() || outcome == ShellWorkerOutcome::Panicked {
+                return Err(format!(
+                    "SSH shell generation {} panicked for session {}",
+                    self.target.generation, self.session_id
+                ));
+            }
+        } else if outcome == ShellWorkerOutcome::Panicked {
+            return Err(format!(
+                "Detached SSH shell generation {} panicked for session {}",
+                self.target.generation, self.session_id
+            ));
+        }
+        Ok(())
+    }
+}
+
+struct DetachedSessionCleanup {
+    session: SshSession,
+}
+
+impl DetachedSessionCleanup {
+    fn finish_bridges(self, deadline: Instant) -> Result<(), String> {
+        let SshSession {
+            id: session_id,
+            session,
+            mut port_forwards,
+            keep_alive_handle,
+            mut intermediate_sessions,
+            mut bridge_handles,
+            ..
+        } = self.session;
+
+        if let Some(handle) = keep_alive_handle {
+            handle.abort();
+        }
+        for (_, forward) in port_forwards.drain() {
+            forward.handle.abort();
+        }
+
+        // These potentially expensive native drops intentionally happen after
+        // the service mutex has been released.
+        drop(session);
+        while let Some(intermediate) = intermediate_sessions.pop() {
+            drop(intermediate);
+        }
+        for (index, handle) in bridge_handles.drain(..).enumerate() {
+            while !handle.is_finished() {
+                if Instant::now() >= deadline {
+                    return Err(format!(
+                        "Timed out waiting for SSH bridge {} to stop for session {}; worker detached safely",
+                        index, session_id
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            if handle.join().is_err() {
+                return Err(format!(
+                    "SSH bridge {} panicked while disconnecting session {}",
+                    index, session_id
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+struct SshDisconnectPlan {
+    session_id: String,
+    pending_connection: Option<Arc<PendingSshConnection>>,
+    shell: Option<DetachedShellCleanup>,
+    session: Option<DetachedSessionCleanup>,
+}
+
+impl SshDisconnectPlan {
+    async fn execute(self, timeout: Duration) -> Result<(), String> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut errors = Vec::new();
+        let SshDisconnectPlan {
+            session_id,
+            pending_connection,
+            shell,
+            session,
+        } = self;
+        let shell_publication = shell
+            .as_ref()
+            .map(|cleanup| Arc::clone(&cleanup.target.publication));
+
+        if let Some(pending) = pending_connection {
+            pending.cancel();
+        }
+        if let Ok(mut pending_prompts) = PENDING_HOST_KEY_PROMPTS.lock() {
+            pending_prompts.remove(&session_id);
+        }
+        if let Some(shell) = &shell {
+            shell.request_shutdown();
+        }
+        if let Err(error) = super::x11::stop_x11_forwarding(&session_id) {
+            errors.push(error);
+        }
+
+        let proxy_session_id = session_id.clone();
+        let proxy_cleanup = tokio::task::spawn_blocking(move || {
+            super::proxy_command::stop_proxy_command(&proxy_session_id)
+        });
+        let session_cleanup = async move {
+            let Some(session) = session else {
+                return Ok(());
+            };
+            let worker_deadline = Instant::now() + timeout;
+            let cleanup =
+                tokio::task::spawn_blocking(move || session.finish_bridges(worker_deadline));
+            match tokio::time::timeout_at(deadline, cleanup).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(error)) => Err(format!("SSH transport cleanup task failed: {error}")),
+                Err(_) => Err(
+                    "Timed out cleaning SSH transports; cleanup worker detached safely".to_string(),
+                ),
+            }
+        };
+        let shell_cleanup = async move {
+            match shell {
+                Some(shell) => shell.finish(deadline).await,
+                None => Ok(()),
+            }
+        };
+        let proxy_cleanup = async move {
+            match tokio::time::timeout_at(deadline, proxy_cleanup).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(error)) => Err(format!("ProxyCommand cleanup task failed: {error}")),
+                Err(_) => Err(
+                    "Timed out cleaning ProxyCommand; cleanup worker detached safely".to_string(),
+                ),
+            }
+        };
+
+        let (proxy_result, session_result, shell_result) =
+            tokio::join!(proxy_cleanup, session_cleanup, shell_cleanup);
+        for result in [proxy_result, session_result, shell_result] {
+            if let Err(error) = result {
+                errors.push(error);
+            }
+        }
+
+        let publication_drained = match shell_publication {
+            Some(publication) => match publication.wait_until_drained(deadline).await {
+                Ok(()) => true,
+                Err(()) => {
+                    errors.push(format!(
+                        "Timed out waiting for SSH shell output publication for session {}; output state retained for cleanup retry",
+                        session_id
+                    ));
+                    false
+                }
+            },
+            None => true,
+        };
+        if publication_drained {
+            if let Err(error) = cleanup_session_output_state(&session_id) {
+                errors.push(error);
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+}
+
 pub struct SshService {
     pub sessions: HashMap<String, SshSession>,
     #[allow(dead_code)]
@@ -784,6 +1019,7 @@ pub struct SshService {
     pub shells: HashMap<String, SshShellHandle>,
     pub event_emitter: Option<DynEventEmitter>,
     pending_connections: PendingSshConnections,
+    shell_admission: Arc<ShellAdmission>,
 }
 
 impl SshService {
@@ -795,6 +1031,7 @@ impl SshService {
             shells: HashMap::new(),
             event_emitter: None,
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            shell_admission: process_shell_admission(),
         }))
     }
 
@@ -806,6 +1043,7 @@ impl SshService {
             shells: HashMap::new(),
             event_emitter: Some(emitter),
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            shell_admission: process_shell_admission(),
         }))
     }
 
@@ -832,6 +1070,7 @@ impl SshService {
             shells: HashMap::new(),
             event_emitter: self.event_emitter.clone(),
             pending_connections: self.pending_connections.clone(),
+            shell_admission: Arc::clone(&self.shell_admission),
         };
         let attempt = SshConnectionAttempt {
             session_id,
@@ -843,21 +1082,17 @@ impl SshService {
         Ok((connector, attempt))
     }
 
-    fn cancel_pending_connection(&self, session_id: &str) -> Result<bool, String> {
+    fn pending_connection(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<Arc<PendingSshConnection>>, String> {
         let pending = self
             .pending_connections
             .lock()
             .map_err(|_| "Failed to lock pending SSH connections".to_string())?
             .get(session_id)
             .cloned();
-
-        if let Some(pending) = pending {
-            pending.cancel();
-            cleanup_pending_connection_artifacts(session_id);
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(pending)
     }
 
     fn adopt_connection(
@@ -916,6 +1151,65 @@ impl SshService {
                 log::warn!("SSH shell thread panicked for session {}", session_id);
             }
         }
+    }
+
+    fn detach_shell_cleanup(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Option<DetachedShellCleanup>, String> {
+        let shell = self.shells.remove(session_id);
+        let target = self
+            .shell_admission
+            .tombstone(session_id, shell.as_ref().map(|handle| handle.generation))?;
+
+        match (shell, target) {
+            (Some(shell), Some(target)) => Ok(Some(DetachedShellCleanup {
+                session_id: session_id.to_string(),
+                target,
+                sender: Some(shell.sender),
+                thread: Some(shell.thread),
+            })),
+            (Some(shell), None) => {
+                // The worker may have completed between handle removal and the
+                // registry lookup. Its completion signal and finished handle
+                // still provide an observable, bounded join.
+                let target = ShellCleanupTarget::completed_without_registry(
+                    shell.generation,
+                    shell.sender.cancellation(),
+                    Arc::clone(&shell.completion),
+                );
+                Ok(Some(DetachedShellCleanup {
+                    session_id: session_id.to_string(),
+                    target,
+                    sender: Some(shell.sender),
+                    thread: Some(shell.thread),
+                }))
+            }
+            (None, Some(target)) => Ok(Some(DetachedShellCleanup {
+                session_id: session_id.to_string(),
+                target,
+                sender: None,
+                thread: None,
+            })),
+            (None, None) => Ok(None),
+        }
+    }
+
+    fn detach_disconnect(&mut self, session_id: &str) -> Result<SshDisconnectPlan, String> {
+        let pending_connection = self.pending_connection(session_id)?;
+        let shell = self.detach_shell_cleanup(session_id)?;
+
+        let session = self
+            .sessions
+            .remove(session_id)
+            .map(|session| DetachedSessionCleanup { session });
+
+        Ok(SshDisconnectPlan {
+            session_id: session_id.to_string(),
+            pending_connection,
+            shell,
+            session,
+        })
     }
 
     pub fn is_session_alive(&self, session_id: &str) -> bool {
@@ -3119,6 +3413,15 @@ impl SshService {
             return Ok(existing.id.clone());
         }
 
+        let (tx, rx) = shell_mailbox(ShellMailboxLimits::default());
+        let completion = ShellCompletion::new();
+        let admission_lease = self.shell_admission.try_acquire(
+            session_id,
+            tx.cancellation(),
+            Arc::clone(&completion),
+        )?;
+        let shell_generation = admission_lease.generation();
+
         let session = self
             .sessions
             .get_mut(session_id)
@@ -3196,173 +3499,185 @@ impl SshService {
         // Allocate the generation before the actor starts so an immediate
         // snapshot (before first output) has stable replay identity.
         ensure_terminal_buffer(session_id)?;
-        let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
         let shell_id = Uuid::new_v4().to_string();
         let session_id_owned = session_id.to_string();
         let emitter = event_emitter.clone();
         let suspend_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let shell_suspend_count = std::sync::Arc::clone(&suspend_count);
+        let shell_admission = Arc::clone(&self.shell_admission);
+        let completion_for_thread = Arc::clone(&completion);
 
-        let thread = std::thread::spawn(move || {
-            let mut buffer = [0u8; 16384];
-            let mut decoder = StreamingUtf8Decoder::new();
-            let mut running = true;
-            let mut close_reason = SshShellCloseReason::RemoteEof;
-            let mut close_message: Option<String> = None;
-            let mut idle_count: u32 = 0;
-            const MIN_SLEEP_MS: u64 = 1;
-            const MAX_SLEEP_MS: u64 = 10;
-            const IDLE_THRESHOLD: u32 = 10;
+        // Keep Rust's platform-default thread stack. The admission ceiling is
+        // the resource guard; changing stack size requires separate measured
+        // proof that libssh2 and every authentication path fit safely.
+        let thread = std::thread::Builder::new()
+            .name(format!("ssh-shell-{shell_generation}"))
+            .spawn(move || {
+                let _admission_lease = admission_lease;
+                let completion_guard = ShellWorkerCompletionGuard::new(completion_for_thread);
+                // Rebind captures after the lifecycle guards so channel and
+                // mailbox destruction completes before the admission lease is
+                // released, including during panic unwinding.
+                let mut channel = channel;
+                let mut rx = rx;
+                let session_id_owned = session_id_owned;
+                let emitter = emitter;
+                let shell_admission = shell_admission;
+                let shell_suspend_count = shell_suspend_count;
+                let mut buffer = [0u8; 16384];
+                let mut decoder = StreamingUtf8Decoder::new();
+                let mut running = true;
+                let mut close_reason = SshShellCloseReason::RemoteEof;
+                let mut close_message: Option<String> = None;
+                let mut idle_count: u32 = 0;
+                const MIN_SLEEP_MS: u64 = 1;
+                const MAX_SLEEP_MS: u64 = 10;
+                const IDLE_THRESHOLD: u32 = 10;
 
-            while running {
-                while let Ok(cmd) = rx.try_recv() {
-                    match cmd {
-                        SshShellCommand::Input(data) => {
-                            record_input(&session_id_owned, &data);
+                while running {
+                    if rx.close_requested() {
+                        close_reason = SshShellCloseReason::Requested;
+                        close_message = None;
+                        let _ = channel.close();
+                        let _ = channel.wait_close();
+                        break;
+                    }
 
-                            if let Err(error) = channel.write_all(data.as_bytes()) {
-                                let message = error.to_string();
-                                let payload = SshShellError {
-                                    session_id: session_id_owned.clone(),
-                                    message: message.clone(),
-                                };
-                                let _ = emitter.emit_event(
-                                    "ssh-error",
-                                    serde_json::to_value(&payload).unwrap_or_default(),
-                                );
-                                close_reason = SshShellCloseReason::TransportError;
-                                close_message = Some(message);
-                                running = false;
-                                break;
-                            }
-                            if let Err(error) = channel.flush() {
-                                let message = error.to_string();
-                                let payload = SshShellError {
-                                    session_id: session_id_owned.clone(),
-                                    message: message.clone(),
-                                };
-                                let _ = emitter.emit_event(
-                                    "ssh-error",
-                                    serde_json::to_value(&payload).unwrap_or_default(),
-                                );
-                                close_reason = SshShellCloseReason::TransportError;
-                                close_message = Some(message);
-                                running = false;
-                                break;
-                            }
-                            idle_count = 0;
-                        }
-                        SshShellCommand::SecretInput(data) => {
-                            if let Err(error) = channel.write_all(data.as_bytes()) {
-                                let message = error.to_string();
-                                let payload = SshShellError {
-                                    session_id: session_id_owned.clone(),
-                                    message: message.clone(),
-                                };
-                                let _ = emitter.emit_event(
-                                    "ssh-error",
-                                    serde_json::to_value(&payload).unwrap_or_default(),
-                                );
-                                close_reason = SshShellCloseReason::TransportError;
-                                close_message = Some(message);
-                                running = false;
-                                break;
-                            }
-                            if let Err(error) = channel.flush() {
-                                let message = error.to_string();
-                                let payload = SshShellError {
-                                    session_id: session_id_owned.clone(),
-                                    message: message.clone(),
-                                };
-                                let _ = emitter.emit_event(
-                                    "ssh-error",
-                                    serde_json::to_value(&payload).unwrap_or_default(),
-                                );
-                                close_reason = SshShellCloseReason::TransportError;
-                                close_message = Some(message);
-                                running = false;
-                                break;
-                            }
-                            idle_count = 0;
-                        }
-                        SshShellCommand::Resize(cols, rows) => {
-                            record_resize(&session_id_owned, cols, rows);
-                            let _ = channel.request_pty_size(cols, rows, None, None);
-                        }
-                        SshShellCommand::Close => {
+                    if let Some((cols, rows)) = rx.take_latest_resize() {
+                        record_resize(&session_id_owned, cols, rows);
+                        let _ = channel.request_pty_size(cols, rows, None, None);
+                        idle_count = 0;
+                    }
+
+                    let input_commands = rx.drain_input_tick(
+                        SHELL_INPUT_COMMANDS_PER_TICK,
+                        SHELL_INPUT_BYTES_PER_TICK,
+                    );
+                    for command in input_commands {
+                        if rx.close_requested() {
                             close_reason = SshShellCloseReason::Requested;
                             close_message = None;
                             let _ = channel.close();
                             let _ = channel.wait_close();
                             running = false;
+                            break;
+                        }
+                        match command {
+                            SshShellCommand::Input(data) => {
+                                record_input(&session_id_owned, &data);
+                                if let Err(message) =
+                                    write_shell_input(&mut channel, data.as_bytes())
+                                {
+                                    emit_shell_error(&session_id_owned, &message, &emitter);
+                                    close_reason = SshShellCloseReason::TransportError;
+                                    close_message = Some(message);
+                                    running = false;
+                                    break;
+                                }
+                                idle_count = 0;
+                            }
+                            SshShellCommand::SecretInput(data) => {
+                                if let Err(message) =
+                                    write_shell_input(&mut channel, data.as_bytes())
+                                {
+                                    emit_shell_error(&session_id_owned, &message, &emitter);
+                                    close_reason = SshShellCloseReason::TransportError;
+                                    close_message = Some(message);
+                                    running = false;
+                                    break;
+                                }
+                                idle_count = 0;
+                            }
+                            SshShellCommand::Resize(..) | SshShellCommand::Close => {
+                                // Resize and Close never enter the input queue.
+                            }
                         }
                     }
-                }
 
-                if !running {
-                    break;
-                }
+                    if !running {
+                        break;
+                    }
 
-                if shell_suspend_count.load(std::sync::atomic::Ordering::Acquire) > 0 {
-                    idle_count = 0;
-                    std::thread::sleep(Duration::from_millis(MAX_SLEEP_MS));
-                    continue;
-                }
-
-                match channel.read(&mut buffer) {
-                    Ok(bytes) if bytes > 0 => {
+                    if shell_suspend_count.load(std::sync::atomic::Ordering::Acquire) > 0 {
                         idle_count = 0;
-                        let raw_output = decoder.push(&buffer[..bytes]);
-                        publish_shell_output(&session_id_owned, &raw_output, &emitter);
+                        std::thread::sleep(Duration::from_millis(MAX_SLEEP_MS));
+                        continue;
                     }
-                    Ok(_) => {
-                        idle_count = idle_count.saturating_add(1);
+
+                    match channel.read(&mut buffer) {
+                        Ok(bytes) if bytes > 0 => {
+                            idle_count = 0;
+                            let raw_output = decoder.push(&buffer[..bytes]);
+                            if let Some(payload) = shell_admission
+                                .publish_if_current(&session_id_owned, shell_generation, || {
+                                    prepare_shell_output(&session_id_owned, &raw_output)
+                                })
+                                .flatten()
+                            {
+                                emit_shell_output(payload, &emitter);
+                            }
+                        }
+                        Ok(_) => {
+                            idle_count = idle_count.saturating_add(1);
+                        }
+                        Err(error) if is_transient_shell_io_error(&error) => {
+                            idle_count = idle_count.saturating_add(1);
+                        }
+                        Err(error) => {
+                            let message = error.to_string();
+                            emit_shell_error(&session_id_owned, &message, &emitter);
+                            close_reason = SshShellCloseReason::TransportError;
+                            close_message = Some(message);
+                            running = false;
+                        }
                     }
-                    Err(error) if is_transient_shell_io_error(&error) => {
-                        idle_count = idle_count.saturating_add(1);
-                    }
-                    Err(error) => {
-                        let message = error.to_string();
-                        let payload = SshShellError {
-                            session_id: session_id_owned.clone(),
-                            message: message.clone(),
-                        };
-                        let _ = emitter.emit_event(
-                            "ssh-error",
-                            serde_json::to_value(&payload).unwrap_or_default(),
-                        );
-                        close_reason = SshShellCloseReason::TransportError;
-                        close_message = Some(message);
+
+                    if running && channel.eof() {
+                        close_reason = SshShellCloseReason::RemoteEof;
+                        close_message = None;
                         running = false;
                     }
+
+                    let sleep_ms = if idle_count > IDLE_THRESHOLD {
+                        MAX_SLEEP_MS
+                    } else {
+                        MIN_SLEEP_MS
+                    };
+                    std::thread::sleep(Duration::from_millis(sleep_ms));
                 }
 
-                if running && channel.eof() {
-                    close_reason = SshShellCloseReason::RemoteEof;
-                    close_message = None;
-                    running = false;
+                // Preserve an incomplete UTF-8 suffix at transport EOF instead
+                // of silently losing it. Tombstoned generations cannot recreate
+                // replay state after disconnect has detached them.
+                let final_output = decoder.finish();
+                if let Some(payload) = shell_admission
+                    .publish_if_current(&session_id_owned, shell_generation, || {
+                        prepare_shell_output(&session_id_owned, &final_output)
+                    })
+                    .flatten()
+                {
+                    emit_shell_output(payload, &emitter);
                 }
 
-                let sleep_ms = if idle_count > IDLE_THRESHOLD {
-                    MAX_SLEEP_MS
-                } else {
-                    MIN_SLEEP_MS
-                };
-                std::thread::sleep(Duration::from_millis(sleep_ms));
-            }
-
-            // Preserve an incomplete UTF-8 suffix at transport EOF instead of
-            // silently losing it. Truly incomplete bytes use the documented
-            // replacement policy exactly once.
-            let final_output = decoder.finish();
-            publish_shell_output(&session_id_owned, &final_output, &emitter);
-
-            let payload = shell_closed_event(session_id_owned, close_reason, close_message);
-            let _ = emitter.emit_event(
-                "ssh-shell-closed",
-                serde_json::to_value(&payload).unwrap_or_default(),
-            );
-        });
+                drop(rx);
+                drop(channel);
+                let payload = shell_closed_event(session_id_owned, close_reason, close_message);
+                let _ = emitter.emit_event(
+                    "ssh-shell-closed",
+                    serde_json::to_value(&payload).unwrap_or_default(),
+                );
+                drop(decoder);
+                drop(shell_suspend_count);
+                drop(shell_admission);
+                drop(emitter);
+                drop(_admission_lease);
+                // The lease removes this generation from process-wide
+                // admission before completion becomes observable. A retry
+                // that wakes on successful completion therefore cannot race
+                // an old generation that still owns its permit.
+                completion_guard.complete();
+            })
+            .map_err(|error| format!("Failed to spawn SSH shell worker: {error}"))?;
 
         self.shells.insert(
             session_id.to_string(),
@@ -3371,6 +3686,8 @@ impl SshService {
                 sender: tx,
                 thread,
                 suspend_count,
+                completion,
+                generation: shell_generation,
             },
         );
 
@@ -3382,7 +3699,7 @@ impl SshService {
         shell
             .sender
             .send(SshShellCommand::Input(data))
-            .map_err(|_| "Failed to send input to shell".to_string())
+            .map_err(|error| format!("Failed to send input to shell: {error}"))
     }
 
     pub async fn send_shell_secret_input(
@@ -3394,7 +3711,7 @@ impl SshService {
         shell
             .sender
             .send(SshShellCommand::SecretInput(data))
-            .map_err(|_| "Failed to send secure input to shell".to_string())
+            .map_err(|error| format!("Failed to send secure input to shell: {error}"))
     }
 
     pub async fn resize_shell(
@@ -3407,29 +3724,15 @@ impl SshService {
         shell
             .sender
             .send(SshShellCommand::Resize(cols, rows))
-            .map_err(|_| "Failed to resize shell".to_string())
+            .map_err(|error| format!("Failed to resize shell: {error}"))
     }
 
     pub async fn stop_shell(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(shell) = self.shells.remove(session_id) {
-            let _ = shell.sender.send(SshShellCommand::Close);
-            let deadline = tokio::time::Instant::now() + SHELL_STOP_TIMEOUT;
-            while !shell.is_finished() && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-            if !shell.is_finished() {
-                self.shells.insert(session_id.to_string(), shell);
-                return Err(format!(
-                    "Timed out waiting for SSH shell to stop for session {}",
-                    session_id
-                ));
-            }
-            if shell.thread.join().is_err() {
-                return Err(format!(
-                    "SSH shell thread panicked for session {}",
-                    session_id
-                ));
-            }
+        if let Some(shell) = self.detach_shell_cleanup(session_id)? {
+            shell.request_shutdown();
+            shell
+                .finish(tokio::time::Instant::now() + SHELL_STOP_TIMEOUT)
+                .await?;
         }
         Ok(())
     }
@@ -4254,51 +4557,9 @@ impl SshService {
     }
 
     pub async fn disconnect_ssh(&mut self, session_id: &str) -> Result<(), String> {
-        if self.cancel_pending_connection(session_id)? {
-            cleanup_session_output_state(session_id)?;
-            return Ok(());
-        }
-
-        // Do not report the backend actor as closed until the shell thread has
-        // actually exited. This keeps VPN/session cleanup fail-closed when a
-        // native actor cannot be stopped deterministically.
-        self.stop_shell(session_id).await?;
-
-        // Clean up X11 forwarding
-        let _ = self.disable_x11_forwarding(session_id);
-
-        // Clean up ProxyCommand
-        let _ = super::proxy_command::stop_proxy_command(session_id);
-
-        if let Some(mut session) = self.sessions.remove(session_id) {
-            if let Some(handle) = session.keep_alive_handle.take() {
-                handle.abort();
-            }
-
-            for (_, forward) in session.port_forwards.drain() {
-                forward.handle.abort();
-            }
-
-            // Drop the main session first (closes its channel_direct_tcpip channels)
-            drop(session.session);
-
-            // Drop intermediate sessions in reverse order (innermost hop first)
-            while let Some(sess) = session.intermediate_sessions.pop() {
-                drop(sess);
-            }
-
-            // Bridge threads will naturally terminate once the channels are dropped;
-            // join them with a bounded wait so we don't block forever.
-            for handle in session.bridge_handles.drain(..) {
-                let _ = handle.join();
-            }
-        }
-        // Replay history and active recording state share one registry mutex,
-        // so observers cannot see only half of the disconnect cleanup. A
-        // recording explicitly configured with `finalize` moves into the
-        // bounded completed cache; the default policy discards it.
-        cleanup_session_output_state(session_id)?;
-        Ok(())
+        self.detach_disconnect(session_id)?
+            .execute(SHELL_STOP_TIMEOUT)
+            .await
     }
 
     pub async fn get_session_info(&self, session_id: &str) -> Result<SshSessionInfo, String> {
@@ -4876,6 +5137,29 @@ impl SshService {
     }
 }
 
+/// App-layer disconnect entry point. The shared service mutex is held only
+/// long enough to detach the session's resources and create a cleanup plan;
+/// all cancellation, native drops, completion waits, and joins run afterward.
+#[doc(hidden)]
+pub async fn disconnect_ssh_on_state(
+    state: &SshServiceState,
+    session_id: &str,
+) -> Result<(), String> {
+    disconnect_ssh_on_state_with_timeout(state, session_id, SHELL_STOP_TIMEOUT).await
+}
+
+async fn disconnect_ssh_on_state_with_timeout(
+    state: &SshServiceState,
+    session_id: &str,
+    timeout: Duration,
+) -> Result<(), String> {
+    let plan = {
+        let mut service = state.lock().await;
+        service.detach_disconnect(session_id)?
+    };
+    plan.execute(timeout).await
+}
+
 /// App-layer connection entry point that keeps connection establishment
 /// cancellable without holding the shared service lock.
 ///
@@ -4960,6 +5244,7 @@ mod host_key_prompt_tests {
             shells: HashMap::new(),
             event_emitter: Some(emitter),
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
         }
     }
 
@@ -5210,9 +5495,10 @@ mod host_key_prompt_tests {
         .expect("session status should not wait behind a host-key prompt");
         assert!(sessions.is_empty());
 
-        tokio::time::timeout(Duration::from_secs(1), async {
-            state.lock().await.disconnect_ssh(&session_id).await
-        })
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            disconnect_ssh_on_state(&state, &session_id),
+        )
         .await
         .expect("disconnect should not wait behind a host-key prompt")
         .expect("pending connection cancellation should succeed");
@@ -5381,6 +5667,7 @@ mod tests {
             shells: HashMap::new(),
             event_emitter: None,
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
         }
     }
 
@@ -5435,6 +5722,40 @@ mod tests {
         .expect("fake SSH session should be adopted")
     }
 
+    fn install_stalled_shell(service: &mut SshService, session_id: &str) -> Arc<AtomicBool> {
+        let (sender, receiver) = shell_mailbox(ShellMailboxLimits::default());
+        let completion = ShellCompletion::new();
+        let lease = service
+            .shell_admission
+            .try_acquire(session_id, sender.cancellation(), Arc::clone(&completion))
+            .expect("test shell should receive an admission permit");
+        let generation = lease.generation();
+        let release = Arc::new(AtomicBool::new(false));
+        let release_worker = Arc::clone(&release);
+        let completion_for_thread = Arc::clone(&completion);
+        let thread = std::thread::spawn(move || {
+            let _lease = lease;
+            let guard = ShellWorkerCompletionGuard::new(completion_for_thread);
+            let _receiver = receiver;
+            while !release_worker.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            guard.complete();
+        });
+        service.shells.insert(
+            session_id.to_string(),
+            SshShellHandle {
+                id: format!("shell-{generation}"),
+                sender,
+                thread,
+                suspend_count: Arc::new(AtomicUsize::new(0)),
+                completion,
+                generation,
+            },
+        );
+        release
+    }
+
     #[tokio::test]
     async fn disconnect_and_reconnect_clean_real_output_and_recording_lifecycle() {
         let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
@@ -5455,10 +5776,7 @@ mod tests {
         record_output_entry(&first_session_id, "first output");
         assert!(is_recording_active(&first_session_id).unwrap());
 
-        state
-            .lock()
-            .await
-            .disconnect_ssh(&first_session_id)
+        disconnect_ssh_on_state(&state, &first_session_id)
             .await
             .expect("real disconnect path should clean the first session");
         assert_eq!(terminal_buffer_text(&first_session_id).unwrap(), "");
@@ -5480,12 +5798,96 @@ mod tests {
         assert!(!reconnected.gap);
         assert!(!reconnected.generation_changed);
 
-        state
-            .lock()
-            .await
-            .disconnect_ssh(&second_session_id)
+        disconnect_ssh_on_state(&state, &second_session_id)
             .await
             .expect("second fake session should cleanly disconnect");
+    }
+
+    #[tokio::test]
+    async fn synthetic_stalled_worker_disconnect_releases_lock_and_meets_deadline() {
+        // The transport/session is real service state, while the deliberately
+        // stalled shell worker is synthetic so this test stays deterministic
+        // and does not claim external SSH-server coverage.
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let session_id = connect_fake_service_session(&state).await;
+        ensure_terminal_buffer(&session_id).unwrap();
+        append_terminal_output(&session_id, "before disconnect").unwrap();
+        let release = {
+            let mut service = state.lock().await;
+            install_stalled_shell(&mut service, &session_id)
+        };
+
+        let disconnect_state = Arc::clone(&state);
+        let disconnect_session_id = session_id.clone();
+        let started = tokio::time::Instant::now();
+        let disconnect = tokio::spawn(async move {
+            disconnect_ssh_on_state_with_timeout(
+                &disconnect_state,
+                &disconnect_session_id,
+                Duration::from_millis(75),
+            )
+            .await
+        });
+
+        tokio::time::timeout(Duration::from_millis(50), async {
+            loop {
+                let service = state.lock().await;
+                if !service.shells.contains_key(&session_id) {
+                    break;
+                }
+                drop(service);
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("disconnect should detach the shell without monopolizing the service lock");
+
+        let sessions = tokio::time::timeout(Duration::from_millis(25), async {
+            state.lock().await.list_sessions().await
+        })
+        .await
+        .expect("status reads must progress while detached cleanup is stalled");
+        assert!(sessions.is_empty());
+        assert_eq!(
+            terminal_buffer_text(&session_id).unwrap(),
+            "before disconnect"
+        );
+
+        let error = tokio::time::timeout(Duration::from_millis(250), disconnect)
+            .await
+            .expect("disconnect must return at its cleanup deadline")
+            .expect("disconnect task must not panic")
+            .expect_err("the deliberately stalled worker must time out");
+        assert!(error.contains("worker detached safely"));
+        assert!(started.elapsed() < Duration::from_millis(250));
+        assert_eq!(terminal_buffer_text(&session_id).unwrap(), "");
+
+        // The timed-out generation remains tombstoned, so it cannot overlap a
+        // replacement. Releasing the worker lets an idempotent retry observe
+        // completion and clear the admission entry without a retained handle.
+        let (probe_sender, probe_receiver) = shell_mailbox(ShellMailboxLimits::default());
+        let admission_error = state
+            .lock()
+            .await
+            .shell_admission
+            .try_acquire(
+                &session_id,
+                probe_sender.cancellation(),
+                ShellCompletion::new(),
+            )
+            .expect_err("the old generation must retain admission until it exits");
+        assert!(admission_error.contains("still stopping"));
+        drop((probe_sender, probe_receiver));
+
+        release.store(true, Ordering::Release);
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            disconnect_ssh_on_state(&state, &session_id),
+        )
+        .await
+        .expect("cleanup retry should observe detached worker completion")
+        .expect("cleanup retry should succeed");
+        assert_eq!(state.lock().await.shell_admission.active_count(), 0);
     }
 
     #[test]
@@ -5790,9 +6192,21 @@ mod tests {
     #[test]
     fn finished_shell_handles_are_not_reported_active_and_are_pruned() {
         let mut service = empty_test_service();
-        let (sender, _receiver) = mpsc::unbounded_channel();
-        let thread = std::thread::spawn(|| {});
         let session_id = "finished-shell";
+        let (sender, receiver) = shell_mailbox(ShellMailboxLimits::default());
+        let completion = ShellCompletion::new();
+        let lease = service
+            .shell_admission
+            .try_acquire(session_id, sender.cancellation(), Arc::clone(&completion))
+            .unwrap();
+        let generation = lease.generation();
+        let completion_for_thread = Arc::clone(&completion);
+        let thread = std::thread::spawn(move || {
+            let _lease = lease;
+            let guard = ShellWorkerCompletionGuard::new(completion_for_thread);
+            drop(receiver);
+            guard.complete();
+        });
         service.shells.insert(
             session_id.to_string(),
             SshShellHandle {
@@ -5800,6 +6214,8 @@ mod tests {
                 sender,
                 thread,
                 suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                completion,
+                generation,
             },
         );
         while !service.shells[session_id].is_finished() {
@@ -5814,14 +6230,23 @@ mod tests {
     #[tokio::test]
     async fn stop_shell_waits_for_actor_exit_before_reporting_success() {
         let mut service = empty_test_service();
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        let thread = std::thread::spawn(move || {
-            assert!(matches!(
-                receiver.blocking_recv(),
-                Some(SshShellCommand::Close)
-            ));
-        });
         let session_id = "stoppable-shell";
+        let (sender, receiver) = shell_mailbox(ShellMailboxLimits::default());
+        let completion = ShellCompletion::new();
+        let lease = service
+            .shell_admission
+            .try_acquire(session_id, sender.cancellation(), Arc::clone(&completion))
+            .unwrap();
+        let generation = lease.generation();
+        let completion_for_thread = Arc::clone(&completion);
+        let thread = std::thread::spawn(move || {
+            let _lease = lease;
+            let guard = ShellWorkerCompletionGuard::new(completion_for_thread);
+            while !receiver.close_requested() {
+                std::thread::yield_now();
+            }
+            guard.complete();
+        });
         service.shells.insert(
             session_id.to_string(),
             SshShellHandle {
@@ -5829,6 +6254,8 @@ mod tests {
                 sender,
                 thread,
                 suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                completion,
+                generation,
             },
         );
 

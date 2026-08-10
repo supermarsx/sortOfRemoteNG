@@ -1,4 +1,3 @@
-
 use super::types::*;
 use super::ACTIVE_AUTOMATIONS;
 
@@ -44,7 +43,14 @@ pub fn process_automation_output(session_id: &str, output: &str) {
                     }
 
                     // Send response
-                    let _ = state.tx.send(SshShellCommand::Input(response.clone()));
+                    if let Err(error) = state.tx.send(SshShellCommand::Input(response.clone())) {
+                        log::warn!(
+                            "Automation response could not be queued for session {}: {}",
+                            session_id,
+                            error
+                        );
+                        return;
+                    }
 
                     // Record match
                     state.matches.push(AutomationMatch {
