@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import vitestConfig, { NODE_TEST_SUITE_EXCLUDES } from "../../vitest.config";
 
 describe("ordinary Vitest discovery", () => {
+  it("bounds worker concurrency on high-core hosts", () => {
+    const config = vitestConfig as {
+      test?: { maxWorkers?: number };
+    };
+
+    expect(config.test?.maxWorkers).toBe(8);
+  });
+
   it("leaves dedicated Node test suites to their package scripts", () => {
     const config = vitestConfig as {
       test?: { exclude?: readonly string[] };

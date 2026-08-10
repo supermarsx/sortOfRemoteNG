@@ -17,6 +17,11 @@ export const NODE_TEST_SUITE_EXCLUDES = [
 export default defineConfig({
   plugins: [react()],
   test: {
+    // Large CI/dev hosts can expose dozens of logical CPUs. Letting Vitest
+    // mirror that count causes jsdom workers to contend until otherwise fast
+    // tests exceed their per-test timeout, so keep the suite predictably
+    // bounded across machines.
+    maxWorkers: 8,
     environment: "jsdom",
     globals: true,
     setupFiles: "./vitest.setup.ts",
