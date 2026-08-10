@@ -1,0 +1,311 @@
+name: npm-compatible-update
+
+on:
+  schedule:
+    # Run after the Monday Cargo updater and advisory audit windows.
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: npm-compatible-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Compatible npm and Bun update
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Diagnose pull-request authority
+        env:
+          GH_TOKEN: ${{ secrets.NPM_UPDATE_TOKEN || github.token }}
+          NPM_UPDATE_TOKEN: ${{ secrets.NPM_UPDATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NPM_UPDATE_TOKEN:-}" ]]; then
+            echo "::notice title=Default updater authority::Using GITHUB_TOKEN. The repository's create/approve pull-request setting is not introspectable with workflow-granted permissions; PR creation will fail closed with the exact Settings remediation if the host policy blocks it."
+            exit 0
+          fi
+
+          if ! workflow_permissions="$(gh api "repos/${GITHUB_REPOSITORY}/actions/permissions/workflow" 2>&1)"; then
+            echo "::error title=NPM_UPDATE_TOKEN cannot inspect workflow permissions::The optional token must have repository Administration: read, Contents: write, and Pull requests: write. GitHub response: ${workflow_permissions}"
+            exit 1
+          fi
+          if ! repository_permissions="$(gh api "repos/${GITHUB_REPOSITORY}" 2>&1)"; then
+            echo "::error title=NPM_UPDATE_TOKEN cannot inspect repository access::Verify repository Administration: read, Contents: write, and Pull requests: write. GitHub response: ${repository_permissions}"
+            exit 1
+          fi
+          if [[ "$(jq -r '.permissions.push // false' <<<"${repository_permissions}")" != "true" ]]; then
+            echo "::error title=NPM_UPDATE_TOKEN cannot write contents::Grant the updater token Contents: write in addition to Administration: read and Pull requests: write."
+            exit 1
+          fi
+
+          can_approve="$(jq -r '.can_approve_pull_request_reviews // false' <<<"${workflow_permissions}")"
+          echo "::notice title=Dedicated updater authority::NPM_UPDATE_TOKEN passed Administration/read and Contents/write preflight. Repository GITHUB_TOKEN create/approve setting: ${can_approve}. Pull requests/write is verified by the captured create-pull-request outcome."
+
+      - name: Checkout main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.NPM_UPDATE_TOKEN || github.token }}
+
+      - name: Set up Node 24 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          cache: "npm"
+
+      - name: Set up canonical Bun lock writer
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: ".bun-version"
+
+      - name: Verify updater toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(tr -d '\r\n' < .node-version)"
+          test "$(bun --version)" = "$(tr -d '\r\n' < .bun-version)"
+          npm --version
+
+      - name: Generate one compatible atomic candidate
+        id: update
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run deps:npm:update:compatible
+          if git diff --quiet -- package.json package-lock.json bun.lock src-tauri/crates/sorng-about/src/js_deps.rs; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+          candidate_sha256="$(
+            sha256sum package.json package-lock.json bun.lock src-tauri/crates/sorng-about/src/js_deps.rs |
+              sha256sum |
+              awk '{print $1}'
+          )"
+          if [[ ! "${candidate_sha256}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error title=Candidate seal failed::Could not compute the four-file aggregate SHA-256."
+            exit 1
+          fi
+          echo "candidate-sha256=${candidate_sha256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install candidate with frozen npm lock
+        if: steps.update.outputs.changed == 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: Install candidate with frozen Bun lock in isolation
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_root="$(mktemp -d "${RUNNER_TEMP:?}/sorng-bun-XXXXXX")"
+          cleanup_candidate() {
+            local prior_status=$?
+            trap - EXIT
+            if [[ -z "${candidate_root:-}" || ! -d "${candidate_root}" || -L "${candidate_root}" ]]; then
+              echo "::error title=Unsafe Bun cleanup target::Expected one real candidate directory beneath RUNNER_TEMP."
+              exit 1
+            fi
+            local resolved_candidate resolved_runner
+            resolved_candidate="$(realpath -e -- "${candidate_root}")"
+            resolved_runner="$(realpath -e -- "${RUNNER_TEMP:?}")"
+            if [[ "$(dirname -- "${resolved_candidate}")" != "${resolved_runner}" || "$(basename -- "${resolved_candidate}")" != sorng-bun-* ]]; then
+              echo "::error title=Unsafe Bun cleanup boundary::Refusing to remove ${resolved_candidate}."
+              exit 1
+            fi
+            rm -rf -- "${resolved_candidate}"
+            exit "${prior_status}"
+          }
+          trap cleanup_candidate EXIT
+          repository_before="$(sha256sum package.json package-lock.json bun.lock)"
+          cp -- package.json package-lock.json bun.lock "${candidate_root}/"
+          temporary_before="$(cd "${candidate_root}" && sha256sum package.json package-lock.json bun.lock)"
+
+          (
+            cd "${candidate_root}"
+            bun install --frozen-lockfile --ignore-scripts
+          )
+
+          temporary_after="$(cd "${candidate_root}" && sha256sum package.json package-lock.json bun.lock)"
+          repository_after="$(sha256sum package.json package-lock.json bun.lock)"
+          test "${temporary_after}" = "${temporary_before}"
+          test "${repository_after}" = "${repository_before}"
+
+      - name: Verify dependency authority and generated catalog
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ls --all
+          npm run deps:lock-parity:check
+          npm run deps:npm:update:test
+          npm run about:js-deps:test
+          npm run about:js-deps:check
+
+      - name: Verify toolchain, version, and release contracts
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run toolchain:test
+          npm run version:test
+          npm run version:floor:check
+          npm run version:check
+          npm run release:test
+
+      - name: Run strict npm audit policy
+        if: steps.update.outputs.changed == 'true'
+        run: node scripts/ci/check-npm-audit.mjs
+
+      - name: Run frontend quality gates
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run format
+          npm run lint
+          npm run typecheck
+          npm run dev:launcher:test
+          npm run test:coverage
+
+      - name: Build production frontend
+        if: steps.update.outputs.changed == 'true'
+        env:
+          CI: "true"
+          NEXT_TELEMETRY_DISABLED: "1"
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+          npm run build:cold:check
+
+      - name: Enforce the exact weekly file boundary
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only --no-ext-diff)
+          for path in "${changed[@]}"; do
+            case "${path}" in
+              package.json|package-lock.json|bun.lock|src-tauri/crates/sorng-about/src/js_deps.rs) ;;
+              *)
+                echo "::error title=Updater escaped its file boundary::Unexpected changed file: ${path}"
+                exit 1
+                ;;
+            esac
+          done
+          if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            echo "::error title=Updater created untracked files::$(git ls-files --others --exclude-standard | tr '\n' ' ')"
+            exit 1
+          fi
+          git diff --check -- package.json package-lock.json bun.lock src-tauri/crates/sorng-about/src/js_deps.rs
+
+      - name: Verify the sealed candidate before pull-request delivery
+        env:
+          EXPECTED_CANDIDATE_SHA256: ${{ steps.update.outputs.candidate-sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_candidate_sha256="$(
+            sha256sum package.json package-lock.json bun.lock src-tauri/crates/sorng-about/src/js_deps.rs |
+              sha256sum |
+              awk '{print $1}'
+          )"
+          if [[ ! "${EXPECTED_CANDIDATE_SHA256:-}" =~ ^[0-9a-f]{64}$ || "${actual_candidate_sha256}" != "${EXPECTED_CANDIDATE_SHA256}" ]]; then
+            echo "::error title=Candidate seal changed::The exact four-file candidate changed after validation and will not be delivered."
+            exit 1
+          fi
+
+      - name: Create or refresh the single update pull request
+        id: pull-request
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ secrets.NPM_UPDATE_TOKEN || github.token }}
+          base: main
+          branch: automation/npm-compatible-update
+          delete-branch: true
+          draft: always-true
+          commit-message: "chore(deps): weekly compatible npm update"
+          title: "chore(deps): weekly compatible npm update"
+          add-paths: |
+            package.json
+            package-lock.json
+            bun.lock
+            src-tauri/crates/sorng-about/src/js_deps.rs
+          body: |
+            Automated compatible npm/Bun dependency refresh.
+
+            Policy:
+            - stays inside every existing caret/tilde compatibility boundary;
+            - keeps `@types/node` at `24.13.3`;
+            - keeps `vitest` and `@vitest/coverage-v8` at `4.1.6` while the Windows discovery regression is held;
+            - leaves `@tauri-apps/*`, overrides, Cargo, patches, and vendored sources for coordinated manual review;
+            - regenerates canonical `package-lock.json`, `bun.lock`, and the shipped About catalog atomically;
+            - opens no automatic merge path.
+
+            The updater ran frozen npm/Bun installs, exact lock parity, audit,
+            catalog, toolchain, version/release, formatting, lint, typecheck,
+            full Vitest coverage, and production build gates before this PR step.
+
+      - name: Verify pull-request reconciliation and fail closed
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.NPM_UPDATE_TOKEN || github.token }}
+          CHANGED: ${{ steps.update.outputs.changed }}
+          OUTCOME: ${{ steps.pull-request.outcome }}
+          OPERATION: ${{ steps.pull-request.outputs.pull-request-operation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${OUTCOME:-skipped}" == "failure" ]]; then
+            echo "::error title=Automated updater PR delivery failed::If the preceding action says GitHub Actions is not permitted to create or approve pull requests, open Settings > Actions > General > Workflow permissions, enable 'Allow GitHub Actions to create and approve pull requests', and rerun. Otherwise configure NPM_UPDATE_TOKEN with repository Administration: read, Contents: write, and Pull requests: write, then inspect the preceding API error."
+            exit 1
+          fi
+          if [[ "${OUTCOME:-skipped}" != "success" ]]; then
+            echo "::error title=Updater did not reconcile its pull request::create-pull-request outcome was ${OUTCOME:-skipped}; inspect the preceding failed or skipped gate."
+            exit 1
+          fi
+
+          case "${OPERATION:-none}" in
+            created|updated|closed|none) ;;
+            *)
+              echo "::error title=Unexpected create-pull-request outcome::${OPERATION}"
+              exit 1
+              ;;
+          esac
+
+          if [[ "${CHANGED:-false}" == "true" ]]; then
+            case "${OPERATION:-none}" in
+              created|updated) ;;
+              *)
+                echo "::error title=Candidate was not delivered::A changed candidate must create or update the fixed updater PR; operation was ${OPERATION:-none}."
+                exit 1
+                ;;
+            esac
+          else
+            case "${OPERATION:-none}" in
+              closed|none) ;;
+              *)
+                echo "::error title=No-change PR reconciliation failed::A no-change run must close an obsolete fixed-branch PR or no-op; operation was ${OPERATION:-none}."
+                exit 1
+                ;;
+            esac
+          fi
+
+          count="$(gh pr list --state open --head automation/npm-compatible-update --json number --jq 'length')"
+          if [[ "${count}" -gt 1 ]]; then
+            echo "::error title=Duplicate updater pull requests::Expected at most one open automation/npm-compatible-update PR; found ${count}."
+            exit 1
+          fi

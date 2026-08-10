@@ -37,6 +37,10 @@ jobs:
           package-manager-cache: false
       - name: Enforce Node toolchain contract
         run: npm run toolchain:test
+      - name: Test compatible npm update automation
+        run: npm run deps:npm:update:test
+      - name: Check npm and Bun lock parity
+        run: npm run deps:lock-parity:check
       - name: Test JavaScript About dependency catalog
         run: npm run about:js-deps:test
       - name: Check JavaScript About dependency catalog

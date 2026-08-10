@@ -13,6 +13,9 @@ const NODE_VERSION = "24.19.0";
 const NODE_TYPES_VERSION = "24.13.3";
 const SETUP_NODE_REF = "820762786026740c76f36085b0efc47a31fe5020";
 const SETUP_NODE_TAG = "v7.0.0";
+const BUN_VERSION = "1.3.11";
+const SETUP_BUN_REF = "0c5077e51419868618aeaa5fe8019c62421857d6";
+const SETUP_BUN_TAG = "v2.2.0";
 
 const EXPECTED_SETUP_NODE_COUNTS = {
   "audit.yml": 1,
@@ -20,6 +23,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "docs-pages.yml": 1,
   "e2e.yml": 1,
   "frontend-build.yml": 1,
+  "npm-update.yml": 1,
   "release.yml": 3,
 };
 
@@ -76,6 +80,23 @@ test("runs the toolchain contract under the supported Node LTS", () => {
     NODE_LTS_MAJOR,
     `toolchain tests require Node ${NODE_LTS_MAJOR}.x; received ${process.versions.node}`,
   );
+});
+
+test("pins the canonical Bun lock writer for dependency automation", async () => {
+  const [bunVersionText, workflow] = await Promise.all([
+    readRepoFile(".bun-version"),
+    readRepoFile(".github/workflows/npm-update.yml"),
+  ]);
+
+  assert.equal(bunVersionText.trim(), BUN_VERSION);
+  assert.match(
+    workflow,
+    new RegExp(
+      `uses: oven-sh/setup-bun@${SETUP_BUN_REF.replaceAll("$", "\\$")} # ${SETUP_BUN_TAG.replaceAll("$", "\\$")}`,
+    ),
+  );
+  assert.match(workflow, /bun-version-file: ["']\.bun-version["']/);
+  assert.doesNotMatch(workflow, /^\s+bun-version:/m);
 });
 
 test("pins every workflow setup-node step to one immutable v7 release", async () => {
