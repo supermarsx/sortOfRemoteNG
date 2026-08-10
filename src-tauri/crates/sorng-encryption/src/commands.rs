@@ -218,6 +218,47 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+trait SettingsTransitionIo: Sync {
+    fn read(&self, path: &Path) -> Result<Vec<u8>, String>;
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<(), String>;
+    fn remove(&self, path: &Path) -> Result<(), String>;
+}
+
+struct FilesystemSettingsTransitionIo;
+
+impl SettingsTransitionIo for FilesystemSettingsTransitionIo {
+    fn read(&self, path: &Path) -> Result<Vec<u8>, String> {
+        read_bounded_regular_file(path, MAX_SETTINGS_BYTES)
+    }
+
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
+        atomic_write(path, bytes)
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), String> {
+        std::fs::remove_file(path).map_err(|error| format!("remove {}: {error}", path.display()))
+    }
+}
+
+fn rollback_settings_destination(
+    io: &dyn SettingsTransitionIo,
+    destination: &Path,
+    previous: Option<&[u8]>,
+    transition_error: String,
+) -> String {
+    let rollback = match previous {
+        Some(bytes) => io.write(destination, bytes),
+        None => io.remove(destination),
+    };
+    match rollback {
+        Ok(()) => transition_error,
+        Err(rollback_error) => format!(
+            "{transition_error}; additionally failed to roll back {}: {rollback_error}",
+            destination.display()
+        ),
+    }
+}
+
 const LOCKOUT_PERSISTENCE_ERROR: &str =
     "password lockout state could not be persisted; retries remain throttled in memory";
 const AUDIT_PERSISTENCE_ERROR: &str = "security audit event could not be persisted";
@@ -336,6 +377,14 @@ pub async fn encryption_status(
     })
 }
 
+async fn install_setup_dek(state: &EncryptionState, dek: MasterDek) {
+    // Key preparation, vault access, password KDF, and receipt persistence are
+    // completed by the caller before this point. Only the live enable edge
+    // needs to share an order with settings writers.
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    state.install(dek).await;
+}
+
 #[tauri::command]
 pub async fn encryption_setup(
     app: AppHandle,
@@ -362,7 +411,7 @@ pub async fn encryption_setup(
                 AuditEvent::SetupCompleted,
                 serde_json::json!({ "method": "vault", "vaultAvailable": true }),
             )?;
-            state.install(dek).await;
+            install_setup_dek(&state, dek).await;
             Ok(UnlockResult::UnlockedFromVault)
         }
         SetupMethod::Password { password, argon2 } => {
@@ -378,7 +427,7 @@ pub async fn encryption_setup(
                 AuditEvent::SetupCompleted,
                 serde_json::json!({ "method": "password", "vaultAvailable": false }),
             )?;
-            state.install(dek).await;
+            install_setup_dek(&state, dek).await;
             Ok(UnlockResult::UnlockedFromPassword)
         }
         SetupMethod::VaultAndPassword { password, argon2 } => {
@@ -405,7 +454,7 @@ pub async fn encryption_setup(
                     "vaultAvailable": true,
                 }),
             )?;
-            state.install(dek).await;
+            install_setup_dek(&state, dek).await;
             Ok(UnlockResult::UnlockedFromVault)
         }
     }
@@ -584,18 +633,38 @@ pub async fn encryption_change_password(
 /// envelope). Requires the state to be unlocked. On success removes
 /// the original plaintext `settings.json` so secrets do not remain
 /// available outside the encrypted envelope.
-#[tauri::command]
-pub async fn encryption_migrate_settings(
-    app: AppHandle,
-    state: State<'_, EncryptionState>,
+fn durable_settings_mode(
+    vault_present: bool,
+    password_receipt_present: bool,
+) -> Result<MasterKeyStorage, String> {
+    match (vault_present, password_receipt_present) {
+        (true, true) => Ok(MasterKeyStorage::VaultAndPassword),
+        (true, false) => Ok(MasterKeyStorage::Vault),
+        (false, true) => Ok(MasterKeyStorage::Password),
+        (false, false) => Err(
+            "unlocked master key has no durable vault or dek.enc receipt; refusing settings encryption"
+                .into(),
+        ),
+    }
+}
+
+async fn migrate_settings_locked_with(
+    dir: &Path,
+    state: &EncryptionState,
+    mode: MasterKeyStorage,
+    io: &dyn SettingsTransitionIo,
 ) -> Result<MigrationReport, String> {
     if !state.is_unlocked().await {
         return Err("state is locked; unlock before migrating".into());
     }
-    let dir = ensure_app_data_dir(&app)?;
+
     let source = dir.join(SETTINGS_JSON_FILENAME);
     let destination = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
-    let raw = read_bounded_regular_file(&source, MAX_SETTINGS_BYTES)?;
+    if destination.exists() {
+        return Err("settings.enc already exists; refusing to overwrite encrypted settings".into());
+    }
+
+    let raw = io.read(&source)?;
     let bytes_in = raw.len();
 
     // Idempotency guard: a file that already starts with the SORNG
@@ -606,45 +675,43 @@ pub async fn encryption_migrate_settings(
 
     let value: serde_json::Value =
         serde_json::from_slice(&raw).map_err(|e| format!("parse settings.json: {e}"))?;
-
-    // Determine the mode from on-disk signals.
-    let vault_has_dek = sorng_vault::keychain::read_dek().await.is_ok();
-    let dek_enc_present = dir.join(DEK_ENC_FILENAME).exists();
-    let mode = match (vault_has_dek, dek_enc_present) {
-        (true, true) => MasterKeyStorage::VaultAndPassword,
-        (true, false) => MasterKeyStorage::Vault,
-        (false, true) => MasterKeyStorage::Password,
-        // Should be impossible: we're unlocked, so something put a DEK
-        // in memory. Default to vault for safety.
-        (false, false) => MasterKeyStorage::Vault,
-    };
-
-    // For vault mode the Argon2 salt is unused; just zero-fill.
     let salt = [0u8; crate::envelope::SALT_LEN];
-    let blob = artifact_settings::write(&state, &value, mode, Argon2Params::OWASP, salt)
+    let blob = artifact_settings::write(state, &value, mode, Argon2Params::OWASP, salt)
         .await
         .map_err(|e| e.to_string())?;
     let bytes_out = blob.len();
 
-    atomic_write(&destination, &blob)?;
-    // Remove the original only after the encrypted envelope has been
-    // durably written. Keeping a plaintext rollback copy would defeat
-    // the encryption-at-rest guarantee exposed in Settings.
-    std::fs::remove_file(&source).map_err(|e| format!("remove plaintext settings.json: {e}"))?;
+    io.write(&destination, &blob)?;
+    let verification = async {
+        let readback = io
+            .read(&destination)
+            .map_err(|error| format!("verify settings.enc (read-back): {error}"))?;
+        let decoded = artifact_settings::read(state, &readback)
+            .await
+            .map_err(|error| format!("verify settings.enc (decrypt): {error}"))?
+            .ok_or_else(|| {
+                "verify settings.enc: encrypted artifact contained no settings document".to_string()
+            })?;
+        if decoded != value {
+            return Err(
+                "verify settings.enc: read-back did not match plaintext source".to_string(),
+            );
+        }
+        Ok::<(), String>(())
+    }
+    .await;
+    if let Err(error) = verification {
+        return Err(rollback_settings_destination(io, &destination, None, error));
+    }
 
-    record_security_audit(
-        &dir,
-        AuditEvent::SettingsMigrated,
-        serde_json::json!({
-            "bytesIn": bytes_in,
-            "bytesOut": bytes_out,
-            "mode": match mode {
-                MasterKeyStorage::Vault => "vault",
-                MasterKeyStorage::Password => "password",
-                MasterKeyStorage::VaultAndPassword => "vault-and-password",
-            },
-        }),
-    )?;
+    if let Err(error) = io.remove(&source) {
+        return Err(rollback_settings_destination(
+            io,
+            &destination,
+            None,
+            format!("remove plaintext settings.json: {error}"),
+        ));
+    }
 
     Ok(MigrationReport {
         source_path: source.to_string_lossy().into_owned(),
@@ -654,6 +721,56 @@ pub async fn encryption_migrate_settings(
         bytes_out,
         master_key_storage: mode,
     })
+}
+
+#[doc(hidden)]
+pub async fn migrate_settings_inner(
+    dir: &Path,
+    state: &EncryptionState,
+    mode: MasterKeyStorage,
+) -> Result<MigrationReport, String> {
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    migrate_settings_locked_with(dir, state, mode, &FilesystemSettingsTransitionIo).await
+}
+
+#[tauri::command]
+pub async fn encryption_migrate_settings(
+    app: AppHandle,
+    state: State<'_, EncryptionState>,
+) -> Result<MigrationReport, String> {
+    let dir = ensure_app_data_dir(&app)?;
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    if !state.is_unlocked().await {
+        return Err("state is locked; unlock before migrating".into());
+    }
+
+    // Determine the mode from on-disk signals while the canonical settings
+    // generation is frozen by the coordinator.
+    let vault_has_dek = sorng_vault::keychain::read_dek().await.is_ok();
+    let dek_enc_present = dir.join(DEK_ENC_FILENAME).exists();
+    let mode = durable_settings_mode(vault_has_dek, dek_enc_present)?;
+
+    let report =
+        migrate_settings_locked_with(&dir, &state, mode, &FilesystemSettingsTransitionIo).await?;
+    drop(_settings_guard);
+
+    if let Err(error) = record_security_audit(
+        &dir,
+        AuditEvent::SettingsMigrated,
+        serde_json::json!({
+            "bytesIn": report.bytes_in,
+            "bytesOut": report.bytes_out,
+            "mode": match mode {
+                MasterKeyStorage::Vault => "vault",
+                MasterKeyStorage::Password => "password",
+                MasterKeyStorage::VaultAndPassword => "vault-and-password",
+            },
+        }),
+    ) {
+        log::warn!("{error}; settings migration already committed");
+    }
+
+    Ok(report)
 }
 
 // ─── Phase 6: decrypt / rotate / portable export-import ────────────
@@ -673,39 +790,70 @@ pub struct DisableSettingsReport {
 /// so the next start uses the v0 path. The master key itself stays
 /// alive (vault entry and/or `dek.enc`) so other artifacts continue
 /// to decrypt; the full "disable everything" path is a follow-up.
-#[tauri::command]
-pub async fn encryption_disable_settings(
-    app: AppHandle,
-    state: State<'_, EncryptionState>,
+async fn disable_settings_locked_with(
+    dir: &Path,
+    state: &EncryptionState,
+    io: &dyn SettingsTransitionIo,
 ) -> Result<DisableSettingsReport, String> {
     if !state.is_unlocked().await {
         return Err("state is locked; unlock before disabling".into());
     }
-    let dir = ensure_app_data_dir(&app)?;
+
     let source = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
     let destination = dir.join(SETTINGS_JSON_FILENAME);
+    let previous_destination = if destination.exists() {
+        Some(io.read(&destination)?)
+    } else {
+        None
+    };
 
-    let raw = read_bounded_regular_file(&source, MAX_SETTINGS_BYTES)?;
+    let raw = io.read(&source)?;
     let bytes_in = raw.len();
     if !looks_like_envelope_helper(&raw) {
         return Err("source is not an envelope file; refusing to operate".into());
     }
-    let value = artifact_settings::read(&state, &raw)
+    let value = artifact_settings::read(state, &raw)
         .await
         .map_err(|e| e.to_string())?
-        .unwrap_or_else(|| serde_json::json!({}));
+        .ok_or_else(|| {
+            "settings.enc did not contain a settings document; refusing to delete it".to_string()
+        })?;
     let body =
         serde_json::to_string_pretty(&value).map_err(|e| format!("re-serialize settings: {e}"))?;
     let bytes_out = body.len();
-    atomic_write(&destination, body.as_bytes())?;
-    // Now safe to delete the encrypted file.
-    std::fs::remove_file(&source).map_err(|e| format!("remove settings.enc: {e}"))?;
 
-    record_security_audit(
-        &dir,
-        AuditEvent::SettingsDecrypted,
-        serde_json::json!({ "bytesIn": bytes_in, "bytesOut": bytes_out }),
-    )?;
+    io.write(&destination, body.as_bytes())?;
+    let verification = io
+        .read(&destination)
+        .map_err(|error| format!("verify settings.json (read-back): {error}"))
+        .and_then(|readback| {
+            serde_json::from_slice::<serde_json::Value>(&readback)
+                .map_err(|error| format!("verify settings.json (parse): {error}"))
+        })
+        .and_then(|decoded| {
+            if decoded == value {
+                Ok(())
+            } else {
+                Err("verify settings.json: read-back did not match encrypted source".to_string())
+            }
+        });
+    if let Err(error) = verification {
+        return Err(rollback_settings_destination(
+            io,
+            &destination,
+            previous_destination.as_deref(),
+            error,
+        ));
+    }
+
+    if let Err(error) = io.remove(&source) {
+        return Err(rollback_settings_destination(
+            io,
+            &destination,
+            previous_destination.as_deref(),
+            format!("remove settings.enc: {error}"),
+        ));
+    }
 
     Ok(DisableSettingsReport {
         source_path: source.to_string_lossy().into_owned(),
@@ -713,6 +861,34 @@ pub async fn encryption_disable_settings(
         bytes_in,
         bytes_out,
     })
+}
+
+#[doc(hidden)]
+pub async fn disable_settings_inner(
+    dir: &Path,
+    state: &EncryptionState,
+) -> Result<DisableSettingsReport, String> {
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    disable_settings_locked_with(dir, state, &FilesystemSettingsTransitionIo).await
+}
+
+#[tauri::command]
+pub async fn encryption_disable_settings(
+    app: AppHandle,
+    state: State<'_, EncryptionState>,
+) -> Result<DisableSettingsReport, String> {
+    let dir = ensure_app_data_dir(&app)?;
+    let report = disable_settings_inner(&dir, &state).await?;
+
+    if let Err(error) = record_security_audit(
+        &dir,
+        AuditEvent::SettingsDecrypted,
+        serde_json::json!({ "bytesIn": report.bytes_in, "bytesOut": report.bytes_out }),
+    ) {
+        log::warn!("{error}; settings disable transition already committed");
+    }
+
+    Ok(report)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -753,6 +929,24 @@ pub async fn encryption_rotate_master_key(
         return Err("password mode is in effect; supply the password to re-wrap dek.enc".into());
     }
 
+    let new_mode = durable_settings_mode(vault_present, dek_enc_present)?;
+
+    // Generate and perform the password KDF before taking the settings
+    // coordinator. No settings snapshot has been captured yet, so doing the
+    // expensive preparation here cannot become stale.
+    let new_dek = MasterDek::generate();
+    let new_bytes = *new_dek.bytes_for_password_wrap();
+    let new_password_blob = password
+        .as_deref()
+        .map(|pw| password_wrap::wrap(pw, &new_dek, Argon2Params::OWASP))
+        .transpose()
+        .map_err(|e| format!("wrap: {e}"))?;
+
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    if !state.is_unlocked().await {
+        return Err("state was locked while waiting to rotate".into());
+    }
+
     // Read each artifact's plaintext via the *current* state, before
     // we install the new DEK.
     let settings_plaintext = if settings_enc_present {
@@ -765,17 +959,9 @@ pub async fn encryption_rotate_master_key(
         serde_json::json!({})
     };
 
-    // Generate the new master DEK, install it.
-    let new_dek = MasterDek::generate();
+    // Install the prepared master DEK only after the settings generation is
+    // frozen against ordinary writers.
     state.install(new_dek).await;
-
-    // Determine the on-disk mode the new files should declare.
-    let new_mode = match (vault_present, dek_enc_present) {
-        (true, true) => MasterKeyStorage::VaultAndPassword,
-        (true, false) => MasterKeyStorage::Vault,
-        (false, true) => MasterKeyStorage::Password,
-        (false, false) => MasterKeyStorage::Vault, // sensible default
-    };
 
     let mut artifacts_rewritten = 0u32;
     let mut bytes_rewritten = 0usize;
@@ -799,11 +985,6 @@ pub async fn encryption_rotate_master_key(
     // Update key-storage receipts.
     let mut vault_updated = false;
     let mut dek_enc_updated = false;
-    let new_bytes = state
-        .with_master(|m| *m.bytes_for_password_wrap())
-        .await
-        .ok_or("master DEK vanished mid-rotation")?;
-
     if vault_present {
         sorng_vault::keychain::store_bytes(
             sorng_vault::types::SERVICE_NAME,
@@ -814,14 +995,11 @@ pub async fn encryption_rotate_master_key(
         .map_err(|e| format!("vault update: {e}"))?;
         vault_updated = true;
     }
-    if let Some(pw) = password {
-        let argon = Argon2Params::OWASP;
-        let dek_owned =
-            MasterDek::from_bytes(&new_bytes).ok_or("internal: master DEK wrong length")?;
-        let blob = password_wrap::wrap(&pw, &dek_owned, argon).map_err(|e| format!("wrap: {e}"))?;
+    if let Some(blob) = new_password_blob {
         atomic_write(&dek_enc_path, &blob)?;
         dek_enc_updated = true;
     }
+    drop(_settings_guard);
 
     // Reset the lockout counter — successful rotation is the strongest
     // possible signal that the user holds the password.
@@ -1060,6 +1238,23 @@ mod tests {
     }
 
     #[test]
+    fn settings_encryption_requires_a_durable_key_receipt() {
+        assert_eq!(
+            durable_settings_mode(true, false).unwrap(),
+            MasterKeyStorage::Vault
+        );
+        assert_eq!(
+            durable_settings_mode(false, true).unwrap(),
+            MasterKeyStorage::Password
+        );
+        assert_eq!(
+            durable_settings_mode(true, true).unwrap(),
+            MasterKeyStorage::VaultAndPassword
+        );
+        assert!(durable_settings_mode(false, false).is_err());
+    }
+
+    #[test]
     fn rotate_report_camel_case() {
         let r = RotateReport {
             artifacts_rewritten: 3,
@@ -1103,6 +1298,181 @@ mod tests {
         .unwrap_err();
         assert_eq!(err, AUDIT_PERSISTENCE_ERROR);
         assert!(!err.contains("sensitive"));
+    }
+
+    #[derive(Default)]
+    struct InjectedSettingsTransitionIo {
+        fail_write: Option<PathBuf>,
+        corrupt_readback: Option<PathBuf>,
+        fail_remove: Option<PathBuf>,
+    }
+
+    impl SettingsTransitionIo for InjectedSettingsTransitionIo {
+        fn read(&self, path: &Path) -> Result<Vec<u8>, String> {
+            if self.corrupt_readback.as_deref() == Some(path) {
+                return Ok(b"corrupt transition readback".to_vec());
+            }
+            read_bounded_regular_file(path, MAX_SETTINGS_BYTES)
+        }
+
+        fn write(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
+            if self.fail_write.as_deref() == Some(path) {
+                return Err("injected settings transition write failure".to_string());
+            }
+            atomic_write(path, bytes)
+        }
+
+        fn remove(&self, path: &Path) -> Result<(), String> {
+            if self.fail_remove.as_deref() == Some(path) {
+                return Err("injected settings transition delete failure".to_string());
+            }
+            std::fs::remove_file(path).map_err(|error| error.to_string())
+        }
+    }
+
+    async fn transition_test_state() -> EncryptionState {
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        state
+    }
+
+    #[tokio::test]
+    async fn migration_failures_roll_back_to_the_plaintext_source() {
+        for failure in ["write", "verify", "delete"] {
+            let dir = tempdir().unwrap();
+            let source = dir.path().join(SETTINGS_JSON_FILENAME);
+            let destination = dir.path().join(artifact_settings::SETTINGS_ENC_FILENAME);
+            let expected = serde_json::json!({ "theme": "dark", "failure": failure });
+            std::fs::write(&source, serde_json::to_vec_pretty(&expected).unwrap()).unwrap();
+            let state = transition_test_state().await;
+            let io = InjectedSettingsTransitionIo {
+                fail_write: (failure == "write").then(|| destination.clone()),
+                corrupt_readback: (failure == "verify").then(|| destination.clone()),
+                fail_remove: (failure == "delete").then(|| source.clone()),
+            };
+
+            let _settings_guard = crate::settings_coordinator::lock().await;
+            let error =
+                migrate_settings_locked_with(dir.path(), &state, MasterKeyStorage::Vault, &io)
+                    .await
+                    .expect_err("injected migration failure");
+            assert!(error.contains("injected") || error.contains("verify"));
+            assert!(source.exists(), "plaintext source must survive {failure}");
+            assert!(
+                !destination.exists(),
+                "encrypted destination must roll back after {failure}"
+            );
+            let recovered: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&source).unwrap()).unwrap();
+            assert_eq!(recovered, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn disable_failures_roll_back_to_the_encrypted_source() {
+        for failure in ["write", "verify", "delete"] {
+            let dir = tempdir().unwrap();
+            let source = dir.path().join(artifact_settings::SETTINGS_ENC_FILENAME);
+            let destination = dir.path().join(SETTINGS_JSON_FILENAME);
+            let expected = serde_json::json!({ "theme": "dark", "failure": failure });
+            let state = transition_test_state().await;
+            let blob = artifact_settings::write(
+                &state,
+                &expected,
+                MasterKeyStorage::Vault,
+                Argon2Params::OWASP,
+                [0u8; SALT_LEN],
+            )
+            .await
+            .unwrap();
+            atomic_write(&source, &blob).unwrap();
+            let io = InjectedSettingsTransitionIo {
+                fail_write: (failure == "write").then(|| destination.clone()),
+                corrupt_readback: (failure == "verify").then(|| destination.clone()),
+                fail_remove: (failure == "delete").then(|| source.clone()),
+            };
+
+            let _settings_guard = crate::settings_coordinator::lock().await;
+            let error = disable_settings_locked_with(dir.path(), &state, &io)
+                .await
+                .expect_err("injected disable failure");
+            assert!(error.contains("injected") || error.contains("verify"));
+            assert!(source.exists(), "encrypted source must survive {failure}");
+            assert!(
+                !destination.exists(),
+                "plaintext destination must roll back after {failure}"
+            );
+            let recovered = artifact_settings::read(&state, &std::fs::read(&source).unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(recovered, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn disable_delete_failure_restores_preexisting_plaintext_bytes() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join(artifact_settings::SETTINGS_ENC_FILENAME);
+        let destination = dir.path().join(SETTINGS_JSON_FILENAME);
+        let expected = serde_json::json!({ "theme": "encrypted-current" });
+        let original_plaintext = b"{\r\n  \"theme\": \"stale-fallback\"\r\n}\r\n";
+        let state = transition_test_state().await;
+        let blob = artifact_settings::write(
+            &state,
+            &expected,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+        atomic_write(&source, &blob).unwrap();
+        std::fs::write(&destination, original_plaintext).unwrap();
+        let io = InjectedSettingsTransitionIo {
+            fail_remove: Some(source.clone()),
+            ..Default::default()
+        };
+
+        let _settings_guard = crate::settings_coordinator::lock().await;
+        disable_settings_locked_with(dir.path(), &state, &io)
+            .await
+            .expect_err("source delete failure must roll back plaintext replacement");
+
+        assert_eq!(std::fs::read(&destination).unwrap(), original_plaintext);
+        let recovered = artifact_settings::read(&state, &std::fs::read(source).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered, expected);
+    }
+
+    #[tokio::test]
+    async fn disable_rejects_empty_envelope_without_committing_plaintext() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join(artifact_settings::SETTINGS_ENC_FILENAME);
+        let destination = dir.path().join(SETTINGS_JSON_FILENAME);
+        let state = transition_test_state().await;
+        let sub_key = state.sub_key(crate::ArtifactKind::Settings).await.unwrap();
+        let header = crate::envelope::EnvelopeHeader::new_vault([0u8; crate::envelope::NONCE_LEN]);
+        let blob = crate::envelope::write_envelope(&sub_key, &header, b"").unwrap();
+        atomic_write(&source, &blob).unwrap();
+
+        let _settings_guard = crate::settings_coordinator::lock().await;
+        let error =
+            disable_settings_locked_with(dir.path(), &state, &FilesystemSettingsTransitionIo)
+                .await
+                .expect_err("empty settings envelope must fail closed");
+
+        assert!(error.contains("did not contain a settings document"));
+        assert!(source.exists());
+        assert!(!destination.exists());
+        assert!(
+            artifact_settings::read(&state, &std::fs::read(source).unwrap())
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     // ─── End-to-end logic tests bypassing the Tauri AppHandle ──

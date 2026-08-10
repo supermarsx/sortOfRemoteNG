@@ -48,6 +48,7 @@ pub mod lockout;
 pub mod log_adapter;
 pub mod log_sink;
 pub mod password_wrap;
+pub mod settings_coordinator;
 pub mod state;
 
 pub use dek::{ArtifactKind, MasterDek, SubKey};

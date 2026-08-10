@@ -6,14 +6,13 @@
 //! - `settings.json` — v0, plaintext JSON, the legacy format.
 //! - `settings.enc` — v2, the [`sorng_encryption`] envelope codec under
 //!   [`ArtifactKind::Settings`]. Produced once the user runs
-//!   `encryption_migrate_settings`; written transparently by every
-//!   subsequent `write_app_settings` while the [`EncryptionState`] is
-//!   unlocked.
+//!   `encryption_migrate_settings`; written transparently by subsequent
+//!   `write_app_settings` calls while that encrypted representation remains
+//!   canonical.
 //!
 //! Read dispatch: `.enc` first, fall back to `.json`. Write dispatch:
-//! `.enc` when the encryption state is unlocked, plaintext `.json`
-//! otherwise — there's no "stay on plaintext after migration" branch
-//! because that would be a silent regression. After
+//! preserve the canonical representation already on disk, using `.enc` for a
+//! first-ever write only when the encryption state is unlocked. After
 //! `encryption_disable_settings` runs, the encrypted file is gone and
 //! `.json` is back, so the next write naturally goes to `.json`.
 //!
@@ -37,11 +36,6 @@ const REST_API_KEY_ACCOUNT: &str = "api-key-v1";
 const REST_API_JWT_ACCOUNT: &str = "jwt-signing-secret-v1";
 const REST_API_SECRET_BYTES: usize = 32;
 
-/// Serialize the complete read-merge-write-verify transaction. Settings saves
-/// can arrive concurrently from auto-save hooks and separate Tauri windows;
-/// without this guard they can both merge from the same generation and lose a
-/// sibling patch even if each individual file replacement is atomic.
-static SETTINGS_WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// Makes each atomic-write temp name unique within a process. The process id in
 /// `temp_path_for` keeps simultaneously-running app processes separate too.
 static SETTINGS_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -182,7 +176,8 @@ fn reject_rest_api_secret_patch(patch: &Value) -> Result<(), String> {
 }
 
 /// Move legacy REST API secrets to the credential vault and persist the
-/// sanitized `restApi` object. The caller must hold `SETTINGS_WRITE_LOCK` so
+/// sanitized `restApi` object. The caller must hold the shared settings
+/// coordinator so
 /// the `settings` snapshot cannot go stale before its sanitized replacement is
 /// merged back into the current document.
 async fn migrate_rest_api_secrets_locked(
@@ -220,7 +215,7 @@ async fn migrate_rest_api_secrets_locked(
 }
 
 /// Read settings and perform any legacy-secret migration while the caller
-/// holds `SETTINGS_WRITE_LOCK`.
+/// holds the shared settings coordinator.
 async fn read_app_settings_secure_locked(
     dir: &std::path::Path,
     enc_state: &EncryptionState,
@@ -240,21 +235,24 @@ pub(crate) async fn read_app_settings_secure_inner(
     // A legacy-secret migration is a read-sanitize-write transaction. Taking
     // the same lock as ordinary settings writes before the read prevents a
     // stale `restApi` object from replaying over a concurrent patch.
-    let _write_guard = SETTINGS_WRITE_LOCK.lock().await;
+    let _write_guard = sorng_encryption::settings_coordinator::lock().await;
     read_app_settings_secure_locked(dir, enc_state).await
 }
 
 /// Probe the live mode from disk + vault. Mirrors the logic in
 /// `encryption_status` so the writer below stamps the preamble with
 /// the same mode that the unlock screen will see at next boot.
-async fn current_master_key_storage(dir: &std::path::Path) -> MasterKeyStorage {
+async fn current_master_key_storage(dir: &std::path::Path) -> Result<MasterKeyStorage, String> {
     let vault_present = sorng_vault::keychain::read_dek().await.is_ok();
     let dek_enc_present = dir.join(DEK_ENC_FILENAME).exists();
     match (vault_present, dek_enc_present) {
-        (true, true) => MasterKeyStorage::VaultAndPassword,
-        (true, false) => MasterKeyStorage::Vault,
-        (false, true) => MasterKeyStorage::Password,
-        (false, false) => MasterKeyStorage::Vault, // sensible default
+        (true, true) => Ok(MasterKeyStorage::VaultAndPassword),
+        (true, false) => Ok(MasterKeyStorage::Vault),
+        (false, true) => Ok(MasterKeyStorage::Password),
+        (false, false) => Err(
+            "unlocked master key has no durable vault or dek.enc receipt; refusing settings encryption"
+                .into(),
+        ),
     }
 }
 
@@ -319,14 +317,12 @@ pub async fn read_app_settings(
 /// Shallow-merge `patch` into the live settings root and persist.
 /// Picks the format automatically:
 ///
-/// - When [`EncryptionState`] is unlocked, the merged blob lands in
-///   `settings.enc` (v2 envelope). Any pre-existing plaintext file is
-///   removed after the encrypted write succeeds so secrets do not
-///   remain available outside the envelope.
-/// - When locked, the merge writes plaintext `settings.json` — this
-///   keeps the boot flow that loads window geometry before unlock
-///   working unchanged. Sensitive keys are still in the user's hands
-///   here; the encryption story applies once they migrate.
+/// - When `settings.enc` is already canonical, the merged blob remains
+///   encrypted. A first-ever write while unlocked also starts encrypted.
+/// - When `settings.json` is canonical, the merge remains plaintext even if
+///   the master key is still unlocked for other artifacts. This keeps an
+///   explicit settings-disable transition stable until migration is requested
+///   again.
 ///
 /// The existing-object base is always read through `read_app_settings`,
 /// so the merge composition is identical between the two paths.
@@ -340,7 +336,7 @@ pub async fn write_app_settings(
     reject_rest_api_secret_patch(&patch)?;
     // Keep the optional legacy-secret migration and the caller's patch in one
     // transaction. Both helpers below assume this guard is already held.
-    let _write_guard = SETTINGS_WRITE_LOCK.lock().await;
+    let _write_guard = sorng_encryption::settings_coordinator::lock().await;
     let _ = read_app_settings_secure_locked(&dir, &enc_state).await?;
     write_app_settings_locked(&dir, &enc_state, patch).await
 }
@@ -497,12 +493,12 @@ pub async fn write_app_settings_inner(
     // Cover the entire transaction, not only the rename: a later writer must
     // read the generation committed by the previous writer before merging its
     // own patch. This also keeps verify-readback isolated from another save.
-    let _write_guard = SETTINGS_WRITE_LOCK.lock().await;
+    let _write_guard = sorng_encryption::settings_coordinator::lock().await;
     write_app_settings_locked(dir, enc_state, patch).await
 }
 
 /// Execute a complete read-merge-write-verify transaction. The caller must
-/// hold `SETTINGS_WRITE_LOCK`; keeping lock acquisition outside this helper
+/// hold the shared settings coordinator; keeping lock acquisition outside this helper
 /// lets legacy-secret migration compose a sanitized write without deadlocking
 /// on the non-reentrant process mutex.
 async fn write_app_settings_locked(
@@ -514,9 +510,12 @@ async fn write_app_settings_locked(
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let enc_path = dir.join(SETTINGS_ENC_FILENAME);
     let plain_path = dir.join(SETTINGS_FILENAME);
+    let encrypted_on_disk = enc_path.exists();
+    let plaintext_on_disk = plain_path.exists();
+    let state_unlocked = enc_state.is_unlocked().await;
 
-    let existing: Value = if enc_path.exists() {
-        if !enc_state.is_unlocked().await {
+    let existing: Value = if encrypted_on_disk {
+        if !state_unlocked {
             return Err("settings are encrypted; unlock first via Settings → Security".into());
         }
         let bytes = std::fs::read(&enc_path).map_err(|e| format!("read settings.enc: {e}"))?;
@@ -537,9 +536,10 @@ async fn write_app_settings_locked(
         }
     };
     let merged = merge_root(existing, &patch)?;
+    let write_encrypted = encrypted_on_disk || (state_unlocked && !plaintext_on_disk);
 
-    if enc_state.is_unlocked().await {
-        let mode = current_master_key_storage(dir).await;
+    if write_encrypted {
+        let mode = current_master_key_storage(dir).await?;
         let salt = [0u8; SALT_LEN];
         let blob = artifact_settings::write(enc_state, &merged, mode, Argon2Params::OWASP, salt)
             .await
@@ -608,7 +608,9 @@ async fn write_app_settings_locked(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sorng_encryption::commands::{disable_settings_inner, migrate_settings_inner};
     use sorng_encryption::MasterDek;
+    use sorng_encryption::MasterKeyStorage;
     use tempfile::tempdir;
 
     #[test]
@@ -787,10 +789,23 @@ mod tests {
 
     /// Build an unlocked `EncryptionState` directly, bypassing the
     /// vault/password flow so we can exercise the dispatch table.
-    async fn unlocked_state() -> EncryptionState {
+    async fn unlocked_state_with_password_receipt(dir: &std::path::Path) -> EncryptionState {
         let state = EncryptionState::new();
-        let dek = MasterDek::from_bytes(&[0x42u8; 32]).expect("32-byte DEK");
+        let bytes = [0x42u8; 32];
+        let dek = MasterDek::from_bytes(&bytes).expect("32-byte DEK");
         state.install(dek).await;
+        let receipt_dek = MasterDek::from_bytes(&bytes).expect("32-byte DEK");
+        let receipt = sorng_encryption::password_wrap::wrap(
+            "test-password",
+            &receipt_dek,
+            Argon2Params {
+                memory_kib: 8 * 1024,
+                time_cost: 1,
+                parallelism: 1,
+            },
+        )
+        .expect("test password receipt");
+        std::fs::write(dir.join(DEK_ENC_FILENAME), receipt).expect("write test password receipt");
         state
     }
 
@@ -809,7 +824,7 @@ mod tests {
     #[tokio::test]
     async fn write_while_unlocked_lands_in_enc() {
         let tmp = tempdir().unwrap();
-        let state = unlocked_state().await;
+        let state = unlocked_state_with_password_receipt(tmp.path()).await;
         write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "dark" }))
             .await
             .unwrap();
@@ -844,7 +859,7 @@ mod tests {
         // secure read took this mutex up front, it could capture the stale
         // `enabled: false` object here, queue its migration behind the writer,
         // and replay that stale object after the writer committed `true`.
-        let guard = SETTINGS_WRITE_LOCK.lock().await;
+        let guard = sorng_encryption::settings_coordinator::lock().await;
 
         let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
         let writer_dir = dir.clone();
@@ -889,7 +904,7 @@ mod tests {
     async fn concurrent_encrypted_writes_are_serialized_and_preserve_every_patch() {
         let tmp = tempdir().unwrap();
         let dir = tmp.path().to_path_buf();
-        let state = unlocked_state().await;
+        let state = unlocked_state_with_password_receipt(&dir).await;
         let mut writes = Vec::new();
 
         for index in 0..24 {
@@ -955,28 +970,32 @@ mod tests {
     #[tokio::test]
     async fn read_prefers_enc_over_plaintext() {
         let tmp = tempdir().unwrap();
-        // Plant a plaintext that we explicitly *don't* want to win.
-        std::fs::write(tmp.path().join("settings.json"), br#"{"theme":"stale"}"#).unwrap();
-        let state = unlocked_state().await;
+        let state = unlocked_state_with_password_receipt(tmp.path()).await;
         write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "fresh" }))
             .await
             .unwrap();
+        // Plant a stale plaintext shadow after the encrypted representation is
+        // canonical. Reads must still prefer the envelope.
+        std::fs::write(tmp.path().join("settings.json"), br#"{"theme":"stale"}"#).unwrap();
 
-        // The `.enc` write should have removed the stale `.json` and
-        // the next read should reflect the encrypted truth.
         assert!(tmp.path().join("settings.enc").exists());
-        assert!(!tmp.path().join("settings.json").exists());
         let value = read_app_settings_inner(tmp.path(), &state)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(value["theme"], "fresh");
+
+        // The next successful encrypted write also sweeps the stale shadow.
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "language": "fr" }))
+            .await
+            .unwrap();
+        assert!(!tmp.path().join("settings.json").exists());
     }
 
     #[tokio::test]
     async fn read_locked_enc_surfaces_lock_error() {
         let tmp = tempdir().unwrap();
-        let state = unlocked_state().await;
+        let state = unlocked_state_with_password_receipt(tmp.path()).await;
         write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "dark" }))
             .await
             .unwrap();
@@ -1002,8 +1021,119 @@ mod tests {
         assert!(value.is_none());
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn migrate_then_queued_write_preserves_the_newest_update() {
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        std::fs::write(
+            dir.join(SETTINGS_FILENAME),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "theme": "dark",
+                "language": "en"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let state = unlocked_state_with_password_receipt(&dir).await;
+
+        let guard = sorng_encryption::settings_coordinator::lock().await;
+        let (migration_started_tx, migration_started_rx) = tokio::sync::oneshot::channel();
+        let migration_dir = dir.clone();
+        let migration_state = state.clone();
+        let migration = tokio::spawn(async move {
+            let _ = migration_started_tx.send(());
+            migrate_settings_inner(&migration_dir, &migration_state, MasterKeyStorage::Password)
+                .await
+        });
+        migration_started_rx.await.unwrap();
+        assert!(!migration.is_finished());
+
+        let (write_started_tx, write_started_rx) = tokio::sync::oneshot::channel();
+        let write_dir = dir.clone();
+        let write_state = state.clone();
+        let writer = tokio::spawn(async move {
+            let _ = write_started_tx.send(());
+            write_app_settings_inner(
+                &write_dir,
+                &write_state,
+                serde_json::json!({ "language": "fr", "windowSize": 1080 }),
+            )
+            .await
+        });
+        write_started_rx.await.unwrap();
+        assert!(!writer.is_finished());
+
+        drop(guard);
+        migration.await.unwrap().unwrap();
+        writer.await.unwrap().unwrap();
+
+        assert!(dir.join(SETTINGS_ENC_FILENAME).exists());
+        assert!(!dir.join(SETTINGS_FILENAME).exists());
+        let value = read_app_settings_inner(&dir, &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(value["theme"], "dark");
+        assert_eq!(value["language"], "fr");
+        assert_eq!(value["windowSize"], 1080);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn disable_then_queued_write_stays_plaintext_and_preserves_the_newest_update() {
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        let state = unlocked_state_with_password_receipt(&dir).await;
+        write_app_settings_inner(
+            &dir,
+            &state,
+            serde_json::json!({ "theme": "dark", "language": "en" }),
+        )
+        .await
+        .unwrap();
+
+        let guard = sorng_encryption::settings_coordinator::lock().await;
+        let (disable_started_tx, disable_started_rx) = tokio::sync::oneshot::channel();
+        let disable_dir = dir.clone();
+        let disable_state = state.clone();
+        let disable = tokio::spawn(async move {
+            let _ = disable_started_tx.send(());
+            disable_settings_inner(&disable_dir, &disable_state).await
+        });
+        disable_started_rx.await.unwrap();
+        assert!(!disable.is_finished());
+
+        let (write_started_tx, write_started_rx) = tokio::sync::oneshot::channel();
+        let write_dir = dir.clone();
+        let write_state = state.clone();
+        let writer = tokio::spawn(async move {
+            let _ = write_started_tx.send(());
+            write_app_settings_inner(
+                &write_dir,
+                &write_state,
+                serde_json::json!({ "language": "fr", "windowSize": 1080 }),
+            )
+            .await
+        });
+        write_started_rx.await.unwrap();
+        assert!(!writer.is_finished());
+
+        drop(guard);
+        disable.await.unwrap().unwrap();
+        writer.await.unwrap().unwrap();
+
+        assert!(dir.join(SETTINGS_FILENAME).exists());
+        assert!(!dir.join(SETTINGS_ENC_FILENAME).exists());
+        let value = read_app_settings_inner(&dir, &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(value["theme"], "dark");
+        assert_eq!(value["language"], "fr");
+        assert_eq!(value["windowSize"], 1080);
+    }
+
     #[tokio::test]
-    async fn v0_to_v2_transition_preserves_data() {
+    async fn explicit_v0_to_v2_transition_preserves_data() {
         // Mirrors the data-loss bug: app writes settings.json while
         // locked, then user enables encryption (state flips unlocked
         // mid-session) and writes again. The merged blob must contain
@@ -1020,7 +1150,10 @@ mod tests {
         .unwrap();
         assert!(tmp.path().join("settings.json").exists());
 
-        let unlocked = unlocked_state().await;
+        let unlocked = unlocked_state_with_password_receipt(tmp.path()).await;
+        migrate_settings_inner(tmp.path(), &unlocked, MasterKeyStorage::Password)
+            .await
+            .unwrap();
         write_app_settings_inner(
             tmp.path(),
             &unlocked,
