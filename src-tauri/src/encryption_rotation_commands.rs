@@ -8,30 +8,29 @@
 //! sub-keys after rotation, which made them all unreadable on next
 //! boot.
 //!
-//! This command takes the snapshot-then-swap-then-rewrite approach:
+//! This command takes a stage-then-commit approach:
 //!
 //! 1. Build a frozen `EncryptionState` snapshot holding the *old*
-//!    DEK. The live state can be swapped underneath us during step 3.
-//! 2. Generate a fresh DEK and install it into the live state.
-//! 3. For each artifact: read with the snapshot (old key), re-encrypt
-//!    with the live state (new key), atomic-rename into place. The
-//!    `.rotating` temp file leaves no half-written canonical paths if
-//!    a single file's rewrite fails.
-//! 4. Re-wrap the new DEK into the OS vault + (if password mode)
-//!    `dek.enc`. Reset the lockout counter; emit the unlocked event;
-//!    audit the rotation.
+//!    DEK. The live state remains on that key until commit succeeds.
+//! 2. Generate a fresh DEK in an isolated state.
+//! 3. Copy every required artifact to a transaction sidecar and
+//!    re-encrypt only the sidecar. Any rewrite failure discards all
+//!    sidecars, leaving canonical bytes and persisted key receipts
+//!    unchanged.
+//! 4. Back up every canonical artifact, replace it with its fully
+//!    staged counterpart, and roll the set back if a replacement or
+//!    key-receipt update fails.
+//! 5. Re-wrap the new DEK into the OS vault + (if password mode)
+//!    `dek.enc`, then install it into the live state. Reset the lockout
+//!    counter; emit the unlocked event; audit the rotation.
 //!
-//! Crash safety: the canonical path of every artifact is touched
-//! exactly once via `rename(tmp, canonical)`, so a crash inside an
-//! individual file's rewrite leaves the canonical at its previous
-//! (old-key) bytes. A crash after step 4 — vault + `dek.enc` updated
-//! but some artifacts still old-key — is the lossy case. Mitigation:
-//! the user is told before clicking "Rotate" to export a portable
-//! `.dek` first (see the existing portable-export command). With that
-//! escape hatch, the worst recoverable state is "import old portable
-//! `.dek`, run the rotation again".
+//! This removes the previous normal-error split-key state: a failed
+//! required rewrite can no longer persist the new DEK or alter a
+//! canonical artifact. Transaction sidecars use unique names so a
+//! failed attempt cannot collide with a later retry.
 
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use sorng_encryption::artifacts::{
@@ -51,6 +50,16 @@ const DEK_ENC_FILENAME: &str = "dek.enc";
 const SETTINGS_ENC_FILENAME: &str = "settings.enc";
 /// Tauri event name. Must mirror the constant in `sorng-encryption`.
 const EVENT_UNLOCKED: &str = "encryption:unlocked";
+
+type RotationFailureInjector<'a> = dyn Fn(&str, &Path) -> Option<String> + Sync + 'a;
+
+#[derive(Debug)]
+struct StagedArtifact {
+    artifact: &'static str,
+    canonical: PathBuf,
+    staged: PathBuf,
+    backup: PathBuf,
+}
 
 /// Per-artifact rewrite tally returned by the rotation command.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -78,9 +87,9 @@ pub struct FullRotateReport {
     /// Was `dek.enc` re-wrapped under the new DEK?
     pub dek_enc_updated: bool,
     /// Per-file failure reasons. Empty on a clean run. A non-empty
-    /// list means the rotation completed for everything that
-    /// succeeded but the listed files still hold their old
-    /// ciphertext — the user can re-run rotation to retry them.
+    /// list means the transaction was not committed: canonical
+    /// artifacts, the live DEK, and persisted key receipts remain on
+    /// the old key so the user can correct the failure and retry.
     pub failures: Vec<FullRotateFailure>,
 }
 
@@ -138,9 +147,11 @@ pub async fn encryption_rotate_master_key_full(
     .await?;
 
     // The cross-window broadcast is the one piece the helper can't
-    // perform — it has no `AppHandle`. Emit it here so every Tauri
-    // window's encryption-status sidebar refreshes after rotation.
-    let _ = app.emit(EVENT_UNLOCKED, ());
+    // perform — it has no `AppHandle`. A failed staged transaction
+    // leaves the old key live, so only announce a committed rotation.
+    if report.failures.is_empty() {
+        let _ = app.emit(EVENT_UNLOCKED, ());
+    }
 
     Ok(report)
 }
@@ -150,15 +161,16 @@ pub async fn encryption_rotate_master_key_full(
 /// Takes plain references instead of `tauri::State` so integration
 /// tests can drive it without the Tauri runtime. Behavioural surface:
 ///
-/// - Step 1 snapshots the current DEK (DEK A) so the rewrite loop can
-///   still decrypt under the old key after step 2 swaps the live state.
-/// - Step 2 generates DEK B and installs it into `enc_state`.
+/// - Step 1 snapshots the current DEK (DEK A).
+/// - Step 2 generates DEK B in an isolated state; the live state stays
+///   on DEK A while work is fallible.
 /// - Step 3 walks every artifact (settings, connections, backups,
-///   recording metadata, media sidecars, macros), decrypting with the
-///   frozen DEK A and re-encrypting with DEK B in place.
-/// - Step 4 updates the key-storage receipts: vault entry when
-///   `vault_present`, and `dek.enc` when `password` is `Some`.
-/// - Step 5 resets the lockout counter and appends to the audit log.
+///   recording metadata, media sidecars, macros), decrypting with DEK
+///   A and re-encrypting a sidecar with DEK B.
+/// - Step 4 commits the complete staged set with rollback copies. If
+///   any required rewrite failed, this step is never entered.
+/// - Step 5 updates key-storage receipts and only then installs DEK B
+///   in the live state, resets lockout, and appends to the audit log.
 ///
 /// The `vault_present` flag is passed in (rather than re-probed) so
 /// tests can deterministically skip the OS-keychain write. The Tauri
@@ -173,6 +185,30 @@ pub async fn rotate_master_key_full_inner(
     recording_state: &RecordingServiceState,
     password: Option<String>,
     vault_present: bool,
+) -> Result<FullRotateReport, String> {
+    rotate_master_key_full_inner_impl(
+        app_data_dir,
+        enc_state,
+        storage_state,
+        backup_state,
+        recording_state,
+        password,
+        vault_present,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn rotate_master_key_full_inner_impl(
+    app_data_dir: &Path,
+    enc_state: &EncryptionState,
+    storage_state: &SecureStorageState,
+    backup_state: &BackupServiceState,
+    recording_state: &RecordingServiceState,
+    password: Option<String>,
+    vault_present: bool,
+    failure_injector: Option<&RotationFailureInjector<'_>>,
 ) -> Result<FullRotateReport, String> {
     if !enc_state.is_unlocked().await {
         return Err("state is locked; unlock before rotating".into());
@@ -193,9 +229,20 @@ pub async fn rotate_master_key_full_inner(
         .await
         .ok_or_else(|| "internal: state vanished mid-rotation".to_string())?;
 
-    // ── Step 2: install the new DEK into the live state ────────────
-    let new_dek = MasterDek::generate();
-    enc_state.install(new_dek).await;
+    let old_bytes_raw = old_state
+        .master_bytes_raw()
+        .await
+        .ok_or_else(|| "internal: old master DEK vanished mid-rotation".to_string())?;
+
+    // ── Step 2: prepare the new DEK in isolation ───────────────────
+    // The live state deliberately stays on the old key until every
+    // staged artifact and persisted key receipt has committed.
+    let new_state = EncryptionState::new();
+    new_state.install(MasterDek::generate()).await;
+    let new_bytes_raw = new_state
+        .master_bytes_raw()
+        .await
+        .ok_or_else(|| "internal: new master DEK vanished mid-rotation".to_string())?;
 
     let new_mode = match (vault_present, dek_enc_present) {
         (true, true) => MasterKeyStorage::VaultAndPassword,
@@ -205,44 +252,78 @@ pub async fn rotate_master_key_full_inner(
     };
     let salt = [0u8; SALT_LEN];
 
+    // Capture the old receipt before any canonical artifact can be
+    // committed so a later receipt failure has a recovery source.
+    let old_dek_enc_blob = if dek_enc_present {
+        Some(std::fs::read(&dek_enc_path).map_err(|e| format!("read dek.enc: {e}"))?)
+    } else {
+        None
+    };
+
     let mut report = FullRotateReport::default();
+    let transaction_id = format!("{:032x}", rand::random::<u128>());
+    let mut staged = Vec::new();
 
     // ── Step 3a: settings.enc ──────────────────────────────────────
     if settings_enc_present {
-        match rewrite_settings(&settings_enc_path, &old_state, enc_state, new_mode, salt).await {
-            Ok(n) => {
-                report.settings_rewritten = true;
-                report.bytes_rewritten += n;
+        match prepare_stage(
+            &transaction_id,
+            "settings",
+            &settings_enc_path,
+            failure_injector,
+        ) {
+            Ok(item) => {
+                let result =
+                    rewrite_settings(&item.staged, &old_state, &new_state, new_mode, salt).await;
+                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
+                    report.settings_rewritten = true;
+                    report.bytes_rewritten += n;
+                });
             }
-            Err(reason) => report.failures.push(FullRotateFailure {
-                artifact: "settings".into(),
-                path: settings_enc_path.display().to_string(),
-                reason,
-            }),
+            Err(reason) => push_failure(&mut report, "settings", &settings_enc_path, reason),
         }
     }
 
     // ── Step 3b: connections (`data.enc` aka `storage.json`) ──────
-    let store_path = {
+    let store_path = PathBuf::from({
         let svc = storage_state.lock().await;
         svc.store_path().to_string()
-    };
-    if std::path::Path::new(&store_path).exists() {
+    });
+    if store_path.exists() {
         // Magic-byte sniff: only re-encrypt v2 envelopes; plaintext
         // files stay plaintext.
-        let head = std::fs::read(&store_path).unwrap_or_default();
-        if head.len() >= 6 && &head[..6] == sorng_encryption::envelope::MAGIC {
-            match rewrite_connections(&store_path, &old_state, enc_state).await {
-                Ok(n) => {
-                    report.connections_rewritten = true;
-                    report.bytes_rewritten += n;
+        match std::fs::read(&store_path) {
+            Ok(head) if head.len() >= 6 && &head[..6] == sorng_encryption::envelope::MAGIC => {
+                match prepare_stage(
+                    &transaction_id,
+                    "connections",
+                    &store_path,
+                    failure_injector,
+                ) {
+                    Ok(item) => {
+                        let result =
+                            rewrite_connections(&item.staged, &old_state, &new_state).await;
+                        keep_or_record_stage(
+                            &mut report,
+                            &mut staged,
+                            item,
+                            result,
+                            |report, n| {
+                                report.connections_rewritten = true;
+                                report.bytes_rewritten += n;
+                            },
+                        );
+                    }
+                    Err(reason) => push_failure(&mut report, "connections", &store_path, reason),
                 }
-                Err(reason) => report.failures.push(FullRotateFailure {
-                    artifact: "connections".into(),
-                    path: store_path.clone(),
-                    reason,
-                }),
             }
+            Ok(_) => {}
+            Err(error) => push_failure(
+                &mut report,
+                "connections",
+                &store_path,
+                format!("read: {error}"),
+            ),
         }
     }
 
@@ -252,20 +333,20 @@ pub async fn rotate_master_key_full_inner(
         svc.list_v2_files().await
     };
     for path in backup_paths {
-        match sorng_storage::backup::BackupService::rewrite_backup_with(
-            &path, &old_state, enc_state,
-        )
-        .await
-        {
-            Ok(n) => {
-                report.backups_rewritten += 1;
-                report.bytes_rewritten += n;
+        match prepare_stage(&transaction_id, "backup", &path, failure_injector) {
+            Ok(item) => {
+                let result = sorng_storage::backup::BackupService::rewrite_backup_with(
+                    &item.staged,
+                    &old_state,
+                    &new_state,
+                )
+                .await;
+                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
+                    report.backups_rewritten += 1;
+                    report.bytes_rewritten += n;
+                });
             }
-            Err(reason) => report.failures.push(FullRotateFailure {
-                artifact: "backup".into(),
-                path: path.display().to_string(),
-                reason,
-            }),
+            Err(reason) => push_failure(&mut report, "backup", &path, reason),
         }
     }
 
@@ -275,69 +356,160 @@ pub async fn rotate_master_key_full_inner(
         svc.storage_root_snapshot().await
     };
     for path in rec_storage::list_encrypted_envelope_paths(&rec_root) {
-        match rec_storage::rewrite_envelope_with(&path, &old_state, enc_state).await {
-            Ok(n) => {
-                report.recording_envelopes_rewritten += 1;
-                report.bytes_rewritten += n;
+        match prepare_stage(&transaction_id, "recording-meta", &path, failure_injector) {
+            Ok(item) => {
+                let result =
+                    rec_storage::rewrite_envelope_with(&item.staged, &old_state, &new_state)
+                        .await
+                        .map_err(|e| e.to_string());
+                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
+                    report.recording_envelopes_rewritten += 1;
+                    report.bytes_rewritten += n;
+                });
             }
-            Err(e) => report.failures.push(FullRotateFailure {
-                artifact: "recording-meta".into(),
-                path: path.display().to_string(),
-                reason: e.to_string(),
-            }),
+            Err(reason) => push_failure(&mut report, "recording-meta", &path, reason),
         }
     }
     for path in rec_storage::list_encrypted_media_paths(&rec_root) {
-        match rec_storage::rewrite_media_with(&path, &old_state, enc_state).await {
-            Ok(n) => {
-                report.media_sidecars_rewritten += 1;
-                report.bytes_rewritten += n;
+        match prepare_stage(&transaction_id, "recording-media", &path, failure_injector) {
+            Ok(item) => {
+                let result = rec_storage::rewrite_media_with(&item.staged, &old_state, &new_state)
+                    .await
+                    .map_err(|e| e.to_string());
+                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
+                    report.media_sidecars_rewritten += 1;
+                    report.bytes_rewritten += n;
+                });
             }
-            Err(e) => report.failures.push(FullRotateFailure {
-                artifact: "recording-media".into(),
-                path: path.display().to_string(),
-                reason: e.to_string(),
-            }),
+            Err(reason) => push_failure(&mut report, "recording-media", &path, reason),
         }
     }
     for path in rec_storage::list_encrypted_macro_paths(&rec_root) {
-        match rec_storage::rewrite_macro_with(&path, &old_state, enc_state).await {
-            Ok(n) => {
-                report.macros_rewritten += 1;
-                report.bytes_rewritten += n;
+        match prepare_stage(&transaction_id, "macro", &path, failure_injector) {
+            Ok(item) => {
+                let result = rec_storage::rewrite_macro_with(&item.staged, &old_state, &new_state)
+                    .await
+                    .map_err(|e| e.to_string());
+                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
+                    report.macros_rewritten += 1;
+                    report.bytes_rewritten += n;
+                });
             }
-            Err(e) => report.failures.push(FullRotateFailure {
-                artifact: "macro".into(),
-                path: path.display().to_string(),
-                reason: e.to_string(),
-            }),
+            Err(reason) => push_failure(&mut report, "macro", &path, reason),
         }
     }
 
-    // ── Step 4: key-storage receipts ──────────────────────────────
-    let new_bytes_raw = enc_state
-        .master_bytes_raw()
-        .await
-        .ok_or_else(|| "internal: new master DEK vanished mid-rotation".to_string())?;
+    // A required rewrite failure aborts before any canonical path,
+    // live key, vault entry, or password receipt can change.
+    if !report.failures.is_empty() {
+        discard_rotation_files(&staged);
+        reset_rewrite_tallies(&mut report);
+        return Ok(report);
+    }
 
-    if vault_present {
-        sorng_vault::keychain::store_bytes(
-            sorng_vault::types::SERVICE_NAME,
-            sorng_vault::types::MASTER_DEK_ACCOUNT,
-            &new_bytes_raw,
+    // Password wrapping is deliberately deferred until the entire
+    // artifact set has staged successfully. Partial rewrite failures
+    // should not spend the expensive Argon2 work or produce any new
+    // key receipt, even transiently.
+    let new_dek_enc_blob = match password.as_deref() {
+        Some(pw) => {
+            let Some(dek_owned) = MasterDek::from_bytes(&new_bytes_raw) else {
+                discard_rotation_files(&staged);
+                return Err("internal: master DEK wrong length".to_string());
+            };
+            match password_wrap::wrap(pw, &dek_owned, Argon2Params::OWASP) {
+                Ok(blob) => Some(blob),
+                Err(error) => {
+                    discard_rotation_files(&staged);
+                    return Err(format!("wrap: {error}"));
+                }
+            }
+        }
+        None => None,
+    };
+
+    // ── Step 4: commit staged artifacts with rollback copies ───────
+    if let Err((artifact, path, reason)) = prepare_backups(&staged) {
+        push_failure(&mut report, artifact, &path, reason);
+        discard_rotation_files(&staged);
+        reset_rewrite_tallies(&mut report);
+        return Ok(report);
+    }
+    if let Err((artifact, path, reason)) = commit_staged_artifacts(&staged) {
+        push_failure(&mut report, artifact, &path, reason);
+        let recovery_errors = rollback_artifacts(&staged);
+        reset_rewrite_tallies(&mut report);
+        if !recovery_errors.is_empty() {
+            discard_staged_files(&staged);
+            return Err(format!(
+                "rotation commit failed and rollback was incomplete: {}",
+                recovery_errors.join("; ")
+            ));
+        }
+        discard_rotation_files(&staged);
+        return Ok(report);
+    }
+
+    // ── Step 5: persist receipts, then swap the live state ─────────
+    let mut vault_updated = false;
+    let receipt_result = async {
+        if vault_present {
+            sorng_vault::keychain::store_bytes(
+                sorng_vault::types::SERVICE_NAME,
+                sorng_vault::types::MASTER_DEK_ACCOUNT,
+                &new_bytes_raw,
+            )
+            .await
+            .map_err(|e| format!("vault update: {e}"))?;
+            vault_updated = true;
+        }
+        if let Some(blob) = new_dek_enc_blob.as_deref() {
+            atomic_write(&dek_enc_path, blob)?;
+        }
+        Ok::<(), String>(())
+    }
+    .await;
+
+    if let Err(reason) = receipt_result {
+        let mut recovery_errors = rollback_artifacts(&staged);
+        if vault_updated {
+            if let Err(error) = sorng_vault::keychain::store_bytes(
+                sorng_vault::types::SERVICE_NAME,
+                sorng_vault::types::MASTER_DEK_ACCOUNT,
+                &old_bytes_raw,
+            )
+            .await
+            {
+                recovery_errors.push(format!("restore vault: {error}"));
+            }
+        }
+        if let Some(blob) = old_dek_enc_blob.as_deref() {
+            if let Err(error) = atomic_write(&dek_enc_path, blob) {
+                recovery_errors.push(format!("restore dek.enc: {error}"));
+            }
+        }
+        if recovery_errors.is_empty() {
+            discard_rotation_files(&staged);
+            return Err(format!(
+                "{reason}; rotation rolled back to the previous key"
+            ));
+        }
+        discard_staged_files(&staged);
+        return Err(format!(
+            "{reason}; rotation recovery was incomplete: {}",
+            recovery_errors.join("; ")
+        ));
+    }
+
+    enc_state
+        .install(
+            MasterDek::from_bytes(&new_bytes_raw)
+                .ok_or_else(|| "internal: master DEK wrong length".to_string())?,
         )
-        .await
-        .map_err(|e| format!("vault update: {e}"))?;
-        report.vault_updated = true;
-    }
-    if let Some(pw) = password {
-        let dek_owned = MasterDek::from_bytes(&new_bytes_raw)
-            .ok_or_else(|| "internal: master DEK wrong length".to_string())?;
-        let blob = password_wrap::wrap(&pw, &dek_owned, Argon2Params::OWASP)
-            .map_err(|e| format!("wrap: {e}"))?;
-        atomic_write(&dek_enc_path, &blob)?;
-        report.dek_enc_updated = true;
-    }
+        .await;
+    report.vault_updated = vault_updated;
+    report.dek_enc_updated = new_dek_enc_blob.is_some();
+    discard_rotation_files(&staged);
 
     // Lockout reset + audit. The cross-window broadcast lives in the
     // Tauri wrapper (this helper has no AppHandle).
@@ -364,6 +536,202 @@ pub async fn rotate_master_key_full_inner(
     Ok(report)
 }
 
+fn rotation_sidecar_path(path: &Path, transaction_id: &str, suffix: &str) -> PathBuf {
+    let mut file_name = path
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("artifact"))
+        .to_os_string();
+    file_name.push(format!(".sorng-rotation-{transaction_id}.{suffix}"));
+    path.with_file_name(file_name)
+}
+
+fn rotating_tmp_path(path: &Path) -> PathBuf {
+    path.with_extension(format!(
+        "{}.rotating",
+        path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
+    ))
+}
+
+fn sync_regular_file(path: &Path) -> Result<(), String> {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| format!("sync {}: {e}", path.display()))
+}
+
+fn sync_parent_best_effort(_path: &Path) {
+    #[cfg(unix)]
+    if let Some(parent) = _path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+    }
+}
+
+fn prepare_stage(
+    transaction_id: &str,
+    artifact: &'static str,
+    canonical: &Path,
+    failure_injector: Option<&RotationFailureInjector<'_>>,
+) -> Result<StagedArtifact, String> {
+    if let Some(reason) = failure_injector.and_then(|injector| injector(artifact, canonical)) {
+        return Err(reason);
+    }
+
+    let staged = rotation_sidecar_path(canonical, transaction_id, "staged");
+    let backup = rotation_sidecar_path(canonical, transaction_id, "backup");
+    if let Err(error) = std::fs::copy(canonical, &staged) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(format!("stage {}: {error}", canonical.display()));
+    }
+    if let Err(reason) = sync_regular_file(&staged) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(reason);
+    }
+    sync_parent_best_effort(&staged);
+
+    Ok(StagedArtifact {
+        artifact,
+        canonical: canonical.to_path_buf(),
+        staged,
+        backup,
+    })
+}
+
+fn push_failure(report: &mut FullRotateReport, artifact: &str, path: &Path, reason: String) {
+    report.failures.push(FullRotateFailure {
+        artifact: artifact.to_string(),
+        path: path.display().to_string(),
+        reason,
+    });
+}
+
+fn keep_or_record_stage(
+    report: &mut FullRotateReport,
+    staged: &mut Vec<StagedArtifact>,
+    item: StagedArtifact,
+    result: Result<u64, String>,
+    on_success: impl FnOnce(&mut FullRotateReport, u64),
+) {
+    let result = result.and_then(|bytes| {
+        sync_regular_file(&item.staged)?;
+        Ok(bytes)
+    });
+    match result {
+        Ok(bytes) => {
+            on_success(report, bytes);
+            staged.push(item);
+        }
+        Err(reason) => {
+            push_failure(report, item.artifact, &item.canonical, reason);
+            discard_artifact_sidecars(&item);
+        }
+    }
+}
+
+fn prepare_backups(staged: &[StagedArtifact]) -> Result<(), (&'static str, PathBuf, String)> {
+    for item in staged {
+        std::fs::copy(&item.canonical, &item.backup).map_err(|e| {
+            (
+                item.artifact,
+                item.canonical.clone(),
+                format!("prepare rollback copy: {e}"),
+            )
+        })?;
+        sync_regular_file(&item.backup).map_err(|reason| {
+            (
+                item.artifact,
+                item.canonical.clone(),
+                format!("prepare rollback copy: {reason}"),
+            )
+        })?;
+        sync_parent_best_effort(&item.backup);
+    }
+    Ok(())
+}
+
+fn durable_replace(source: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(source, destination)
+        .map_err(|e| format!("replace {}: {e}", destination.display()))?;
+    sync_parent_best_effort(destination);
+    Ok(())
+}
+
+fn commit_staged_artifacts(
+    staged: &[StagedArtifact],
+) -> Result<(), (&'static str, PathBuf, String)> {
+    for item in staged {
+        durable_replace(&item.staged, &item.canonical)
+            .map_err(|reason| (item.artifact, item.canonical.clone(), reason))?;
+    }
+    Ok(())
+}
+
+fn rollback_artifacts(staged: &[StagedArtifact]) -> Vec<String> {
+    let mut failures = Vec::new();
+    for item in staged.iter().rev() {
+        if item.backup.exists() {
+            if let Err(reason) = durable_replace(&item.backup, &item.canonical) {
+                failures.push(format!(
+                    "restore {} {}: {reason}; rollback copy retained at {}",
+                    item.artifact,
+                    item.canonical.display(),
+                    item.backup.display()
+                ));
+            }
+        }
+    }
+    failures
+}
+
+fn discard_artifact_sidecars(item: &StagedArtifact) {
+    let staged_tmp = rotating_tmp_path(&item.staged);
+    let backup_tmp = rotating_tmp_path(&item.backup);
+    for path in [
+        item.staged.as_path(),
+        item.backup.as_path(),
+        staged_tmp.as_path(),
+        backup_tmp.as_path(),
+    ] {
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn discard_rotation_files(staged: &[StagedArtifact]) {
+    for item in staged {
+        discard_artifact_sidecars(item);
+    }
+}
+
+fn discard_staged_files(staged: &[StagedArtifact]) {
+    for item in staged {
+        let staged_tmp = rotating_tmp_path(&item.staged);
+        for path in [&item.staged, &staged_tmp] {
+            if path.exists() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+}
+
+fn reset_rewrite_tallies(report: &mut FullRotateReport) {
+    report.settings_rewritten = false;
+    report.connections_rewritten = false;
+    report.backups_rewritten = 0;
+    report.recording_envelopes_rewritten = 0;
+    report.media_sidecars_rewritten = 0;
+    report.macros_rewritten = 0;
+    report.bytes_rewritten = 0;
+    report.vault_updated = false;
+    report.dek_enc_updated = false;
+}
+
 async fn rewrite_settings(
     path: &std::path::Path,
     from: &EncryptionState,
@@ -385,7 +753,7 @@ async fn rewrite_settings(
 }
 
 async fn rewrite_connections(
-    path: &str,
+    path: &Path,
     from: &EncryptionState,
     to: &EncryptionState,
 ) -> Result<u64, String> {
@@ -404,17 +772,14 @@ async fn rewrite_connections(
     .await
     .map_err(|e| format!("encrypt: {e}"))?;
     let n = blob.len() as u64;
-    atomic_write(std::path::Path::new(path), &blob)?;
+    atomic_write(path, &blob)?;
     Ok(n)
 }
 
 fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
 
-    let tmp = path.with_extension(format!(
-        "{}.rotating",
-        path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
-    ));
+    let tmp = rotating_tmp_path(path);
 
     // Write the temp file and flush it to stable storage BEFORE the rename.
     // Without this barrier a crash after the rename can leave the target as a
@@ -432,16 +797,165 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     // fsync the directory holding `path` so the rename itself is durable.
     // POSIX-only — on Windows the NTFS journal covers directory metadata as
     // part of the rename and directories can't be opened for fsync.
-    #[cfg(unix)]
-    {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                if let Ok(dir) = std::fs::File::open(parent) {
-                    let _ = dir.sync_all();
-                }
-            }
-        }
-    }
+    sync_parent_best_effort(path);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    use sorng_recording::service::RecordingService;
+    use sorng_storage::backup::BackupService;
+    use sorng_storage::storage::{SecureStorage, StorageData};
+
+    #[tokio::test]
+    async fn partial_rewrite_failure_keeps_old_key_receipt_and_artifacts_restart_readable() {
+        let tmp = tempdir().expect("temp app data");
+        let app_data = tmp.path();
+        let backup_dir = app_data.join("backups");
+        std::fs::create_dir_all(&backup_dir).expect("backup dir");
+
+        let old_dek_bytes = [23u8; 32];
+        let enc_state = Arc::new(EncryptionState::new());
+        enc_state
+            .install(MasterDek::from_bytes(&old_dek_bytes).expect("old DEK"))
+            .await;
+
+        let password = "rotation-recovery-test";
+        let old_receipt = password_wrap::wrap(
+            password,
+            &MasterDek::from_bytes(&old_dek_bytes).expect("receipt DEK"),
+            Argon2Params::OWASP,
+        )
+        .expect("wrap old receipt");
+        let receipt_path = app_data.join(DEK_ENC_FILENAME);
+        std::fs::write(&receipt_path, &old_receipt).expect("write old receipt");
+
+        let settings_path = app_data.join(SETTINGS_ENC_FILENAME);
+        let settings_payload = json!({ "theme": "dark", "language": "en" });
+        let settings_blob = artifact_settings::write(
+            &enc_state,
+            &settings_payload,
+            MasterKeyStorage::Password,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .expect("encode settings");
+        std::fs::write(&settings_path, &settings_blob).expect("write settings");
+
+        let connections_path = app_data.join("storage.json");
+        let storage_state = SecureStorage::new(connections_path.to_string_lossy().to_string());
+        storage_state
+            .lock()
+            .await
+            .set_encryption_state(enc_state.clone());
+        let storage_payload = StorageData {
+            connections: vec![json!({ "id": "c1", "host": "example.test", "port": 22 })],
+            settings: std::collections::HashMap::new(),
+            timestamp: 1_700_000_000,
+            app_data: std::collections::HashMap::new(),
+        };
+        storage_state
+            .lock()
+            .await
+            .save_data(storage_payload, false)
+            .await
+            .expect("encode connections");
+
+        let backup_state = BackupService::new(backup_dir.to_string_lossy().to_string());
+        let recording_service = RecordingService::new(&app_data.to_string_lossy());
+        recording_service
+            .set_encryption_state(enc_state.clone())
+            .await;
+        let recording_state = Arc::new(tokio::sync::Mutex::new(recording_service));
+
+        let settings_before = std::fs::read(&settings_path).expect("settings before");
+        let connections_before = std::fs::read(&connections_path).expect("connections before");
+        let receipt_before = std::fs::read(&receipt_path).expect("receipt before");
+
+        let fail_connections = |artifact: &str, _path: &Path| {
+            (artifact == "connections").then(|| "injected connections rewrite failure".to_string())
+        };
+        let report = rotate_master_key_full_inner_impl(
+            app_data,
+            &enc_state,
+            &storage_state,
+            &backup_state,
+            &recording_state,
+            Some(password.to_string()),
+            false,
+            Some(&fail_connections),
+        )
+        .await
+        .expect("partial failure must return a retryable report");
+
+        assert_eq!(
+            report.failures.len(),
+            1,
+            "unexpected failures: {:?}",
+            report.failures
+        );
+        assert_eq!(report.failures[0].artifact, "connections");
+        assert!(report.failures[0]
+            .reason
+            .contains("injected connections rewrite failure"));
+        assert!(!report.settings_rewritten);
+        assert!(!report.connections_rewritten);
+        assert_eq!(report.bytes_rewritten, 0);
+        assert!(!report.vault_updated);
+        assert!(!report.dek_enc_updated);
+
+        assert_eq!(
+            enc_state.master_bytes_raw().await.expect("live DEK"),
+            old_dek_bytes,
+            "the failed transaction must leave DEK A live"
+        );
+        assert_eq!(std::fs::read(&settings_path).unwrap(), settings_before);
+        assert_eq!(
+            std::fs::read(&connections_path).unwrap(),
+            connections_before
+        );
+        assert_eq!(std::fs::read(&receipt_path).unwrap(), receipt_before);
+
+        // Simulate restart: rebuild state exclusively from the on-disk
+        // password receipt and verify both canonical artifacts remain
+        // readable. No in-memory snapshot from the failed attempt is used.
+        let restarted_state = EncryptionState::new();
+        restarted_state
+            .install(password_wrap::unwrap(password, &receipt_before).expect("unwrap old receipt"))
+            .await;
+        let restarted_settings = artifact_settings::read(&restarted_state, &settings_before)
+            .await
+            .expect("settings decrypt after restart")
+            .expect("settings payload");
+        assert_eq!(restarted_settings, settings_payload);
+        let restarted_connections =
+            artifact_connections::read(&restarted_state, &connections_before)
+                .await
+                .expect("connections decrypt after restart")
+                .expect("connections payload");
+        assert_eq!(restarted_connections["connections"][0]["id"], "c1");
+
+        let leaked_sidecars: Vec<_> = std::fs::read_dir(app_data)
+            .expect("list app data")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".sorng-rotation-")
+            })
+            .map(|entry| entry.path())
+            .collect();
+        assert!(
+            leaked_sidecars.is_empty(),
+            "failed transaction leaked sidecars: {leaked_sidecars:?}"
+        );
+    }
 }
