@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+  JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS,
   JAVASCRIPT_UPDATE_HOLDS,
   checkJsLockParity,
 } from "./check-js-lock-parity.mjs";
@@ -106,10 +107,36 @@ function isManualCrossGraphHold(name) {
   return MANUAL_CROSS_GRAPH_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 
+function compatibleUpdateHold(name) {
+  return JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS[name];
+}
+
+function assertConfiguredHoldSpec(name, spec, hold) {
+  if (spec !== hold.spec) {
+    fail(`${name} explicit compatible hold spec drifted`, {
+      expected: hold.spec,
+      actual: spec,
+      reason: hold.reason,
+    });
+  }
+}
+
+function compatibleHoldSummary(name, hold) {
+  return {
+    name,
+    spec: hold.spec,
+    allowedVersions: [...hold.allowedVersions],
+    reason: hold.reason,
+    sources: [...hold.sources],
+  };
+}
+
 export function buildCompatibleUpdatePolicy(manifest) {
   const eligible = [];
   const exactHolds = [];
   const crossGraphHolds = [];
+  const explicitHolds = [];
+  const configuredHoldsSeen = new Set();
 
   for (const group of dependencyGroups(manifest)) {
     for (const [name, spec] of Object.entries(manifest[group])) {
@@ -120,7 +147,12 @@ export function buildCompatibleUpdatePolicy(manifest) {
       ) {
         fail(`${group}.${name} uses an unsupported update spec`, spec);
       }
-      if (isManualCrossGraphHold(name)) {
+      const explicitHold = compatibleUpdateHold(name);
+      if (explicitHold) {
+        assertConfiguredHoldSpec(name, spec, explicitHold);
+        configuredHoldsSeen.add(name);
+        explicitHolds.push(compatibleHoldSummary(name, explicitHold));
+      } else if (isManualCrossGraphHold(name)) {
         crossGraphHolds.push(name);
       } else if (classification.kind === "exact") {
         exactHolds.push(name);
@@ -130,10 +162,22 @@ export function buildCompatibleUpdatePolicy(manifest) {
     }
   }
 
+  const missingConfiguredHolds = Object.keys(
+    JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS,
+  ).filter((name) => !configuredHoldsSeen.has(name));
+  if (missingConfiguredHolds.length > 0) {
+    fail("explicit compatible holds are missing from package.json", {
+      missing: missingConfiguredHolds.sort(),
+    });
+  }
+
   return {
     eligible: eligible.sort(),
     exactHolds: exactHolds.sort(),
     crossGraphHolds: crossGraphHolds.sort(),
+    explicitHolds: explicitHolds.sort((left, right) =>
+      left.name.localeCompare(right.name),
+    ),
   };
 }
 
@@ -174,8 +218,15 @@ export function assertCompatibleManifestUpdate(before, after) {
       const afterSpec = after[group][name];
       const classification = classifyDependencySpec(beforeSpec);
       const afterClassification = classifyDependencySpec(afterSpec);
+      const explicitHold = compatibleUpdateHold(name);
       const held =
-        classification.kind === "exact" || isManualCrossGraphHold(name);
+        classification.kind === "exact" ||
+        isManualCrossGraphHold(name) ||
+        explicitHold;
+
+      if (explicitHold) {
+        assertConfiguredHoldSpec(name, beforeSpec, explicitHold);
+      }
 
       if (held) {
         if (afterSpec !== beforeSpec) {
@@ -254,8 +305,28 @@ export function assertCompatibleLockUpdate({
       const beforeVersion = parseStableSemVer(beforeVersionText);
       const afterVersion = parseStableSemVer(afterVersionText);
       const classification = classifyDependencySpec(beforeSpec);
+      const explicitHold = compatibleUpdateHold(name);
       const held =
-        classification.kind === "exact" || isManualCrossGraphHold(name);
+        classification.kind === "exact" ||
+        isManualCrossGraphHold(name) ||
+        explicitHold;
+
+      if (explicitHold) {
+        assertConfiguredHoldSpec(name, beforeSpec, explicitHold);
+        for (const [state, version] of [
+          ["before", beforeVersionText],
+          ["after", afterVersionText],
+        ]) {
+          if (!explicitHold.allowedVersions.includes(version)) {
+            fail(`${name} explicit compatible hold resolution is not allowed`, {
+              state,
+              version,
+              allowedVersions: explicitHold.allowedVersions,
+              reason: explicitHold.reason,
+            });
+          }
+        }
+      }
 
       if (held) {
         if (afterVersionText !== beforeVersionText) {

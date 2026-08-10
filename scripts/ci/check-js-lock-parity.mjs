@@ -12,6 +12,74 @@ export const JAVASCRIPT_UPDATE_HOLDS = Object.freeze({
   vitest: "4.1.6",
 });
 
+const defineCompatibleHold = ({ spec, allowedVersions, reason, sources }) =>
+  Object.freeze({
+    spec,
+    allowedVersions: Object.freeze([...allowedVersions]),
+    reason,
+    sources: Object.freeze([...sources]),
+  });
+
+const DESKTOP_E2E_HOLD = Object.freeze({
+  reason: "desktop-e2e-required",
+  sources: Object.freeze([
+    "https://github.com/webdriverio/desktop-mobile/issues/591",
+    "https://github.com/webdriverio/webdriverio/issues/15476",
+  ]),
+});
+
+export const JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS = Object.freeze({
+  "@wdio/cli": defineCompatibleHold({
+    spec: "^9.27.1",
+    allowedVersions: ["9.27.1"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+  "@wdio/local-runner": defineCompatibleHold({
+    spec: "^9.27.1",
+    allowedVersions: ["9.27.1"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+  "@wdio/mocha-framework": defineCompatibleHold({
+    spec: "^9.27.1",
+    allowedVersions: ["9.29.1"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+  "@wdio/spec-reporter": defineCompatibleHold({
+    spec: "^9.27.1",
+    allowedVersions: ["9.27.1"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+  "@wdio/tauri-service": defineCompatibleHold({
+    spec: "^1.0.0",
+    allowedVersions: ["1.2.0"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+  "@wdio/types": defineCompatibleHold({
+    spec: "^9.27.1",
+    allowedVersions: ["9.27.1"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+  "expect-webdriverio": defineCompatibleHold({
+    spec: "^5.6.5",
+    allowedVersions: ["5.6.5"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+  prettier: defineCompatibleHold({
+    spec: "^3.8.3",
+    allowedVersions: ["3.8.3"],
+    reason: "liquid-markdown-corruption",
+    sources: [
+      "https://github.com/prettier/prettier/issues/19724",
+      "https://github.com/prettier/prettier/pull/19730",
+    ],
+  }),
+  webdriverio: defineCompatibleHold({
+    spec: "^9.27.1",
+    allowedVersions: ["9.27.1"],
+    ...DESKTOP_E2E_HOLD,
+  }),
+});
+
 function fail(message, details = undefined) {
   const suffix = details === undefined ? "" : `: ${JSON.stringify(details)}`;
   throw new Error(`JavaScript lock parity: ${message}${suffix}`);
@@ -182,12 +250,29 @@ export function inspectJsLockParity({
     }
   }
 
+  for (const [name, hold] of Object.entries(
+    JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS,
+  )) {
+    const spec = packageJson.devDependencies?.[name];
+    const resolved = packageLock.packages[`node_modules/${name}`]?.version;
+    if (spec !== hold.spec || !hold.allowedVersions.includes(resolved)) {
+      fail(`${name} compatible hold moved`, {
+        expectedSpec: hold.spec,
+        allowedVersions: hold.allowedVersions,
+        spec,
+        resolved,
+        reason: hold.reason,
+      });
+    }
+  }
+
   return {
     production: Object.keys(packageJson.dependencies ?? {}).length,
     development: Object.keys(packageJson.devDependencies ?? {}).length,
     total: direct.length,
     bunVersion: String(bunVersion).trim(),
     holds: { ...JAVASCRIPT_UPDATE_HOLDS },
+    compatibleHolds: { ...JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS },
     direct,
   };
 }
@@ -224,6 +309,7 @@ function main(argv) {
         total: result.total,
         bunVersion: result.bunVersion,
         holds: result.holds,
+        compatibleHolds: result.compatibleHolds,
       },
       null,
       2,

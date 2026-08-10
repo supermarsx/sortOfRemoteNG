@@ -9,6 +9,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS,
   inspectJsLockParity,
   parseBunLock,
   stripJsonTrailingCommas,
@@ -44,8 +45,17 @@ function fixtureManifest() {
       "@types/node": "24.13.3",
       "@types/react": "^19.2.18",
       "@vitest/coverage-v8": "4.1.6",
+      "@wdio/cli": "^9.27.1",
+      "@wdio/local-runner": "^9.27.1",
+      "@wdio/mocha-framework": "^9.27.1",
+      "@wdio/spec-reporter": "^9.27.1",
+      "@wdio/tauri-service": "^1.0.0",
+      "@wdio/types": "^9.27.1",
       "@webgpu/types": "^0.1.71",
+      "expect-webdriverio": "^5.6.5",
+      prettier: "^3.8.3",
       vitest: "4.1.6",
+      webdriverio: "^9.27.1",
     },
     overrides: { nanoid: "3.3.17" },
   };
@@ -58,9 +68,30 @@ function fixtureVersions() {
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@vitest/coverage-v8": "4.1.6",
+    "@wdio/cli": "9.27.1",
+    "@wdio/local-runner": "9.27.1",
+    "@wdio/mocha-framework": "9.29.1",
+    "@wdio/spec-reporter": "9.27.1",
+    "@wdio/tauri-service": "1.2.0",
+    "@wdio/types": "9.27.1",
     "@webgpu/types": "0.1.71",
+    "expect-webdriverio": "5.6.5",
+    prettier: "3.8.3",
     vitest: "4.1.6",
+    webdriverio: "9.27.1",
   };
+}
+
+function expectedCompatibleHolds() {
+  return Object.entries(JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS)
+    .map(([name, hold]) => ({
+      name,
+      spec: hold.spec,
+      allowedVersions: [...hold.allowedVersions],
+      reason: hold.reason,
+      sources: [...hold.sources],
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function fixtureNpmLock(
@@ -307,16 +338,39 @@ test("proves exact npm/Bun direct parity and all explicit holds", () => {
       development: result.development,
       total: result.total,
     },
-    { production: 2, development: 5, total: 7 },
+    { production: 2, development: 14, total: 16 },
   );
   assert.deepEqual(result.holds, {
     "@types/node": "24.13.3",
     "@vitest/coverage-v8": "4.1.6",
     vitest: "4.1.6",
   });
+  assert.deepEqual(
+    Object.entries(result.compatibleHolds)
+      .map(([name, hold]) => ({ name, ...hold }))
+      .sort((left, right) => left.name.localeCompare(right.name)),
+    expectedCompatibleHolds(),
+  );
+  assert.equal(
+    result.compatibleHolds.prettier.reason,
+    "liquid-markdown-corruption",
+  );
+  assert.deepEqual(result.compatibleHolds.prettier.allowedVersions, ["3.8.3"]);
+  for (const name of [
+    "@wdio/cli",
+    "@wdio/local-runner",
+    "@wdio/mocha-framework",
+    "@wdio/spec-reporter",
+    "@wdio/tauri-service",
+    "@wdio/types",
+    "expect-webdriverio",
+    "webdriverio",
+  ]) {
+    assert.equal(result.compatibleHolds[name].reason, "desktop-e2e-required");
+  }
 });
 
-test("fails closed on Bun resolution drift and a moved Windows Vitest hold", () => {
+test("fails closed on npm/Bun drift and moved exact or compatible holds", () => {
   const bun = fixtureBunLock();
   bun.packages.react[0] = "react@19.2.9";
   assert.throws(
@@ -348,13 +402,40 @@ test("fails closed on Bun resolution drift and a moved Windows Vitest hold", () 
       }),
     /vitest hold moved/,
   );
+
+  const prettierManifest = fixtureManifest();
+  prettierManifest.devDependencies.prettier = "^3.9.6";
+  const prettierVersions = { ...fixtureVersions(), prettier: "3.9.6" };
+  assert.throws(
+    () =>
+      inspectJsLockParity({
+        packageJson: prettierManifest,
+        packageLock: fixtureNpmLock(prettierManifest, prettierVersions),
+        bunLock: fixtureBunLock(prettierManifest, prettierVersions),
+        bunVersion: "1.3.11",
+      }),
+    /prettier compatible hold moved/,
+  );
+
+  const wdioVersions = { ...fixtureVersions(), "@wdio/cli": "9.30.1" };
+  assert.throws(
+    () =>
+      inspectJsLockParity({
+        packageJson: fixtureManifest(),
+        packageLock: fixtureNpmLock(fixtureManifest(), wdioVersions),
+        bunLock: fixtureBunLock(fixtureManifest(), wdioVersions),
+        bunVersion: "1.3.11",
+      }),
+    /@wdio\/cli compatible hold moved/,
+  );
 });
 
-test("selects only compatible ranges and holds exact and cross-graph packages", () => {
+test("selects only compatible ranges and reports every explicit hold reason", () => {
   assert.deepEqual(buildCompatibleUpdatePolicy(fixtureManifest()), {
     eligible: ["@types/react", "@webgpu/types", "react"],
     exactHolds: ["@types/node", "@vitest/coverage-v8", "vitest"],
     crossGraphHolds: ["@tauri-apps/api"],
+    explicitHolds: expectedCompatibleHolds(),
   });
 });
 
@@ -370,7 +451,7 @@ test("accepts monotonic compatible manifest floors without changing policy metad
   );
 });
 
-test("rejects majors, zero-major minor crossings, exact holds, Tauri drift, and metadata drift", () => {
+test("rejects majors, range-boundary crossings, every hold class, and metadata drift", () => {
   const cases = [
     [
       "major",
@@ -383,6 +464,11 @@ test("rejects majors, zero-major minor crossings, exact holds, Tauri drift, and 
       /compatible manifest boundary/,
     ],
     ["exact", (value) => (value.devDependencies.vitest = "4.1.10"), /held/],
+    [
+      "explicit compatible",
+      (value) => (value.devDependencies.prettier = "^3.9.6"),
+      /prettier is held/,
+    ],
     [
       "tauri",
       (value) => (value.dependencies["@tauri-apps/api"] = "^2.11.2"),
@@ -440,6 +526,21 @@ test("accepts compatible resolved movement but rejects held or major resolution 
     /@tauri-apps\/api is held/,
   );
 
+  const explicitHeldVersions = {
+    ...fixtureVersions(),
+    prettier: "3.9.6",
+  };
+  assert.throws(
+    () =>
+      assertCompatibleLockUpdate({
+        beforeManifest,
+        beforeLock,
+        afterManifest: beforeManifest,
+        afterLock: fixtureNpmLock(beforeManifest, explicitHeldVersions),
+      }),
+    /prettier explicit compatible hold resolution is not allowed/,
+  );
+
   const majorVersions = { ...fixtureVersions(), react: "20.0.0" };
   assert.throws(
     () =>
@@ -467,6 +568,11 @@ test("real-repository dry-run is read-only and reports the complete direct graph
     "@vitest/coverage-v8",
     "vitest",
   ]);
+  assert.deepEqual(result.policy.explicitHolds, expectedCompatibleHolds());
+  assert.deepEqual(
+    Object.keys(result.parity.compatibleHolds).sort(),
+    expectedCompatibleHolds().map(({ name }) => name),
+  );
 });
 
 test("hermetic write path updates only the atomic files, is idempotent, and cleans Bun roots", (t) => {
@@ -646,6 +752,7 @@ test("workflow and package scripts enforce atomic generation and the CI parity g
     packageJson.scripts["deps:npm:tree:check"],
     "npm ls --package-lock-only --all",
   );
+  assert.equal(packageJson.packageManager, "npm@11.11.0");
   assert.match(ciWorkflow, /run: npm run deps:npm:tree:check/);
   assert.match(ciWorkflow, /run: npm run deps:lock-parity:check/);
   assert.match(ciWorkflow, /run: npm run deps:npm:update:test/);
