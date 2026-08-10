@@ -8,7 +8,10 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
 import { useSettingsSearch } from "../../components/SettingsDialog/useSettingsSearch";
 import { useSettingHighlight } from "../../components/SettingsDialog/useSettingHighlight";
-import { TAB_DEFAULTS, DEFAULT_VALUES } from "../../components/SettingsDialog/settingsConstants";
+import {
+  TAB_DEFAULTS,
+  DEFAULT_VALUES,
+} from "../../components/SettingsDialog/settingsConstants";
 
 /* ═══════════════════════════════════════════════════════════════
    Hook
@@ -33,20 +36,32 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
   const contentScrollRef = useRef<HTMLDivElement>(null);
   const bottomSentinelRef = useRef<HTMLDivElement>(null);
   const debounceSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSettingsRef = useRef<GlobalSettings | null>(null);
+  const settingsRef = useRef<GlobalSettings | null>(null);
+  const pendingPatchRef = useRef<Partial<GlobalSettings> | null>(null);
+  const inFlightPatchRef = useRef<Partial<GlobalSettings> | null>(null);
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
 
   const settingsManager = SettingsManager.getInstance();
   const themeManager = ThemeManager.getInstance();
 
-  // ── Load on open ──────────────────────────────────────────────
-  const loadSettings = useCallback(async () => {
-    const currentSettings = await settingsManager.loadSettings();
-    setSettings(currentSettings);
-  }, [settingsManager]);
-
+  // The provider is the only settings-sync consumer. It accepts only validated,
+  // ordered snapshots and updates `contextSettings`; this dialog never listens
+  // to the raw Tauri event bus itself. Local unsaved/in-flight edits form a
+  // shallow top-level overlay so a newer validated remote snapshot cannot wipe
+  // them, while unrelated remote fields remain authoritative.
   useEffect(() => {
-    if (isOpen) loadSettings();
-  }, [isOpen, loadSettings]);
+    if (!isOpen) return;
+    const localOverlay = {
+      ...(inFlightPatchRef.current ?? {}),
+      ...(pendingPatchRef.current ?? {}),
+    };
+    const rebased = { ...contextSettings, ...localOverlay };
+    settingsRef.current = rebased;
+    setSettings(rebased);
+    if (Object.keys(localOverlay).length > 0) {
+      settingsManager.applyInMemory(localOverlay);
+    }
+  }, [contextSettings, isOpen, settingsManager]);
 
   // ── Keyboard (ESC) ────────────────────────────────────────────
   useEffect(() => {
@@ -57,42 +72,6 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
-
-  // ── Cross-window settings sync ──────────────────────────────
-  useEffect(() => {
-    if (!isOpen) return;
-    let unlisten: (() => void) | null = null;
-    let mounted = true;
-
-    (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        const myLabel = await settingsManager.getWindowLabel();
-
-        const unlistenFn = await listen<{
-          settings: GlobalSettings;
-          source: string;
-        }>("settings-sync", (event) => {
-          if (event.payload.source === myLabel) return;
-          if (mounted) {
-            setSettings(event.payload.settings);
-          }
-        });
-        if (mounted) {
-          unlisten = unlistenFn;
-        } else {
-          unlistenFn();
-        }
-      } catch {
-        // Not in Tauri environment
-      }
-    })();
-
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, [isOpen, settingsManager]);
 
   // ── Reset scroll-to-bottom on tab change ──────────────────────
   useEffect(() => {
@@ -134,96 +113,118 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
     },
     [toast, t],
   );
+  const showAutoSaveRef = useRef(showAutoSave);
+  showAutoSaveRef.current = showAutoSave;
 
-  const flushDebouncedSave = useCallback(async () => {
-    if (debounceSaveRef.current) {
-      clearTimeout(debounceSaveRef.current);
-      debounceSaveRef.current = null;
-    }
-    const pending = pendingSettingsRef.current;
-    if (pending) {
-      pendingSettingsRef.current = null;
-      try {
-        await settingsManager.saveSettings(pending, { silent: true });
-        showAutoSave("success");
-      } catch (error) {
-        console.error("Failed to flush debounced save:", error);
-        showAutoSave("error");
+  const flushPendingPatch = useCallback(
+    async (mode: "auto" | "manual" | "unmount" = "auto") => {
+      if (debounceSaveRef.current) {
+        clearTimeout(debounceSaveRef.current);
+        debounceSaveRef.current = null;
       }
-    }
-  }, [settingsManager, showAutoSave]);
+
+      const run = async () => {
+        const pending = pendingPatchRef.current;
+        if (!pending || Object.keys(pending).length === 0) return;
+
+        pendingPatchRef.current = null;
+        inFlightPatchRef.current = pending;
+        try {
+          await settingsManager.saveSettings(pending, {
+            silent: mode !== "manual",
+          });
+          if (mode !== "unmount") showAutoSaveRef.current("success");
+        } catch (error) {
+          // A newer edit may have arrived while this patch was in flight. Put
+          // the failed patch back underneath it so the newest local value wins
+          // and a later manual/auto flush can retry the complete local intent.
+          pendingPatchRef.current = {
+            ...pending,
+            ...(pendingPatchRef.current ?? {}),
+          };
+          if (mode !== "unmount") showAutoSaveRef.current("error");
+          throw error;
+        } finally {
+          inFlightPatchRef.current = null;
+        }
+      };
+
+      const operation = saveChainRef.current.then(run, run);
+      saveChainRef.current = operation.catch(() => undefined);
+      await operation;
+    },
+    [settingsManager],
+  );
 
   // Flush on unmount
   useEffect(() => {
     return () => {
       if (debounceSaveRef.current) clearTimeout(debounceSaveRef.current);
-      const pending = pendingSettingsRef.current;
-      if (pending) {
-        settingsManager.saveSettings(pending, { silent: true }).catch(() => {});
-      }
+      void flushPendingPatch("unmount").catch(() => {});
     };
-  }, [settingsManager]);
+  }, [flushPendingPatch]);
 
   const scheduleSave = useCallback(
-    (newSettings: GlobalSettings) => {
-      settingsManager.applyInMemory(newSettings);
+    (patch: Partial<GlobalSettings>, newSettings: GlobalSettings) => {
+      pendingPatchRef.current = {
+        ...(pendingPatchRef.current ?? {}),
+        ...patch,
+      };
+      settingsManager.applyInMemory(patch);
 
-      const autoSave = newSettings.settingsDialog?.autoSave ?? true;
-      if (!autoSave) {
-        pendingSettingsRef.current = newSettings;
-        return;
+      if (debounceSaveRef.current) {
+        clearTimeout(debounceSaveRef.current);
+        debounceSaveRef.current = null;
       }
 
-      pendingSettingsRef.current = newSettings;
-      if (debounceSaveRef.current) clearTimeout(debounceSaveRef.current);
-      debounceSaveRef.current = setTimeout(async () => {
+      const autoSave = newSettings.settingsDialog?.autoSave ?? true;
+      if (!autoSave) return;
+
+      debounceSaveRef.current = setTimeout(() => {
         debounceSaveRef.current = null;
-        const toSave = pendingSettingsRef.current;
-        if (!toSave) return;
-        pendingSettingsRef.current = null;
-        try {
-          await settingsManager.saveSettings(toSave, { silent: true });
-          showAutoSave("success");
-        } catch (error) {
+        void flushPendingPatch("auto").catch((error) => {
           console.error("Failed to auto save settings:", error);
-          showAutoSave("error");
-        }
+        });
       }, 1500);
     },
-    [settingsManager, showAutoSave],
+    [flushPendingPatch, settingsManager],
   );
 
   // ── Public handlers ───────────────────────────────────────────
   const handleSave = useCallback(async () => {
-    if (!settings) return;
+    const currentSettings = settingsRef.current;
+    if (!currentSettings) return;
     try {
-      await flushDebouncedSave();
-      await settingsManager.saveSettings(settings);
+      await flushPendingPatch("manual");
 
-      const effectiveLanguage = settings.autoDetectOsLanguage
+      const effectiveLanguage = currentSettings.autoDetectOsLanguage
         ? resolveSupportedLanguage(
             typeof navigator !== "undefined" ? navigator.language : "en",
           )
-        : settings.language;
+        : currentSettings.language;
       if (effectiveLanguage !== i18n.language) {
         if (effectiveLanguage !== "en-US")
           await loadLanguage(effectiveLanguage);
         await i18n.changeLanguage(effectiveLanguage);
       }
       if (typeof document !== "undefined") {
-        document.documentElement.dir = settings.rtlLayout ? "rtl" : "ltr";
+        document.documentElement.dir = currentSettings.rtlLayout
+          ? "rtl"
+          : "ltr";
       }
 
       themeManager.applyTheme(
-        settings.theme,
-        settings.colorScheme,
-        settings.useCustomAccent ? settings.primaryAccentColor : undefined,
+        currentSettings.theme,
+        currentSettings.colorScheme,
+        currentSettings.useCustomAccent
+          ? currentSettings.primaryAccentColor
+          : undefined,
       );
       onClose();
     } catch (error) {
       console.error("Failed to save settings:", error);
     }
-  }, [settings, flushDebouncedSave, settingsManager, i18n, themeManager, onClose]);
+  }, [flushPendingPatch, i18n, themeManager, onClose]);
 
   const handleReset = useCallback(() => {
     const confirm = settings?.settingsDialog?.confirmBeforeReset ?? true;
@@ -250,27 +251,28 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
     }
 
     const newSettings = { ...settings, ...resetUpdates };
+    settingsRef.current = newSettings;
     setSettings(newSettings);
+    scheduleSave(resetUpdates, newSettings);
 
     try {
-      await settingsManager.saveSettings(newSettings);
+      await flushPendingPatch("manual");
 
       if (activeTab === "theme") {
         themeManager.applyTheme(
           newSettings.theme,
           newSettings.colorScheme,
-          newSettings.useCustomAccent ? newSettings.primaryAccentColor : undefined,
+          newSettings.useCustomAccent
+            ? newSettings.primaryAccentColor
+            : undefined,
         );
       }
-
-      showAutoSave("success");
     } catch (error) {
       console.error("Failed to reset tab settings:", error);
-      showAutoSave("error");
     }
 
     setShowResetConfirm(false);
-  }, [settings, activeTab, settingsManager, themeManager, showAutoSave]);
+  }, [settings, activeTab, scheduleSave, flushPendingPatch, themeManager]);
 
   const handleBenchmark = useCallback(async () => {
     if (!settings) return;
@@ -279,19 +281,25 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
       const optimalIterations = await settingsManager.benchmarkKeyDerivation(
         settings.benchmarkTimeSeconds,
       );
-      setSettings({ ...settings, keyDerivationIterations: optimalIterations });
+      const patch = { keyDerivationIterations: optimalIterations };
+      const newSettings = { ...settings, ...patch };
+      settingsRef.current = newSettings;
+      setSettings(newSettings);
+      scheduleSave(patch, newSettings);
     } catch (error) {
       console.error("Benchmark failed:", error);
     } finally {
       setIsBenchmarking(false);
     }
-  }, [settings, settingsManager]);
+  }, [settings, settingsManager, scheduleSave]);
 
   const updateSettings = useCallback(
     async (updates: Partial<GlobalSettings>) => {
-      if (!settings) return;
+      const currentSettings = settingsRef.current;
+      if (!currentSettings) return;
 
-      const newSettings = { ...settings, ...updates };
+      const newSettings = { ...currentSettings, ...updates };
+      settingsRef.current = newSettings;
       setSettings(newSettings);
 
       if (updates.language && updates.language !== i18n.language) {
@@ -308,30 +316,44 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
         themeManager.applyTheme(
           newSettings.theme,
           newSettings.colorScheme,
-          newSettings.useCustomAccent ? newSettings.primaryAccentColor : undefined,
+          newSettings.useCustomAccent
+            ? newSettings.primaryAccentColor
+            : undefined,
         );
       }
 
-      scheduleSave(newSettings);
+      scheduleSave(updates, newSettings);
     },
-    [settings, i18n, themeManager, scheduleSave],
+    [i18n, themeManager, scheduleSave],
   );
 
   const updateProxy = useCallback(
     async (updates: Partial<ProxyConfig>) => {
-      if (!settings) return;
+      const currentSettings = settingsRef.current;
+      if (!currentSettings) return;
 
-      const newSettings = {
-        ...settings,
-        globalProxy: { ...settings.globalProxy, ...updates } as ProxyConfig,
+      const patch = {
+        globalProxy: {
+          ...currentSettings.globalProxy,
+          ...updates,
+        } as ProxyConfig,
       };
+      const newSettings = {
+        ...currentSettings,
+        ...patch,
+      };
+      settingsRef.current = newSettings;
       setSettings(newSettings);
-      scheduleSave(newSettings);
+      scheduleSave(patch, newSettings);
     },
-    [settings, scheduleSave],
+    [scheduleSave],
   );
 
-  const defaults = { showSaveButton: false, confirmBeforeReset: true, autoSave: true };
+  const defaults = {
+    showSaveButton: false,
+    confirmBeforeReset: true,
+    autoSave: true,
+  };
   const dialogConfig = settings
     ? { ...defaults, ...settings.settingsDialog }
     : defaults;
