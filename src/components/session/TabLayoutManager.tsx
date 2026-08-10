@@ -25,6 +25,7 @@ import { Slider } from "../ui/forms";
 import MenuSurface from "../ui/overlays/MenuSurface";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
 import { partitionSessions } from "../../utils/session/sessionClassification";
+import { SessionRenderActivityProvider } from "./SessionRenderActivity";
 
 type Mgr = ReturnType<typeof useTabLayoutManager>;
 
@@ -772,6 +773,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           );
           const isVisibleTile =
             mosaicMode && style.visibility === "visible" && slotIndex >= 0;
+          const isRendererActive = isVisibleTile || (isTabsMode && isActive);
           const isDropTarget = isVisibleTile && dragOverSlot === slotIndex;
           return (
             <div
@@ -826,7 +828,9 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                   isVisibleTile ? "absolute inset-0 top-[29px]" : "h-full"
                 }
               >
-                {renderSession(session)}
+                <SessionRenderActivityProvider isActive={isRendererActive}>
+                  {renderSession(session)}
+                </SessionRenderActivityProvider>
               </div>
             </div>
           );

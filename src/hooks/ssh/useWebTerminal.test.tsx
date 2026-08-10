@@ -2053,4 +2053,177 @@ describe("useWebTerminal input lifecycle", () => {
       commands.lastIndexOf("release_vpn_leases"),
     );
   });
+
+  it("suspends routed output writes and resumes from an ordered snapshot", async () => {
+    let retained = "";
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+      if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+      if (command === "get_terminal_buffer_snapshot") {
+        return Promise.resolve({
+          session_id: "backend-ssh-1",
+          data: retained,
+          generation: 1,
+          sequence_start: 0,
+          sequence_end: new TextEncoder().encode(retained).byteLength,
+          retained_start: 0,
+          dropped_bytes: 0,
+          gap: false,
+          generation_changed: false,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    let model: WebTerminalMgr | null = null;
+    const Harness = ({ active }: { active: boolean }) => {
+      model = useWebTerminal(session, undefined, active);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness active={false} />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(true));
+    const terminal = mocks.MockTerminal.instances[0];
+    expect(terminal).toBeDefined();
+
+    retained = "A";
+    act(() => {
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-ssh-1",
+        data: "A",
+        generation: 1,
+        sequence_start: 0,
+        sequence_end: 1,
+        retained_start: 0,
+        dropped_bytes: 0,
+      });
+    });
+    retained = "AB";
+    act(() => {
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-ssh-1",
+        data: "B",
+        generation: 1,
+        sequence_start: 1,
+        sequence_end: 2,
+        retained_start: 0,
+        dropped_bytes: 0,
+      });
+    });
+    await act(
+      async () =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, 15);
+        }),
+    );
+    expect(terminal.write).not.toHaveBeenCalled();
+
+    view.rerender(<Harness active />);
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("AB"));
+    expect(terminal.write).not.toHaveBeenCalledWith("A");
+    expect(terminal.write).not.toHaveBeenCalledWith("B");
+
+    retained = "ABC";
+    act(() => {
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-ssh-1",
+        data: "C",
+        generation: 1,
+        sequence_start: 2,
+        sequence_end: 3,
+        retained_start: 0,
+        dropped_bytes: 0,
+      });
+    });
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("C"));
+
+    view.rerender(<Harness active={false} />);
+    retained = "ABCD";
+    act(() => {
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-ssh-1",
+        data: "D",
+        generation: 1,
+        sequence_start: 3,
+        sequence_end: 4,
+        retained_start: 0,
+        dropped_bytes: 0,
+      });
+    });
+    await act(
+      async () =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, 15);
+        }),
+    );
+    expect(terminal.write).not.toHaveBeenCalledWith("D");
+
+    view.rerender(<Harness active />);
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("D"));
+    expect(
+      terminal.write.mock.calls.filter(([data]) => data === "D"),
+    ).toHaveLength(1);
+    expect(mocks.invoke).toHaveBeenCalledWith("get_terminal_buffer_snapshot", {
+      sessionId: "backend-ssh-1",
+      generation: 1,
+      afterSequence: 3,
+    });
+
+    view.unmount();
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(false));
+  });
+
+  it("keeps an event that arrives while the legacy replay RPC is in flight", async () => {
+    let resolveLegacyReplay!: (data: string) => void;
+    const legacyReplay = new Promise<string>((resolve) => {
+      resolveLegacyReplay = resolve;
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+      if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+      if (command === "get_terminal_buffer_snapshot") {
+        return Promise.reject(new Error("legacy backend"));
+      }
+      if (command === "get_terminal_buffer") return legacyReplay;
+      return Promise.resolve(undefined);
+    });
+
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session, undefined, true);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("get_terminal_buffer", {
+        sessionId: "backend-ssh-1",
+      }),
+    );
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(true));
+    const terminal = mocks.MockTerminal.instances[0];
+
+    act(() => {
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-ssh-1",
+        data: "B",
+      });
+    });
+    expect(terminal.write).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveLegacyReplay("A");
+      await legacyReplay;
+    });
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() =>
+      expect(terminal.write.mock.calls.map(([data]) => data)).toEqual([
+        "A",
+        "B",
+      ]),
+    );
+
+    view.unmount();
+  });
 });

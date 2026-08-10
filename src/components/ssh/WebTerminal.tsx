@@ -12,9 +12,11 @@ import ProxyCommandConfirmDialog from "./webTerminal/ProxyCommandConfirmDialog";
 import SSHConnectionOverview from "./webTerminal/SSHConnectionOverview";
 import SSHCommandHistoryPanel from "./commandHistory/SSHCommandHistoryPanel";
 import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
+import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 
 const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
-  const mgr = useWebTerminal(session, onResize);
+  const { isActive } = useSessionRenderActivity();
+  const mgr = useWebTerminal(session, onResize, isActive);
   const { t } = useTranslation();
   const bgMgr = useTerminalBackground(mgr.sshTerminalConfig?.background);
   const showCommandHistory = mgr.commandHistory.isOpen && !mgr.isFullscreen;

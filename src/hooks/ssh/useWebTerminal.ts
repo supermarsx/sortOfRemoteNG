@@ -82,6 +82,18 @@ import {
   getSshReconnectDelayMs,
   resolveSshReconnectPolicy,
 } from "../../utils/ssh/sshReconnectPolicy";
+import {
+  getSshEventRouter,
+  type SshClosedEventPayload,
+  type SshErrorEventPayload,
+  type SshOutputEventPayload,
+} from "../../services/session/sshEventRouter";
+import {
+  formatTerminalOutputGap,
+  getTerminalOutputScheduler,
+  type TerminalOutputRegistration,
+  type TerminalReplaySnapshot,
+} from "../../services/session/terminalOutputScheduler";
 
 /* ── Internal types ────────────────────────────────────────────── */
 
@@ -126,14 +138,47 @@ export interface SshConnectionFailure {
   maxRetryAttempts: number;
   retryDelaySeconds: number;
 }
-type SshOutputEvent = { session_id: string; data: string };
-type SshErrorEvent = { session_id: string; message: string };
-type SshClosedEvent = {
+interface NativeSshTerminalBufferSnapshot {
   session_id: string;
-  /** Added by newer backends. Missing fields retain legacy unexpected-close semantics. */
-  reason?: "requested" | "remote_eof" | "transport_error" | string;
-  recoverable?: boolean;
-  message?: string | null;
+  data: string;
+  generation: number;
+  sequence_start: number;
+  sequence_end: number;
+  retained_start: number;
+  dropped_bytes: number;
+  gap: boolean;
+  generation_changed: boolean;
+}
+
+const normalizeTerminalBufferSnapshot = (
+  value: unknown,
+): TerminalReplaySnapshot | null => {
+  if (!value || typeof value !== "object") return null;
+  const snapshot = value as Partial<NativeSshTerminalBufferSnapshot>;
+  if (
+    typeof snapshot.session_id !== "string" ||
+    typeof snapshot.data !== "string" ||
+    typeof snapshot.generation !== "number" ||
+    typeof snapshot.sequence_start !== "number" ||
+    typeof snapshot.sequence_end !== "number" ||
+    typeof snapshot.retained_start !== "number" ||
+    typeof snapshot.dropped_bytes !== "number" ||
+    typeof snapshot.gap !== "boolean" ||
+    typeof snapshot.generation_changed !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    sessionId: snapshot.session_id,
+    data: snapshot.data,
+    generation: snapshot.generation,
+    sequenceStart: snapshot.sequence_start,
+    sequenceEnd: snapshot.sequence_end,
+    retainedStart: snapshot.retained_start,
+    droppedBytes: snapshot.dropped_bytes,
+    gap: snapshot.gap,
+    generationChanged: snapshot.generation_changed,
+  };
 };
 type HostKeyPromptDecision = "accept_once" | "accept_and_save" | "reject";
 type SshHostKeyPromptEvent = {
@@ -202,6 +247,7 @@ const persistTrackedVpnLeaseOwners = (
 export function useWebTerminal(
   session: ConnectionSession,
   onResize?: (cols: number, rows: number) => void,
+  isTerminalActive = true,
 ) {
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
@@ -303,9 +349,20 @@ export function useWebTerminal(
     sessionId: string;
     message: string;
   } | null>(null);
-  const outputUnlistenRef = useRef<(() => void) | null>(null);
-  const errorUnlistenRef = useRef<(() => void) | null>(null);
-  const closeUnlistenRef = useRef<(() => void) | null>(null);
+  const terminalActiveRef = useRef(isTerminalActive);
+  terminalActiveRef.current = isTerminalActive;
+  const previousTerminalActiveRef = useRef(isTerminalActive);
+  const sshActorRouteUnsubscribeRef = useRef<(() => void) | null>(null);
+  const sshOutputRegistrationRef = useRef<TerminalOutputRegistration | null>(
+    null,
+  );
+  const bindSshEventActorRef = useRef<(sessionId: string) => Promise<void>>(
+    async () => undefined,
+  );
+  const unbindSshEventActorRef = useRef<(sessionId?: string) => void>(
+    () => undefined,
+  );
+  const resumeSshOutputRef = useRef<() => Promise<void>>(async () => undefined);
   const initSshRef = useRef<
     (force?: boolean, mode?: SshConnectMode) => Promise<void>
   >(async () => undefined);
@@ -634,55 +691,67 @@ export function useWebTerminal(
   }, []);
 
   const restoreBuffer = useCallback((content: string) => {
-    if (!termRef.current || !content || isDisposed.current) return;
+    if (
+      !termRef.current ||
+      !content ||
+      isDisposed.current ||
+      !terminalActiveRef.current
+    )
+      return false;
     try {
       const core = (termRef.current as any)?._core;
       const renderService = core?.renderService ?? core?._renderService;
       if (!renderService?.dimensions) {
-        setTimeout(() => restoreBuffer(content), 100);
-        return;
+        return false;
       }
       termRef.current.clear();
       const lines = content.split("\n");
       for (const line of lines) termRef.current.writeln(line);
+      return true;
     } catch (err) {
       console.error("Failed to restore terminal buffer:", err);
+      return false;
     }
   }, []);
 
   /* ── Buffer request/restore effects ── */
 
   useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen<{ sessionId: string }>("request-terminal-buffer", async (event) => {
-      if (event.payload.sessionId !== session.id) return;
-      let buffer = "";
-      if (sshSessionId.current && session.protocol === "ssh") {
-        try {
-          buffer = await invoke<string>("get_terminal_buffer", {
-            sessionId: sshSessionId.current,
+    const unsubscribe = getSshEventRouter().subscribeBufferRequests(
+      session.id,
+      () => {
+        void (async () => {
+          let buffer = "";
+          if (sshSessionId.current && session.protocol === "ssh") {
+            try {
+              buffer = await invoke<string>("get_terminal_buffer", {
+                sessionId: sshSessionId.current,
+              });
+            } catch {
+              buffer = serializeBuffer();
+            }
+          } else {
+            buffer = serializeBuffer();
+          }
+          await emit("terminal-buffer-response", {
+            sessionId: session.id,
+            buffer,
           });
-        } catch {
-          buffer = serializeBuffer();
-        }
-      } else {
-        buffer = serializeBuffer();
-      }
-      await emit("terminal-buffer-response", { sessionId: session.id, buffer });
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(console.error);
-    return () => {
-      unlisten?.();
-    };
+        })();
+      },
+    );
+    return unsubscribe;
   }, [session.id, session.protocol, serializeBuffer]);
 
   const bufferRestoredRef = useRef(false);
 
   useEffect(() => {
-    if (!session.terminalBuffer || bufferRestoredRef.current) return;
+    if (
+      !isTerminalActive ||
+      !session.terminalBuffer ||
+      bufferRestoredRef.current
+    )
+      return;
     const tryRestore = (attempts = 0) => {
       if (attempts > 30) return;
       if (!termRef.current) {
@@ -695,12 +764,13 @@ export function useWebTerminal(
         setTimeout(() => tryRestore(attempts + 1), 100);
         return;
       }
-      bufferRestoredRef.current = true;
-      restoreBuffer(session.terminalBuffer!);
+      if (restoreBuffer(session.terminalBuffer!)) {
+        bufferRestoredRef.current = true;
+      }
     };
     const timer = setTimeout(() => tryRestore(0), 300);
     return () => clearTimeout(timer);
-  }, [session.terminalBuffer, restoreBuffer]);
+  }, [isTerminalActive, session.terminalBuffer, restoreBuffer]);
 
   /* ── Terminal write helpers ── */
 
@@ -719,14 +789,16 @@ export function useWebTerminal(
 
   const safeWrite = useCallback(
     (text: string) => {
-      if (isDisposed.current || !termRef.current) return;
+      if (isDisposed.current || !termRef.current || !terminalActiveRef.current)
+        return false;
       if (termRef.current.element && !termRef.current.element.isConnected)
-        return;
-      if (!canRender()) return;
+        return false;
+      if (!canRender()) return false;
       try {
         termRef.current.write(text);
+        return true;
       } catch {
-        /* ignore */
+        return false;
       }
     },
     [canRender],
@@ -734,14 +806,16 @@ export function useWebTerminal(
 
   const safeWriteln = useCallback(
     (text: string) => {
-      if (isDisposed.current || !termRef.current) return;
+      if (isDisposed.current || !termRef.current || !terminalActiveRef.current)
+        return false;
       if (termRef.current.element && !termRef.current.element.isConnected)
-        return;
-      if (!canRender()) return;
+        return false;
+      if (!canRender()) return false;
       try {
         termRef.current.writeln(text);
+        return true;
       } catch {
-        /* ignore */
+        return false;
       }
     },
     [canRender],
@@ -1121,6 +1195,7 @@ export function useWebTerminal(
         if (!cleanup.backendClosed) {
           pendingSshBackendCleanupRef.current.add(backendSessionId);
         } else {
+          unbindSshEventActorRef.current(backendSessionId);
           pendingSshBackendCleanupRef.current.delete(backendSessionId);
           if (pendingOwnerId) {
             protectedVpnLeaseOwnersRef.current.delete(pendingOwnerId);
@@ -1500,6 +1575,7 @@ export function useWebTerminal(
         pendingSshBackendCleanupRef.current.delete(sessionId);
         pendingSshBackendOwnersRef.current.delete(sessionId);
         if (sshSessionId.current === sessionId) {
+          unbindSshEventActorRef.current(sessionId);
           sshSessionId.current = null;
         }
         return true;
@@ -1542,6 +1618,7 @@ export function useWebTerminal(
         }
 
         sshSessionId.current = targetSessionId;
+        await bindSshEventActorRef.current(targetSessionId);
         for (const previousOwnerId of primaryOwnerIds) {
           if (previousOwnerId !== nextOwnerId) {
             trackPendingVpnLeaseOwner(tracker, previousOwnerId);
@@ -1719,14 +1796,6 @@ export function useWebTerminal(
             // remounted view must not assume machine-wide VPN state survived.
             runtimePath = await resolveAndAcquireVpnPath();
             if (await stopIfStale()) return;
-            const buffer = await invoke<string>("get_terminal_buffer", {
-              sessionId: currentSession.backendSessionId,
-            }).catch(() => "");
-            if (await stopIfStale()) return;
-            if (buffer) {
-              restoreBuffer(buffer);
-              writeLine("\x1b[32mRestored terminal buffer from session\x1b[0m");
-            }
             const existingShellId = await invoke<string | null>(
               "get_shell_info",
               { sessionId: currentSession.backendSessionId },
@@ -2544,19 +2613,18 @@ export function useWebTerminal(
             exitCode: result.exitCode,
             durationMs: Math.max(0, Date.now() - startedAt),
           });
-          const term = termRef.current;
-          if (term) {
-            term.write(`\r\n\x1b[90m── Script: ${script.name} ──\x1b[0m\r\n`);
+          if (termRef.current) {
+            safeWrite(`\r\n\x1b[90m── Script: ${script.name} ──\x1b[0m\r\n`);
             if (result.stdout) {
               for (const line of result.stdout.split("\n")) {
-                term.write(line + "\r\n");
+                safeWrite(line + "\r\n");
               }
             }
             if (result.stderr) {
-              term.write(`\x1b[31m${result.stderr}\x1b[0m\r\n`);
+              safeWrite(`\x1b[31m${result.stderr}\x1b[0m\r\n`);
             }
             const codeColor = result.exitCode === 0 ? "32" : "31";
-            term.write(
+            safeWrite(
               `\x1b[90m── Exit: \x1b[${codeColor}m${result.exitCode}\x1b[90m ──\x1b[0m\r\n`,
             );
           }
@@ -2589,7 +2657,13 @@ export function useWebTerminal(
       }
       closeScriptSelector();
     },
-    [addCommandHistoryEntry, closeScriptSelector, formatErrorDetails, isSsh],
+    [
+      addCommandHistoryEntry,
+      closeScriptSelector,
+      formatErrorDetails,
+      isSsh,
+      safeWrite,
+    ],
   );
 
   /* ──────────────────────────────────────────────────────────────
@@ -2761,6 +2835,7 @@ export function useWebTerminal(
 
     let rafId = 0;
     let initRetryCount = 0;
+    let replayInFlightRevision: number | null = null;
     const maxInitRetries = 20;
 
     const canFit = () => {
@@ -2775,7 +2850,13 @@ export function useWebTerminal(
     };
 
     const doFit = () => {
-      if (isDisposed.current || !fitRef.current || !termRef.current) return;
+      if (
+        isDisposed.current ||
+        !terminalActiveRef.current ||
+        !fitRef.current ||
+        !termRef.current
+      )
+        return;
       if (!container.isConnected || !termRef.current.element?.isConnected)
         return;
       if (!canFit()) {
@@ -2794,6 +2875,9 @@ export function useWebTerminal(
             cols: termRef.current.cols,
             rows: termRef.current.rows,
           }).catch(() => undefined);
+        }
+        if (replayInFlightRevision === null) {
+          sshOutputRegistrationRef.current?.resume();
         }
       } catch {
         /* ignore */
@@ -2843,197 +2927,304 @@ export function useWebTerminal(
     container.addEventListener("contextmenu", handleTerminalContextMenu, true);
 
     let cancelled = false;
-    let outputBuffer: string[] = [];
-    let flushScheduled = false;
-    const BATCH_INTERVAL_MS = 8;
+    let actorBindingRevision = 0;
+    let boundActorId: string | null = null;
+    let boundGeneration: number | undefined;
 
-    const flushOutputBuffer = () => {
-      if (outputBuffer.length === 0 || isDisposed.current || !termRef.current) {
-        flushScheduled = false;
+    const handleOutput = (payload: SshOutputEventPayload) => {
+      if (
+        payload.session_id !== sshSessionId.current ||
+        (boundGeneration !== undefined &&
+          payload.generation !== undefined &&
+          payload.generation !== boundGeneration)
+      ) {
         return;
       }
-      const data = outputBuffer.join("");
-      outputBuffer = [];
-      flushScheduled = false;
-      safeWrite(data);
-    };
-
-    const scheduleFlush = () => {
-      if (!flushScheduled) {
-        flushScheduled = true;
-        setTimeout(flushOutputBuffer, BATCH_INTERVAL_MS);
+      sshOutputRegistrationRef.current?.enqueue({
+        data: payload.data,
+        generation: payload.generation,
+        sequenceStart: payload.sequence_start,
+        sequenceEnd: payload.sequence_end,
+        retainedStart: payload.retained_start,
+        droppedBytes: payload.dropped_bytes,
+      });
+      // Blink window when output arrives and window is not focused.
+      if (
+        sshTerminalConfig?.blinkWindowOnActivity &&
+        document.visibilityState === "hidden"
+      ) {
+        invoke("flash_window").catch(() => {});
       }
     };
 
-    const attachListeners = async () => {
-      if (!isSsh) return;
+    const handleError = (payload: SshErrorEventPayload) => {
+      const actorId = payload.session_id;
+      if (
+        actorId !== sshSessionId.current ||
+        (boundGeneration !== undefined &&
+          payload.generation !== undefined &&
+          payload.generation !== boundGeneration) ||
+        disconnectIntentRef.current !== "none" ||
+        closingSshActorsRef.current.has(actorId)
+      ) {
+        return;
+      }
+      const safeMessage = sanitizeCurrentSshMessage(payload.message);
+      lastSshTransportErrorRef.current = {
+        sessionId: actorId,
+        message: safeMessage,
+      };
+      safeWriteln(`\r\n\x1b[31mSSH error: ${safeMessage}\x1b[0m`);
+    };
+
+    const handleClosed = (payload: SshClosedEventPayload) => {
+      const actorId = payload.session_id;
+      if (
+        actorId !== sshSessionId.current ||
+        (boundGeneration !== undefined &&
+          payload.generation !== undefined &&
+          payload.generation !== boundGeneration) ||
+        isDisposed.current ||
+        closingSshActorsRef.current.has(actorId)
+      ) {
+        return;
+      }
+
+      // Requested closes can race the disconnect command that initiated
+      // them. They are completion signals, never reconnect triggers.
+      if (
+        payload.reason === "requested" ||
+        disconnectIntentRef.current !== "none"
+      ) {
+        return;
+      }
+
+      closingSshActorsRef.current.add(actorId);
+      isSshReady.current = false;
+      void (async () => {
+        const lastTransportError =
+          lastSshTransportErrorRef.current?.sessionId === actorId
+            ? lastSshTransportErrorRef.current.message
+            : null;
+        const technicalDetails = sanitizeCurrentSshMessage(
+          payload.message ||
+            lastTransportError ||
+            (payload.reason === "remote_eof"
+              ? "The SSH server closed the transport (remote EOF)."
+              : "The SSH transport closed unexpectedly."),
+        );
+        const classification = classifySshError(technicalDetails);
+        const recoverable =
+          payload.recoverable ??
+          (payload.reason !== "requested" &&
+            (classification.recoverable ||
+              payload.reason === "remote_eof" ||
+              payload.reason === "transport_error" ||
+              payload.reason === undefined));
+        const summary =
+          payload.reason === "remote_eof"
+            ? "SSH server closed the connection"
+            : payload.reason === "transport_error" ||
+                classification.kind === "transport"
+              ? "SSH transport was interrupted"
+              : classification.friendly;
+        const reconnectPolicy = getReconnectPolicy();
+        const failure: SshConnectionFailure = {
+          kind:
+            payload.reason === "remote_eof" ||
+            payload.reason === "transport_error"
+              ? "transport"
+              : classification.kind,
+          summary,
+          technicalDetails,
+          recoverable,
+          occurredAt: new Date().toISOString(),
+          retryScheduled: false,
+          retryAttempt: autoReconnectAttemptRef.current,
+          maxRetryAttempts: reconnectPolicy.maxAttempts,
+          retryDelaySeconds:
+            getSshReconnectDelayMs(
+              reconnectPolicy,
+              autoReconnectAttemptRef.current,
+            ) / 1_000,
+        };
+        autoReconnectEligibleRef.current =
+          wasSshEstablishedRef.current && failure.recoverable;
+        const shouldPrepareRetry =
+          reconnectPolicy.enabled && autoReconnectEligibleRef.current;
+        setStatusState(shouldPrepareRetry ? "reconnecting" : "error");
+        setError(
+          shouldPrepareRetry ? `${summary}. Preparing to reconnect` : summary,
+        );
+        setSshFailure(failure);
+        writeLine(`\x1b[33m${summary}: ${technicalDetails}\x1b[0m`);
+
+        // A shell-close event proves only that the shell task stopped.
+        // The idempotent disconnect command still owns actor/forward
+        // cleanup and must finish before a replacement can acquire VPN.
+        const closeGeneration = ++sshInitGenRef.current;
+        disconnectIntentRef.current = "replace";
+        const backendClean = await disconnectCurrentSsh(true, true);
+        if (
+          !backendClean ||
+          isDisposed.current ||
+          sshInitGenRef.current !== closeGeneration ||
+          disconnectIntentRef.current !== "replace"
+        ) {
+          return;
+        }
+        disconnectIntentRef.current = "none";
+        if (scheduleAutoReconnect(failure)) return;
+
+        setStatusState("error");
+        setError(summary);
+        setSshFailure({ ...failure, retryScheduled: false });
+        const updatedSession = {
+          ...sessionRef.current,
+          status: "error" as const,
+          errorMessage: summary,
+        };
+        sessionRef.current = updatedSession;
+        dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+      })().finally(() => {
+        closingSshActorsRef.current.delete(actorId);
+      });
+    };
+
+    const unbindActor = (requestedActorId?: string) => {
+      if (requestedActorId && boundActorId !== requestedActorId) return;
+      actorBindingRevision++;
+      sshActorRouteUnsubscribeRef.current?.();
+      sshActorRouteUnsubscribeRef.current = null;
+      sshOutputRegistrationRef.current?.dispose();
+      sshOutputRegistrationRef.current = null;
+      boundActorId = null;
+      boundGeneration = undefined;
+      replayInFlightRevision = null;
+      resumeSshOutputRef.current = async () => undefined;
+    };
+
+    const synchronizeReplay = async (
+      actorId: string,
+      registration: TerminalOutputRegistration,
+    ) => {
+      const revision = ++actorBindingRevision;
+      replayInFlightRevision = revision;
+      registration.pause();
+      const cursor = registration.cursor();
+      const request: {
+        sessionId: string;
+        generation?: number;
+        afterSequence?: number;
+      } = { sessionId: actorId };
+      if (cursor.generation !== undefined) {
+        request.generation = cursor.generation;
+      }
+      if (cursor.afterSequence !== undefined) {
+        request.afterSequence = cursor.afterSequence;
+      }
+
       try {
-        const unlistenOutput = await listen<SshOutputEvent>(
-          "ssh-output",
-          (event) => {
-            if (event.payload.session_id !== sshSessionId.current) return;
-            outputBuffer.push(event.payload.data);
-            scheduleFlush();
-            // Blink window when output arrives and window is not focused
-            if (
-              sshTerminalConfig?.blinkWindowOnActivity &&
-              document.visibilityState === "hidden"
-            ) {
-              invoke("flash_window").catch(() => {});
-            }
-          },
+        const rawSnapshot = await invoke<unknown>(
+          "get_terminal_buffer_snapshot",
+          request,
         );
-        if (!cancelled) outputUnlistenRef.current = unlistenOutput;
-        else unlistenOutput();
+        const snapshot = normalizeTerminalBufferSnapshot(rawSnapshot);
+        if (!snapshot || snapshot.sessionId !== actorId) {
+          throw new Error("SSH snapshot command returned an invalid payload");
+        }
+        if (
+          cancelled ||
+          revision !== actorBindingRevision ||
+          boundActorId !== actorId ||
+          sshOutputRegistrationRef.current !== registration
+        ) {
+          return;
+        }
+        boundGeneration = snapshot.generation;
+        registration.applyReplay(snapshot);
+      } catch {
+        // The legacy API has no sequence cursor. Capture the event cutoff
+        // before requesting its snapshot so output delivered while the RPC is
+        // in flight remains queued instead of being mistaken for replayed data.
+        const throughOrdinal = registration.captureOrdinal();
+        const legacyBuffer = await invoke<unknown>("get_terminal_buffer", {
+          sessionId: actorId,
+        }).catch(() => null);
+        if (
+          cancelled ||
+          revision !== actorBindingRevision ||
+          boundActorId !== actorId ||
+          sshOutputRegistrationRef.current !== registration
+        ) {
+          return;
+        }
+        if (typeof legacyBuffer === "string") {
+          registration.applyLegacyReplay(legacyBuffer, throughOrdinal);
+        }
+      }
 
-        const unlistenError = await listen<SshErrorEvent>(
-          "ssh-error",
-          (event) => {
-            const actorId = event.payload.session_id;
-            if (
-              actorId !== sshSessionId.current ||
-              disconnectIntentRef.current !== "none" ||
-              closingSshActorsRef.current.has(actorId)
-            ) {
-              return;
-            }
-            const safeMessage = sanitizeCurrentSshMessage(
-              event.payload.message,
-            );
-            lastSshTransportErrorRef.current = {
-              sessionId: actorId,
-              message: safeMessage,
-            };
-            safeWriteln(`\r\n\x1b[31mSSH error: ${safeMessage}\x1b[0m`);
-          },
-        );
-        if (!cancelled) errorUnlistenRef.current = unlistenError;
-        else unlistenError();
-
-        const unlistenClosed = await listen<SshClosedEvent>(
-          "ssh-shell-closed",
-          (event) => {
-            const payload = event.payload;
-            const actorId = payload.session_id;
-            if (
-              actorId !== sshSessionId.current ||
-              isDisposed.current ||
-              closingSshActorsRef.current.has(actorId)
-            ) {
-              return;
-            }
-
-            // Requested closes can race the disconnect command that initiated
-            // them. They are completion signals, never reconnect triggers.
-            if (
-              payload.reason === "requested" ||
-              disconnectIntentRef.current !== "none"
-            ) {
-              return;
-            }
-
-            closingSshActorsRef.current.add(actorId);
-            isSshReady.current = false;
-            void (async () => {
-              const lastTransportError =
-                lastSshTransportErrorRef.current?.sessionId === actorId
-                  ? lastSshTransportErrorRef.current.message
-                  : null;
-              const technicalDetails = sanitizeCurrentSshMessage(
-                payload.message ||
-                  lastTransportError ||
-                  (payload.reason === "remote_eof"
-                    ? "The SSH server closed the transport (remote EOF)."
-                    : "The SSH transport closed unexpectedly."),
-              );
-              const classification = classifySshError(technicalDetails);
-              const recoverable =
-                payload.recoverable ??
-                (payload.reason !== "requested" &&
-                  (classification.recoverable ||
-                    payload.reason === "remote_eof" ||
-                    payload.reason === "transport_error" ||
-                    payload.reason === undefined));
-              const summary =
-                payload.reason === "remote_eof"
-                  ? "SSH server closed the connection"
-                  : payload.reason === "transport_error" ||
-                      classification.kind === "transport"
-                    ? "SSH transport was interrupted"
-                    : classification.friendly;
-              const reconnectPolicy = getReconnectPolicy();
-              const failure: SshConnectionFailure = {
-                kind:
-                  payload.reason === "remote_eof" ||
-                  payload.reason === "transport_error"
-                    ? "transport"
-                    : classification.kind,
-                summary,
-                technicalDetails,
-                recoverable,
-                occurredAt: new Date().toISOString(),
-                retryScheduled: false,
-                retryAttempt: autoReconnectAttemptRef.current,
-                maxRetryAttempts: reconnectPolicy.maxAttempts,
-                retryDelaySeconds:
-                  getSshReconnectDelayMs(
-                    reconnectPolicy,
-                    autoReconnectAttemptRef.current,
-                  ) / 1_000,
-              };
-              autoReconnectEligibleRef.current =
-                wasSshEstablishedRef.current && failure.recoverable;
-              const shouldPrepareRetry =
-                reconnectPolicy.enabled && autoReconnectEligibleRef.current;
-              setStatusState(shouldPrepareRetry ? "reconnecting" : "error");
-              setError(
-                shouldPrepareRetry
-                  ? `${summary}. Preparing to reconnect`
-                  : summary,
-              );
-              setSshFailure(failure);
-              writeLine(`\x1b[33m${summary}: ${technicalDetails}\x1b[0m`);
-
-              // A shell-close event proves only that the shell task stopped.
-              // The idempotent disconnect command still owns actor/forward
-              // cleanup and must finish before a replacement can acquire VPN.
-              const closeGeneration = ++sshInitGenRef.current;
-              disconnectIntentRef.current = "replace";
-              const backendClean = await disconnectCurrentSsh(true, true);
-              if (
-                !backendClean ||
-                isDisposed.current ||
-                sshInitGenRef.current !== closeGeneration ||
-                disconnectIntentRef.current !== "replace"
-              ) {
-                return;
-              }
-              disconnectIntentRef.current = "none";
-              if (scheduleAutoReconnect(failure)) return;
-
-              setStatusState("error");
-              setError(summary);
-              setSshFailure({ ...failure, retryScheduled: false });
-              const updatedSession = {
-                ...sessionRef.current,
-                status: "error" as const,
-                errorMessage: summary,
-              };
-              sessionRef.current = updatedSession;
-              dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
-            })().finally(() => {
-              closingSshActorsRef.current.delete(actorId);
-            });
-          },
-        );
-        if (!cancelled) closeUnlistenRef.current = unlistenClosed;
-        else unlistenClosed();
-      } catch (error) {
-        console.error("Failed to attach SSH listeners:", error);
+      if (replayInFlightRevision === revision) {
+        replayInFlightRevision = null;
+      }
+      if (
+        !cancelled &&
+        revision === actorBindingRevision &&
+        boundActorId === actorId &&
+        sshOutputRegistrationRef.current === registration &&
+        terminalActiveRef.current
+      ) {
+        // Even when replay is temporarily unavailable, bounded live output may
+        // continue. A later inactive→active transition retries synchronization.
+        registration.resume();
       }
     };
 
-    attachListeners();
+    const bindActor = async (actorId: string) => {
+      if (cancelled || !isSsh) return;
+      if (
+        boundActorId === actorId &&
+        sshOutputRegistrationRef.current !== null
+      ) {
+        await synchronizeReplay(actorId, sshOutputRegistrationRef.current);
+        return;
+      }
+
+      unbindActor();
+      boundActorId = actorId;
+      const registration = getTerminalOutputScheduler().register(
+        actorId,
+        {
+          write: safeWrite,
+          onGap: (gap) => safeWrite(formatTerminalOutputGap(gap)),
+          onReset: () => {
+            if (!terminalActiveRef.current || !termRef.current) return false;
+            try {
+              termRef.current.clear();
+              return true;
+            } catch {
+              return false;
+            }
+          },
+        },
+        { paused: true },
+      );
+      sshOutputRegistrationRef.current = registration;
+      sshActorRouteUnsubscribeRef.current = getSshEventRouter().subscribeActor(
+        actorId,
+        {
+          onOutput: handleOutput,
+          onError: handleError,
+          onClosed: handleClosed,
+        },
+      );
+      resumeSshOutputRef.current = () =>
+        synchronizeReplay(actorId, registration);
+      await synchronizeReplay(actorId, registration);
+    };
+
+    bindSshEventActorRef.current = bindActor;
+    unbindSshEventActorRef.current = unbindActor;
 
     if (isSsh) {
       // Persisted/pre-existing failures mount the full recovery surface but
@@ -3092,12 +3283,9 @@ export function useWebTerminal(
       );
       resizeObserver?.disconnect();
       dataDisposable.dispose();
-      outputUnlistenRef.current?.();
-      errorUnlistenRef.current?.();
-      closeUnlistenRef.current?.();
-      outputUnlistenRef.current = null;
-      errorUnlistenRef.current = null;
-      closeUnlistenRef.current = null;
+      unbindActor();
+      bindSshEventActorRef.current = async () => undefined;
+      unbindSshEventActorRef.current = () => undefined;
       requestAnimationFrame(() => {
         try {
           term.dispose();
@@ -3129,6 +3317,24 @@ export function useWebTerminal(
     setStatusState,
     writeLine,
   ]);
+
+  useEffect(() => {
+    const registration = sshOutputRegistrationRef.current;
+    const wasActive = previousTerminalActiveRef.current;
+    previousTerminalActiveRef.current = isTerminalActive;
+    if (!isTerminalActive) {
+      registration?.pause();
+      return;
+    }
+    if (!wasActive) {
+      try {
+        fitRef.current?.fit();
+      } catch {
+        /* ResizeObserver / the next fit pass retries before draining output. */
+      }
+    }
+    void resumeSshOutputRef.current();
+  }, [isTerminalActive]);
 
   /* ── Apply theme on settings change ── */
 
