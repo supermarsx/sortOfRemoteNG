@@ -471,6 +471,27 @@ test("rolling snapshots atomically synchronize package versions back to main", (
   );
 });
 
+test("main and rolling release entry points reject allocated version regression", () => {
+  const versionJob = ciWorkflow.slice(
+    ciWorkflow.indexOf("  version:"),
+    ciWorkflow.indexOf("  updater-signature-verifier:"),
+  );
+  assert.match(versionJob, /actions\/checkout@v5[\s\S]*?fetch-depth: 0/);
+  assert.match(
+    versionJob,
+    /Reject allocated release version regression[\s\S]*?npm run version:floor:check/,
+  );
+
+  const metadataJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  metadata:"),
+    releaseWorkflow.indexOf("  build:"),
+  );
+  assert.match(
+    metadataJob,
+    /Reject rolling source version regression[\s\S]*?if: inputs\.mode == 'rolling'[\s\S]*?npm run version:floor:check/,
+  );
+});
+
 test("normal main CI calls release only after every internal job", () => {
   const releaseJob = ciWorkflow.slice(ciWorkflow.indexOf("  rolling-release:"));
   for (const job of [

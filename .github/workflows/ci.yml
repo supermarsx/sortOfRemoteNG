@@ -29,12 +29,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
           package-manager-cache: false
       - name: Test rolling-version tooling
         run: npm run version:test
+      - name: Reject allocated release version regression
+        run: npm run version:floor:check
       - name: Check rolling-version synchronization
         run: npm run version:check
       - name: Test release metadata enforcement

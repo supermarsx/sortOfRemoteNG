@@ -135,6 +135,10 @@ jobs:
           node-version: "20"
           package-manager-cache: false
 
+      - name: Reject rolling source version regression
+        if: inputs.mode == 'rolling'
+        run: npm run version:floor:check
+
       - name: Validate invocation contract
         shell: bash
         env:

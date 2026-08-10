@@ -15,7 +15,7 @@ Public releases use a rolling `YY.N` identity, while package ecosystems and upda
 | Git tag                          | `26.1`   | Immutable release-snapshot identity; no `v` prefix |
 | Package / updater version        | `26.1.0` | Machine-compatible SemVer projection               |
 
-`YY` is the two-digit UTC year. `N` is allocated monotonically from the existing bare tags and resets to 1 when the UTC year changes; `26.1` is the first-release example for 2026. The allocator owns this public identity; it synchronizes `version.json` and every machine projection in the release snapshot rather than accepting unrelated version strings from separate jobs. The README badge resolves GitHub's latest public Release directly, so hidden drafts never appear current. The verified snapshot and its bare tag are pushed atomically, fast-forwarding `main` only when it still identifies the exact gated source commit. Its generated `[skip ci]` commit keeps package metadata current without starting a duplicate release cycle.
+`YY` is the two-digit UTC year. `N` is allocated monotonically from the existing bare tags and resets to 1 when the UTC year changes; `26.1` is the first-release example for 2026. The allocator owns this public identity; it synchronizes `version.json` and every machine projection in the release snapshot rather than accepting unrelated version strings from separate jobs. The README badge resolves GitHub's latest public Release directly, so hidden drafts never appear current. The verified snapshot and its bare tag are pushed atomically, fast-forwarding `main` only when it still identifies the exact gated source commit. Its generated `[skip ci]` commit keeps package metadata current without starting a duplicate release cycle. CI fetches the complete tag namespace and rejects a canonical version below the highest allocated strict tag. Allocated tags remain the version floor even when their draft or publication later fails; this prevents subsequent work based on the pre-snapshot source commit from silently restoring older package metadata.
 
 The workflow records the successful `main` commit as the release `source_sha`.
 Its immutable bare tag identifies a version-synchronized snapshot commit whose
@@ -97,6 +97,7 @@ Before manual recovery, verify that the source SHA is the intended successful `m
 
 ```powershell
 npm run version:test
+npm run version:floor:check
 npm run version:check
 npm run release:test
 ```

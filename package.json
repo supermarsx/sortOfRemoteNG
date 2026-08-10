@@ -1,11 +1,12 @@
 {
   "name": "sortofremoteng",
   "private": true,
-  "version": "26.1.0",
+  "version": "26.26.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "version:check": "node ./scripts/sync-version.mjs --check",
+    "version:floor:check": "node ./scripts/ci/check-release-version-floor.mjs",
     "version:sync": "node ./scripts/sync-version.mjs --write",
     "version:test": "node --test ./tests/versioning/versioning.test.mjs",
     "i18n:styled:generate": "node ./scripts/styled-english-locales.mjs",
