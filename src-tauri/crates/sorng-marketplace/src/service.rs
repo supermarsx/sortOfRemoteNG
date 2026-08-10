@@ -4,6 +4,7 @@
 //! compatible with Tauri's managed-state model.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -139,6 +140,21 @@ impl MarketplaceService {
     }
 
     pub async fn update(&mut self, listing_id: &str) -> Result<InstallResult, MarketplaceError> {
+        self.update_with_installer(listing_id, |installed, listing, dest_dir| async move {
+            installer::update_extension(&installed, &listing, &dest_dir).await
+        })
+        .await
+    }
+
+    async fn update_with_installer<F, Fut>(
+        &mut self,
+        listing_id: &str,
+        updater: F,
+    ) -> Result<InstallResult, MarketplaceError>
+    where
+        F: FnOnce(InstalledExtension, MarketplaceListing, String) -> Fut,
+        Fut: Future<Output = Result<InstallResult, MarketplaceError>>,
+    {
         let ext = self
             .registry
             .installed
@@ -146,8 +162,12 @@ impl MarketplaceService {
             .ok_or_else(|| MarketplaceError::ListingNotFound(listing_id.to_string()))?
             .clone();
         let new_listing = self.registry.get_listing(listing_id)?.clone();
-        let result =
-            installer::update_extension(&ext, &new_listing, &self.config.cache_directory).await?;
+        let result = updater(
+            ext.clone(),
+            new_listing.clone(),
+            self.config.cache_directory.clone(),
+        )
+        .await?;
         if result.success {
             self.registry.mark_installed(InstalledExtension {
                 listing_id: new_listing.id.clone(),
@@ -250,5 +270,586 @@ impl MarketplaceService {
         manifest_json: &str,
     ) -> Result<MarketplaceListing, MarketplaceError> {
         repository::validate_manifest(manifest_json)
+    }
+}
+
+#[cfg(test)]
+mod update_transaction_tests {
+    use super::*;
+    use crate::installer::UpdateFault;
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+    use uuid::Uuid;
+
+    const EXTENSION_ID: &str = "atomic-extension";
+    const OLD_VERSION: &str = "1.0.0";
+    const NEW_VERSION: &str = "2.0.0";
+    const OLD_ARTEFACT: &[u8] = b"old extension archive bytes";
+    const NEW_ARTEFACT: &[u8] = b"new extension archive bytes";
+
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("sorng-marketplace-update-test-{}", Uuid::new_v4()));
+            std::fs::create_dir(&path).expect("create test root");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    struct UpdateFixture {
+        root: TestRoot,
+        canonical: PathBuf,
+        service: MarketplaceService,
+        old_snapshot: BTreeMap<String, Vec<u8>>,
+    }
+
+    fn listing(version: &str) -> MarketplaceListing {
+        MarketplaceListing {
+            id: EXTENSION_ID.to_string(),
+            name: EXTENSION_ID.to_string(),
+            display_name: "Atomic extension".to_string(),
+            description: "transaction test extension".to_string(),
+            long_description: None,
+            author: MarketplaceAuthor {
+                name: "Tests".to_string(),
+                email: None,
+                url: None,
+                github_username: None,
+                verified: true,
+            },
+            version: version.to_string(),
+            repository_url: "https://invalid.example/extension.tar.gz".to_string(),
+            homepage_url: None,
+            license: None,
+            tags: vec![],
+            category: ExtensionCategory::Utility,
+            downloads: 0,
+            rating: 0.0,
+            rating_count: 0,
+            verified: true,
+            featured: false,
+            icon_url: None,
+            screenshots: vec![],
+            manifest_url: String::new(),
+            published_at: Utc::now(),
+            updated_at: Utc::now(),
+            compatible_versions: vec![],
+            dependencies: vec![],
+            permissions_required: vec![],
+            size_bytes: Some(NEW_ARTEFACT.len() as u64),
+            checksum: None,
+        }
+    }
+
+    fn write_installed_tree(canonical: &Path) {
+        std::fs::create_dir(canonical).expect("create canonical extension");
+        std::fs::write(canonical.join("extension.tar.gz"), OLD_ARTEFACT)
+            .expect("write old artefact");
+        std::fs::write(canonical.join("runtime-state.bin"), b"old runtime state")
+            .expect("write old runtime state");
+        std::fs::write(
+            canonical.join("manifest.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "id": EXTENSION_ID,
+                "version": OLD_VERSION,
+                "installed_at": "2026-01-01T00:00:00Z"
+            }))
+            .expect("serialize old manifest"),
+        )
+        .expect("write old manifest");
+    }
+
+    fn snapshot_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+        let mut snapshot = BTreeMap::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(path) = pending.pop() {
+            for entry in std::fs::read_dir(&path).expect("read snapshot tree") {
+                let entry = entry.expect("read snapshot entry");
+                let path = entry.path();
+                let metadata = std::fs::symlink_metadata(&path).expect("snapshot metadata");
+                if metadata.is_dir() {
+                    pending.push(path);
+                } else {
+                    let relative = path
+                        .strip_prefix(root)
+                        .expect("snapshot path beneath root")
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    snapshot.insert(relative, std::fs::read(path).expect("snapshot file"));
+                }
+            }
+        }
+        snapshot
+    }
+
+    fn update_residues(root: &Path) -> Vec<String> {
+        std::fs::read_dir(root)
+            .expect("read managed root")
+            .map(|entry| {
+                entry
+                    .expect("managed root entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .filter(|name| name.contains(".sorng-update-"))
+            .collect()
+    }
+
+    fn assert_no_update_residues(root: &Path) {
+        let residues = update_residues(root);
+        assert!(residues.is_empty(), "unexpected residues: {residues:?}");
+    }
+
+    fn fixture() -> UpdateFixture {
+        let root = TestRoot::new();
+        let canonical = root.path().join(EXTENSION_ID);
+        write_installed_tree(&canonical);
+        let old_snapshot = snapshot_tree(&canonical);
+
+        let mut registry = MarketplaceRegistry::new();
+        registry
+            .add_listing(listing(NEW_VERSION))
+            .expect("add update listing");
+        registry.mark_installed(InstalledExtension {
+            listing_id: EXTENSION_ID.to_string(),
+            version: OLD_VERSION.to_string(),
+            installed_at: Utc::now(),
+            auto_update: true,
+            path: canonical.to_string_lossy().into_owned(),
+        });
+        let service = MarketplaceService {
+            registry,
+            ratings: RatingManager::new(),
+            config: MarketplaceConfig {
+                cache_directory: root.path().to_string_lossy().into_owned(),
+                ..MarketplaceConfig::default()
+            },
+        };
+
+        UpdateFixture {
+            root,
+            canonical,
+            service,
+            old_snapshot,
+        }
+    }
+
+    async fn assert_fault_rolls_back(fault: UpdateFault) {
+        let mut fixture = fixture();
+        let original_registry = fixture
+            .service
+            .registry
+            .installed
+            .get(EXTENSION_ID)
+            .expect("installed registry entry")
+            .clone();
+
+        let error = fixture
+            .service
+            .update_with_installer(
+                EXTENSION_ID,
+                move |installed, listing, dest_dir| async move {
+                    installer::update_extension_with_fault(
+                        &installed,
+                        &listing,
+                        &dest_dir,
+                        NEW_ARTEFACT,
+                        Some(fault),
+                    )
+                    .await
+                },
+            )
+            .await
+            .expect_err("injected update must fail");
+
+        assert!(error.to_string().contains("injected update failure"));
+        assert_eq!(snapshot_tree(&fixture.canonical), fixture.old_snapshot);
+        let registry_entry = fixture
+            .service
+            .registry
+            .installed
+            .get(EXTENSION_ID)
+            .expect("registry entry remains installed");
+        assert_eq!(registry_entry.version, original_registry.version);
+        assert_eq!(registry_entry.path, original_registry.path);
+        assert_eq!(registry_entry.installed_at, original_registry.installed_at);
+        assert_no_update_residues(fixture.root.path());
+    }
+
+    #[tokio::test]
+    async fn download_failure_preserves_old_install_and_registry() {
+        assert_fault_rolls_back(UpdateFault::Download).await;
+    }
+
+    #[tokio::test]
+    async fn materialize_write_failure_preserves_old_install_and_registry() {
+        assert_fault_rolls_back(UpdateFault::Materialize).await;
+    }
+
+    #[tokio::test]
+    async fn first_rename_failure_preserves_old_install_and_registry() {
+        assert_fault_rolls_back(UpdateFault::FirstRename).await;
+    }
+
+    #[tokio::test]
+    async fn second_rename_failure_restores_old_install_and_registry() {
+        assert_fault_rolls_back(UpdateFault::SecondRename).await;
+    }
+
+    #[tokio::test]
+    async fn cleanup_failure_restores_old_install_and_registry() {
+        assert_fault_rolls_back(UpdateFault::Cleanup).await;
+    }
+
+    #[tokio::test]
+    async fn successful_update_commits_new_bytes_registry_and_no_residues() {
+        let mut fixture = fixture();
+
+        let result = fixture
+            .service
+            .update_with_installer(EXTENSION_ID, |installed, listing, dest_dir| async move {
+                installer::update_extension_with_fault(
+                    &installed,
+                    &listing,
+                    &dest_dir,
+                    NEW_ARTEFACT,
+                    None,
+                )
+                .await
+            })
+            .await
+            .expect("atomic update succeeds");
+
+        assert!(result.success);
+        assert_eq!(
+            std::fs::read(fixture.canonical.join("extension.tar.gz")).expect("read new artefact"),
+            NEW_ARTEFACT
+        );
+        assert!(!fixture.canonical.join("runtime-state.bin").exists());
+        assert!(!fixture.canonical.join(".sorng-update-owner.json").exists());
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(fixture.canonical.join("manifest.json")).expect("read new manifest"),
+        )
+        .expect("parse new manifest");
+        assert_eq!(manifest["id"], EXTENSION_ID);
+        assert_eq!(manifest["version"], NEW_VERSION);
+        let registry_entry = fixture
+            .service
+            .registry
+            .installed
+            .get(EXTENSION_ID)
+            .expect("updated registry entry");
+        assert_eq!(registry_entry.version, NEW_VERSION);
+        assert_eq!(registry_entry.path, result.installed_path.unwrap());
+        assert_no_update_residues(fixture.root.path());
+    }
+
+    #[tokio::test]
+    async fn post_commit_cleanup_failure_keeps_new_registry_and_recovers_later() {
+        let mut fixture = fixture();
+
+        let result = fixture
+            .service
+            .update_with_installer(EXTENSION_ID, |installed, listing, dest_dir| async move {
+                installer::update_extension_with_fault(
+                    &installed,
+                    &listing,
+                    &dest_dir,
+                    NEW_ARTEFACT,
+                    Some(UpdateFault::PostCommitCleanup),
+                )
+                .await
+            })
+            .await
+            .expect("post-commit cleanup failure must not fail the committed update");
+
+        assert!(result.success);
+        let committed_snapshot = snapshot_tree(&fixture.canonical);
+        let committed_registry = fixture
+            .service
+            .registry
+            .installed
+            .get(EXTENSION_ID)
+            .expect("registry advanced after durable replacement")
+            .clone();
+        assert_eq!(committed_registry.version, NEW_VERSION);
+        let residues = update_residues(fixture.root.path());
+        assert_eq!(residues.len(), 1);
+        assert!(residues[0].ends_with(".obsolete"));
+
+        let error = fixture
+            .service
+            .update_with_installer(EXTENSION_ID, |installed, listing, dest_dir| async move {
+                installer::update_extension_with_fault(
+                    &installed,
+                    &listing,
+                    &dest_dir,
+                    NEW_ARTEFACT,
+                    Some(UpdateFault::Download),
+                )
+                .await
+            })
+            .await
+            .expect_err("download injection runs after obsolete recovery");
+
+        assert!(error.to_string().contains("injected update failure"));
+        assert_eq!(snapshot_tree(&fixture.canonical), committed_snapshot);
+        let registry_entry = fixture
+            .service
+            .registry
+            .installed
+            .get(EXTENSION_ID)
+            .expect("registry remains committed after later failure");
+        assert_eq!(registry_entry.version, committed_registry.version);
+        assert_eq!(registry_entry.path, committed_registry.path);
+        assert_eq!(registry_entry.installed_at, committed_registry.installed_at);
+        assert_no_update_residues(fixture.root.path());
+    }
+
+    #[tokio::test]
+    async fn committed_filesystem_repairs_registry_after_commit_boundary_crash() {
+        let mut fixture = fixture();
+        let installed = fixture
+            .service
+            .registry
+            .installed
+            .get(EXTENSION_ID)
+            .expect("old registry entry")
+            .clone();
+        let new_listing = fixture
+            .service
+            .registry
+            .get_listing(EXTENSION_ID)
+            .expect("new listing")
+            .clone();
+
+        installer::update_extension_with_fault(
+            &installed,
+            &new_listing,
+            fixture.root.path().to_str().expect("UTF-8 test directory"),
+            NEW_ARTEFACT,
+            Some(UpdateFault::PostCommitCleanup),
+        )
+        .await
+        .expect("filesystem replacement crossed the durable commit point");
+
+        assert_eq!(
+            fixture
+                .service
+                .registry
+                .installed
+                .get(EXTENSION_ID)
+                .expect("registry still reflects pre-crash state")
+                .version,
+            OLD_VERSION
+        );
+        let committed_snapshot = snapshot_tree(&fixture.canonical);
+        let residues = update_residues(fixture.root.path());
+        assert_eq!(residues.len(), 1);
+        assert!(residues[0].ends_with(".obsolete"));
+
+        let result = fixture
+            .service
+            .update_with_installer(EXTENSION_ID, |installed, listing, dest_dir| async move {
+                installer::update_extension_with_fault(
+                    &installed,
+                    &listing,
+                    &dest_dir,
+                    NEW_ARTEFACT,
+                    Some(UpdateFault::Download),
+                )
+                .await
+            })
+            .await
+            .expect("recovery reports the already committed replacement");
+
+        assert!(result.success);
+        assert_eq!(result.version, NEW_VERSION);
+        assert_eq!(snapshot_tree(&fixture.canonical), committed_snapshot);
+        assert_eq!(
+            fixture
+                .service
+                .registry
+                .installed
+                .get(EXTENSION_ID)
+                .expect("registry repaired after committed recovery")
+                .version,
+            NEW_VERSION
+        );
+        assert_no_update_residues(fixture.root.path());
+    }
+
+    #[tokio::test]
+    async fn interrupted_first_swap_is_recovered_before_download() {
+        let mut fixture = fixture();
+        let transaction = Uuid::new_v4();
+        let stem = format!(".{EXTENSION_ID}.sorng-update-{transaction}");
+        let backup = fixture.root.path().join(format!("{stem}.backup"));
+        let staging = fixture.root.path().join(format!("{stem}.staging"));
+        std::fs::rename(&fixture.canonical, &backup).expect("simulate first swap rename");
+        std::fs::create_dir(&staging).expect("create interrupted staging");
+        std::fs::write(
+            staging.join(".sorng-update-owner.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "extension_id": EXTENSION_ID,
+                "transaction_id": transaction.to_string()
+            }))
+            .expect("serialize staging owner"),
+        )
+        .expect("write staging owner");
+        std::fs::write(staging.join("extension.tar.gz"), NEW_ARTEFACT)
+            .expect("write interrupted artefact");
+
+        let error = fixture
+            .service
+            .update_with_installer(EXTENSION_ID, |installed, listing, dest_dir| async move {
+                installer::update_extension_with_fault(
+                    &installed,
+                    &listing,
+                    &dest_dir,
+                    NEW_ARTEFACT,
+                    Some(UpdateFault::Download),
+                )
+                .await
+            })
+            .await
+            .expect_err("injected download failure follows recovery");
+
+        assert!(error.to_string().contains("injected update failure"));
+        assert_eq!(snapshot_tree(&fixture.canonical), fixture.old_snapshot);
+        assert_eq!(
+            fixture
+                .service
+                .registry
+                .installed
+                .get(EXTENSION_ID)
+                .expect("registry remains old after recovery")
+                .version,
+            OLD_VERSION
+        );
+        assert_no_update_residues(fixture.root.path());
+    }
+
+    #[tokio::test]
+    async fn uuid_shaped_unowned_residues_fail_closed_and_are_preserved() {
+        for kind in ["staging", "obsolete"] {
+            let mut fixture = fixture();
+            let residue = fixture.root.path().join(format!(
+                ".{EXTENSION_ID}.sorng-update-{}.{kind}",
+                Uuid::new_v4()
+            ));
+            std::fs::create_dir(&residue).expect("create unowned residue");
+            std::fs::write(residue.join("extension.tar.gz"), b"unowned bytes")
+                .expect("write unowned residue artefact");
+            std::fs::write(
+                residue.join("manifest.json"),
+                std::fs::read(fixture.canonical.join("manifest.json")).expect("read old manifest"),
+            )
+            .expect("write unowned residue manifest");
+            let original_registry = fixture
+                .service
+                .registry
+                .installed
+                .get(EXTENSION_ID)
+                .expect("old registry entry")
+                .clone();
+
+            let error = fixture
+                .service
+                .update_with_installer(EXTENSION_ID, |installed, listing, dest_dir| async move {
+                    installer::update_extension_with_fault(
+                        &installed,
+                        &listing,
+                        &dest_dir,
+                        NEW_ARTEFACT,
+                        Some(UpdateFault::Download),
+                    )
+                    .await
+                })
+                .await
+                .expect_err("unowned reserved-looking residue must fail closed");
+
+            assert!(error.to_string().contains("update ownership marker"));
+            assert!(residue.exists(), "unowned {kind} residue must be preserved");
+            assert_eq!(snapshot_tree(&fixture.canonical), fixture.old_snapshot);
+            let registry_entry = fixture
+                .service
+                .registry
+                .installed
+                .get(EXTENSION_ID)
+                .expect("registry remains old");
+            assert_eq!(registry_entry.version, original_registry.version);
+            assert_eq!(registry_entry.path, original_registry.path);
+            assert_eq!(registry_entry.installed_at, original_registry.installed_at);
+        }
+    }
+
+    #[tokio::test]
+    async fn multiple_backups_fail_closed_without_mutation() {
+        let mut fixture = fixture();
+        for _ in 0..2 {
+            let transaction = Uuid::new_v4();
+            let backup = fixture
+                .root
+                .path()
+                .join(format!(".{EXTENSION_ID}.sorng-update-{transaction}.backup"));
+            std::fs::create_dir(&backup).expect("create preserved backup");
+            std::fs::write(backup.join("extension.tar.gz"), OLD_ARTEFACT)
+                .expect("write backup artefact");
+            std::fs::write(
+                backup.join("manifest.json"),
+                std::fs::read(fixture.canonical.join("manifest.json"))
+                    .expect("read canonical manifest"),
+            )
+            .expect("write backup manifest");
+        }
+        let before = snapshot_tree(&fixture.canonical);
+
+        let error = fixture
+            .service
+            .update_with_installer(EXTENSION_ID, |installed, listing, dest_dir| async move {
+                installer::update_extension_with_fault(
+                    &installed,
+                    &listing,
+                    &dest_dir,
+                    NEW_ARTEFACT,
+                    None,
+                )
+                .await
+            })
+            .await
+            .expect_err("ambiguous recovery must fail closed");
+
+        assert!(error.to_string().contains("multiple interrupted updates"));
+        assert_eq!(snapshot_tree(&fixture.canonical), before);
+        assert_eq!(
+            fixture
+                .service
+                .registry
+                .installed
+                .get(EXTENSION_ID)
+                .expect("registry remains installed")
+                .version,
+            OLD_VERSION
+        );
+        let backups = std::fs::read_dir(fixture.root.path())
+            .expect("read backups")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".backup"))
+            .count();
+        assert_eq!(backups, 2, "ambiguous backups must be preserved");
     }
 }
