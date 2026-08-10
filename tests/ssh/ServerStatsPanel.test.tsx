@@ -34,6 +34,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
     getInstance: () => ({
       getAllDatabases: vi.fn().mockResolvedValue([]),
       getCurrentDatabase: vi.fn().mockReturnValue(null),
+      registerBeforeDatabaseTransition: vi.fn(() => () => {}),
     }),
     resetInstance: vi.fn(),
   },
@@ -138,7 +139,9 @@ describe("ServerStatsPanel", () => {
   describe("Tab Navigation", () => {
     it("should render tab buttons", () => {
       renderPanel();
-      expect(screen.getByRole("tablist", { name: "Server stats tabs" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("tablist", { name: "Server stats tabs" }),
+      ).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "overview" })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "cpu" })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "memory" })).toBeInTheDocument();
@@ -160,7 +163,10 @@ describe("ServerStatsPanel", () => {
 
       fireEvent.keyDown(overviewTab, { key: "ArrowRight" });
 
-      expect(screen.getByRole("tab", { name: "cpu" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "cpu" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
     });
   });
 });
@@ -222,7 +228,12 @@ time_wait:7
 ===SORNG_STATS_END===`;
 
   it("should parse CPU stats", () => {
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.cpu.model).toBe("Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz");
     expect(snap.cpu.coreCount).toBe(4);
     expect(snap.cpu.loadAvg1).toBeCloseTo(0.45);
@@ -232,7 +243,12 @@ time_wait:7
   });
 
   it("should parse memory stats", () => {
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.memory.totalBytes).toBe(16384000 * 1024);
     expect(snap.memory.freeBytes).toBe(2048000 * 1024);
     expect(snap.memory.availableBytes).toBe(8192000 * 1024);
@@ -242,7 +258,12 @@ time_wait:7
   });
 
   it("should parse disk partitions", () => {
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.disk.partitions).toHaveLength(2);
     expect(snap.disk.partitions[0].mountPoint).toBe("/");
     expect(snap.disk.partitions[0].fsType).toBe("ext4");
@@ -251,14 +272,24 @@ time_wait:7
   });
 
   it("should parse disk I/O stats", () => {
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.disk.io).not.toBeNull();
     expect(snap.disk.io!.readBytes).toBeGreaterThan(0);
     expect(snap.disk.io!.writeBytes).toBeGreaterThan(0);
   });
 
   it("should parse system info", () => {
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.system.hostname).toBe("web-prod-01");
     expect(snap.system.kernelVersion).toBe("5.15.0-91-generic");
     expect(snap.system.architecture).toBe("x86_64");
@@ -269,7 +300,12 @@ time_wait:7
   });
 
   it("should parse firewall config", () => {
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.firewall.backend).toBe("ufw");
     expect(snap.firewall.active).toBe(true);
     expect(snap.firewall.rules.length).toBeGreaterThanOrEqual(3);
@@ -277,7 +313,12 @@ time_wait:7
   });
 
   it("should parse port monitor stats", () => {
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.ports.listeningPorts.length).toBeGreaterThanOrEqual(3);
     expect(snap.ports.establishedConnections).toBe(42);
     expect(snap.ports.timeWaitConnections).toBe(7);
@@ -289,7 +330,12 @@ time_wait:7
   });
 
   it("should report warnings for missing sections", () => {
-    const snap = parseServerStatsOutput("===SORNG_STATS_BEGIN===\n===SORNG_STATS_END===", "s1", "test", Date.now());
+    const snap = parseServerStatsOutput(
+      "===SORNG_STATS_BEGIN===\n===SORNG_STATS_END===",
+      "s1",
+      "test",
+      Date.now(),
+    );
     expect(snap.warnings.length).toBeGreaterThan(0);
     expect(snap.cpu.usagePercent).toBe(0);
     expect(snap.memory.totalBytes).toBe(0);
@@ -298,7 +344,12 @@ time_wait:7
 
   it("should include collection metadata", () => {
     const start = Date.now();
-    const snap = parseServerStatsOutput(SAMPLE_OUTPUT, "session-1", "TestServer", start);
+    const snap = parseServerStatsOutput(
+      SAMPLE_OUTPUT,
+      "session-1",
+      "TestServer",
+      start,
+    );
     expect(snap.sessionId).toBe("session-1");
     expect(snap.connectionName).toBe("TestServer");
     expect(snap.collectedAt).toBeDefined();
@@ -311,7 +362,12 @@ time_wait:7
 describe("buildStatsCollectionScript", () => {
   it("should include CPU section when enabled", () => {
     const opts: StatsCollectionOptions = {
-      cpu: true, memory: false, disk: false, system: false, firewall: false, ports: false,
+      cpu: true,
+      memory: false,
+      disk: false,
+      system: false,
+      firewall: false,
+      ports: false,
     };
     const script = buildStatsCollectionScript(opts);
     expect(script).toContain("===CPU_BEGIN===");
@@ -322,7 +378,12 @@ describe("buildStatsCollectionScript", () => {
 
   it("should include all sections when all enabled", () => {
     const opts: StatsCollectionOptions = {
-      cpu: true, memory: true, disk: true, system: true, firewall: true, ports: true,
+      cpu: true,
+      memory: true,
+      disk: true,
+      system: true,
+      firewall: true,
+      ports: true,
     };
     const script = buildStatsCollectionScript(opts);
     expect(script).toContain("===CPU_BEGIN===");
@@ -335,7 +396,12 @@ describe("buildStatsCollectionScript", () => {
 
   it("should include begin/end markers", () => {
     const opts: StatsCollectionOptions = {
-      cpu: true, memory: true, disk: true, system: true, firewall: true, ports: true,
+      cpu: true,
+      memory: true,
+      disk: true,
+      system: true,
+      firewall: true,
+      ports: true,
     };
     const script = buildStatsCollectionScript(opts);
     expect(script).toContain("===SORNG_STATS_BEGIN===");
@@ -344,7 +410,12 @@ describe("buildStatsCollectionScript", () => {
 
   it("should generate empty script body when nothing enabled", () => {
     const opts: StatsCollectionOptions = {
-      cpu: false, memory: false, disk: false, system: false, firewall: false, ports: false,
+      cpu: false,
+      memory: false,
+      disk: false,
+      system: false,
+      firewall: false,
+      ports: false,
     };
     const script = buildStatsCollectionScript(opts);
     expect(script).toContain("===SORNG_STATS_BEGIN===");
@@ -354,7 +425,12 @@ describe("buildStatsCollectionScript", () => {
 
   it("should use portable commands for cross-distro support", () => {
     const opts: StatsCollectionOptions = {
-      cpu: true, memory: true, disk: true, system: true, firewall: true, ports: true,
+      cpu: true,
+      memory: true,
+      disk: true,
+      system: true,
+      firewall: true,
+      ports: true,
     };
     const script = buildStatsCollectionScript(opts);
     // Should use /proc/meminfo (not free command which varies)

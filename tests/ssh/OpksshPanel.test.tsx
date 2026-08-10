@@ -59,6 +59,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
     getInstance: () => ({
       getAllDatabases: vi.fn().mockResolvedValue([]),
       getCurrentDatabase: vi.fn().mockReturnValue(null),
+      registerBeforeDatabaseTransition: vi.fn(() => () => {}),
     }),
     resetInstance: vi.fn(),
   },
@@ -157,8 +158,7 @@ const makeRuntimeStatus = (
   overrides: Partial<OpksshRuntimeStatus> = {},
 ): OpksshRuntimeStatus => {
   const cli =
-    (overrides.cli as OpksshBinaryStatus | undefined)
-    ?? makeBinaryStatus(true);
+    (overrides.cli as OpksshBinaryStatus | undefined) ?? makeBinaryStatus(true);
 
   return {
     mode: "auto",
@@ -170,7 +170,8 @@ const makeRuntimeStatus = (
       availability: "planned",
       version: null,
       path: null,
-      message: "The in-process OPKSSH library backend is not linked in this build.",
+      message:
+        "The in-process OPKSSH library backend is not linked in this build.",
     }),
     cli,
     message: cli.installed
@@ -198,13 +199,15 @@ const makeRolloutSignal = (runtime = makeRuntimeStatus()) => {
       preferredMode: runtime.mode,
       activeBackend: runtime.activeBackend,
       usingFallback: runtime.usingFallback,
-      fallbackReason: runtime.mode === "cli"
-        ? "CLI mode is explicitly selected for the current release-cycle fallback seam."
-        : runtime.message,
+      fallbackReason:
+        runtime.mode === "cli"
+          ? "CLI mode is explicitly selected for the current release-cycle fallback seam."
+          : runtime.message,
       cliRetirementDecision: "retain-cli-fallback",
-      cliRetirementMessage: runtime.mode === "cli"
-        ? "CLI retirement is deferred: this build is still running in explicit CLI mode for the current rollout seam."
-        : "CLI retirement is deferred: the wrapped contract is still running on CLI fallback, so keep it visible for at least one release cycle.",
+      cliRetirementMessage:
+        runtime.mode === "cli"
+          ? "CLI retirement is deferred: this build is still running in explicit CLI mode for the current rollout seam."
+          : "CLI retirement is deferred: the wrapped contract is still running on CLI fallback, so keep it visible for at least one release cycle.",
     };
   }
 
@@ -234,11 +237,13 @@ const makeKey = (overrides: Partial<OpksshKey> = {}): OpksshKey => ({
 });
 
 const makeStatus = (opts: Partial<OpksshStatus> = {}): OpksshStatus => ({
-  runtime: opts.runtime ?? makeRuntimeStatus({ cli: opts.binary ?? makeBinaryStatus() }),
+  runtime:
+    opts.runtime ??
+    makeRuntimeStatus({ cli: opts.binary ?? makeBinaryStatus() }),
   binary:
-    (opts.runtime as { cli?: OpksshBinaryStatus } | undefined)?.cli
-    ?? opts.binary
-    ?? makeBinaryStatus(),
+    (opts.runtime as { cli?: OpksshBinaryStatus } | undefined)?.cli ??
+    opts.binary ??
+    makeBinaryStatus(),
   activeKeys: [makeKey()],
   clientConfig: null,
   lastLogin: null,
@@ -365,7 +370,9 @@ const makeMgr = (overrides: Record<string, unknown> = {}) => {
     buildEnvString: vi.fn(),
     wellKnownProviders: [],
     refreshWellKnownProviders: vi.fn(),
-    sshSessions: mockSshSessions.filter((session) => session.protocol === "ssh"),
+    sshSessions: mockSshSessions.filter(
+      (session) => session.protocol === "ssh",
+    ),
     selectedSessionId: "session-1",
     setSelectedSessionId: vi.fn(),
     serverConfigs: {},
@@ -518,13 +525,17 @@ describe("OpksshPanel", () => {
       expect(screen.getByText("CLI fallback active")).toBeInTheDocument();
       expect(screen.getByText("Rollout mode: auto")).toBeInTheDocument();
       expect(
-        screen.getByText((_, element) =>
-          element?.textContent === "Fallback reason: Using CLI fallback until the in-process library backend is linked.",
+        screen.getByText(
+          (_, element) =>
+            element?.textContent ===
+            "Fallback reason: Using CLI fallback until the in-process library backend is linked.",
         ),
       ).toBeInTheDocument();
       expect(
-        screen.getByText((_, element) =>
-          element?.textContent === "CLI retirement: CLI retirement is deferred: the wrapped contract is still running on CLI fallback, so keep it visible for at least one release cycle.",
+        screen.getByText(
+          (_, element) =>
+            element?.textContent ===
+            "CLI retirement: CLI retirement is deferred: the wrapped contract is still running on CLI fallback, so keep it visible for at least one release cycle.",
         ),
       ).toBeInTheDocument();
       expect(
@@ -540,7 +551,11 @@ describe("OpksshPanel", () => {
         if (cmd === "opkssh_get_status")
           return Promise.resolve(
             makeStatus({
-              runtime: makeRuntimeStatus({ cli: binary, activeBackend: null, usingFallback: false }),
+              runtime: makeRuntimeStatus({
+                cli: binary,
+                activeBackend: null,
+                usingFallback: false,
+              }),
               binary,
               activeKeys: [],
             }),
@@ -599,7 +614,8 @@ describe("OpksshPanel", () => {
         canCancel: true,
         result: null,
         finishedAt: null,
-        message: "Using CLI fallback until the in-process library backend is linked.",
+        message:
+          "Using CLI fallback until the in-process library backend is linked.",
       });
       const completed = makeLoginOperation({
         id: started.id,
@@ -714,13 +730,17 @@ describe("OpksshPanel", () => {
 
         expect(screen.getByText("Rollout mode: cli")).toBeInTheDocument();
         expect(
-          screen.getByText((_, element) =>
-            element?.textContent === "Fallback reason: CLI mode is explicitly selected for the current release-cycle fallback seam.",
+          screen.getByText(
+            (_, element) =>
+              element?.textContent ===
+              "Fallback reason: CLI mode is explicitly selected for the current release-cycle fallback seam.",
           ),
         ).toBeInTheDocument();
         expect(
-          screen.getByText((_, element) =>
-            element?.textContent === "CLI retirement: CLI retirement is deferred: this build is still running in explicit CLI mode for the current rollout seam.",
+          screen.getByText(
+            (_, element) =>
+              element?.textContent ===
+              "CLI retirement: CLI retirement is deferred: this build is still running in explicit CLI mode for the current rollout seam.",
           ),
         ).toBeInTheDocument();
       } finally {
@@ -791,8 +811,8 @@ describe("OpksshPanel", () => {
       fireEvent.click(sessionSelect);
       // Select the empty placeholder option to deselect
       const placeholders = screen.getAllByRole("option");
-      const emptyOption = placeholders.find(
-        (el) => el.textContent?.match(/select session|opkssh\.selectSession/i),
+      const emptyOption = placeholders.find((el) =>
+        el.textContent?.match(/select session|opkssh\.selectSession/i),
       );
       if (emptyOption) {
         fireEvent.mouseDown(emptyOption);

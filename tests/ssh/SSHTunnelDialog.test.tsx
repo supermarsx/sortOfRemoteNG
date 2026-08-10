@@ -19,6 +19,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
     getInstance: () => ({
       getAllDatabases: vi.fn().mockResolvedValue([]),
       getCurrentDatabase: vi.fn().mockReturnValue(null),
+      registerBeforeDatabaseTransition: vi.fn(() => () => {}),
     }),
     resetInstance: vi.fn(),
   },
@@ -72,7 +73,9 @@ describe("SSHTunnelDialog", () => {
       />,
     );
 
-    expect(screen.getByText("Tunnel Name", { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText("Tunnel Name", { exact: false }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByText("Cancel"));
 
     expect(onClose).toHaveBeenCalledTimes(1);
