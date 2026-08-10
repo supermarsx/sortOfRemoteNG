@@ -56,7 +56,8 @@ pub enum VncFrontendEvent {
 
 /// Preserve the registered stats command name while extending its app-facing
 /// response with a bounded drain of native session events. The underlying VNC
-/// queue is bounded to two events and `max_events` is clamped again here.
+/// delivery state is bounded and coalesced; the app-facing drain is clamped to
+/// two events here so control and framebuffer progress remain balanced.
 #[tauri::command]
 pub async fn get_vnc_session_stats(
     state: tauri::State<'_, service::VncServiceState>,
@@ -64,12 +65,8 @@ pub async fn get_vnc_session_stats(
     max_events: Option<usize>,
 ) -> Result<VncFrontendPoll, String> {
     let mut svc = state.lock().await;
-    let stats = svc
-        .get_session_stats(&session_id)
-        .await
-        .map_err(|error| error.message)?;
-    let drained = svc
-        .drain_events(&session_id, max_events.unwrap_or(2).clamp(1, 2))
+    let (stats, drained) = svc
+        .poll_session_stats_and_events(&session_id, max_events.unwrap_or(2).clamp(1, 2))
         .await
         .map_err(|error| error.message)?;
     let mut events = Vec::with_capacity(drained.len());

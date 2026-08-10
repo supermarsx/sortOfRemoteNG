@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod commands;
+mod delivery;
 pub mod encoding;
 pub mod protocol;
 pub mod service;

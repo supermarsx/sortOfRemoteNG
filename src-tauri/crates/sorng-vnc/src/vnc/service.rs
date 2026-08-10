@@ -8,7 +8,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use zeroize::Zeroize;
 
-use crate::vnc::session::{frame_to_event, SessionCommand, SessionEvent, VncSessionHandle};
+use crate::vnc::session::{
+    frame_to_event, SessionCommand, SessionEvent, SharedSessionState, VncSessionHandle,
+};
 use crate::vnc::types::*;
 
 /// Thread-safe wrapper for the VNC service state (used as Tauri managed state).
@@ -17,6 +19,22 @@ pub type VncServiceState = Arc<Mutex<VncService>>;
 /// Multi-session VNC service.
 pub struct VncService {
     sessions: HashMap<String, VncSessionHandle>,
+}
+
+fn session_stats(session: &VncSessionHandle, state: &SharedSessionState) -> VncStats {
+    VncStats {
+        session_id: session.id.clone(),
+        bytes_sent: state.bytes_sent,
+        bytes_received: state.bytes_received,
+        frame_count: state.frame_count,
+        connected_at: state.last_activity.clone(),
+        last_activity: state.last_activity.clone(),
+        uptime_secs: 0,
+        framebuffer_width: state.framebuffer_width,
+        framebuffer_height: state.framebuffer_height,
+        pixel_format: format!("{}", state.pixel_format),
+        encoding: String::new(),
+    }
 }
 
 impl VncService {
@@ -190,9 +208,7 @@ impl VncService {
             .sessions
             .get(session_id)
             .ok_or_else(|| VncError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::RequestUpdate { incremental })
-            .await
+        session.request_update_after_render(incremental).await
     }
 
     /// Set the pixel format for a session.
@@ -289,19 +305,30 @@ impl VncService {
 
         let st = session.state.lock().await;
 
-        Ok(VncStats {
-            session_id: session.id.clone(),
-            bytes_sent: st.bytes_sent,
-            bytes_received: st.bytes_received,
-            frame_count: st.frame_count,
-            connected_at: st.last_activity.clone(),
-            last_activity: st.last_activity.clone(),
-            uptime_secs: 0, // Could be computed from connected_at.
-            framebuffer_width: st.framebuffer_width,
-            framebuffer_height: st.framebuffer_height,
-            pixel_format: format!("{}", st.pixel_format),
-            encoding: String::new(),
-        })
+        Ok(session_stats(session, &st))
+    }
+
+    /// Atomically pair the stats snapshot with its bounded native event drain.
+    /// The state -> delivery lock order matches framebuffer resize commit.
+    pub async fn poll_session_stats_and_events(
+        &mut self,
+        session_id: &str,
+        max: usize,
+    ) -> Result<(VncStats, Vec<SessionEvent>), VncError> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| VncError::session_not_found(session_id))?;
+        let state = Arc::clone(&session.state);
+        let state = state.lock().await;
+        let stats = session_stats(session, &state);
+        let limit = if max == 0 {
+            MAX_VNC_DRAIN_EVENTS
+        } else {
+            max.min(MAX_VNC_DRAIN_EVENTS)
+        };
+        let events = session.events.drain(limit)?;
+        Ok((stats, events))
     }
 
     /// List all active session IDs.
@@ -348,37 +375,28 @@ impl VncService {
             .get_mut(session_id)
             .ok_or_else(|| VncError::session_not_found(session_id))?;
 
-        let mut events = Vec::new();
         let limit = if max == 0 {
             MAX_VNC_DRAIN_EVENTS
         } else {
             max.min(MAX_VNC_DRAIN_EVENTS)
         };
-        for _ in 0..limit {
-            match session.event_rx.try_recv() {
-                Ok(ev) => events.push(ev),
-                Err(_) => break,
-            }
-        }
-
-        Ok(events)
+        session.events.drain(limit)
     }
 
     /// Collect frame events and convert them to Tauri event payloads.
     pub async fn collect_frame_events(
         &mut self,
         session_id: &str,
-        max: usize,
+        _max: usize,
     ) -> Result<Vec<VncFrameEvent>, VncError> {
-        let frame_limit = if max == 0 { 1 } else { max.min(1) };
-        let events = self.drain_events(session_id, frame_limit).await?;
-        let mut frames = Vec::new();
-        for ev in events {
-            if let SessionEvent::Frame(rect) = ev {
-                frames.push(frame_to_event(session_id, rect)?);
-            }
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| VncError::session_not_found(session_id))?;
+        if let Some(rect) = session.events.drain_frame_only()? {
+            return Ok(vec![frame_to_event(session_id, rect)?]);
         }
-        Ok(frames)
+        Ok(Vec::new())
     }
 
     /// Prune disconnected sessions from the map.
@@ -406,6 +424,116 @@ impl Default for VncService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn poll_test_state() -> crate::vnc::session::SharedState {
+        Arc::new(Mutex::new(SharedSessionState {
+            connected: true,
+            terminated: false,
+            framebuffer_width: 1,
+            framebuffer_height: 1,
+            pixel_format: PixelFormat::rgba32(),
+            server_name: "test".into(),
+            protocol_version: "3.8".into(),
+            security_type: "None".into(),
+            bytes_sent: 0,
+            bytes_received: 0,
+            frame_count: 0,
+            last_activity: String::new(),
+        }))
+    }
+
+    #[tokio::test]
+    async fn atomic_poll_cannot_pair_old_stats_with_committed_resize_frame() {
+        let session_id = "atomic-poll".to_string();
+        let state = poll_test_state();
+        let (handle, delivery) =
+            VncSessionHandle::test_handle(session_id.clone(), Arc::clone(&state), 1, 1).unwrap();
+        let mut service = VncService::new();
+        service.sessions.insert(session_id.clone(), handle);
+        let service = Arc::new(Mutex::new(service));
+
+        delivery.begin_framebuffer_update().unwrap();
+        delivery.resize_framebuffer(2, 1).unwrap();
+        delivery
+            .apply_frame(crate::vnc::encoding::DecodedRect {
+                x: 1,
+                y: 0,
+                width: 1,
+                height: 1,
+                source_x: None,
+                source_y: None,
+                pixels: vec![9, 8, 7, 255],
+            })
+            .unwrap();
+
+        let held_state = state.lock().await;
+        let poll_service = Arc::clone(&service);
+        let poll_id = session_id.clone();
+        let poll = tokio::spawn(async move {
+            poll_service
+                .lock()
+                .await
+                .poll_session_stats_and_events(&poll_id, 2)
+                .await
+        });
+        for _ in 0..100 {
+            if service.try_lock().is_err() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            service.try_lock().is_err(),
+            "poll did not acquire the service lock"
+        );
+
+        let commit_state = Arc::clone(&state);
+        let commit_delivery = delivery.clone();
+        let commit = tokio::spawn(async move {
+            let mut state = commit_state.lock().await;
+            state.framebuffer_width = 2;
+            state.framebuffer_height = 1;
+            commit_delivery.finish_framebuffer_update().unwrap();
+            drop(state);
+            commit_delivery
+                .publish_control(SessionEvent::Resize {
+                    width: 2,
+                    height: 1,
+                })
+                .unwrap();
+        });
+        tokio::task::yield_now().await;
+        drop(held_state);
+
+        let (old_stats, old_events) = poll.await.unwrap().unwrap();
+        assert_eq!(
+            (old_stats.framebuffer_width, old_stats.framebuffer_height),
+            (1, 1)
+        );
+        assert!(old_events.is_empty());
+        commit.await.unwrap();
+
+        let (new_stats, new_events) = service
+            .lock()
+            .await
+            .poll_session_stats_and_events(&session_id, 2)
+            .await
+            .unwrap();
+        assert_eq!(
+            (new_stats.framebuffer_width, new_stats.framebuffer_height),
+            (2, 1)
+        );
+        assert!(new_events.iter().any(|event| matches!(
+            event,
+            SessionEvent::Resize {
+                width: 2,
+                height: 1
+            }
+        )));
+        assert!(new_events
+            .iter()
+            .any(|event| matches!(event, SessionEvent::Frame(_))));
+    }
 
     #[test]
     fn new_service_is_empty() {
