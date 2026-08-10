@@ -4,11 +4,6 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tauriManagedDev = process.env.SORNG_TAURI_MANAGED_DEV === "1";
 
-// The novnc npm package ships a broken static import in
-// core/input/keyboard.js → ../../app/ui.js which does not exist in
-// the published package.  We stub it out so the bundler can resolve it.
-const novncStub = path.join(__dirname, "src", "stubs", "novnc-ui.js");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Browser and Tauri development may intentionally run together on different
@@ -25,13 +20,6 @@ const nextConfig = {
     // not walk up through nested git worktrees / lockfiles when inferring
     // the root. Silences the "multiple lockfiles" warning in CI.
     root: __dirname,
-    resolveAlias: {
-      "../../app/ui.js": "./src/stubs/novnc-ui.js",
-    },
-  },
-  webpack: (config) => {
-    config.resolve.alias["../../app/ui.js"] = novncStub;
-    return config;
   },
 };
 

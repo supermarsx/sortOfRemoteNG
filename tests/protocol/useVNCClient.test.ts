@@ -32,11 +32,6 @@ vi.mock("../../src/utils/core/debugLogger", () => ({
   debugLog: vi.fn(),
 }));
 
-// Mock noVNC import to always fail.
-vi.mock("novnc/core/rfb", () => {
-  throw new Error("noVNC not available in test");
-});
-
 import { useVNCClient } from "../../src/hooks/protocol/useVNCClient";
 import type { ConnectionSession } from "../../src/types/connection/connection";
 import type { VNCSettings } from "../../src/hooks/protocol/useVNCClient";

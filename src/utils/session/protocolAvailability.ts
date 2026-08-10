@@ -116,10 +116,10 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     classification: "fully-interactive",
     sessionEntry: "client-owned",
     frontendPath: "src/components/protocol/VNCClient.tsx",
-    backendPath: null,
-    testPath: "tests/session/SessionViewer.test.tsx",
+    backendPath: "src-tauri/crates/sorng-vnc",
+    testPath: "tests/protocol/useVNCClient.test.ts",
     detail:
-      "The noVNC client is interactive for WebSocket-capable VNC endpoints; it does not create a native TCP-to-WebSocket bridge.",
+      "The saved connection owns a native TCP/RFB session, framebuffer delivery, input, clipboard, reconnect, and disconnect lifecycle.",
   }),
   anydesk: capability({
     label: "AnyDesk",

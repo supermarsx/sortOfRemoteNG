@@ -49,7 +49,7 @@ The current direct-session behavior is:
 | ARD, Telnet, or Serial      | Opens the dedicated client when the imported record contains enough settings. Serial still needs a valid local device path, driver, and OS permission on this computer. |
 | SFTP, MySQL/MariaDB, or SMB | Opens the saved file/query client. Recheck authentication, initial path/database/share, and server reachability.                                                        |
 | AnyDesk or RustDesk         | Hands off to the installed native application; importing an ID does not install that client.                                                                            |
-| VNC                         | Requires a WebSocket-capable VNC endpoint or compatible proxy; a conventional raw-RFB TCP endpoint is not bridged by the app.                                           |
+| VNC                         | Opens the native TCP/RFB client. Recheck the target port, credentials, and any explicitly enabled legacy-security exceptions.                                           |
 | FTP or SCP                  | Preserved as recognized connection types, but no direct interactive tab is wired yet. Prefer SFTP where possible.                                                       |
 
 Imports never prove that a live target is available. Test a small sample with non-production credentials and verify any driver, native client, proxy, certificate, or host-key requirement before applying a bulk migration.

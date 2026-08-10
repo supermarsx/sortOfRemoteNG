@@ -138,6 +138,16 @@ describe("protocol availability contract", () => {
     );
   });
 
+  it("records VNC as a native TCP/RFB runtime", () => {
+    const availability = BUILT_IN_PROTOCOL_AVAILABILITY.vnc;
+
+    expect(availability.backendPath).toBe("src-tauri/crates/sorng-vnc");
+    expect(availability.testPath).toBe("tests/protocol/useVNCClient.test.ts");
+    expect(availability.detail).toBe(
+      "The saved connection owns a native TCP/RFB session, framebuffer delivery, input, clipboard, reconnect, and disconnect lifecycle.",
+    );
+  });
+
   it("routes every Quick Connect choice through a real client", () => {
     for (const protocol of ["rdp", "ssh", "vnc", "http", "https", "telnet"]) {
       expect(getProtocolAvailability(protocol)?.sessionEntry, protocol).toBe(
