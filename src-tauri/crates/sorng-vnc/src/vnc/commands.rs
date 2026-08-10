@@ -157,6 +157,35 @@ pub async fn request_vnc_update(
         .map_err(|e| e.message)
 }
 
+/// Replace the renderer activity authority only when `activity_generation` is
+/// strictly newer than the native generation. The authoritative result is
+/// returned even when a stale/equal request is rejected.
+#[tauri::command]
+pub async fn set_vnc_session_activity(
+    state: tauri::State<'_, VncServiceState>,
+    session_id: String,
+    active: bool,
+    activity_generation: u64,
+) -> Result<VncActivityResult, String> {
+    let svc = state.lock().await;
+    svc.set_session_activity(&session_id, active, activity_generation)
+        .map_err(|error| error.message)
+}
+
+/// Acknowledge exactly the in-flight frame identified by its renderer epoch
+/// and opaque frame token. Logical stale/wrong ACKs return `accepted: false`.
+#[tauri::command]
+pub async fn acknowledge_vnc_frame(
+    state: tauri::State<'_, VncServiceState>,
+    session_id: String,
+    delivery_epoch: u64,
+    frame_token: u64,
+) -> Result<VncFrameAckResult, String> {
+    let svc = state.lock().await;
+    svc.acknowledge_frame(&session_id, delivery_epoch, frame_token)
+        .map_err(|error| error.message)
+}
+
 #[tauri::command]
 pub async fn set_vnc_pixel_format(
     state: tauri::State<'_, VncServiceState>,

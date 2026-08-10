@@ -102,8 +102,33 @@ async fn vnc_connect_list_disconnect_golden_path() {
     assert_eq!(info.port, port);
     eprintln!(
         "t3-e7 VNC: session {} host={}:{} fb={}x{} proto={:?}",
-        info.id, info.host, info.port, info.framebuffer_width, info.framebuffer_height, info.protocol_version,
+        info.id,
+        info.host,
+        info.port,
+        info.framebuffer_width,
+        info.framebuffer_height,
+        info.protocol_version,
     );
+
+    // ── renderer suspension / replacement ownership ───────────────
+    let inactive = svc
+        .set_session_activity(&session_id, false, 1)
+        .expect("newer inactive ownership should be accepted");
+    assert!(inactive.accepted);
+    assert!(!inactive.active);
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        svc.is_connected(&session_id).await,
+        "renderer suspension must preserve the TCP/RFB actor"
+    );
+
+    let replacement = svc
+        .set_session_activity(&session_id, true, 2)
+        .expect("replacement renderer should claim a newer generation");
+    assert!(replacement.accepted);
+    assert!(replacement.active);
+    assert!(replacement.refresh_queued);
+    assert!(replacement.delivery_epoch > inactive.delivery_epoch);
 
     // ── disconnect ─────────────────────────────────────────────────
     svc.disconnect(&session_id)

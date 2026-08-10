@@ -177,6 +177,8 @@ pub fn is_command(command: &str) -> bool {
             | "send_vnc_pointer_event"
             | "send_vnc_clipboard"
             | "request_vnc_update"
+            | "set_vnc_session_activity"
+            | "acknowledge_vnc_frame"
             | "set_vnc_pixel_format"
             | "prune_vnc_sessions"
             | "get_vnc_session_count"
@@ -1550,6 +1552,8 @@ define_command_group!(
         vnc_commands::send_vnc_pointer_event,
         vnc_commands::send_vnc_clipboard,
         vnc_commands::request_vnc_update,
+        vnc_commands::set_vnc_session_activity,
+        vnc_commands::acknowledge_vnc_frame,
         vnc_commands::set_vnc_pixel_format,
         vnc_commands::prune_vnc_sessions,
         vnc_commands::get_vnc_session_count,
@@ -2838,6 +2842,17 @@ mod tests {
     fn runtime_capabilities_are_always_recognized_and_registered() {
         assert!(is_command("get_runtime_capabilities"));
         assert!(GROUP_A_COMMANDS.contains(&"get_runtime_capabilities"));
+    }
+
+    #[test]
+    fn vnc_activity_and_ack_commands_are_recognized_and_registered() {
+        for command in ["set_vnc_session_activity", "acknowledge_vnc_frame"] {
+            assert!(is_command(command), "{command} is not publicly recognized");
+            assert!(
+                GROUP_J_COMMANDS.contains(&command),
+                "{command} is not registered in the VNC command group"
+            );
+        }
     }
 
     #[test]

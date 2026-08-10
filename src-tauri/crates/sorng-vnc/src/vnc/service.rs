@@ -208,7 +208,36 @@ impl VncService {
             .sessions
             .get(session_id)
             .ok_or_else(|| VncError::session_not_found(session_id))?;
-        session.request_update_after_render(incremental).await
+        session.request_update(incremental).await
+    }
+
+    /// Replace renderer activity authority for one session when the supplied
+    /// generation is strictly newer than native state.
+    pub fn set_session_activity(
+        &self,
+        session_id: &str,
+        active: bool,
+        activity_generation: u64,
+    ) -> Result<VncActivityResult, VncError> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| VncError::session_not_found(session_id))?;
+        session.set_activity(active, activity_generation)
+    }
+
+    /// Acknowledge exactly one epoch-and-token renderer tile.
+    pub fn acknowledge_frame(
+        &self,
+        session_id: &str,
+        delivery_epoch: u64,
+        frame_token: u64,
+    ) -> Result<VncFrameAckResult, VncError> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| VncError::session_not_found(session_id))?;
+        session.acknowledge_frame(delivery_epoch, frame_token)
     }
 
     /// Set the pixel format for a session.

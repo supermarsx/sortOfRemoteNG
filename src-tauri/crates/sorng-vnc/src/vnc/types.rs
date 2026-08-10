@@ -21,6 +21,9 @@ pub const MAX_VNC_SESSIONS: usize = 2;
 pub const MAX_VNC_DRAIN_EVENTS: usize = 8;
 pub const MAX_VNC_COMMAND_QUEUE: usize = 32;
 pub const MAX_VNC_EVENT_QUEUE: usize = 2;
+/// Largest activity generation that round-trips losslessly through a
+/// JavaScript `number` on the Tauri JSON boundary.
+pub const MAX_VNC_ACTIVITY_GENERATION: u64 = 9_007_199_254_740_991;
 
 // ── RFB Protocol Version ────────────────────────────────────────────────
 
@@ -732,6 +735,11 @@ impl VncSession {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VncFrameEvent {
     pub session_id: String,
+    /// Renderer ownership epoch. A frame may only be acknowledged while this
+    /// exactly matches the session's current delivery epoch.
+    pub delivery_epoch: u64,
+    /// Opaque token for this one in-flight renderer tile.
+    pub frame_token: u64,
     /// Base64-encoded raw pixel data (RGBA).
     pub data: String,
     pub x: u16,
@@ -744,6 +752,31 @@ pub struct VncFrameEvent {
     /// CopyRect source Y coordinate; absent for pixel-bearing frames.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_y: Option<u16>,
+}
+
+/// Authoritative result of a generation-aware renderer activity claim.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VncActivityResult {
+    pub session_id: String,
+    pub active: bool,
+    pub activity_generation: u64,
+    pub delivery_epoch: u64,
+    pub accepted: bool,
+    /// True only when this claim created a new renderer epoch and ensured one
+    /// coalesced non-incremental refresh for it.
+    pub refresh_queued: bool,
+}
+
+/// Result of acknowledging one renderer-delivered framebuffer tile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VncFrameAckResult {
+    pub session_id: String,
+    pub accepted: bool,
+    pub active: bool,
+    pub activity_generation: u64,
+    pub delivery_epoch: u64,
 }
 
 /// Bell event (server requests attention).
@@ -1131,6 +1164,8 @@ mod tests {
     fn frame_event_serde() {
         let ev = VncFrameEvent {
             session_id: "x".into(),
+            delivery_epoch: 2,
+            frame_token: 9,
             data: "AAAA".into(),
             x: 0,
             y: 0,
@@ -1140,8 +1175,45 @@ mod tests {
             source_y: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains("\"delivery_epoch\":2"));
+        assert!(json.contains("\"frame_token\":9"));
         let de: VncFrameEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(de.width, 100);
+    }
+
+    #[test]
+    fn activity_result_uses_frozen_camel_case_contract() {
+        let result = VncActivityResult {
+            session_id: "session".into(),
+            active: true,
+            activity_generation: 4,
+            delivery_epoch: 7,
+            accepted: true,
+            refresh_queued: true,
+        };
+        let json = serde_json::to_value(result).unwrap();
+        assert_eq!(json["sessionId"], "session");
+        assert_eq!(json["activityGeneration"], 4);
+        assert_eq!(json["deliveryEpoch"], 7);
+        assert_eq!(json["refreshQueued"], true);
+        assert!(json.get("activity_generation").is_none());
+    }
+
+    #[test]
+    fn frame_ack_result_uses_frozen_camel_case_contract() {
+        let result = VncFrameAckResult {
+            session_id: "session".into(),
+            accepted: false,
+            active: false,
+            activity_generation: 8,
+            delivery_epoch: 3,
+        };
+        let json = serde_json::to_value(result).unwrap();
+        assert_eq!(json["sessionId"], "session");
+        assert_eq!(json["accepted"], false);
+        assert_eq!(json["activityGeneration"], 8);
+        assert_eq!(json["deliveryEpoch"], 3);
+        assert!(json.get("delivery_epoch").is_none());
     }
 
     #[test]

@@ -10,7 +10,7 @@ use std::sync::{
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 use zeroize::{Zeroize, Zeroizing};
@@ -40,6 +40,18 @@ async fn read_exact_with_timeout(
         .map_err(|_| VncError::timeout("VNC read timed out"))?
         .map(|_| ())
         .map_err(VncError::from)
+}
+
+/// Wait for the first byte of the next RFB server message without treating a
+/// legally idle desktop as a dead connection. Once framing starts, the
+/// existing bounded body deadlines still apply.
+async fn read_server_message_type(reader: &mut (impl AsyncRead + Unpin)) -> Result<u8, VncError> {
+    let mut message_type = [0u8; 1];
+    reader
+        .read_exact(&mut message_type)
+        .await
+        .map_err(VncError::from)?;
+    Ok(message_type[0])
 }
 
 async fn write_all_with_timeout(
@@ -73,27 +85,33 @@ async fn write_all_or_terminal(
         .map_err(|error| publish_writer_error(delivery, operation, error))
 }
 
-async fn write_periodic_update(
+async fn write_scheduled_update(
     writer: &mut (impl AsyncWrite + Unpin),
     delivery: &VncEventSender,
     width: u16,
     height: u16,
-) -> Result<usize, VncError> {
-    let reservation = delivery
+) -> Result<Option<usize>, VncError> {
+    let Some(mut reservation) = delivery
         .reserve_update_request(true)
-        .map_err(|error| publish_writer_error(delivery, "periodic refresh reservation", error))?;
+        .map_err(|error| publish_writer_error(delivery, "scheduled refresh reservation", error))?
+    else {
+        return Ok(None);
+    };
     let request = protocol::build_fb_update_request(reservation.incremental(), 0, 0, width, height);
+    reservation
+        .activate()
+        .map_err(|error| publish_writer_error(delivery, "refresh write activation", error))?;
     write_all_or_terminal(
         writer,
         &request,
         delivery,
-        "periodic framebuffer request write",
+        "scheduled framebuffer request write",
     )
     .await?;
     reservation
         .commit()
         .map_err(|error| publish_writer_error(delivery, "refresh reservation commit", error))?;
-    Ok(request.len())
+    Ok(Some(request.len()))
 }
 
 fn checked_payload_len(
@@ -128,7 +146,6 @@ pub enum SessionCommand {
     ClientCutText(String),
     /// Request a full or incremental framebuffer update.
     RequestUpdate {
-        incremental: bool,
         reservation: Option<RefreshRequestReservation>,
     },
     /// Set the client pixel format.
@@ -140,10 +157,18 @@ pub enum SessionCommand {
 }
 
 /// Events sent from the session task to the service.
+#[derive(Clone, Debug)]
+pub struct DeliveredFrame {
+    pub rect: DecodedRect,
+    pub delivery_epoch: u64,
+    pub frame_token: u64,
+}
+
+/// Events sent from the session task to the service.
 #[derive(Debug)]
 pub enum SessionEvent {
     /// Decoded framebuffer rectangle.
-    Frame(DecodedRect),
+    Frame(DeliveredFrame),
     /// Server sent Bell.
     Bell,
     /// Server sent clipboard text.
@@ -193,18 +218,17 @@ pub struct SharedSessionState {
 pub type SharedState = Arc<Mutex<SharedSessionState>>;
 type HandshakeSignal = Arc<Mutex<Option<oneshot::Sender<Result<(), VncError>>>>>;
 
-async fn enqueue_rendered_update(
+async fn enqueue_update_request(
     delivery: &VncEventSender,
     command_tx: &mpsc::Sender<SessionCommand>,
     requested_incremental: bool,
 ) -> Result<(), VncError> {
-    delivery.acknowledge_rendered_tile()?;
-    let reservation = delivery.reserve_update_request(requested_incremental)?;
-    let incremental = reservation.incremental();
+    let Some(reservation) = delivery.reserve_update_request(requested_incremental)? else {
+        return Ok(());
+    };
     timeout(
         COMMAND_SEND_TIMEOUT,
         command_tx.send(SessionCommand::RequestUpdate {
-            incremental,
             reservation: Some(reservation),
         }),
     )
@@ -361,13 +385,28 @@ impl VncSessionHandle {
         self.send_command(SessionCommand::Disconnect).await
     }
 
-    /// A request issued after the renderer drains and draws a tile is the only
-    /// command path allowed to acknowledge that tile.
-    pub(crate) async fn request_update_after_render(
+    /// Queue one generic/manual refresh request. This never acknowledges a
+    /// renderer tile; duplicate floods are coalesced by native wire credit.
+    pub(crate) async fn request_update(&self, requested_incremental: bool) -> Result<(), VncError> {
+        enqueue_update_request(&self.delivery, &self.cmd_tx, requested_incremental).await
+    }
+
+    pub(crate) fn set_activity(
         &self,
-        requested_incremental: bool,
-    ) -> Result<(), VncError> {
-        enqueue_rendered_update(&self.delivery, &self.cmd_tx, requested_incremental).await
+        active: bool,
+        activity_generation: u64,
+    ) -> Result<VncActivityResult, VncError> {
+        self.delivery
+            .set_activity(&self.id, active, activity_generation)
+    }
+
+    pub(crate) fn acknowledge_frame(
+        &self,
+        delivery_epoch: u64,
+        frame_token: u64,
+    ) -> Result<VncFrameAckResult, VncError> {
+        self.delivery
+            .acknowledge_rendered_tile(&self.id, delivery_epoch, frame_token)
     }
 
     #[cfg(test)]
@@ -788,8 +827,14 @@ async fn session_task(
 
     // ── 6. Initial full framebuffer request ─────────────────────────
 
-    let fbr = protocol::build_fb_update_request(false, 0, 0, fb_width, fb_height);
+    let mut initial_request = event_tx.reserve_update_request(false)?.ok_or_else(|| {
+        VncError::new(VncErrorKind::Internal, "Initial VNC refresh was coalesced")
+    })?;
+    let fbr =
+        protocol::build_fb_update_request(initial_request.incremental(), 0, 0, fb_width, fb_height);
+    initial_request.activate()?;
     write_all_with_timeout(&mut stream, &fbr, HANDSHAKE_IO_TIMEOUT).await?;
+    initial_request.commit()?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += fbr.len() as u64;
@@ -809,7 +854,6 @@ async fn session_task(
 
     // ── 7. Main event loop ──────────────────────────────────────────
 
-    let update_interval = Duration::from_millis(config.update_interval_ms.max(10));
     let keepalive_interval = if config.keepalive_interval_secs > 0 {
         Some(Duration::from_secs(config.keepalive_interval_secs))
     } else {
@@ -820,17 +864,24 @@ async fn session_task(
     let writer = Arc::new(Mutex::new(writer));
     let writer_cmd = writer.clone();
     let local_shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_notify = Arc::new(Notify::new());
 
-    // Periodic full-screen update request.
+    // Event-driven framebuffer request scheduler. A response completion,
+    // renderer ownership claim, dropped reservation, or detected gap provides
+    // one coalesced wake edge; inactive/idle sessions have no high-rate timer.
     let writer_update = writer.clone();
     let state_update = state.clone();
     let update_delivery = event_tx.clone();
     let update_local_shutdown = local_shutdown.clone();
+    let update_shutdown_notify = shutdown_notify.clone();
+    let update_request_notify = event_tx.refresh_notifier();
     let update_task = {
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(update_interval);
             loop {
-                interval.tick().await;
+                update_request_notify.notified().await;
+                if update_local_shutdown.load(Ordering::Acquire) {
+                    break;
+                }
                 let (fb_w, fb_h) = {
                     let st = state_update.lock().await;
                     if !st.connected {
@@ -840,10 +891,15 @@ async fn session_task(
                 };
                 let mut w = writer_update.lock().await;
                 let written =
-                    match write_periodic_update(&mut *w, &update_delivery, fb_w, fb_h).await {
-                        Ok(written) => written,
+                    match write_scheduled_update(&mut *w, &update_delivery, fb_w, fb_h).await {
+                        Ok(Some(written)) => written,
+                        Ok(None) => {
+                            drop(w);
+                            continue;
+                        }
                         Err(_) => {
                             update_local_shutdown.store(true, Ordering::Release);
+                            update_shutdown_notify.notify_one();
                             let _ = timeout(SESSION_IO_TIMEOUT, w.shutdown()).await;
                             drop(w);
                             let mut st = state_update.lock().await;
@@ -867,31 +923,39 @@ async fn session_task(
         let state_ka = state.clone();
         let keepalive_delivery = event_tx.clone();
         let keepalive_local_shutdown = local_shutdown.clone();
+        let keepalive_shutdown_notify = shutdown_notify.clone();
         tokio::spawn(async move {
             let mut timer = tokio::time::interval(interval);
             loop {
                 timer.tick().await;
-                let fbr = protocol::build_fb_update_request(true, 0, 0, 1, 1);
+                let (fb_w, fb_h) = {
+                    let st = state_ka.lock().await;
+                    if !st.connected {
+                        break;
+                    }
+                    (st.framebuffer_width, st.framebuffer_height)
+                };
                 let mut w = writer_ka.lock().await;
-                if write_all_or_terminal(
-                    &mut *w,
-                    &fbr,
-                    &keepalive_delivery,
-                    "keepalive framebuffer request write",
-                )
-                .await
-                .is_err()
-                {
-                    keepalive_local_shutdown.store(true, Ordering::Release);
-                    let _ = timeout(SESSION_IO_TIMEOUT, w.shutdown()).await;
-                    drop(w);
-                    let mut st = state_ka.lock().await;
-                    st.connected = false;
-                    break;
-                }
+                let written =
+                    match write_scheduled_update(&mut *w, &keepalive_delivery, fb_w, fb_h).await {
+                        Ok(Some(written)) => written,
+                        Ok(None) => {
+                            drop(w);
+                            continue;
+                        }
+                        Err(_) => {
+                            keepalive_local_shutdown.store(true, Ordering::Release);
+                            keepalive_shutdown_notify.notify_one();
+                            let _ = timeout(SESSION_IO_TIMEOUT, w.shutdown()).await;
+                            drop(w);
+                            let mut st = state_ka.lock().await;
+                            st.connected = false;
+                            break;
+                        }
+                    };
                 drop(w);
                 let mut st = state_ka.lock().await;
-                st.bytes_sent += fbr.len() as u64;
+                st.bytes_sent += written as u64;
             }
         })
     });
@@ -900,6 +964,7 @@ async fn session_task(
     let cmd_event_tx = event_tx.clone();
     let cmd_state = state.clone();
     let cmd_local_shutdown = local_shutdown.clone();
+    let cmd_shutdown_notify = shutdown_notify.clone();
     let cmd_task = tokio::spawn(async move {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
@@ -966,10 +1031,11 @@ async fn session_task(
                     let mut st = cmd_state.lock().await;
                     st.bytes_sent += msg.len() as u64;
                 }
-                SessionCommand::RequestUpdate {
-                    incremental,
-                    reservation,
-                } => {
+                SessionCommand::RequestUpdate { reservation } => {
+                    let Some(mut reservation) = reservation else {
+                        continue;
+                    };
+                    let incremental = reservation.incremental();
                     let st = cmd_state.lock().await;
                     let fbr = protocol::build_fb_update_request(
                         incremental,
@@ -980,6 +1046,11 @@ async fn session_task(
                     );
                     drop(st);
                     let mut w = writer_cmd.lock().await;
+                    if let Err(error) = reservation.activate() {
+                        let _ =
+                            publish_writer_error(&cmd_event_tx, "refresh write activation", error);
+                        break;
+                    }
                     if write_all_or_terminal(
                         &mut *w,
                         &fbr,
@@ -992,15 +1063,13 @@ async fn session_task(
                         break;
                     }
                     drop(w);
-                    if let Some(reservation) = reservation {
-                        if let Err(error) = reservation.commit() {
-                            let _ = publish_writer_error(
-                                &cmd_event_tx,
-                                "refresh reservation commit",
-                                error,
-                            );
-                            break;
-                        }
+                    if let Err(error) = reservation.commit() {
+                        let _ = publish_writer_error(
+                            &cmd_event_tx,
+                            "refresh reservation commit",
+                            error,
+                        );
+                        break;
                     }
                     let mut st = cmd_state.lock().await;
                     st.bytes_sent += fbr.len() as u64;
@@ -1064,6 +1133,7 @@ async fn session_task(
                 }
                 SessionCommand::Disconnect => {
                     cmd_local_shutdown.store(true, Ordering::Release);
+                    cmd_shutdown_notify.notify_one();
                     let mut w = writer_cmd.lock().await;
                     let _ = timeout(SESSION_IO_TIMEOUT, w.shutdown()).await;
                     let _ = cmd_event_tx.publish_control(SessionEvent::Disconnected(None));
@@ -1075,6 +1145,7 @@ async fn session_task(
             st.last_activity = chrono::Utc::now().to_rfc3339();
         }
         cmd_local_shutdown.store(true, Ordering::Release);
+        cmd_shutdown_notify.notify_one();
         {
             let mut st = cmd_state.lock().await;
             st.connected = false;
@@ -1086,16 +1157,28 @@ async fn session_task(
     // Server message read loop.
     let mut terminal_error = None;
     loop {
-        let mut msg_type_buf = [0u8; 1];
-        match read_exact_with_timeout(&mut reader, &mut msg_type_buf, SESSION_IO_TIMEOUT).await {
-            Ok(()) => {}
+        if local_shutdown.load(Ordering::Acquire) {
+            break;
+        }
+        let message_result = tokio::select! {
+            biased;
+            _ = shutdown_notify.notified() => {
+                if local_shutdown.load(Ordering::Acquire) {
+                    break;
+                }
+                continue;
+            }
+            result = read_server_message_type(&mut reader) => result,
+        };
+        let message_type = match message_result {
+            Ok(message_type) => message_type,
             Err(e) => {
                 if !local_shutdown.load(Ordering::Acquire) {
                     terminal_error = Some(e);
                 }
                 break;
             }
-        }
+        };
 
         // The outer message-type byte is a complete framing unit and is
         // accounted immediately. Framebuffer handlers likewise record each
@@ -1106,7 +1189,7 @@ async fn session_task(
             st.bytes_received += 1;
         }
 
-        let msg_type = ServerMessageType::from_byte(msg_type_buf[0]);
+        let msg_type = ServerMessageType::from_byte(message_type);
 
         let handler_result = match msg_type {
             Some(ServerMessageType::FramebufferUpdate) => {
@@ -1606,23 +1689,57 @@ async fn handle_cut_text(
 // ── Utility function for event payload construction ─────────────────────
 
 /// Build a `VncFrameEvent` from a decoded rect for Tauri event emission.
-pub fn frame_to_event(session_id: &str, rect: DecodedRect) -> Result<VncFrameEvent, VncError> {
-    let data = base64_encode_pixels(&rect.pixels).map_err(VncError::protocol)?;
+pub fn frame_to_event(
+    session_id: &str,
+    delivered: DeliveredFrame,
+) -> Result<VncFrameEvent, VncError> {
+    let data = base64_encode_pixels(&delivered.rect.pixels).map_err(VncError::protocol)?;
     Ok(VncFrameEvent {
         session_id: session_id.to_string(),
+        delivery_epoch: delivered.delivery_epoch,
+        frame_token: delivered.frame_token,
         data,
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        source_x: rect.source_x,
-        source_y: rect.source_y,
+        x: delivered.rect.x,
+        y: delivered.rect.y,
+        width: delivered.rect.width,
+        height: delivered.rect.height,
+        source_x: delivered.rect.source_x,
+        source_y: delivered.rect.source_y,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn legal_idle_longer_than_sixty_seconds_keeps_message_read_alive() {
+        let (mut reader, mut writer) = tokio::io::duplex(8);
+        let read = tokio::spawn(async move { read_server_message_type(&mut reader).await });
+
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::task::yield_now().await;
+        assert!(!read.is_finished());
+
+        writer
+            .write_all(&[ServerMessageType::Bell as u8])
+            .await
+            .unwrap();
+        assert_eq!(read.await.unwrap().unwrap(), ServerMessageType::Bell as u8);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn started_message_body_still_has_a_bounded_deadline() {
+        let (mut reader, _writer) = tokio::io::duplex(8);
+        let read = tokio::spawn(async move {
+            let mut body = [0u8; 4];
+            read_exact_with_timeout(&mut reader, &mut body, Duration::from_secs(5)).await
+        });
+
+        tokio::time::advance(Duration::from_secs(6)).await;
+        let error = read.await.unwrap().unwrap_err();
+        assert_eq!(error.kind, VncErrorKind::Timeout);
+    }
 
     fn test_shared_state(width: u16, height: u16) -> SharedState {
         Arc::new(Mutex::new(SharedSessionState {
@@ -1713,11 +1830,12 @@ mod tests {
         let (command_tx, command_rx) = mpsc::channel(1);
         drop(command_rx);
 
-        assert!(enqueue_rendered_update(&sender, &command_tx, true)
+        assert!(enqueue_update_request(&sender, &command_tx, true)
             .await
             .is_err());
-        let retry = sender.reserve_update_request(true).unwrap();
+        let mut retry = sender.reserve_update_request(true).unwrap().unwrap();
         assert!(!retry.incremental());
+        retry.activate().unwrap();
         retry.commit().unwrap();
     }
 
@@ -1727,51 +1845,50 @@ mod tests {
         prepare_forced_refresh(&sender, &mut receiver);
         let (command_tx, command_rx) = mpsc::channel(1);
 
-        enqueue_rendered_update(&sender, &command_tx, true)
+        enqueue_update_request(&sender, &command_tx, true)
             .await
             .unwrap();
         drop(command_rx);
-        let retry = sender.reserve_update_request(true).unwrap();
+        let mut retry = sender.reserve_update_request(true).unwrap().unwrap();
         assert!(!retry.incremental());
+        retry.activate().unwrap();
         retry.commit().unwrap();
     }
 
     #[tokio::test]
-    async fn periodic_write_failure_restores_force_and_publishes_terminal() {
+    async fn scheduled_write_failure_restores_force_and_publishes_terminal() {
         let (sender, mut receiver) = event_delivery();
         prepare_forced_refresh(&sender, &mut receiver);
         let (mut writer, peer) = tokio::io::duplex(16);
         drop(peer);
 
-        assert!(write_periodic_update(&mut writer, &sender, 1, 1)
+        assert!(write_scheduled_update(&mut writer, &sender, 1, 1)
             .await
             .is_err());
-        let retry = sender.reserve_update_request(true).unwrap();
-        assert!(!retry.incremental());
-        drop(retry);
+        assert!(sender.reserve_update_request(true).unwrap().is_none());
         assert!(matches!(
             receiver.drain(2).unwrap().as_slice(),
             [SessionEvent::Disconnected(Some(reason))]
-                if reason.contains("periodic framebuffer request write")
+                if reason.contains("scheduled framebuffer request write")
         ));
     }
 
     #[tokio::test]
-    async fn periodic_reservation_failure_publishes_diagnostic_terminal() {
+    async fn scheduled_reservation_failure_publishes_diagnostic_terminal() {
         let (sender, mut receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         let transaction = sender.framebuffer_update().unwrap();
         drop(transaction);
         let (mut writer, _peer) = tokio::io::duplex(16);
 
-        let error = write_periodic_update(&mut writer, &sender, 1, 1)
+        let error = write_scheduled_update(&mut writer, &sender, 1, 1)
             .await
             .expect_err("a suspended delivery must reject refresh reservation");
-        assert!(error.message.contains("periodic refresh reservation"));
+        assert!(error.message.contains("scheduled refresh reservation"));
         assert!(matches!(
             receiver.drain(2).unwrap().as_slice(),
             [SessionEvent::Disconnected(Some(reason))]
-                if reason.contains("periodic refresh reservation")
+                if reason.contains("scheduled refresh reservation")
                     && reason.contains("delivery is suspended")
         ));
     }
@@ -1940,16 +2057,10 @@ mod tests {
 
     #[test]
     fn session_command_request_update() {
-        let cmd = SessionCommand::RequestUpdate {
-            incremental: true,
-            reservation: None,
-        };
+        let cmd = SessionCommand::RequestUpdate { reservation: None };
         assert!(matches!(
             cmd,
-            SessionCommand::RequestUpdate {
-                incremental: true,
-                reservation: None,
-            }
+            SessionCommand::RequestUpdate { reservation: None }
         ));
     }
 
@@ -2056,13 +2167,23 @@ mod tests {
                 0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 128, 128, 128, 255,
             ],
         };
-        let ev = frame_to_event("sess1", rect).unwrap();
+        let ev = frame_to_event(
+            "sess1",
+            DeliveredFrame {
+                rect,
+                delivery_epoch: 7,
+                frame_token: 11,
+            },
+        )
+        .unwrap();
         assert_eq!(ev.session_id, "sess1");
         assert_eq!(ev.x, 10);
         assert_eq!(ev.y, 20);
         assert_eq!(ev.width, 2);
         assert_eq!(ev.height, 2);
         assert_eq!(ev.source_x, None);
+        assert_eq!(ev.delivery_epoch, 7);
+        assert_eq!(ev.frame_token, 11);
         assert!(!ev.data.is_empty());
     }
 
@@ -2077,7 +2198,15 @@ mod tests {
             source_y: Some(5),
             pixels: Vec::new(),
         };
-        let ev = frame_to_event("s2", rect).unwrap();
+        let ev = frame_to_event(
+            "s2",
+            DeliveredFrame {
+                rect,
+                delivery_epoch: 3,
+                frame_token: 1,
+            },
+        )
+        .unwrap();
         assert_eq!(ev.data, "");
         assert_eq!(ev.source_x, Some(4));
         assert_eq!(ev.source_y, Some(5));

@@ -3,17 +3,21 @@
 //! Control notifications are coalesced into a fixed number of typed slots and
 //! terminal state has a dedicated out-of-band slot. Framebuffer rectangles are
 //! applied to one canonical RGBA buffer, while fixed-size dirty tiles preserve
-//! damage until the renderer's existing post-draw update request acknowledges
-//! the delivered tile.
+//! damage until an explicit epoch-and-token renderer ACK acknowledges the
+//! delivered tile. Renderer activity is generation-authoritative here: hiding
+//! a viewer closes only frame delivery and refresh scheduling while canonical
+//! framebuffer and bounded control/terminal state remain live.
 
 use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::Notify;
 
 use super::encoding::DecodedRect;
-use super::session::SessionEvent;
+use super::session::{DeliveredFrame, SessionEvent};
 use super::types::{
-    VncError, VncErrorKind, MAX_VNC_CLIPBOARD_BYTES, MAX_VNC_CURSOR_DIMENSION,
-    MAX_VNC_DESKTOP_NAME_BYTES, MAX_VNC_DIMENSION, MAX_VNC_DRAIN_EVENTS, MAX_VNC_EVENT_QUEUE,
-    MAX_VNC_FRAMEBUFFER_BYTES, MAX_VNC_RECT_RGBA_BYTES,
+    VncActivityResult, VncError, VncErrorKind, VncFrameAckResult, MAX_VNC_ACTIVITY_GENERATION,
+    MAX_VNC_CLIPBOARD_BYTES, MAX_VNC_CURSOR_DIMENSION, MAX_VNC_DESKTOP_NAME_BYTES,
+    MAX_VNC_DIMENSION, MAX_VNC_DRAIN_EVENTS, MAX_VNC_EVENT_QUEUE, MAX_VNC_FRAMEBUFFER_BYTES,
+    MAX_VNC_RECT_RGBA_BYTES,
 };
 
 const RGBA_BYTES_PER_PIXEL: usize = 4;
@@ -25,14 +29,18 @@ const MAX_CONTROL_TEXT_BYTES: usize = 256 * 1024;
 const MAX_TERMINAL_REASON_BYTES: usize = 64 * 1024;
 const MAX_CURSOR_RGBA_BYTES: usize =
     MAX_VNC_CURSOR_DIMENSION as usize * MAX_VNC_CURSOR_DIMENSION as usize * RGBA_BYTES_PER_PIXEL;
+const MAX_FORCED_REPAINT_COVERAGE_BYTES: usize =
+    MAX_VNC_FRAMEBUFFER_BYTES / RGBA_BYTES_PER_PIXEL / u8::BITS as usize;
 
 #[derive(Clone)]
 pub(crate) struct VncEventSender {
     shared: Arc<StdMutex<DeliveryState>>,
+    request_wake: Arc<Notify>,
 }
 
 pub(crate) struct VncEventReceiver {
     shared: Arc<StdMutex<DeliveryState>>,
+    request_wake: Arc<Notify>,
 }
 
 /// Resets delivery state if a framebuffer update future fails, times out, or
@@ -44,8 +52,12 @@ pub(crate) struct FramebufferUpdateGuard<'a> {
 
 pub struct RefreshRequestReservation {
     shared: Arc<StdMutex<DeliveryState>>,
+    request_wake: Arc<Notify>,
     incremental: bool,
     forced_epoch: Option<u64>,
+    forced_override: bool,
+    delivery_epoch: u64,
+    activated: bool,
     completed: bool,
 }
 
@@ -55,6 +67,9 @@ impl std::fmt::Debug for RefreshRequestReservation {
             .debug_struct("RefreshRequestReservation")
             .field("incremental", &self.incremental)
             .field("forced_epoch", &self.forced_epoch)
+            .field("forced_override", &self.forced_override)
+            .field("delivery_epoch", &self.delivery_epoch)
+            .field("activated", &self.activated)
             .finish_non_exhaustive()
     }
 }
@@ -64,10 +79,41 @@ impl RefreshRequestReservation {
         self.incremental
     }
 
-    pub(crate) fn commit(mut self) -> Result<(), VncError> {
+    /// Make this request visible to the response reader before its socket
+    /// write starts. The reservation fence remains held until `commit` or
+    /// drop, so an early response cannot admit a competing request while the
+    /// writer is still awaiting completion.
+    pub(crate) fn activate(&mut self) -> Result<(), VncError> {
+        if self.activated || self.completed {
+            return Err(delivery_error(
+                "VNC refresh reservation was activated more than once",
+            ));
+        }
+        let mut delivery = lock_delivery(&self.shared)?;
+        let framebuffer = &mut delivery.framebuffer;
+        if !framebuffer.request_reserved || framebuffer.request_reservation_active {
+            return Err(delivery_error("VNC refresh reservation is not current"));
+        }
+        if self.forced_override {
+            if framebuffer.forced_request_outstanding {
+                return Err(delivery_error(
+                    "VNC forced refresh credit is already outstanding",
+                ));
+            }
+            framebuffer.forced_request_outstanding = true;
+            framebuffer.forced_request_delivery_epoch = Some(self.delivery_epoch);
+        } else {
+            if framebuffer.request_outstanding {
+                return Err(delivery_error(
+                    "VNC incremental refresh credit is already outstanding",
+                ));
+            }
+            framebuffer.request_outstanding = true;
+        }
+        framebuffer.request_reservation_active = true;
+        framebuffer.reserved_request_forced = self.forced_override;
+        framebuffer.reserved_response_consumed = false;
         if let Some(epoch) = self.forced_epoch {
-            let mut delivery = lock_delivery(&self.shared)?;
-            let framebuffer = &mut delivery.framebuffer;
             if framebuffer.reserved_refresh_epoch == Some(epoch) {
                 framebuffer.reserved_refresh_epoch = None;
             }
@@ -75,24 +121,86 @@ impl RefreshRequestReservation {
                 framebuffer.force_full_refresh = false;
             }
         }
+        self.activated = true;
+        Ok(())
+    }
+
+    pub(crate) fn commit(mut self) -> Result<(), VncError> {
+        if !self.activated {
+            return Err(delivery_error(
+                "VNC refresh reservation was committed before write activation",
+            ));
+        }
+        let mut delivery = lock_delivery(&self.shared)?;
+        let terminal_published = delivery.terminal_published;
+        let framebuffer = &mut delivery.framebuffer;
+        if !framebuffer.request_reserved
+            || !framebuffer.request_reservation_active
+            || framebuffer.reserved_request_forced != self.forced_override
+        {
+            return Err(delivery_error("VNC refresh reservation is not current"));
+        }
+        let response_consumed = framebuffer.reserved_response_consumed;
+        framebuffer.request_reserved = false;
+        framebuffer.request_reservation_active = false;
+        framebuffer.reserved_request_forced = false;
+        framebuffer.reserved_response_consumed = false;
+        let should_wake = !terminal_published
+            && framebuffer.renderer_active
+            && !framebuffer.delivery_suspended
+            && !framebuffer.forced_request_outstanding
+            && (framebuffer.force_full_refresh
+                || (response_consumed && !framebuffer.request_outstanding));
+        drop(delivery);
         self.completed = true;
+        if should_wake {
+            self.request_wake.notify_one();
+        }
         Ok(())
     }
 }
 
 impl Drop for RefreshRequestReservation {
     fn drop(&mut self) {
-        let Some(epoch) = self.forced_epoch else {
-            return;
-        };
         if self.completed {
             return;
         }
         let Ok(mut delivery) = lock_delivery(&self.shared) else {
             return;
         };
-        if delivery.framebuffer.reserved_refresh_epoch == Some(epoch) {
-            delivery.framebuffer.reserved_refresh_epoch = None;
+        let terminal_published = delivery.terminal_published;
+        let framebuffer = &mut delivery.framebuffer;
+        let response_consumed = framebuffer.reserved_response_consumed;
+        if self.activated && !response_consumed {
+            if self.forced_override {
+                if framebuffer.forced_request_delivery_epoch == Some(self.delivery_epoch) {
+                    framebuffer.forced_request_outstanding = false;
+                    framebuffer.forced_request_delivery_epoch = None;
+                }
+            } else {
+                framebuffer.request_outstanding = false;
+            }
+        }
+        framebuffer.request_reserved = false;
+        framebuffer.request_reservation_active = false;
+        framebuffer.reserved_request_forced = false;
+        framebuffer.reserved_response_consumed = false;
+        if let Some(epoch) = self.forced_epoch {
+            if framebuffer.reserved_refresh_epoch == Some(epoch) {
+                framebuffer.reserved_refresh_epoch = None;
+            }
+            if self.activated && !response_consumed && framebuffer.force_refresh_epoch == epoch {
+                framebuffer.force_full_refresh = true;
+            }
+        }
+        let should_wake = !terminal_published
+            && framebuffer.renderer_active
+            && !framebuffer.delivery_suspended
+            && framebuffer.force_full_refresh
+            && !framebuffer.forced_request_outstanding;
+        drop(delivery);
+        if should_wake {
+            self.request_wake.notify_one();
         }
     }
 }
@@ -115,11 +223,16 @@ impl Drop for FramebufferUpdateGuard<'_> {
 
 pub(crate) fn event_delivery() -> (VncEventSender, VncEventReceiver) {
     let shared = Arc::new(StdMutex::new(DeliveryState::default()));
+    let request_wake = Arc::new(Notify::new());
     (
         VncEventSender {
             shared: Arc::clone(&shared),
+            request_wake: Arc::clone(&request_wake),
         },
-        VncEventReceiver { shared },
+        VncEventReceiver {
+            shared,
+            request_wake,
+        },
     )
 }
 
@@ -146,7 +259,7 @@ struct PendingControl {
 struct InFlightTile {
     tile_index: usize,
     dirty_generation: u64,
-    frame: DecodedRect,
+    frame: DeliveredFrame,
 }
 
 #[derive(Debug)]
@@ -160,6 +273,9 @@ struct PendingFramebufferUpdate {
     touched_tiles: Vec<bool>,
     rectangles: u64,
     resized: bool,
+    consumed_forced_delivery_epoch: Option<u64>,
+    covered_pixels: Option<Vec<u64>>,
+    covered_pixel_count: usize,
 }
 
 #[derive(Debug, Default)]
@@ -175,7 +291,7 @@ struct DeliveryDiagnostics {
     replayed_unacknowledged_tiles: u64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct FramebufferState {
     width: u16,
     height: u16,
@@ -189,11 +305,59 @@ struct FramebufferState {
     rectangles_since_ack: u64,
     next_tile_cursor: usize,
     in_flight: Option<InFlightTile>,
+    renderer_active: bool,
+    activity_generation: u64,
+    delivery_epoch: u64,
+    next_frame_token: u64,
+    request_reserved: bool,
+    request_reservation_active: bool,
+    reserved_request_forced: bool,
+    reserved_response_consumed: bool,
+    request_outstanding: bool,
+    forced_request_outstanding: bool,
+    forced_request_delivery_epoch: Option<u64>,
+    awaiting_full_delivery_epoch: Option<u64>,
     force_full_refresh: bool,
     force_refresh_epoch: u64,
     reserved_refresh_epoch: Option<u64>,
     gap_epoch_active: bool,
     delivery_suspended: bool,
+}
+
+impl Default for FramebufferState {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+            tiles_x: 0,
+            tiles_y: 0,
+            dirty_generation: Vec::new(),
+            update_in_progress: false,
+            generation: 0,
+            updates_since_ack: 0,
+            rectangles_since_ack: 0,
+            next_tile_cursor: 0,
+            in_flight: None,
+            renderer_active: true,
+            activity_generation: 0,
+            delivery_epoch: 1,
+            next_frame_token: 0,
+            request_reserved: false,
+            request_reservation_active: false,
+            reserved_request_forced: false,
+            reserved_response_consumed: false,
+            request_outstanding: false,
+            forced_request_outstanding: false,
+            forced_request_delivery_epoch: None,
+            awaiting_full_delivery_epoch: None,
+            force_full_refresh: false,
+            force_refresh_epoch: 0,
+            reserved_refresh_epoch: None,
+            gap_epoch_active: false,
+            delivery_suspended: false,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -439,6 +603,64 @@ fn write_pending_rect(
     Ok(())
 }
 
+fn reset_forced_response_coverage(pending: &mut PendingFramebufferUpdate) -> Result<(), VncError> {
+    if pending.consumed_forced_delivery_epoch.is_none() {
+        pending.covered_pixels = None;
+        pending.covered_pixel_count = 0;
+        return Ok(());
+    }
+    let pixel_count = (pending.width as usize)
+        .checked_mul(pending.height as usize)
+        .ok_or_else(|| delivery_error("VNC repaint coverage size overflow"))?;
+    let coverage_words = pixel_count.div_ceil(u64::BITS as usize);
+    coverage_words
+        .checked_mul(std::mem::size_of::<u64>())
+        .filter(|bytes| *bytes <= MAX_FORCED_REPAINT_COVERAGE_BYTES)
+        .ok_or_else(|| delivery_error("VNC repaint coverage exceeds the safety limit"))?;
+    pending.covered_pixels = Some(vec![0; coverage_words]);
+    pending.covered_pixel_count = 0;
+    Ok(())
+}
+
+fn mark_forced_response_coverage(
+    pending: &mut PendingFramebufferUpdate,
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+) {
+    let Some(covered_pixels) = pending.covered_pixels.as_mut() else {
+        return;
+    };
+    let stride = pending.width as usize;
+    for row in y as usize..y as usize + height as usize {
+        let start = row * stride + x as usize;
+        let end = start + width as usize;
+        let first_word = start / u64::BITS as usize;
+        let last_word = (end - 1) / u64::BITS as usize;
+        for (word_index, covered_word) in covered_pixels
+            .iter_mut()
+            .enumerate()
+            .take(last_word + 1)
+            .skip(first_word)
+        {
+            let word_start = word_index * u64::BITS as usize;
+            let lower_bit = start.saturating_sub(word_start).min(u64::BITS as usize);
+            let upper_bit = (end - word_start).min(u64::BITS as usize);
+            let lower_mask = u64::MAX << lower_bit;
+            let upper_mask = if upper_bit == u64::BITS as usize {
+                u64::MAX
+            } else {
+                (1u64 << upper_bit) - 1
+            };
+            let mask = lower_mask & upper_mask;
+            let prior = *covered_word;
+            pending.covered_pixel_count += (mask & !prior).count_ones() as usize;
+            *covered_word = prior | mask;
+        }
+    }
+}
+
 fn require_full_refresh(framebuffer: &mut FramebufferState) -> Result<(), VncError> {
     framebuffer.force_refresh_epoch = framebuffer
         .force_refresh_epoch
@@ -574,6 +796,7 @@ impl VncEventSender {
             pending.touched_tiles = vec![false; tile_count];
             pending.rectangles = 0;
             pending.resized = true;
+            reset_forced_response_coverage(pending)?;
             return Ok(());
         }
         if delivery.framebuffer.delivery_suspended {
@@ -589,6 +812,18 @@ impl VncEventSender {
             tiles_y,
             dirty_generation: vec![0; tile_count],
             generation: delivery.framebuffer.generation,
+            renderer_active: delivery.framebuffer.renderer_active,
+            activity_generation: delivery.framebuffer.activity_generation,
+            delivery_epoch: delivery.framebuffer.delivery_epoch,
+            next_frame_token: delivery.framebuffer.next_frame_token,
+            request_reserved: delivery.framebuffer.request_reserved,
+            request_reservation_active: delivery.framebuffer.request_reservation_active,
+            reserved_request_forced: delivery.framebuffer.reserved_request_forced,
+            reserved_response_consumed: delivery.framebuffer.reserved_response_consumed,
+            request_outstanding: delivery.framebuffer.request_outstanding,
+            forced_request_outstanding: delivery.framebuffer.forced_request_outstanding,
+            forced_request_delivery_epoch: delivery.framebuffer.forced_request_delivery_epoch,
+            awaiting_full_delivery_epoch: delivery.framebuffer.awaiting_full_delivery_epoch,
             force_refresh_epoch: delivery.framebuffer.force_refresh_epoch,
             reserved_refresh_epoch: delivery.framebuffer.reserved_refresh_epoch,
             gap_epoch_active: true,
@@ -596,6 +831,8 @@ impl VncEventSender {
         };
         require_full_refresh(&mut framebuffer)?;
         delivery.framebuffer = framebuffer;
+        drop(delivery);
+        self.request_wake.notify_one();
         Ok(())
     }
 
@@ -610,9 +847,27 @@ impl VncEventSender {
         if framebuffer.update_in_progress {
             return Err(delivery_error("Nested VNC framebuffer update"));
         }
-        framebuffer.update_in_progress = true;
+        // Responses consume wire credits in request order: an older normal
+        // request first, then the single forced resume override. Keep forced
+        // credit marked outstanding while its body is decoded so no retry can
+        // overlap it; a committed partial response releases that credit and
+        // queues exactly one sequential forced retry.
+        let consumed_forced_delivery_epoch = if framebuffer.request_outstanding {
+            framebuffer.request_outstanding = false;
+            if framebuffer.request_reservation_active && !framebuffer.reserved_request_forced {
+                framebuffer.reserved_response_consumed = true;
+            }
+            None
+        } else if framebuffer.forced_request_outstanding {
+            if framebuffer.request_reservation_active && framebuffer.reserved_request_forced {
+                framebuffer.reserved_response_consumed = true;
+            }
+            framebuffer.forced_request_delivery_epoch
+        } else {
+            None
+        };
         let tile_count = framebuffer.dirty_generation.len();
-        delivery.pending_framebuffer = Some(PendingFramebufferUpdate {
+        let mut pending = PendingFramebufferUpdate {
             width: framebuffer.width,
             height: framebuffer.height,
             tiles_x: framebuffer.tiles_x,
@@ -622,7 +877,13 @@ impl VncEventSender {
             touched_tiles: vec![false; tile_count],
             rectangles: 0,
             resized: false,
-        });
+            consumed_forced_delivery_epoch,
+            covered_pixels: None,
+            covered_pixel_count: 0,
+        };
+        reset_forced_response_coverage(&mut pending)?;
+        framebuffer.update_in_progress = true;
+        delivery.pending_framebuffer = Some(pending);
         Ok(())
     }
 
@@ -718,6 +979,7 @@ impl VncEventSender {
             rect.height,
             pixels,
         )?;
+        mark_forced_response_coverage(pending, rect.x, rect.y, rect.width, rect.height);
         pending.rectangles = pending
             .rectangles
             .checked_add(1)
@@ -734,6 +996,11 @@ impl VncEventSender {
             .pending_framebuffer
             .take()
             .ok_or_else(|| delivery_error("VNC framebuffer transaction is missing"))?;
+        let canonical_pixel_count = (pending.width as usize)
+            .checked_mul(pending.height as usize)
+            .ok_or_else(|| delivery_error("VNC repaint coverage size overflow"))?;
+        let full_canonical_repaint = pending.covered_pixels.is_some()
+            && pending.covered_pixel_count == canonical_pixel_count;
         let next_generation = if pending.rectangles == 0 {
             delivery.framebuffer.generation
         } else {
@@ -757,6 +1024,18 @@ impl VncEventSender {
                 tiles_y: pending.tiles_y,
                 dirty_generation: vec![0; pending.touched_tiles.len()],
                 generation: delivery.framebuffer.generation,
+                renderer_active: delivery.framebuffer.renderer_active,
+                activity_generation: delivery.framebuffer.activity_generation,
+                delivery_epoch: delivery.framebuffer.delivery_epoch,
+                next_frame_token: delivery.framebuffer.next_frame_token,
+                request_reserved: delivery.framebuffer.request_reserved,
+                request_reservation_active: delivery.framebuffer.request_reservation_active,
+                reserved_request_forced: delivery.framebuffer.reserved_request_forced,
+                reserved_response_consumed: delivery.framebuffer.reserved_response_consumed,
+                request_outstanding: delivery.framebuffer.request_outstanding,
+                forced_request_outstanding: delivery.framebuffer.forced_request_outstanding,
+                forced_request_delivery_epoch: delivery.framebuffer.forced_request_delivery_epoch,
+                awaiting_full_delivery_epoch: delivery.framebuffer.awaiting_full_delivery_epoch,
                 force_refresh_epoch: delivery.framebuffer.force_refresh_epoch,
                 reserved_refresh_epoch: delivery.framebuffer.reserved_refresh_epoch,
                 gap_epoch_active: true,
@@ -789,6 +1068,35 @@ impl VncEventSender {
             framebuffer.rectangles_since_ack = framebuffer
                 .rectangles_since_ack
                 .saturating_add(pending.rectangles);
+        }
+        if let Some(completed_epoch) = pending.consumed_forced_delivery_epoch {
+            debug_assert!(framebuffer.forced_request_outstanding);
+            debug_assert_eq!(
+                framebuffer.forced_request_delivery_epoch,
+                Some(completed_epoch)
+            );
+            framebuffer.forced_request_outstanding = false;
+            framebuffer.forced_request_delivery_epoch = None;
+            if full_canonical_repaint
+                && framebuffer.awaiting_full_delivery_epoch == Some(completed_epoch)
+            {
+                framebuffer.awaiting_full_delivery_epoch = None;
+                framebuffer.gap_epoch_active = false;
+                framebuffer.updates_since_ack = 1;
+                framebuffer.rectangles_since_ack = pending.rectangles;
+                framebuffer.force_full_refresh = false;
+                framebuffer.reserved_refresh_epoch = None;
+            } else if framebuffer.renderer_active
+                && framebuffer.awaiting_full_delivery_epoch.is_some()
+                && !framebuffer.force_full_refresh
+            {
+                require_full_refresh(framebuffer)?;
+            }
+        }
+        let should_wake = framebuffer.renderer_active;
+        drop(delivery);
+        if should_wake {
+            self.request_wake.notify_one();
         }
         Ok(())
     }
@@ -914,17 +1222,96 @@ impl VncEventSender {
         Ok(())
     }
 
-    /// A renderer-driven post-draw callback acknowledges only the tile returned
-    /// by the preceding drain. Native periodic/keepalive writes never call it.
-    pub(crate) fn acknowledge_rendered_tile(&self) -> Result<(), VncError> {
+    /// Apply one generation-aware renderer activity claim.
+    ///
+    /// Every higher-generation active claim represents new renderer ownership,
+    /// even if the prior renderer was also active. It therefore advances the
+    /// delivery epoch, invalidates the old token, preserves dirty state, and
+    /// queues one coalesced full repaint.
+    pub(crate) fn set_activity(
+        &self,
+        session_id: &str,
+        active: bool,
+        activity_generation: u64,
+    ) -> Result<VncActivityResult, VncError> {
         let mut delivery = lock_delivery(&self.shared)?;
-        let framebuffer = &mut delivery.framebuffer;
-        if framebuffer.delivery_suspended {
-            return Err(delivery_error(
-                "VNC framebuffer delivery is suspended after an aborted update",
+        if delivery.terminal_published {
+            return Err(VncError::new(
+                VncErrorKind::NotConnected,
+                "VNC session delivery is terminal",
             ));
         }
-        if let Some(in_flight) = framebuffer.in_flight.take() {
+        let framebuffer = &mut delivery.framebuffer;
+        if activity_generation > MAX_VNC_ACTIVITY_GENERATION {
+            return Err(VncError::protocol(
+                "VNC activity generation exceeds the JavaScript-safe limit",
+            ));
+        }
+        let accepted = activity_generation > framebuffer.activity_generation;
+        let mut refresh_queued = false;
+        if activity_generation > framebuffer.activity_generation {
+            if active {
+                let next_delivery_epoch = framebuffer
+                    .delivery_epoch
+                    .checked_add(1)
+                    .filter(|epoch| *epoch <= MAX_VNC_ACTIVITY_GENERATION)
+                    .ok_or_else(|| delivery_error("VNC delivery epoch overflow"))?;
+                let next_refresh_epoch = framebuffer
+                    .force_refresh_epoch
+                    .checked_add(1)
+                    .ok_or_else(|| delivery_error("VNC full-refresh epoch overflow"))?;
+                framebuffer.activity_generation = activity_generation;
+                framebuffer.renderer_active = true;
+                framebuffer.delivery_epoch = next_delivery_epoch;
+                framebuffer.next_frame_token = 0;
+                framebuffer.in_flight = None;
+                framebuffer.awaiting_full_delivery_epoch = Some(next_delivery_epoch);
+                framebuffer.force_refresh_epoch = next_refresh_epoch;
+                framebuffer.force_full_refresh = true;
+                refresh_queued = true;
+            } else {
+                framebuffer.activity_generation = activity_generation;
+                framebuffer.renderer_active = false;
+            }
+        }
+
+        let result = VncActivityResult {
+            session_id: session_id.to_string(),
+            active: framebuffer.renderer_active,
+            activity_generation: framebuffer.activity_generation,
+            delivery_epoch: framebuffer.delivery_epoch,
+            accepted,
+            refresh_queued,
+        };
+        drop(delivery);
+        if refresh_queued {
+            self.request_wake.notify_one();
+        }
+        Ok(result)
+    }
+
+    /// A renderer-driven post-draw callback acknowledges only the exact tile
+    /// returned by the preceding drain. Native refresh requests never call it.
+    pub(crate) fn acknowledge_rendered_tile(
+        &self,
+        session_id: &str,
+        delivery_epoch: u64,
+        frame_token: u64,
+    ) -> Result<VncFrameAckResult, VncError> {
+        let mut delivery = lock_delivery(&self.shared)?;
+        let framebuffer = &mut delivery.framebuffer;
+        let accepted = framebuffer.renderer_active
+            && !framebuffer.delivery_suspended
+            && delivery_epoch == framebuffer.delivery_epoch
+            && framebuffer.in_flight.as_ref().is_some_and(|in_flight| {
+                in_flight.frame.delivery_epoch == delivery_epoch
+                    && in_flight.frame.frame_token == frame_token
+            });
+        if accepted {
+            let in_flight = framebuffer
+                .in_flight
+                .take()
+                .expect("accepted VNC renderer ACK has an in-flight tile");
             if framebuffer
                 .dirty_generation
                 .get(in_flight.tile_index)
@@ -944,7 +1331,13 @@ impl VncEventSender {
             framebuffer.updates_since_ack = 0;
             framebuffer.rectangles_since_ack = 0;
         }
-        Ok(())
+        Ok(VncFrameAckResult {
+            session_id: session_id.to_string(),
+            accepted,
+            active: framebuffer.renderer_active,
+            activity_generation: framebuffer.activity_generation,
+            delivery_epoch: framebuffer.delivery_epoch,
+        })
     }
 
     /// Reserve a forced full refresh without clearing it. The reservation must
@@ -953,28 +1346,54 @@ impl VncEventSender {
     pub(crate) fn reserve_update_request(
         &self,
         requested_incremental: bool,
-    ) -> Result<RefreshRequestReservation, VncError> {
+    ) -> Result<Option<RefreshRequestReservation>, VncError> {
         let mut delivery = lock_delivery(&self.shared)?;
+        if delivery.terminal_published {
+            return Ok(None);
+        }
         let framebuffer = &mut delivery.framebuffer;
         if framebuffer.delivery_suspended {
             return Err(delivery_error(
                 "VNC framebuffer delivery is suspended after an aborted update",
             ));
         }
-        let forced_epoch =
-            if framebuffer.force_full_refresh && framebuffer.reserved_refresh_epoch.is_none() {
-                let epoch = framebuffer.force_refresh_epoch;
-                framebuffer.reserved_refresh_epoch = Some(epoch);
-                Some(epoch)
-            } else {
-                None
-            };
-        Ok(RefreshRequestReservation {
+        if !framebuffer.renderer_active || framebuffer.request_reserved {
+            return Ok(None);
+        }
+        let forced_epoch = framebuffer
+            .force_full_refresh
+            .then_some(framebuffer.force_refresh_epoch)
+            .filter(|_| framebuffer.reserved_refresh_epoch.is_none());
+        let forced_override = forced_epoch.is_some();
+        if framebuffer.forced_request_outstanding
+            || (!forced_override && framebuffer.request_outstanding)
+        {
+            return Ok(None);
+        }
+        if let Some(epoch) = forced_epoch {
+            framebuffer.reserved_refresh_epoch = Some(epoch);
+        }
+        framebuffer.request_reserved = true;
+        Ok(Some(RefreshRequestReservation {
             shared: Arc::clone(&self.shared),
+            request_wake: Arc::clone(&self.request_wake),
             incremental: requested_incremental && forced_epoch.is_none(),
             forced_epoch,
+            forced_override,
+            delivery_epoch: framebuffer.delivery_epoch,
+            activated: false,
             completed: false,
-        })
+        }))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_request_state(&self) -> Result<(bool, bool, bool), VncError> {
+        let delivery = lock_delivery(&self.shared)?;
+        Ok((
+            delivery.framebuffer.request_reserved,
+            delivery.framebuffer.request_outstanding,
+            delivery.framebuffer.forced_request_outstanding,
+        ))
     }
 
     #[cfg(test)]
@@ -982,10 +1401,25 @@ impl VncEventSender {
         &self,
         requested_incremental: bool,
     ) -> Result<bool, VncError> {
-        self.acknowledge_rendered_tile()?;
-        let reservation = self.reserve_update_request(requested_incremental)?;
+        let in_flight = {
+            let delivery = lock_delivery(&self.shared)?;
+            delivery
+                .framebuffer
+                .in_flight
+                .as_ref()
+                .map(|in_flight| (in_flight.frame.delivery_epoch, in_flight.frame.frame_token))
+        };
+        if let Some((epoch, token)) = in_flight {
+            let result = self.acknowledge_rendered_tile("test", epoch, token)?;
+            debug_assert!(result.accepted);
+        }
+        let mut reservation = self
+            .reserve_update_request(requested_incremental)?
+            .ok_or_else(|| delivery_error("VNC refresh request was coalesced in a unit test"))?;
         let incremental = reservation.incremental();
+        reservation.activate()?;
         reservation.commit()?;
+        self.test_complete_request()?;
         Ok(incremental)
     }
 
@@ -994,16 +1428,38 @@ impl VncEventSender {
         &self,
         requested_incremental: bool,
     ) -> Result<bool, VncError> {
-        let reservation = self.reserve_update_request(requested_incremental)?;
+        let mut reservation = self
+            .reserve_update_request(requested_incremental)?
+            .ok_or_else(|| delivery_error("VNC refresh request was coalesced in a unit test"))?;
         let incremental = reservation.incremental();
+        reservation.activate()?;
         reservation.commit()?;
+        self.test_complete_request()?;
         Ok(incremental)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_complete_request(&self) -> Result<(), VncError> {
+        let mut delivery = lock_delivery(&self.shared)?;
+        delivery.framebuffer.request_outstanding = false;
+        delivery.framebuffer.forced_request_outstanding = false;
+        delivery.framebuffer.forced_request_delivery_epoch = None;
+        Ok(())
     }
 
     #[cfg(test)]
     pub(crate) fn test_framebuffer_dimensions(&self) -> Result<(u16, u16), VncError> {
         let delivery = lock_delivery(&self.shared)?;
         Ok((delivery.framebuffer.width, delivery.framebuffer.height))
+    }
+
+    pub(crate) fn refresh_notifier(&self) -> Arc<Notify> {
+        Arc::clone(&self.request_wake)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn test_wait_for_request_wake(&self) {
+        self.request_wake.notified().await;
     }
 }
 
@@ -1046,7 +1502,7 @@ impl VncEventReceiver {
 
         let mut emitted_frame = false;
         if events.len() < max && frame_ready {
-            if let Some(frame) = take_dirty_tile(&mut delivery)? {
+            if let Some(frame) = take_dirty_tile(&mut delivery, &self.request_wake)? {
                 events.push(SessionEvent::Frame(frame));
                 emitted_frame = true;
                 delivery.prefer_frame_for_single_slot = false;
@@ -1058,17 +1514,21 @@ impl VncEventReceiver {
         Ok(events)
     }
 
-    pub(crate) fn drain_frame_only(&mut self) -> Result<Option<DecodedRect>, VncError> {
+    pub(crate) fn drain_frame_only(&mut self) -> Result<Option<DeliveredFrame>, VncError> {
         let mut delivery = lock_delivery(&self.shared)?;
         if delivery.terminal_published || delivery.terminal_delivered {
             return Ok(None);
         }
-        take_dirty_tile(&mut delivery)
+        take_dirty_tile(&mut delivery, &self.request_wake)
     }
 }
 
 fn frame_ready(framebuffer: &FramebufferState) -> bool {
-    if framebuffer.update_in_progress || framebuffer.delivery_suspended {
+    if framebuffer.update_in_progress
+        || framebuffer.delivery_suspended
+        || !framebuffer.renderer_active
+        || framebuffer.awaiting_full_delivery_epoch.is_some()
+    {
         return false;
     }
     framebuffer.in_flight.is_some()
@@ -1078,7 +1538,10 @@ fn frame_ready(framebuffer: &FramebufferState) -> bool {
             .any(|generation| *generation != 0)
 }
 
-fn take_dirty_tile(delivery: &mut DeliveryState) -> Result<Option<DecodedRect>, VncError> {
+fn take_dirty_tile(
+    delivery: &mut DeliveryState,
+    request_wake: &Notify,
+) -> Result<Option<DeliveredFrame>, VncError> {
     let DeliveryState {
         framebuffer,
         diagnostics,
@@ -1086,6 +1549,8 @@ fn take_dirty_tile(delivery: &mut DeliveryState) -> Result<Option<DecodedRect>, 
     } = delivery;
     if framebuffer.update_in_progress
         || framebuffer.delivery_suspended
+        || !framebuffer.renderer_active
+        || framebuffer.awaiting_full_delivery_epoch.is_some()
         || framebuffer.width == 0
         || framebuffer.height == 0
     {
@@ -1094,6 +1559,7 @@ fn take_dirty_tile(delivery: &mut DeliveryState) -> Result<Option<DecodedRect>, 
     if framebuffer.updates_since_ack > 1 && !framebuffer.gap_epoch_active {
         framebuffer.gap_epoch_active = true;
         require_full_refresh(framebuffer)?;
+        request_wake.notify_one();
         diagnostics.gap_epochs = diagnostics.gap_epochs.saturating_add(1);
         diagnostics.coalesced_updates = diagnostics
             .coalesced_updates
@@ -1137,7 +1603,7 @@ fn take_dirty_tile(delivery: &mut DeliveryState) -> Result<Option<DecodedRect>, 
         let start = (y + row) * stride + x * RGBA_BYTES_PER_PIXEL;
         pixels.extend_from_slice(&framebuffer.pixels[start..start + row_bytes]);
     }
-    let frame = DecodedRect {
+    let rect = DecodedRect {
         x: x as u16,
         y: y as u16,
         width: width as u16,
@@ -1145,6 +1611,16 @@ fn take_dirty_tile(delivery: &mut DeliveryState) -> Result<Option<DecodedRect>, 
         source_x: None,
         source_y: None,
         pixels,
+    };
+    framebuffer.next_frame_token = framebuffer
+        .next_frame_token
+        .checked_add(1)
+        .filter(|token| *token <= MAX_VNC_ACTIVITY_GENERATION)
+        .ok_or_else(|| delivery_error("VNC frame token overflow"))?;
+    let frame = DeliveredFrame {
+        rect,
+        delivery_epoch: framebuffer.delivery_epoch,
+        frame_token: framebuffer.next_frame_token,
     };
     framebuffer.in_flight = Some(InFlightTile {
         tile_index,
@@ -1171,14 +1647,51 @@ mod tests {
         }
     }
 
+    fn solid_rect(width: u16, height: u16, value: u8) -> DecodedRect {
+        let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
+        for _ in 0..width as usize * height as usize {
+            pixels.extend_from_slice(&[value, value, value, 255]);
+        }
+        DecodedRect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+            source_x: None,
+            source_y: None,
+            pixels,
+        }
+    }
+
+    fn commit_update(sender: &VncEventSender, rect: DecodedRect) {
+        sender.begin_framebuffer_update().unwrap();
+        sender.apply_frame(rect).unwrap();
+        sender.finish_framebuffer_update().unwrap();
+    }
+
+    fn commit_request(mut reservation: RefreshRequestReservation) {
+        reservation.activate().unwrap();
+        reservation.commit().unwrap();
+    }
+
     fn frame_from(events: Vec<SessionEvent>) -> DecodedRect {
+        events
+            .into_iter()
+            .find_map(|event| match event {
+                SessionEvent::Frame(frame) => Some(frame.rect),
+                _ => None,
+            })
+            .expect("expected one dirty-tile frame")
+    }
+
+    fn delivered_frame_from(events: Vec<SessionEvent>) -> DeliveredFrame {
         events
             .into_iter()
             .find_map(|event| match event {
                 SessionEvent::Frame(frame) => Some(frame),
                 _ => None,
             })
-            .expect("expected one dirty-tile frame")
+            .expect("expected one delivered VNC frame")
     }
 
     fn draw_frame(framebuffer: &mut [u8], framebuffer_width: usize, frame: &DecodedRect) {
@@ -1209,7 +1722,7 @@ mod tests {
                 _ => None,
             })
         {
-            draw_frame(&mut framebuffer, width, &frame);
+            draw_frame(&mut framebuffer, width, &frame.rect);
             sender.acknowledge_and_select_incremental(true).unwrap();
         }
         framebuffer
@@ -1492,7 +2005,7 @@ mod tests {
     }
 
     #[test]
-    fn periodic_request_consumes_one_forced_full_without_losing_newer_pixels() {
+    fn scheduled_request_consumes_one_forced_full_without_losing_newer_pixels() {
         let (sender, mut receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         for value in [1, 2] {
@@ -1521,15 +2034,17 @@ mod tests {
         let (sender, _receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         sender.resize_framebuffer(2, 1).unwrap();
-        let older = sender.reserve_update_request(true).unwrap();
+        let older = sender.reserve_update_request(true).unwrap().unwrap();
         assert!(!older.incremental());
 
         sender.resize_framebuffer(3, 1).unwrap();
-        older.commit().unwrap();
-        let newer = sender.reserve_update_request(true).unwrap();
+        commit_request(older);
+        sender.test_complete_request().unwrap();
+        let newer = sender.reserve_update_request(true).unwrap().unwrap();
         assert!(!newer.incremental());
-        newer.commit().unwrap();
-        let incremental = sender.reserve_update_request(true).unwrap();
+        commit_request(newer);
+        sender.test_complete_request().unwrap();
+        let incremental = sender.reserve_update_request(true).unwrap().unwrap();
         assert!(incremental.incremental());
     }
 
@@ -1704,6 +2219,490 @@ mod tests {
             );
         }
         sender.abort_framebuffer_update();
+    }
+
+    #[test]
+    fn activity_authority_rejects_every_equal_or_stale_generation() {
+        let (sender, _receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+
+        let first_owner = sender.set_activity("session", true, 5).unwrap();
+        assert!(first_owner.accepted);
+        assert!(first_owner.refresh_queued);
+        assert_eq!(first_owner.delivery_epoch, 2);
+
+        let stale_same_state = sender.set_activity("session", true, 1).unwrap();
+        assert!(!stale_same_state.accepted);
+        assert_eq!(stale_same_state.activity_generation, 5);
+        assert!(stale_same_state.active);
+        assert_eq!(stale_same_state.delivery_epoch, 2);
+
+        let equal_same_state = sender.set_activity("session", true, 5).unwrap();
+        assert!(!equal_same_state.accepted);
+        assert!(!equal_same_state.refresh_queued);
+        let equal_conflict = sender.set_activity("session", false, 5).unwrap();
+        assert!(!equal_conflict.accepted);
+        assert!(equal_conflict.active);
+
+        let corrected_owner = sender.set_activity("session", true, 6).unwrap();
+        assert!(corrected_owner.accepted);
+        assert!(corrected_owner.refresh_queued);
+        assert_eq!(corrected_owner.delivery_epoch, 3);
+    }
+
+    #[test]
+    fn delivery_epoch_fails_closed_at_javascript_safe_boundary() {
+        let (sender, _receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+        {
+            let mut delivery = lock_delivery(&sender.shared).unwrap();
+            delivery.framebuffer.delivery_epoch = MAX_VNC_ACTIVITY_GENERATION;
+        }
+
+        let error = sender
+            .set_activity("session", true, 1)
+            .expect_err("delivery epoch must not exceed the JS-safe boundary");
+        assert!(error.message.contains("delivery epoch overflow"));
+        let delivery = lock_delivery(&sender.shared).unwrap();
+        assert_eq!(delivery.framebuffer.activity_generation, 0);
+        assert_eq!(
+            delivery.framebuffer.delivery_epoch,
+            MAX_VNC_ACTIVITY_GENERATION
+        );
+        assert!(!delivery.framebuffer.force_full_refresh);
+    }
+
+    #[test]
+    fn replacement_mount_wins_before_or_after_old_final_inactive() {
+        let (sender, _receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+        assert!(sender.set_activity("session", true, 1).unwrap().accepted);
+
+        let replacement_first = sender.set_activity("session", true, 3).unwrap();
+        assert!(replacement_first.accepted);
+        assert!(replacement_first.refresh_queued);
+        let delayed_old_final = sender.set_activity("session", false, 2).unwrap();
+        assert!(!delayed_old_final.accepted);
+        assert!(delayed_old_final.active);
+        assert_eq!(delayed_old_final.activity_generation, 3);
+
+        let (sender, _receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+        assert!(sender.set_activity("session", true, 1).unwrap().accepted);
+        assert!(sender.set_activity("session", false, 2).unwrap().accepted);
+        let replacement_after = sender.set_activity("session", true, 3).unwrap();
+        assert!(replacement_after.accepted);
+        assert!(replacement_after.active);
+        assert!(replacement_after.refresh_queued);
+        assert_eq!(replacement_after.delivery_epoch, 3);
+
+        let equal_old_final = sender.set_activity("session", false, 3).unwrap();
+        assert!(!equal_old_final.accepted);
+        assert!(equal_old_final.active);
+    }
+
+    #[test]
+    fn inactive_rejects_ack_without_releasing_in_flight_tile() {
+        let (sender, mut receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+        commit_update(&sender, pixel_rect(0, 4));
+        let first = delivered_frame_from(receiver.drain(2).unwrap());
+
+        let inactive = sender.set_activity("session", false, 1).unwrap();
+        assert!(inactive.accepted);
+        let rejected = sender
+            .acknowledge_rendered_tile("session", first.delivery_epoch, first.frame_token)
+            .unwrap();
+        assert!(!rejected.accepted);
+        {
+            let delivery = lock_delivery(&sender.shared).unwrap();
+            assert!(delivery.framebuffer.in_flight.is_some());
+            assert!(delivery.framebuffer.dirty_generation[0] > 0);
+        }
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+
+        let resumed = sender.set_activity("session", true, 2).unwrap();
+        assert!(resumed.accepted);
+        assert!(resumed.refresh_queued);
+        assert_eq!(resumed.delivery_epoch, first.delivery_epoch + 1);
+        let stale = sender
+            .acknowledge_rendered_tile("session", first.delivery_epoch, first.frame_token)
+            .unwrap();
+        assert!(!stale.accepted);
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+    }
+
+    #[test]
+    fn generic_refresh_never_acknowledges_renderer_tile() {
+        let (sender, mut receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+        commit_update(&sender, pixel_rect(0, 8));
+        let first = delivered_frame_from(receiver.drain(2).unwrap());
+
+        let refresh = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(refresh.incremental());
+        commit_request(refresh);
+        let replay = delivered_frame_from(receiver.drain(2).unwrap());
+        assert_eq!(replay.delivery_epoch, first.delivery_epoch);
+        assert_eq!(replay.frame_token, first.frame_token);
+        assert_eq!(replay.rect.pixels, first.rect.pixels);
+
+        let wrong_token = sender
+            .acknowledge_rendered_tile("session", first.delivery_epoch, first.frame_token + 1)
+            .unwrap();
+        assert!(!wrong_token.accepted);
+        let replay = delivered_frame_from(receiver.drain(2).unwrap());
+        assert_eq!(replay.frame_token, first.frame_token);
+
+        let accepted = sender
+            .acknowledge_rendered_tile("session", first.delivery_epoch, first.frame_token)
+            .unwrap();
+        assert!(accepted.accepted);
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+    }
+
+    #[test]
+    fn resume_waits_for_proven_full_repaint_after_idle_incremental() {
+        let (sender, mut receiver) = event_delivery();
+        sender.initialize_framebuffer(512, 1).unwrap();
+
+        let idle_incremental = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(idle_incremental.incremental());
+        commit_request(idle_incremental);
+        let resumed = sender.set_activity("session", true, 1).unwrap();
+        assert!(resumed.accepted);
+        assert!(resumed.refresh_queued);
+
+        let forced = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!forced.incremental());
+        commit_request(forced);
+        assert_eq!(sender.test_request_state().unwrap(), (false, true, true));
+
+        // Even a complete response to the older incremental request consumes
+        // only normal credit; it cannot satisfy the newer forced epoch.
+        commit_update(&sender, solid_rect(512, 1, 3));
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, true));
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+        assert!(sender.reserve_update_request(true).unwrap().is_none());
+
+        // The full canonical response proves the forced repaint. Only now may
+        // the new epoch drain, with fresh epoch-scoped tokens.
+        commit_update(&sender, solid_rect(512, 1, 9));
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+        let mut delivered_tiles = 0;
+        while let Some(frame) = receiver.drain_frame_only().unwrap() {
+            assert_eq!(frame.delivery_epoch, resumed.delivery_epoch);
+            assert!(frame.frame_token > 0);
+            assert!(frame.rect.pixels.chunks_exact(4).all(|pixel| pixel[0] == 9));
+            let ack = sender
+                .acknowledge_rendered_tile("session", frame.delivery_epoch, frame.frame_token)
+                .unwrap();
+            assert!(ack.accepted);
+            delivered_tiles += 1;
+        }
+        assert_eq!(delivered_tiles, 2);
+
+        let next = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(next.incremental());
+    }
+
+    #[test]
+    fn forced_resize_and_partial_responses_retry_without_overlapping_credit() {
+        let (sender, mut receiver) = event_delivery();
+        sender.initialize_framebuffer(256, 1).unwrap();
+        let resumed = sender.set_activity("session", true, 1).unwrap();
+        assert!(resumed.accepted);
+
+        let resize_request = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!resize_request.incremental());
+        commit_request(resize_request);
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, true));
+
+        // A DesktopSize-only response consumes the forced wire credit but
+        // cannot open renderer delivery. It must permit one sequential full
+        // retry at the new dimensions.
+        let resize = sender.framebuffer_update().unwrap();
+        sender.resize_framebuffer(512, 1).unwrap();
+        resize.finish().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+        assert_eq!(sender.test_framebuffer_dimensions().unwrap(), (512, 1));
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+
+        let partial_request = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!partial_request.incremental());
+        commit_request(partial_request);
+        for _ in 0..1_000 {
+            assert!(sender.reserve_update_request(true).unwrap().is_none());
+        }
+
+        // A partial response similarly releases its consumed credit while the
+        // full-delivery gate remains closed and exactly one retry is eligible.
+        commit_update(&sender, pixel_rect(0, 4));
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+
+        let full_request = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!full_request.incremental());
+        commit_request(full_request);
+        for _ in 0..1_000 {
+            assert!(sender.reserve_update_request(true).unwrap().is_none());
+        }
+
+        commit_update(&sender, solid_rect(512, 1, 9));
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+        let mut delivered_tiles = 0;
+        while let Some(frame) = receiver.drain_frame_only().unwrap() {
+            assert_eq!(frame.delivery_epoch, resumed.delivery_epoch);
+            let ack = sender
+                .acknowledge_rendered_tile("session", frame.delivery_epoch, frame.frame_token)
+                .unwrap();
+            assert!(ack.accepted);
+            delivered_tiles += 1;
+        }
+        assert_eq!(delivered_tiles, 2);
+    }
+
+    #[test]
+    fn normal_responses_before_write_finalize_do_not_create_phantom_credit() {
+        let (sender, _receiver) = event_delivery();
+        sender.initialize_framebuffer(2, 1).unwrap();
+
+        let mut partial = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(partial.incremental());
+        partial.activate().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (true, true, false));
+        commit_update(&sender, pixel_rect(0, 3));
+        assert_eq!(sender.test_request_state().unwrap(), (true, false, false));
+        partial.commit().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+
+        let mut full = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(full.incremental());
+        full.activate().unwrap();
+        commit_update(&sender, solid_rect(2, 1, 7));
+        assert_eq!(sender.test_request_state().unwrap(), (true, false, false));
+        full.commit().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+
+        let next = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(next.incremental());
+    }
+
+    #[test]
+    fn activated_reservation_drop_rolls_back_unconsumed_wire_credit() {
+        let (sender, _receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+
+        let mut normal = sender.reserve_update_request(true).unwrap().unwrap();
+        normal.activate().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (true, true, false));
+        drop(normal);
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+
+        assert!(sender.set_activity("session", true, 1).unwrap().accepted);
+        let mut forced = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!forced.incremental());
+        forced.activate().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (true, false, true));
+        drop(forced);
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+
+        let retry = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!retry.incremental());
+    }
+
+    #[test]
+    fn forced_responses_before_write_finalize_preserve_full_gate_and_retry_bound() {
+        let (sender, mut receiver) = event_delivery();
+        sender.initialize_framebuffer(256, 1).unwrap();
+        let resumed = sender.set_activity("session", true, 1).unwrap();
+        assert!(resumed.accepted);
+
+        let mut partial = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!partial.incremental());
+        partial.activate().unwrap();
+        commit_update(&sender, pixel_rect(0, 4));
+        assert_eq!(sender.test_request_state().unwrap(), (true, false, false));
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+        partial.commit().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+
+        let mut resize = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!resize.incremental());
+        for _ in 0..1_000 {
+            assert!(sender.reserve_update_request(true).unwrap().is_none());
+        }
+        resize.activate().unwrap();
+        let update = sender.framebuffer_update().unwrap();
+        sender.resize_framebuffer(512, 1).unwrap();
+        update.finish().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (true, false, false));
+        assert!(receiver.drain_frame_only().unwrap().is_none());
+        resize.commit().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+
+        let mut full = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(!full.incremental());
+        for _ in 0..1_000 {
+            assert!(sender.reserve_update_request(true).unwrap().is_none());
+        }
+        full.activate().unwrap();
+        commit_update(&sender, solid_rect(512, 1, 9));
+        assert_eq!(sender.test_request_state().unwrap(), (true, false, false));
+        full.commit().unwrap();
+        assert_eq!(sender.test_request_state().unwrap(), (false, false, false));
+
+        let mut delivered_tiles = 0;
+        while let Some(frame) = receiver.drain_frame_only().unwrap() {
+            assert_eq!(frame.delivery_epoch, resumed.delivery_epoch);
+            let ack = sender
+                .acknowledge_rendered_tile("session", frame.delivery_epoch, frame.frame_token)
+                .unwrap();
+            assert!(ack.accepted);
+            delivered_tiles += 1;
+        }
+        assert_eq!(delivered_tiles, 2);
+
+        let next = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(next.incremental());
+    }
+
+    #[test]
+    fn request_and_timer_floods_keep_one_normal_plus_one_forced_credit() {
+        for flood in [100usize, 500, 1_000] {
+            let (sender, _receiver) = event_delivery();
+            sender.initialize_framebuffer(1, 1).unwrap();
+            let mut normal_admissions = 0;
+            for _ in 0..flood {
+                if let Some(request) = sender.reserve_update_request(true).unwrap() {
+                    assert!(request.incremental());
+                    commit_request(request);
+                    normal_admissions += 1;
+                }
+            }
+            assert_eq!(normal_admissions, 1);
+            assert_eq!(sender.test_request_state().unwrap(), (false, true, false));
+
+            let claim = sender.set_activity("session", true, 1).unwrap();
+            assert!(claim.accepted);
+            assert!(claim.refresh_queued);
+            let mut forced_admissions = 0;
+            for _ in 0..flood {
+                if let Some(request) = sender.reserve_update_request(true).unwrap() {
+                    assert!(!request.incremental());
+                    commit_request(request);
+                    forced_admissions += 1;
+                }
+            }
+            assert_eq!(forced_admissions, 1);
+            assert_eq!(sender.test_request_state().unwrap(), (false, true, true));
+
+            let replacement = sender.set_activity("session", true, 2).unwrap();
+            assert!(replacement.accepted);
+            assert!(replacement.refresh_queued);
+            assert!(sender.reserve_update_request(true).unwrap().is_none());
+            let delivery = lock_delivery(&sender.shared).unwrap();
+            assert_eq!(delivery.framebuffer.awaiting_full_delivery_epoch, Some(3));
+            assert!(delivery.framebuffer.force_full_refresh);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn inactive_authorities_have_zero_high_rate_scheduler_wakes() {
+        for flood in [100u64, 500, 1_000] {
+            let (sender, _receiver) = event_delivery();
+            sender.initialize_framebuffer(1, 1).unwrap();
+            for generation in 1..=flood {
+                let result = sender.set_activity("session", false, generation).unwrap();
+                assert!(result.accepted);
+                assert!(!result.refresh_queued);
+                assert!(sender.reserve_update_request(true).unwrap().is_none());
+            }
+
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(3_600),
+                    sender.test_wait_for_request_wake(),
+                )
+                .await
+                .is_err(),
+                "inactive activity changes must not wake the request scheduler"
+            );
+
+            let active = sender.set_activity("session", true, flood + 1).unwrap();
+            assert!(active.accepted);
+            assert!(active.refresh_queued);
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                sender.test_wait_for_request_wake(),
+            )
+            .await
+            .expect("active ownership must wake the request scheduler");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn committed_response_emits_one_coalesced_progress_wake() {
+        let (sender, _receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+        let request = sender.reserve_update_request(true).unwrap().unwrap();
+        commit_request(request);
+        assert_eq!(sender.test_request_state().unwrap(), (false, true, false));
+
+        commit_update(&sender, pixel_rect(0, 6));
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            sender.test_wait_for_request_wake(),
+        )
+        .await
+        .expect("a committed response must wake request progression");
+
+        let next = sender.reserve_update_request(true).unwrap().unwrap();
+        assert!(next.incremental());
+        commit_request(next);
+        for _ in 0..1_000 {
+            assert!(sender.reserve_update_request(true).unwrap().is_none());
+        }
+        assert_eq!(sender.test_request_state().unwrap(), (false, true, false));
+    }
+
+    #[test]
+    fn inactive_frame_and_control_flood_remains_bounded_and_terminal_wins() {
+        let (sender, mut receiver) = event_delivery();
+        sender.initialize_framebuffer(1, 1).unwrap();
+        assert!(sender.set_activity("session", false, 1).unwrap().accepted);
+        for value in 0..1_000u16 {
+            commit_update(&sender, pixel_rect(0, value as u8));
+            sender.publish_control(SessionEvent::Bell).unwrap();
+        }
+        assert!(sender.reserve_update_request(true).unwrap().is_none());
+        {
+            let delivery = lock_delivery(&sender.shared).unwrap();
+            assert_eq!(delivery.framebuffer.pixels.len(), 4);
+            assert!(delivery.framebuffer.dirty_generation.len() <= MAX_DIRTY_TILES);
+            assert!(delivery.framebuffer.in_flight.is_none());
+            assert!(delivery.controls.len() <= MAX_PENDING_CONTROL_ENTRIES);
+            assert!(delivery.control_bytes <= MAX_PENDING_CONTROL_BYTES);
+        }
+        let controls = receiver.drain(MAX_VNC_DRAIN_EVENTS).unwrap();
+        assert!(controls
+            .iter()
+            .all(|event| !matches!(event, SessionEvent::Frame(_))));
+
+        sender
+            .publish_control(SessionEvent::Disconnected(Some("closed".into())))
+            .unwrap();
+        assert!(sender.set_activity("session", true, 2).is_err());
+        assert!(matches!(
+            receiver.drain(2).unwrap().as_slice(),
+            [SessionEvent::Disconnected(Some(reason))] if reason == "closed"
+        ));
+
+        let (replacement, _receiver) = event_delivery();
+        replacement.initialize_framebuffer(1, 1).unwrap();
+        let new_claim = replacement.set_activity("replacement", true, 1).unwrap();
+        assert!(new_claim.accepted);
+        assert_eq!(new_claim.delivery_epoch, 2);
     }
 
     #[test]
