@@ -252,7 +252,7 @@ impl CleanupPermit {
         match self.service.sender.try_send(job) {
             Ok(()) => self.active = false,
             Err(error) => {
-                let job = error.into_inner();
+                let job = super::recover_try_send_value(error);
                 let mut orphaned = self
                     .service
                     .state
