@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
+vi.mock("@tauri-apps/api/core", () => ({
+  // These state-only tests intentionally keep initialization pending. The
+  // activity suite exercises the complete native lifecycle under `act`.
+  invoke: vi.fn(() => new Promise(() => undefined)),
+}));
+
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: vi.fn().mockReturnValue({
     state: {
