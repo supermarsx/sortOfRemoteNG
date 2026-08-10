@@ -184,7 +184,7 @@ describe("useSessionManager settings effects", () => {
         connectionCount: 1,
       });
       const { result, rerender } = renderHook(() => useSessionManager());
-      let connectPromise!: Promise<void>;
+      let connectPromise!: Promise<string | undefined>;
 
       act(() => {
         connectPromise = result.current.handleConnect(connection);
@@ -256,7 +256,7 @@ describe("useSessionManager settings effects", () => {
         warnOnClose: false,
       });
       const { result, rerender } = renderHook(() => useSessionManager());
-      let connectPromise!: Promise<void>;
+      let connectPromise!: Promise<string | undefined>;
 
       act(() => {
         connectPromise = result.current.handleConnect(connection);
@@ -534,6 +534,47 @@ describe("useSessionManager settings effects", () => {
     expect(result.current.activeSessionId).toBe(foregroundSession.id);
   });
 
+  it("returns the exact created session id and no id when the connection limit rejects creation", async () => {
+    const connection = makeConnection({ id: "conn-correlated" });
+    const { result, rerender } = renderHook(() => useSessionManager());
+
+    let createdSessionId: string | undefined;
+    await act(async () => {
+      createdSessionId = await result.current.handleConnect(connection);
+    });
+    const addedSession = connectionMocks.dispatch.mock.calls.find(
+      ([action]) => action.type === "ADD_SESSION",
+    )?.[0].payload as ConnectionSession;
+    expect(createdSessionId).toBe(addedSession.id);
+
+    connectionMocks.state = {
+      sessions: [addedSession],
+      connections: [connection],
+    };
+    SettingsManager.getInstance().applyInMemory({
+      maxConcurrentConnections: 1,
+    });
+    connectionMocks.dispatch.mockClear();
+    rerender();
+
+    let rejectedConnect!: Promise<string | undefined>;
+    act(() => {
+      rejectedConnect = result.current.handleConnect(
+        makeConnection({ id: "conn-rejected" }),
+      );
+    });
+    await waitFor(() =>
+      expect(result.current.confirmDialog?.props.message).toMatch(
+        /maximum concurrent connections/i,
+      ),
+    );
+    act(() => result.current.confirmDialog?.props.onConfirm());
+    await expect(rejectedConnect).resolves.toBeUndefined();
+    expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "ADD_SESSION" }),
+    );
+  });
+
   it.each(singletonIntegrationProtocols)(
     "allows only one healthy %s native session but ignores cold disconnected tabs",
     async (protocol) => {
@@ -560,7 +601,7 @@ describe("useSessionManager settings effects", () => {
       };
       const { result, rerender } = renderHook(() => useSessionManager());
 
-      let blocked!: Promise<void>;
+      let blocked!: Promise<string | undefined>;
       act(() => {
         blocked = result.current.handleConnect(secondDrive);
       });
@@ -697,7 +738,7 @@ describe("useSessionManager settings effects", () => {
     };
     rerender();
 
-    let blocked!: Promise<void>;
+    let blocked!: Promise<string | undefined>;
     act(() => {
       blocked = result.current.handleConnect(secondConnection);
     });
@@ -724,7 +765,7 @@ describe("useSessionManager settings effects", () => {
     });
     const { result } = renderHook(() => useSessionManager());
 
-    let connectPromise!: Promise<void>;
+    let connectPromise!: Promise<string | undefined>;
     act(() => {
       connectPromise = result.current.handleConnect(makeConnection());
     });
@@ -777,7 +818,7 @@ describe("useSessionManager settings effects", () => {
     });
     const { result } = renderHook(() => useSessionManager());
 
-    let connectPromise!: Promise<void>;
+    let connectPromise!: Promise<string | undefined>;
     act(() => {
       connectPromise = result.current.handleConnect(makeConnection());
     });

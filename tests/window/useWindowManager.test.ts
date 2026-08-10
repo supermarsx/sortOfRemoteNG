@@ -109,6 +109,73 @@ describe("useWindowManager", () => {
     expect(mockWindowListeners.size).toBe(0);
   });
 
+  it("does not poll or detach a later same-connection session for a missing exact session id", async () => {
+    let unmount: (() => void) | undefined;
+    let usingFakeTimers = false;
+    try {
+      const handleSessionDetach = vi.fn();
+      const baseProps = {
+        connections: [makeConnection("conn-shared")],
+        tabGroups: [],
+        dispatch: vi.fn(),
+        setActiveSessionId: vi.fn(),
+        handleSessionClose: vi.fn().mockResolvedValue(undefined),
+        handleSessionDetach,
+      };
+      const rendered = renderHook((props: any) => useWindowManager(props), {
+        initialProps: {
+          ...baseProps,
+          sessions: [] as ReturnType<typeof makeSession>[],
+        },
+      });
+      unmount = rendered.unmount;
+
+      const { listen } = await import("@tauri-apps/api/event");
+      await waitFor(() => {
+        expect(
+          vi
+            .mocked(listen)
+            .mock.calls.some(
+              ([eventName]) => eventName === "connect-in-new-window",
+            ),
+        ).toBe(true);
+      });
+      const requestDetach = [...vi.mocked(listen).mock.calls]
+        .reverse()
+        .find(([eventName]) => eventName === "connect-in-new-window")?.[1] as
+        | ((event: { payload: any }) => void)
+        | undefined;
+      expect(requestDetach).toBeTypeOf("function");
+      vi.useFakeTimers();
+      usingFakeTimers = true;
+
+      act(() => {
+        requestDetach!({ payload: { sessionId: "rejected-session" } });
+      });
+      expect(vi.getTimerCount()).toBe(0);
+
+      rendered.rerender({
+        ...baseProps,
+        sessions: [
+          makeSession("later-session", { connectionId: "conn-shared" }),
+        ],
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+
+      expect(handleSessionDetach).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+      usingFakeTimers = false;
+      rendered.unmount();
+      unmount = undefined;
+    } finally {
+      if (usingFakeTimers) vi.useRealTimers();
+      unmount?.();
+    }
+  });
+
   it("main window entry contains session IDs for non-detached sessions", () => {
     const { result } = renderWindowManager();
     const mainEntry = result.current.registry.current.windows.get("main")!;

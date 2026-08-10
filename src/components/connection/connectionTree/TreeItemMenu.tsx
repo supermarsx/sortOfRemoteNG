@@ -74,7 +74,9 @@ function TreeItemMenu({
   menuPosition: { x: number; y: number } | null;
   triggerRef: React.RefObject<HTMLButtonElement | null>;
   onClose: () => void;
-  onConnect: (c: Connection) => void;
+  onConnect: (
+    c: Connection,
+  ) => void | string | undefined | Promise<string | undefined>;
   onDisconnect: (c: Connection) => void;
   onEdit: (c: Connection) => void;
   onDelete: (c: Connection) => void;
@@ -173,6 +175,26 @@ function TreeItemMenu({
     }
   }, [showMenu]);
 
+  const connectAndPlaceSession = async (targetWindow?: string) => {
+    try {
+      // handleConnect returns only after it either rejected/cancelled the
+      // request or created a concrete session. Correlating by that immutable
+      // id prevents this intent from ever targeting a later session for the
+      // same saved connection.
+      const sessionId = await onConnect(connection);
+      if (!sessionId) return;
+
+      const { emit } = await import("@tauri-apps/api/event");
+      if (targetWindow) {
+        await emit("connect-in-window", { sessionId, targetWindow });
+      } else {
+        await emit("connect-in-new-window", { sessionId });
+      }
+    } catch (error) {
+      console.error("Failed to connect session in requested window:", error);
+    }
+  };
+
   return (
     <MenuSurface
       isOpen={showMenu}
@@ -226,16 +248,7 @@ function TreeItemMenu({
         <>
           <button
             onClick={act(() => {
-              // Connect then immediately detach to a new window
-              onConnect(connection);
-              // Defer detach to let the session be created first
-              setTimeout(() => {
-                import("@tauri-apps/api/event").then(({ emit }) => {
-                  emit("connect-in-new-window", {
-                    connectionId: connection.id,
-                  });
-                });
-              }, 500);
+              void connectAndPlaceSession();
             })}
             className="sor-menu-item"
           >
@@ -295,15 +308,7 @@ function TreeItemMenu({
                     key={w.label}
                     role="menuitem"
                     onClick={act(() => {
-                      onConnect(connection);
-                      setTimeout(() => {
-                        import("@tauri-apps/api/event").then(({ emit }) => {
-                          emit("connect-in-window", {
-                            connectionId: connection.id,
-                            targetWindow: w.label,
-                          });
-                        });
-                      }, 500);
+                      void connectAndPlaceSession(w.label);
                     })}
                     className="sor-menu-item"
                   >

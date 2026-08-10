@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen as listenToEvent } from "@tauri-apps/api/event";
 import {
   ConnectionSession,
   Connection,
@@ -696,52 +697,43 @@ export function useWindowManager({
     if (typeof isTauri !== "function" || !isTauri()) return;
     const cleanups: Array<() => void> = [];
     let mounted = true;
+    const retainCleanup = (unlisten: () => void) => {
+      if (mounted) cleanups.push(unlisten);
+      else unlisten();
+    };
 
-    import("@tauri-apps/api/event")
-      .then(({ listen }) => {
-        // Connect in new window: find the session by connectionId, then detach
-        listen<{ connectionId: string }>("connect-in-new-window", (event) => {
-          const { connectionId } = event.payload;
-          // Wait for session to appear in state
-          const check = () => {
-            const session = sessionsRef.current.find(
-              (s) => s.connectionId === connectionId && !s.layout?.isDetached,
-            );
-            if (session && detachRef.current) {
-              detachRef.current(session.id);
-            } else {
-              // Retry briefly
-              setTimeout(check, 200);
-            }
-          };
-          setTimeout(check, 100);
-        }).then((fn) => {
-          if (mounted) cleanups.push(fn);
-          else fn();
-        });
+    // The connection flow supplies the exact session it created. Never poll
+    // by saved connection id: a rejected request must not retain an intent
+    // capable of detaching a different session opened later.
+    void listenToEvent<{ sessionId: string }>(
+      "connect-in-new-window",
+      (event) => {
+        const { sessionId } = event.payload;
+        const session = sessionsRef.current.find(
+          (candidate) =>
+            candidate.id === sessionId && !candidate.layout?.isDetached,
+        );
+        if (session) detachRef.current?.(session.id);
+      },
+    )
+      .then(retainCleanup)
+      .catch(() => {});
 
-        // Connect in specific window: find session, then move it
-        listen<{ connectionId: string; targetWindow: string }>(
-          "connect-in-window",
-          (event) => {
-            const { connectionId, targetWindow } = event.payload;
-            const check = () => {
-              const session = sessionsRef.current.find(
-                (s) => s.connectionId === connectionId && !s.layout?.isDetached,
-              );
-              if (session) {
-                handleMoveSession(session.id, targetWindow as WindowId);
-              } else {
-                setTimeout(check, 200);
-              }
-            };
-            setTimeout(check, 100);
-          },
-        ).then((fn) => {
-          if (mounted) cleanups.push(fn);
-          else fn();
-        });
-      })
+    // Connect in specific window: move that same exact session once.
+    void listenToEvent<{ sessionId: string; targetWindow: string }>(
+      "connect-in-window",
+      (event) => {
+        const { sessionId, targetWindow } = event.payload;
+        const session = sessionsRef.current.find(
+          (candidate) =>
+            candidate.id === sessionId && !candidate.layout?.isDetached,
+        );
+        if (session) {
+          void handleMoveSession(session.id, targetWindow as WindowId);
+        }
+      },
+    )
+      .then(retainCleanup)
       .catch(() => {});
 
     return () => {

@@ -520,7 +520,9 @@ export const useSessionManager = () => {
    * Creates a new session for a given connection and begins establishing it.
    * @param connection - Connection definition to open.
    */
-  const handleConnect = async (connection: Connection) => {
+  const handleConnect = async (
+    connection: Connection,
+  ): Promise<string | undefined> => {
     const settings = settingsManager.getSettings();
     const runtimeCapabilities = await loadRuntimeCapabilities();
     const unsupportedMessage =
@@ -543,7 +545,7 @@ export const useSessionManager = () => {
       );
       if (existingSession) {
         setActiveSessionId(existingSession.id);
-        return;
+        return existingSession.id;
       }
       const singletonConflict = findSingletonIntegrationConflict(
         state.sessions,
@@ -652,13 +654,14 @@ export const useSessionManager = () => {
       await lifecycle.emitInitialStatus(session, connection, {
         reason: "error",
       });
-      return;
+      return session.id;
     }
 
     const completed = await connectSession(session, connection);
     if (completed) {
       await lifecycle.emitInitialStatus(session, connection);
     }
+    return session.id;
   };
 
   const reconnectSession = async (
