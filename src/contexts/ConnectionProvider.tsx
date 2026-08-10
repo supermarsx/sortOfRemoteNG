@@ -590,8 +590,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // must cross the same durable barrier before the mutable current database
   // can advance.
   useEffect(
-    () =>
-      databaseManager.registerBeforeDatabaseTransition(flushPendingSave),
+    () => databaseManager.registerBeforeDatabaseTransition(flushPendingSave),
     [databaseManager, flushPendingSave],
   );
 
@@ -612,103 +611,103 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     [dispatch, flushPendingSave],
   );
 
-  const loadData = useCallback(async (expectedDatabaseId?: string) => {
-    const generation = ++loadGenerationRef.current;
-    try {
-      // Never replace the rendered rows while their owning database still has
-      // a dirty generation. This also covers callers that changed the manager
-      // selection without going through App.handleDatabaseSelect.
-      await flushPendingSave();
+  const loadData = useCallback(
+    async (expectedDatabaseId?: string) => {
+      const generation = ++loadGenerationRef.current;
+      try {
+        // Never replace the rendered rows while their owning database still has
+        // a dirty generation. This also covers callers that changed the manager
+        // selection without going through App.handleDatabaseSelect.
+        await flushPendingSave();
 
-      const target = databaseManager.captureCurrentDatabaseDataTarget();
-      if (!target) {
-        throw new Error("No collection selected");
-      }
-      if (
-        expectedDatabaseId &&
-        target.databaseId !== expectedDatabaseId
-      ) {
-        return false;
-      }
+        const target = databaseManager.captureCurrentDatabaseDataTarget();
+        if (!target) {
+          throw new Error("No collection selected");
+        }
+        if (expectedDatabaseId && target.databaseId !== expectedDatabaseId) {
+          return false;
+        }
 
-      const data = await target.load();
-      if (
-        generation !== loadGenerationRef.current ||
-        databaseManager.getCurrentDatabase()?.id !== target.databaseId
-      ) {
-        return false;
-      }
+        const data = await target.load();
+        if (
+          generation !== loadGenerationRef.current ||
+          databaseManager.getCurrentDatabase()?.id !== target.databaseId
+        ) {
+          return false;
+        }
 
-      // Edits can still arrive while an encrypted or recovered collection is
-      // loading. Flush the old owner once more immediately before publishing.
-      await flushPendingSave();
-      if (
-        generation !== loadGenerationRef.current ||
-        databaseManager.getCurrentDatabase()?.id !== target.databaseId
-      ) {
-        return false;
-      }
+        // Edits can still arrive while an encrypted or recovered collection is
+        // loading. Flush the old owner once more immediately before publishing.
+        await flushPendingSave();
+        if (
+          generation !== loadGenerationRef.current ||
+          databaseManager.getCurrentDatabase()?.id !== target.databaseId
+        ) {
+          return false;
+        }
 
-      if (data && data.connections) {
-        // Convert date strings back to Date objects (with validation)
-        const toValidDate = (
-          value: unknown,
-          field: string,
-          connId?: string,
-        ): Date => {
-          if (!value) return new Date();
-          const d = new Date(value as string | number);
-          if (isNaN(d.getTime())) {
-            console.warn(
-              `Invalid ${field} date for connection ${connId}:`,
-              value,
-            );
-            return new Date();
-          }
-          return d;
-        };
-        const connections = data.connections.map((conn: any) =>
-          normalizeAdvancedProtocolConnection({
-            ...conn,
-            createdAt: toValidDate(conn.createdAt, "createdAt", conn.id),
-            updatedAt: toValidDate(conn.updatedAt, "updatedAt", conn.id),
-          } as Connection),
-        );
-        const tabGroups = Array.isArray(data.tabGroups) ? data.tabGroups : [];
-        stateRef.current = {
-          ...stateRef.current,
-          connections,
-          tabGroups,
-        };
-        connectionsRef.current = connections;
-        tabGroupsRef.current = tabGroups;
-        baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
-        baseDispatch({ type: "SET_TAB_GROUPS", payload: tabGroups });
+        if (data && data.connections) {
+          // Convert date strings back to Date objects (with validation)
+          const toValidDate = (
+            value: unknown,
+            field: string,
+            connId?: string,
+          ): Date => {
+            if (!value) return new Date();
+            const d = new Date(value as string | number);
+            if (isNaN(d.getTime())) {
+              console.warn(
+                `Invalid ${field} date for connection ${connId}:`,
+                value,
+              );
+              return new Date();
+            }
+            return d;
+          };
+          const connections = data.connections.map((conn: any) =>
+            normalizeAdvancedProtocolConnection({
+              ...conn,
+              createdAt: toValidDate(conn.createdAt, "createdAt", conn.id),
+              updatedAt: toValidDate(conn.updatedAt, "updatedAt", conn.id),
+            } as Connection),
+          );
+          const tabGroups = Array.isArray(data.tabGroups) ? data.tabGroups : [];
+          stateRef.current = {
+            ...stateRef.current,
+            connections,
+            tabGroups,
+          };
+          connectionsRef.current = connections;
+          tabGroupsRef.current = tabGroups;
+          baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
+          baseDispatch({ type: "SET_TAB_GROUPS", payload: tabGroups });
+        }
+        // Mark as loaded after successfully loading data
+        activeDatabaseTargetRef.current = target;
+        hasLoadedRef.current = true;
+        dirtyRevisionRef.current = 0;
+        persistedRevisionRef.current = 0;
+        pendingSnapshotRef.current = null;
+        setPersistence({
+          dirty: false,
+          saving: false,
+          error: null,
+        });
+        return true;
+      } catch (error) {
+        if (
+          generation !== loadGenerationRef.current ||
+          (expectedDatabaseId !== undefined &&
+            databaseManager.getCurrentDatabase()?.id !== expectedDatabaseId)
+        ) {
+          return false;
+        }
+        console.error("Failed to load data:", error);
+        throw error;
       }
-      // Mark as loaded after successfully loading data
-      activeDatabaseTargetRef.current = target;
-      hasLoadedRef.current = true;
-      dirtyRevisionRef.current = 0;
-      persistedRevisionRef.current = 0;
-      pendingSnapshotRef.current = null;
-      setPersistence({
-        dirty: false,
-        saving: false,
-        error: null,
-      });
-      return true;
-    } catch (error) {
-      if (
-        generation !== loadGenerationRef.current ||
-        (expectedDatabaseId !== undefined &&
-          databaseManager.getCurrentDatabase()?.id !== expectedDatabaseId)
-      ) {
-        return false;
-      }
-      console.error("Failed to load data:", error);
-      throw error;
-    }
-  }, [databaseManager, flushPendingSave]);
+    },
+    [databaseManager, flushPendingSave],
+  );
 
   // Debounced auto-save: coalesces rapid connection changes into a single write.
   const debouncedSave = useCallback(() => {
