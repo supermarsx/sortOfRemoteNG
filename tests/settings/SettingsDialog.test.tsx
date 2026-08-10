@@ -114,12 +114,16 @@ const mockSettings = {
   exportPassword: undefined,
 };
 
+const mockSettingsManager = {
+  loadSettings: vi.fn().mockResolvedValue(mockSettings),
+  saveSettings: vi.fn(),
+};
+
 vi.mock("../../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
-    getInstance: () => ({
-      loadSettings: vi.fn().mockResolvedValue(mockSettings),
-      saveSettings: vi.fn(),
-    }),
+    // Match the production singleton contract. Returning a new object on every
+    // render retriggers effects that correctly depend on the manager identity.
+    getInstance: () => mockSettingsManager,
   },
 }));
 
