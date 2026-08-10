@@ -120,6 +120,7 @@ fn root_registry_only_orchestrates_external_registrars_in_original_order() {
         "register_platform(",
         "register_collab(",
         "ops_startup_state::register(",
+        "ops_startup_state::register_scheduler(",
         "register_api_service(",
         "register_api_server_controller(",
     ];
@@ -317,8 +318,26 @@ fn ops_startup_state_registrar_is_exported_by_the_domain_crate() {
         &mut tauri::App<tauri::Wry>,
         &std::path::Path,
     ) -> Result<(), CredentialError> = sorng_app_domains::ops_startup_state::register;
+    let scheduler_registrar: fn(
+        &mut tauri::App<tauri::Wry>,
+        &std::path::Path,
+    ) -> tauri::Result<()> = sorng_app_domains::ops_startup_state::register_scheduler;
+    let scheduler_stopper: fn(&tauri::AppHandle) =
+        sorng_app_domains::ops_startup_state::stop_scheduler;
     assert_eq!(
         std::mem::size_of_val(&registrar),
         std::mem::size_of::<fn()>()
+    );
+    assert_eq!(
+        std::mem::size_of_val(&scheduler_registrar),
+        std::mem::size_of::<fn()>()
+    );
+    assert_eq!(
+        std::mem::size_of_val(&scheduler_stopper),
+        std::mem::size_of::<fn()>()
+    );
+    assert_eq!(
+        sorng_app_domains::ops_startup_state::MANAGED_STATE_REGISTRATIONS,
+        73
     );
 }

@@ -183,7 +183,7 @@ pub fn run() {
 
         #[cfg(feature = "ops")]
         if matches!(event, tauri::RunEvent::Exit) {
-            state_registry::stop_scheduler(app_handle);
+            sorng_app_domains::ops_startup_state::stop_scheduler(app_handle);
         }
     });
 }

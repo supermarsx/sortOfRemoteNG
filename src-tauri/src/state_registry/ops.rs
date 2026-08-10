@@ -78,7 +78,7 @@ use kafka::service::KafkaServiceState;
 /// Number of concrete Tauri state registrations owned by this codegen unit.
 /// Kept as an explicit parity contract so state additions cannot accidentally
 /// migrate back into the root `app_lib` composition unit unnoticed.
-pub const MANAGED_STATE_REGISTRATIONS: usize = 72;
+pub const MANAGED_STATE_REGISTRATIONS: usize = 73;
 
 const LOCALES_DIRECTORY_NAME: &str = "locales";
 const PORTABLE_RESOURCES_DIRECTORY_NAME: &str = "resources";
@@ -423,6 +423,61 @@ pub fn register(
         _watcher: i18n_watcher,
     });
     Ok(())
+}
+
+/// Register and start the operations scheduler after the other ops-domain
+/// state has been installed. Keeping this ownership in the ops registrar
+/// prevents root composition from acquiring another `App::manage` monomorph.
+pub fn register_scheduler(
+    app: &mut tauri::App<tauri::Wry>,
+    app_dir: &std::path::Path,
+) -> tauri::Result<()> {
+    // This plaintext store is intentionally dedicated to the scheduler's
+    // non-secret Wake-on-LAN task family. SchedulerService rejects every
+    // legacy action that could carry credentials before it reaches disk.
+    let storage_path = app_dir.join("scheduler-wol-state-v1.json");
+    let state = crate::scheduler::service::SchedulerService::with_storage_path(storage_path)
+        .map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("scheduler state could not be loaded from app data: {error}"),
+            )
+        })?;
+
+    if !app.manage(state.clone()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "scheduler state was registered more than once",
+        )
+        .into());
+    }
+
+    // Setup runs before IPC is exposed. Starting through Tauri's Tokio
+    // runtime here makes lifecycle ownership explicit; the service method is
+    // idempotent, so its constructor's runtime-aware safeguard cannot create
+    // a second background loop.
+    tauri::async_runtime::block_on(
+        crate::scheduler::service::SchedulerService::ensure_background_started(state),
+    )
+    .map_err(|error| {
+        std::io::Error::other(format!(
+            "scheduler background loop could not start: {error}"
+        ))
+    })?;
+
+    Ok(())
+}
+
+/// Stop the scheduler during application shutdown without exposing its state
+/// ownership back to the root composition crate.
+pub fn stop_scheduler(app_handle: &tauri::AppHandle) {
+    if let Some(state) = app_handle.try_state::<crate::scheduler::service::SchedulerServiceState>()
+    {
+        let state = state.inner().clone();
+        tauri::async_runtime::block_on(
+            crate::scheduler::service::SchedulerService::stop_background(&state),
+        );
+    }
 }
 
 #[cfg(test)]
