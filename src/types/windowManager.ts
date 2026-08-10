@@ -99,6 +99,8 @@ export type WindowCommand =
 /** Data pushed from main to a detached window after any state change. */
 export interface WindowSessionSync {
   windowId: WindowId;
+  /** Sender-owned ordering token used to reject duplicate or stale snapshots. */
+  syncRevision: number;
   sessions: ConnectionSession[];
   connections: Connection[];
   tabGroups: TabGroup[];

@@ -8,14 +8,19 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Exercise the real provider; detached policy updates are now provider-owned.
 vi.unmock("../../src/contexts/SettingsContext");
-import DetachedClient from "../../app/detached/DetachedClient";
-import { emit, listen } from "@tauri-apps/api/event";
+import DetachedClient, {
+  DetachedSessionContent,
+} from "../../app/detached/DetachedClient";
+import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import {
   SettingsManager,
   SettingsSyncRevisionTracker,
   _resetInMemorySettingsStore,
 } from "../../src/utils/settings/settingsManager";
+import { SettingsProvider } from "../../src/contexts/SettingsContext";
+import { ConnectionContext } from "../../src/contexts/ConnectionContextTypes";
+import type { WindowSessionSync } from "../../src/types/windowManager";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
@@ -54,18 +59,26 @@ let closeResultHandler:
 let mainSessionClosedHandler:
   | ((event: { payload: { sessionId: string } }) => void)
   | undefined;
-let syncHandler:
-  | ((event: {
-      payload: {
-        windowId: string;
-        sessions: unknown[];
-        connections: unknown[];
-        tabGroups: unknown[];
-        activeSessionId: string;
-      };
-    }) => void)
-  | undefined;
+type SyncEvent = { payload: WindowSessionSync };
+type SyncHandler = (event: SyncEvent) => void;
+type SyncRegistration = {
+  handler: SyncHandler;
+  active: boolean;
+  unlisten: ReturnType<typeof vi.fn>;
+};
+
+const syncRegistrations: SyncRegistration[] = [];
+let syncHandler: SyncHandler | undefined;
 let settingsSyncHandler: ((event: { payload: unknown }) => void) | undefined;
+
+const activeSyncRegistrations = () =>
+  syncRegistrations.filter(({ active }) => active);
+
+const emitSyncSnapshot = (payload: WindowSessionSync) => {
+  for (const registration of activeSyncRegistrations()) {
+    registration.handler({ payload });
+  }
+};
 
 const mockWindow = {
   label: "detached-1",
@@ -141,18 +154,30 @@ vi.mock("@tauri-apps/api/event", () => ({
         mainSessionClosedHandler = handler as typeof mainSessionClosedHandler;
       }
       if (eventName === "wm:sync") {
-        syncHandler = handler as typeof syncHandler;
+        const registration: SyncRegistration = {
+          handler: handler as SyncHandler,
+          active: true,
+          unlisten: vi.fn(),
+        };
+        registration.unlisten.mockImplementation(() => {
+          registration.active = false;
+        });
+        syncRegistrations.push(registration);
+        syncHandler = registration.handler;
         queueMicrotask(() => {
-          handler({
+          if (!registration.active) return;
+          registration.handler({
             payload: {
               windowId: "detached-1",
-              sessions: [syncedSession],
-              connections: [syncedConnection],
+              syncRevision: 1,
+              sessions: [syncedSession as any],
+              connections: [syncedConnection as any],
               tabGroups: [],
               activeSessionId: "s1",
             },
           });
         });
+        return Promise.resolve(registration.unlisten);
       }
       if (eventName === "settings-sync") {
         settingsSyncHandler = handler as typeof settingsSyncHandler;
@@ -161,6 +186,8 @@ vi.mock("@tauri-apps/api/event", () => ({
     },
   ),
 }));
+
+const defaultListenImplementation = vi.mocked(listen).getMockImplementation()!;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(() => Promise.resolve()),
@@ -175,7 +202,9 @@ describe("DetachedClient accessibility", () => {
     closeResultHandler = undefined;
     mainSessionClosedHandler = undefined;
     syncHandler = undefined;
+    syncRegistrations.length = 0;
     settingsSyncHandler = undefined;
+    vi.mocked(listen).mockImplementation(defaultListenImplementation);
     vi.mocked(invoke).mockResolvedValue(undefined);
   });
 
@@ -193,6 +222,484 @@ describe("DetachedClient accessibility", () => {
       ).toBeInTheDocument();
     });
   };
+
+  it("keeps exactly one live wm:sync listener and releases it on unmount", async () => {
+    (window as any).__TAURI__ = true;
+    const { unmount } = render(<DetachedClient />);
+
+    await waitFor(() => {
+      expect(activeSyncRegistrations()).toHaveLength(1);
+    });
+    expect(syncRegistrations).toHaveLength(1);
+    expect(
+      vi
+        .mocked(listen)
+        .mock.calls.filter(([eventName]) => eventName === "wm:sync"),
+    ).toHaveLength(1);
+
+    const [registration] = syncRegistrations;
+    unmount();
+
+    await waitFor(() => {
+      expect(activeSyncRegistrations()).toHaveLength(0);
+    });
+    expect(registration.unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies only the newest sync dispatch set and closes once for a newest empty snapshot", async () => {
+    (window as any).__TAURI__ = true;
+    const dispatch = vi.fn();
+    const noopAsync = vi.fn().mockResolvedValue(undefined);
+    const { unmount } = render(
+      <SettingsProvider>
+        <ConnectionContext.Provider
+          value={
+            {
+              state: {
+                connections: [],
+                sessions: [],
+                selectedConnection: null,
+                selectedConnectionIds: new Set(),
+                filter: {
+                  searchTerm: "",
+                  protocols: [],
+                  tags: [],
+                  colorTags: [],
+                  showRecent: false,
+                  showFavorites: false,
+                  sortBy: "custom",
+                  sortDirection: "asc",
+                },
+                isLoading: false,
+                sidebarCollapsed: false,
+                tabGroups: [],
+              },
+              dispatch,
+              dispatchAndFlush: noopAsync,
+              persistence: { dirty: false, saving: false, error: null },
+              saveData: noopAsync,
+              flushPendingSave: noopAsync,
+              loadData: vi.fn().mockResolvedValue(true),
+            } as any
+          }
+        >
+          <DetachedSessionContent onRegisterDisconnect={vi.fn()} />
+        </ConnectionContext.Provider>
+      </SettingsProvider>,
+    );
+
+    await waitFor(() => {
+      expect(dispatch).toHaveBeenCalledTimes(3);
+      expect(activeSyncRegistrations()).toHaveLength(1);
+    });
+    dispatch.mockClear();
+    mockWindow.close.mockClear();
+
+    const newestSession = { ...syncedSession, name: "Newest Session" };
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 4,
+        sessions: [newestSession as any],
+        connections: [syncedConnection as any],
+        tabGroups: [],
+        activeSessionId: "s1",
+      });
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 4,
+        sessions: [{ ...syncedSession, name: "Duplicate Session" } as any],
+        connections: [syncedConnection as any],
+        tabGroups: [],
+        activeSessionId: "s1",
+      });
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 3,
+        sessions: [{ ...syncedSession, name: "Stale Session" } as any],
+        connections: [syncedConnection as any],
+        tabGroups: [],
+        activeSessionId: "s1",
+      });
+    });
+
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      {
+        type: "SET_CONNECTIONS",
+        payload: [expect.objectContaining({ id: "c1" })],
+      },
+      {
+        type: "SET_SESSIONS",
+        payload: [expect.objectContaining({ name: "Newest Session" })],
+      },
+      { type: "SET_TAB_GROUPS", payload: [] },
+    ]);
+
+    dispatch.mockClear();
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 5,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 5,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      "SET_CONNECTIONS",
+      "SET_SESSIONS",
+      "SET_TAB_GROUPS",
+    ]);
+    expect(mockWindow.close).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("settles a before-close rejection and retries one later empty sync", async () => {
+    (window as any).__TAURI__ = true;
+    await renderAndLoadDetachedClient();
+    await waitFor(() => expect(closeRequestedHandler).toBeTypeOf("function"));
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 2,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(1));
+
+    vi.mocked(emitTo).mockRejectedValueOnce(new Error("before close rejected"));
+    await act(async () => {
+      await expect(
+        closeRequestedHandler!({ preventDefault: vi.fn() }),
+      ).resolves.toBeUndefined();
+    });
+    expect(mockWindow.close).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 3,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 3,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(2));
+  });
+
+  it("settles a rejected final close, restores confirmation, and retries once", async () => {
+    (window as any).__TAURI__ = true;
+    mockWindow.close
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("final close rejected"))
+      .mockResolvedValueOnce(undefined);
+    await renderAndLoadDetachedClient();
+    await waitFor(() => expect(closeRequestedHandler).toBeTypeOf("function"));
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 2,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await expect(
+        closeRequestedHandler!({ preventDefault: vi.fn() }),
+      ).resolves.toBeUndefined();
+    });
+    expect(mockWindow.close).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 3,
+        sessions: [syncedSession as any],
+        connections: [syncedConnection as any],
+        tabGroups: [],
+        activeSessionId: "s1",
+      });
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("tablist", { name: /detached session tabs/i }),
+      ).toBeInTheDocument();
+    });
+
+    let manualClose: Promise<void> | undefined;
+    act(() => {
+      manualClose = closeRequestedHandler!({ preventDefault: vi.fn() });
+    });
+    expect(await screen.findByTestId("confirm-dialog")).toBeInTheDocument();
+    expect(mockWindow.close).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByTestId("confirm-no"));
+    await act(async () => {
+      await manualClose;
+    });
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 4,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 4,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(3));
+  });
+
+  it("queues a newer empty sync behind a cancelled delayed close intent", async () => {
+    (window as any).__TAURI__ = true;
+    await renderAndLoadDetachedClient();
+    await waitFor(() => expect(closeRequestedHandler).toBeTypeOf("function"));
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 2,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 3,
+        sessions: [syncedSession as any],
+        connections: [syncedConnection as any],
+        tabGroups: [],
+        activeSessionId: "s1",
+      });
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("tablist", { name: /detached session tabs/i }),
+      ).toBeInTheDocument();
+    });
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 4,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 4,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    expect(mockWindow.close).toHaveBeenCalledTimes(1);
+
+    const preventDefault = vi.fn();
+    await act(async () => {
+      await closeRequestedHandler!({ preventDefault });
+    });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("confirm-dialog")).not.toBeInTheDocument();
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 5,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    expect(mockWindow.close).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await closeRequestedHandler!({ preventDefault: vi.fn() });
+    });
+    expect(mockWindow.close).toHaveBeenCalledTimes(3);
+  });
+
+  it("coalesces a newer automatic close during manual checking and re-drives it once", async () => {
+    (window as any).__TAURI__ = true;
+    await renderAndLoadDetachedClient();
+    await waitFor(() => expect(closeRequestedHandler).toBeTypeOf("function"));
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("settings-updated", {
+          detail: {
+            ...SettingsManager.getInstance().getSettings(),
+            warnOnDetachClose: false,
+          },
+        }),
+      );
+    });
+
+    let pendingCloseRequest:
+      | { requestId: string; sessionId: string }
+      | undefined;
+    vi.mocked(emit).mockImplementation(async (eventName, payload) => {
+      const command = payload as any;
+      if (eventName === "wm:command" && command.type === "CLOSE_SESSION") {
+        pendingCloseRequest = command;
+      }
+    });
+
+    let manualClose: Promise<void> | undefined;
+    act(() => {
+      manualClose = closeRequestedHandler!({ preventDefault: vi.fn() });
+    });
+    await waitFor(() => expect(pendingCloseRequest).toBeDefined());
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 2,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(1));
+
+    // Model the native event raised by that automatic close request while the
+    // manual request is still awaiting its authoritative session result.
+    const coalescedPreventDefault = vi.fn();
+    await act(async () => {
+      await closeRequestedHandler!({
+        preventDefault: coalescedPreventDefault,
+      });
+    });
+    expect(coalescedPreventDefault).toHaveBeenCalledTimes(1);
+    expect(mockWindow.close).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      closeResultHandler?.({
+        payload: {
+          requestId: pendingCloseRequest!.requestId,
+          sessionId: pendingCloseRequest!.sessionId,
+          success: false,
+        },
+      });
+    });
+    await act(async () => {
+      await manualClose;
+    });
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      emitSyncSnapshot({
+        windowId: "detached-1" as any,
+        syncRevision: 3,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      });
+    });
+    expect(mockWindow.close).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await closeRequestedHandler!({ preventDefault: vi.fn() });
+    });
+    expect(mockWindow.close).toHaveBeenCalledTimes(3);
+    expect(screen.queryByTestId("confirm-dialog")).not.toBeInTheDocument();
+  });
+
+  it("releases a wm:sync listener that resolves after unmount", async () => {
+    let resolveLateListener: ((unlisten: () => void) => void) | undefined;
+    const lateRegistration: SyncRegistration = {
+      handler: () => {},
+      active: true,
+      unlisten: vi.fn(),
+    };
+    lateRegistration.unlisten.mockImplementation(() => {
+      lateRegistration.active = false;
+    });
+
+    vi.mocked(listen).mockImplementation(((eventName: string, handler: any) => {
+      if (eventName !== "wm:sync") {
+        return (defaultListenImplementation as any)(eventName, handler);
+      }
+      lateRegistration.handler = handler as SyncHandler;
+      syncRegistrations.push(lateRegistration);
+      return new Promise<() => void>((resolve) => {
+        resolveLateListener = resolve;
+      });
+    }) as any);
+
+    const { unmount } = render(<DetachedClient />);
+    await waitFor(() => expect(resolveLateListener).toBeTypeOf("function"));
+    unmount();
+    expect(lateRegistration.unlisten).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveLateListener!(lateRegistration.unlisten as () => void);
+      await Promise.resolve();
+    });
+
+    expect(lateRegistration.unlisten).toHaveBeenCalledTimes(1);
+    expect(activeSyncRegistrations()).toHaveLength(0);
+  });
+
+  it.each([100, 500, 1000])(
+    "does not grow wm:sync listeners across %i accepted emissions",
+    async (emissionCount) => {
+      const { unmount } = render(<DetachedClient />);
+      await waitFor(() => expect(activeSyncRegistrations()).toHaveLength(1));
+
+      act(() => {
+        for (let index = 0; index < emissionCount; index += 1) {
+          emitSyncSnapshot({
+            windowId: "detached-1" as any,
+            syncRevision: index + 2,
+            sessions: [syncedSession as any],
+            connections: [syncedConnection as any],
+            tabGroups: [],
+            activeSessionId: "s1",
+          });
+        }
+      });
+
+      await waitFor(() => {
+        expect(syncRegistrations).toHaveLength(1);
+        expect(activeSyncRegistrations()).toHaveLength(1);
+      });
+      unmount();
+    },
+  );
 
   it("exposes detached tablist/tab semantics and header control labels", async () => {
     await renderAndLoadDetachedClient();
@@ -412,8 +919,9 @@ describe("DetachedClient accessibility", () => {
       syncHandler?.({
         payload: {
           windowId: "detached-1",
-          sessions: [syncedSession, secondSession],
-          connections: [syncedConnection],
+          syncRevision: 2,
+          sessions: [syncedSession as any, secondSession as any],
+          connections: [syncedConnection as any],
           tabGroups: [],
           activeSessionId: "s1",
         },
@@ -490,6 +998,7 @@ describe("DetachedClient reconnect banner", () => {
           handler({
             payload: {
               windowId: "detached-1",
+              syncRevision: 1,
               sessions: [disconnectedSession],
               connections: [syncedConnection],
               tabGroups: [],
@@ -527,6 +1036,7 @@ describe("DetachedClient reconnect banner", () => {
           handler({
             payload: {
               windowId: "detached-1",
+              syncRevision: 1,
               sessions: [errorSession],
               connections: [syncedConnection],
               tabGroups: [],

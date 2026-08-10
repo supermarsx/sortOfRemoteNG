@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { listen as listenToEvent } from "@tauri-apps/api/event";
+import { emitTo, listen as listenToEvent } from "@tauri-apps/api/event";
 import {
   ConnectionSession,
   Connection,
@@ -29,6 +29,97 @@ import {
   advanceSessionLifecycleAuthority,
   applySessionLifecyclePatch,
 } from "../../utils/session/sessionLifecycle";
+
+const WINDOW_SYNC_REVISION_STORAGE_KEY =
+  "sort-of-remote-ng:wm-sync-revision-high-water:v1";
+const WINDOW_SYNC_REVISION_BLOCK_SIZE = 4_096;
+
+export interface WindowSyncRevisionStore {
+  readHighWater: () => string | null;
+  writeHighWater: (value: string) => void;
+}
+
+const browserWindowSyncRevisionStore: WindowSyncRevisionStore = {
+  readHighWater: () => {
+    if (typeof window === "undefined") {
+      throw new Error("wm:sync revision storage is unavailable");
+    }
+    return window.localStorage.getItem(WINDOW_SYNC_REVISION_STORAGE_KEY);
+  },
+  writeHighWater: (value) => {
+    if (typeof window === "undefined") {
+      throw new Error("wm:sync revision storage is unavailable");
+    }
+    window.localStorage.setItem(WINDOW_SYNC_REVISION_STORAGE_KEY, value);
+  },
+};
+
+const parseWindowSyncRevisionHighWater = (raw: string | null): number => {
+  if (raw === null) return 0;
+  if (!/^(0|[1-9]\d*)$/.test(raw)) {
+    throw new Error("wm:sync revision high-water mark is malformed");
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError("wm:sync revision high-water mark is out of range");
+  }
+  return value;
+};
+
+/**
+ * Creates a restart-safe, monotonically increasing revision allocator.
+ *
+ * Each main runtime reserves a block by persisting its end before returning
+ * the first revision, so ordinary emissions do not synchronously write. This
+ * relies on the application-enforced invariant that only one main-window
+ * sender runs at a time. Sequential runtime restarts are supported; concurrent
+ * competing main runtimes are not.
+ */
+export const createWindowSyncRevisionClock = (
+  store: WindowSyncRevisionStore = browserWindowSyncRevisionStore,
+  blockSize = WINDOW_SYNC_REVISION_BLOCK_SIZE,
+): (() => number) => {
+  let nextRevision = 0;
+  let reservedThrough = 0;
+
+  const reserveBlock = () => {
+    if (!Number.isSafeInteger(blockSize) || blockSize <= 0) {
+      throw new RangeError("wm:sync revision block size must be positive");
+    }
+
+    const persistedHighWater = parseWindowSyncRevisionHighWater(
+      store.readHighWater(),
+    );
+    // Never move backwards within a live runtime if storage is externally
+    // cleared or rolled back between block reservations.
+    const reservationBase = Math.max(persistedHighWater, reservedThrough);
+    if (reservationBase > Number.MAX_SAFE_INTEGER - blockSize) {
+      throw new RangeError("wm:sync revision exceeded safe integer range");
+    }
+
+    const blockEnd = reservationBase + blockSize;
+    const serializedBlockEnd = String(blockEnd);
+    store.writeHighWater(serializedBlockEnd);
+    if (store.readHighWater() !== serializedBlockEnd) {
+      throw new Error("wm:sync revision reservation could not be verified");
+    }
+
+    nextRevision = reservationBase + 1;
+    reservedThrough = blockEnd;
+  };
+
+  return () => {
+    if (nextRevision === 0) reserveBlock();
+
+    const revision = nextRevision;
+    nextRevision = revision === reservedThrough ? 0 : Math.max(revision + 1, 1);
+    return revision;
+  };
+};
+
+// Module scope keeps an allocated block intact across hook remounts. Storage
+// access remains lazy, so importing or rendering during SSR has no side effect.
+const nextWindowSyncRevision = createWindowSyncRevisionClock();
 
 interface UseWindowManagerParams {
   sessions: ConnectionSession[];
@@ -124,19 +215,19 @@ export function useWindowManager({
       windowGroupIds.has(g.id),
     );
 
-    const payload: WindowSessionSync = {
-      windowId,
-      sessions: windowSessions,
-      connections: windowConns,
-      tabGroups: windowTabGroups,
-      activeSessionId: entry.activeSessionId,
-    };
-
     try {
-      const { emitTo } = await import("@tauri-apps/api/event");
+      const payload: WindowSessionSync = {
+        windowId,
+        syncRevision: nextWindowSyncRevision(),
+        sessions: windowSessions,
+        connections: windowConns,
+        tabGroups: windowTabGroups,
+        activeSessionId: entry.activeSessionId,
+      };
       await emitTo(windowId, "wm:sync", payload);
     } catch {
-      // Window might have closed — ignore
+      // A missing revision reservation must fail closed before emit. Native
+      // emit failures are also expected when the target window has closed.
     }
   }, []);
 

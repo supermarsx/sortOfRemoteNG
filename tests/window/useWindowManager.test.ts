@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useWindowManager } from "../../src/hooks/window/useWindowManager";
+import {
+  createWindowSyncRevisionClock,
+  useWindowManager,
+} from "../../src/hooks/window/useWindowManager";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -85,6 +88,23 @@ function renderWindowManager(overrides: Record<string, any> = {}) {
   );
 }
 
+function createMemoryRevisionStore(initialHighWater: string | null = null) {
+  let highWater = initialHighWater;
+  const readHighWater = vi.fn(() => highWater);
+  const writeHighWater = vi.fn((value: string) => {
+    highWater = value;
+  });
+  return {
+    store: { readHighWater, writeHighWater },
+    readHighWater,
+    writeHighWater,
+    getHighWater: () => highWater,
+    setHighWater: (value: string | null) => {
+      highWater = value;
+    },
+  };
+}
+
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe("useWindowManager", () => {
@@ -100,6 +120,89 @@ describe("useWindowManager", () => {
     const reg = result.current.registry.current;
     expect(reg.windows.has("main")).toBe(true);
     expect(reg.windows.get("main")!.windowId).toBe("main");
+  });
+
+  it("reserves persisted blocks across a same-millisecond restart and a burst above 1,024", () => {
+    const memory = createMemoryRevisionStore();
+    const firstRuntimeClock = createWindowSyncRevisionClock(memory.store);
+    const burst = Array.from({ length: 5_000 }, () => firstRuntimeClock());
+
+    expect(burst.every(Number.isSafeInteger)).toBe(true);
+    expect(new Set(burst).size).toBe(5_000);
+    expect(burst[burst.length - 1]).toBeGreaterThan(burst[0]);
+    expect(memory.writeHighWater).toHaveBeenCalledTimes(2);
+    expect(memory.getHighWater()).toBe("8192");
+
+    // A sequential runtime restart in the same clock tick skips the unused
+    // tail of the prior block and reserves a fresh block before returning.
+    const restartedRuntimeClock = createWindowSyncRevisionClock(memory.store);
+    const restartedRevision = restartedRuntimeClock();
+    expect(restartedRevision).toBe(8_193);
+    expect(restartedRevision).toBeGreaterThan(burst[burst.length - 1]);
+    expect(memory.writeHighWater).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not depend on the wall clock when time moves backwards", () => {
+    const memory = createMemoryRevisionStore();
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    try {
+      const firstRuntimeClock = createWindowSyncRevisionClock(memory.store);
+      const firstRevision = firstRuntimeClock();
+      dateNow.mockReturnValue(1);
+      const restartedRuntimeClock = createWindowSyncRevisionClock(memory.store);
+      const restartedRevision = restartedRuntimeClock();
+
+      expect(restartedRevision).toBeGreaterThan(firstRevision);
+      expect(dateNow).not.toHaveBeenCalled();
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
+  it("allocates lazily and verifies the persisted block before returning", () => {
+    const memory = createMemoryRevisionStore();
+    const clock = createWindowSyncRevisionClock(memory.store, 4);
+    expect(memory.readHighWater).not.toHaveBeenCalled();
+    expect(memory.writeHighWater).not.toHaveBeenCalled();
+
+    expect(clock()).toBe(1);
+    expect(memory.writeHighWater).toHaveBeenCalledWith("4");
+    expect(memory.readHighWater).toHaveBeenCalledTimes(2);
+
+    let corruptedHighWater: string | null = null;
+    const corruptedClock = createWindowSyncRevisionClock({
+      readHighWater: () => corruptedHighWater,
+      writeHighWater: (value) => {
+        corruptedHighWater = String(Number(value) + 1);
+      },
+    });
+    expect(corruptedClock).toThrow(/could not be verified/);
+  });
+
+  it("does not reuse revisions if storage rolls back before block rollover", () => {
+    const memory = createMemoryRevisionStore();
+    const clock = createWindowSyncRevisionClock(memory.store, 4);
+    expect([clock(), clock(), clock(), clock()]).toEqual([1, 2, 3, 4]);
+
+    memory.setHighWater("0");
+    expect(clock()).toBe(5);
+    expect(memory.getHighWater()).toBe("8");
+  });
+
+  it("throws before allocation on storage failure or safe-integer exhaustion", () => {
+    const writeFailureClock = createWindowSyncRevisionClock({
+      readHighWater: () => null,
+      writeHighWater: () => {
+        throw new Error("storage denied");
+      },
+    });
+    expect(writeFailureClock).toThrow("storage denied");
+
+    const exhaustedClock = createWindowSyncRevisionClock(
+      createMemoryRevisionStore(String(Number.MAX_SAFE_INTEGER)).store,
+      1,
+    );
+    expect(exhaustedClock).toThrow(/safe integer range/);
   });
 
   it("does not subscribe to native window events in a browser runtime", async () => {
@@ -246,6 +349,27 @@ describe("useWindowManager", () => {
     expect(mockEmitTo).not.toHaveBeenCalled();
   });
 
+  it("fails closed before emit when a revision block cannot be persisted", async () => {
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("storage denied");
+      });
+    try {
+      const { result } = renderWindowManager();
+      act(() => {
+        result.current.registerWindow("detached-no-revision" as any, ["s1"]);
+      });
+      await act(async () => {
+        await result.current.syncWindow("detached-no-revision" as any);
+      });
+
+      expect(mockEmitTo).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it("syncWindow completes without error for a registered detached window", async () => {
     const { result } = renderWindowManager();
     act(() => {
@@ -260,6 +384,91 @@ describe("useWindowManager", () => {
     expect(
       result.current.registry.current.windows.has("detached-z" as any),
     ).toBe(true);
+  });
+
+  it("emits sender-owned sync revisions monotonically across manager remounts", async () => {
+    const firstManager = renderWindowManager();
+    act(() => {
+      firstManager.result.current.registerWindow("detached-revision" as any, [
+        "s1",
+      ]);
+    });
+
+    await act(async () => {
+      await firstManager.result.current.syncWindow("detached-revision" as any);
+    });
+    await waitFor(() => {
+      expect(
+        mockEmitTo.mock.calls.filter(
+          ([, eventName]) => eventName === "wm:sync",
+        ),
+      ).toHaveLength(1);
+    });
+    await act(async () => {
+      await firstManager.result.current.syncWindow("detached-revision" as any);
+    });
+
+    const firstRuntimeRevisions = mockEmitTo.mock.calls
+      .filter(([, eventName]) => eventName === "wm:sync")
+      .map(([, , payload]) => payload.syncRevision as number);
+    expect(firstRuntimeRevisions).toHaveLength(2);
+    expect(Number.isSafeInteger(firstRuntimeRevisions[0])).toBe(true);
+    expect(firstRuntimeRevisions[0]).toBeGreaterThan(0);
+    expect(firstRuntimeRevisions[1]).toBeGreaterThan(firstRuntimeRevisions[0]);
+
+    firstManager.unmount();
+    const restartedManager = renderWindowManager();
+    act(() => {
+      restartedManager.result.current.registerWindow(
+        "detached-revision" as any,
+        ["s1"],
+      );
+    });
+    await act(async () => {
+      await restartedManager.result.current.syncWindow(
+        "detached-revision" as any,
+      );
+    });
+
+    const allRevisions = mockEmitTo.mock.calls
+      .filter(([, eventName]) => eventName === "wm:sync")
+      .map(([, , payload]) => payload.syncRevision as number);
+    expect(allRevisions).toHaveLength(3);
+    expect(allRevisions[2]).toBeGreaterThan(allRevisions[1]);
+  });
+
+  it("orders concurrent sync payloads before their emits settle out of order", async () => {
+    const emitResolvers: Array<() => void> = [];
+    mockEmitTo.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          emitResolvers.push(resolve);
+        }),
+    );
+    const { result } = renderWindowManager();
+    act(() => {
+      result.current.registerWindow("detached-concurrent" as any, ["s1"]);
+    });
+
+    let firstSync!: Promise<void>;
+    let secondSync!: Promise<void>;
+    act(() => {
+      firstSync = result.current.syncWindow("detached-concurrent" as any);
+      secondSync = result.current.syncWindow("detached-concurrent" as any);
+    });
+
+    expect(mockEmitTo).toHaveBeenCalledTimes(2);
+    const revisions = mockEmitTo.mock.calls.map(
+      ([, , payload]) => payload.syncRevision as number,
+    );
+    expect(revisions[1]).toBeGreaterThan(revisions[0]);
+
+    await act(async () => {
+      emitResolvers[1]();
+      await secondSync;
+      emitResolvers[0]();
+      await firstSync;
+    });
   });
 
   it("syncWindow ignores non-existent windows without error", async () => {

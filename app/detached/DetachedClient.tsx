@@ -140,8 +140,23 @@ const focusFirstSubmenuItem = (panel: HTMLElement | null) => {
   first?.focus();
 };
 
-const DetachedSessionContent: React.FC<{
-  onRegisterDisconnect: (handler: () => Promise<boolean>) => void;
+type DetachedCloseAttemptFailure =
+  | "vetoed"
+  | "before-close-error"
+  | "final-close-error";
+
+interface DetachedWindowCloseRegistration {
+  onBeforeClose: () => Promise<boolean>;
+  onCloseAttemptFailed: (failure: DetachedCloseAttemptFailure) => void;
+}
+
+interface EmptySyncCloseIntent {
+  revision: number;
+  cancelled: boolean;
+}
+
+export const DetachedSessionContent: React.FC<{
+  onRegisterDisconnect: (registration: DetachedWindowCloseRegistration) => void;
 }> = ({ onRegisterDisconnect }) => {
   useTooltipSystem();
   const { t } = useTranslation();
@@ -193,12 +208,49 @@ const DetachedSessionContent: React.FC<{
     Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
   const closingRef = useRef(false);
   const hasLoadedRef = useRef(false);
+  // The receiver watermark is scoped to this detached-page lifetime. A page
+  // restart resets it to zero and WINDOW_READY requests a fresh revision from
+  // the main-window sender's persisted high-water allocator.
+  const lastAcceptedSyncRevisionRef = useRef(0);
+  const emptySyncCloseIntentRef = useRef<EmptySyncCloseIntent | null>(null);
+  const queuedEmptySyncCloseIntentRef = useRef<EmptySyncCloseIntent | null>(
+    null,
+  );
+  const activeCloseAttemptIntentRef = useRef<EmptySyncCloseIntent | null>(null);
+  const requestEmptySyncCloseRef = useRef<
+    (intent: EmptySyncCloseIntent) => void
+  >(() => undefined);
   const skipNextConfirmRef = useRef(false);
   const reattachRef = useRef(false);
   const handleReattachRef = useRef<(() => void) | null>(null);
   const closeResolverRef = useRef<((value: boolean) => void) | null>(null);
 
   const isTauriRef = useRef(isTauri);
+  const promoteQueuedEmptySyncClose = useCallback(() => {
+    const queuedIntent = queuedEmptySyncCloseIntentRef.current;
+    queuedEmptySyncCloseIntentRef.current = null;
+    if (!queuedIntent || queuedIntent.cancelled) {
+      skipNextConfirmRef.current = false;
+      return null;
+    }
+    emptySyncCloseIntentRef.current = queuedIntent;
+    skipNextConfirmRef.current = true;
+    return queuedIntent;
+  }, []);
+  const requestEmptySyncClose = useCallback(
+    (intent: EmptySyncCloseIntent) => {
+      getCurrentWindow()
+        .close()
+        .catch(() => {
+          if (emptySyncCloseIntentRef.current !== intent) return;
+          emptySyncCloseIntentRef.current = null;
+          const queuedIntent = promoteQueuedEmptySyncClose();
+          if (queuedIntent) requestEmptySyncCloseRef.current(queuedIntent);
+        });
+    },
+    [promoteQueuedEmptySyncClose],
+  );
+  requestEmptySyncCloseRef.current = requestEmptySyncClose;
   const applyTransparency = useCallback(
     (enabled: boolean, opacity?: number) => {
       const targetOpacity = enabled
@@ -261,25 +313,79 @@ const DetachedSessionContent: React.FC<{
     let mounted = true;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Listen for wm:sync from main window
-    const unlistenPromise = listen<WindowSessionSync>("wm:sync", (event) => {
-      if (!mounted || event.payload.windowId !== myWindowId) return;
+    let unlisten: (() => void) | null = null;
+
+    // This is the detached window's only lifetime wm:sync listener. The main
+    // sender can complete concurrent emits out of order, so accept only a
+    // strictly newer revision before applying the full snapshot.
+    void listen<WindowSessionSync>("wm:sync", (event) => {
+      const { payload } = event;
+      if (
+        !mounted ||
+        payload.windowId !== myWindowId ||
+        !Number.isSafeInteger(payload.syncRevision) ||
+        payload.syncRevision <= lastAcceptedSyncRevisionRef.current
+      ) {
+        return;
+      }
+      lastAcceptedSyncRevisionRef.current = payload.syncRevision;
       hasLoadedRef.current = true;
       if (fallbackTimer) {
         clearTimeout(fallbackTimer);
         fallbackTimer = null;
       }
 
-      const sessions = event.payload.sessions.map(reviveSession);
-      const conns = event.payload.connections.map(reviveConnection);
+      const sessions = payload.sessions.map(reviveSession);
+      const conns = payload.connections.map(reviveConnection);
 
       dispatch({ type: "SET_CONNECTIONS", payload: conns });
       dispatch({ type: "SET_SESSIONS", payload: sessions });
-      if (event.payload.tabGroups)
-        dispatch({ type: "SET_TAB_GROUPS", payload: event.payload.tabGroups });
-      if (event.payload.activeSessionId)
-        setActiveTabId(event.payload.activeSessionId);
-    });
+      if (payload.tabGroups)
+        dispatch({ type: "SET_TAB_GROUPS", payload: payload.tabGroups });
+      if (payload.activeSessionId) setActiveTabId(payload.activeSessionId);
+
+      if (isTauriRef.current && sessions.length > 0) {
+        // A newer non-empty snapshot invalidates the prior empty intent. Keep
+        // the cancelled intent until its lifecycle event settles so a delayed
+        // close request cannot close a repopulated window.
+        const pendingIntent = emptySyncCloseIntentRef.current;
+        if (pendingIntent) pendingIntent.cancelled = true;
+        const queuedIntent = queuedEmptySyncCloseIntentRef.current;
+        if (queuedIntent) queuedIntent.cancelled = true;
+        skipNextConfirmRef.current = false;
+      } else if (
+        isTauriRef.current &&
+        sessions.length === 0 &&
+        !emptySyncCloseIntentRef.current
+      ) {
+        // The first accepted empty snapshot owns one lifecycle close attempt.
+        // Later empty snapshots cannot fan out concurrent close requests.
+        const intent: EmptySyncCloseIntent = {
+          revision: payload.syncRevision,
+          cancelled: false,
+        };
+        emptySyncCloseIntentRef.current = intent;
+        skipNextConfirmRef.current = true;
+        requestEmptySyncClose(intent);
+      } else if (
+        isTauriRef.current &&
+        sessions.length === 0 &&
+        emptySyncCloseIntentRef.current?.cancelled
+      ) {
+        // The cancelled intent must remain current until its delayed native
+        // request is identified and vetoed. Queue the latest authoritative
+        // empty snapshot behind it, without fanning out another close yet.
+        queuedEmptySyncCloseIntentRef.current = {
+          revision: payload.syncRevision,
+          cancelled: false,
+        };
+      }
+    })
+      .then((release) => {
+        if (mounted) unlisten = release;
+        else release();
+      })
+      .catch(() => {});
 
     // Request data from main
     const cmd: WindowCommand = {
@@ -321,7 +427,7 @@ const DetachedSessionContent: React.FC<{
     return () => {
       mounted = false;
       if (fallbackTimer) clearTimeout(fallbackTimer);
-      unlistenPromise.then((fn) => fn()).catch(() => {});
+      unlisten?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -341,35 +447,6 @@ const DetachedSessionContent: React.FC<{
       .isAlwaysOnTop()
       .then(setIsAlwaysOnTop)
       .catch(() => undefined);
-  }, [isTauri]);
-
-  // wm:sync listener — main window pushes updated session data after
-  // any tab operation (move, close, reorder). Keeps this window in sync.
-  useEffect(() => {
-    if (!isTauri) return;
-    const myWindowId = getCurrentWindow().label;
-    const unlistenPromise = listen<WindowSessionSync>("wm:sync", (event) => {
-      if (event.payload.windowId !== myWindowId) return;
-      const sessions = event.payload.sessions.map(reviveSession);
-      const conns = event.payload.connections.map(reviveConnection);
-      dispatch({ type: "SET_CONNECTIONS", payload: conns });
-      dispatch({ type: "SET_SESSIONS", payload: sessions });
-      if (event.payload.tabGroups)
-        dispatch({ type: "SET_TAB_GROUPS", payload: event.payload.tabGroups });
-      if (event.payload.activeSessionId)
-        setActiveTabId(event.payload.activeSessionId);
-      // If main pushed zero sessions, window should close
-      if (sessions.length === 0) {
-        skipNextConfirmRef.current = true;
-        getCurrentWindow()
-          .close()
-          .catch(() => {});
-      }
-    });
-    return () => {
-      unlistenPromise.then((fn) => fn()).catch(() => {});
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTauri]);
 
   // SettingsProvider owns loading and cross-window synchronization. Derive the
@@ -924,11 +1001,26 @@ const DetachedSessionContent: React.FC<{
   handleReattachRef.current = handleReattach;
 
   const handleCloseRequest = useCallback(async () => {
+    const emptySyncIntent = emptySyncCloseIntentRef.current;
+    activeCloseAttemptIntentRef.current = emptySyncIntent;
+    const emptySyncIntentWasCancelled = () =>
+      emptySyncIntent !== null &&
+      (emptySyncIntent.cancelled ||
+        emptySyncCloseIntentRef.current !== emptySyncIntent);
+
+    // A delayed native close request for an invalidated empty snapshot must be
+    // vetoed before it opens the shared behavior-window close transaction.
+    if (emptySyncIntentWasCancelled()) return false;
+
     await requestBehaviorWindowClose();
+    if (emptySyncIntentWasCancelled()) {
+      await cancelBehaviorWindowClose();
+      return false;
+    }
     if (reattachRef.current) {
       reattachRef.current = false;
       await confirmBehaviorWindowClose();
-      return true;
+      return !emptySyncIntentWasCancelled();
     }
     if (warnRef.current && !skipNextConfirmRef.current) {
       const confirmed = await requestCloseConfirmation();
@@ -937,13 +1029,21 @@ const DetachedSessionContent: React.FC<{
         return false;
       }
     }
+    if (emptySyncIntentWasCancelled()) {
+      await cancelBehaviorWindowClose();
+      return false;
+    }
     skipNextConfirmRef.current = false;
     if (!(await disconnectOwnedSessions())) {
       await cancelBehaviorWindowClose();
       return false;
     }
+    if (emptySyncIntentWasCancelled()) {
+      await cancelBehaviorWindowClose();
+      return false;
+    }
     await confirmBehaviorWindowClose();
-    return true;
+    return !emptySyncIntentWasCancelled();
   }, [
     cancelBehaviorWindowClose,
     confirmBehaviorWindowClose,
@@ -952,10 +1052,49 @@ const DetachedSessionContent: React.FC<{
     requestCloseConfirmation,
   ]);
 
+  const handleCloseAttemptFailed = useCallback(
+    (_failure: DetachedCloseAttemptFailure) => {
+      const attemptIntent = activeCloseAttemptIntentRef.current;
+      activeCloseAttemptIntentRef.current = null;
+      // Settle only the automatic intent captured by this exact native close
+      // attempt. A manual attempt must not clear a newer automatic intent that
+      // arrived while its confirmation was still in flight.
+      if (!attemptIntent) {
+        const pendingIntent = emptySyncCloseIntentRef.current;
+        if (pendingIntent?.cancelled) {
+          // This intent's native request was also coalesced by the manual
+          // attempt, but a newer non-empty sync invalidated it meanwhile.
+          emptySyncCloseIntentRef.current = null;
+          const queuedIntent = promoteQueuedEmptySyncClose();
+          if (queuedIntent) requestEmptySyncCloseRef.current(queuedIntent);
+        } else if (pendingIntent) {
+          // Its first native request was coalesced while this manual attempt
+          // was checking. Re-drive it now that the lifecycle is idle.
+          requestEmptySyncClose(pendingIntent);
+        }
+        return;
+      }
+      if (emptySyncCloseIntentRef.current !== attemptIntent) {
+        const newerIntent = emptySyncCloseIntentRef.current;
+        if (newerIntent && !newerIntent.cancelled) {
+          requestEmptySyncCloseRef.current(newerIntent);
+        }
+        return;
+      }
+      emptySyncCloseIntentRef.current = null;
+      const queuedIntent = promoteQueuedEmptySyncClose();
+      if (queuedIntent) requestEmptySyncCloseRef.current(queuedIntent);
+    },
+    [promoteQueuedEmptySyncClose, requestEmptySyncClose],
+  );
+
   // Register close handler ONCE — stable because all deps are stable
   useEffect(() => {
-    onRegisterDisconnect(handleCloseRequest);
-  }, [handleCloseRequest, onRegisterDisconnect]);
+    onRegisterDisconnect({
+      onBeforeClose: handleCloseRequest,
+      onCloseAttemptFailed: handleCloseAttemptFailed,
+    });
+  }, [handleCloseAttemptFailed, handleCloseRequest, onRegisterDisconnect]);
 
   if (error) {
     return (
@@ -1970,11 +2109,14 @@ const DetachedSessionContent: React.FC<{
 
 const DetachedWindowLifecycle: React.FC<{
   onBeforeClose: () => Promise<boolean>;
-}> = ({ onBeforeClose }) => {
+  onCloseAttemptFailed: (failure: DetachedCloseAttemptFailure) => void;
+}> = ({ onBeforeClose, onCloseAttemptFailed }) => {
   // Use a ref so the effect registers onCloseRequested ONCE and the
   // handler always calls the latest onBeforeClose without re-registering.
   const handlerRef = useRef(onBeforeClose);
   handlerRef.current = onBeforeClose;
+  const failureHandlerRef = useRef(onCloseAttemptFailed);
+  failureHandlerRef.current = onCloseAttemptFailed;
 
   useEffect(() => {
     const isTauri =
@@ -1982,18 +2124,33 @@ const DetachedWindowLifecycle: React.FC<{
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
     if (!isTauri) return;
 
-    let isClosing = false;
+    let phase: "idle" | "checking" | "authorized-final-close" = "idle";
     const currentWindow = getCurrentWindow();
     const unlistenPromise = currentWindow.onCloseRequested(async (event) => {
-      if (isClosing) return;
+      if (phase === "authorized-final-close") return;
       event.preventDefault();
-      isClosing = true;
-      const shouldClose = await handlerRef.current();
-      if (!shouldClose) {
-        isClosing = false;
+      if (phase === "checking") return;
+      phase = "checking";
+      let shouldClose: boolean;
+      try {
+        shouldClose = await handlerRef.current();
+      } catch {
+        phase = "idle";
+        failureHandlerRef.current("before-close-error");
         return;
       }
-      await currentWindow.close();
+      if (!shouldClose) {
+        phase = "idle";
+        failureHandlerRef.current("vetoed");
+        return;
+      }
+      phase = "authorized-final-close";
+      try {
+        await currentWindow.close();
+      } catch {
+        phase = "idle";
+        failureHandlerRef.current("final-close-error");
+      }
     });
 
     return () => {
@@ -2005,11 +2162,11 @@ const DetachedWindowLifecycle: React.FC<{
 };
 
 const DetachedClient: React.FC = () => {
-  const [disconnectHandler, setDisconnectHandler] = useState<
-    (() => Promise<boolean>) | null
-  >(null);
+  const [closeRegistration, setCloseRegistration] =
+    useState<DetachedWindowCloseRegistration | null>(null);
   const handleRegisterDisconnect = useCallback(
-    (handler: () => Promise<boolean>) => setDisconnectHandler(() => handler),
+    (registration: DetachedWindowCloseRegistration) =>
+      setCloseRegistration(registration),
     [],
   );
 
@@ -2017,8 +2174,11 @@ const DetachedClient: React.FC = () => {
     <SettingsProvider>
       <ConnectionProvider>
         <ToastProvider>
-          {disconnectHandler && (
-            <DetachedWindowLifecycle onBeforeClose={disconnectHandler} />
+          {closeRegistration && (
+            <DetachedWindowLifecycle
+              onBeforeClose={closeRegistration.onBeforeClose}
+              onCloseAttemptFailed={closeRegistration.onCloseAttemptFailed}
+            />
           )}
           <DetachedSessionContent
             onRegisterDisconnect={handleRegisterDisconnect}
