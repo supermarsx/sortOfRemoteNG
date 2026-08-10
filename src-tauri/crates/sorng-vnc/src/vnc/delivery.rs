@@ -1464,7 +1464,7 @@ impl VncEventSender {
 }
 
 impl VncEventReceiver {
-    pub(crate) fn drain(&mut self, max: usize) -> Result<Vec<SessionEvent>, VncError> {
+    pub(crate) fn drain(&self, max: usize) -> Result<Vec<SessionEvent>, VncError> {
         let max = max.min(MAX_VNC_DRAIN_EVENTS);
         if max == 0 {
             return Ok(Vec::new());
@@ -1514,7 +1514,7 @@ impl VncEventReceiver {
         Ok(events)
     }
 
-    pub(crate) fn drain_frame_only(&mut self) -> Result<Option<DeliveredFrame>, VncError> {
+    pub(crate) fn drain_frame_only(&self) -> Result<Option<DeliveredFrame>, VncError> {
         let mut delivery = lock_delivery(&self.shared)?;
         if delivery.terminal_published || delivery.terminal_delivered {
             return Ok(None);
@@ -1776,7 +1776,7 @@ mod tests {
     #[test]
     fn control_bursts_are_nonblocking_coalesced_and_memory_bounded() {
         for count in [100usize, 500, 1_000] {
-            let (sender, mut receiver) = event_delivery();
+            let (sender, receiver) = event_delivery();
             publish_connected(&sender);
             for index in 0..count {
                 sender.publish_control(SessionEvent::Bell).unwrap();
@@ -1819,7 +1819,7 @@ mod tests {
 
     #[test]
     fn oversized_drain_limit_is_clamped_and_cannot_expand_a_bell_burst() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         for _ in 0..1_000 {
             sender.publish_control(SessionEvent::Bell).unwrap();
         }
@@ -1831,7 +1831,7 @@ mod tests {
 
     #[test]
     fn malformed_and_oversized_cursors_are_dropped_with_accounting() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender
             .publish_control(SessionEvent::Cursor {
                 pixels: vec![0; 513 * RGBA_BYTES_PER_PIXEL],
@@ -1882,7 +1882,7 @@ mod tests {
 
     #[test]
     fn frame_only_drain_preserves_controls_for_the_control_consumer() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         sender
             .publish_control(SessionEvent::Clipboard("preserve-me".into()))
@@ -1901,7 +1901,7 @@ mod tests {
 
     #[test]
     fn terminal_survives_frame_and_control_flood_and_is_exclusive() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         for generation in 0..1_000u16 {
             sender.begin_framebuffer_update().unwrap();
@@ -1925,7 +1925,7 @@ mod tests {
 
     #[test]
     fn continuous_controls_reserve_frame_progress_in_normal_two_event_drain() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         sender.begin_framebuffer_update().unwrap();
         sender.apply_frame(pixel_rect(0, 9)).unwrap();
@@ -1948,7 +1948,7 @@ mod tests {
 
     #[test]
     fn one_event_drains_alternate_controls_and_frames_under_continuous_load() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         sender.begin_framebuffer_update().unwrap();
         sender.apply_frame(pixel_rect(0, 1)).unwrap();
@@ -1970,7 +1970,7 @@ mod tests {
 
     #[test]
     fn unacknowledged_tiles_replay_and_newer_damage_survives_ack() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         sender.begin_framebuffer_update().unwrap();
         sender.apply_frame(pixel_rect(0, 1)).unwrap();
@@ -1990,7 +1990,7 @@ mod tests {
 
     #[test]
     fn native_requests_never_acknowledge_renderer_in_flight_tiles() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         sender.begin_framebuffer_update().unwrap();
         sender.apply_frame(pixel_rect(0, 4)).unwrap();
@@ -2006,7 +2006,7 @@ mod tests {
 
     #[test]
     fn scheduled_request_consumes_one_forced_full_without_losing_newer_pixels() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         for value in [1, 2] {
             sender.begin_framebuffer_update().unwrap();
@@ -2050,7 +2050,7 @@ mod tests {
 
     #[test]
     fn aborted_update_suspends_frames_and_preserves_terminal_exclusivity() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         sender.begin_framebuffer_update().unwrap();
         sender.apply_frame(pixel_rect(0, 1)).unwrap();
@@ -2080,7 +2080,7 @@ mod tests {
 
     #[test]
     fn initial_and_single_multi_rect_updates_do_not_create_false_gaps() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(4, 1).unwrap();
         assert!(!sender.acknowledge_and_select_incremental(false).unwrap());
         assert!(sender.acknowledge_and_select_incremental(true).unwrap());
@@ -2099,7 +2099,7 @@ mod tests {
 
     #[test]
     fn generation_gap_and_resize_force_one_full_request_per_epoch() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         for value in [1u8, 2, 3] {
             sender.begin_framebuffer_update().unwrap();
@@ -2120,7 +2120,7 @@ mod tests {
 
     #[test]
     fn dirty_tile_selection_is_round_robin_under_a_hot_tile() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(512, 1).unwrap();
         sender.begin_framebuffer_update().unwrap();
         sender.apply_frame(pixel_rect(0, 1)).unwrap();
@@ -2139,7 +2139,7 @@ mod tests {
 
     #[test]
     fn copyrect_overlap_updates_canonical_pixels() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(4, 1).unwrap();
         sender.begin_framebuffer_update().unwrap();
         for x in 0..4u16 {
@@ -2303,7 +2303,7 @@ mod tests {
 
     #[test]
     fn inactive_rejects_ack_without_releasing_in_flight_tile() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         commit_update(&sender, pixel_rect(0, 4));
         let first = delivered_frame_from(receiver.drain(2).unwrap());
@@ -2334,7 +2334,7 @@ mod tests {
 
     #[test]
     fn generic_refresh_never_acknowledges_renderer_tile() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         commit_update(&sender, pixel_rect(0, 8));
         let first = delivered_frame_from(receiver.drain(2).unwrap());
@@ -2363,7 +2363,7 @@ mod tests {
 
     #[test]
     fn resume_waits_for_proven_full_repaint_after_idle_incremental() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(512, 1).unwrap();
 
         let idle_incremental = sender.reserve_update_request(true).unwrap().unwrap();
@@ -2408,7 +2408,7 @@ mod tests {
 
     #[test]
     fn forced_resize_and_partial_responses_retry_without_overlapping_credit() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(256, 1).unwrap();
         let resumed = sender.set_activity("session", true, 1).unwrap();
         assert!(resumed.accepted);
@@ -2513,7 +2513,7 @@ mod tests {
 
     #[test]
     fn forced_responses_before_write_finalize_preserve_full_gate_and_retry_bound() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(256, 1).unwrap();
         let resumed = sender.set_activity("session", true, 1).unwrap();
         assert!(resumed.accepted);
@@ -2668,7 +2668,7 @@ mod tests {
 
     #[test]
     fn inactive_frame_and_control_flood_remains_bounded_and_terminal_wins() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         assert!(sender.set_activity("session", false, 1).unwrap().accepted);
         for value in 0..1_000u16 {
@@ -2707,7 +2707,7 @@ mod tests {
 
     #[test]
     fn utf8_truncation_stays_on_codepoint_boundary_and_records_pressure() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         let oversized = "é".repeat(MAX_TERMINAL_REASON_BYTES);
         sender
             .publish_control(SessionEvent::Disconnected(Some(oversized)))

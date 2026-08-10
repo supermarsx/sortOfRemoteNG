@@ -76,7 +76,7 @@ async fn vnc_connect_list_disconnect_golden_path() {
         keepalive_interval_secs: 0,
     };
 
-    let mut svc = VncService::new();
+    let svc = VncService::new();
 
     // ── connect ────────────────────────────────────────────────────
     let session_id = svc
@@ -89,7 +89,7 @@ async fn vnc_connect_list_disconnect_golden_path() {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // ── list ───────────────────────────────────────────────────────
-    let ids = svc.list_sessions();
+    let ids = svc.list_sessions().await;
     assert!(
         ids.iter().any(|id| id == &session_id),
         "connected session should appear in list_sessions()"
@@ -113,6 +113,7 @@ async fn vnc_connect_list_disconnect_golden_path() {
     // ── renderer suspension / replacement ownership ───────────────
     let inactive = svc
         .set_session_activity(&session_id, false, 1)
+        .await
         .expect("newer inactive ownership should be accepted");
     assert!(inactive.accepted);
     assert!(!inactive.active);
@@ -124,6 +125,7 @@ async fn vnc_connect_list_disconnect_golden_path() {
 
     let replacement = svc
         .set_session_activity(&session_id, true, 2)
+        .await
         .expect("replacement renderer should claim a newer generation");
     assert!(replacement.accepted);
     assert!(replacement.active);
@@ -138,5 +140,5 @@ async fn vnc_connect_list_disconnect_golden_path() {
         !svc.is_connected(&session_id).await,
         "session should report disconnected"
     );
-    assert!(svc.remove_session(&session_id));
+    assert!(svc.remove_session(&session_id).await);
 }

@@ -36,8 +36,7 @@ pub async fn connect_vnc(
         allow_unauthenticated: allow_unauthenticated.unwrap_or(false),
         ..VncConfig::default()
     };
-    let mut svc = state.lock().await;
-    svc.connect(config).await.map_err(|e| e.message)
+    state.connect(config).await.map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -45,8 +44,8 @@ pub async fn disconnect_vnc(
     state: tauri::State<'_, VncServiceState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.disconnect_and_remove(&session_id)
+    state
+        .disconnect_and_remove(&session_id)
         .await
         .map_err(|e| e.message)
 }
@@ -55,8 +54,7 @@ pub async fn disconnect_vnc(
 pub async fn disconnect_all_vnc(
     state: tauri::State<'_, VncServiceState>,
 ) -> Result<Vec<String>, String> {
-    let mut svc = state.lock().await;
-    Ok(svc.disconnect_all().await)
+    Ok(state.disconnect_all().await)
 }
 
 #[tauri::command]
@@ -64,8 +62,7 @@ pub async fn is_vnc_connected(
     state: tauri::State<'_, VncServiceState>,
     session_id: String,
 ) -> Result<bool, String> {
-    let svc = state.lock().await;
-    Ok(svc.is_connected(&session_id).await)
+    Ok(state.is_connected(&session_id).await)
 }
 
 // ── Session info ────────────────────────────────────────────────────────
@@ -75,8 +72,8 @@ pub async fn get_vnc_session_info(
     state: tauri::State<'_, VncServiceState>,
     session_id: String,
 ) -> Result<VncSession, String> {
-    let svc = state.lock().await;
-    svc.get_session_info(&session_id)
+    state
+        .get_session_info(&session_id)
         .await
         .map_err(|e| e.message)
 }
@@ -85,8 +82,7 @@ pub async fn get_vnc_session_info(
 pub async fn list_vnc_sessions(
     state: tauri::State<'_, VncServiceState>,
 ) -> Result<Vec<VncSession>, String> {
-    let svc = state.lock().await;
-    Ok(svc.list_session_info().await)
+    Ok(state.list_session_info().await)
 }
 
 // This remains a service-level helper. The app-facing shim owns the sole
@@ -96,8 +92,8 @@ pub async fn get_vnc_session_stats(
     state: tauri::State<'_, VncServiceState>,
     session_id: String,
 ) -> Result<VncStats, String> {
-    let svc = state.lock().await;
-    svc.get_session_stats(&session_id)
+    state
+        .get_session_stats(&session_id)
         .await
         .map_err(|e| e.message)
 }
@@ -111,8 +107,8 @@ pub async fn send_vnc_key_event(
     down: bool,
     key: u32,
 ) -> Result<(), String> {
-    let svc = state.lock().await;
-    svc.send_key_event(&session_id, down, key)
+    state
+        .send_key_event(&session_id, down, key)
         .await
         .map_err(|e| e.message)
 }
@@ -125,8 +121,8 @@ pub async fn send_vnc_pointer_event(
     x: u16,
     y: u16,
 ) -> Result<(), String> {
-    let svc = state.lock().await;
-    svc.send_pointer_event(&session_id, button_mask, x, y)
+    state
+        .send_pointer_event(&session_id, button_mask, x, y)
         .await
         .map_err(|e| e.message)
 }
@@ -137,8 +133,8 @@ pub async fn send_vnc_clipboard(
     session_id: String,
     text: String,
 ) -> Result<(), String> {
-    let svc = state.lock().await;
-    svc.send_clipboard(&session_id, text)
+    state
+        .send_clipboard(&session_id, text)
         .await
         .map_err(|e| e.message)
 }
@@ -151,8 +147,8 @@ pub async fn request_vnc_update(
     session_id: String,
     incremental: Option<bool>,
 ) -> Result<(), String> {
-    let svc = state.lock().await;
-    svc.request_update(&session_id, incremental.unwrap_or(true))
+    state
+        .request_update(&session_id, incremental.unwrap_or(true))
         .await
         .map_err(|e| e.message)
 }
@@ -167,8 +163,9 @@ pub async fn set_vnc_session_activity(
     active: bool,
     activity_generation: u64,
 ) -> Result<VncActivityResult, String> {
-    let svc = state.lock().await;
-    svc.set_session_activity(&session_id, active, activity_generation)
+    state
+        .set_session_activity(&session_id, active, activity_generation)
+        .await
         .map_err(|error| error.message)
 }
 
@@ -181,8 +178,9 @@ pub async fn acknowledge_vnc_frame(
     delivery_epoch: u64,
     frame_token: u64,
 ) -> Result<VncFrameAckResult, String> {
-    let svc = state.lock().await;
-    svc.acknowledge_frame(&session_id, delivery_epoch, frame_token)
+    state
+        .acknowledge_frame(&session_id, delivery_epoch, frame_token)
+        .await
         .map_err(|error| error.message)
 }
 
@@ -198,8 +196,8 @@ pub async fn set_vnc_pixel_format(
         8 => PixelFormat::indexed8(),
         _ => return Err(format!("Unsupported bits_per_pixel: {}", bits_per_pixel)),
     };
-    let svc = state.lock().await;
-    svc.set_pixel_format(&session_id, pf)
+    state
+        .set_pixel_format(&session_id, pf)
         .await
         .map_err(|e| e.message)
 }
@@ -210,16 +208,14 @@ pub async fn set_vnc_pixel_format(
 pub async fn prune_vnc_sessions(
     state: tauri::State<'_, VncServiceState>,
 ) -> Result<Vec<String>, String> {
-    let mut svc = state.lock().await;
-    Ok(svc.prune_disconnected().await)
+    Ok(state.prune_disconnected().await)
 }
 
 #[tauri::command]
 pub async fn get_vnc_session_count(
     state: tauri::State<'_, VncServiceState>,
 ) -> Result<usize, String> {
-    let svc = state.lock().await;
-    Ok(svc.session_count())
+    Ok(state.session_count().await)
 }
 
 #[cfg(test)]

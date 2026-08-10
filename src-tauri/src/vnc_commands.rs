@@ -64,8 +64,7 @@ pub async fn get_vnc_session_stats(
     session_id: String,
     max_events: Option<usize>,
 ) -> Result<VncFrontendPoll, String> {
-    let mut svc = state.lock().await;
-    let (stats, drained) = svc
+    let (stats, drained) = state
         .poll_session_stats_and_events(&session_id, max_events.unwrap_or(2).clamp(1, 2))
         .await
         .map_err(|error| error.message)?;

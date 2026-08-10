@@ -17,7 +17,26 @@ pub const MAX_VNC_RECT_RGBA_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_VNC_FRAMEBUFFER_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_VNC_DIMENSION: u16 = 16_384;
 pub const MAX_VNC_CURSOR_DIMENSION: u16 = 512;
-pub const MAX_VNC_SESSIONS: usize = 2;
+/// Default number of admitted VNC sessions. This is intentionally modest:
+/// every admitted session reserves a conservative native payload envelope.
+pub const DEFAULT_MAX_VNC_SESSIONS: usize = 8;
+/// Absolute process-level ceiling, even when operators opt into a larger
+/// service limit through environment configuration.
+pub const MAX_VNC_SESSIONS: usize = 16;
+pub const DEFAULT_MAX_VNC_CONNECTING: usize = 2;
+pub const MAX_VNC_CONNECTING: usize = 4;
+/// Conservative per-session payload reservation used by service admission.
+///
+/// The 96 MiB envelope covers the 32 MiB canonical framebuffer, a second
+/// 32 MiB transactional framebuffer/overlay, forced-repaint coverage, the
+/// bounded decode buffers, the bounded command/control queues, cursor data,
+/// and one delivered tile. Allocator/task/socket overhead is deliberately not
+/// presented as part of this byte-exact payload accounting.
+pub const VNC_SESSION_RESOURCE_RESERVATION_BYTES: usize = 96 * 1024 * 1024;
+pub const DEFAULT_VNC_RESOURCE_BUDGET_BYTES: usize =
+    DEFAULT_MAX_VNC_SESSIONS * VNC_SESSION_RESOURCE_RESERVATION_BYTES;
+pub const MAX_VNC_RESOURCE_BUDGET_BYTES: usize =
+    MAX_VNC_SESSIONS * VNC_SESSION_RESOURCE_RESERVATION_BYTES;
 pub const MAX_VNC_DRAIN_EVENTS: usize = 8;
 pub const MAX_VNC_COMMAND_QUEUE: usize = 32;
 pub const MAX_VNC_EVENT_QUEUE: usize = 2;

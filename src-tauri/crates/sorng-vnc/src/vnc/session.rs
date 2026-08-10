@@ -5,7 +5,7 @@
 //! dispatching framebuffer updates, bell, and clipboard events.
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -28,7 +28,6 @@ use crate::vnc::types::*;
 const HANDSHAKE_IO_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_TOTAL_TIMEOUT: Duration = Duration::from_secs(90);
 const SESSION_IO_TIMEOUT: Duration = Duration::from_secs(60);
-const COMMAND_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 async fn read_exact_with_timeout(
     reader: &mut (impl AsyncRead + Unpin),
@@ -218,6 +217,20 @@ pub struct SharedSessionState {
 pub type SharedState = Arc<Mutex<SharedSessionState>>;
 type HandshakeSignal = Arc<Mutex<Option<oneshot::Sender<Result<(), VncError>>>>>;
 
+fn enqueue_command_now(
+    command_tx: &mpsc::Sender<SessionCommand>,
+    command: SessionCommand,
+) -> Result<(), VncError> {
+    command_tx.try_send(command).map_err(|error| match error {
+        mpsc::error::TrySendError::Full(_) => {
+            VncError::timeout("VNC command queue is full; command rejected without waiting")
+        }
+        mpsc::error::TrySendError::Closed(_) => {
+            VncError::new(VncErrorKind::NotConnected, "Session task is gone")
+        }
+    })
+}
+
 async fn enqueue_update_request(
     delivery: &VncEventSender,
     command_tx: &mpsc::Sender<SessionCommand>,
@@ -226,15 +239,12 @@ async fn enqueue_update_request(
     let Some(reservation) = delivery.reserve_update_request(requested_incremental)? else {
         return Ok(());
     };
-    timeout(
-        COMMAND_SEND_TIMEOUT,
-        command_tx.send(SessionCommand::RequestUpdate {
+    enqueue_command_now(
+        command_tx,
+        SessionCommand::RequestUpdate {
             reservation: Some(reservation),
-        }),
+        },
     )
-    .await
-    .map_err(|_| VncError::timeout("VNC command queue is full"))?
-    .map_err(|_| VncError::new(VncErrorKind::NotConnected, "Session task is gone"))
 }
 
 /// Handle to a running VNC session.
@@ -247,12 +257,43 @@ pub struct VncSessionHandle {
     pub(crate) events: VncEventReceiver,
     pub state: SharedState,
     delivery: VncEventSender,
+    _task: OwnedSessionTask,
+}
+
+/// Owns cancellation of a spawned session actor. Dropping the connect future
+/// during its handshake drops this guard, aborts the detached Tokio task, and
+/// releases logical task accounting synchronously.
+struct OwnedSessionTask {
     task: JoinHandle<()>,
+    active_tasks: Arc<AtomicUsize>,
+}
+
+impl OwnedSessionTask {
+    fn new(task: JoinHandle<()>, active_tasks: Arc<AtomicUsize>) -> Self {
+        active_tasks.fetch_add(1, Ordering::AcqRel);
+        Self { task, active_tasks }
+    }
+
+    fn abort(&self) {
+        self.task.abort();
+    }
+}
+
+impl Drop for OwnedSessionTask {
+    fn drop(&mut self) {
+        self.task.abort();
+        let previous = self.active_tasks.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous > 0, "VNC active-task accounting underflow");
+    }
 }
 
 impl VncSessionHandle {
     /// Spawn a new session task that connects and runs the RFB session.
-    pub(crate) async fn connect(id: String, mut config: VncConfig) -> Result<Self, VncError> {
+    pub(crate) async fn connect(
+        id: String,
+        mut config: VncConfig,
+        active_tasks: Arc<AtomicUsize>,
+    ) -> Result<Self, VncError> {
         let password = config.password.take().map(Zeroizing::new);
         if password
             .as_ref()
@@ -300,34 +341,37 @@ impl VncSessionHandle {
         let task_config = config.clone();
         let task_id = id.clone();
 
-        let task = tokio::spawn(async move {
-            let result = session_task(
-                task_id,
-                task_config,
-                password,
-                stream,
-                SessionTaskChannels {
-                    cmd_rx,
-                    event_tx: event_tx.clone(),
-                },
-                task_state,
-                task_handshake_signal,
-            )
-            .await;
-            if let Err(error) = &result {
-                if let Some(sender) = failure_handshake_signal.lock().await.take() {
-                    let _ = sender.send(Err(error.clone()));
+        let task = OwnedSessionTask::new(
+            tokio::spawn(async move {
+                let result = session_task(
+                    task_id,
+                    task_config,
+                    password,
+                    stream,
+                    SessionTaskChannels {
+                        cmd_rx,
+                        event_tx: event_tx.clone(),
+                    },
+                    task_state,
+                    task_handshake_signal,
+                )
+                .await;
+                if let Err(error) = &result {
+                    if let Some(sender) = failure_handshake_signal.lock().await.take() {
+                        let _ = sender.send(Err(error.clone()));
+                    }
                 }
-            }
-            {
-                let mut st = cleanup_state.lock().await;
-                st.connected = false;
-                st.terminated = true;
-            }
-            if let Err(e) = result {
-                let _ = event_tx.publish_control(SessionEvent::Disconnected(Some(e.message)));
-            }
-        });
+                {
+                    let mut st = cleanup_state.lock().await;
+                    st.connected = false;
+                    st.terminated = true;
+                }
+                if let Err(e) = result {
+                    let _ = event_tx.publish_control(SessionEvent::Disconnected(Some(e.message)));
+                }
+            }),
+            active_tasks,
+        );
 
         let public_config = config;
         let handshake_result = timeout(HANDSHAKE_TOTAL_TIMEOUT, handshake_rx).await;
@@ -354,7 +398,7 @@ impl VncSessionHandle {
             events: event_rx,
             state,
             delivery,
-            task,
+            _task: task,
         })
     }
 
@@ -374,10 +418,7 @@ impl VncSessionHandle {
             SessionCommand::SetPixelFormat(pixel_format) => pixel_format.validate()?,
             _ => {}
         }
-        timeout(COMMAND_SEND_TIMEOUT, self.cmd_tx.send(cmd))
-            .await
-            .map_err(|_| VncError::timeout("VNC command queue is full"))?
-            .map_err(|_| VncError::new(VncErrorKind::NotConnected, "Session task is gone"))
+        enqueue_command_now(&self.cmd_tx, cmd)
     }
 
     /// Request disconnect.
@@ -421,7 +462,11 @@ impl VncSessionHandle {
         let delivery = event_tx.clone();
         let external_delivery = event_tx.clone();
         let (cmd_tx, mut cmd_rx) = mpsc::channel(MAX_VNC_COMMAND_QUEUE);
-        let task = tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
+        let active_tasks = Arc::new(AtomicUsize::new(0));
+        let task = OwnedSessionTask::new(
+            tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} }),
+            active_tasks,
+        );
         Ok((
             Self {
                 id,
@@ -430,16 +475,10 @@ impl VncSessionHandle {
                 events: event_rx,
                 state,
                 delivery,
-                task,
+                _task: task,
             },
             external_delivery,
         ))
-    }
-}
-
-impl Drop for VncSessionHandle {
-    fn drop(&mut self) {
-        self.task.abort();
     }
 }
 
@@ -1855,6 +1894,72 @@ mod tests {
         retry.commit().unwrap();
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn command_saturation_is_fail_fast_and_payload_bounded_at_100_500_1000() {
+        let payload = "x".repeat(MAX_VNC_CLIPBOARD_BYTES);
+        for attempts in [100usize, 500, 1_000] {
+            let (command_tx, mut command_rx) = mpsc::channel(MAX_VNC_COMMAND_QUEUE);
+            let started = tokio::time::Instant::now();
+            let mut accepted = 0usize;
+            let mut rejected = 0usize;
+            for _ in 0..attempts {
+                match enqueue_command_now(
+                    &command_tx,
+                    SessionCommand::ClientCutText(payload.clone()),
+                ) {
+                    Ok(()) => accepted += 1,
+                    Err(error) => {
+                        assert_eq!(error.kind, VncErrorKind::Timeout);
+                        rejected += 1;
+                    }
+                }
+            }
+            assert_eq!(started.elapsed(), Duration::ZERO);
+            assert_eq!(accepted, MAX_VNC_COMMAND_QUEUE);
+            assert_eq!(rejected, attempts - MAX_VNC_COMMAND_QUEUE);
+
+            let mut retained_commands = 0usize;
+            let mut retained_payload_bytes = 0usize;
+            while let Ok(command) = command_rx.try_recv() {
+                let SessionCommand::ClientCutText(text) = command else {
+                    panic!("clipboard saturation retained a different command")
+                };
+                retained_commands += 1;
+                retained_payload_bytes += text.len();
+            }
+            assert_eq!(retained_commands, MAX_VNC_COMMAND_QUEUE);
+            assert_eq!(
+                retained_payload_bytes,
+                MAX_VNC_COMMAND_QUEUE * MAX_VNC_CLIPBOARD_BYTES
+            );
+            assert!(retained_payload_bytes <= VNC_SESSION_RESOURCE_RESERVATION_BYTES);
+        }
+    }
+
+    #[test]
+    fn key_pointer_and_disconnect_share_fail_fast_command_admission() {
+        let (command_tx, _command_rx) = mpsc::channel(1);
+        enqueue_command_now(
+            &command_tx,
+            SessionCommand::KeyEvent {
+                down: true,
+                key: keysym::RETURN,
+            },
+        )
+        .unwrap();
+        for command in [
+            SessionCommand::PointerEvent {
+                button_mask: mouse_button::LEFT,
+                x: 1,
+                y: 1,
+            },
+            SessionCommand::Disconnect,
+        ] {
+            let error = enqueue_command_now(&command_tx, command).unwrap_err();
+            assert_eq!(error.kind, VncErrorKind::Timeout);
+        }
+    }
+
     #[tokio::test]
     async fn scheduled_write_failure_restores_force_and_publishes_terminal() {
         let (sender, mut receiver) = event_delivery();
@@ -1875,7 +1980,7 @@ mod tests {
 
     #[tokio::test]
     async fn scheduled_reservation_failure_publishes_diagnostic_terminal() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         let transaction = sender.framebuffer_update().unwrap();
         drop(transaction);
@@ -1895,7 +2000,7 @@ mod tests {
 
     #[tokio::test]
     async fn command_writer_failure_publishes_diagnostic_terminal() {
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         let (mut writer, peer) = tokio::io::duplex(16);
         drop(peer);
 
@@ -1917,7 +2022,7 @@ mod tests {
     #[tokio::test]
     async fn framebuffer_pseudos_and_stats_stay_hidden_until_commit() {
         let state = test_shared_state(1, 1);
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         let (mut writer, mut reader) = tokio::io::duplex(256);
         let task_sender = sender.clone();
@@ -1978,7 +2083,7 @@ mod tests {
     #[tokio::test]
     async fn abort_after_pseudos_discards_resize_cursor_and_partial_pixels() {
         let state = test_shared_state(1, 1);
-        let (sender, mut receiver) = event_delivery();
+        let (sender, receiver) = event_delivery();
         sender.initialize_framebuffer(1, 1).unwrap();
         let (mut writer, mut reader) = tokio::io::duplex(256);
         let task_sender = sender.clone();
