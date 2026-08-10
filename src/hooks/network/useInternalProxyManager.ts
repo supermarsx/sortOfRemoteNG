@@ -97,7 +97,7 @@ export function useInternalProxyManager(isOpen: boolean) {
   const autoRefreshRef = useRef(autoRefresh);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (): Promise<boolean> => {
     try {
       const [sessionsData, logData] = await Promise.all([
         invoke<ProxySessionDetail[]>("get_proxy_session_details"),
@@ -106,8 +106,10 @@ export function useInternalProxyManager(isOpen: boolean) {
       setSessions(sessionsData);
       setRequestLog(logData);
       setError("");
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     }
   }, []);
 
@@ -142,13 +144,23 @@ export function useInternalProxyManager(isOpen: boolean) {
     autoRefreshRef.current = autoRefresh;
   }, [autoRefresh]);
 
-  const handleStopSession = async (sessionId: string) => {
+  const handleStopSession = async (sessionId: string): Promise<boolean> => {
     try {
       await invoke("stop_basic_auth_proxy", { sessionId });
-      await fetchData();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     }
+
+    // The native stop command is intentionally non-idempotent: once it
+    // succeeds, retrying it can only report "not found". Commit that close
+    // locally before the best-effort refresh so an observability failure
+    // cannot turn completed cleanup into an endless retry loop.
+    setSessions((current) =>
+      current.filter((session) => session.session_id !== sessionId),
+    );
+    await fetchData();
+    return true;
   };
 
   const handleStopAll = async () => {

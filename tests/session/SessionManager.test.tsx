@@ -74,9 +74,18 @@ const PROXY_SESSION = {
   last_error: null,
 };
 
-function mockInvoke(overrides: Record<string, unknown> = {}) {
+type InvokeOverride =
+  | unknown
+  | ((command: string) => unknown | Promise<unknown>);
+
+function mockInvoke(overrides: Record<string, InvokeOverride> = {}) {
   vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-    if (cmd in overrides) return overrides[cmd] as never;
+    if (cmd in overrides) {
+      const override = overrides[cmd];
+      return (
+        typeof override === "function" ? await override(cmd) : override
+      ) as never;
+    }
     switch (cmd) {
       case "list_rdp_sessions":
         return [RDP_SESSION] as never;
@@ -225,9 +234,11 @@ function renderUnifiedSessionManagerHook({
 function renderManagerWithConnectionState({
   sessions,
   connections = CONNECTIONS,
+  managerProps = {},
 }: {
   sessions: ConnectionSession[];
   connections?: Connection[];
+  managerProps?: Partial<React.ComponentProps<typeof SessionManager>>;
 }) {
   const state: ConnectionState = {
     connections,
@@ -267,6 +278,7 @@ function renderManagerWithConnectionState({
           activeBackendSessionIds={["rdp-1"]}
           onClose={() => {}}
           thumbnailsEnabled={false}
+          {...managerProps}
         />
       </ConnectionContext.Provider>
     </ToastProvider>,
@@ -592,6 +604,240 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
         sessionId: "sess-1",
       });
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-completed",
+        "2",
+      ),
+    );
+    expect(screen.queryByTestId("session-close-retry")).not.toBeInTheDocument();
+  });
+
+  it("keeps failed frontend closes selected and retries only unfinished work", async () => {
+    mockInvoke({
+      list_rdp_sessions: [],
+      get_proxy_session_details: [],
+      list_sessions: [],
+    });
+    const sessions = Array.from({ length: 3 }, (_, index) => ({
+      id: `telnet-${index}`,
+      connectionId: `connection-${index}`,
+      name: `Telnet ${index}`,
+      status: "connected" as const,
+      startTime: new Date("2026-01-01T12:00:00.000Z"),
+      protocol: "telnet",
+      hostname: `host-${index}`,
+    }));
+    const attempts = new Map<string, number>();
+    const onCloseSession = vi.fn(async (sessionId: string) => {
+      const attempt = (attempts.get(sessionId) ?? 0) + 1;
+      attempts.set(sessionId, attempt);
+      return sessionId !== "telnet-1" || attempt > 1;
+    });
+    renderManagerWithConnectionState({
+      sessions,
+      managerProps: {
+        onCloseSession,
+        sessionCloseConcurrency: 2,
+        sessionCloseYieldControl: async () => Promise.resolve(),
+      },
+    });
+
+    expect(await screen.findByText("Telnet 0")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Select all sessions on this page",
+      }),
+    );
+    fireEvent.click(screen.getByTestId("session-end-selected"));
+    fireEvent.click(screen.getByRole("button", { name: "End Sessions" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-failed",
+        "1",
+      ),
+    );
+    expect(onCloseSession).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId("session-close-retry")).toHaveTextContent(
+      "Retry 1",
+    );
+
+    fireEvent.click(screen.getByTestId("session-close-retry"));
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-completed",
+        "3",
+      ),
+    );
+    expect(onCloseSession).toHaveBeenCalledTimes(4);
+    expect(attempts).toEqual(
+      new Map([
+        ["telnet-0", 1],
+        ["telnet-1", 2],
+        ["telnet-2", 1],
+      ]),
+    );
+    expect(screen.queryByTestId("session-close-retry")).not.toBeInTheDocument();
+  });
+
+  it("keeps a rejected proxy stop invoke retryable", async () => {
+    const stopProxy = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("proxy stop rejected"))
+      .mockResolvedValue(undefined);
+    mockInvoke({ stop_basic_auth_proxy: stopProxy });
+    renderManager({ sessionCloseYieldControl: async () => Promise.resolve() });
+
+    expect(await screen.findByText("https://example.com")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select https://example.com" }),
+    );
+    fireEvent.click(screen.getByTestId("session-end-selected"));
+    fireEvent.click(screen.getByRole("button", { name: "End Sessions" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-failed",
+        "1",
+      ),
+    );
+    expect(stopProxy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("session-close-retry")).toHaveTextContent(
+      "Retry 1",
+    );
+
+    fireEvent.click(screen.getByTestId("session-close-retry"));
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-completed",
+        "1",
+      ),
+    );
+    expect(stopProxy).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("session-close-retry")).not.toBeInTheDocument();
+  });
+
+  it("keeps a successful proxy stop complete when its refresh fails", async () => {
+    let rejectNextRefresh = false;
+    let stopAttempts = 0;
+    const stopProxy = vi.fn(async () => {
+      stopAttempts++;
+      if (stopAttempts === 1) rejectNextRefresh = true;
+    });
+    const getProxySessions = vi.fn(async () => {
+      if (rejectNextRefresh) {
+        rejectNextRefresh = false;
+        throw new Error("proxy refresh rejected");
+      }
+      return [PROXY_SESSION];
+    });
+    mockInvoke({
+      stop_basic_auth_proxy: stopProxy,
+      get_proxy_session_details: getProxySessions,
+    });
+    renderManager({ sessionCloseYieldControl: async () => Promise.resolve() });
+
+    expect(await screen.findByText("https://example.com")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select https://example.com" }),
+    );
+    fireEvent.click(screen.getByTestId("session-end-selected"));
+    fireEvent.click(screen.getByRole("button", { name: "End Sessions" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-completed",
+        "1",
+      ),
+    );
+    expect(stopProxy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("session-close-retry")).not.toBeInTheDocument();
+    expect(screen.queryByText("https://example.com")).not.toBeInTheDocument();
+  });
+
+  it("blocks a duplicate close batch while timed-out cleanup is still settling", async () => {
+    mockInvoke({
+      list_rdp_sessions: [],
+      get_proxy_session_details: [],
+      list_sessions: [],
+    });
+    const sessions = ["first", "second"].map((id) => ({
+      id,
+      connectionId: `connection-${id}`,
+      name: `Session ${id}`,
+      status: "connected" as const,
+      startTime: new Date("2026-01-01T12:00:00.000Z"),
+      protocol: "telnet",
+      hostname: `${id}.example.com`,
+    }));
+    let releaseFirst: (() => void) | undefined;
+    const attempts = new Map<string, number>();
+    const onCloseSession = vi.fn(async (sessionId: string) => {
+      attempts.set(sessionId, (attempts.get(sessionId) ?? 0) + 1);
+      if (sessionId === "first") {
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return true;
+    });
+    renderManagerWithConnectionState({
+      sessions,
+      connections: [],
+      managerProps: {
+        onCloseSession,
+        sessionCloseConcurrency: 1,
+        sessionCloseTimeoutMs: 20,
+        sessionCloseYieldControl: async () => Promise.resolve(),
+      },
+    });
+
+    expect(await screen.findByText("Session first")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select Session first" }),
+    );
+    fireEvent.click(screen.getByTestId("session-end-selected"));
+    fireEvent.click(screen.getByRole("button", { name: "End Sessions" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-timed-out",
+        "1",
+      ),
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select Session second" }),
+    );
+    const endSelected = screen.getByTestId("session-end-selected");
+    expect(endSelected).toBeDisabled();
+    fireEvent.click(endSelected);
+    expect(
+      screen.queryByRole("button", { name: "End Sessions" }),
+    ).not.toBeInTheDocument();
+    expect(attempts).toEqual(new Map([["first", 1]]));
+
+    releaseFirst?.();
+    await waitFor(() => expect(endSelected).not.toBeDisabled());
+    expect(endSelected).toHaveTextContent("End selected (1)");
+    fireEvent.click(endSelected);
+    fireEvent.click(screen.getByRole("button", { name: "End Sessions" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+        "data-completed",
+        "1",
+      ),
+    );
+    expect(screen.getByTestId("session-close-progress")).toHaveAttribute(
+      "data-timed-out",
+      "0",
+    );
+    expect(attempts).toEqual(
+      new Map([
+        ["first", 1],
+        ["second", 1],
+      ]),
+    );
   });
 
   it("renders frontend SSH sessions in the same Session Manager panel", async () => {

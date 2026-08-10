@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   RefreshCw,
   Monitor,
@@ -45,6 +51,11 @@ import {
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
 import { SshSessionsView } from "./SshSessionsView";
+import {
+  BoundedSessionCloseBatch,
+  type SessionCloseProgress,
+  type SessionCloseTarget,
+} from "./sessionCloseBatch";
 
 /* ═══════════════════════════════════════════════════════════════════
    Props
@@ -59,7 +70,12 @@ interface SessionManagerProps {
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
   onReconnect?: (connection: Connection) => void;
-  onCloseSession?: (sessionId: string) => void;
+  onCloseSession?: (
+    sessionId: string,
+  ) => boolean | void | Promise<boolean | void>;
+  sessionCloseConcurrency?: number;
+  sessionCloseTimeoutMs?: number;
+  sessionCloseYieldControl?: () => Promise<void>;
   thumbnailsEnabled?: boolean;
   thumbnailPolicy?: "realtime" | "on-blur" | "on-detach" | "manual";
   thumbnailInterval?: number;
@@ -338,8 +354,12 @@ const SessionRowActions: React.FC<{
   onDetachToWindow?: (sessionId: string) => void;
   onViewRdpLogs: (sessionId: string) => void;
   onViewerDetach: (backendSessionId: string) => void;
-  onCloseSession: (sessionId: string) => void;
-  onDisconnectSsh: (row: UnifiedSessionRow) => void | Promise<void>;
+  onCloseSession: (
+    sessionId: string,
+  ) => boolean | void | Promise<boolean | void>;
+  onDisconnectSsh: (
+    row: UnifiedSessionRow,
+  ) => boolean | void | Promise<boolean | void>;
 }> = ({
   mgr,
   row,
@@ -475,9 +495,16 @@ const SessionsView: React.FC<{
   onDetachToWindow?: (sessionId: string) => void;
   onViewRdpLogs: (sessionId: string) => void;
   onViewerDetach: (backendSessionId: string) => void;
-  onCloseSession: (sessionId: string) => void;
-  onDisconnectSsh: (row: UnifiedSessionRow) => void | Promise<void>;
+  onCloseSession: (
+    sessionId: string,
+  ) => boolean | void | Promise<boolean | void>;
+  onDisconnectSsh: (
+    row: UnifiedSessionRow,
+  ) => boolean | void | Promise<boolean | void>;
   onDisconnectAllSsh: () => void | Promise<void>;
+  sessionCloseConcurrency?: number;
+  sessionCloseTimeoutMs?: number;
+  sessionCloseYieldControl?: () => Promise<void>;
 }> = ({
   mgr,
   onReattachSession,
@@ -487,6 +514,9 @@ const SessionsView: React.FC<{
   onCloseSession,
   onDisconnectSsh,
   onDisconnectAllSsh,
+  sessionCloseConcurrency,
+  sessionCloseTimeoutMs,
+  sessionCloseYieldControl,
 }) => {
   const [kindFilter, setKindFilter] = useState<SessionFilter>(
     readStoredSessionFilter,
@@ -498,6 +528,17 @@ const SessionsView: React.FC<{
   const [pageSize, setPageSize] = useState(50);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [confirmEndSelected, setConfirmEndSelected] = useState(false);
+  const [sessionCloseBatch, setSessionCloseBatch] = useState<
+    BoundedSessionCloseBatch<UnifiedSessionRow> | undefined
+  >(undefined);
+  const [sessionCloseProgress, setSessionCloseProgress] = useState<
+    SessionCloseProgress | undefined
+  >(undefined);
+  const [sessionCloseRunning, setSessionCloseRunning] = useState(false);
+  const sessionCloseBatchRef = useRef<
+    BoundedSessionCloseBatch<UnifiedSessionRow> | undefined
+  >(undefined);
+  const sessionCloseMountedRef = useRef(true);
 
   useEffect(() => {
     try {
@@ -593,6 +634,14 @@ const SessionsView: React.FC<{
     });
   }, [mgr.rows]);
 
+  useEffect(() => {
+    sessionCloseMountedRef.current = true;
+    return () => {
+      sessionCloseMountedRef.current = false;
+      sessionCloseBatchRef.current?.cancel();
+    };
+  }, []);
+
   const changeFilter = (filter: SessionFilter) => {
     setKindFilter(filter);
     setPage(1);
@@ -618,23 +667,116 @@ const SessionsView: React.FC<{
 
   const endSession = useCallback(
     async (row: UnifiedSessionRow) => {
+      let ended: boolean | void = undefined;
       if (row.source === "rdp") {
-        await mgr.rdp.handleDisconnect(row.nativeId);
+        ended = await mgr.rdp.handleDisconnect(row.nativeId);
       } else if (row.source === "ssh") {
-        await onDisconnectSsh(row);
+        ended = await onDisconnectSsh(row);
       } else if (row.source === "http-proxy") {
-        await mgr.proxy.handleStopSession(row.nativeId);
+        ended = await mgr.proxy.handleStopSession(row.nativeId);
       } else {
-        onCloseSession(row.nativeId);
+        ended = await onCloseSession(row.nativeId);
+      }
+      if (ended === false) {
+        throw new Error(
+          `${row.kindLabel} session ${row.title} remains open for cleanup retry`,
+        );
       }
     },
     [mgr.proxy, mgr.rdp, onCloseSession, onDisconnectSsh],
   );
 
-  const endSelectedSessions = async () => {
-    const rows = mgr.rows.filter((row) => selectedRows.has(row.uid));
-    await Promise.allSettled(rows.map(endSession));
-    setSelectedRows(new Set());
+  const captureSelectedCloseBatch = () => {
+    const capturedIds = new Set(selectedRows);
+    const alreadyCompletedIds = new Set(
+      sessionCloseBatchRef.current?.result().completedIds ?? [],
+    );
+    const targets: SessionCloseTarget<UnifiedSessionRow>[] = mgr.rows
+      .filter(
+        (row) => capturedIds.has(row.uid) && !alreadyCompletedIds.has(row.uid),
+      )
+      .map((row) => ({
+        id: row.uid,
+        value: Object.freeze({
+          ...row,
+          frontendSession: row.frontendSession
+            ? { ...row.frontendSession }
+            : undefined,
+          rdpSession: row.rdpSession ? { ...row.rdpSession } : undefined,
+          proxySession: row.proxySession ? { ...row.proxySession } : undefined,
+          sshSession: row.sshSession ? { ...row.sshSession } : undefined,
+        }),
+      }));
+    return new BoundedSessionCloseBatch(targets);
+  };
+
+  const requestEndSelectedSessions = () => {
+    if (
+      sessionCloseRunning ||
+      (sessionCloseProgress?.inFlight ?? 0) > 0 ||
+      completedCloseIdsAwaitingSelectionPrune
+    )
+      return;
+    const batch = captureSelectedCloseBatch();
+    if (batch.targets.length === 0) return;
+    sessionCloseBatchRef.current = batch;
+    setSessionCloseBatch(batch);
+    setSessionCloseProgress(batch.progress());
+    setConfirmEndSelected(true);
+  };
+
+  const runSessionCloseBatch = async (
+    batch: BoundedSessionCloseBatch<UnifiedSessionRow>,
+  ) => {
+    if (sessionCloseBatchRef.current !== batch) return;
+    setSessionCloseRunning(true);
+    try {
+      const result = await batch.run(endSession, {
+        concurrency: sessionCloseConcurrency,
+        timeoutMs: sessionCloseTimeoutMs,
+        yieldControl: sessionCloseYieldControl,
+        onSettledAfterTimeout: ({ id, completed }) => {
+          if (
+            !completed ||
+            !sessionCloseMountedRef.current ||
+            sessionCloseBatchRef.current !== batch
+          )
+            return;
+          setSelectedRows((current) => {
+            if (!current.has(id)) return current;
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+        },
+        onProgress: (progress) => {
+          if (
+            sessionCloseMountedRef.current &&
+            sessionCloseBatchRef.current === batch
+          ) {
+            setSessionCloseProgress(progress);
+          }
+        },
+      });
+      if (
+        !sessionCloseMountedRef.current ||
+        sessionCloseBatchRef.current !== batch
+      )
+        return;
+      setSessionCloseProgress(result);
+      setSelectedRows((current) => {
+        const next = new Set(current);
+        result.completedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } finally {
+      if (
+        sessionCloseMountedRef.current &&
+        sessionCloseBatchRef.current === batch
+      ) {
+        setSessionCloseRunning(false);
+      }
+    }
   };
 
   const showRdpBulk =
@@ -644,6 +786,13 @@ const SessionsView: React.FC<{
     (kindFilter === "all" || kindFilter === "proxy");
   const showSshBulk =
     mgr.sshRows.length > 0 && (kindFilter === "all" || kindFilter === "ssh");
+  const unfinishedSessionCloses = sessionCloseProgress
+    ? sessionCloseProgress.total - sessionCloseProgress.completed
+    : 0;
+  const completedCloseIdsAwaitingSelectionPrune =
+    !sessionCloseRunning &&
+    sessionCloseProgress?.inFlight === 0 &&
+    sessionCloseBatch?.result().completedIds.some((id) => selectedRows.has(id));
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -672,7 +821,12 @@ const SessionsView: React.FC<{
             {selectedRows.size > 0 && (
               <button
                 type="button"
-                onClick={() => setConfirmEndSelected(true)}
+                onClick={requestEndSelectedSessions}
+                disabled={
+                  sessionCloseRunning ||
+                  (sessionCloseProgress?.inFlight ?? 0) > 0 ||
+                  completedCloseIdsAwaitingSelectionPrune
+                }
                 className="sor-option-chip text-xs bg-error/20 text-error border-error/40 hover:bg-error/30"
                 title="End selected sessions"
                 data-testid="session-end-selected"
@@ -717,6 +871,55 @@ const SessionsView: React.FC<{
             )}
           </div>
         </div>
+        {sessionCloseProgress && (
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--color-border)] bg-[var(--color-backgroundSecondary)] px-2.5 py-1.5 text-xs"
+            aria-live="polite"
+            aria-busy={sessionCloseRunning}
+            data-testid="session-close-progress"
+            data-completed={sessionCloseProgress.completed}
+            data-failed={sessionCloseProgress.failed}
+            data-pending={sessionCloseProgress.pending}
+            data-in-flight={sessionCloseProgress.inFlight}
+            data-timed-out={sessionCloseProgress.timedOut}
+          >
+            <span>
+              {sessionCloseRunning
+                ? `${sessionCloseProgress.cancelled ? "Cancelling" : "Ending"} sessions: ${sessionCloseProgress.completed + sessionCloseProgress.failed} of ${sessionCloseProgress.total} settled · ${sessionCloseProgress.inFlight} active · ${sessionCloseProgress.pending} queued`
+                : sessionCloseProgress.timedOut > 0
+                  ? `${sessionCloseProgress.completed} ended · ${sessionCloseProgress.timedOut} timed out and still cleaning up · ${sessionCloseProgress.pending} not started`
+                  : unfinishedSessionCloses > 0
+                    ? `${sessionCloseProgress.completed} ended · ${sessionCloseProgress.failed} failed · ${sessionCloseProgress.pending} not started`
+                    : `${sessionCloseProgress.completed} sessions ended`}
+            </span>
+            {sessionCloseRunning && sessionCloseBatch && (
+              <button
+                type="button"
+                className="sor-option-chip text-xs"
+                onClick={() =>
+                  setSessionCloseProgress(sessionCloseBatch.cancel())
+                }
+                disabled={sessionCloseProgress.cancelled}
+                data-testid="session-close-cancel"
+              >
+                Cancel remaining
+              </button>
+            )}
+            {!sessionCloseRunning &&
+              sessionCloseProgress.inFlight === 0 &&
+              unfinishedSessionCloses > 0 &&
+              sessionCloseBatch && (
+                <button
+                  type="button"
+                  className="sor-option-chip text-xs"
+                  onClick={() => void runSessionCloseBatch(sessionCloseBatch)}
+                  data-testid="session-close-retry"
+                >
+                  Retry {unfinishedSessionCloses}
+                </button>
+              )}
+          </div>
+        )}
         <div
           className="flex items-center gap-1.5 overflow-x-auto"
           role="toolbar"
@@ -965,15 +1168,20 @@ const SessionsView: React.FC<{
       <ConfirmDialog
         isOpen={confirmEndSelected}
         title="End Selected Sessions"
-        message={`End ${selectedRows.size} selected session${selectedRows.size === 1 ? "" : "s"}? Active transports will be disconnected and selected tabs will be closed.`}
+        message={`End ${sessionCloseBatch?.targets.length ?? 0} selected session${sessionCloseBatch?.targets.length === 1 ? "" : "s"}? Active transports will be disconnected and selected tabs will be closed.`}
         confirmText="End Sessions"
         cancelText="Cancel"
         variant="danger"
         onConfirm={() => {
           setConfirmEndSelected(false);
-          void endSelectedSessions();
+          if (sessionCloseBatch) void runSessionCloseBatch(sessionCloseBatch);
         }}
-        onCancel={() => setConfirmEndSelected(false)}
+        onCancel={() => {
+          setConfirmEndSelected(false);
+          setSessionCloseBatch(undefined);
+          setSessionCloseProgress(undefined);
+          sessionCloseBatchRef.current = undefined;
+        }}
       />
     </div>
   );
@@ -1004,6 +1212,9 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
   onDetachToWindow,
   onReconnect,
   onCloseSession,
+  sessionCloseConcurrency,
+  sessionCloseTimeoutMs,
+  sessionCloseYieldControl,
   thumbnailsEnabled = true,
   thumbnailPolicy = "realtime",
   thumbnailInterval = 5,
@@ -1026,20 +1237,18 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
   };
 
   const handleCloseManagedSession = useCallback(
-    (sessionId: string) => {
+    async (sessionId: string): Promise<boolean | void> => {
       if (onCloseSession) {
-        onCloseSession(sessionId);
-        return;
+        return await onCloseSession(sessionId);
       }
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+      return true;
     },
     [dispatch, onCloseSession],
   );
 
   const handleDisconnectSsh = useCallback(
-    async (row: UnifiedSessionRow) => {
-      await mgr.ssh.handleDisconnect(row.nativeId);
-    },
+    async (row: UnifiedSessionRow) => mgr.ssh.handleDisconnect(row.nativeId),
     [mgr.ssh],
   );
 
@@ -1164,6 +1373,9 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               onCloseSession={handleCloseManagedSession}
               onDisconnectSsh={handleDisconnectSsh}
               onDisconnectAllSsh={handleDisconnectAllSsh}
+              sessionCloseConcurrency={sessionCloseConcurrency}
+              sessionCloseTimeoutMs={sessionCloseTimeoutMs}
+              sessionCloseYieldControl={sessionCloseYieldControl}
             />
           )}
           {view === "ssh-sessions" && <SshSessionsView />}

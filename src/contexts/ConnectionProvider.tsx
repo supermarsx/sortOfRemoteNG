@@ -22,7 +22,7 @@ import {
   ConnectionAction,
   ConnectionContext,
 } from "./ConnectionContextTypes";
-import { Connection } from "../types/connection/connection";
+import { Connection, ConnectionSession } from "../types/connection/connection";
 import {
   diffConnection,
   formatConnectionDiff,
@@ -68,6 +68,50 @@ function flattenConnectionIds(connections: Connection[]): string[] {
   walk(roots);
   return result;
 }
+
+export interface SessionSnapshotReconciliationDiagnostics {
+  indexedSessions: number;
+  lookupSessions: number;
+  matchedSessions: number;
+}
+
+/**
+ * Reconciles a full session snapshot in O(current + incoming) time while
+ * preserving the incoming snapshot's ordering and lifecycle merge semantics.
+ */
+// Exported for deterministic reducer scalability coverage.
+// eslint-disable-next-line react-refresh/only-export-components
+export const reconcileSessionSnapshot = (
+  currentSessions: readonly ConnectionSession[],
+  incomingSessions: readonly ConnectionSession[],
+  onDiagnostics?: (
+    diagnostics: SessionSnapshotReconciliationDiagnostics,
+  ) => void,
+): ConnectionSession[] => {
+  const currentById = new Map<string, ConnectionSession>();
+  let indexedSessions = 0;
+  for (const session of currentSessions) {
+    indexedSessions++;
+    // Session ids are unique in application state. Keeping the first entry also
+    // exactly matches the previous Array.find behavior for malformed snapshots.
+    if (!currentById.has(session.id)) currentById.set(session.id, session);
+  }
+  let lookupSessions = 0;
+  let matchedSessions = 0;
+  const reconciled = incomingSessions.map((incoming) => {
+    lookupSessions++;
+    const current = currentById.get(incoming.id);
+    if (!current) return incoming;
+    matchedSessions++;
+    return reconcileSessionLifecycleSnapshot(current, incoming);
+  });
+  onDiagnostics?.({
+    indexedSessions,
+    lookupSessions,
+    matchedSessions,
+  });
+  return reconciled;
+};
 
 // Exported for deterministic reducer regression coverage.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -213,14 +257,7 @@ export const connectionReducer = (
       // revision instead of last-write-wins replacement.
       return {
         ...state,
-        sessions: action.payload.map((incoming) => {
-          const current = state.sessions.find(
-            (session) => session.id === incoming.id,
-          );
-          return current
-            ? reconcileSessionLifecycleSnapshot(current, incoming)
-            : incoming;
-        }),
+        sessions: reconcileSessionSnapshot(state.sessions, action.payload),
       };
     case "REORDER_SESSIONS":
       // Reorder sessions by moving from one index to another

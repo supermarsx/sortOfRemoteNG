@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { connectionReducer } from "../../src/contexts/ConnectionProvider";
+import {
+  connectionReducer,
+  reconcileSessionSnapshot,
+  type SessionSnapshotReconciliationDiagnostics,
+} from "../../src/contexts/ConnectionProvider";
 import type { ConnectionState } from "../../src/contexts/ConnectionContextTypes";
 import type { ConnectionSession } from "../../src/types/connection/connection";
 
@@ -280,5 +284,73 @@ describe("connectionReducer UPDATE_SESSION", () => {
         lifecycleWriterId: "detached-session-1",
       }),
     );
+  });
+});
+
+describe("connectionReducer SET_SESSIONS scalability", () => {
+  const makeSessions = (count: number): ConnectionSession[] =>
+    Array.from({ length: count }, (_, index) => ({
+      ...session,
+      id: `session-${index}`,
+      connectionId: `connection-${index}`,
+      name: `Current ${index}`,
+      backendSessionId: `backend-${index}`,
+      shellId: `shell-${index}`,
+      lifecycleRevision: 2,
+    }));
+
+  it("preserves incoming ordering and the previous first-match behavior", () => {
+    const first = { ...session, name: "First current" };
+    const duplicate = { ...session, name: "Duplicate current" };
+    const incoming = [
+      { ...session, id: "new", name: "New" },
+      { ...session, name: "Incoming" },
+    ];
+
+    const reconciled = reconcileSessionSnapshot([first, duplicate], incoming);
+
+    expect(reconciled.map((candidate) => candidate.id)).toEqual([
+      "new",
+      "session-1",
+    ]);
+    expect(reconciled[1].name).toBe("Incoming");
+    expect(reconciled[1].backendSessionId).toBe(first.backendSessionId);
+  });
+
+  it("uses exactly one index visit and one lookup per row at 100/500/1000", () => {
+    const operationCounts: number[] = [];
+
+    for (const count of [100, 500, 1_000]) {
+      const current = makeSessions(count);
+      const incoming = [...current].reverse().map((candidate) => ({
+        ...candidate,
+        name: `Incoming ${candidate.id}`,
+      }));
+      let diagnostics: SessionSnapshotReconciliationDiagnostics | undefined;
+
+      const reconciled = reconcileSessionSnapshot(
+        current,
+        incoming,
+        (snapshot) => {
+          diagnostics = snapshot;
+        },
+      );
+
+      expect(reconciled.map((candidate) => candidate.id)).toEqual(
+        incoming.map((candidate) => candidate.id),
+      );
+      expect(diagnostics).toEqual({
+        indexedSessions: count,
+        lookupSessions: count,
+        matchedSessions: count,
+      });
+      operationCounts.push(
+        diagnostics!.indexedSessions + diagnostics!.lookupSessions,
+      );
+    }
+
+    expect(operationCounts).toEqual([200, 1_000, 2_000]);
+    expect(operationCounts[1] / operationCounts[0]).toBe(5);
+    expect(operationCounts[2] / operationCounts[0]).toBe(10);
   });
 });
