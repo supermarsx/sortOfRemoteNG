@@ -4,11 +4,15 @@
   "version": "26.26.0",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "version:check": "node ./scripts/sync-version.mjs --check",
     "version:floor:check": "node ./scripts/ci/check-release-version-floor.mjs",
     "version:sync": "node ./scripts/sync-version.mjs --write",
     "version:test": "node --test ./tests/versioning/versioning.test.mjs",
+    "toolchain:test": "node --test ./tests/tooling/nodeToolchain.node-test.mjs",
     "i18n:styled:generate": "node ./scripts/styled-english-locales.mjs",
     "i18n:styled:check": "node ./scripts/styled-english-locales.mjs --check",
     "release:test": "node --test ./tests/release/*.test.mjs",
@@ -92,7 +96,7 @@
     "@types/file-saver": "^2.0.7",
     "@types/guacamole-common-js": "^1.5.5",
     "@types/jszip": "^3.4.1",
-    "@types/node": "^25.7.0",
+    "@types/node": "24.13.3",
     "@types/novnc": "^0.0.27",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",

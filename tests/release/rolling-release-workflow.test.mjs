@@ -360,8 +360,8 @@ test("release actions use audited Node 24-compatible immutable releases", () => 
     ["actions/checkout", "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09", "v5.1.0"],
     [
       "actions/setup-node",
-      "a0853c24544627f65ddf259abe73b1d18a591444",
-      "v5.0.0",
+      "820762786026740c76f36085b0efc47a31fe5020",
+      "v7.0.0",
     ],
     ["actions/setup-go", "924ae3a1cded613372ab5595356fb5720e22ba16", "v6.5.0"],
     [

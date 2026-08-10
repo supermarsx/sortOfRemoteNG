@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           package-manager-cache: false
       - run: node scripts/ci/check-docs-links.mjs
 
@@ -31,10 +31,12 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           package-manager-cache: false
+      - name: Enforce Node toolchain contract
+        run: npm run toolchain:test
       - name: Test rolling-version tooling
         run: npm run version:test
       - name: Reject allocated release version regression
@@ -61,9 +63,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
       - run: npm run format
@@ -71,9 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
       - run: npm run lint
@@ -81,9 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
       - run: npm run typecheck
@@ -91,9 +93,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci
       - run: npm run dev:launcher:test
@@ -464,9 +466,9 @@ jobs:
         run: cargo test -p sorng-opkssh --tests --features vendored-wrapper -- --nocapture
       - name: cargo check (app feature forwards OPKSSH vendored wrapper)
         run: cargo check -p app --features opkssh-vendored-wrapper
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           package-manager-cache: false
       - name: verify OPKSSH vendor staging defaults to disabled cleanup
         run: node ../scripts/stage-opkssh-vendor.mjs --disable
