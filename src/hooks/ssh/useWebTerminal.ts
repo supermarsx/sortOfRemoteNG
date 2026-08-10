@@ -206,6 +206,8 @@ export function useWebTerminal(
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
   const { toast } = useToastContext();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   const connection = useMemo(
     () => resolveRuntimeConnection(state.connections, session.connectionId),
@@ -2340,9 +2342,9 @@ export function useWebTerminal(
             ? "Failed to clear the clipboard"
             : "Failed to confirm the terminal paste";
       console.error(`${message}:`, error);
-      toast.error(message, 3000);
+      toastRef.current.error(message, 3000);
     },
-    [toast],
+    [],
   );
 
   const scheduleClipboardClear = useCallback(
@@ -2427,11 +2429,11 @@ export function useWebTerminal(
         return true;
       } catch (error) {
         console.error("Failed to paste into the terminal:", error);
-        toast.error("Failed to paste into the terminal", 3000);
+        toastRef.current.error("Failed to paste into the terminal", 3000);
         return false;
       }
     },
-    [handleInput, reportClipboardFailure, scheduleClipboardClear, toast],
+    [handleInput, reportClipboardFailure, scheduleClipboardClear],
   );
 
   const pasteFromClipboard = useCallback(async (): Promise<boolean> => {

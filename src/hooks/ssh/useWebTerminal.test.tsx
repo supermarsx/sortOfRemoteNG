@@ -86,12 +86,15 @@ const mocks = vi.hoisted(() => {
   const settingsContext = {
     settings: {} as Record<string, unknown>,
   };
-  const toast = Object.assign(vi.fn(), {
-    error: vi.fn(),
-    info: vi.fn(),
-    success: vi.fn(),
-    warning: vi.fn(),
-  });
+  const createToast = () =>
+    Object.assign(vi.fn(), {
+      error: vi.fn(),
+      info: vi.fn(),
+      success: vi.fn(),
+      warning: vi.fn(),
+    });
+  const toast = createToast();
+  const toastContext = { current: toast };
   const clipboard = {
     readText: vi.fn(async () => ""),
     writeText: vi.fn(async (_text: string) => undefined),
@@ -121,7 +124,9 @@ const mocks = vi.hoisted(() => {
     connection,
     context,
     settingsContext,
+    createToast,
     toast,
+    toastContext,
     clipboard,
     confirmPaste,
     invoke: vi.fn(),
@@ -163,7 +168,7 @@ vi.mock("../../contexts/SettingsContext", () => ({
   useSettings: () => mocks.settingsContext,
 }));
 vi.mock("../../contexts/ToastContext", () => ({
-  useToastContext: () => ({ toast: mocks.toast }),
+  useToastContext: () => ({ toast: mocks.toastContext.current }),
 }));
 vi.mock("../recording/useTerminalRecorder", () => ({
   useTerminalRecorder: () => ({ isRecording: false }),
@@ -253,6 +258,7 @@ beforeEach(() => {
   mocks.toast.info.mockClear();
   mocks.toast.success.mockClear();
   mocks.toast.warning.mockClear();
+  mocks.toastContext.current = mocks.toast;
   mocks.clipboard.readText.mockReset();
   mocks.clipboard.readText.mockResolvedValue("");
   mocks.clipboard.writeText.mockReset();
@@ -924,6 +930,32 @@ describe("useWebTerminal input lifecycle", () => {
       data: "whoami",
     });
     expect(mocks.addHistoryEntry).not.toHaveBeenCalled();
+  });
+
+  it("keeps clipboard callbacks stable while reporting through the latest toast", async () => {
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(mocks.MockTerminal.instances).toHaveLength(1);
+
+    const latestToast = mocks.createToast();
+    mocks.toastContext.current = latestToast;
+    view.rerender(<Harness />);
+    await act(async () => Promise.resolve());
+
+    expect(mocks.MockTerminal.instances).toHaveLength(1);
+    mocks.clipboard.readText.mockRejectedValueOnce(new Error("read denied"));
+    await expect(model!.pasteFromClipboard()).resolves.toBe(false);
+    expect(latestToast.error).toHaveBeenCalledWith(
+      "Failed to read from the clipboard",
+      3000,
+    );
+    expect(mocks.toast.error).not.toHaveBeenCalled();
   });
 
   it("keeps ordinary xterm input outside clipboard policy", async () => {
