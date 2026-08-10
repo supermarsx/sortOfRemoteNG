@@ -21,19 +21,18 @@ use tempfile::tempdir;
 use app_lib::encryption_rotation_commands::rotate_master_key_full_inner;
 
 use sorng_encryption::artifacts::{
-    backups as artifact_backups, connections as artifact_connections,
-    macros as artifact_macros, recording_media as artifact_recording_media,
-    recording_meta as artifact_recording_meta, settings as artifact_settings,
+    backups as artifact_backups, connections as artifact_connections, macros as artifact_macros,
+    recording_media as artifact_recording_media, recording_meta as artifact_recording_meta,
+    settings as artifact_settings,
 };
-use sorng_encryption::envelope::{MasterKeyStorage, MAGIC, SALT_LEN};
-use sorng_encryption::password_wrap::Argon2Params;
+use sorng_encryption::envelope::{EnvelopeHeader, MasterKeyStorage, MAGIC, SALT_LEN};
+use sorng_encryption::password_wrap::{self, Argon2Params};
 use sorng_encryption::{EncryptionState, MasterDek};
 
 use sorng_recording::service::RecordingService;
 use sorng_recording::storage as rec_storage;
 use sorng_recording::types::{
-    CompressionAlgorithm, ExportFormat, MacroRecording, RecordingProtocol,
-    SavedRecordingEnvelope,
+    CompressionAlgorithm, ExportFormat, MacroRecording, RecordingProtocol, SavedRecordingEnvelope,
 };
 
 use sorng_storage::backup::{BackupConfig, BackupService};
@@ -136,10 +135,12 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
         .await;
 
     // ── Stand up services and inject the state ─────────────────────
-    let storage_state = SecureStorage::new(
-        app_data.join("storage.json").to_string_lossy().to_string(),
-    );
-    storage_state.lock().await.set_encryption_state(enc_state.clone());
+    let storage_state =
+        SecureStorage::new(app_data.join("storage.json").to_string_lossy().to_string());
+    storage_state
+        .lock()
+        .await
+        .set_encryption_state(enc_state.clone());
 
     let backup_state = BackupService::new(backup_dir.to_string_lossy().to_string());
     {
@@ -165,8 +166,7 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
     rec_svc.set_encryption_state(enc_state.clone()).await;
     let rec_root = rec_svc.storage_root_snapshot().await;
     rec_storage::ensure_dirs(&rec_root).unwrap();
-    let recording_state =
-        std::sync::Arc::new(tokio::sync::Mutex::new(rec_svc));
+    let recording_state = std::sync::Arc::new(tokio::sync::Mutex::new(rec_svc));
 
     // ── Materialise every artifact kind under DEK A ────────────────
 
@@ -202,14 +202,9 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
 
     let media_basename = "e2e.media";
     let media_bytes: Vec<u8> = (0u8..200).cycle().take(150_000).collect();
-    rec_storage::save_media_blob_dispatched(
-        &rec_root,
-        media_basename,
-        &media_bytes,
-        &enc_state,
-    )
-    .await
-    .unwrap();
+    rec_storage::save_media_blob_dispatched(&rec_root, media_basename, &media_bytes, &enc_state)
+        .await
+        .unwrap();
 
     let macro_fixture = fixture_macro("e2e-mac");
     rec_storage::save_macro_dispatched(&rec_root, &macro_fixture, &enc_state)
@@ -264,17 +259,17 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
     let state_a = enc_state.snapshot().await.unwrap();
 
     // ── Call the rotation helper ───────────────────────────────────
-    // password: None + vault_present: false → vault-only mode; no
-    // dek.enc write, no host-keychain write. Matches the orchestrator's
-    // `(false, false)` branch which defaults to `MasterKeyStorage::Vault`
-    // for the new settings header.
+    // No host keychain is available in this deterministic fixture, so
+    // supply a password that creates the durable dek.enc receipt the
+    // fail-closed rotation contract requires.
+    let rotation_password = "e2e-durable-rotation-receipt";
     let report = rotate_master_key_full_inner(
         &app_data,
         &enc_state,
         &storage_state,
         &backup_state,
         &recording_state,
-        None,
+        Some(rotation_password.to_string()),
         false, // vault_present
     )
     .await
@@ -293,18 +288,30 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
     assert_eq!(report.media_sidecars_rewritten, 1);
     assert_eq!(report.macros_rewritten, 1);
     assert!(report.bytes_rewritten > 0);
-    // vault_present: false and password: None ⇒ neither receipt got
-    // touched. This is the explicit contract for the headless test
-    // path; the production command path is exercised elsewhere via
-    // the unit tests on the receipt writers.
+    // The fixture has no vault; the password receipt is the sole
+    // durable restart source.
     assert!(!report.vault_updated);
-    assert!(!report.dek_enc_updated);
+    assert!(report.dek_enc_updated);
 
-    // ── Post-rotation readability: every artifact decodes under DEK B
-    //    via the live `enc_state` (which the orchestrator swapped in).
+    let dek_enc_path = app_data.join("dek.enc");
+    let persisted_dek = password_wrap::unwrap(
+        rotation_password,
+        &std::fs::read(&dek_enc_path).expect("read durable dek.enc"),
+    )
+    .expect("unwrap durable dek.enc");
+    let restarted_state = EncryptionState::new();
+    restarted_state.install(persisted_dek).await;
+
+    // ── Post-rotation restart readability: every artifact decodes
+    //    under DEK B reconstructed solely from the durable receipt.
     let settings_bytes_after = std::fs::read(&settings_path).unwrap();
     assert_eq!(&settings_bytes_after[..6], MAGIC);
-    let decoded_settings = artifact_settings::read(&enc_state, &settings_bytes_after)
+    let settings_header = EnvelopeHeader::decode(&settings_bytes_after).unwrap();
+    assert_eq!(
+        settings_header.master_key_storage,
+        MasterKeyStorage::Password
+    );
+    let decoded_settings = artifact_settings::read(&restarted_state, &settings_bytes_after)
         .await
         .unwrap()
         .unwrap();
@@ -313,7 +320,7 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
     let connections_bytes_after = std::fs::read(&connections_path).unwrap();
     assert_eq!(&connections_bytes_after[..6], MAGIC);
     let decoded_connections =
-        artifact_connections::read(&enc_state, &connections_bytes_after)
+        artifact_connections::read(&restarted_state, &connections_bytes_after)
             .await
             .unwrap()
             .unwrap();
@@ -322,27 +329,28 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
     assert_eq!(decoded_connections["connections"][0]["id"], "c1");
 
     let backup_bytes_after = std::fs::read(&backup_path).unwrap();
-    assert!(artifact_backups::read(&enc_state, &backup_bytes_after)
-        .await
-        .is_ok());
+    assert!(
+        artifact_backups::read(&restarted_state, &backup_bytes_after)
+            .await
+            .is_ok()
+    );
 
     let env_bytes_after = std::fs::read(&env_path).unwrap();
-    let decoded_env = artifact_recording_meta::read(&enc_state, &env_bytes_after)
+    let decoded_env = artifact_recording_meta::read(&restarted_state, &env_bytes_after)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(decoded_env["id"], "e2e-rec");
 
     let media_bytes_after = std::fs::read(&media_path).unwrap();
-    let decoded_media =
-        artifact_recording_media::read_all(&enc_state, &media_bytes_after)
-            .await
-            .unwrap();
+    let decoded_media = artifact_recording_media::read_all(&restarted_state, &media_bytes_after)
+        .await
+        .unwrap();
     assert_eq!(decoded_media.len(), media_bytes.len());
     assert_eq!(decoded_media, media_bytes);
 
     let macro_bytes_after = std::fs::read(&macro_path).unwrap();
-    let decoded_macro = artifact_macros::read(&enc_state, &macro_bytes_after)
+    let decoded_macro = artifact_macros::read(&restarted_state, &macro_bytes_after)
         .await
         .unwrap()
         .unwrap();

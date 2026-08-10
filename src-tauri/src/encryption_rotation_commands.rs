@@ -52,6 +52,7 @@ const SETTINGS_ENC_FILENAME: &str = "settings.enc";
 const EVENT_UNLOCKED: &str = "encryption:unlocked";
 
 type RotationFailureInjector<'a> = dyn Fn(&str, &Path) -> Option<String> + Sync + 'a;
+type VaultReceiptWriter<'a> = dyn Fn(&[u8; 32]) -> Result<(), String> + Sync + 'a;
 
 #[derive(Debug)]
 struct StagedArtifact {
@@ -59,6 +60,21 @@ struct StagedArtifact {
     canonical: PathBuf,
     staged: PathBuf,
     backup: PathBuf,
+}
+
+fn durable_rotation_mode(
+    vault_receipt_will_exist: bool,
+    password_receipt_will_exist: bool,
+) -> Result<MasterKeyStorage, String> {
+    match (vault_receipt_will_exist, password_receipt_will_exist) {
+        (true, true) => Ok(MasterKeyStorage::VaultAndPassword),
+        (true, false) => Ok(MasterKeyStorage::Vault),
+        (false, true) => Ok(MasterKeyStorage::Password),
+        (false, false) => Err(
+            "rotation requires at least one durable key receipt (OS vault or password-wrapped dek.enc)"
+                .to_string(),
+        ),
+    }
 }
 
 /// Per-artifact rewrite tally returned by the rotation command.
@@ -195,6 +211,7 @@ pub async fn rotate_master_key_full_inner(
         password,
         vault_present,
         None,
+        None,
     )
     .await
 }
@@ -209,6 +226,7 @@ async fn rotate_master_key_full_inner_impl(
     password: Option<String>,
     vault_present: bool,
     failure_injector: Option<&RotationFailureInjector<'_>>,
+    vault_receipt_writer: Option<&VaultReceiptWriter<'_>>,
 ) -> Result<FullRotateReport, String> {
     if !enc_state.is_unlocked().await {
         return Err("state is locked; unlock before rotating".into());
@@ -222,6 +240,8 @@ async fn rotate_master_key_full_inner_impl(
     if dek_enc_present && password.is_none() {
         return Err("password mode is in effect; supply the password to re-wrap dek.enc".into());
     }
+
+    let new_mode = durable_rotation_mode(vault_present, password.is_some())?;
 
     // ── Step 1: freeze the old DEK ─────────────────────────────────
     let old_state = enc_state
@@ -244,12 +264,6 @@ async fn rotate_master_key_full_inner_impl(
         .await
         .ok_or_else(|| "internal: new master DEK vanished mid-rotation".to_string())?;
 
-    let new_mode = match (vault_present, dek_enc_present) {
-        (true, true) => MasterKeyStorage::VaultAndPassword,
-        (true, false) => MasterKeyStorage::Vault,
-        (false, true) => MasterKeyStorage::Password,
-        (false, false) => MasterKeyStorage::Vault,
-    };
     let salt = [0u8; SALT_LEN];
 
     // Capture the old receipt before any canonical artifact can be
@@ -454,13 +468,17 @@ async fn rotate_master_key_full_inner_impl(
     let mut vault_updated = false;
     let receipt_result = async {
         if vault_present {
-            sorng_vault::keychain::store_bytes(
-                sorng_vault::types::SERVICE_NAME,
-                sorng_vault::types::MASTER_DEK_ACCOUNT,
-                &new_bytes_raw,
-            )
-            .await
-            .map_err(|e| format!("vault update: {e}"))?;
+            if let Some(writer) = vault_receipt_writer {
+                writer(&new_bytes_raw).map_err(|e| format!("vault update: {e}"))?;
+            } else {
+                sorng_vault::keychain::store_bytes(
+                    sorng_vault::types::SERVICE_NAME,
+                    sorng_vault::types::MASTER_DEK_ACCOUNT,
+                    &new_bytes_raw,
+                )
+                .await
+                .map_err(|e| format!("vault update: {e}"))?;
+            }
             vault_updated = true;
         }
         if let Some(blob) = new_dek_enc_blob.as_deref() {
@@ -473,13 +491,18 @@ async fn rotate_master_key_full_inner_impl(
     if let Err(reason) = receipt_result {
         let mut recovery_errors = rollback_artifacts(&staged);
         if vault_updated {
-            if let Err(error) = sorng_vault::keychain::store_bytes(
-                sorng_vault::types::SERVICE_NAME,
-                sorng_vault::types::MASTER_DEK_ACCOUNT,
-                &old_bytes_raw,
-            )
-            .await
-            {
+            let restore_result = if let Some(writer) = vault_receipt_writer {
+                writer(&old_bytes_raw)
+            } else {
+                sorng_vault::keychain::store_bytes(
+                    sorng_vault::types::SERVICE_NAME,
+                    sorng_vault::types::MASTER_DEK_ACCOUNT,
+                    &old_bytes_raw,
+                )
+                .await
+                .map_err(|e| e.to_string())
+            };
+            if let Err(error) = restore_result {
                 recovery_errors.push(format!("restore vault: {error}"));
             }
         }
@@ -809,9 +832,204 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
+    use sorng_encryption::envelope::EnvelopeHeader;
     use sorng_recording::service::RecordingService;
     use sorng_storage::backup::BackupService;
     use sorng_storage::storage::{SecureStorage, StorageData};
+
+    struct ReceiptFixture {
+        _temp: tempfile::TempDir,
+        app_data: PathBuf,
+        enc_state: Arc<EncryptionState>,
+        storage_state: SecureStorageState,
+        backup_state: BackupServiceState,
+        recording_state: RecordingServiceState,
+        settings_path: PathBuf,
+        settings_payload: serde_json::Value,
+        old_dek_bytes: [u8; 32],
+    }
+
+    async fn receipt_fixture(seed: u8) -> ReceiptFixture {
+        let temp = tempdir().expect("temp app data");
+        let app_data = temp.path().to_path_buf();
+        let backup_dir = app_data.join("backups");
+        std::fs::create_dir_all(&backup_dir).expect("backup dir");
+
+        let old_dek_bytes = [seed; 32];
+        let enc_state = Arc::new(EncryptionState::new());
+        enc_state
+            .install(MasterDek::from_bytes(&old_dek_bytes).expect("old DEK"))
+            .await;
+
+        let settings_path = app_data.join(SETTINGS_ENC_FILENAME);
+        let settings_payload = json!({ "theme": "dark", "fixture": seed });
+        let settings_blob = artifact_settings::write(
+            &enc_state,
+            &settings_payload,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .expect("encode settings");
+        std::fs::write(&settings_path, settings_blob).expect("write settings");
+
+        let storage_state =
+            SecureStorage::new(app_data.join("storage.json").to_string_lossy().to_string());
+        storage_state
+            .lock()
+            .await
+            .set_encryption_state(enc_state.clone());
+        let backup_state = BackupService::new(backup_dir.to_string_lossy().to_string());
+        let recording_service = RecordingService::new(&app_data.to_string_lossy());
+        recording_service
+            .set_encryption_state(enc_state.clone())
+            .await;
+        let recording_state = Arc::new(tokio::sync::Mutex::new(recording_service));
+
+        ReceiptFixture {
+            _temp: temp,
+            app_data,
+            enc_state,
+            storage_state,
+            backup_state,
+            recording_state,
+            settings_path,
+            settings_payload,
+            old_dek_bytes,
+        }
+    }
+
+    #[tokio::test]
+    async fn durable_receipt_matrix_sets_truthful_metadata_and_restarts_readably() {
+        let cases = [
+            ("vault", true, None, MasterKeyStorage::Vault),
+            (
+                "password",
+                false,
+                Some("password-only"),
+                MasterKeyStorage::Password,
+            ),
+            (
+                "vault-and-password",
+                true,
+                Some("hybrid-password"),
+                MasterKeyStorage::VaultAndPassword,
+            ),
+        ];
+
+        for (index, (name, vault_present, password, expected_mode)) in cases.into_iter().enumerate()
+        {
+            let fixture = receipt_fixture(40 + index as u8).await;
+            let captured_vault = std::sync::Mutex::new(None::<[u8; 32]>);
+            let vault_writer = |bytes: &[u8; 32]| {
+                *captured_vault.lock().expect("vault writer lock") = Some(*bytes);
+                Ok(())
+            };
+
+            let report = rotate_master_key_full_inner_impl(
+                &fixture.app_data,
+                &fixture.enc_state,
+                &fixture.storage_state,
+                &fixture.backup_state,
+                &fixture.recording_state,
+                password.map(str::to_string),
+                vault_present,
+                None,
+                Some(&vault_writer),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{name} rotation failed: {error}"));
+
+            assert!(report.failures.is_empty(), "{name}: {:?}", report.failures);
+            assert!(report.settings_rewritten, "{name}");
+            assert_eq!(report.vault_updated, vault_present, "{name}");
+            assert_eq!(report.dek_enc_updated, password.is_some(), "{name}");
+
+            let settings_after = std::fs::read(&fixture.settings_path).expect("rotated settings");
+            let header = EnvelopeHeader::decode(&settings_after).expect("settings header");
+            assert_eq!(header.master_key_storage, expected_mode, "{name}");
+
+            let persisted_vault = *captured_vault.lock().expect("vault read lock");
+            assert_eq!(persisted_vault.is_some(), vault_present, "{name}");
+            let receipt_path = fixture.app_data.join(DEK_ENC_FILENAME);
+            assert_eq!(receipt_path.exists(), password.is_some(), "{name}");
+
+            let restarted_state = EncryptionState::new();
+            let restart_dek = if let Some(password) = password {
+                let blob = std::fs::read(&receipt_path).expect("password receipt");
+                let dek = password_wrap::unwrap(password, &blob).expect("unwrap password receipt");
+                if let Some(vault_bytes) = persisted_vault {
+                    let password_state = EncryptionState::new();
+                    password_state.install(dek).await;
+                    let password_bytes = password_state
+                        .master_bytes_raw()
+                        .await
+                        .expect("password DEK bytes");
+                    assert_eq!(password_bytes, vault_bytes, "{name}");
+                    MasterDek::from_bytes(&password_bytes).expect("restart DEK")
+                } else {
+                    dek
+                }
+            } else {
+                MasterDek::from_bytes(&persisted_vault.expect("vault receipt"))
+                    .expect("restart vault DEK")
+            };
+            restarted_state.install(restart_dek).await;
+            let restarted_settings = artifact_settings::read(&restarted_state, &settings_after)
+                .await
+                .expect("settings decrypt after restart")
+                .expect("settings payload");
+            assert_eq!(restarted_settings, fixture.settings_payload, "{name}");
+            assert_ne!(
+                restarted_state.master_bytes_raw().await.expect("new DEK"),
+                fixture.old_dek_bytes,
+                "{name}: rotation must install a fresh key"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rotation_without_any_durable_receipt_fails_before_rewriting() {
+        let fixture = receipt_fixture(61).await;
+        let settings_before = std::fs::read(&fixture.settings_path).expect("settings before");
+
+        let error = rotate_master_key_full_inner_impl(
+            &fixture.app_data,
+            &fixture.enc_state,
+            &fixture.storage_state,
+            &fixture.backup_state,
+            &fixture.recording_state,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
+        .expect_err("rotation without a durable receipt must fail closed");
+
+        assert!(error.contains("at least one durable key receipt"));
+        assert_eq!(
+            std::fs::read(&fixture.settings_path).unwrap(),
+            settings_before
+        );
+        assert_eq!(
+            fixture
+                .enc_state
+                .master_bytes_raw()
+                .await
+                .expect("live old DEK"),
+            fixture.old_dek_bytes
+        );
+        assert!(!fixture.app_data.join(DEK_ENC_FILENAME).exists());
+        assert!(std::fs::read_dir(&fixture.app_data)
+            .expect("list app data")
+            .filter_map(Result::ok)
+            .all(|entry| !entry
+                .file_name()
+                .to_string_lossy()
+                .contains(".sorng-rotation-")));
+    }
 
     #[tokio::test]
     async fn partial_rewrite_failure_keeps_old_key_receipt_and_artifacts_restart_readable() {
@@ -891,6 +1109,7 @@ mod tests {
             Some(password.to_string()),
             false,
             Some(&fail_connections),
+            None,
         )
         .await
         .expect("partial failure must return a retryable report");
