@@ -1,6 +1,6 @@
 import React from "react";
-import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // The real i18n instance is not initialized under vitest, so react-i18next's
 // fallback `t` returns the defaultValue without interpolating `{{count}}`.
@@ -8,7 +8,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 // uses so "{{count}} selected" renders as "2 selected".
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string, options?: Record<string, unknown>) => {
+    t: (
+      key: string,
+      defaultValue?: string,
+      options?: Record<string, unknown>,
+    ) => {
       let result = defaultValue ?? key;
       if (options) {
         for (const [name, value] of Object.entries(options)) {
@@ -27,6 +31,7 @@ import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import type { Connection } from "../../src/types/connection/connection";
+import { SettingsManager } from "../../src/utils/settings/settingsManager";
 
 const mockConnections: Connection[] = [
   {
@@ -64,6 +69,10 @@ function Harness() {
 }
 
 describe("BulkConnectionEditor", () => {
+  beforeEach(() => {
+    SettingsManager.resetInstance();
+  });
+
   it("updates aria-sort state on sortable headers", async () => {
     render(
       <ToastProvider>
@@ -73,7 +82,9 @@ describe("BulkConnectionEditor", () => {
       </ToastProvider>,
     );
 
-    const nameSortButton = await screen.findByRole("button", { name: /^Name$/i });
+    const nameSortButton = await screen.findByRole("button", {
+      name: /^Name$/i,
+    });
     const nameHeader = nameSortButton.closest("th");
     expect(nameHeader).not.toBeNull();
     expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
@@ -134,7 +145,9 @@ describe("BulkConnectionEditor", () => {
     );
     await screen.findByText("Alpha");
 
-    fireEvent.click(screen.getByRole("button", { name: "Select all visible connections" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all visible connections" }),
+    );
 
     expect(screen.getByText("2 selected")).toBeInTheDocument();
   });
@@ -152,6 +165,51 @@ describe("BulkConnectionEditor", () => {
     const searchInput = screen.getByPlaceholderText(/search by name/i);
     fireEvent.change(searchInput, { target: { value: "nonexistent-xyz" } });
 
-    expect(screen.getByText("No connections match your search")).toBeInTheDocument();
+    expect(
+      screen.getByText("No connections match your search"),
+    ).toBeInTheDocument();
+  });
+
+  it("asks before a row deletion by default and cancel preserves the row", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    await screen.findByText("Alpha");
+
+    fireEvent.click(screen.getByTestId("row-delete-conn-1"));
+
+    expect(screen.getByText(/delete this connection/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/delete this connection/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("deletes a row directly when confirmation is disabled", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      confirmDeleteConnection: false,
+    });
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    await screen.findByText("Alpha");
+
+    fireEvent.click(screen.getByTestId("row-delete-conn-1"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(/delete this connection/i),
+    ).not.toBeInTheDocument();
   });
 });

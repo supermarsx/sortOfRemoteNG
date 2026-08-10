@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveConnectionDeleteConfirmation,
   resolveConnectionRetryAttempts,
   resolveConnectionRetryDelay,
   resolveConnectionWarnOnClose,
@@ -19,5 +20,11 @@ describe("legacy per-connection behavior fallback", () => {
     expect(resolveConnectionRetryAttempts(undefined, 3)).toBe(3);
     expect(resolveConnectionRetryDelay(undefined, 5000)).toBe(5000);
     expect(resolveConnectionWarnOnClose(undefined, true)).toBe(true);
+  });
+
+  it("keeps permanent deletion confirmation fail-safe unless explicitly disabled", () => {
+    expect(resolveConnectionDeleteConfirmation(undefined)).toBe(true);
+    expect(resolveConnectionDeleteConfirmation(true)).toBe(true);
+    expect(resolveConnectionDeleteConfirmation(false)).toBe(false);
   });
 });

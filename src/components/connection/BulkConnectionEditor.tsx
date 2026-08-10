@@ -144,7 +144,7 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
             <span>{t("connections.cloneWithCredentials")}</span>
           </button>
           <button
-            onClick={() => mgr.setShowDeleteConfirm(true)}
+            onClick={() => void mgr.requestDeleteSelected()}
             className="px-2.5 py-1.5 bg-error/10 hover:bg-error/20 text-error rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
             data-testid="bulk-delete"
           >
@@ -357,9 +357,11 @@ function ConnectionRow({
             <KeyRound size={14} />
           </button>
           <button
-            onClick={() => void mgr.deleteConnection(connection.id)}
+            onClick={() => void mgr.requestDeleteConnection(connection.id)}
             className="p-1.5 hover:bg-error/20 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
             title={t("common.delete", "Delete")}
+            aria-label={`${t("common.delete", "Delete")} ${connection.name}`}
+            data-testid={`row-delete-${connection.id}`}
           >
             <Trash2 size={14} />
           </button>
@@ -570,21 +572,26 @@ function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
           </h3>
         </div>
         <p className="text-[var(--color-textSecondary)] mb-6">
-          {t(
-            "connections.bulkEditor.deleteConfirm",
-            "Are you sure you want to delete {{count}} selected connection(s)? This action cannot be undone.",
-            { count: mgr.selectedIds.size },
-          )}
+          {mgr.pendingDeleteId
+            ? t(
+                "dialogs.confirmDelete",
+                "Are you sure you want to delete this connection? This action cannot be undone.",
+              )
+            : t(
+                "connections.bulkEditor.deleteConfirm",
+                "Are you sure you want to delete {{count}} selected connection(s)? This action cannot be undone.",
+                { count: mgr.pendingDeleteCount },
+              )}
         </p>
         <div className="flex justify-end space-x-3">
           <button
-            onClick={() => mgr.setShowDeleteConfirm(false)}
+            onClick={mgr.cancelDeleteConfirmation}
             className="px-4 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
           >
             {t("dialogs.cancel", "Cancel")}
           </button>
           <button
-            onClick={() => void mgr.deleteSelected()}
+            onClick={() => void mgr.confirmDelete()}
             className="px-4 py-2 bg-error hover:bg-error/80 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2"
           >
             <Trash2 size={14} />

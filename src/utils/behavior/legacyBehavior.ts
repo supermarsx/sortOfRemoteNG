@@ -13,3 +13,8 @@ export const resolveConnectionWarnOnClose = (
   connectionValue: boolean | undefined,
   fallback: boolean,
 ): boolean => connectionValue ?? fallback;
+
+/** Permanent connection deletion is confirmation-on unless explicitly off. */
+export const resolveConnectionDeleteConfirmation = (
+  confirmDeleteConnection: boolean | undefined,
+): boolean => confirmDeleteConnection !== false;

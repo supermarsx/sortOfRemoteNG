@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection } from "../../src/types/connection/connection";
+import { SettingsManager } from "../../src/utils/settings/settingsManager";
 
 const mocks = vi.hoisted(() => ({
   state: {
@@ -43,6 +44,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { useBulkConnectionEditor } from "../../src/hooks/connection/useBulkConnectionEditor";
+import { resolveConnectionDeleteConfirmation } from "../../src/utils/behavior/legacyBehavior";
 
 const connections: Connection[] = [
   {
@@ -80,6 +82,7 @@ const deferred = () => {
 describe("useBulkConnectionEditor durable operations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    SettingsManager.resetInstance();
     mocks.state.connections = connections;
     mocks.dispatchAndFlush.mockResolvedValue(undefined);
     mocks.flushPendingSave.mockResolvedValue(undefined);
@@ -111,16 +114,133 @@ describe("useBulkConnectionEditor durable operations", () => {
     expect(mocks.toast.success).toHaveBeenCalledTimes(1);
   });
 
-  it("surfaces a failed single deletion without reporting success", async () => {
+  it("uses the default confirmation policy and cancel performs no deletion or save", async () => {
+    expect(
+      SettingsManager.getInstance().getSettings().confirmDeleteConnection,
+    ).toBe(true);
+    expect(resolveConnectionDeleteConfirmation(undefined)).toBe(true);
+    const { result } = renderHook(() => useBulkConnectionEditor(true, vi.fn()));
+
+    await act(async () => {
+      await result.current.requestDeleteConnection("connection-one");
+    });
+
+    expect(result.current.showDeleteConfirm).toBe(true);
+    expect(result.current.pendingDeleteId).toBe("connection-one");
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(mocks.flushPendingSave).not.toHaveBeenCalled();
+
+    act(() => result.current.cancelDeleteConfirmation());
+
+    expect(result.current.showDeleteConfirm).toBe(false);
+    expect(result.current.pendingDeleteId).toBeNull();
+    expect(mocks.dispatchAndFlush).not.toHaveBeenCalled();
+  });
+
+  it("deletes and durably flushes after confirmation", async () => {
+    const { result } = renderHook(() => useBulkConnectionEditor(true, vi.fn()));
+    await act(async () => {
+      await result.current.requestDeleteConnection("connection-one");
+    });
+
+    let persisted = false;
+    await act(async () => {
+      persisted = await result.current.confirmDelete();
+    });
+
+    expect(persisted).toBe(true);
+    expect(mocks.dispatchAndFlush).toHaveBeenCalledWith({
+      type: "DELETE_CONNECTION",
+      payload: "connection-one",
+    });
+    expect(result.current.showDeleteConfirm).toBe(false);
+    expect(result.current.pendingDeleteId).toBeNull();
+  });
+
+  it("deletes directly when the dedicated confirmation policy is disabled", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      confirmDeleteConnection: false,
+    });
+    const { result } = renderHook(() => useBulkConnectionEditor(true, vi.fn()));
+
+    let persisted = false;
+    await act(async () => {
+      persisted =
+        (await result.current.requestDeleteConnection("connection-one")) ??
+        false;
+    });
+
+    expect(persisted).toBe(true);
+    expect(result.current.showDeleteConfirm).toBe(false);
+    expect(mocks.dispatchAndFlush).toHaveBeenCalledWith({
+      type: "DELETE_CONNECTION",
+      payload: "connection-one",
+    });
+  });
+
+  it("uses the same disabled policy for selected connection deletion", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      confirmDeleteConnection: false,
+    });
+    const { result } = renderHook(() => useBulkConnectionEditor(true, vi.fn()));
+    act(() => result.current.toggleSelect("connection-one"));
+
+    let persisted = false;
+    await act(async () => {
+      persisted = (await result.current.requestDeleteSelected()) ?? false;
+    });
+
+    expect(persisted).toBe(true);
+    expect(result.current.showDeleteConfirm).toBe(false);
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: "DELETE_CONNECTION",
+      payload: "connection-one",
+    });
+    expect(mocks.flushPendingSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirms only the selected ids captured when the prompt opened", async () => {
+    const { result } = renderHook(() => useBulkConnectionEditor(true, vi.fn()));
+    act(() => result.current.toggleSelect("connection-one"));
+    await act(async () => {
+      await result.current.requestDeleteSelected();
+    });
+    expect(result.current.pendingDeleteIds).toEqual(["connection-one"]);
+
+    act(() => result.current.toggleSelect("connection-two"));
+    expect(result.current.selectedIds).toEqual(
+      new Set(["connection-one", "connection-two"]),
+    );
+    await act(async () => {
+      await result.current.confirmDelete();
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: "DELETE_CONNECTION",
+      payload: "connection-one",
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith({
+      type: "DELETE_CONNECTION",
+      payload: "connection-two",
+    });
+    expect(result.current.selectedIds).toEqual(new Set(["connection-two"]));
+  });
+
+  it("surfaces a failed confirmed deletion and keeps it retryable", async () => {
     mocks.dispatchAndFlush.mockRejectedValueOnce(
       new Error("storage unavailable"),
     );
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { result } = renderHook(() => useBulkConnectionEditor(true, vi.fn()));
 
+    await act(async () => {
+      await result.current.requestDeleteConnection("connection-one");
+    });
     let persisted = true;
     await act(async () => {
-      persisted = await result.current.deleteConnection("connection-one");
+      persisted = await result.current.confirmDelete();
     });
 
     expect(persisted).toBe(false);
@@ -130,6 +250,8 @@ describe("useBulkConnectionEditor durable operations", () => {
     });
     expect(mocks.toast.error).toHaveBeenCalledTimes(1);
     expect(mocks.toast.success).not.toHaveBeenCalled();
+    expect(result.current.showDeleteConfirm).toBe(true);
+    expect(result.current.pendingDeleteId).toBe("connection-one");
     consoleSpy.mockRestore();
   });
 
@@ -140,12 +262,14 @@ describe("useBulkConnectionEditor durable operations", () => {
     act(() => {
       result.current.toggleSelect("connection-one");
       result.current.toggleSelect("connection-two");
-      result.current.setShowDeleteConfirm(true);
+    });
+    await act(async () => {
+      await result.current.requestDeleteSelected();
     });
 
     let deleting!: Promise<boolean>;
     act(() => {
-      deleting = result.current.deleteSelected();
+      deleting = result.current.confirmDelete();
     });
     expect(mocks.dispatch).toHaveBeenCalledTimes(2);
     expect(result.current.selectedIds.size).toBe(2);
@@ -167,12 +291,14 @@ describe("useBulkConnectionEditor durable operations", () => {
     const { result } = renderHook(() => useBulkConnectionEditor(true, vi.fn()));
     act(() => {
       result.current.toggleSelect("connection-one");
-      result.current.setShowDeleteConfirm(true);
+    });
+    await act(async () => {
+      await result.current.requestDeleteSelected();
     });
 
     let persisted = true;
     await act(async () => {
-      persisted = await result.current.deleteSelected();
+      persisted = await result.current.confirmDelete();
     });
 
     expect(persisted).toBe(false);

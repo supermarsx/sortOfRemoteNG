@@ -3,8 +3,14 @@ import { useTranslation } from "react-i18next";
 import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useToastContext } from "../../contexts/ToastContext";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { resolveConnectionDeleteConfirmation } from "../../utils/behavior/legacyBehavior";
 
 type EditableField = "name" | "hostname" | "port" | "username";
+type PendingConnectionDelete = {
+  kind: "single" | "selected";
+  ids: readonly string[];
+};
 
 export function useBulkConnectionEditor(
   isOpen: boolean,
@@ -26,7 +32,8 @@ export function useBulkConnectionEditor(
     "name" | "protocol" | "hostname" | "favorite"
   >("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingDelete, setPendingDelete] =
+    useState<PendingConnectionDelete | null>(null);
   const [showFavoritesFirst, setShowFavoritesFirst] = useState(true);
 
   // Non-group connections
@@ -239,27 +246,79 @@ export function useBulkConnectionEditor(
     [dispatchAndFlush, t, toast],
   );
 
-  const deleteSelected = useCallback(async (): Promise<boolean> => {
-    const ids = [...selectedIds];
-    ids.forEach((id) => {
-      dispatch({ type: "DELETE_CONNECTION", payload: id });
-    });
-    try {
-      await flushPendingSave();
-      setSelectedIds(new Set());
-      setShowDeleteConfirm(false);
-      return true;
-    } catch (error) {
-      console.error("Failed to persist bulk connection deletion:", error);
-      toast.error(
-        t(
-          "connections.deletePersistenceFailed",
-          "The deletion could not be saved. Retry after storage is available.",
-        ),
-      );
-      return false;
+  const deleteSelected = useCallback(
+    async (ids: readonly string[]): Promise<boolean> => {
+      ids.forEach((id) => {
+        dispatch({ type: "DELETE_CONNECTION", payload: id });
+      });
+      try {
+        await flushPendingSave();
+        setSelectedIds((current) => {
+          const remaining = new Set(current);
+          ids.forEach((id) => remaining.delete(id));
+          return remaining;
+        });
+        return true;
+      } catch (error) {
+        console.error("Failed to persist bulk connection deletion:", error);
+        toast.error(
+          t(
+            "connections.deletePersistenceFailed",
+            "The deletion could not be saved. Retry after storage is available.",
+          ),
+        );
+        return false;
+      }
+    },
+    [dispatch, flushPendingSave, t, toast],
+  );
+
+  const shouldConfirmDelete = useCallback(
+    () =>
+      resolveConnectionDeleteConfirmation(
+        SettingsManager.getInstance().getSettings().confirmDeleteConnection,
+      ),
+    [],
+  );
+
+  const requestDeleteConnection = useCallback(
+    async (id: string): Promise<boolean | undefined> => {
+      if (shouldConfirmDelete()) {
+        setPendingDelete({ kind: "single", ids: [id] });
+        return undefined;
+      }
+      return deleteConnection(id);
+    },
+    [deleteConnection, shouldConfirmDelete],
+  );
+
+  const requestDeleteSelected = useCallback(async (): Promise<
+    boolean | undefined
+  > => {
+    if (selectedIds.size === 0) return undefined;
+    const requestedIds = [...selectedIds];
+    if (shouldConfirmDelete()) {
+      setPendingDelete({ kind: "selected", ids: requestedIds });
+      return undefined;
     }
-  }, [selectedIds, dispatch, flushPendingSave, t, toast]);
+    return deleteSelected(requestedIds);
+  }, [deleteSelected, selectedIds, shouldConfirmDelete]);
+
+  const cancelDeleteConfirmation = useCallback(() => {
+    setPendingDelete(null);
+  }, []);
+
+  const confirmDelete = useCallback(async (): Promise<boolean> => {
+    if (!pendingDelete) return false;
+    const persisted =
+      pendingDelete.kind === "single"
+        ? await deleteConnection(pendingDelete.ids[0])
+        : await deleteSelected(pendingDelete.ids);
+    if (persisted) {
+      setPendingDelete(null);
+    }
+    return persisted;
+  }, [deleteConnection, deleteSelected, pendingDelete]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
@@ -297,7 +356,12 @@ export function useBulkConnectionEditor(
     editValue,
     sortField,
     sortDirection,
-    showDeleteConfirm,
+    showDeleteConfirm: pendingDelete !== null,
+    pendingDeleteId:
+      pendingDelete?.kind === "single" ? pendingDelete.ids[0] : null,
+    pendingDeleteIds: pendingDelete?.ids ?? [],
+    pendingDeleteKind: pendingDelete?.kind ?? null,
+    pendingDeleteCount: pendingDelete?.ids.length ?? 0,
     showFavoritesFirst,
     // Derived
     connections,
@@ -306,7 +370,6 @@ export function useBulkConnectionEditor(
     // Setters
     setSearchTerm,
     setEditValue,
-    setShowDeleteConfirm,
     setShowFavoritesFirst,
     // Handlers
     toggleSort,
@@ -319,8 +382,10 @@ export function useBulkConnectionEditor(
     toggleSelectedFavorites,
     duplicateConnection,
     duplicateSelected,
-    deleteConnection,
-    deleteSelected,
+    requestDeleteConnection,
+    requestDeleteSelected,
+    cancelDeleteConfirmation,
+    confirmDelete,
     handleEditInFullEditor,
     // Props pass-through
     onClose,

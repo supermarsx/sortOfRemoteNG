@@ -16,7 +16,7 @@ import {
   TabLayout,
   TabLayoutMode,
 } from "./types/connection/connection";
-import { resolveConnectionWarnOnClose } from "./utils/behavior/legacyBehavior";
+import { resolveConnectionDeleteConfirmation } from "./utils/behavior/legacyBehavior";
 import {
   buildTabLayout,
   clampGridDim,
@@ -813,6 +813,9 @@ const AppContent: React.FC = () => {
 
   const handleDeleteConnection = (connection: Connection) => {
     const settings = settingsManager.getSettings();
+    const shouldConfirmDelete = resolveConnectionDeleteConfirmation(
+      settings.confirmDeleteConnection,
+    );
     const isFolder = connection.isGroup === true;
     const noun = isFolder ? "Folder" : "Connection";
 
@@ -883,6 +886,10 @@ const AppContent: React.FC = () => {
     if (isFolder) {
       const descendants = collectDescendantIds(connection.id);
       if (descendants.length > 0) {
+        if (!shouldConfirmDelete) {
+          void performDelete([connection.id, ...descendants], noun);
+          return;
+        }
         const parentName = connection.parentId
           ? state.connections.find((c) => c.id === connection.parentId)?.name
           : null;
@@ -955,10 +962,7 @@ const AppContent: React.FC = () => {
       }
     }
 
-    const confirmMessage = resolveConnectionWarnOnClose(
-      connection.warnOnClose,
-      settings.warnOnClose,
-    )
+    const confirmMessage = shouldConfirmDelete
       ? t(isFolder ? "dialogs.confirmDeleteFolder" : "dialogs.confirmDelete")
       : null;
 
