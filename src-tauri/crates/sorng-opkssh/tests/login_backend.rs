@@ -1,5 +1,5 @@
 use serde_json::Value;
-use sorng_opkssh::login;
+use sorng_opkssh::login::{self, OpksshLoginOperationStatus};
 use sorng_opkssh::{
     OpksshBackendKind, OpksshBackendMode, OpksshLoginOptions, OpksshRuntimeAvailability,
     OpksshService, OpksshVendorLoadStrategy,
@@ -8,7 +8,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
 
 const FAKE_CLI_SOURCE: &str = r#"
@@ -1051,6 +1051,49 @@ async fn blocking_login_wrapper_returns_a_redacted_result_from_the_operation_pat
     assert_eq!(status.runtime.mode, OpksshBackendMode::Cli);
     assert_eq!(status.runtime.active_backend, Some(OpksshBackendKind::Cli));
     assert!(!status.runtime.using_fallback);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn blocking_login_operation_can_be_cancelled_and_reawaited_without_a_task_leak() {
+    let _env_lock = env_lock().lock().await;
+    let home = unique_temp_dir("sorng-opkssh-login-home-cancel");
+    let key_path = home.join(".ssh").join("id_ecdsa-cancelled");
+    let mut env = configure_fake_cli_env(&home, &key_path, "cancelled@example.com");
+    env.set("SORNG_OPKSSH_BACKEND", "cli");
+    env.set("OPKSSH_FAKE_DELAY_MS", "30000");
+
+    let service_state = Arc::new(AsyncMutex::new(OpksshService::new()));
+    let operation = login::start_login_operation(
+        service_state,
+        OpksshLoginOptions {
+            provider: Some("google".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("start blocking opkssh login operation");
+
+    let cancelled = tokio::time::timeout(
+        Duration::from_secs(10),
+        login::cancel_login_operation(&operation.id),
+    )
+    .await
+    .expect("cancellation must complete within its cleanup deadline")
+    .expect("cancel blocking opkssh login operation");
+    assert_eq!(cancelled.status, OpksshLoginOperationStatus::Cancelled);
+    assert!(!cancelled.can_cancel);
+    assert!(cancelled.result.is_none());
+
+    let retained = tokio::time::timeout(
+        Duration::from_secs(1),
+        login::await_login_operation(&operation.id),
+    )
+    .await
+    .expect("terminal operation must not retain a running task")
+    .expect("re-await cancelled opkssh login operation");
+    assert_eq!(retained.status, OpksshLoginOperationStatus::Cancelled);
+    assert!(!retained.can_cancel);
+    assert!(retained.result.is_none());
 }
 
 #[test]

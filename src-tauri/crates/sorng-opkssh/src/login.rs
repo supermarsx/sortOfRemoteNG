@@ -525,7 +525,9 @@ pub async fn await_login_operation(operation_id: &str) -> Result<OpksshLoginOper
             }
             pending.task.take().map(|task| {
                 pending.snapshot.can_cancel = false;
-                pending.cancellation.take();
+                // Keep the sender in the registry while this waiter owns the
+                // task. Dropping the sole sender closes the watch channel,
+                // which the process supervisor treats as cancellation.
                 (task, pending.snapshot.clone())
             })
         };
@@ -1876,6 +1878,60 @@ mod tests {
         let mut registry = login_operations().lock().await;
         registry.remove(&first_id);
         registry.remove(&second_id);
+    }
+
+    #[tokio::test]
+    async fn awaiting_task_keeps_cancellation_owner_until_terminal_cleanup() {
+        let operation_id = format!("opkssh-await-owner-{}", Uuid::new_v4());
+        let mut snapshot = running_operation();
+        snapshot.id = operation_id.clone();
+        let entry = test_registry_entry(snapshot);
+        let (cancellation, mut cancellation_receiver) = watch::channel(false);
+        let task_entry = entry.clone();
+        let task_id = operation_id.clone();
+        let task = tokio::spawn(async move {
+            let cancellation_channel_ended_early =
+                tokio::time::timeout(Duration::from_millis(50), cancellation_receiver.changed())
+                    .await
+                    .is_ok();
+            let outcome = if cancellation_channel_ended_early {
+                Err("cancellation owner was dropped during task transfer".to_string())
+            } else {
+                Ok(successful_test_result("awaited completion"))
+            };
+            store_operation_outcome(&task_id, &task_entry, outcome.clone()).await;
+            outcome
+        });
+
+        {
+            let mut pending = entry.lock().await;
+            pending.task = Some(task);
+            pending.cancellation = Some(cancellation);
+        }
+        login_operations()
+            .lock()
+            .await
+            .entries
+            .insert(operation_id.clone(), entry.clone());
+
+        let completed =
+            tokio::time::timeout(Duration::from_secs(1), await_login_operation(&operation_id))
+                .await
+                .expect("awaiting login task must not leak")
+                .expect("await login operation");
+        assert_eq!(completed.status, OpksshLoginOperationStatus::Succeeded);
+        assert!(completed.result.is_some_and(|result| result.success));
+
+        let pending = entry.lock().await;
+        assert!(pending.task.is_none());
+        assert!(pending.cancellation.is_none());
+        assert_eq!(
+            pending.snapshot.status,
+            OpksshLoginOperationStatus::Succeeded
+        );
+        drop(pending);
+
+        login_operations().lock().await.remove(&operation_id);
     }
 
     fn fake_helper_args() -> Vec<String> {
