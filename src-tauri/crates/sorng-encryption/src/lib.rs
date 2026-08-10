@@ -57,8 +57,8 @@ pub use lockout::{LockoutState, LOCKOUT_FILENAME};
 pub use password_wrap::{Argon2Params, WrapError};
 pub use state::EncryptionState;
 
-/// Tauri command names this crate exposes. Used by the invoke handler in
-/// `sorng-commands-core` to route incoming IPC.
+/// Supported Tauri encryption command names, including the app-level full
+/// rotation command routed by `sorng-commands-core`.
 pub const COMMAND_NAMES: &[&str] = &[
     "encryption_status",
     "encryption_setup",
@@ -68,7 +68,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "encryption_migrate_settings",
     "encryption_lockout_state",
     "encryption_disable_settings",
-    "encryption_rotate_master_key",
+    "encryption_rotate_master_key_full",
     "encryption_export_portable_dek",
     "encryption_import_portable_dek",
     "encryption_audit_read",
@@ -80,4 +80,22 @@ pub const COMMAND_NAMES: &[&str] = &[
 /// `sorng-commands-*` crates.
 pub fn is_command(name: &str) -> bool {
     COMMAND_NAMES.contains(&name)
+}
+
+#[cfg(test)]
+mod command_metadata_tests {
+    use super::{is_command, COMMAND_NAMES};
+
+    #[test]
+    fn advertises_full_rotation_and_rejects_retired_legacy_rotation() {
+        assert!(is_command("encryption_rotate_master_key_full"));
+        assert!(!is_command("encryption_rotate_master_key"));
+        assert_eq!(
+            COMMAND_NAMES
+                .iter()
+                .filter(|name| **name == "encryption_rotate_master_key_full")
+                .count(),
+            1
+        );
+    }
 }
