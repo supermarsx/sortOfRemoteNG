@@ -5,7 +5,7 @@
 
 use tauri::State;
 
-use super::service::MarketplaceServiceState;
+use super::service::{self, MarketplaceServiceState};
 use super::types::*;
 
 /// Helper to map MarketplaceError → String for Tauri command results.
@@ -65,8 +65,9 @@ pub async fn mkt_install(
     state: State<'_, MarketplaceServiceState>,
     listing_id: String,
 ) -> Result<InstallResult, String> {
-    let mut svc = state.lock().await;
-    svc.install(&listing_id).await.map_err(err_str)
+    service::install_shared(state.inner().as_ref(), &listing_id)
+        .await
+        .map_err(err_str)
 }
 
 #[tauri::command]
@@ -74,8 +75,9 @@ pub async fn mkt_uninstall(
     state: State<'_, MarketplaceServiceState>,
     listing_id: String,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.uninstall(&listing_id).await.map_err(err_str)
+    service::uninstall_shared(state.inner().as_ref(), &listing_id)
+        .await
+        .map_err(err_str)
 }
 
 #[tauri::command]
@@ -83,8 +85,9 @@ pub async fn mkt_update(
     state: State<'_, MarketplaceServiceState>,
     listing_id: String,
 ) -> Result<InstallResult, String> {
-    let mut svc = state.lock().await;
-    svc.update(&listing_id).await.map_err(err_str)
+    service::update_shared(state.inner().as_ref(), &listing_id)
+        .await
+        .map_err(err_str)
 }
 
 #[tauri::command]
@@ -109,8 +112,9 @@ pub async fn mkt_check_updates(
 pub async fn mkt_refresh_repositories(
     state: State<'_, MarketplaceServiceState>,
 ) -> Result<u64, String> {
-    let mut svc = state.lock().await;
-    svc.refresh_repositories().await.map_err(err_str)
+    service::refresh_repositories_shared(state.inner().as_ref())
+        .await
+        .map_err(err_str)
 }
 
 #[tauri::command]
@@ -118,9 +122,12 @@ pub async fn mkt_add_repository(
     state: State<'_, MarketplaceServiceState>,
     repo: RepositoryConfig,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.add_repository(repo);
-    Ok(())
+    service::with_mutation_gate(state.inner().as_ref(), move |svc| {
+        svc.add_repository(repo);
+        Ok(())
+    })
+    .await
+    .map_err(err_str)
 }
 
 #[tauri::command]
@@ -128,8 +135,11 @@ pub async fn mkt_remove_repository(
     state: State<'_, MarketplaceServiceState>,
     url: String,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.remove_repository(&url).map_err(err_str)
+    service::with_mutation_gate(state.inner().as_ref(), move |svc| {
+        svc.remove_repository(&url)
+    })
+    .await
+    .map_err(err_str)
 }
 
 #[tauri::command]
@@ -183,9 +193,12 @@ pub async fn mkt_update_config(
     state: State<'_, MarketplaceServiceState>,
     config: MarketplaceConfig,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.update_config(config);
-    Ok(())
+    service::with_mutation_gate(state.inner().as_ref(), move |svc| {
+        svc.update_config(config);
+        Ok(())
+    })
+    .await
+    .map_err(err_str)
 }
 
 #[tauri::command]

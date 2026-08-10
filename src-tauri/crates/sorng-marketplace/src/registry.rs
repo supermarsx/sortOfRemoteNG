@@ -12,6 +12,7 @@ pub struct MarketplaceRegistry {
     pub listings: HashMap<String, MarketplaceListing>,
     /// Currently installed extensions keyed by `listing_id`.
     pub installed: HashMap<String, InstalledExtension>,
+    generation: u64,
 }
 
 impl MarketplaceRegistry {
@@ -20,7 +21,17 @@ impl MarketplaceRegistry {
         Self {
             listings: HashMap::new(),
             installed: HashMap::new(),
+            generation: 0,
         }
+    }
+
+    /// Monotonic mutation generation used to reject stale marketplace work.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    fn bump_generation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
     }
 
     // ── Listing CRUD ────────────────────────────────────────────
@@ -33,14 +44,18 @@ impl MarketplaceRegistry {
             return Err(MarketplaceError::DuplicateListing(listing.id.clone()));
         }
         self.listings.insert(listing.id.clone(), listing);
+        self.bump_generation();
         Ok(())
     }
 
     /// Remove a listing by its ID, returning it.
     pub fn remove_listing(&mut self, id: &str) -> Result<MarketplaceListing, MarketplaceError> {
-        self.listings
+        let listing = self
+            .listings
             .remove(id)
-            .ok_or_else(|| MarketplaceError::ListingNotFound(id.to_string()))
+            .ok_or_else(|| MarketplaceError::ListingNotFound(id.to_string()))?;
+        self.bump_generation();
+        Ok(listing)
     }
 
     /// Get a reference to a listing by its ID.
@@ -119,6 +134,7 @@ impl MarketplaceRegistry {
     /// Record an extension as installed.
     pub fn mark_installed(&mut self, ext: InstalledExtension) {
         self.installed.insert(ext.listing_id.clone(), ext);
+        self.bump_generation();
     }
 
     /// Remove an extension from the installed set.
@@ -126,7 +142,9 @@ impl MarketplaceRegistry {
         self.installed
             .remove(listing_id)
             .map(|_| ())
-            .ok_or_else(|| MarketplaceError::ListingNotFound(listing_id.to_string()))
+            .ok_or_else(|| MarketplaceError::ListingNotFound(listing_id.to_string()))?;
+        self.bump_generation();
+        Ok(())
     }
 
     /// List all installed extensions.
