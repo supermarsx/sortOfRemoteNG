@@ -450,9 +450,12 @@ pub async fn traceroute(
 pub async fn scan_network(
     state: tauri::State<'_, NetworkServiceState>,
     subnet: String,
+    max_concurrent: Option<usize>,
 ) -> Result<Vec<String>, String> {
     let network = state.lock().await;
-    network.scan_network(subnet).await
+    network
+        .scan_network_with_concurrency(subnet, max_concurrent)
+        .await
 }
 
 #[tauri::command]
@@ -463,6 +466,11 @@ pub async fn scan_network_comprehensive(
 ) -> Result<Vec<DiscoveredHost>, String> {
     let network = state.lock().await;
     network.scan_network_comprehensive(subnet, scan_ports).await
+}
+
+#[tauri::command]
+pub async fn probe_vnc_rfb(host: String, port: u16, timeout_ms: u64) -> VncRfbProbeResult {
+    super::network::probe_vnc_rfb(&host, port, timeout_ms).await
 }
 
 /// Measure TCP connection timing in detail

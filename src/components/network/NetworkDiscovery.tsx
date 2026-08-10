@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { DiscoveredHost, DiscoveredService } from "../../types/connection/connection";
 import { useNetworkDiscovery } from "../../hooks/network/useNetworkDiscovery";
+import { getDiscoveredServiceLabel } from "../../utils/network/networkScanner";
 import { Modal } from "../ui/overlays/Modal";import { DialogHeader } from '../ui/overlays/DialogHeader';import { Checkbox, NumberInput, TextInput } from '../ui/forms';
 
 interface NetworkDiscoveryProps {
@@ -25,8 +26,8 @@ type Mgr = ReturnType<typeof useNetworkDiscovery>;
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
-const getServiceIcon = (service: string) => {
-  switch (service.toLowerCase()) {
+const getServiceIcon = (service: DiscoveredService) => {
+  switch ((service.protocol || service.service).toLowerCase()) {
     case "ssh": return Monitor;
     case "http": case "https": return Globe;
     case "rdp": return Monitor;
@@ -109,8 +110,13 @@ const ScanControls: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="flex items-center space-x-4">
       <button onClick={mgr.handleScan} disabled={mgr.isScanning} className="px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
         <Search size={16} />
-        <span>{mgr.isScanning ? mgr.t("networkDiscovery.scanning") : mgr.t("networkDiscovery.scan")}</span>
+        <span>{mgr.t("networkDiscovery.startScan")}</span>
       </button>
+      {mgr.isScanning && (
+        <button onClick={mgr.handleStop} className="px-4 py-2 bg-danger hover:bg-danger/90 text-[var(--color-text)] rounded-md transition-colors">
+          {mgr.t("networkDiscovery.stop")}
+        </button>
+      )}
       {mgr.selectedHosts.size > 0 && (
         <button onClick={mgr.handleCreateConnections} className="px-4 py-2 bg-success hover:bg-success/90 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
           <Plus size={16} />
@@ -151,12 +157,12 @@ const HostCard: React.FC<{ mgr: Mgr; host: DiscoveredHost }> = ({ mgr, host }) =
     </div>
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       {host.services.map((service, index) => {
-        const ServiceIcon = getServiceIcon(service.service);
+        const ServiceIcon = getServiceIcon(service);
         return (
           <div key={index} className="bg-[var(--color-surfaceHover)] rounded-lg p-3 flex items-center space-x-3">
             <ServiceIcon size={20} className="text-primary" />
             <div className="flex-1 min-w-0">
-              <p className="text-[var(--color-text)] font-medium">{service.service.toUpperCase()}</p>
+              <p className="text-[var(--color-text)] font-medium">{getDiscoveredServiceLabel(service)}</p>
               <p className="text-[var(--color-textSecondary)] text-sm">{mgr.t("networkDiscovery.port", { port: service.port })}</p>
               {service.version && <p className="text-[var(--color-textMuted)] text-xs truncate">{service.version}</p>}
             </div>

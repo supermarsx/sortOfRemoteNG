@@ -250,6 +250,7 @@ pub fn is_command(command: &str) -> bool {
             | "traceroute"
             | "scan_network"
             | "scan_network_comprehensive"
+            | "probe_vnc_rfb"
             | "tcp_connection_timing"
             | "check_mtu"
             | "detect_icmp_blockade"
@@ -1633,6 +1634,7 @@ define_command_group!(
         network_commands::traceroute,
         network_commands::scan_network,
         network_commands::scan_network_comprehensive,
+        network_commands::probe_vnc_rfb,
         network_commands::tcp_connection_timing,
         network_commands::check_mtu,
         network_commands::detect_icmp_blockade,

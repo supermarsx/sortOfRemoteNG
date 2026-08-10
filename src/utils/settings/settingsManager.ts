@@ -15,6 +15,7 @@ import {
   defaultDiagnosticsConfig,
   defaultMemoryWatchdogSettings,
   defaultExportSecuritySettings,
+  NetworkDiscoveryConfig,
 } from "../../types/settings/settings";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../../components/ui/display/loadingElement/defaults";
 import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
@@ -603,7 +604,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
       http: ["http"],
       https: ["http"],
       rdp: ["websocket"],
-      vnc: ["websocket"],
+      vnc: ["rfb"],
       mysql: ["websocket"],
       ftp: ["websocket"],
       telnet: ["websocket"],
@@ -945,6 +946,22 @@ function mergeToolDisplayModes(
   return merged;
 }
 
+function normalizeNetworkDiscoverySettings(
+  stored?: Partial<NetworkDiscoveryConfig>,
+): NetworkDiscoveryConfig {
+  return {
+    ...DEFAULT_SETTINGS.networkDiscovery,
+    ...(stored ?? {}),
+    probeStrategies: {
+      ...DEFAULT_SETTINGS.networkDiscovery.probeStrategies,
+      ...(stored?.probeStrategies ?? {}),
+      // VNC discovery is raw RFB over native TCP. Legacy WebSocket strategies
+      // must never override or follow the banner-confirming probe.
+      vnc: ["rfb"],
+    },
+  };
+}
+
 /**
  * Handles persistence and retrieval of application settings, action logs,
  * performance metrics and custom scripts. Implemented as a singleton so that
@@ -1112,8 +1129,9 @@ export class SettingsManager {
         normalizedStored.certificateTrustPolicy ??
         DEFAULT_SETTINGS.certificateTrustPolicy,
       networkDiscovery: {
-        ...DEFAULT_SETTINGS.networkDiscovery,
-        ...(normalizedStored.networkDiscovery ?? {}),
+        ...normalizeNetworkDiscoverySettings(
+          normalizedStored.networkDiscovery,
+        ),
       },
       toolDisplayModes: mergeToolDisplayModes(
         normalizedStored.toolDisplayModes,
@@ -1197,6 +1215,11 @@ export class SettingsManager {
       delete restApi.apiKey;
       delete restApi.jwtSecret;
       safePatch.restApi = restApi as GlobalSettings["restApi"];
+    }
+    if (safePatch.networkDiscovery) {
+      safePatch.networkDiscovery = normalizeNetworkDiscoverySettings(
+        safePatch.networkDiscovery,
+      );
     }
     return safePatch;
   }

@@ -1,8 +1,10 @@
 // Re-exported for use by network_cmds.rs (compiled via include!() in the app crate).
 pub use dns_lookup::lookup_addr;
 pub use futures::future::join_all;
+use futures::stream::{self, StreamExt};
 use mac_address::get_mac_address;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 pub use std::process::Stdio;
 use std::sync::Arc;
 pub use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -30,6 +32,122 @@ pub struct DiscoveredService {
     pub protocol: String,
     pub service_name: String,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VncRfbProbeResult {
+    pub status: String,
+    pub elapsed_ms: u64,
+    pub version: Option<String>,
+    pub banner: Option<String>,
+}
+
+const MIN_VNC_PROBE_TIMEOUT_MS: u64 = 50;
+const MAX_VNC_PROBE_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_DISCOVERY_PING_CONCURRENCY: usize = 16;
+const MAX_DISCOVERY_PING_CONCURRENCY: usize = 32;
+const DISCOVERY_PING_TIMEOUT: Duration = Duration::from_millis(1_500);
+
+fn is_rfb_banner(banner: &[u8; 12]) -> bool {
+    banner.starts_with(b"RFB ")
+        && banner[4..7].iter().all(u8::is_ascii_digit)
+        && banner[7] == b'.'
+        && banner[8..11].iter().all(u8::is_ascii_digit)
+        && banner[11] == b'\n'
+}
+
+/// Confirm that a raw TCP endpoint speaks RFB without beginning authentication.
+///
+/// VNC servers send a 12-byte protocol banner immediately after accepting a TCP
+/// connection. Reading only that banner keeps discovery credential-free and
+/// avoids treating an arbitrary service on a conventional VNC port as VNC.
+pub async fn probe_vnc_rfb(host: &str, port: u16, timeout_ms: u64) -> VncRfbProbeResult {
+    let started = std::time::Instant::now();
+    let timeout_ms = timeout_ms.clamp(MIN_VNC_PROBE_TIMEOUT_MS, MAX_VNC_PROBE_TIMEOUT_MS);
+    let probe = async {
+        let mut stream = TcpStream::connect((host, port)).await?;
+        let mut banner = [0u8; 12];
+        stream.read_exact(&mut banner).await?;
+        Ok::<[u8; 12], std::io::Error>(banner)
+    };
+
+    let (status, version, banner) = match timeout(Duration::from_millis(timeout_ms), probe).await {
+        Ok(Ok(bytes)) if is_rfb_banner(&bytes) => {
+            let text = String::from_utf8_lossy(&bytes).trim_end().to_string();
+            (
+                "rfb".to_string(),
+                Some(String::from_utf8_lossy(&bytes[4..11]).to_string()),
+                Some(text),
+            )
+        }
+        Ok(Ok(_)) => ("not_rfb".to_string(), None, None),
+        Ok(Err(error)) => {
+            let status = match error.kind() {
+                std::io::ErrorKind::ConnectionRefused => "refused",
+                std::io::ErrorKind::TimedOut => "timeout",
+                std::io::ErrorKind::UnexpectedEof => "not_rfb",
+                _ => "unreachable",
+            };
+            (status.to_string(), None, None)
+        }
+        Err(_) => ("timeout".to_string(), None, None),
+    };
+
+    VncRfbProbeResult {
+        status,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        version,
+        banner,
+    }
+}
+
+fn discovery_ping_concurrency(requested: Option<usize>) -> usize {
+    requested
+        .unwrap_or(DEFAULT_DISCOVERY_PING_CONCURRENCY)
+        .clamp(1, MAX_DISCOVERY_PING_CONCURRENCY)
+}
+
+async fn collect_bounded_ping_hosts<F, Fut>(
+    candidates: Vec<String>,
+    concurrency: usize,
+    probe: F,
+) -> Vec<String>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = Option<String>>,
+{
+    let probes = stream::iter(candidates.into_iter().map(probe));
+    let mut probes = probes.buffer_unordered(concurrency.max(1));
+    let mut responsive = Vec::new();
+    while let Some(ip) = probes.next().await {
+        if let Some(ip) = ip {
+            responsive.push(ip);
+        }
+    }
+    responsive.sort();
+    responsive
+}
+
+async fn ping_discovery_host(ip: String) -> Option<String> {
+    let mut cmd = Command::new("ping");
+    #[cfg(target_os = "windows")]
+    cmd.args(["-n", "1", "-w", "500", &ip]);
+    #[cfg(not(target_os = "windows"))]
+    cmd.args(["-c", "1", "-W", "1", &ip]);
+    cmd.stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+
+    let mut child = cmd.spawn().ok()?;
+    let status = match timeout(DISCOVERY_PING_TIMEOUT, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(_)) | Err(_) => {
+            let _ = child.kill().await;
+            return None;
+        }
+    };
+    status.success().then_some(ip)
 }
 
 pub struct NetworkService {
@@ -146,7 +264,11 @@ impl NetworkService {
 
         // Parse subnet (e.g., "192.168.1.0/24" -> "192.168.1")
         let base_ip = if subnet.contains('/') {
-            subnet.split('/').next().expect("split always yields at least one element").to_string()
+            subnet
+                .split('/')
+                .next()
+                .expect("split always yields at least one element")
+                .to_string()
         } else {
             subnet.clone()
         };
@@ -223,11 +345,21 @@ impl NetworkService {
     }
 
     pub async fn scan_network(&self, subnet: String) -> Result<Vec<String>, String> {
-        let mut results = Vec::new();
+        self.scan_network_with_concurrency(subnet, None).await
+    }
 
+    pub async fn scan_network_with_concurrency(
+        &self,
+        subnet: String,
+        max_concurrent: Option<usize>,
+    ) -> Result<Vec<String>, String> {
         // Parse subnet (e.g., "192.168.1.0/24" -> "192.168.1")
         let base_ip = if subnet.contains('/') {
-            subnet.split('/').next().expect("split always yields at least one element").to_string()
+            subnet
+                .split('/')
+                .next()
+                .expect("split always yields at least one element")
+                .to_string()
         } else {
             subnet.clone()
         };
@@ -243,42 +375,17 @@ impl NetworkService {
         let end_octet: u8 = if subnet.contains("/24") {
             254
         } else {
-            start_octet + 10
+            start_octet.saturating_add(10)
         };
-
-        // Scan IP range concurrently
-        let mut handles = vec![];
-
-        for i in start_octet..=end_octet {
-            let ip = format!("{}.{}", base, i);
-            let ip_clone = ip.clone();
-            let handle = tokio::spawn(async move {
-                // Simple ping check - in production, you'd want more sophisticated scanning
-                let mut cmd = Command::new("ping");
-                cmd.arg("-n")
-                    .arg("1")
-                    .arg("-w")
-                    .arg("500") // Shorter timeout for scanning
-                    .arg(&ip_clone)
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null());
-
-                match cmd.status().await {
-                    Ok(status) if status.success() => Some(ip_clone),
-                    _ => None,
-                }
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all ping operations to complete
-        for handle in handles {
-            if let Ok(Some(ip)) = handle.await {
-                results.push(ip);
-            }
-        }
-
-        Ok(results)
+        let candidates = (start_octet..=end_octet)
+            .map(|octet| format!("{}.{}", base, octet))
+            .collect();
+        Ok(collect_bounded_ping_hosts(
+            candidates,
+            discovery_ping_concurrency(max_concurrent),
+            ping_discovery_host,
+        )
+        .await)
     }
 }
 
@@ -891,3 +998,108 @@ pub async fn reverse_dns_lookup(ip: &str) -> Option<String> {
     }
 }
 
+#[cfg(test)]
+mod vnc_rfb_probe_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::net::TcpListener;
+
+    async fn listener_port() -> (TcpListener, u16) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        (listener, port)
+    }
+
+    #[tokio::test]
+    async fn confirms_a_real_rfb_banner_over_tcp() {
+        let (listener, port) = listener_port().await;
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            stream.write_all(b"RFB 003.008\n").await.unwrap();
+        });
+
+        let result = probe_vnc_rfb("127.0.0.1", port, 500).await;
+
+        assert_eq!(result.status, "rfb");
+        assert_eq!(result.version.as_deref(), Some("003.008"));
+        assert_eq!(result.banner.as_deref(), Some("RFB 003.008"));
+    }
+
+    #[tokio::test]
+    async fn rejects_an_open_tcp_service_without_an_rfb_banner() {
+        let (listener, port) = listener_port().await;
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            stream.write_all(b"HTTP/1.1 200").await.unwrap();
+        });
+
+        let result = probe_vnc_rfb("127.0.0.1", port, 500).await;
+
+        assert_eq!(result.status, "not_rfb");
+        assert_eq!(result.version, None);
+        assert_eq!(result.banner, None);
+    }
+
+    #[tokio::test]
+    async fn times_out_when_an_open_tcp_service_sends_no_banner() {
+        let (listener, port) = listener_port().await;
+        tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        });
+
+        let result = probe_vnc_rfb("127.0.0.1", port, 1).await;
+
+        assert_eq!(result.status, "timeout");
+        assert!(result.elapsed_ms >= MIN_VNC_PROBE_TIMEOUT_MS);
+        assert!(result.elapsed_ms < 500);
+    }
+
+    #[test]
+    fn requires_the_exact_twelve_byte_rfb_banner_shape() {
+        assert!(is_rfb_banner(b"RFB 003.003\n"));
+        assert!(!is_rfb_banner(b"RFB 03.0008\n"));
+        assert!(!is_rfb_banner(b"RFB 003.008\r"));
+    }
+
+    #[test]
+    fn caps_discovery_ping_concurrency() {
+        assert_eq!(
+            discovery_ping_concurrency(None),
+            DEFAULT_DISCOVERY_PING_CONCURRENCY
+        );
+        assert_eq!(discovery_ping_concurrency(Some(0)), 1);
+        assert_eq!(discovery_ping_concurrency(Some(7)), 7);
+        assert_eq!(
+            discovery_ping_concurrency(Some(usize::MAX)),
+            MAX_DISCOVERY_PING_CONCURRENCY
+        );
+    }
+
+    #[tokio::test]
+    async fn bounds_aggregate_ping_work_across_the_candidate_set() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let probe_active = Arc::clone(&active);
+        let probe_peak = Arc::clone(&peak);
+        let candidates = (0..40).map(|i| format!("host-{i:02}")).collect();
+
+        let responsive = collect_bounded_ping_hosts(candidates, 3, move |ip| {
+            let active = Arc::clone(&probe_active);
+            let peak = Arc::clone(&probe_peak);
+            async move {
+                let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(now, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                active.fetch_sub(1, Ordering::SeqCst);
+                (!ip.ends_with("07")).then_some(ip)
+            }
+        })
+        .await;
+
+        assert_eq!(peak.load(Ordering::SeqCst), 3);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert_eq!(responsive.len(), 39);
+        assert!(!responsive.iter().any(|ip| ip == "host-07"));
+    }
+}

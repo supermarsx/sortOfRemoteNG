@@ -198,6 +198,43 @@ describe("SettingsManager loadSettings", () => {
     expect(settings.networkDiscovery.macTtl).toBe(300000);
   });
 
+  it("normalizes persisted VNC discovery to native RFB without losing custom scan settings", async () => {
+    seedStoredSettings({
+      networkDiscovery: {
+        timeout: 4321,
+        customPorts: { vnc: [5999] },
+        probeStrategies: {
+          http: ["http"],
+          vnc: ["websocket", "rfb"],
+        },
+      },
+    } as any);
+
+    const manager = SettingsManager.getInstance();
+    const settings = await manager.loadSettings();
+
+    expect(settings.networkDiscovery.timeout).toBe(4321);
+    expect(settings.networkDiscovery.customPorts.vnc).toEqual([5999]);
+    expect(settings.networkDiscovery.probeStrategies.http).toEqual(["http"]);
+    expect(settings.networkDiscovery.probeStrategies.vnc).toEqual(["rfb"]);
+
+    await manager.saveSettings({
+      networkDiscovery: {
+        ...settings.networkDiscovery,
+        probeStrategies: {
+          ...settings.networkDiscovery.probeStrategies,
+          vnc: ["websocket"],
+        },
+      },
+    });
+    const persisted = fakeStoredSettings?.networkDiscovery as
+      | GlobalSettings["networkDiscovery"]
+      | undefined;
+    expect(persisted?.timeout).toBe(4321);
+    expect(persisted?.customPorts.vnc).toEqual([5999]);
+    expect(persisted?.probeStrategies.vnc).toEqual(["rfb"]);
+  });
+
   it("defaults SSH trust policy to always-ask while preserving explicit stored values", async () => {
     seedStoredSettings({
       theme: "dark",

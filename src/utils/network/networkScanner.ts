@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { DiscoveredHost, DiscoveredService } from "../../types/connection/connection";
 import { NetworkDiscoveryConfig } from "../../types/settings/settings";
 import { Semaphore } from "../core/semaphore";
@@ -8,6 +9,37 @@ interface CacheEntry<T> {
   value: T | null;
   timestamp: number;
 }
+
+interface NativeVncRfbProbeResult {
+  status: "rfb" | "not_rfb" | "refused" | "timeout" | "unreachable";
+  elapsedMs: number;
+  version?: string;
+  banner?: string;
+}
+
+const EXACT_RFB_BANNER = /^RFB \d{3}\.\d{3}$/;
+const HOST_ONLY_RAW_PROTOCOLS = new Set([
+  "ssh",
+  "rdp",
+  "mysql",
+  "ftp",
+  "telnet",
+]);
+
+const isConfirmedRfbBanner = (banner?: string): boolean =>
+  typeof banner === "string" && EXACT_RFB_BANNER.test(banner);
+
+export const getDiscoveredServiceLabel = (
+  service: DiscoveredService,
+): string => {
+  if (
+    service.protocol.toLowerCase() === "vnc" &&
+    isConfirmedRfbBanner(service.banner)
+  ) {
+    return "VNC (RFB/TCP)";
+  }
+  return service.service.toUpperCase();
+};
 
 /**
  * Utility for scanning networks to discover hosts and open services.
@@ -37,6 +69,7 @@ export class NetworkScanner {
     let completed = 0;
 
     const semaphore = new Semaphore(config.maxConcurrent);
+    const portSemaphore = new Semaphore(config.maxPortConcurrent);
     const tasks: Promise<void>[] = [];
 
     for await (const ip of this.generateIPRange(config.ipRange)) {
@@ -50,8 +83,8 @@ export class NetworkScanner {
           if (signal?.aborted) {
             return;
           }
-          const host = await this.scanHost(ip, config, signal);
-          if (host) {
+          const host = await this.scanHost(ip, config, signal, portSemaphore);
+          if (host && !signal?.aborted) {
             discoveredHosts.push(host);
           }
         } catch (error) {
@@ -66,12 +99,10 @@ export class NetworkScanner {
       tasks.push(task);
     }
 
-    await Promise.race([
-      Promise.all(tasks),
-      new Promise<void>((resolve) =>
-        signal?.addEventListener("abort", () => resolve()),
-      ),
-    ]);
+    // Every in-flight probe observes the same signal. Waiting for the bounded
+    // task set to drain ensures semaphore waiters are released before the scan
+    // resolves, while native RFB invokes are fenced promptly by `probeVncRfb`.
+    await Promise.all(tasks);
 
     return discoveredHosts.sort((a, b) => this.compareIPs(a.ip, b.ip));
   }
@@ -200,6 +231,7 @@ export class NetworkScanner {
     ip: string,
     config: NetworkDiscoveryConfig,
     signal?: AbortSignal,
+    portSemaphore = new Semaphore(config.maxPortConcurrent),
   ): Promise<DiscoveredHost | null> {
     const startTime = Date.now();
     const openPorts: number[] = [];
@@ -209,26 +241,43 @@ export class NetworkScanner {
     const portsToScan = this.getPortsToScan(config);
 
     // Scan ports with a concurrency limit
-    const portSemaphore = new Semaphore(config.maxPortConcurrent);
     const portPromises = portsToScan.map(async (port) => {
       await portSemaphore.acquire();
       try {
         if (signal?.aborted) {
           return { isOpen: false, elapsed: 0 };
         }
-        return await this.scanPort(ip, port, config, signal);
+        return await this.scanPort(
+          ip,
+          port,
+          config,
+          signal,
+          this.getProtocolForPort(port, config),
+        );
       } finally {
         portSemaphore.release();
       }
     });
     const portResults = await Promise.all(portPromises);
 
+    if (signal?.aborted) {
+      return null;
+    }
+
     portResults.forEach((result, index) => {
       if (result.isOpen) {
         const port = portsToScan[index];
+        const protocol = this.getProtocolForPort(port, config);
+        if (protocol === "vnc" && !isConfirmedRfbBanner(result.banner)) {
+          return;
+        }
         openPorts.push(port);
 
-        const service = this.identifyService(port, result.banner);
+        const service = this.identifyService(
+          port,
+          result.banner,
+          protocol,
+        );
         if (service) {
           services.push(service);
         }
@@ -240,7 +289,18 @@ export class NetworkScanner {
     }
 
     const responseTime = Date.now() - startTime;
-    const hostname = await this.resolveHostname(ip, config.hostnameTtl);
+    const hostname = await this.resolveHostname(
+      ip,
+      config.hostnameTtl,
+      signal,
+    );
+    if (signal?.aborted) {
+      return null;
+    }
+    const macAddress = await this.getMacAddress(ip, config.macTtl, signal);
+    if (signal?.aborted) {
+      return null;
+    }
 
     return {
       ip,
@@ -248,7 +308,7 @@ export class NetworkScanner {
       openPorts,
       services,
       responseTime,
-      macAddress: await this.getMacAddress(ip, config.macTtl),
+      macAddress,
     };
   }
 
@@ -276,15 +336,36 @@ export class NetworkScanner {
     return Array.from(ports).sort((a, b) => a - b);
   }
 
+  private getProtocolForPort(
+    port: number,
+    config: NetworkDiscoveryConfig,
+  ): string {
+    const configuredProtocol = config.protocols.find((protocol) =>
+      config.customPorts[protocol]?.includes(port),
+    );
+    return configuredProtocol || serviceMap[port]?.protocol || "default";
+  }
+
   private async scanPort(
     ip: string,
     port: number,
     config: NetworkDiscoveryConfig,
     signal?: AbortSignal,
+    protocolHint?: string,
   ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
-    const protocol = serviceMap[port]?.protocol || "default";
+    const protocol = protocolHint || serviceMap[port]?.protocol || "default";
+    if (HOST_ONLY_RAW_PROTOCOLS.has(protocol)) {
+      // The prior native scan established host reachability only. A browser
+      // WebSocket handshake does not prove any of these raw TCP protocols, so
+      // retain them as ping-only hosts until a protocol-specific native probe
+      // is implemented.
+      return { isOpen: false, elapsed: 0 };
+    }
     const strategies =
-      config.probeStrategies[protocol] || config.probeStrategies.default || ["websocket"];
+      protocol === "vnc"
+        ? (["rfb"] as const)
+        : config.probeStrategies[protocol] ||
+          config.probeStrategies.default || ["websocket"];
 
     for (const strategy of strategies) {
       if (signal?.aborted) {
@@ -306,10 +387,64 @@ export class NetworkScanner {
         if (httpResult !== null) {
           return httpResult;
         }
+      } else if (strategy === "rfb") {
+        const rfbResult = await this.probeVncRfb(
+          ip,
+          port,
+          config.timeout,
+          signal,
+        );
+        if (rfbResult !== null) {
+          return rfbResult;
+        }
       }
     }
 
     return { isOpen: false, elapsed: 0 };
+  }
+
+  private async probeVncRfb(
+    ip: string,
+    port: number,
+    timeout: number,
+    signal?: AbortSignal,
+  ): Promise<{ isOpen: boolean; banner?: string; elapsed: number } | null> {
+    if (signal?.aborted) {
+      return { isOpen: false, elapsed: 0 };
+    }
+
+    const abortResult = Symbol("vnc-discovery-aborted");
+    let abortHandler: (() => void) | undefined;
+    const aborted = new Promise<typeof abortResult>((resolve) => {
+      abortHandler = () => resolve(abortResult);
+      signal?.addEventListener("abort", abortHandler, { once: true });
+    });
+    const invoked = invoke<NativeVncRfbProbeResult>("probe_vnc_rfb", {
+      host: ip,
+      port,
+      timeoutMs: timeout,
+    }).catch(() => null);
+
+    const result = await Promise.race([invoked, aborted]);
+    if (abortHandler) {
+      signal?.removeEventListener("abort", abortHandler);
+    }
+    if (result === abortResult || signal?.aborted) {
+      return { isOpen: false, elapsed: 0 };
+    }
+    if (!result) {
+      // Browser-only builds cannot perform a raw TCP probe. Fail closed rather
+      // than claiming that a WebSocket or HTTP response is a VNC endpoint.
+      return null;
+    }
+
+    const confirmed =
+      result.status === "rfb" && isConfirmedRfbBanner(result.banner);
+    return {
+      isOpen: confirmed,
+      banner: confirmed ? result.banner : undefined,
+      elapsed: result.elapsedMs,
+    };
   }
 
   private async probeWebSocket(
@@ -457,8 +592,18 @@ export class NetworkScanner {
   private identifyService(
     port: number,
     banner?: string,
+    protocolHint?: string,
   ): DiscoveredService | null {
     const serviceInfo = serviceMap[port];
+    if (protocolHint === "vnc") {
+      return {
+        port,
+        protocol: "vnc",
+        service: "vnc",
+        version: this.extractVersion(banner),
+        banner,
+      };
+    }
     if (!serviceInfo) {
       return {
         port,
@@ -488,6 +633,7 @@ export class NetworkScanner {
       /Microsoft[_\s]+IIS[\/\s]+([\d.]+)/i,
       /MySQL[_\s]+([\d.]+)/i,
       /PostgreSQL[_\s]+([\d.]+)/i,
+      /RFB\s+([\d.]+)/i,
     ];
 
     for (const pattern of patterns) {
@@ -512,6 +658,7 @@ export class NetworkScanner {
   private async resolveHostname(
     ip: string,
     ttl: number,
+    signal?: AbortSignal,
   ): Promise<string | undefined> {
     this.purgeCache(this.hostnameCache, ttl);
     const cached = this.hostnameCache.get(ip);
@@ -523,6 +670,7 @@ export class NetworkScanner {
     try {
       const response = await fetch(
         `/api/resolve-hostname?ip=${encodeURIComponent(ip)}`,
+        { signal },
       );
       if (!response.ok) {
         throw new Error("Request failed");
@@ -535,7 +683,9 @@ export class NetworkScanner {
       });
       return hostname;
     } catch {
-      this.hostnameCache.set(ip, { value: null, timestamp: Date.now() });
+      if (!signal?.aborted) {
+        this.hostnameCache.set(ip, { value: null, timestamp: Date.now() });
+      }
       return undefined;
     }
   }
@@ -543,6 +693,7 @@ export class NetworkScanner {
   private async getMacAddress(
     ip: string,
     ttl: number,
+    signal?: AbortSignal,
   ): Promise<string | undefined> {
     this.purgeCache(this.macCache, ttl);
     const cached = this.macCache.get(ip);
@@ -554,6 +705,7 @@ export class NetworkScanner {
     try {
       const response = await fetch(
         `/api/arp-lookup?ip=${encodeURIComponent(ip)}`,
+        { signal },
       );
       if (!response.ok) {
         throw new Error("Request failed");
@@ -563,7 +715,9 @@ export class NetworkScanner {
       this.macCache.set(ip, { value: mac ?? null, timestamp: Date.now() });
       return mac;
     } catch {
-      this.macCache.set(ip, { value: null, timestamp: Date.now() });
+      if (!signal?.aborted) {
+        this.macCache.set(ip, { value: null, timestamp: Date.now() });
+      }
       return undefined;
     }
   }
