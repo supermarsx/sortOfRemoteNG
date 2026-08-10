@@ -49,14 +49,12 @@ impl JiraClient {
             })?;
             builder = builder.proxy(proxy);
         }
-        let http = builder
-            .build()
-            .map_err(|_| {
-                JiraError::new(
-                    JiraErrorKind::ConnectionFailed,
-                    "Failed to build Jira HTTP client",
-                )
-            })?;
+        let http = builder.build().map_err(|_| {
+            JiraError::new(
+                JiraErrorKind::ConnectionFailed,
+                "Failed to build Jira HTTP client",
+            )
+        })?;
 
         let base = cfg.host.trim_end_matches('/').to_string();
 
@@ -313,9 +311,7 @@ impl JiraClient {
         {
             return Err(JiraError::new(
                 JiraErrorKind::ParseError,
-                format!(
-                    "Response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
-                ),
+                format!("Response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"),
             ));
         }
 
@@ -334,9 +330,7 @@ impl JiraClient {
             if body.len() > MAX_RESPONSE_BODY_BYTES {
                 return Err(JiraError::new(
                     JiraErrorKind::ParseError,
-                    format!(
-                        "Response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
-                    ),
+                    format!("Response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"),
                 ));
             }
         }

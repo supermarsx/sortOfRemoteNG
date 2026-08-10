@@ -2833,9 +2833,10 @@ impl SshService {
         stdin_data: Option<Vec<u8>>,
     ) -> Result<super::integration::SshCommandOutput, String> {
         let mut stdin_data = stdin_data.map(ZeroingCommandInput);
-        if stdin_data.as_ref().is_some_and(|data| {
-            data.0.len() > super::integration::MAX_COMMAND_INPUT_LIMIT_BYTES
-        }) {
+        if stdin_data
+            .as_ref()
+            .is_some_and(|data| data.0.len() > super::integration::MAX_COMMAND_INPUT_LIMIT_BYTES)
+        {
             return Err(format!(
                 "SSH command input exceeds the {} byte limit",
                 super::integration::MAX_COMMAND_INPUT_LIMIT_BYTES

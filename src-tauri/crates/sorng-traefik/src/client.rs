@@ -22,10 +22,9 @@ impl TraefikClient {
                 "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract",
             ));
         }
-        let mut builder =
-            HttpClient::builder()
-                .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
-                .redirect(reqwest::redirect::Policy::none());
+        let mut builder = HttpClient::builder()
+            .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
+            .redirect(reqwest::redirect::Policy::none());
         if let Some(proxy_url) = config
             .proxy_url
             .as_deref()

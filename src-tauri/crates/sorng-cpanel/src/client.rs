@@ -283,8 +283,7 @@ impl CpanelClient {
         };
         let raw: serde_json::Value = self.get_json(&url).await?;
         Self::ensure_whm_success(&raw)?;
-        serde_json::from_value(raw)
-            .map_err(|_| CpanelError::parse("WHM response schema mismatch"))
+        serde_json::from_value(raw).map_err(|_| CpanelError::parse("WHM response schema mismatch"))
     }
 
     /// Call a WHM API function and return raw JSON.
@@ -318,8 +317,7 @@ impl CpanelClient {
         };
         let raw: serde_json::Value = self.get_json(&url).await?;
         Self::ensure_uapi_success(&raw)?;
-        serde_json::from_value(raw)
-            .map_err(|_| CpanelError::parse("UAPI response schema mismatch"))
+        serde_json::from_value(raw).map_err(|_| CpanelError::parse("UAPI response schema mismatch"))
     }
 
     /// Call a UAPI function via WHM (impersonating a user).
@@ -437,9 +435,7 @@ impl CpanelClient {
             .and_then(|value| value.get("status"))
             .and_then(|value| value.as_u64());
         match status {
-            Some(0) => {
-                Err(CpanelError::api("cPanel UAPI reported failure"))
-            }
+            Some(0) => Err(CpanelError::api("cPanel UAPI reported failure")),
             Some(_) => Ok(()),
             None => Err(CpanelError::parse(
                 "cPanel UAPI response omitted result.status",

@@ -240,10 +240,7 @@ impl ReapTarget {
     async fn reap(&mut self) {
         loop {
             let reaped = match self {
-                Self::Process {
-                    child,
-                    process_id,
-                } => {
+                Self::Process { child, process_id } => {
                     if matches!(child.try_wait(), Ok(Some(_))) {
                         true
                     } else {

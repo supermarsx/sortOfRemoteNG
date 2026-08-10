@@ -1,5 +1,5 @@
-use sorng_cpanel::error::CpanelErrorKind;
 use sorng_cpanel::client::CpanelClient;
+use sorng_cpanel::error::CpanelErrorKind;
 use sorng_cpanel::service::CpanelService;
 use sorng_cpanel::types::{CpanelAuthMode, CpanelConnectionConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -84,9 +84,7 @@ fn insecure_tls_acknowledgement_is_required_consumed_and_not_serialized() {
     assert_eq!(client.config.acknowledge_invalid_cert_risk, None);
 
     let serialized = serde_json::to_value(&client.config).unwrap();
-    assert!(serialized
-        .get("acknowledge_invalid_cert_risk")
-        .is_none());
+    assert!(serialized.get("acknowledge_invalid_cert_risk").is_none());
 }
 
 #[test]

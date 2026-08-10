@@ -201,8 +201,8 @@ mod process_tree {
                     std::mem::size_of::<JobObjectExtendedLimitInformation>() as u32,
                 )
             };
-            let assigned = configured != 0
-                && unsafe { AssignProcessToJobObject(job, process.cast()) } != 0;
+            let assigned =
+                configured != 0 && unsafe { AssignProcessToJobObject(job, process.cast()) } != 0;
             if !assigned {
                 let error = io::Error::last_os_error();
                 unsafe {
