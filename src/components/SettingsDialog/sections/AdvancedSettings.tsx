@@ -99,7 +99,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               return (
                 <button
                   key={level.value}
-                  onClick={() => updateSettings({ logLevel: level.value as any })}
+                  onClick={() =>
+                    updateSettings({ logLevel: level.value as any })
+                  }
                   className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                     settings.logLevel === level.value
                       ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
@@ -121,7 +123,10 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       </div>
 
       {/* Memory Watchdog */}
-      <MemoryWatchdogSection settings={settings} updateSettings={updateSettings} />
+      <MemoryWatchdogSection
+        settings={settings}
+        updateSettings={updateSettings}
+      />
     </div>
   );
 };
@@ -137,7 +142,9 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
   const update = (patch: Partial<MemoryWatchdogSettings>) => {
     updateSettings({ memoryWatchdog: { ...mw, ...patch } });
   };
-  const updateDetached = (patch: Partial<MemoryWatchdogSettings["detached"]>) => {
+  const updateDetached = (
+    patch: Partial<MemoryWatchdogSettings["detached"]>,
+  ) => {
     updateSettings({
       memoryWatchdog: {
         ...mw,
@@ -153,7 +160,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
         title={
           <span className="flex items-center gap-2">
             Memory Watchdog
-            <InfoTooltip text="Monitors JS heap and system RAM usage. Automatically tears down the page if thresholds are exceeded to protect your system from freezing." />
+            <InfoTooltip text="Monitors JS heap and system RAM usage and surfaces a non-destructive alert when thresholds are exceeded." />
           </span>
         }
       />
@@ -162,10 +169,10 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
         <Toggle
           icon={<Cpu size={16} />}
           label="Enable memory watchdog"
-          description="Monitor JS heap and system RAM; tear down the page when thresholds are exceeded."
+          description="Monitor JS heap and system RAM and alert when pressure thresholds are exceeded."
           checked={mw.enabled}
           onChange={(v) => update({ enabled: v })}
-          infoTooltip="When disabled, no memory monitoring runs. The application will not be protected from runaway memory usage."
+          infoTooltip="When disabled, no memory monitoring or proactive pressure alert runs."
         />
 
         <div
@@ -183,7 +190,10 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="How often the watchdog checks memory usage. Lower values detect leaks faster but use slightly more CPU."
           />
 
-          <SubGroupHeader icon={<Monitor size={11} />} label="Main window heap" />
+          <SubGroupHeader
+            icon={<Monitor size={11} />}
+            label="Main window heap"
+          />
 
           <SettingsNumberRow
             icon={<AlertTriangle size={16} />}
@@ -207,13 +217,13 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           />
           <SettingsNumberRow
             icon={<Power size={16} />}
-            label="Main heap — Kill"
+            label="Main heap — Pressure"
             value={mw.heapKillMb}
             min={256}
             max={16384}
             unit="MB"
             onChange={(v) => update({ heapKillMb: v })}
-            infoTooltip="Main-window JS heap usage at which the page is torn down to protect the system."
+            infoTooltip="Main-window JS heap usage that raises the highest-severity alert. Active connections remain running."
           />
 
           <SubGroupHeader
@@ -243,19 +253,16 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           />
           <SettingsNumberRow
             icon={<Power size={16} />}
-            label="Detached heap — Kill"
+            label="Detached heap — Pressure"
             value={mw.detached.heapKillMb}
             min={256}
             max={16384}
             unit="MB"
             onChange={(v) => updateDetached({ heapKillMb: v })}
-            infoTooltip="Detached-window JS heap usage at which the window is torn down."
+            infoTooltip="Detached-window JS heap usage that raises the highest-severity alert without closing the window."
           />
 
-          <SubGroupHeader
-            icon={<HardDrive size={11} />}
-            label="System RAM"
-          />
+          <SubGroupHeader icon={<HardDrive size={11} />} label="System RAM" />
 
           <SettingsNumberRow
             icon={<AlertTriangle size={16} />}
@@ -269,13 +276,13 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           />
           <SettingsNumberRow
             icon={<Power size={16} />}
-            label="System RAM — Kill"
+            label="System RAM — Pressure"
             value={mw.systemKillPct}
             min={60}
             max={99}
             unit="%"
             onChange={(v) => update({ systemKillPct: v })}
-            infoTooltip="OS-level physical RAM usage at which the window is torn down to prevent the system from freezing. Requires the Tauri backend command."
+            infoTooltip="OS-level physical RAM usage that raises the highest-severity alert. Requires the Tauri backend command; the watchdog never closes sessions automatically."
           />
         </div>
       </Card>

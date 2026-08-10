@@ -76,6 +76,7 @@ import {
   BEHAVIOR_ACTIVATE_SESSION_EVENT,
   type BehaviorActivateSessionPayload,
 } from "../../src/utils/behavior/windowActions";
+import { MemoryWatchdogController } from "../../src/components/app/MemoryWatchdogController";
 
 /** Protocol → Icon mapping matching main window SessionTabs. */
 const SessionIcon: React.FC<{ protocol: string }> = ({ protocol }) => {
@@ -2161,6 +2162,22 @@ const DetachedWindowLifecycle: React.FC<{
   return null;
 };
 
+const DetachedMemoryWatchdog: React.FC = () => {
+  const { settings } = useSettings();
+  let windowLabel = "detached";
+  try {
+    windowLabel = getCurrentWindow().label || windowLabel;
+  } catch {
+    // Browser preview fallback; detached thresholds still apply.
+  }
+  return (
+    <MemoryWatchdogController
+      settings={settings.memoryWatchdog}
+      windowLabel={windowLabel}
+    />
+  );
+};
+
 const DetachedClient: React.FC = () => {
   const [closeRegistration, setCloseRegistration] =
     useState<DetachedWindowCloseRegistration | null>(null);
@@ -2172,6 +2189,7 @@ const DetachedClient: React.FC = () => {
 
   return (
     <SettingsProvider>
+      <DetachedMemoryWatchdog />
       <ConnectionProvider>
         <ToastProvider>
           {closeRegistration && (

@@ -1,35 +1,45 @@
 /**
- * Memory Watchdog — monitors both JS heap and system-level RAM usage.
+ * Memory watchdog for one application window.
  *
- * **JS Heap**: Uses `performance.memory` (Chromium/WebView2) for heap stats.
- * **System RAM**: Calls `invoke("get_system_memory_info")` via Tauri to read
- * OS-level memory. Falls back gracefully if the command isn't registered.
- *
- * When system RAM exceeds 95% usage, or JS heap exceeds its kill threshold,
- * the watchdog tears down the page to protect the machine.
+ * Heap sampling is synchronous and never waits for the native system-memory
+ * probe. Pressure is reported to the React owner; this module does not tear
+ * down UI, clear canvases, close sessions, or claim to reclaim resources.
  */
 
+export type MemoryPressureSeverity =
+  | "warning"
+  | "critical"
+  | "pressure"
+  | "recovered";
+
+export type MemoryPressureSource = "heap" | "system" | "both";
+export type MemoryWatchdogOwner = symbol;
+
 export interface MemoryWatchdogConfig {
-  /** Polling interval in ms (default: 5000) */
+  /** Delay between heap samples in ms (default: 5000). */
   intervalMs?: number;
-  /** JS heap warning threshold in MB (default: 512) */
+  /** JS heap warning threshold in MB (default: 512). */
   warningMb?: number;
-  /** JS heap critical threshold in MB — shows overlay (default: 1024) */
+  /** JS heap critical threshold in MB (default: 1024). */
   criticalMb?: number;
-  /** JS heap kill threshold in MB — tears down page (default: 1800) */
+  /** JS heap pressure threshold in MB (default: 1800). */
   killMb?: number;
-  /** System RAM usage % at which to show a warning (default: 85) */
+  /** System RAM usage percentage that raises a warning (default: 85). */
   systemWarningPct?: number;
-  /** System RAM usage % at which to tear down (default: 95) */
+  /** System RAM usage percentage that raises pressure (default: 95). */
   systemKillPct?: number;
-  /** Label shown in the BSOD to identify which window crashed */
+  /** Maximum wait for delivery of a native system sample (default: 4000). */
+  systemProbeTimeoutMs?: number;
+  /** Label identifying the monitored window. */
   windowLabel?: string;
-  /** Callback when warning threshold is reached */
+  /** Callback when a warning state is first entered. */
   onWarning?: (stats: MemoryStats) => void;
-  /** Callback when critical threshold is reached */
+  /** Callback when heap critical pressure is first entered. */
   onCritical?: (stats: MemoryStats) => void;
-  /** Callback when kill threshold is reached */
+  /** Backward-compatible callback for entering a pressure threshold. */
   onKill?: (stats: MemoryStats) => void;
+  /** Receives pressure transitions and updated active-pressure samples. */
+  onStatusChange?: (status: MemoryWatchdogStatus) => void;
 }
 
 export interface MemoryStats {
@@ -40,12 +50,19 @@ export interface MemoryStats {
   timestamp: number;
   trend: "rising" | "stable" | "falling";
   growthRateMbPerSec: number;
-  /** OS-level memory (null if unavailable) */
+  /** Latest valid OS-level memory sample, or null when unavailable/stale. */
   system: {
     totalGb: number;
     usedGb: number;
     usedPct: number;
   } | null;
+}
+
+export interface MemoryWatchdogStatus {
+  severity: MemoryPressureSeverity;
+  source: MemoryPressureSource;
+  stats: MemoryStats;
+  windowLabel: string;
 }
 
 interface PerformanceMemory {
@@ -60,85 +77,300 @@ interface SystemMemoryInfo {
   available_bytes: number;
 }
 
-const MB = 1024 * 1024;
-const GB = 1024 * MB;
-
-function getHeapMemory(): PerformanceMemory | null {
-  const perf = performance as any;
-  if (perf.memory) return perf.memory as PerformanceMemory;
-  return null;
+interface NativeSystemProbe {
+  token: symbol;
+  promise: Promise<unknown>;
 }
 
-/** Try to get OS memory from Tauri backend. Caches the "not available" result. */
-let _systemMemoryAvailable: boolean | null = null;
-async function getSystemMemory(): Promise<SystemMemoryInfo | null> {
-  if (_systemMemoryAvailable === false) return null;
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const info = await invoke<SystemMemoryInfo>("get_system_memory_info");
-    _systemMemoryAvailable = true;
-    return info;
-  } catch {
-    _systemMemoryAvailable = false;
+interface SystemProbeDelivery {
+  token: symbol;
+  generation: number;
+  controller: AbortController;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
+type ActiveSeverity = Exclude<MemoryPressureSeverity, "recovered"> | "normal";
+
+const MB = 1024 * 1024;
+const GB = 1024 * MB;
+const MIN_INTERVAL_MS = 1000;
+const MAX_INTERVAL_MS = 30_000;
+const MIN_SYSTEM_PROBE_TIMEOUT_MS = 100;
+const MAX_SYSTEM_PROBE_TIMEOUT_MS = 30_000;
+const MAX_SYSTEM_PROBE_BACKOFF_MS = 60_000;
+const MIN_HEAP_WARNING_MB = 64;
+const MIN_HEAP_CRITICAL_MB = 128;
+const MIN_HEAP_PRESSURE_MB = 256;
+const MAX_HEAP_WARNING_MB = 8192;
+const MAX_HEAP_CRITICAL_MB = 8192;
+const MAX_HEAP_PRESSURE_MB = 16_384;
+
+const noop = () => {};
+
+const defaultConfig: Required<MemoryWatchdogConfig> = {
+  intervalMs: 5000,
+  warningMb: 512,
+  criticalMb: 1024,
+  killMb: 1800,
+  systemWarningPct: 85,
+  systemKillPct: 95,
+  systemProbeTimeoutMs: 4000,
+  windowLabel: "main",
+  onWarning: noop,
+  onCritical: noop,
+  onKill: noop,
+  onStatusChange: noop,
+};
+
+function finiteOrDefault(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function inRange(value: number, min: number, max: number): boolean {
+  return value >= min && value <= max;
+}
+
+/**
+ * Normalizes persisted/runtime input at the execution boundary. Invalid or
+ * misordered threshold groups fail closed to known-safe defaults instead of
+ * producing ambiguous severity ordering.
+ */
+export function normalizeMemoryWatchdogConfig(
+  config: MemoryWatchdogConfig = {},
+): Required<MemoryWatchdogConfig> {
+  const intervalCandidate = finiteOrDefault(
+    config.intervalMs,
+    defaultConfig.intervalMs,
+  );
+  const timeoutCandidate = finiteOrDefault(
+    config.systemProbeTimeoutMs,
+    defaultConfig.systemProbeTimeoutMs,
+  );
+  const warningCandidate = finiteOrDefault(
+    config.warningMb,
+    defaultConfig.warningMb,
+  );
+  const criticalCandidate = finiteOrDefault(
+    config.criticalMb,
+    defaultConfig.criticalMb,
+  );
+  const pressureCandidate = finiteOrDefault(
+    config.killMb,
+    defaultConfig.killMb,
+  );
+  const heapThresholdsValid =
+    inRange(warningCandidate, MIN_HEAP_WARNING_MB, MAX_HEAP_WARNING_MB) &&
+    inRange(criticalCandidate, MIN_HEAP_CRITICAL_MB, MAX_HEAP_CRITICAL_MB) &&
+    inRange(pressureCandidate, MIN_HEAP_PRESSURE_MB, MAX_HEAP_PRESSURE_MB) &&
+    warningCandidate < criticalCandidate &&
+    criticalCandidate < pressureCandidate;
+  const systemWarningCandidate = finiteOrDefault(
+    config.systemWarningPct,
+    defaultConfig.systemWarningPct,
+  );
+  const systemPressureCandidate = finiteOrDefault(
+    config.systemKillPct,
+    defaultConfig.systemKillPct,
+  );
+  const systemThresholdsValid =
+    inRange(systemWarningCandidate, 1, 99) &&
+    inRange(systemPressureCandidate, 2, 100) &&
+    systemWarningCandidate < systemPressureCandidate;
+
+  return {
+    intervalMs: Math.min(
+      MAX_INTERVAL_MS,
+      Math.max(MIN_INTERVAL_MS, intervalCandidate),
+    ),
+    warningMb: heapThresholdsValid ? warningCandidate : defaultConfig.warningMb,
+    criticalMb: heapThresholdsValid
+      ? criticalCandidate
+      : defaultConfig.criticalMb,
+    killMb: heapThresholdsValid ? pressureCandidate : defaultConfig.killMb,
+    systemWarningPct: systemThresholdsValid
+      ? systemWarningCandidate
+      : defaultConfig.systemWarningPct,
+    systemKillPct: systemThresholdsValid
+      ? systemPressureCandidate
+      : defaultConfig.systemKillPct,
+    systemProbeTimeoutMs: Math.min(
+      MAX_SYSTEM_PROBE_TIMEOUT_MS,
+      Math.max(MIN_SYSTEM_PROBE_TIMEOUT_MS, timeoutCandidate),
+    ),
+    windowLabel:
+      typeof config.windowLabel === "string" && config.windowLabel.trim()
+        ? config.windowLabel
+        : defaultConfig.windowLabel,
+    onWarning:
+      typeof config.onWarning === "function"
+        ? config.onWarning
+        : defaultConfig.onWarning,
+    onCritical:
+      typeof config.onCritical === "function"
+        ? config.onCritical
+        : defaultConfig.onCritical,
+    onKill:
+      typeof config.onKill === "function"
+        ? config.onKill
+        : defaultConfig.onKill,
+    onStatusChange:
+      typeof config.onStatusChange === "function"
+        ? config.onStatusChange
+        : defaultConfig.onStatusChange,
+  };
+}
+
+function getHeapMemory(): PerformanceMemory | null {
+  if (typeof performance === "undefined") return null;
+  const perf = performance as Performance & { memory?: PerformanceMemory };
+  const memory = perf.memory;
+  if (
+    !memory ||
+    !Number.isFinite(memory.usedJSHeapSize) ||
+    !Number.isFinite(memory.totalJSHeapSize) ||
+    !Number.isFinite(memory.jsHeapSizeLimit) ||
+    memory.usedJSHeapSize < 0 ||
+    memory.totalJSHeapSize < 0 ||
+    memory.jsHeapSizeLimit <= 0
+  ) {
     return null;
+  }
+  return memory;
+}
+
+function normalizeSystemMemoryInfo(value: unknown): SystemMemoryInfo | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<SystemMemoryInfo>;
+  if (
+    !Number.isFinite(candidate.total_bytes) ||
+    !Number.isFinite(candidate.used_bytes) ||
+    !Number.isFinite(candidate.available_bytes) ||
+    (candidate.total_bytes ?? 0) <= 0 ||
+    (candidate.used_bytes ?? -1) < 0 ||
+    (candidate.available_bytes ?? -1) < 0 ||
+    (candidate.used_bytes ?? 0) > (candidate.total_bytes ?? 0) ||
+    (candidate.available_bytes ?? 0) > (candidate.total_bytes ?? 0)
+  ) {
+    return null;
+  }
+  return candidate as SystemMemoryInfo;
+}
+
+/*
+ * Tauri invoke has no cancellation primitive. This gate guarantees at most
+ * one native request in this JS realm. A stopped/restarted watchdog never
+ * awaits or adopts the old promise; it simply continues heap sampling until
+ * the abandoned native call settles and the gate becomes available again.
+ */
+let activeNativeSystemProbe: NativeSystemProbe | null = null;
+
+function launchNativeSystemProbe(): NativeSystemProbe | null {
+  if (activeNativeSystemProbe) return null;
+
+  const token = Symbol("system-memory-probe");
+  const promise = (async (): Promise<unknown> => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<SystemMemoryInfo>("get_system_memory_info");
+  })();
+  const probe = { token, promise };
+  activeNativeSystemProbe = probe;
+  void promise.then(
+    () => {
+      if (activeNativeSystemProbe?.token === token) {
+        activeNativeSystemProbe = null;
+      }
+    },
+    () => {
+      if (activeNativeSystemProbe?.token === token) {
+        activeNativeSystemProbe = null;
+      }
+    },
+  );
+  return probe;
+}
+
+function severityRank(severity: ActiveSeverity): number {
+  switch (severity) {
+    case "pressure":
+      return 3;
+    case "critical":
+      return 2;
+    case "warning":
+      return 1;
+    default:
+      return 0;
   }
 }
 
 export class MemoryWatchdog {
-  private intervalId: ReturnType<typeof setInterval> | null = null;
+  private timeoutId: ReturnType<typeof setTimeout> | null = null;
   private config: Required<MemoryWatchdogConfig>;
   private history: { usedMb: number; time: number }[] = [];
-  private warningShown = false;
-  private criticalShown = false;
-  private systemWarningShown = false;
-  private overlayEl: HTMLDivElement | null = null;
-  private killed = false;
+  private running = false;
+  private generation = 0;
+  private currentSeverity: ActiveSeverity = "normal";
+  private currentSource: MemoryPressureSource = "heap";
+  private latestSystemMemory: SystemMemoryInfo | null = null;
+  private systemDelivery: SystemProbeDelivery | null = null;
+  private systemProbeFailures = 0;
+  private nextSystemProbeAt = 0;
 
   constructor(config: MemoryWatchdogConfig = {}) {
-    this.config = {
-      intervalMs: config.intervalMs ?? 5000,
-      warningMb: config.warningMb ?? 512,
-      criticalMb: config.criticalMb ?? 1024,
-      killMb: config.killMb ?? 1800,
-      systemWarningPct: config.systemWarningPct ?? 85,
-      systemKillPct: config.systemKillPct ?? 95,
-      windowLabel: config.windowLabel ?? "main",
-      onWarning: config.onWarning ?? (() => {}),
-      onCritical: config.onCritical ?? (() => {}),
-      onKill: config.onKill ?? (() => {}),
-    };
+    this.config = normalizeMemoryWatchdogConfig(config);
   }
 
   start(): void {
-    if (this.intervalId) return;
+    if (this.running) return;
+    this.running = true;
+    this.generation += 1;
+    this.addVisibilityListener();
+
     if (!getHeapMemory()) {
-      console.warn("[MemoryWatchdog] performance.memory not available — heap monitoring disabled");
+      console.warn(
+        "[MemoryWatchdog] performance.memory not available; heap monitoring is disabled",
+      );
     }
     console.log(
-      `[MemoryWatchdog] Started — heap warn/crit/kill: ${this.config.warningMb}/${this.config.criticalMb}/${this.config.killMb}MB, system kill: ${this.config.systemKillPct}%`,
+      `[MemoryWatchdog] Started for ${this.config.windowLabel}; heap warn/critical/pressure: ${this.config.warningMb}/${this.config.criticalMb}/${this.config.killMb}MB, system pressure: ${this.config.systemKillPct}%`,
     );
-    this.intervalId = setInterval(() => this.check(), this.config.intervalMs);
-    this.check();
+    if (!this.isDocumentHidden()) this.schedule(0);
+  }
+
+  updateConfig(config: MemoryWatchdogConfig): void {
+    this.config = normalizeMemoryWatchdogConfig(config);
+    if (!this.running || this.isDocumentHidden()) return;
+    this.clearScheduledHeapProbe();
+    this.schedule(0);
   }
 
   stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    this.removeOverlay();
+    if (!this.running && !this.timeoutId && !this.systemDelivery) return;
+    this.running = false;
+    this.generation += 1;
+    this.clearScheduledHeapProbe();
+    this.cancelSystemDelivery();
+    this.removeVisibilityListener();
+    this.history = [];
+    this.latestSystemMemory = null;
+    this.nextSystemProbeAt = 0;
+    this.currentSeverity = "normal";
+    this.currentSource = "heap";
   }
 
-  async getStats(): Promise<MemoryStats | null> {
-    const heap = getHeapMemory();
-    const sysMem = await getSystemMemory();
+  /** Returns an immediate heap sample plus the latest delivered system sample. */
+  async getStats(signal?: AbortSignal): Promise<MemoryStats | null> {
+    if (signal?.aborted) return null;
+    return this.sampleStats();
+  }
 
+  private sampleStats(recordHeapHistory = true): MemoryStats {
+    const heap = getHeapMemory();
     const usedMb = heap ? heap.usedJSHeapSize / MB : 0;
     const totalMb = heap ? heap.totalJSHeapSize / MB : 0;
     const limitMb = heap ? heap.jsHeapSizeLimit / MB : 0;
     const now = Date.now();
 
-    if (heap) {
+    if (heap && recordHeapHistory) {
       this.history.push({ usedMb, time: now });
       if (this.history.length > 60) this.history.shift();
     }
@@ -146,6 +378,7 @@ export class MemoryWatchdog {
     const growthRate = this.calcGrowthRate();
     const trend: MemoryStats["trend"] =
       growthRate > 0.5 ? "rising" : growthRate < -0.5 ? "falling" : "stable";
+    const system = this.latestSystemMemory;
 
     return {
       usedMb: Math.round(usedMb * 10) / 10,
@@ -155,13 +388,11 @@ export class MemoryWatchdog {
       timestamp: now,
       trend,
       growthRateMbPerSec: Math.round(growthRate * 100) / 100,
-      system: sysMem
+      system: system
         ? {
-            totalGb: Math.round((sysMem.total_bytes / GB) * 10) / 10,
-            usedGb: Math.round((sysMem.used_bytes / GB) * 10) / 10,
-            usedPct: Math.round(
-              (sysMem.used_bytes / sysMem.total_bytes) * 100,
-            ),
+            totalGb: Math.round((system.total_bytes / GB) * 10) / 10,
+            usedGb: Math.round((system.used_bytes / GB) * 10) / 10,
+            usedPct: Math.round((system.used_bytes / system.total_bytes) * 100),
           }
         : null,
     };
@@ -177,271 +408,288 @@ export class MemoryWatchdog {
     return (last.usedMb - first.usedMb) / dtSec;
   }
 
-  private async check(): Promise<void> {
-    if (this.killed) return;
-    const stats = await this.getStats();
-    if (!stats) return;
-
-    // ═══ System RAM kill — highest priority ═══
-    if (stats.system && stats.system.usedPct >= this.config.systemKillPct) {
-      console.error(
-        `[MemoryWatchdog] SYSTEM RAM CRITICAL — ${stats.system.usedPct}% (${stats.system.usedGb}/${stats.system.totalGb}GB)`,
-      );
-      this.config.onKill(stats);
-      this.forceClose(stats);
+  private schedule(delayMs: number): void {
+    if (!this.running || this.timeoutId !== null || this.isDocumentHidden()) {
       return;
     }
 
-    // ═══ System RAM warning ═══
-    if (
-      stats.system &&
-      stats.system.usedPct >= this.config.systemWarningPct &&
-      !this.systemWarningShown
-    ) {
-      this.systemWarningShown = true;
-      console.warn(
-        `[MemoryWatchdog] SYSTEM RAM WARNING — ${stats.system.usedPct}% (${stats.system.usedGb}/${stats.system.totalGb}GB)`,
-      );
-      this.showOverlay(stats);
-    }
-    if (
-      stats.system &&
-      stats.system.usedPct < this.config.systemWarningPct - 5
-    ) {
-      this.systemWarningShown = false;
-    }
-
-    // ═══ JS Heap kill ═══
-    if (stats.usedMb >= this.config.killMb) {
-      console.error(
-        `[MemoryWatchdog] HEAP KILL (${this.config.killMb}MB) — ${stats.usedMb}MB, growth: ${stats.growthRateMbPerSec}MB/s`,
-      );
-      this.config.onKill(stats);
-      this.forceClose(stats);
-      return;
-    }
-
-    // ═══ JS Heap critical ═══
-    if (stats.usedMb >= this.config.criticalMb) {
-      if (!this.criticalShown) {
-        this.criticalShown = true;
-        console.error(
-          `[MemoryWatchdog] HEAP CRITICAL (${this.config.criticalMb}MB) — ${stats.usedMb}MB, growth: ${stats.growthRateMbPerSec}MB/s`,
-        );
-        this.config.onCritical(stats);
-        this.showOverlay(stats);
-        this.attemptGC();
-      }
-      this.updateOverlay(stats);
-      return;
-    }
-
-    // ═══ JS Heap warning ═══
-    if (stats.usedMb >= this.config.warningMb && stats.trend === "rising") {
-      if (!this.warningShown) {
-        this.warningShown = true;
-        console.warn(
-          `[MemoryWatchdog] HEAP WARNING (${this.config.warningMb}MB) — ${stats.usedMb}MB, growth: ${stats.growthRateMbPerSec}MB/s`,
-        );
-        this.config.onWarning(stats);
-      }
-      return;
-    }
-
-    // Reset flags if memory drops
-    if (stats.usedMb < this.config.warningMb * 0.8) {
-      this.warningShown = false;
-    }
-    if (stats.usedMb < this.config.criticalMb * 0.8) {
-      this.criticalShown = false;
-      this.removeOverlay();
-    }
+    const generation = this.generation;
+    this.timeoutId = setTimeout(() => {
+      this.timeoutId = null;
+      this.runHeapProbe(generation);
+    }, delayMs);
   }
 
-  private attemptGC(): void {
+  private runHeapProbe(generation: number): void {
+    if (
+      !this.running ||
+      generation !== this.generation ||
+      this.isDocumentHidden()
+    ) {
+      return;
+    }
+
     try {
-      document
-        .querySelectorAll("img[src^='data:']")
-        .forEach((img) => ((img as HTMLImageElement).src = ""));
-      document.querySelectorAll("canvas").forEach((c) => {
-        const ctx = c.getContext("2d");
-        if (ctx && c.width > 0) ctx.clearRect(0, 0, c.width, c.height);
-      });
-      if ((window as any).gc) (window as any).gc();
-    } catch {
-      /* best effort */
+      this.evaluate(this.sampleStats());
+      this.startSystemProbe(generation);
+    } catch (error) {
+      console.warn("[MemoryWatchdog] heap probe failed", error);
+    } finally {
+      if (this.running && generation === this.generation) {
+        this.schedule(this.config.intervalMs);
+      }
     }
   }
 
-  // ─── Overlay UI ────────────────────────────────────────────────
-
-  private showOverlay(stats: MemoryStats): void {
-    if (this.overlayEl) {
-      this.updateOverlay(stats);
+  private startSystemProbe(generation: number): void {
+    if (
+      this.systemDelivery ||
+      Date.now() < this.nextSystemProbeAt ||
+      !this.running ||
+      generation !== this.generation ||
+      this.isDocumentHidden()
+    ) {
       return;
     }
-    const el = document.createElement("div");
-    el.id = "memory-watchdog-overlay";
-    el.style.cssText = `
-      position:fixed;bottom:12px;right:12px;z-index:2147483646;
-      background:#1a1a2e;color:#e2e8f0;font-family:monospace;
-      font-size:12px;padding:12px 16px;border-radius:8px;
-      border:1px solid #ef4444;box-shadow:0 4px 24px rgba(0,0,0,0.5);
-      max-width:340px;line-height:1.5;
-    `;
-    el.innerHTML = this.buildOverlayHTML(stats);
-    document.body.appendChild(el);
-    this.overlayEl = el;
-    this.wireOverlayButtons();
+
+    const nativeProbe = launchNativeSystemProbe();
+    if (!nativeProbe) return;
+    const controller = new AbortController();
+    const delivery: SystemProbeDelivery = {
+      token: nativeProbe.token,
+      generation,
+      controller,
+      timeoutId: setTimeout(() => {
+        if (this.systemDelivery !== delivery) return;
+        controller.abort();
+        this.systemDelivery = null;
+        this.latestSystemMemory = null;
+        this.recordSystemProbeFailure();
+      }, this.config.systemProbeTimeoutMs),
+    };
+    this.systemDelivery = delivery;
+
+    void nativeProbe.promise.then(
+      (value) => this.completeSystemProbe(delivery, value),
+      () => this.completeSystemProbe(delivery, null),
+    );
   }
 
-  private updateOverlay(stats: MemoryStats): void {
-    if (!this.overlayEl) return;
-    this.overlayEl.innerHTML = this.buildOverlayHTML(stats);
-    this.wireOverlayButtons();
-  }
-
-  private wireOverlayButtons(): void {
-    this.overlayEl?.querySelector("#mw-close")?.addEventListener("click", () => {
-      this.removeOverlay();
-      this.criticalShown = false;
-      this.systemWarningShown = false;
-    });
-    this.overlayEl?.querySelector("#mw-reload")?.addEventListener("click", () => {
-      window.location.reload();
-    });
-  }
-
-  private buildOverlayHTML(stats: MemoryStats): string {
-    const heapPct = stats.heapPct;
-    const barColor = heapPct > 80 ? "#ef4444" : heapPct > 60 ? "#f59e0b" : "#22c55e";
-    const trendIcon =
-      stats.trend === "rising"
-        ? "&#x2191;"
-        : stats.trend === "falling"
-          ? "&#x2193;"
-          : "&#x2192;";
-
-    let sysHTML = "";
-    if (stats.system) {
-      const sysColor =
-        stats.system.usedPct >= 95
-          ? "#ef4444"
-          : stats.system.usedPct >= 85
-            ? "#f59e0b"
-            : "#22c55e";
-      sysHTML = `
-        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #1e2650">
-          System RAM: <strong>${stats.system.usedGb}GB</strong> / ${stats.system.totalGb}GB
-          (<span style="color:${sysColor};font-weight:600">${stats.system.usedPct}%</span>)
-        </div>
-        <div style="height:4px;background:#1e2650;border-radius:2px;overflow:hidden;margin-top:4px">
-          <div style="height:100%;width:${stats.system.usedPct}%;background:${sysColor};border-radius:2px;transition:width 0.3s"></div>
-        </div>
-      `;
+  private completeSystemProbe(
+    delivery: SystemProbeDelivery,
+    value: unknown,
+  ): void {
+    if (this.systemDelivery !== delivery) return;
+    clearTimeout(delivery.timeoutId);
+    this.systemDelivery = null;
+    if (
+      delivery.controller.signal.aborted ||
+      !this.running ||
+      delivery.generation !== this.generation
+    ) {
+      return;
     }
 
-    return `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span style="font-weight:600;color:#ef4444">&#x26A0; High Memory Usage</span>
-        <button id="mw-close" style="background:none;border:none;color:#8892b0;cursor:pointer;font-size:16px;padding:0 4px">&times;</button>
-      </div>
-      <div style="margin-bottom:4px">
-        JS Heap: <strong>${stats.usedMb}MB</strong> / ${stats.limitMb}MB (${heapPct}%)
-        <span style="margin-left:4px">${trendIcon} ${stats.growthRateMbPerSec}MB/s</span>
-      </div>
-      <div style="height:4px;background:#1e2650;border-radius:2px;overflow:hidden">
-        <div style="height:100%;width:${heapPct}%;background:${barColor};border-radius:2px;transition:width 0.3s"></div>
-      </div>
-      ${sysHTML}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button id="mw-reload" style="padding:4px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">Reload</button>
-      </div>
-    `;
-  }
-
-  private removeOverlay(): void {
-    this.overlayEl?.remove();
-    this.overlayEl = null;
-  }
-
-  // ─── Force close (BSOD) ────────────────────────────────────────
-
-  private forceClose(stats: MemoryStats): void {
-    if (this.killed) return;
-    this.killed = true;
-    this.stop();
-
-    const label = this.config.windowLabel;
-    const isDetached = label !== "main";
-
-    // Notify main window that this detached window was killed
-    if (isDetached) {
-      import("@tauri-apps/api/event").then(({ emit }) => {
-        emit("detached-window-oom", { windowLabel: label, stats }).catch(() => {});
-      }).catch(() => {});
+    const systemMemory = normalizeSystemMemoryInfo(value);
+    if (!systemMemory) {
+      this.latestSystemMemory = null;
+      this.recordSystemProbeFailure();
+      return;
     }
 
-    const sysLine = stats.system
-      ? `System RAM: ${stats.system.usedGb}GB / ${stats.system.totalGb}GB (${stats.system.usedPct}%)`
-      : "";
-    const reason = stats.system && stats.system.usedPct >= this.config.systemKillPct
-      ? `System memory usage reached ${stats.system.usedPct}% (${stats.system.usedGb}GB / ${stats.system.totalGb}GB).`
-      : `JS heap usage reached ${Math.round(stats.usedMb)}MB (limit: ${Math.round(stats.limitMb)}MB) with a growth rate of ${stats.growthRateMbPerSec}MB/s.`;
-    const safeLabel = label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const windowInfo = isDetached
-      ? `<p style="font-size:11px;color:#8892b0;margin-bottom:8px;font-family:monospace">Window: ${safeLabel}</p>`
-      : "";
+    this.latestSystemMemory = systemMemory;
+    this.systemProbeFailures = 0;
+    this.nextSystemProbeAt = Date.now() + this.config.intervalMs;
+    this.evaluate(this.sampleStats(false));
+  }
 
-    const el = document.createElement("div");
-    el.style.cssText = `
-      position:fixed;inset:0;z-index:2147483647;background:#0a0e27;color:#e2e8f0;
-      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-      display:flex;align-items:center;justify-content:center;
-    `;
-    el.innerHTML = `
-      <div style="text-align:center;max-width:540px;padding:48px">
-        <div style="font-size:80px;font-weight:100;margin-bottom:24px">:(</div>
-        <h1 style="font-size:22px;font-weight:300;margin-bottom:12px">
-          ${isDetached ? "This detached window" : "This window"} was stopped to protect your system
-        </h1>
-        <p style="font-size:14px;color:#8892b0;margin-bottom:8px;line-height:1.6">
-          ${reason}
-        </p>
-        ${windowInfo}
-        ${sysLine ? `<p style="font-size:12px;color:#8892b0;margin-bottom:24px;font-family:monospace">${sysLine}</p>` : ""}
-        <div style="display:flex;gap:12px;justify-content:center">
-          <button onclick="window.location.reload()" style="
-            padding:10px 24px;background:#3b82f6;color:#fff;border:none;
-            border-radius:6px;font-size:14px;cursor:pointer;
-          ">Reload</button>
-          <button onclick="window.close()" style="
-            padding:10px 24px;background:#141a3a;color:#e2e8f0;
-            border:1px solid #1e2650;border-radius:6px;font-size:14px;cursor:pointer;
-          ">Close Window</button>
-        </div>
-      </div>
-    `;
-    document.body.innerHTML = "";
-    document.body.appendChild(el);
+  private recordSystemProbeFailure(): void {
+    this.systemProbeFailures += 1;
+    const backoffMs = Math.min(
+      MAX_SYSTEM_PROBE_BACKOFF_MS,
+      1000 * 2 ** Math.min(this.systemProbeFailures - 1, 6),
+    );
+    this.nextSystemProbeAt = Date.now() + backoffMs;
+  }
+
+  private cancelSystemDelivery(): void {
+    const delivery = this.systemDelivery;
+    if (!delivery) return;
+    delivery.controller.abort();
+    clearTimeout(delivery.timeoutId);
+    this.systemDelivery = null;
+  }
+
+  private evaluate(stats: MemoryStats): void {
+    const heapSeverity: ActiveSeverity =
+      stats.usedMb >= this.config.killMb
+        ? "pressure"
+        : stats.usedMb >= this.config.criticalMb
+          ? "critical"
+          : stats.usedMb >= this.config.warningMb && stats.trend === "rising"
+            ? "warning"
+            : "normal";
+    const systemSeverity: ActiveSeverity = !stats.system
+      ? "normal"
+      : stats.system.usedPct >= this.config.systemKillPct
+        ? "pressure"
+        : stats.system.usedPct >= this.config.systemWarningPct
+          ? "warning"
+          : "normal";
+    const heapRank = severityRank(heapSeverity);
+    const systemRank = severityRank(systemSeverity);
+    const severity = heapRank >= systemRank ? heapSeverity : systemSeverity;
+    const source: MemoryPressureSource =
+      heapRank > 0 && heapRank === systemRank
+        ? "both"
+        : heapRank >= systemRank
+          ? "heap"
+          : "system";
+
+    if (severity === "normal") {
+      if (this.currentSeverity !== "normal") {
+        this.notifyStatus({
+          severity: "recovered",
+          source: this.currentSource,
+          stats,
+          windowLabel: this.config.windowLabel,
+        });
+      }
+      this.currentSeverity = "normal";
+      this.currentSource = source;
+      return;
+    }
+
+    const changed =
+      severity !== this.currentSeverity || source !== this.currentSource;
+    if (changed) this.notifyThreshold(severity, source, stats);
+    this.currentSeverity = severity;
+    this.currentSource = source;
+    this.notifyStatus({
+      severity,
+      source,
+      stats,
+      windowLabel: this.config.windowLabel,
+    });
+  }
+
+  private notifyThreshold(
+    severity: Exclude<ActiveSeverity, "normal">,
+    source: MemoryPressureSource,
+    stats: MemoryStats,
+  ): void {
+    const systemSummary = stats.system
+      ? `${stats.system.usedPct}% (${stats.system.usedGb}/${stats.system.totalGb}GB)`
+      : "unavailable";
+    if (severity === "pressure") {
+      console.error(
+        `[MemoryWatchdog] MEMORY PRESSURE in ${this.config.windowLabel}; source: ${source}, heap: ${stats.usedMb}MB, system: ${systemSummary}`,
+      );
+      this.callSafely(this.config.onKill, stats);
+      return;
+    }
+    if (severity === "critical") {
+      console.error(
+        `[MemoryWatchdog] HEAP CRITICAL in ${this.config.windowLabel}; ${stats.usedMb}MB, growth: ${stats.growthRateMbPerSec}MB/s`,
+      );
+      this.callSafely(this.config.onCritical, stats);
+      return;
+    }
+    console.warn(
+      `[MemoryWatchdog] MEMORY WARNING in ${this.config.windowLabel}; source: ${source}, heap: ${stats.usedMb}MB, system: ${systemSummary}`,
+    );
+    this.callSafely(this.config.onWarning, stats);
+  }
+
+  private notifyStatus(status: MemoryWatchdogStatus): void {
+    this.callSafely(this.config.onStatusChange, status);
+  }
+
+  private callSafely<T>(callback: (value: T) => void, value: T): void {
+    try {
+      callback(value);
+    } catch (error) {
+      console.error("[MemoryWatchdog] callback failed", error);
+    }
+  }
+
+  private isDocumentHidden(): boolean {
+    return (
+      typeof document !== "undefined" && document.visibilityState === "hidden"
+    );
+  }
+
+  private readonly handleVisibilityChange = (): void => {
+    if (!this.running) return;
+    if (this.isDocumentHidden()) {
+      this.clearScheduledHeapProbe();
+      this.cancelSystemDelivery();
+      this.latestSystemMemory = null;
+      this.nextSystemProbeAt = 0;
+      return;
+    }
+    this.schedule(0);
+  };
+
+  private addVisibilityListener(): void {
+    if (typeof document !== "undefined") {
+      document.addEventListener(
+        "visibilitychange",
+        this.handleVisibilityChange,
+      );
+    }
+  }
+
+  private removeVisibilityListener(): void {
+    if (typeof document !== "undefined") {
+      document.removeEventListener(
+        "visibilitychange",
+        this.handleVisibilityChange,
+      );
+    }
+  }
+
+  private clearScheduledHeapProbe(): void {
+    if (this.timeoutId === null) return;
+    clearTimeout(this.timeoutId);
+    this.timeoutId = null;
   }
 }
 
-/** Singleton for the app-wide watchdog. */
-let _instance: MemoryWatchdog | null = null;
+let instance: MemoryWatchdog | null = null;
+let activeOwner: MemoryWatchdogOwner | null = null;
+const legacyOwner = Symbol("legacy-memory-watchdog-owner");
 
-export function startMemoryWatchdog(config?: MemoryWatchdogConfig): MemoryWatchdog {
-  if (_instance) return _instance;
-  _instance = new MemoryWatchdog(config);
-  _instance.start();
-  return _instance;
+/** Starts or live-updates the one monitor owned by this JS window. */
+export function startMemoryWatchdog(
+  config: MemoryWatchdogConfig = {},
+  owner: MemoryWatchdogOwner = legacyOwner,
+): MemoryWatchdog {
+  if (instance) {
+    if (activeOwner === owner) {
+      instance.updateConfig(config);
+      instance.start();
+    }
+    return instance;
+  }
+  instance = new MemoryWatchdog(config);
+  activeOwner = owner;
+  instance.start();
+  return instance;
 }
 
-export function stopMemoryWatchdog(): void {
-  _instance?.stop();
-  _instance = null;
+/** Stops only the expected instance/owner; omitting owner force-cleans tests. */
+export function stopMemoryWatchdog(
+  expected?: MemoryWatchdog,
+  owner?: MemoryWatchdogOwner,
+): void {
+  if (expected && instance !== expected) return;
+  if (owner && activeOwner !== owner) return;
+  instance?.stop();
+  instance = null;
+  activeOwner = null;
 }
 
 export function getMemoryWatchdog(): MemoryWatchdog | null {
-  return _instance;
+  return instance;
 }

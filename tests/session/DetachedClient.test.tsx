@@ -21,6 +21,10 @@ import {
 import { SettingsProvider } from "../../src/contexts/SettingsContext";
 import { ConnectionContext } from "../../src/contexts/ConnectionContextTypes";
 import type { WindowSessionSync } from "../../src/types/windowManager";
+import {
+  getMemoryWatchdog,
+  stopMemoryWatchdog,
+} from "../../src/utils/debug/memoryWatchdog";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
@@ -196,6 +200,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 describe("DetachedClient accessibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stopMemoryWatchdog();
     SettingsManager.resetInstance();
     _resetInMemorySettingsStore();
     closeRequestedHandler = undefined;
@@ -209,6 +214,7 @@ describe("DetachedClient accessibility", () => {
   });
 
   afterEach(() => {
+    stopMemoryWatchdog();
     localStorage.clear();
     delete (window as any).__TAURI__;
   });
@@ -222,6 +228,84 @@ describe("DetachedClient accessibility", () => {
       ).toBeInTheDocument();
     });
   };
+
+  it("owns detached watchdog thresholds, live settings, and cleanup", async () => {
+    const previousMemory = Object.getOwnPropertyDescriptor(
+      performance,
+      "memory",
+    );
+    Object.defineProperty(performance, "memory", {
+      configurable: true,
+      value: {
+        usedJSHeapSize: 1300 * 1024 * 1024,
+        totalJSHeapSize: 1400 * 1024 * 1024,
+        jsHeapSizeLimit: 2048 * 1024 * 1024,
+      },
+    });
+    const { unmount } = render(<DetachedClient />);
+
+    try {
+      const alert = await screen.findByTestId("memory-pressure-alert");
+      expect(alert).toHaveAttribute("data-window-label", "detached-1");
+      expect(screen.getByText("Memory pressure detected")).toBeInTheDocument();
+      expect(getMemoryWatchdog()).not.toBeNull();
+
+      const settings = SettingsManager.getInstance().getSettings();
+      fireEvent(
+        window,
+        new CustomEvent("settings-updated", {
+          detail: {
+            ...settings,
+            memoryWatchdog: {
+              ...settings.memoryWatchdog,
+              detached: {
+                heapWarningMb: 1000,
+                heapCriticalMb: 1400,
+                heapKillMb: 1500,
+              },
+            },
+          },
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId("memory-pressure-alert"),
+        ).not.toBeInTheDocument(),
+      );
+
+      fireEvent(
+        window,
+        new CustomEvent("settings-updated", {
+          detail: {
+            ...settings,
+            memoryWatchdog: {
+              ...settings.memoryWatchdog,
+              detached: {
+                heapWarningMb: 64,
+                heapCriticalMb: 128,
+                heapKillMb: 256,
+              },
+            },
+          },
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByText("Memory pressure detected"),
+        ).toBeInTheDocument(),
+      );
+
+      unmount();
+      expect(getMemoryWatchdog()).toBeNull();
+    } finally {
+      if (getMemoryWatchdog()) unmount();
+      if (previousMemory) {
+        Object.defineProperty(performance, "memory", previousMemory);
+      } else {
+        Reflect.deleteProperty(performance, "memory");
+      }
+    }
+  });
 
   it("keeps exactly one live wm:sync listener and releases it on unmount", async () => {
     (window as any).__TAURI__ = true;

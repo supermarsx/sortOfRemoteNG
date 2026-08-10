@@ -59,7 +59,7 @@ import { TabLayoutManager } from "./components/session/TabLayoutManager";
 import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import { SplashScreen } from "./components/app/SplashScreen";
 import { CriticalErrorScreen } from "./components/app/CriticalErrorScreen";
-import { startMemoryWatchdog } from "./utils/debug/memoryWatchdog";
+import { MemoryWatchdogController } from "./components/app/MemoryWatchdogController";
 import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
 import {
   ToolKey,
@@ -215,21 +215,6 @@ const AppContent: React.FC = () => {
       setShowPasswordDialog,
       setPasswordDialogMode,
     });
-
-  // Start memory watchdog once settings are available
-  useEffect(() => {
-    const mw = appSettings.memoryWatchdog;
-    if (!mw?.enabled) return;
-    startMemoryWatchdog({
-      intervalMs: mw.intervalMs,
-      warningMb: mw.heapWarningMb,
-      criticalMb: mw.heapCriticalMb,
-      killMb: mw.heapKillMb,
-      systemWarningPct: mw.systemWarningPct,
-      systemKillPct: mw.systemKillPct,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time watchdog init on mount
-  }, []);
 
   // Extracted hooks
   const {
@@ -1613,6 +1598,10 @@ const AppContent: React.FC = () => {
           detail={criticalError.detail}
         />
       )}
+      <MemoryWatchdogController
+        settings={appSettings.memoryWatchdog}
+        windowLabel="main"
+      />
       {/* Splash Screen */}
       {!criticalError && showSplash && (
         <SplashScreen

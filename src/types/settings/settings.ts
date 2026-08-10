@@ -1299,11 +1299,11 @@ export interface MemoryWatchdogSettings {
   heapWarningMb: number;
   /** JS heap critical threshold in MB — shows an overlay widget */
   heapCriticalMb: number;
-  /** JS heap kill threshold in MB — tears down the page */
+  /** JS heap pressure threshold in MB — raises the highest-severity alert */
   heapKillMb: number;
   /** System RAM warning threshold as percentage (0–100) */
   systemWarningPct: number;
-  /** System RAM kill threshold as percentage — tears down the page */
+  /** System RAM pressure threshold as percentage — raises an alert */
   systemKillPct: number;
   /** Override thresholds for detached windows */
   detached: {

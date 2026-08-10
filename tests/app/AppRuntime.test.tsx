@@ -227,6 +227,10 @@ import {
   InvalidPasswordError,
   CorruptedDataError,
 } from "../../src/utils/core/errors";
+import {
+  getMemoryWatchdog,
+  stopMemoryWatchdog,
+} from "../../src/utils/debug/memoryWatchdog";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -301,6 +305,7 @@ function ConnectionStateView() {
 // ── Reset singletons helper ──────────────────────────────────────────────
 
 function resetSingletons() {
+  stopMemoryWatchdog();
   SettingsManager.resetInstance?.();
   StatusChecker.resetInstance?.();
   DatabaseManager.resetInstance?.();
@@ -365,6 +370,81 @@ describe("App runtime – full mount", () => {
         expect(container.querySelector(".app-shell")).toBeTruthy();
       });
       unmount();
+    }
+  });
+
+  it("applies watchdog enable changes live and releases it on unmount", async () => {
+    const previousMemory = Object.getOwnPropertyDescriptor(
+      performance,
+      "memory",
+    );
+    Object.defineProperty(performance, "memory", {
+      configurable: true,
+      value: {
+        usedJSHeapSize: 300 * 1024 * 1024,
+        totalJSHeapSize: 400 * 1024 * 1024,
+        jsHeapSizeLimit: 2048 * 1024 * 1024,
+      },
+    });
+    const { unmount } = render(<App />);
+    await waitFor(() => expect(getMemoryWatchdog()).not.toBeNull());
+
+    const settings = SettingsManager.getInstance().getSettings();
+    fireEvent(
+      window,
+      new CustomEvent("settings-updated", {
+        detail: {
+          ...settings,
+          memoryWatchdog: {
+            ...settings.memoryWatchdog,
+            enabled: false,
+          },
+        },
+      }),
+    );
+    await waitFor(() => expect(getMemoryWatchdog()).toBeNull());
+
+    const enabledSettings = {
+      ...settings,
+      memoryWatchdog: {
+        ...settings.memoryWatchdog,
+        enabled: true,
+        intervalMs: 12_345,
+      },
+    };
+    fireEvent(
+      window,
+      new CustomEvent("settings-updated", { detail: enabledSettings }),
+    );
+    await waitFor(() => expect(getMemoryWatchdog()).not.toBeNull());
+    const runningMonitor = getMemoryWatchdog();
+
+    fireEvent(
+      window,
+      new CustomEvent("settings-updated", {
+        detail: {
+          ...enabledSettings,
+          memoryWatchdog: {
+            ...enabledSettings.memoryWatchdog,
+            heapWarningMb: 64,
+            heapCriticalMb: 128,
+            heapKillMb: 256,
+          },
+        },
+      }),
+    );
+    await waitFor(() => expect(getMemoryWatchdog()).toBe(runningMonitor));
+    await waitFor(() =>
+      expect(screen.getByTestId("memory-pressure-alert")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("app-shell")).toBeInTheDocument();
+
+    unmount();
+    expect(getMemoryWatchdog()).toBeNull();
+    if (previousMemory) {
+      Object.defineProperty(performance, "memory", previousMemory);
+    } else {
+      Reflect.deleteProperty(performance, "memory");
     }
   });
 });
