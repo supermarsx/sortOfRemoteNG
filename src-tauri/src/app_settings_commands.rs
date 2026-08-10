@@ -39,6 +39,19 @@ const REST_API_SECRET_BYTES: usize = 32;
 /// Makes each atomic-write temp name unique within a process. The process id in
 /// `temp_path_for` keeps simultaneously-running app processes separate too.
 static SETTINGS_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// Assigns a process-wide total order to successfully committed settings
+/// transactions. A generation is reserved under the shared settings
+/// coordinator before fallible I/O, and is returned only after durable
+/// write/read-back verification succeeds; failed writes leave harmless gaps.
+static SETTINGS_COMMIT_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+fn reserve_settings_commit_generation() -> Result<u64, String> {
+    SETTINGS_COMMIT_GENERATION
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |generation| {
+            generation.checked_add(1)
+        })
+        .map_err(|_| "settings commit generation exhausted".to_string())
+}
 
 #[derive(Clone)]
 #[doc(hidden)]
@@ -326,12 +339,14 @@ pub async fn read_app_settings(
 ///
 /// The existing-object base is always read through `read_app_settings`,
 /// so the merge composition is identical between the two paths.
+/// Returns the process-wide commit generation only after the write has been
+/// durably verified.
 #[tauri::command]
 pub async fn write_app_settings(
     app: tauri::AppHandle,
     enc_state: State<'_, EncryptionState>,
     patch: Value,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     reject_rest_api_secret_patch(&patch)?;
     // Keep the optional legacy-secret migration and the caller's patch in one
@@ -484,12 +499,13 @@ fn merge_root(mut existing: Value, patch: &Value) -> Result<Value, String> {
 
 /// Pure-Rust write entry-point shared by the Tauri command and any
 /// future caller that already holds the encryption state by
-/// reference. Kept symmetric with `read_app_settings_inner`.
+/// reference. Kept symmetric with `read_app_settings_inner`; its successful
+/// result is the same process-wide commit generation returned by the command.
 pub async fn write_app_settings_inner(
     dir: &std::path::Path,
     enc_state: &EncryptionState,
     patch: Value,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     // Cover the entire transaction, not only the rename: a later writer must
     // read the generation committed by the previous writer before merging its
     // own patch. This also keeps verify-readback isolated from another save.
@@ -505,8 +521,12 @@ async fn write_app_settings_locked(
     dir: &std::path::Path,
     enc_state: &EncryptionState,
     patch: Value,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     reject_rest_api_secret_patch(&patch)?;
+    // Reserve before any fallible filesystem work. Failed writes may leave a
+    // harmless gap, but a durable commit can never be followed by a generation
+    // allocation error that falsely reports the write as failed.
+    let commit_generation = reserve_settings_commit_generation()?;
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let enc_path = dir.join(SETTINGS_ENC_FILENAME);
     let plain_path = dir.join(SETTINGS_FILENAME);
@@ -594,15 +614,16 @@ async fn write_app_settings_locked(
                 );
             }
         }
-        Ok(())
     } else {
         let body = serde_json::to_string_pretty(&merged)
             .map_err(|e| format!("serialize settings.json: {e}"))?;
         let plain_path = plain_path.clone();
         tokio::task::spawn_blocking(move || atomic_write(&plain_path, body.as_bytes()))
             .await
-            .map_err(|e| format!("settings.json write task join: {e}"))?
+            .map_err(|e| format!("settings.json write task join: {e}"))??;
     }
+
+    Ok(commit_generation)
 }
 
 #[cfg(test)]
@@ -785,6 +806,52 @@ mod tests {
         // The pre-deletion key is gone (dir was wiped) but the new
         // write landed cleanly.
         assert_eq!(value["language"], "fr");
+    }
+
+    #[tokio::test]
+    async fn successful_writes_return_increasing_commit_generations() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+
+        let first =
+            write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "dark" }))
+                .await
+                .unwrap();
+        let second =
+            write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "language": "fr" }))
+                .await
+                .unwrap();
+
+        assert!(first > 0);
+        assert!(second > first);
+    }
+
+    #[tokio::test]
+    async fn failed_write_returns_no_generation_and_leaves_a_harmless_gap() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let before =
+            write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "dark" }))
+                .await
+                .unwrap();
+
+        std::fs::write(tmp.path().join(SETTINGS_FILENAME), b"not valid json").unwrap();
+        let failed =
+            write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "language": "de" }))
+                .await;
+        assert!(failed.is_err());
+
+        std::fs::write(
+            tmp.path().join(SETTINGS_FILENAME),
+            br#"{ "theme": "dark" }"#,
+        )
+        .unwrap();
+        let after =
+            write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "language": "fr" }))
+                .await
+                .unwrap();
+
+        assert!(after >= before + 2);
     }
 
     /// Build an unlocked `EncryptionState` directly, bypassing the

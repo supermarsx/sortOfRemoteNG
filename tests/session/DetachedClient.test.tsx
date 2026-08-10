@@ -6,9 +6,16 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// Exercise the real provider; detached policy updates are now provider-owned.
+vi.unmock("../../src/contexts/SettingsContext");
 import DetachedClient from "../../app/detached/DetachedClient";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  SettingsManager,
+  SettingsSyncRevisionTracker,
+  _resetInMemorySettingsStore,
+} from "../../src/utils/settings/settingsManager";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
@@ -58,6 +65,7 @@ let syncHandler:
       };
     }) => void)
   | undefined;
+let settingsSyncHandler: ((event: { payload: unknown }) => void) | undefined;
 
 const mockWindow = {
   label: "detached-1",
@@ -146,6 +154,9 @@ vi.mock("@tauri-apps/api/event", () => ({
           });
         });
       }
+      if (eventName === "settings-sync") {
+        settingsSyncHandler = handler as typeof settingsSyncHandler;
+      }
       return Promise.resolve(() => {});
     },
   ),
@@ -158,10 +169,13 @@ vi.mock("@tauri-apps/api/core", () => ({
 describe("DetachedClient accessibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    SettingsManager.resetInstance();
+    _resetInMemorySettingsStore();
     closeRequestedHandler = undefined;
     closeResultHandler = undefined;
     mainSessionClosedHandler = undefined;
     syncHandler = undefined;
+    settingsSyncHandler = undefined;
     vi.mocked(invoke).mockResolvedValue(undefined);
   });
 
@@ -280,12 +294,16 @@ describe("DetachedClient accessibility", () => {
   it("uses the acknowledged main-window closer without directly closing SSH", async () => {
     (window as any).__TAURI__ = true;
     await renderAndLoadDetachedClient();
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent("settings-updated", {
-          detail: { warnOnDetachClose: false },
+    await waitFor(() => expect(settingsSyncHandler).toBeTypeOf("function"));
+    const remote = new SettingsSyncRevisionTracker("writer-main", () => 100);
+    await act(async () => {
+      settingsSyncHandler?.({
+        payload: remote.next("main", {
+          ...SettingsManager.getInstance().getSettings(),
+          warnOnDetachClose: false,
         }),
-      );
+      });
+      await Promise.resolve();
     });
     await waitFor(() => expect(closeRequestedHandler).toBeTypeOf("function"));
 
@@ -335,7 +353,10 @@ describe("DetachedClient accessibility", () => {
     act(() => {
       window.dispatchEvent(
         new CustomEvent("settings-updated", {
-          detail: { warnOnDetachClose: false },
+          detail: {
+            ...SettingsManager.getInstance().getSettings(),
+            warnOnDetachClose: false,
+          },
         }),
       );
     });
@@ -399,7 +420,10 @@ describe("DetachedClient accessibility", () => {
       });
       window.dispatchEvent(
         new CustomEvent("settings-updated", {
-          detail: { warnOnDetachClose: false },
+          detail: {
+            ...SettingsManager.getInstance().getSettings(),
+            warnOnDetachClose: false,
+          },
         }),
       );
     });

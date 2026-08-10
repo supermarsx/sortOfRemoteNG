@@ -597,6 +597,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
     loadedRef.current = true;
     settingsRef.current = loadedSettings;
     setSettings(loadedSettings);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("settings-updated", { detail: loadedSettings }),
+      );
+    }
   }, [settingsManager]);
 
   const updateSettings = useCallback(
@@ -650,60 +655,50 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
     reloadSettings();
   }, [reloadSettings]);
 
-  // Listen for settings-sync Tauri events from other windows.
-  // ONLY enabled in the main window — detached windows don't need live
-  // settings sync (they load once on mount) and the listener + JSON
-  // comparison overhead causes unnecessary CPU/memory pressure.
+  // Every Tauri window consumes the same validated settings channel. The
+  // manager rejects self/stale/malformed envelopes and applies accepted
+  // snapshots in memory only, so this bridge never persists or re-emits.
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let mounted = true;
 
-    (async () => {
-      try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const label = getCurrentWindow().label;
-        // Skip sync listener in detached windows
-        if (label !== "main") return;
-
-        const { listen } = await import("@tauri-apps/api/event");
-
-        const unlistenFn = await listen<{
-          settings: GlobalSettings;
-          source: string;
-        }>("settings-sync", async (event) => {
-          if (event.payload.source === label) return;
-          const incoming = event.payload.settings;
-          if (!incoming || typeof incoming !== "object") return;
-          const current = settingsRef.current;
-          let changed = false;
+    settingsManager
+      .listenForSettingsSync((incoming) => {
+        if (mounted) {
+          let changed = true;
           try {
-            changed = JSON.stringify(current) !== JSON.stringify(incoming);
+            changed =
+              JSON.stringify(settingsRef.current) !== JSON.stringify(incoming);
           } catch {
             changed = true;
           }
-          try {
-            await settingsManager.applySyncedSettings(incoming);
-          } catch {
-            // Sync failed — don't update React state with potentially invalid data
-            return;
-          }
-          if (mounted && changed) {
+          loadedRef.current = true;
+          settingsRef.current = incoming;
+          if (changed) {
             setSettings(incoming);
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("settings-updated", { detail: incoming }),
+              );
+            }
           }
-        });
-        if (mounted) {
-          unlisten = unlistenFn;
-        } else {
-          unlistenFn();
         }
-      } catch {
-        // Not in Tauri environment
-      }
-    })();
+      })
+      .then((unlistenFn) => {
+        if (mounted) unlisten = unlistenFn;
+        else unlistenFn();
+      })
+      .catch(() => {
+        // Browser/single-window runtime: the DOM fallback below remains active.
+      });
 
     return () => {
       mounted = false;
-      unlisten?.();
+      try {
+        unlisten?.();
+      } catch {
+        // Listener cleanup must never destabilize provider teardown.
+      }
     };
   }, [settingsManager]);
 
@@ -721,23 +716,25 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
     if (typeof window === "undefined") return;
     const onUpdated = (event: Event) => {
       const detail = (event as CustomEvent<GlobalSettings>).detail;
-      if (!detail || typeof detail !== "object") return;
+      const incoming = settingsManager.applySettingsSnapshot(detail);
+      if (!incoming) return;
       // Skip redundant renders when nothing actually changed (e.g. the
       // context's own updateSettings already applied this blob before saving).
       let changed = true;
       try {
         changed =
-          JSON.stringify(settingsRef.current) !== JSON.stringify(detail);
+          JSON.stringify(settingsRef.current) !== JSON.stringify(incoming);
       } catch {
         changed = true;
       }
       if (!changed) return;
-      settingsRef.current = detail;
-      setSettings(detail);
+      loadedRef.current = true;
+      settingsRef.current = incoming;
+      setSettings(incoming);
     };
     window.addEventListener("settings-updated", onUpdated);
     return () => window.removeEventListener("settings-updated", onUpdated);
-  }, []);
+  }, [settingsManager]);
 
   const contextValue = useMemo(
     () => ({ settings, updateSettings, reloadSettings }),

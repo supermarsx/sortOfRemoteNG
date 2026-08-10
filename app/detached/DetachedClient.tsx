@@ -151,7 +151,6 @@ const DetachedSessionContent: React.FC<{
   const [error, setError] = useState("");
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [isTransparent, setIsTransparent] = useState(false);
-  const [warnOnDetachClose, setWarnOnDetachClose] = useState(true);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -186,6 +185,7 @@ const DetachedSessionContent: React.FC<{
   const sendToSubmenuPanelId = useId();
 
   const { settings: appSettings } = useSettings();
+  const warnOnDetachClose = appSettings.warnOnDetachClose;
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const isTauri =
@@ -372,28 +372,28 @@ const DetachedSessionContent: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTauri]);
 
+  // SettingsProvider owns loading and cross-window synchronization. Derive the
+  // detached shell's visual state from that live snapshot so sessions and
+  // terminals remain mounted while policies change around them.
   useEffect(() => {
-    const manager = SettingsManager.getInstance();
-    const themeManager = ThemeManager.getInstance();
-    manager
-      .loadSettings()
-      .then((settings) => {
-        applyTransparency(
-          settings.windowTransparencyEnabled,
-          settings.windowTransparencyOpacity,
-        );
-        setWarnOnDetachClose(settings.warnOnDetachClose);
-        // Apply theme without emitting back to other windows
-        themeManager.applyThemeFromSync(
-          settings.theme,
-          settings.colorScheme,
-          settings.useCustomAccent ? settings.primaryAccentColor : undefined,
-        );
-        // Dispatch settings-updated event so WebTerminal can sync xterm theme on initial load
-        window.dispatchEvent(new CustomEvent("settings-updated"));
-      })
-      .catch(() => undefined);
-  }, [applyTransparency]);
+    applyTransparency(
+      appSettings.windowTransparencyEnabled,
+      appSettings.windowTransparencyOpacity,
+    );
+    ThemeManager.getInstance().applyThemeFromSync(
+      appSettings.theme,
+      appSettings.colorScheme,
+      appSettings.useCustomAccent ? appSettings.primaryAccentColor : undefined,
+    );
+  }, [
+    appSettings.colorScheme,
+    appSettings.primaryAccentColor,
+    appSettings.theme,
+    appSettings.useCustomAccent,
+    appSettings.windowTransparencyEnabled,
+    appSettings.windowTransparencyOpacity,
+    applyTransparency,
+  ]);
 
   // Listen for theme changes from main window
   useEffect(() => {
@@ -466,28 +466,6 @@ const DetachedSessionContent: React.FC<{
         .catch(() => undefined);
     };
   }, [dispatch, isTauri]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleSettingsUpdate = (event: Event) => {
-      const detail = (event as CustomEvent).detail as {
-        windowTransparencyEnabled?: boolean;
-        windowTransparencyOpacity?: number;
-        warnOnDetachClose?: boolean;
-      };
-      if (!detail) return;
-      applyTransparency(
-        Boolean(detail.windowTransparencyEnabled),
-        detail.windowTransparencyOpacity,
-      );
-      if (typeof detail.warnOnDetachClose === "boolean") {
-        setWarnOnDetachClose(detail.warnOnDetachClose);
-      }
-    };
-    window.addEventListener("settings-updated", handleSettingsUpdate);
-    return () =>
-      window.removeEventListener("settings-updated", handleSettingsUpdate);
-  }, [applyTransparency]);
 
   // Multi-session support: track which tab is active in this detached window
   const activeSession = useMemo(() => {

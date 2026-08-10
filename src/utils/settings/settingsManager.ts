@@ -24,7 +24,7 @@ import { generateId } from "../core/id";
 import { getInvoke as tauriInvoke } from "../tauri/invoke";
 import { normalizeSshReconnectSettings } from "../ssh/sshReconnectPolicy";
 
-/** Unique label for this window — used to ignore our own sync events. */
+/** Cached window label used as diagnostic metadata in sync envelopes. */
 let _windowLabel: string | null = null;
 async function getWindowLabel(): Promise<string> {
   if (_windowLabel) return _windowLabel;
@@ -37,16 +37,186 @@ async function getWindowLabel(): Promise<string> {
   return _windowLabel;
 }
 
-/** Broadcast settings to all other Tauri windows. */
-async function emitSettingsSync(settings: GlobalSettings): Promise<void> {
+export const SETTINGS_SYNC_EVENT = "settings-sync";
+export const SETTINGS_SYNC_VERSION = 1 as const;
+
+export interface SettingsSyncPayload {
+  version: typeof SETTINGS_SYNC_VERSION;
+  source: string;
+  writerId: string;
+  revision: number;
+  /** Process-wide native commit order when supplied by write_app_settings. */
+  commitGeneration?: number;
+  settings: GlobalSettings;
+}
+
+export interface SettingsSyncRuntime {
+  getSource: () => Promise<string>;
+  emit: (payload: SettingsSyncPayload) => Promise<void>;
+  listen: (handler: (payload: unknown) => Promise<void>) => Promise<() => void>;
+}
+
+export interface SettingsManagerOptions {
+  settingsSyncRuntime?: SettingsSyncRuntime;
+  settingsSyncWriterId?: string;
+  now?: () => number;
+}
+
+type SettingsSyncStamp = Pick<
+  SettingsSyncPayload,
+  "revision" | "writerId" | "commitGeneration"
+>;
+
+export type SettingsSyncDecision<T> =
+  | { kind: "accepted"; payload: SettingsSyncPayload; settings: T }
+  | { kind: "self" | "stale" | "malformed" };
+
+const createSettingsSyncWriterId = (): string => {
   try {
-    const { emit } = await import("@tauri-apps/api/event");
-    const source = await getWindowLabel();
-    await emit("settings-sync", { settings, source });
+    if (typeof globalThis.crypto?.randomUUID === "function") {
+      return globalThis.crypto.randomUUID();
+    }
   } catch {
-    // Not in Tauri environment — ignore
+    // Fall through to the repository ID helper.
+  }
+  return generateId();
+};
+
+const parseSettingsSyncPayload = (
+  candidate: unknown,
+): SettingsSyncPayload | null => {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+  const value = candidate as Record<string, unknown>;
+  if (
+    value.version !== SETTINGS_SYNC_VERSION ||
+    typeof value.source !== "string" ||
+    value.source.length === 0 ||
+    typeof value.writerId !== "string" ||
+    value.writerId.length === 0 ||
+    !Number.isSafeInteger(value.revision) ||
+    (value.revision as number) <= 0 ||
+    (value.commitGeneration !== undefined &&
+      (!Number.isSafeInteger(value.commitGeneration) ||
+        (value.commitGeneration as number) <= 0)) ||
+    !value.settings ||
+    typeof value.settings !== "object" ||
+    Array.isArray(value.settings)
+  ) {
+    return null;
+  }
+  return value as unknown as SettingsSyncPayload;
+};
+
+/**
+ * A deterministic hybrid logical clock for full settings snapshots.
+ * Revisions are time-seeded so a newly opened window can supersede an older
+ * writer, then increment monotonically for multiple saves in the same
+ * millisecond. Writer IDs break otherwise-equal revisions consistently.
+ */
+export class SettingsSyncRevisionTracker {
+  private logicalRevision = 0;
+  private current: SettingsSyncStamp = { revision: 0, writerId: "" };
+
+  constructor(
+    readonly writerId: string = createSettingsSyncWriterId(),
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  private stamp(payload: SettingsSyncStamp): SettingsSyncStamp {
+    return {
+      revision: payload.revision,
+      writerId: payload.writerId,
+      ...(payload.commitGeneration === undefined
+        ? {}
+        : { commitGeneration: payload.commitGeneration }),
+    };
+  }
+
+  private compare(left: SettingsSyncStamp, right: SettingsSyncStamp): number {
+    if (
+      left.commitGeneration !== undefined ||
+      right.commitGeneration !== undefined
+    ) {
+      if (left.commitGeneration === undefined) return -1;
+      if (right.commitGeneration === undefined) return 1;
+      if (left.commitGeneration !== right.commitGeneration) {
+        return left.commitGeneration - right.commitGeneration;
+      }
+    }
+    if (left.revision !== right.revision) {
+      return left.revision - right.revision;
+    }
+    return left.writerId.localeCompare(right.writerId);
+  }
+
+  next(
+    source: string,
+    settings: GlobalSettings,
+    commitGeneration?: number,
+  ): SettingsSyncPayload {
+    const wallClockRevision = Math.max(1, Math.floor(this.now()));
+    this.logicalRevision = Math.max(
+      wallClockRevision,
+      this.logicalRevision + 1,
+      this.current.revision + 1,
+    );
+    const payload: SettingsSyncPayload = {
+      version: SETTINGS_SYNC_VERSION,
+      source,
+      writerId: this.writerId,
+      revision: this.logicalRevision,
+      ...(commitGeneration === undefined ? {} : { commitGeneration }),
+      settings,
+    };
+    if (this.compare(payload, this.current) > 0) {
+      this.current = this.stamp(payload);
+    }
+    return payload;
+  }
+
+  accept<T>(
+    candidate: unknown,
+    validateSettings: (settings: unknown) => T | null,
+  ): SettingsSyncDecision<T> {
+    const payload = parseSettingsSyncPayload(candidate);
+    if (!payload) return { kind: "malformed" };
+    if (payload.writerId === this.writerId) return { kind: "self" };
+    if (this.compare(payload, this.current) <= 0) return { kind: "stale" };
+
+    const settings = validateSettings(payload.settings);
+    if (!settings) return { kind: "malformed" };
+
+    this.logicalRevision = Math.max(this.logicalRevision, payload.revision);
+    this.current = this.stamp(payload);
+    return { kind: "accepted", payload, settings };
+  }
+
+  isCurrent(payload: SettingsSyncPayload): boolean {
+    return (
+      payload.revision === this.current.revision &&
+      payload.writerId === this.current.writerId &&
+      payload.commitGeneration === this.current.commitGeneration
+    );
   }
 }
+
+const defaultSettingsSyncRuntime: SettingsSyncRuntime = {
+  getSource: getWindowLabel,
+  async emit(payload) {
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit(SETTINGS_SYNC_EVENT, payload);
+  },
+  async listen(handler) {
+    const { listen } = await import("@tauri-apps/api/event");
+    return listen<unknown>(SETTINGS_SYNC_EVENT, (event) => {
+      void handler(event.payload).catch((error) => {
+        console.error("Failed to apply synchronized settings:", error);
+      });
+    });
+  },
+};
 
 /**
  * Module-level in-memory settings store for non-Tauri runtimes (jsdom
@@ -712,6 +882,53 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   },
 };
 
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  (Object.getPrototypeOf(value) === Object.prototype ||
+    Object.getPrototypeOf(value) === null);
+
+const isJsonCompatible = (value: unknown): boolean => {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonCompatible);
+  if (!isPlainRecord(value)) return false;
+  return Object.values(value).every(isJsonCompatible);
+};
+
+const matchesSettingsTemplate = (
+  value: unknown,
+  template: unknown,
+): boolean => {
+  if (template === undefined) return isJsonCompatible(value);
+  if (template === null) return value === null;
+  if (Array.isArray(template)) {
+    return Array.isArray(value) && value.every(isJsonCompatible);
+  }
+  if (isPlainRecord(template)) {
+    if (!isPlainRecord(value)) return false;
+    for (const [key, expected] of Object.entries(template)) {
+      if (expected === undefined) continue;
+      if (!(key in value) || !matchesSettingsTemplate(value[key], expected)) {
+        return false;
+      }
+    }
+    return Object.values(value).every(isJsonCompatible);
+  }
+  if (typeof template === "number") {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  return typeof value === typeof template;
+};
+
+const isCompleteSettingsSnapshot = (
+  candidate: unknown,
+): candidate is GlobalSettings =>
+  isPlainRecord(candidate) &&
+  matchesSettingsTemplate(candidate, DEFAULT_SETTINGS);
+
 function mergeToolDisplayModes(
   stored?: Partial<ToolDisplayModes>,
 ): ToolDisplayModes {
@@ -739,6 +956,19 @@ export class SettingsManager {
   private actionLog: ActionLogEntry[] = [];
   private performanceMetrics: PerformanceMetrics[] = [];
   private customScripts: CustomScript[] = [];
+  private readonly settingsSyncRuntime: SettingsSyncRuntime;
+  private readonly settingsSyncRevisions: SettingsSyncRevisionTracker;
+  private settingsSyncApplyChain: Promise<unknown> = Promise.resolve();
+  private settingsSyncEmitChain: Promise<unknown> = Promise.resolve();
+
+  constructor(options: SettingsManagerOptions = {}) {
+    this.settingsSyncRuntime =
+      options.settingsSyncRuntime ?? defaultSettingsSyncRuntime;
+    this.settingsSyncRevisions = new SettingsSyncRevisionTracker(
+      options.settingsSyncWriterId,
+      options.now,
+    );
+  }
 
   /**
    * Whether the initial load from persistent storage has completed.
@@ -801,6 +1031,9 @@ export class SettingsManager {
    */
   private sliceKnownSettings(
     raw: Record<string, unknown> | null | undefined,
+    options: { stripRestApiSecrets?: boolean } = {
+      stripRestApiSecrets: true,
+    },
   ): Partial<GlobalSettings> | null {
     if (!raw || typeof raw !== "object") return null;
     const out: Record<string, unknown> = {};
@@ -808,13 +1041,119 @@ export class SettingsManager {
       if (key in raw) out[key] = (raw as Record<string, unknown>)[key];
     }
     const restApi = out.restApi;
-    if (restApi && typeof restApi === "object" && !Array.isArray(restApi)) {
+    if (
+      options.stripRestApiSecrets !== false &&
+      restApi &&
+      typeof restApi === "object" &&
+      !Array.isArray(restApi)
+    ) {
       const safeRestApi = { ...(restApi as Record<string, unknown>) };
       delete safeRestApi.apiKey;
       delete safeRestApi.jwtSecret;
       out.restApi = safeRestApi;
     }
     return out as Partial<GlobalSettings>;
+  }
+
+  private normalizeSettingsSnapshot(
+    storedSettings: Partial<GlobalSettings>,
+  ): GlobalSettings {
+    const normalizedStored = { ...storedSettings };
+    const sshReconnectSettings =
+      normalizeSshReconnectSettings(normalizedStored);
+    const validColorSchemes = [
+      "red",
+      "rose",
+      "pink",
+      "orange",
+      "amber",
+      "yellow",
+      "lime",
+      "green",
+      "emerald",
+      "teal",
+      "cyan",
+      "sky",
+      "blue",
+      "indigo",
+      "violet",
+      "purple",
+      "fuchsia",
+      "slate",
+      "grey",
+    ];
+    if (
+      normalizedStored.colorScheme &&
+      !validColorSchemes.includes(normalizedStored.colorScheme)
+    ) {
+      console.warn(
+        `Invalid colorScheme "${normalizedStored.colorScheme}" found in settings, resetting to "blue"`,
+      );
+      normalizedStored.colorScheme = "blue";
+    }
+
+    return {
+      ...DEFAULT_SETTINGS,
+      ...normalizedStored,
+      ...sshReconnectSettings,
+      sshTerminal: mergeSSHTerminalConfig(
+        DEFAULT_SETTINGS.sshTerminal,
+        normalizedStored.sshTerminal,
+      ),
+      sshConnection: mergeSSHConnectionConfig(
+        DEFAULT_SETTINGS.sshConnection,
+        normalizedStored.sshConnection,
+      ),
+      httpsTrustPolicy:
+        normalizedStored.httpsTrustPolicy ??
+        normalizedStored.tlsTrustPolicy ??
+        DEFAULT_SETTINGS.httpsTrustPolicy,
+      certificateTrustPolicy:
+        normalizedStored.certificateTrustPolicy ??
+        DEFAULT_SETTINGS.certificateTrustPolicy,
+      networkDiscovery: {
+        ...DEFAULT_SETTINGS.networkDiscovery,
+        ...(normalizedStored.networkDiscovery ?? {}),
+      },
+      toolDisplayModes: mergeToolDisplayModes(
+        normalizedStored.toolDisplayModes,
+      ),
+      rdpDefaults: {
+        ...DEFAULT_SETTINGS.rdpDefaults,
+        ...(normalizedStored.rdpDefaults ?? {}),
+      },
+      mcpServer: {
+        ...DEFAULT_SETTINGS.mcpServer,
+        ...(normalizedStored.mcpServer ?? {}),
+      },
+      exportSecurity: {
+        ...DEFAULT_SETTINGS.exportSecurity,
+        ...(normalizedStored.exportSecurity ?? {}),
+        encryptByDefault:
+          normalizedStored.exportSecurity?.encryptByDefault ??
+          normalizedStored.exportEncryption ??
+          DEFAULT_SETTINGS.exportSecurity.encryptByDefault,
+      },
+      backup: migrateBackupConfig({
+        ...DEFAULT_SETTINGS.backup,
+        ...(normalizedStored.backup ?? {}),
+      }),
+      cloudSync: migrateCloudSyncConfig({
+        ...DEFAULT_SETTINGS.cloudSync,
+        ...(normalizedStored.cloudSync ?? {}),
+      }),
+    };
+  }
+
+  private validateCompleteSettingsSnapshot(
+    candidate: unknown,
+  ): GlobalSettings | null {
+    if (!isCompleteSettingsSnapshot(candidate)) return null;
+    const known = this.sliceKnownSettings(
+      candidate as unknown as Record<string, unknown>,
+    );
+    if (!known) return null;
+    return this.normalizeSettingsSnapshot(known);
   }
 
   /**
@@ -847,6 +1186,21 @@ export class SettingsManager {
     return null;
   }
 
+  private sanitizeSettingsPatch(
+    patch: Partial<GlobalSettings>,
+  ): Partial<GlobalSettings> {
+    const safePatch = { ...patch } as Partial<GlobalSettings> & {
+      restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
+    };
+    if (safePatch.restApi) {
+      const restApi = { ...safePatch.restApi } as Record<string, unknown>;
+      delete restApi.apiKey;
+      delete restApi.jwtSecret;
+      safePatch.restApi = restApi as GlobalSettings["restApi"];
+    }
+    return safePatch;
+  }
+
   /**
    * Persist a settings change. In the desktop shell the patch is
    * shallow-merged into `settings.json` by the backend (so partial saves
@@ -868,16 +1222,10 @@ export class SettingsManager {
    * `saveSettings` in try/catch — e.g. the debounced settings save and
    * window-geometry save) can react. It never throws on the no-Tauri path.
    */
-  private async persistSettings(patch: Partial<GlobalSettings>): Promise<void> {
-    const safePatch = { ...patch } as Partial<GlobalSettings> & {
-      restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
-    };
-    if (safePatch.restApi) {
-      const restApi = { ...safePatch.restApi } as Record<string, unknown>;
-      delete restApi.apiKey;
-      delete restApi.jwtSecret;
-      safePatch.restApi = restApi as GlobalSettings["restApi"];
-    }
+  private async persistSettings(
+    patch: Partial<GlobalSettings>,
+  ): Promise<number | undefined> {
+    const safePatch = this.sanitizeSettingsPatch(patch);
     const invoke = await tauriInvoke();
     if (!invoke) {
       // No Tauri disk — retain the full blob in the module-level store so
@@ -886,18 +1234,31 @@ export class SettingsManager {
         ...this.settings,
         ...(safePatch as Partial<GlobalSettings>),
       };
-      return;
+      return undefined;
     }
 
     let sawFailure = false;
     for (let attempt = 1; attempt <= SETTINGS_WRITE_MAX_ATTEMPTS; attempt++) {
       try {
-        await invoke("write_app_settings", { patch: safePatch });
+        const result = await invoke<unknown>("write_app_settings", {
+          patch: safePatch,
+        });
         if (sawFailure) {
           // Recovered after one or more failed attempts.
           dispatchWriteRecovered(attempt, SETTINGS_WRITE_MAX_ATTEMPTS);
         }
-        return;
+        if (typeof result === "number" && Number.isSafeInteger(result)) {
+          return result > 0 ? result : undefined;
+        }
+        if (
+          isPlainRecord(result) &&
+          typeof result.generation === "number" &&
+          Number.isSafeInteger(result.generation) &&
+          result.generation > 0
+        ) {
+          return result.generation;
+        }
+        return undefined;
       } catch (error) {
         sawFailure = true;
         const message = error instanceof Error ? error.message : String(error);
@@ -921,6 +1282,7 @@ export class SettingsManager {
         await delay(SETTINGS_WRITE_RETRY_BASE_MS * attempt);
       }
     }
+    return undefined;
   }
 
   /**
@@ -940,99 +1302,7 @@ export class SettingsManager {
     try {
       const stored = await this.readPersistedSettings();
       if (stored) {
-        const storedSettings = stored;
-        const sshReconnectSettings =
-          normalizeSshReconnectSettings(storedSettings);
-        // Validate colorScheme - migrate invalid values like "other" or "custom" to "blue"
-        const validColorSchemes = [
-          "red",
-          "rose",
-          "pink",
-          "orange",
-          "amber",
-          "yellow",
-          "lime",
-          "green",
-          "emerald",
-          "teal",
-          "cyan",
-          "sky",
-          "blue",
-          "indigo",
-          "violet",
-          "purple",
-          "fuchsia",
-          "slate",
-          "grey",
-        ];
-        if (
-          storedSettings.colorScheme &&
-          !validColorSchemes.includes(storedSettings.colorScheme)
-        ) {
-          console.warn(
-            `Invalid colorScheme "${storedSettings.colorScheme}" found in settings, resetting to "blue"`,
-          );
-          storedSettings.colorScheme = "blue";
-        }
-
-        this.settings = {
-          ...DEFAULT_SETTINGS,
-          ...storedSettings,
-          ...sshReconnectSettings,
-          sshTerminal: mergeSSHTerminalConfig(
-            DEFAULT_SETTINGS.sshTerminal,
-            storedSettings.sshTerminal,
-          ),
-          sshConnection: mergeSSHConnectionConfig(
-            DEFAULT_SETTINGS.sshConnection,
-            storedSettings.sshConnection,
-          ),
-          httpsTrustPolicy:
-            storedSettings.httpsTrustPolicy ??
-            storedSettings.tlsTrustPolicy ??
-            DEFAULT_SETTINGS.httpsTrustPolicy,
-          certificateTrustPolicy:
-            storedSettings.certificateTrustPolicy ??
-            DEFAULT_SETTINGS.certificateTrustPolicy,
-          networkDiscovery: {
-            ...DEFAULT_SETTINGS.networkDiscovery,
-            ...(storedSettings.networkDiscovery ?? {}),
-          },
-          toolDisplayModes: mergeToolDisplayModes(
-            storedSettings.toolDisplayModes,
-          ),
-          rdpDefaults: {
-            ...DEFAULT_SETTINGS.rdpDefaults,
-            ...(storedSettings.rdpDefaults ?? {}),
-          },
-          mcpServer: {
-            ...DEFAULT_SETTINGS.mcpServer,
-            ...(storedSettings.mcpServer ?? {}),
-          },
-          exportSecurity: {
-            ...DEFAULT_SETTINGS.exportSecurity,
-            ...(storedSettings.exportSecurity ?? {}),
-            encryptByDefault:
-              storedSettings.exportSecurity?.encryptByDefault ??
-              storedSettings.exportEncryption ??
-              DEFAULT_SETTINGS.exportSecurity.encryptByDefault,
-          },
-          // Wrap the legacy `backup.destinationPath` into the new
-          // `backup.destinations[]` shape on first load after the
-          // multi-target work landed. Idempotent — already-migrated
-          // configs pass through unchanged.
-          backup: migrateBackupConfig({
-            ...DEFAULT_SETTINGS.backup,
-            ...(storedSettings.backup ?? {}),
-          }),
-          // Wrap the legacy `cloudSync.enabledProviders` flat list
-          // into the new `cloudSync.syncTargets[]` shape on first
-          // load after the multi-target work landed. Idempotent.
-          cloudSync: migrateCloudSyncConfig({
-            ...DEFAULT_SETTINGS.cloudSync,
-            ...(storedSettings.cloudSync ?? {}),
-          }),
-        };
+        this.settings = this.normalizeSettingsSnapshot(stored);
       }
       this.loaded = true;
       return this.settings;
@@ -1060,10 +1330,11 @@ export class SettingsManager {
       // here would persist defaults over the user's stored config. Wait
       // for the load to complete first.
       await this.ensureLoaded();
-      this.settings = { ...this.settings, ...settings };
+      const safeSettings = this.sanitizeSettingsPatch(settings);
+      this.settings = { ...this.settings, ...safeSettings };
       // Write only the patch: the backend shallow-merges it into
       // settings.json, so partial saves never drop sibling keys.
-      await this.persistSettings(settings);
+      const commitGeneration = await this.persistSettings(safeSettings);
       // Only log explicit user-initiated saves, not auto-saves or intermediate changes
       if (!options?.silent) {
         this.logAction(
@@ -1073,13 +1344,9 @@ export class SettingsManager {
           "User settings updated",
         );
       }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("settings-updated", { detail: this.settings }),
-        );
-      }
-      // Broadcast to other Tauri windows
-      emitSettingsSync(this.settings);
+      // Generate and broadcast the sortable revision only after persistence
+      // has committed. Sync transport failures never roll back the local save.
+      await this.broadcastSettingsSync(safeSettings, commitGeneration);
     } catch (error) {
       console.error("Failed to save settings:", error);
       throw error;
@@ -1096,34 +1363,96 @@ export class SettingsManager {
   }
 
   /**
-   * Apply a full settings snapshot received from another window.
-   * Updates in-memory state and persists to disk (via the backend) but
-   * does NOT re-emit the Tauri sync event (to avoid echo loops).
+   * Apply a validated full snapshot from the same-window DOM fallback.
+   * This is strictly in-memory: no persistence and no Tauri emission.
    */
-  async applySyncedSettings(settings: GlobalSettings): Promise<void> {
-    const prev = this.settings;
-    this.settings = settings;
-    await this.persistSettings(settings);
-    // Only dispatch the DOM event if something visual might have changed
-    // (theme, transparency, etc.) — skip if the object is identical.
-    const visualChanged =
-      prev.theme !== settings.theme ||
-      prev.colorScheme !== settings.colorScheme ||
-      prev.primaryAccentColor !== settings.primaryAccentColor ||
-      prev.useCustomAccent !== settings.useCustomAccent ||
-      prev.windowTransparencyEnabled !== settings.windowTransparencyEnabled ||
-      prev.windowTransparencyOpacity !== settings.windowTransparencyOpacity ||
-      prev.warnOnDetachClose !== settings.warnOnDetachClose;
-    if (typeof window !== "undefined" && visualChanged) {
-      window.dispatchEvent(
-        new CustomEvent("settings-updated", { detail: this.settings }),
-      );
-    }
+  applySettingsSnapshot(settings: unknown): GlobalSettings | null {
+    const validated = this.validateCompleteSettingsSnapshot(settings);
+    if (!validated) return null;
+    this.settings = validated;
+    this.loaded = true;
+    return validated;
   }
 
-  /** Returns the window label helper for source-filtering sync events. */
+  /**
+   * Accept a cross-window envelope when it is valid, non-self, and newer than
+   * the current logical stamp. Accepted snapshots are applied in memory only.
+   */
+  async applySyncedSettings(payload: unknown): Promise<GlobalSettings | null> {
+    const decision = this.settingsSyncRevisions.accept(payload, (settings) =>
+      this.validateCompleteSettingsSnapshot(settings),
+    );
+    if (decision.kind !== "accepted") return null;
+
+    const apply = this.settingsSyncApplyChain.then(async () => {
+      await this.ensureLoaded();
+      if (!this.settingsSyncRevisions.isCurrent(decision.payload)) return null;
+      this.settings = decision.settings;
+      this.loaded = true;
+      return this.settings;
+    });
+    this.settingsSyncApplyChain = apply.catch(() => undefined);
+    return apply;
+  }
+
+  async listenForSettingsSync(
+    onSettings: (settings: GlobalSettings) => void | Promise<void>,
+  ): Promise<() => void> {
+    return this.settingsSyncRuntime.listen(async (payload) => {
+      const settings = await this.applySyncedSettings(payload);
+      if (settings) await onSettings(settings);
+    });
+  }
+
+  private async broadcastSettingsSync(
+    patch: Partial<GlobalSettings>,
+    commitGeneration?: number,
+  ): Promise<void> {
+    const broadcast = this.settingsSyncEmitChain.then(async () => {
+      let source = "unknown";
+      try {
+        source = await this.settingsSyncRuntime.getSource();
+      } catch {
+        // The writer token, not the diagnostic label, suppresses self-echoes.
+      }
+
+      const safePatch = this.sanitizeSettingsPatch(patch);
+      const safeKnownSettings = this.sliceKnownSettings({
+        ...(this.settings as unknown as Record<string, unknown>),
+        ...(safePatch as unknown as Record<string, unknown>),
+      });
+      if (!safeKnownSettings) return;
+      const safeSettings = this.normalizeSettingsSnapshot(safeKnownSettings);
+      const payload = this.settingsSyncRevisions.next(
+        source,
+        safeSettings,
+        commitGeneration,
+      );
+      // A newer native commit may have arrived while this save was awaiting
+      // persistence. Never emit or reinstate the older completed write.
+      if (!this.settingsSyncRevisions.isCurrent(payload)) return;
+
+      this.settings = safeSettings;
+      this.loaded = true;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("settings-updated", { detail: safeSettings }),
+        );
+      }
+
+      try {
+        await this.settingsSyncRuntime.emit(payload);
+      } catch {
+        // Browser/single-window runtimes do not provide a Tauri event bus.
+      }
+    });
+    this.settingsSyncEmitChain = broadcast.catch(() => undefined);
+    await broadcast;
+  }
+
+  /** Returns the current runtime label for diagnostics and compatibility. */
   async getWindowLabel(): Promise<string> {
-    return getWindowLabel();
+    return this.settingsSyncRuntime.getSource();
   }
 
   /**
