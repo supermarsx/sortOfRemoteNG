@@ -15,6 +15,7 @@
     "dev:check": "node ./scripts/dev-server.mjs --check",
     "dev:launcher:test": "node --test ./tests/tooling/devLauncher.node-test.mjs",
     "build": "next build",
+    "build:cold:check": "node ./scripts/ci/check-frontend-cold-bundle.mjs",
     "stage:opkssh-vendor": "node ./scripts/stage-opkssh-vendor.mjs",
     "stage:opkssh-vendor:enable": "node ./scripts/stage-opkssh-vendor.mjs --enable",
     "stage:opkssh-vendor:disable": "node ./scripts/stage-opkssh-vendor.mjs --disable",

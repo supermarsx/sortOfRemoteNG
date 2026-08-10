@@ -6,7 +6,11 @@ import {
 import { SettingsManager } from "../settings/settingsManager";
 import { generateId } from "../core/id";
 import { sanitizeBehaviorText } from "../behavior/template";
-import * as ts from "typescript";
+
+type TypeScriptCompiler = typeof import("typescript");
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 export interface ScriptExecutionContext extends Record<string, unknown> {
   connection?: Connection;
@@ -32,6 +36,9 @@ export interface HttpClient {
 export class ScriptEngine {
   private static instance: ScriptEngine | null = null;
   private settingsManager = SettingsManager.getInstance();
+  private typeScriptCompilerPromise: Promise<TypeScriptCompiler> | null = null;
+  private importTypeScriptCompiler = (): Promise<TypeScriptCompiler> =>
+    import("typescript");
 
   static getInstance(): ScriptEngine {
     if (ScriptEngine.instance === null) {
@@ -185,7 +192,7 @@ export class ScriptEngine {
       );
     } else if (script.type === "typescript") {
       if (isNode) {
-        const js = this.transpileTypeScript(script.content, script.name);
+        const js = await this.transpileTypeScript(script.content, script.name);
         return this.executeJavaScript<T>(
           js,
           scriptContext,
@@ -292,14 +299,46 @@ export class ScriptEngine {
     }
   }
 
-  private transpileTypeScript(code: string, scriptName: string): string {
-    const result = ts.transpileModule(code, {
-      compilerOptions: {
-        module: ts.ModuleKind.ESNext,
-        target: ts.ScriptTarget.ES2017,
-      },
-      reportDiagnostics: true,
-    });
+  private async loadTypeScriptCompiler(
+    scriptName: string,
+  ): Promise<TypeScriptCompiler> {
+    if (this.typeScriptCompilerPromise === null) {
+      this.typeScriptCompilerPromise = this.importTypeScriptCompiler().catch(
+        (error) => {
+          this.typeScriptCompilerPromise = null;
+          throw error;
+        },
+      );
+    }
+
+    try {
+      return await this.typeScriptCompilerPromise;
+    } catch (error) {
+      throw new Error(
+        `Unable to load TypeScript compiler for ${scriptName}: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  private async transpileTypeScript(
+    code: string,
+    scriptName: string,
+  ): Promise<string> {
+    const ts = await this.loadTypeScriptCompiler(scriptName);
+    let result: ReturnType<TypeScriptCompiler["transpileModule"]>;
+    try {
+      result = ts.transpileModule(code, {
+        compilerOptions: {
+          module: ts.ModuleKind.ESNext,
+          target: ts.ScriptTarget.ES2017,
+        },
+        reportDiagnostics: true,
+      });
+    } catch (error) {
+      throw new Error(
+        `TypeScript compilation failed in ${scriptName}: ${errorMessage(error)}`,
+      );
+    }
     if (result.diagnostics && result.diagnostics.length > 0) {
       const message = result.diagnostics
         .map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"))

@@ -35,6 +35,8 @@ jobs:
           # non-zero exit is sufficient for fail-on-error semantics.
           NEXT_TELEMETRY_DISABLED: "1"
           CI: "true"
+      - name: Verify TypeScript compiler stays out of the cold bundle
+        run: npm run build:cold:check
       - name: Upload build output (debug on failure)
         if: failure()
         uses: actions/upload-artifact@v6

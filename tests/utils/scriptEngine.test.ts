@@ -227,6 +227,91 @@ describe("ScriptEngine error handling", () => {
 });
 
 describe("ScriptEngine TypeScript", () => {
+  it("does not load the TypeScript compiler for JavaScript scripts", async () => {
+    const engine = ScriptEngine.getInstance();
+    const importTypeScriptCompiler = vi
+      .fn()
+      .mockRejectedValue(new Error("compiler should stay lazy"));
+    (
+      engine as unknown as {
+        importTypeScriptCompiler: typeof importTypeScriptCompiler;
+      }
+    ).importTypeScriptCompiler = importTypeScriptCompiler;
+    const script: CustomScript = {
+      id: "js-without-compiler",
+      name: "plain JavaScript",
+      type: "javascript",
+      content: "return 1;",
+      trigger: "manual",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await expect(
+      engine.executeScript<number>(script, { trigger: "manual" }),
+    ).resolves.toBe(1);
+    expect(importTypeScriptCompiler).not.toHaveBeenCalled();
+  });
+
+  it("surfaces lazy compiler import failures and permits a retry", async () => {
+    const engine = ScriptEngine.getInstance();
+    const importTypeScriptCompiler = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("chunk unavailable"))
+      .mockImplementationOnce(() => import("typescript"));
+    (
+      engine as unknown as {
+        importTypeScriptCompiler: typeof importTypeScriptCompiler;
+      }
+    ).importTypeScriptCompiler = importTypeScriptCompiler;
+    const script: CustomScript = {
+      id: "ts-import-error",
+      name: "lazy TypeScript",
+      type: "typescript",
+      content: "const n: number = 1; return n;",
+      trigger: "manual",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await expect(
+      engine.executeScript<number>(script, { trigger: "manual" }),
+    ).rejects.toThrow(
+      "Unable to load TypeScript compiler for lazy TypeScript: chunk unavailable",
+    );
+    await expect(
+      engine.executeScript<number>(script, { trigger: "manual" }),
+    ).resolves.toBe(1);
+    expect(importTypeScriptCompiler).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches the compiler module after the first TypeScript script", async () => {
+    const engine = ScriptEngine.getInstance();
+    const importTypeScriptCompiler = vi.fn(() => import("typescript"));
+    (
+      engine as unknown as {
+        importTypeScriptCompiler: typeof importTypeScriptCompiler;
+      }
+    ).importTypeScriptCompiler = importTypeScriptCompiler;
+    const script: CustomScript = {
+      id: "ts-cached",
+      name: "cached TypeScript",
+      type: "typescript",
+      content: "const n: number = 1; return n;",
+      trigger: "manual",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await engine.executeScript<number>(script, { trigger: "manual" });
+    await engine.executeScript<number>(script, { trigger: "manual" });
+
+    expect(importTypeScriptCompiler).toHaveBeenCalledTimes(1);
+  });
+
   it("executes TypeScript scripts", async () => {
     const engine = ScriptEngine.getInstance();
     const script: CustomScript = {
