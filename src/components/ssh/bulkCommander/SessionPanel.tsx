@@ -3,6 +3,9 @@ import {
   AlertCircle,
   Check,
   CheckSquare,
+  Eye,
+  Loader2,
+  RefreshCw,
   Square,
   Terminal,
 } from "lucide-react";
@@ -41,45 +44,86 @@ function SessionPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           mgr.sshSessions.map((session) => {
             const isSelected = mgr.selectedSessionIds.has(session.id);
             const output = mgr.sessionOutputs[session.id];
+            const isPreviewLoading = mgr.previewLoadingSessionIds.has(
+              session.id,
+            );
+            const previewFailed = Boolean(mgr.previewErrors[session.id]);
+            const previewAction = isPreviewLoading
+              ? t("bulkSsh.loadingSessionPreview", `Loading ${session.name}`)
+              : output?.previewedAt
+                ? t("bulkSsh.refreshSessionPreview", `Refresh ${session.name}`)
+                : previewFailed
+                  ? t("bulkSsh.retrySessionPreview", `Retry ${session.name}`)
+                  : t("bulkSsh.peekSession", `Peek ${session.name}`);
             return (
-              <button
-                key={session.id}
-                onClick={() => mgr.toggleSessionSelection(session.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
-                  isSelected
-                    ? "bg-primary/20 border border-primary/40"
-                    : "hover:bg-[var(--color-surfaceHover)] border border-transparent"
-                }`}
-              >
-                {isSelected ? (
-                  <CheckSquare
-                    size={14}
-                    className="text-primary flex-shrink-0"
-                  />
-                ) : (
-                  <Square
-                    size={14}
-                    className="text-[var(--color-textSecondary)] flex-shrink-0"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-[var(--color-text)] truncate">
-                    {session.name}
+              <div key={session.id} className="flex items-stretch gap-1">
+                <button
+                  type="button"
+                  onClick={() => mgr.toggleSessionSelection(session.id)}
+                  aria-pressed={isSelected}
+                  aria-label={t(
+                    isSelected
+                      ? "bulkSsh.removeCommandRecipient"
+                      : "bulkSsh.addCommandRecipient",
+                    isSelected
+                      ? `Remove ${session.name} from command recipients`
+                      : `Add ${session.name} to command recipients`,
+                  )}
+                  className={`min-w-0 flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                    isSelected
+                      ? "bg-primary/20 border border-primary/40"
+                      : "hover:bg-[var(--color-surfaceHover)] border border-transparent"
+                  }`}
+                >
+                  {isSelected ? (
+                    <CheckSquare
+                      size={14}
+                      className="text-primary flex-shrink-0"
+                    />
+                  ) : (
+                    <Square
+                      size={14}
+                      className="text-[var(--color-textSecondary)] flex-shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[var(--color-text)] truncate">
+                      {session.name}
+                    </div>
+                    <div className="text-xs text-[var(--color-textSecondary)] truncate">
+                      {session.hostname}
+                    </div>
                   </div>
-                  <div className="text-xs text-[var(--color-textSecondary)] truncate">
-                    {session.hostname}
-                  </div>
-                </div>
-                {output?.status === "running" && (
-                  <div className="w-2 h-2 bg-warning rounded-full animate-pulse" />
-                )}
-                {output?.status === "dispatched" && (
-                  <Check size={12} className="text-info" />
-                )}
-                {output?.status === "cancelled" && (
-                  <AlertCircle size={12} className="text-error" />
-                )}
-              </button>
+                  {output?.status === "running" && (
+                    <div className="w-2 h-2 bg-warning rounded-full animate-pulse" />
+                  )}
+                  {output?.status === "dispatched" && (
+                    <Check size={12} className="text-info" />
+                  )}
+                  {output?.status === "cancelled" && (
+                    <AlertCircle size={12} className="text-error" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void mgr.peekSession(session.id)}
+                  disabled={!session.backendSessionId || isPreviewLoading}
+                  className="px-2 rounded-lg border border-transparent text-[var(--color-textSecondary)] hover:text-primary hover:bg-[var(--color-surfaceHover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  aria-label={previewAction}
+                  title={t(
+                    "bulkSsh.peekSessionTitle",
+                    `Read ${session.name}'s live backend terminal buffer into this view. This does not change command recipients or clear the backend buffer.`,
+                  )}
+                >
+                  {isPreviewLoading ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : output?.previewedAt || previewFailed ? (
+                    <RefreshCw size={14} />
+                  ) : (
+                    <Eye size={14} />
+                  )}
+                </button>
+              </div>
             );
           })
         )}

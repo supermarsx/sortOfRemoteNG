@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BulkSSHCommander } from "../../src/components/ssh/BulkSSHCommander";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
@@ -8,6 +14,8 @@ import {
   resetSSHCommandHistoryMemoryForTests,
 } from "../../src/hooks/ssh/useSSHCommandHistory";
 import { invoke } from "@tauri-apps/api/core";
+import { bulkScriptsStore } from "../../src/hooks/ssh/bulkScriptLibrary";
+import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
@@ -133,6 +141,9 @@ const renderComponent = (isOpen = true) => {
   );
 };
 
+const invokeCallsFor = (command: string) =>
+  vi.mocked(invoke).mock.calls.filter(([candidate]) => candidate === command);
+
 describe("BulkSSHCommander", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -209,6 +220,175 @@ describe("BulkSSHCommander", () => {
       renderComponent();
       const selectAllButton = screen.getByText(/Select All|Deselect All/);
       expect(selectAllButton).toBeInTheDocument();
+    });
+  });
+
+  describe("Session Preview", () => {
+    it("uses the exact backend session ID and strips terminal control sequences", async () => {
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_terminal_buffer") {
+          return (
+            "\u001b]0;secret window title\u0007" +
+            "\u001b[32mroot@host:~$ uptime\u001b[0m\r\n" +
+            "up 4 days\u0000\u009b31mvisible\u009b0m"
+          );
+        }
+        return undefined;
+      });
+      renderComponent();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      );
+
+      await waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith("get_terminal_buffer", {
+          sessionId: "backend-1",
+        }),
+      );
+      expect(
+        await screen.findByText(/root@host:~\$ uptime/),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/up 4 days/)).toBeInTheDocument();
+      const pageText = document.body.textContent ?? "";
+      expect(pageText).toContain("visible");
+      expect(pageText).not.toContain("secret window title");
+      expect(pageText).not.toContain("31mvisible");
+      expect(pageText).not.toContain("\u001b");
+      expect(pageText).not.toContain("\u0000");
+      expect(pageText).not.toContain("\u009b");
+      expect(getSSHCommandHistoryMemorySnapshot()).toHaveLength(0);
+
+      fireEvent.click(screen.getByText("History"));
+      expect(screen.getByText(/No command history yet/i)).toBeInTheDocument();
+    });
+
+    it("bounds large terminal snapshots and retains the newest output", async () => {
+      const oversized =
+        "old terminal output\n".repeat(5_000) +
+        "\u001b[32mNEWEST OUTPUT\u001b[0m";
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_terminal_buffer") return oversized;
+        return undefined;
+      });
+      renderComponent();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      );
+
+      const newest = await screen.findByText(/NEWEST OUTPUT/);
+      const preview = newest.closest("pre");
+      expect(preview).not.toBeNull();
+      expect(preview).toHaveTextContent("Earlier terminal output omitted");
+      expect(
+        new TextEncoder().encode(preview?.textContent ?? "").byteLength,
+      ).toBeLessThanOrEqual(64 * 1024 + 64);
+    });
+
+    it("refreshes a previously peeked terminal snapshot", async () => {
+      let peekCount = 0;
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_terminal_buffer") {
+          peekCount += 1;
+          return peekCount === 1 ? "first snapshot" : "refreshed snapshot";
+        }
+        return undefined;
+      });
+      renderComponent();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      );
+      expect(await screen.findByText("first snapshot")).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Refresh SSH Server 1" }),
+      );
+      expect(await screen.findByText("refreshed snapshot")).toBeInTheDocument();
+      expect(invokeCallsFor("get_terminal_buffer")).toHaveLength(2);
+    });
+
+    it("shows an explicit empty-buffer state", async () => {
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_terminal_buffer") return "";
+        return undefined;
+      });
+      renderComponent();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      );
+
+      expect(
+        await screen.findByText("The terminal buffer was empty when peeked."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Refresh SSH Server 1" }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows a retryable terminal-buffer error", async () => {
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_terminal_buffer") {
+          throw new Error("terminal buffer unavailable");
+        }
+        return undefined;
+      });
+      renderComponent();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      );
+
+      expect(
+        await screen.findByText("terminal buffer unavailable"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Retry SSH Server 1" }),
+      ).toBeInTheDocument();
+    });
+
+    it("never changes command recipients when peeking an unselected session", async () => {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: {},
+      });
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_terminal_buffer") return "peeked only";
+        return undefined;
+      });
+      renderComponent();
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Remove SSH Server 1 from command recipients",
+        }),
+      );
+      const unselectedRecipient = screen.getByRole("button", {
+        name: "Add SSH Server 1 to command recipients",
+      });
+      expect(unselectedRecipient).toHaveAttribute("aria-pressed", "false");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      );
+      expect(await screen.findByText("peeked only")).toBeInTheDocument();
+      expect(unselectedRecipient).toHaveAttribute("aria-pressed", "false");
+
+      fireEvent.change(screen.getByPlaceholderText(/Enter command/i), {
+        target: { value: "hostname" },
+      });
+      fireEvent.click(screen.getByText("Send"));
+
+      await waitFor(() =>
+        expect(invokeCallsFor("send_ssh_input")).toEqual([
+          ["send_ssh_input", { sessionId: "backend-2", data: "hostname\n" }],
+        ]),
+      );
+      expect(getSSHCommandHistoryMemorySnapshot()[0].executions).toHaveLength(
+        1,
+      );
     });
   });
 
@@ -299,7 +479,7 @@ describe("BulkSSHCommander", () => {
       });
       expect(localStorage.getItem("sshCommandHistory")).toBeNull();
       expect(
-        screen.getAllByText(/remote completion is not tracked/i),
+        screen.getAllByText(/did not capture remote completion evidence/i),
       ).toHaveLength(2);
       delete (window as any).__TAURI_INTERNALS__;
     });
@@ -359,6 +539,23 @@ describe("BulkSSHCommander", () => {
       expect(await screen.findByText("System Info")).toBeInTheDocument();
       expect(await screen.findByText("Disk Usage")).toBeInTheDocument();
     });
+
+    it("loads scripts through a focusable, named button", async () => {
+      renderComponent();
+      fireEvent.click(screen.getByText("Scripts"));
+
+      const loadButton = await screen.findByRole("button", {
+        name: "Load System Info",
+      });
+      loadButton.focus();
+      expect(loadButton).toHaveFocus();
+      fireEvent.click(loadButton);
+
+      expect(
+        (screen.getByPlaceholderText(/Enter command/i) as HTMLTextAreaElement)
+          .value,
+      ).toContain("uname -a");
+    });
   });
 
   describe("History", () => {
@@ -374,12 +571,109 @@ describe("BulkSSHCommander", () => {
       // History panel should be visible
       expect(screen.getByText(/No command history/i)).toBeInTheDocument();
     });
+
+    it("tracks Bulk Commander history by default and states its exact scope", () => {
+      renderComponent();
+
+      const toggle = screen.getByRole("button", {
+        name: "Disable Bulk Commander history",
+      });
+      expect(toggle).toHaveAttribute("aria-pressed", "true");
+      expect(toggle).toHaveTextContent("Bulk history on");
+      expect(toggle).toHaveAttribute(
+        "title",
+        expect.stringContaining("Bulk Commander command history only"),
+      );
+      expect(toggle).toHaveAttribute(
+        "title",
+        expect.stringContaining("does not disable session recording"),
+      );
+      expect(toggle).toHaveAttribute(
+        "title",
+        expect.stringContaining("live backend terminal buffer"),
+      );
+    });
+
+    it("can dispatch without tracking any new command history", async () => {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: {},
+      });
+      vi.mocked(invoke).mockResolvedValue(undefined);
+      renderComponent();
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Disable Bulk Commander history",
+        }),
+      );
+      expect(screen.getByText("Bulk history off")).toBeInTheDocument();
+
+      fireEvent.change(screen.getByPlaceholderText(/Enter command/i), {
+        target: { value: "whoami" },
+      });
+      fireEvent.click(screen.getByText("Send"));
+
+      await waitFor(() =>
+        expect(invokeCallsFor("send_ssh_input")).toEqual([
+          ["send_ssh_input", { sessionId: "backend-1", data: "whoami\n" }],
+          ["send_ssh_input", { sessionId: "backend-2", data: "whoami\n" }],
+        ]),
+      );
+      expect(getSSHCommandHistoryMemorySnapshot()).toHaveLength(0);
+      expect(localStorage.getItem("sshCommandHistory")).toBeNull();
+
+      fireEvent.click(screen.getByText("History"));
+      expect(screen.getByText(/No command history yet/i)).toBeInTheDocument();
+      delete (window as any).__TAURI_INTERNALS__;
+    });
   });
 
   describe("Clear Outputs", () => {
-    it("should have clear button", () => {
+    it("clears preview errors and ignores a late in-flight preview", async () => {
+      let previewCalls = 0;
+      let resolveLatePreview!: (value: string) => void;
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command !== "get_terminal_buffer") {
+          return Promise.resolve(undefined);
+        }
+        previewCalls += 1;
+        if (previewCalls === 1) {
+          return Promise.reject(new Error("stale preview error"));
+        }
+        return new Promise((resolve) => {
+          resolveLatePreview = resolve;
+        });
+      });
       renderComponent();
-      expect(screen.getByText("Clear")).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      );
+      expect(
+        await screen.findByText("stale preview error"),
+      ).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Retry SSH Server 1" }),
+      );
+      expect(
+        (await screen.findAllByText("Loading terminal preview...")).length,
+      ).toBeGreaterThan(0);
+
+      fireEvent.click(screen.getByText("Clear"));
+      expect(screen.queryByText("stale preview error")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Peek SSH Server 1" }),
+      ).toBeInTheDocument();
+
+      await act(async () => {
+        resolveLatePreview("late terminal output");
+        await Promise.resolve();
+      });
+      expect(
+        screen.queryByText("late terminal output"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -491,6 +785,11 @@ describe("BulkSSHCommander Script Storage", () => {
   });
 
   it("should migrate saved scripts from localStorage", async () => {
+    // Drain any load queued by a component unmounted in the preceding test,
+    // then remove the durable generation so this exercises legacy migration
+    // deterministically instead of inheriting suite-order state.
+    await bulkScriptsStore.load();
+    await IndexedDbService.removeItemStrict(bulkScriptsStore.key);
     const customScript = {
       id: "custom-1",
       name: "Custom Script",
@@ -501,6 +800,12 @@ describe("BulkSSHCommander Script Storage", () => {
       updatedAt: new Date().toISOString(),
     };
     localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
+
+    const migrated = await bulkScriptsStore.load();
+    expect(migrated.value?.active).toEqual([
+      expect.objectContaining({ id: "custom-1", name: "Custom Script" }),
+    ]);
+    expect(localStorage.getItem(SCRIPTS_STORAGE_KEY)).toBeNull();
 
     renderComponent();
     const scriptsButton = screen.getByText("Scripts");

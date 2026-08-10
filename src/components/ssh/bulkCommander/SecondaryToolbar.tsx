@@ -1,7 +1,24 @@
 import { Mgr, TFunc } from "./types";
-import { FileCode, Grid3x3, History, Rows, Trash2, X } from "lucide-react";
+import {
+  EyeOff,
+  FileCode,
+  Grid3x3,
+  History,
+  Radio,
+  Rows,
+  Trash2,
+  X,
+} from "lucide-react";
 
-function SecondaryToolbar({ mgr, t, onClose }: { mgr: Mgr; t: TFunc; onClose?: () => void }) {
+function SecondaryToolbar({
+  mgr,
+  t,
+  onClose,
+}: {
+  mgr: Mgr;
+  t: TFunc;
+  onClose?: () => void;
+}) {
   return (
     <div className="border-b border-[var(--color-border)] px-5 py-2 flex items-center justify-between bg-[var(--color-surfaceHover)]/30">
       <div className="flex items-center gap-2">
@@ -51,6 +68,33 @@ function SecondaryToolbar({ mgr, t, onClose }: { mgr: Mgr; t: TFunc; onClose?: (
         >
           <History size={14} />
           {t("bulkSsh.history", "History")}
+        </button>
+        <button
+          type="button"
+          onClick={() => mgr.setTrackHistory(!mgr.trackHistory)}
+          aria-pressed={mgr.trackHistory}
+          aria-label={t(
+            mgr.trackHistory
+              ? "bulkSsh.disableHistoryTracking"
+              : "bulkSsh.enableHistoryTracking",
+            mgr.trackHistory
+              ? "Disable Bulk Commander history"
+              : "Enable Bulk Commander history",
+          )}
+          title={t(
+            "bulkSsh.historyTrackingHint",
+            "Controls Bulk Commander command history only. It does not disable session recording, lifecycle logging, or the live backend terminal buffer. Peek snapshots stay in this view and are not added to Bulk Commander history.",
+          )}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md transition-colors ${
+            mgr.trackHistory
+              ? "bg-primary/15 text-primary"
+              : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+          }`}
+        >
+          {mgr.trackHistory ? <Radio size={14} /> : <EyeOff size={14} />}
+          {mgr.trackHistory
+            ? t("bulkSsh.trackingHistory", "Bulk history on")
+            : t("bulkSsh.notTracking", "Bulk history off")}
         </button>
         <div className="w-px h-5 bg-[var(--color-border)] mx-1" />
         <button

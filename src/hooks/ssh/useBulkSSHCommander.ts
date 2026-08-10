@@ -1,17 +1,38 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  SavedBulkScript,
-  defaultBulkScripts,
-} from "../../data/defaultBulkScripts";
+import { defaultBulkScripts } from "../../data/defaultBulkScripts";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
 import { useToastContext } from "../../contexts/ToastContext";
 import {
-  AppDataJsonStore,
+  BULK_SCRIPT_TYPE_OPTIONS,
+  DEFAULT_BULK_SCRIPT_LIBRARY_CONFIG,
+  MAX_BULK_SCRIPT_BYTES,
+  MAX_BULK_SCRIPT_CATEGORY_LENGTH,
+  MAX_BULK_SCRIPT_DESCRIPTION_LENGTH,
+  MAX_BULK_SCRIPT_NAME_LENGTH,
+  bulkScriptsStore,
+  createEmptyBulkScriptLibrary,
+  decorateBulkScript,
+  inferBulkScriptType,
+  isDestructiveBulkScript,
+  shouldConfirmBulkScriptDelete,
+  shouldConfirmBulkScriptRun,
+  updateBulkScriptLibrary,
+  type BulkScript,
+  type BulkScriptDeleteConfirmation,
+  type BulkScriptLibraryConfig,
+  type BulkScriptLibraryMutation,
+  type BulkScriptLibrarySnapshot,
+  type BulkScriptRisk,
+  type BulkScriptRunConfirmation,
+  type BulkScriptType,
+} from "./bulkScriptLibrary";
+import { formatBulkTerminalPreview } from "./bulkTerminalPreview";
+import {
+  APP_DATA_STORE_CHANGED_EVENT,
   containsLikelySecretText,
-  type SanitizedValue,
 } from "../../utils/storage/appDataJsonStore";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -33,46 +54,19 @@ export interface SessionOutput {
   output: string;
   error?: string;
   status: "idle" | "running" | "dispatched" | "cancelled";
+  previewedAt?: Date;
 }
 
 export type ViewMode = "tabs" | "mosaic";
 
-const SCRIPTS_STORAGE_KEY = "bulkSshScripts";
+const DEFAULT_LIBRARY_SCRIPTS = defaultBulkScripts.map(decorateBulkScript);
 
-const sanitizeBulkScripts = (
-  value: unknown,
-): SanitizedValue<SavedBulkScript[]> => {
-  if (!Array.isArray(value)) {
-    throw new Error("Stored bulk SSH scripts are corrupted");
+const createScriptId = (): string => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
   }
-  let changed = false;
-  const scripts: SavedBulkScript[] = [];
-  for (const item of value) {
-    if (
-      !item ||
-      typeof item !== "object" ||
-      Array.isArray(item) ||
-      typeof (item as SavedBulkScript).id !== "string" ||
-      typeof (item as SavedBulkScript).name !== "string" ||
-      typeof (item as SavedBulkScript).script !== "string"
-    ) {
-      throw new Error("Stored bulk SSH scripts contain an invalid entry");
-    }
-    const script = item as SavedBulkScript;
-    if (containsLikelySecretText(script.script)) {
-      changed = true;
-      continue;
-    }
-    scripts.push(script);
-  }
-  return { value: scripts, changed };
+  return `bulk-script-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
-
-const bulkScriptsStore = new AppDataJsonStore<SavedBulkScript[]>({
-  key: "ssh.bulk-scripts",
-  legacyLocalStorageKey: SCRIPTS_STORAGE_KEY,
-  sanitize: sanitizeBulkScripts,
-});
 
 // ─── Hook ──────────────────────────────────────────────────────────
 
@@ -88,11 +82,15 @@ export function useBulkSSHCommander(isOpen: boolean) {
         (s.status === "connected" || s.status === "connecting"),
     );
   }, [state.sessions]);
+  const liveSessionIds = useMemo(
+    () => new Set(sshSessions.map((session) => session.id)),
+    [sshSessions],
+  );
 
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(
     new Set(),
   );
-  const [command, setCommand] = useState("");
+  const [command, setCommandState] = useState("");
   const [commandHistory, setCommandHistory] = useState<CommandHistoryItem[]>(
     [],
   );
@@ -101,18 +99,39 @@ export function useBulkSSHCommander(isOpen: boolean) {
   >({});
   const [viewMode, setViewMode] = useState<ViewMode>("mosaic");
   const [isExecuting, setIsExecuting] = useState(false);
+  const [trackHistory, setTrackHistory] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [activeOutputTab, setActiveOutputTab] = useState<string | null>(null);
+  const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
+  const [previewLoadingSessionIds, setPreviewLoadingSessionIds] = useState<
+    Set<string>
+  >(new Set());
+  const [previewErrors, setPreviewErrors] = useState<Record<string, string>>(
+    {},
+  );
 
   // Script library state
   const [showScriptLibrary, setShowScriptLibrary] = useState(false);
-  const [savedScripts, setSavedScripts] = useState<SavedBulkScript[]>([]);
-  const [editingScript, setEditingScript] = useState<SavedBulkScript | null>(
-    null,
+  const [savedScripts, setSavedScripts] = useState<BulkScript[]>(
+    DEFAULT_LIBRARY_SCRIPTS,
   );
+  const [trashedScripts, setTrashedScripts] = useState<BulkScript[]>([]);
+  const [scriptLibraryConfig, setScriptLibraryConfig] =
+    useState<BulkScriptLibraryConfig>({
+      ...DEFAULT_BULK_SCRIPT_LIBRARY_CONFIG,
+    });
+  const [scriptLibraryLoaded, setScriptLibraryLoaded] = useState(false);
+  const [scriptLibrarySection, setScriptLibrarySection] = useState<
+    "active" | "trash"
+  >("active");
+  const [loadedScript, setLoadedScript] = useState<BulkScript | null>(null);
+  const [editingScript, setEditingScript] = useState<BulkScript | null>(null);
   const [newScriptName, setNewScriptName] = useState("");
   const [newScriptDescription, setNewScriptDescription] = useState("");
   const [newScriptCategory, setNewScriptCategory] = useState("Custom");
+  const [newScriptType, setNewScriptType] = useState<BulkScriptType>("shell");
+  const [newScriptRisk, setNewScriptRisk] =
+    useState<BulkScriptRisk>("standard");
   const [scriptFilter, setScriptFilter] = useState("");
   const [scriptStorageError, setScriptStorageError] = useState<string | null>(
     null,
@@ -120,61 +139,81 @@ export function useBulkSSHCommander(isOpen: boolean) {
 
   const commandInputRef = useRef<HTMLTextAreaElement>(null);
   const outputListenersRef = useRef<Map<string, () => void>>(new Map());
+  const liveSessionIdsRef = useRef(liveSessionIds);
+  const previewRequestCounterRef = useRef(0);
+  const previewRequestTokensRef = useRef<Map<string, number>>(new Map());
+  liveSessionIdsRef.current = liveSessionIds;
 
   // ─── Effects ────────────────────────────────────────────────────
 
-  // Load saved scripts from encrypted app-data storage or browser IndexedDB.
+  const applyLibrarySnapshot = useCallback(
+    (snapshot: BulkScriptLibrarySnapshot) => {
+      setSavedScripts([...DEFAULT_LIBRARY_SCRIPTS, ...snapshot.active]);
+      setTrashedScripts(snapshot.trash);
+      setScriptLibraryConfig(snapshot.config);
+    },
+    [],
+  );
+
+  // Load saved scripts from app-data storage (or the browser test fallback).
   useEffect(() => {
     let cancelled = false;
     bulkScriptsStore
       .load()
       .then((result) => {
         if (cancelled) return;
-        setSavedScripts([...defaultBulkScripts, ...(result.value ?? [])]);
+        applyLibrarySnapshot(result.value ?? createEmptyBulkScriptLibrary());
         if (result.sanitized) {
           const message =
-            "Bulk SSH scripts containing possible credential material were removed during secure storage migration.";
+            "Malformed or possible credential-bearing Bulk SSH scripts were removed while normalizing secure app-data storage.";
           setScriptStorageError(message);
           toast.warning(message);
         }
+        setScriptLibraryLoaded(true);
       })
       .catch((error) => {
         if (cancelled) return;
         const message = `Bulk SSH scripts could not be loaded: ${String(error)}`;
         setScriptStorageError(message);
         toast.error(message);
-        setSavedScripts(defaultBulkScripts);
+        applyLibrarySnapshot(createEmptyBulkScriptLibrary());
+        setScriptLibraryLoaded(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+  }, [applyLibrarySnapshot, toast]);
 
-  const saveScriptsToStorage = useCallback(
-    async (scripts: SavedBulkScript[]) => {
-      const customScripts = scripts.filter((s) => !s.id.startsWith("default-"));
-      const unsafe = customScripts.find((script) =>
-        containsLikelySecretText(script.script),
-      );
-      if (unsafe) {
-        const message = `Bulk SSH script "${unsafe.name}" appears to contain literal credential material and was not persisted.`;
-        setScriptStorageError(message);
-        toast.error(message);
-        return false;
-      }
-      try {
-        await bulkScriptsStore.save(customScripts);
-        setScriptStorageError(null);
-        return true;
-      } catch (error) {
-        const message = `Bulk SSH scripts could not be saved: ${String(error)}`;
-        setScriptStorageError(message);
-        toast.error(message);
-        return false;
-      }
-    },
-    [toast],
-  );
+  // Keep sibling hook instances in this webview synchronized with durable
+  // mutations performed through AppDataJsonStore.
+  useEffect(() => {
+    if (!scriptLibraryLoaded || typeof window === "undefined") return;
+    let cancelled = false;
+    const refreshLibrary = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key !== bulkScriptsStore.key) return;
+      void bulkScriptsStore
+        .load()
+        .then((result) => {
+          if (!cancelled) {
+            applyLibrarySnapshot(
+              result.value ?? createEmptyBulkScriptLibrary(),
+            );
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          const message = `Bulk SSH scripts could not be refreshed: ${String(error)}`;
+          setScriptStorageError(message);
+          toast.error(message);
+        });
+    };
+    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, refreshLibrary);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, refreshLibrary);
+    };
+  }, [applyLibrarySnapshot, scriptLibraryLoaded, toast]);
 
   // Initialize session outputs when sessions change
   useEffect(() => {
@@ -190,11 +229,43 @@ export function useBulkSSHCommander(isOpen: boolean) {
       });
       return newOutputs;
     });
-    setActiveOutputTab((prev) => {
-      if (!prev && sshSessions.length > 0) return sshSessions[0].id;
-      return prev;
-    });
-  }, [sshSessions]);
+    setSelectedSessionIds(
+      (current) => new Set([...current].filter((id) => liveSessionIds.has(id))),
+    );
+    setPreviewSessionId((prev) =>
+      prev && liveSessionIds.has(prev) ? prev : null,
+    );
+    setPreviewLoadingSessionIds(
+      (current) => new Set([...current].filter((id) => liveSessionIds.has(id))),
+    );
+    setPreviewErrors((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => liveSessionIds.has(id)),
+      ),
+    );
+    for (const sessionId of previewRequestTokensRef.current.keys()) {
+      if (!liveSessionIds.has(sessionId)) {
+        previewRequestTokensRef.current.delete(sessionId);
+      }
+    }
+  }, [liveSessionIds, sshSessions]);
+
+  // The active output tab must always correspond to a selected recipient or
+  // the one explicitly peeked session.
+  useEffect(() => {
+    const outputSessionIds = sshSessions
+      .filter(
+        (session) =>
+          selectedSessionIds.has(session.id) || previewSessionId === session.id,
+      )
+      .map((session) => session.id);
+    const validIds = new Set(outputSessionIds);
+    setActiveOutputTab((current) =>
+      current && validIds.has(current)
+        ? current
+        : (outputSessionIds[0] ?? null),
+    );
+  }, [previewSessionId, selectedSessionIds, sshSessions]);
 
   // Select all sessions by default
   useEffect(() => {
@@ -230,36 +301,152 @@ export function useBulkSSHCommander(isOpen: boolean) {
         s.name.toLowerCase().includes(lower) ||
         s.description.toLowerCase().includes(lower) ||
         s.category.toLowerCase().includes(lower) ||
+        s.type.toLowerCase().includes(lower) ||
+        s.risk.toLowerCase().includes(lower) ||
         s.script.toLowerCase().includes(lower),
     );
   }, [savedScripts, scriptFilter]);
 
-  const selectedCount = selectedSessionIds.size;
+  const filteredTrashedScripts = useMemo(() => {
+    if (!scriptFilter) return trashedScripts;
+    const lower = scriptFilter.toLowerCase();
+    return trashedScripts.filter(
+      (script) =>
+        script.name.toLowerCase().includes(lower) ||
+        script.description.toLowerCase().includes(lower) ||
+        script.category.toLowerCase().includes(lower) ||
+        script.type.toLowerCase().includes(lower) ||
+        script.risk.toLowerCase().includes(lower) ||
+        script.script.toLowerCase().includes(lower),
+    );
+  }, [scriptFilter, trashedScripts]);
+
+  const selectedCount = sshSessions.filter((session) =>
+    selectedSessionIds.has(session.id),
+  ).length;
   const totalCount = sshSessions.length;
+
+  const setCommand = useCallback((value: string) => {
+    setCommandState(value);
+    setLoadedScript((current) => (current?.script === value ? current : null));
+  }, []);
 
   // ─── Session selection ────────────────────────────────────────
 
-  const toggleSessionSelection = useCallback((sessionId: string) => {
-    setSelectedSessionIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(sessionId)) next.delete(sessionId);
-      else next.add(sessionId);
-      return next;
-    });
-  }, []);
+  const toggleSessionSelection = useCallback(
+    (sessionId: string) => {
+      if (!liveSessionIds.has(sessionId)) return;
+      setSelectedSessionIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(sessionId)) next.delete(sessionId);
+        else next.add(sessionId);
+        return next;
+      });
+    },
+    [liveSessionIds],
+  );
 
   const selectAllSessions = useCallback(() => {
-    if (selectedSessionIds.size === sshSessions.length) {
+    if (selectedCount === sshSessions.length) {
       setSelectedSessionIds(new Set());
     } else {
       setSelectedSessionIds(new Set(sshSessions.map((s) => s.id)));
     }
-  }, [sshSessions, selectedSessionIds]);
+  }, [selectedCount, sshSessions]);
+
+  /**
+   * Fetch a one-off, memory-only snapshot of an individual terminal. Peeking
+   * never writes to SSH command history, even when history tracking is on.
+   */
+  const peekSession = useCallback(
+    async (sessionId: string) => {
+      const session = sshSessions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      if (!session) return;
+
+      const requestToken = ++previewRequestCounterRef.current;
+      previewRequestTokensRef.current.set(session.id, requestToken);
+      const requestIsCurrent = () =>
+        previewRequestTokensRef.current.get(session.id) === requestToken &&
+        liveSessionIdsRef.current.has(session.id);
+
+      setPreviewSessionId(session.id);
+      setActiveOutputTab(session.id);
+      setPreviewLoadingSessionIds((current) => {
+        const next = new Set(current);
+        next.add(session.id);
+        return next;
+      });
+      setPreviewErrors((current) => {
+        if (!(session.id in current)) return current;
+        const next = { ...current };
+        delete next[session.id];
+        return next;
+      });
+
+      try {
+        if (!session.backendSessionId) {
+          throw new Error("No backend session ID");
+        }
+        const buffer = await invoke<string>("get_terminal_buffer", {
+          sessionId: session.backendSessionId,
+        });
+        if (!requestIsCurrent()) return;
+        setSessionOutputs((current) => ({
+          ...current,
+          [session.id]: {
+            ...(current[session.id] ?? {
+              sessionId: session.id,
+              sessionName: session.name,
+              status: "idle" as const,
+            }),
+            output: formatBulkTerminalPreview(buffer),
+            error: undefined,
+            previewedAt: new Date(),
+          },
+        }));
+      } catch (error) {
+        if (!requestIsCurrent()) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setPreviewErrors((current) => ({
+          ...current,
+          [session.id]: message,
+        }));
+        setSessionOutputs((current) => ({
+          ...current,
+          [session.id]: {
+            ...(current[session.id] ?? {
+              sessionId: session.id,
+              sessionName: session.name,
+              output: "",
+              status: "idle" as const,
+            }),
+            previewedAt: undefined,
+          },
+        }));
+      } finally {
+        if (previewRequestTokensRef.current.get(session.id) === requestToken) {
+          previewRequestTokensRef.current.delete(session.id);
+          setPreviewLoadingSessionIds((current) => {
+            if (!current.has(session.id)) return current;
+            const next = new Set(current);
+            next.delete(session.id);
+            return next;
+          });
+        }
+      }
+    },
+    [sshSessions],
+  );
 
   // ─── Command execution ────────────────────────────────────────
 
   const executeCommand = useCallback(async () => {
-    if (!command.trim() || selectedSessionIds.size === 0 || isExecuting) return;
+    const selectedSessions = sshSessions.filter((session) =>
+      selectedSessionIds.has(session.id),
+    );
+    if (!command.trim() || selectedSessions.length === 0 || isExecuting) return;
 
     const isTauri =
       typeof window !== "undefined" &&
@@ -269,11 +456,28 @@ export function useBulkSSHCommander(isOpen: boolean) {
       return;
     }
 
+    const normalizedCommand = command.trim();
+    const commandRisk: BulkScriptRisk =
+      loadedScript?.script === normalizedCommand
+        ? loadedScript.risk
+        : isDestructiveBulkScript(normalizedCommand)
+          ? "destructive"
+          : "standard";
+    if (
+      shouldConfirmBulkScriptRun(
+        scriptLibraryConfig.runConfirmation,
+        commandRisk,
+      ) &&
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `${commandRisk === "destructive" ? "This command may make destructive changes." : "Run this command?"}\n\nDispatch to ${selectedSessions.length} selected SSH session${selectedSessions.length === 1 ? "" : "s"}?`,
+      )
+    ) {
+      return;
+    }
+
     setIsExecuting(true);
     const commandId = Date.now().toString();
-    const selectedSessions = sshSessions.filter((s) =>
-      selectedSessionIds.has(s.id),
-    );
 
     const initialOutputs: Record<string, SessionOutput> = {};
     selectedSessions.forEach((session) => {
@@ -288,9 +492,9 @@ export function useBulkSSHCommander(isOpen: boolean) {
 
     const historyItem: CommandHistoryItem = {
       id: commandId,
-      command: command.trim(),
+      command: normalizedCommand,
       timestamp: new Date(),
-      sessionIds: Array.from(selectedSessionIds),
+      sessionIds: selectedSessions.map((session) => session.id),
       results: {},
     };
 
@@ -301,35 +505,39 @@ export function useBulkSSHCommander(isOpen: boolean) {
 
         await invoke("send_ssh_input", {
           sessionId: backendSessionId,
-          data: command.trim() + "\n",
+          data: normalizedCommand + "\n",
         });
 
-        setSessionOutputs((prev) => ({
-          ...prev,
-          [session.id]: {
-            ...prev[session.id],
-            status: "dispatched",
-            output:
-              prev[session.id]?.output +
-              `\n$ ${command.trim()}\nCommand input dispatched; remote completion is not tracked.\n`,
-          },
-        }));
+        if (liveSessionIdsRef.current.has(session.id)) {
+          setSessionOutputs((prev) => ({
+            ...prev,
+            [session.id]: {
+              ...prev[session.id],
+              status: "dispatched",
+              output:
+                prev[session.id]?.output +
+                `\n$ ${normalizedCommand}\nCommand input was dispatched; this path did not capture remote completion evidence.\n`,
+            },
+          }));
+        }
 
         historyItem.results[session.id] = {
           detail:
-            "Command input dispatched; remote completion was not observed.",
+            "Command input was dispatched; no remote completion evidence was captured by this path.",
           status: "pending",
         };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        setSessionOutputs((prev) => ({
-          ...prev,
-          [session.id]: {
-            ...prev[session.id],
-            status: "cancelled",
-            error: errorMsg,
-          },
-        }));
+        if (liveSessionIdsRef.current.has(session.id)) {
+          setSessionOutputs((prev) => ({
+            ...prev,
+            [session.id]: {
+              ...prev[session.id],
+              status: "cancelled",
+              error: errorMsg,
+            },
+          }));
+        }
         historyItem.results[session.id] = {
           detail: "Command input dispatch failed.",
           error: errorMsg,
@@ -339,7 +547,9 @@ export function useBulkSSHCommander(isOpen: boolean) {
     });
 
     await Promise.all(commandPromises);
-    setCommandHistory((prev) => [historyItem, ...prev].slice(0, 50));
+    if (trackHistory) {
+      setCommandHistory((prev) => [historyItem, ...prev].slice(0, 50));
+    }
 
     // Persist to the dedicated SSH command history
     const persistentExecutions: CommandExecution[] = selectedSessions.map(
@@ -359,12 +569,24 @@ export function useBulkSSHCommander(isOpen: boolean) {
         };
       },
     );
-    historyMgr.addEntry(command.trim(), persistentExecutions);
+    if (trackHistory) {
+      historyMgr.addEntry(normalizedCommand, persistentExecutions);
+    }
 
     setIsExecuting(false);
-    setCommand("");
+    setCommandState("");
+    setLoadedScript(null);
     commandInputRef.current?.focus();
-  }, [command, selectedSessionIds, sshSessions, isExecuting, historyMgr]);
+  }, [
+    command,
+    selectedSessionIds,
+    sshSessions,
+    isExecuting,
+    trackHistory,
+    historyMgr,
+    loadedScript,
+    scriptLibraryConfig.runConfirmation,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -389,7 +611,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
         }
       }
     },
-    [executeCommand, command, historyMgr],
+    [executeCommand, command, historyMgr, setCommand],
   );
 
   const sendCancel = useCallback(async () => {
@@ -410,14 +632,16 @@ export function useBulkSSHCommander(isOpen: boolean) {
           sessionId: backendSessionId,
           data: "\x03",
         });
-        setSessionOutputs((prev) => ({
-          ...prev,
-          [session.id]: {
-            ...prev[session.id],
-            output: prev[session.id]?.output + "\n^C\n",
-            status: "idle",
-          },
-        }));
+        if (liveSessionIdsRef.current.has(session.id)) {
+          setSessionOutputs((prev) => ({
+            ...prev,
+            [session.id]: {
+              ...prev[session.id],
+              output: prev[session.id]?.output + "\n^C\n",
+              status: "idle",
+            },
+          }));
+        }
       } catch (error) {
         console.error("Failed to send cancel to session:", session.id, error);
       }
@@ -428,6 +652,10 @@ export function useBulkSSHCommander(isOpen: boolean) {
   }, [sshSessions, selectedSessionIds]);
 
   const clearOutputs = useCallback(() => {
+    previewRequestTokensRef.current.clear();
+    setPreviewLoadingSessionIds(new Set());
+    setPreviewErrors({});
+    setPreviewSessionId(null);
     const clearedOutputs: Record<string, SessionOutput> = {};
     sshSessions.forEach((session) => {
       clearedOutputs[session.id] = {
@@ -440,56 +668,286 @@ export function useBulkSSHCommander(isOpen: boolean) {
     setSessionOutputs(clearedOutputs);
   }, [sshSessions]);
 
-  const loadHistoryCommand = useCallback((historyItem: CommandHistoryItem) => {
-    setCommand(historyItem.command);
-    setShowHistory(false);
-    commandInputRef.current?.focus();
-  }, []);
+  const loadHistoryCommand = useCallback(
+    (historyItem: CommandHistoryItem) => {
+      setCommand(historyItem.command);
+      setShowHistory(false);
+      commandInputRef.current?.focus();
+    },
+    [setCommand],
+  );
 
   // ─── Script library ───────────────────────────────────────────
 
-  const loadScript = useCallback((script: SavedBulkScript) => {
-    setCommand(script.script);
-    setShowScriptLibrary(false);
-    commandInputRef.current?.focus();
-  }, []);
+  const persistAndApplyLibrary = useCallback(
+    async (mutation: BulkScriptLibraryMutation): Promise<boolean> => {
+      if (!scriptLibraryLoaded) {
+        toast.warning(
+          "Bulk SSH scripts are still loading; wait for the library before changing it.",
+        );
+        return false;
+      }
+      try {
+        const saved = await updateBulkScriptLibrary((current) => {
+          const next = mutation(current);
+          const unsafe = [...next.active, ...next.trash].find((script) =>
+            [
+              script.name,
+              script.description,
+              script.category,
+              script.script,
+            ].some(containsLikelySecretText),
+          );
+          if (unsafe) {
+            throw new Error(
+              `Bulk SSH script "${unsafe.name}" appears to contain literal credential material and was not persisted.`,
+            );
+          }
+          return next;
+        });
+        setScriptStorageError(null);
+        applyLibrarySnapshot(saved);
+        return true;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const message = detail.startsWith("Bulk SSH script ")
+          ? detail
+          : `Bulk SSH scripts could not be saved: ${detail}`;
+        setScriptStorageError(message);
+        toast.error(message);
+        return false;
+      }
+    },
+    [applyLibrarySnapshot, scriptLibraryLoaded, toast],
+  );
+
+  const loadScript = useCallback(
+    (script: BulkScript) => {
+      if (
+        script.risk === "destructive" &&
+        scriptLibraryConfig.runConfirmation !== "never" &&
+        typeof window !== "undefined" &&
+        !window.confirm(
+          `Load destructive script "${script.name}" into the command editor? Loading does not run it; execution is confirmed separately.`,
+        )
+      ) {
+        return;
+      }
+      setCommandState(script.script);
+      setLoadedScript(script);
+      setShowScriptLibrary(false);
+      commandInputRef.current?.focus();
+    },
+    [scriptLibraryConfig.runConfirmation],
+  );
 
   const saveCurrentAsScript = useCallback(async () => {
     if (!command.trim() || !newScriptName.trim()) return;
 
-    const newScript: SavedBulkScript = {
-      id: Date.now().toString(),
-      name: newScriptName.trim(),
-      description: newScriptDescription.trim(),
-      script: command.trim(),
-      category: newScriptCategory || "Custom",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    const scriptName = newScriptName.trim();
+    const scriptDescription = newScriptDescription.trim();
+    const scriptCategory = newScriptCategory.trim() || "Custom";
+    const scriptBody = command.trim();
+    const validationError =
+      scriptName.length > MAX_BULK_SCRIPT_NAME_LENGTH
+        ? `Bulk SSH script names cannot exceed ${MAX_BULK_SCRIPT_NAME_LENGTH} characters.`
+        : scriptDescription.length > MAX_BULK_SCRIPT_DESCRIPTION_LENGTH
+          ? `Bulk SSH script descriptions cannot exceed ${MAX_BULK_SCRIPT_DESCRIPTION_LENGTH} characters.`
+          : scriptCategory.length > MAX_BULK_SCRIPT_CATEGORY_LENGTH
+            ? `Bulk SSH script categories cannot exceed ${MAX_BULK_SCRIPT_CATEGORY_LENGTH} characters.`
+            : new TextEncoder().encode(scriptBody).length >
+                MAX_BULK_SCRIPT_BYTES
+              ? `Bulk SSH scripts cannot exceed ${MAX_BULK_SCRIPT_BYTES} UTF-8 bytes.`
+              : null;
+    if (validationError) {
+      setScriptStorageError(validationError);
+      toast.error(validationError);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const newScript: BulkScript = {
+      id: createScriptId(),
+      name: scriptName,
+      description: scriptDescription,
+      script: scriptBody,
+      category: scriptCategory,
+      createdAt: now,
+      updatedAt: now,
+      type: newScriptType || inferBulkScriptType(scriptCategory, scriptBody),
+      risk:
+        newScriptRisk === "destructive" || isDestructiveBulkScript(scriptBody)
+          ? "destructive"
+          : "standard",
     };
 
-    const updated = [...savedScripts, newScript];
-    if (!(await saveScriptsToStorage(updated))) return;
-    setSavedScripts(updated);
+    if (
+      !(await persistAndApplyLibrary((current) => ({
+        ...current,
+        active: [...current.active, newScript],
+      })))
+    ) {
+      return;
+    }
     setNewScriptName("");
     setNewScriptDescription("");
+    setNewScriptCategory("Custom");
+    setNewScriptType("shell");
+    setNewScriptRisk("standard");
     setEditingScript(null);
   }, [
     command,
     newScriptName,
     newScriptDescription,
     newScriptCategory,
-    savedScripts,
-    saveScriptsToStorage,
+    newScriptType,
+    newScriptRisk,
+    persistAndApplyLibrary,
+    toast,
   ]);
 
   const deleteScript = useCallback(
     async (scriptId: string) => {
       if (scriptId.startsWith("default-")) return;
-      const updated = savedScripts.filter((s) => s.id !== scriptId);
-      if (!(await saveScriptsToStorage(updated))) return;
-      setSavedScripts(updated);
+      const script = savedScripts.find(
+        (candidate) => candidate.id === scriptId,
+      );
+      if (!script) return;
+      if (
+        shouldConfirmBulkScriptDelete(
+          scriptLibraryConfig.deleteConfirmation,
+          false,
+        ) &&
+        typeof window !== "undefined" &&
+        !window.confirm(`Move "${script.name}" to Bulk SSH script trash?`)
+      ) {
+        return;
+      }
+      const deletedAt = new Date().toISOString();
+      await persistAndApplyLibrary((current) => {
+        const latest = current.active.find(
+          (candidate) => candidate.id === scriptId,
+        );
+        if (!latest) return current;
+        return {
+          ...current,
+          active: current.active.filter(
+            (candidate) => candidate.id !== scriptId,
+          ),
+          trash: [
+            { ...latest, deletedAt },
+            ...current.trash.filter((candidate) => candidate.id !== scriptId),
+          ],
+        };
+      });
     },
-    [savedScripts, saveScriptsToStorage],
+    [persistAndApplyLibrary, savedScripts, scriptLibraryConfig],
+  );
+
+  const restoreScript = useCallback(
+    async (scriptId: string) => {
+      const script = trashedScripts.find(
+        (candidate) => candidate.id === scriptId,
+      );
+      if (!script) return;
+      if (savedScripts.some((candidate) => candidate.id === scriptId)) {
+        toast.error(
+          `Bulk SSH script "${script.name}" could not be restored because its ID is already active.`,
+        );
+        return;
+      }
+      const restoredAt = new Date().toISOString();
+      await persistAndApplyLibrary((current) => {
+        const latest = current.trash.find(
+          (candidate) => candidate.id === scriptId,
+        );
+        if (
+          !latest ||
+          current.active.some((candidate) => candidate.id === scriptId)
+        ) {
+          return current;
+        }
+        const { deletedAt: _deletedAt, ...activeScript } = latest;
+        return {
+          ...current,
+          active: [
+            ...current.active,
+            { ...activeScript, updatedAt: restoredAt },
+          ],
+          trash: current.trash.filter((candidate) => candidate.id !== scriptId),
+        };
+      });
+    },
+    [persistAndApplyLibrary, savedScripts, toast, trashedScripts],
+  );
+
+  const permanentlyDeleteScript = useCallback(
+    async (scriptId: string) => {
+      const script = trashedScripts.find(
+        (candidate) => candidate.id === scriptId,
+      );
+      if (!script) return;
+      if (
+        shouldConfirmBulkScriptDelete(
+          scriptLibraryConfig.deleteConfirmation,
+          true,
+        ) &&
+        typeof window !== "undefined" &&
+        !window.confirm(
+          `Permanently delete Bulk SSH script "${script.name}"? This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+      await persistAndApplyLibrary((current) => ({
+        ...current,
+        trash: current.trash.filter((candidate) => candidate.id !== scriptId),
+      }));
+    },
+    [persistAndApplyLibrary, scriptLibraryConfig, trashedScripts],
+  );
+
+  const emptyScriptTrash = useCallback(async () => {
+    if (trashedScripts.length === 0) return;
+    if (
+      shouldConfirmBulkScriptDelete(
+        scriptLibraryConfig.deleteConfirmation,
+        true,
+      ) &&
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Permanently delete ${trashedScripts.length} trashed Bulk SSH script${trashedScripts.length === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    const confirmedIds = new Set(trashedScripts.map((script) => script.id));
+    await persistAndApplyLibrary((current) => ({
+      ...current,
+      trash: current.trash.filter((script) => !confirmedIds.has(script.id)),
+    }));
+  }, [persistAndApplyLibrary, scriptLibraryConfig, trashedScripts]);
+
+  const updateScriptLibraryConfig = useCallback(
+    async (updates: Partial<BulkScriptLibraryConfig>) => {
+      await persistAndApplyLibrary((current) => ({
+        ...current,
+        config: { ...current.config, ...updates },
+      }));
+    },
+    [persistAndApplyLibrary],
+  );
+
+  const setScriptRunConfirmation = useCallback(
+    (policy: BulkScriptRunConfirmation) =>
+      updateScriptLibraryConfig({ runConfirmation: policy }),
+    [updateScriptLibraryConfig],
+  );
+
+  const setScriptDeleteConfirmation = useCallback(
+    (policy: BulkScriptDeleteConfirmation) =>
+      updateScriptLibraryConfig({ deleteConfirmation: policy }),
+    [updateScriptLibraryConfig],
   );
 
   // ─── Panel toggles ───────────────────────────────────────────
@@ -513,6 +971,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
     sessionOutputs,
     toggleSessionSelection,
     selectAllSessions,
+    peekSession,
 
     // Command
     command,
@@ -520,6 +979,8 @@ export function useBulkSSHCommander(isOpen: boolean) {
     commandInputRef,
     commandHistory,
     isExecuting,
+    trackHistory,
+    setTrackHistory,
     executeCommand,
     handleKeyDown,
     sendCancel,
@@ -531,6 +992,9 @@ export function useBulkSSHCommander(isOpen: boolean) {
     setViewMode,
     activeOutputTab,
     setActiveOutputTab,
+    previewSessionId,
+    previewLoadingSessionIds,
+    previewErrors,
 
     // Panels
     showHistory,
@@ -540,6 +1004,12 @@ export function useBulkSSHCommander(isOpen: boolean) {
 
     // Scripts
     savedScripts,
+    trashedScripts,
+    scriptLibraryConfig,
+    scriptLibraryLoaded,
+    scriptLibrarySection,
+    setScriptLibrarySection,
+    loadedScript,
     editingScript,
     setEditingScript,
     newScriptName,
@@ -548,14 +1018,25 @@ export function useBulkSSHCommander(isOpen: boolean) {
     setNewScriptDescription,
     newScriptCategory,
     setNewScriptCategory,
+    newScriptType,
+    setNewScriptType,
+    newScriptRisk,
+    setNewScriptRisk,
+    scriptTypeOptions: BULK_SCRIPT_TYPE_OPTIONS,
     scriptFilter,
     scriptStorageError,
     setScriptFilter,
     categories,
     filteredScripts,
+    filteredTrashedScripts,
     loadScript,
     saveCurrentAsScript,
     deleteScript,
+    restoreScript,
+    permanentlyDeleteScript,
+    emptyScriptTrash,
+    setScriptRunConfirmation,
+    setScriptDeleteConfirmation,
 
     // Persistent command history manager
     historyMgr,
