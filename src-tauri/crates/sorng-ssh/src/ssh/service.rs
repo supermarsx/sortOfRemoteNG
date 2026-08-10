@@ -20,9 +20,13 @@ use uuid::Uuid;
 
 use super::automation::process_automation_output;
 use super::highlighting::process_highlight_output;
+use super::output_state::{
+    append_terminal_output, cleanup_session_output_state, ensure_terminal_buffer,
+    StreamingUtf8Decoder,
+};
 use super::recording::{record_input, record_output, record_resize};
 use super::types::*;
-use super::{MAX_BUFFER_SIZE, PENDING_HOST_KEY_PROMPTS, TERMINAL_BUFFERS};
+use super::PENDING_HOST_KEY_PROMPTS;
 
 /// Bounded capacity, in 32 KiB relay chunks, for each direction of an SSH
 /// port-forward / tunnel byte relay. 32 * 32 KiB = 1 MiB in flight per direction
@@ -605,6 +609,34 @@ fn shell_closed_event(
         recoverable: reason != SshShellCloseReason::Requested,
         message,
     }
+}
+
+fn publish_shell_output(session_id: &str, raw_output: &str, emitter: &DynEventEmitter) {
+    if raw_output.is_empty() {
+        return;
+    }
+
+    // Recording and automation consume the unhighlighted terminal text.
+    record_output(session_id, raw_output);
+    process_automation_output(session_id, raw_output);
+
+    // Replay and renderer delivery use the same highlighted UTF-8 stream, so
+    // their sequence offsets describe the exact bytes the renderer receives.
+    let output = process_highlight_output(session_id, raw_output);
+    let replay = append_terminal_output(session_id, &output).ok();
+    let payload = SshShellOutput {
+        session_id: session_id.to_string(),
+        data: output,
+        generation: replay.map(|metadata| metadata.generation),
+        sequence_start: replay.map(|metadata| metadata.sequence_start),
+        sequence_end: replay.map(|metadata| metadata.sequence_end),
+        retained_start: replay.map(|metadata| metadata.retained_start),
+        dropped_bytes: replay.map(|metadata| metadata.dropped_bytes),
+    };
+    let _ = emitter.emit_event(
+        "ssh-output",
+        serde_json::to_value(&payload).unwrap_or_default(),
+    );
 }
 
 #[derive(Debug)]
@@ -3161,6 +3193,9 @@ impl SshService {
             .get_mut(session_id)
             .ok_or("Session not found")?;
 
+        // Allocate the generation before the actor starts so an immediate
+        // snapshot (before first output) has stable replay identity.
+        ensure_terminal_buffer(session_id)?;
         let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
         let shell_id = Uuid::new_v4().to_string();
         let session_id_owned = session_id.to_string();
@@ -3170,6 +3205,7 @@ impl SshService {
 
         let thread = std::thread::spawn(move || {
             let mut buffer = [0u8; 16384];
+            let mut decoder = StreamingUtf8Decoder::new();
             let mut running = true;
             let mut close_reason = SshShellCloseReason::RemoteEof;
             let mut close_message: Option<String> = None;
@@ -3275,35 +3311,9 @@ impl SshService {
 
                 match channel.read(&mut buffer) {
                     Ok(bytes) if bytes > 0 => {
-                        let raw_output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
                         idle_count = 0;
-
-                        // Record and automate against the raw (unhighlighted) output
-                        record_output(&session_id_owned, &raw_output);
-                        process_automation_output(&session_id_owned, &raw_output);
-
-                        // Apply regex-based syntax highlighting (injects ANSI SGR codes)
-                        let output = process_highlight_output(&session_id_owned, &raw_output);
-
-                        if let Ok(mut buffers) = TERMINAL_BUFFERS.lock() {
-                            let session_buffer = buffers
-                                .entry(session_id_owned.clone())
-                                .or_insert_with(String::new);
-                            session_buffer.push_str(&output);
-                            if session_buffer.len() > MAX_BUFFER_SIZE {
-                                let excess = session_buffer.len() - MAX_BUFFER_SIZE;
-                                *session_buffer = session_buffer[excess..].to_string();
-                            }
-                        }
-
-                        let payload = SshShellOutput {
-                            session_id: session_id_owned.clone(),
-                            data: output,
-                        };
-                        let _ = emitter.emit_event(
-                            "ssh-output",
-                            serde_json::to_value(&payload).unwrap_or_default(),
-                        );
+                        let raw_output = decoder.push(&buffer[..bytes]);
+                        publish_shell_output(&session_id_owned, &raw_output, &emitter);
                     }
                     Ok(_) => {
                         idle_count = idle_count.saturating_add(1);
@@ -3340,6 +3350,12 @@ impl SshService {
                 };
                 std::thread::sleep(Duration::from_millis(sleep_ms));
             }
+
+            // Preserve an incomplete UTF-8 suffix at transport EOF instead of
+            // silently losing it. Truly incomplete bytes use the documented
+            // replacement policy exactly once.
+            let final_output = decoder.finish();
+            publish_shell_output(&session_id_owned, &final_output, &emitter);
 
             let payload = shell_closed_event(session_id_owned, close_reason, close_message);
             let _ = emitter.emit_event(
@@ -4239,6 +4255,7 @@ impl SshService {
 
     pub async fn disconnect_ssh(&mut self, session_id: &str) -> Result<(), String> {
         if self.cancel_pending_connection(session_id)? {
+            cleanup_session_output_state(session_id)?;
             return Ok(());
         }
 
@@ -4276,6 +4293,11 @@ impl SshService {
                 let _ = handle.join();
             }
         }
+        // Replay history and active recording state share one registry mutex,
+        // so observers cannot see only half of the disconnect cleanup. A
+        // recording explicitly configured with `finalize` moves into the
+        // bounded completed cache; the default policy discards it.
+        cleanup_session_output_state(session_id)?;
         Ok(())
     }
 
@@ -5243,6 +5265,10 @@ impl SshService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ssh::output_state::{
+        is_recording_active, record_output_entry, start_recording_state, stop_recording_state,
+        terminal_buffer_snapshot, terminal_buffer_text,
+    };
     use crate::ssh::types::ScriptExecutionResult;
     use serde_json::json;
 
@@ -5379,6 +5405,87 @@ mod tests {
             "keyboard_interactive_responses": []
         }))
         .expect("valid SSH test config")
+    }
+
+    async fn connect_fake_service_session(state: &SshServiceState) -> String {
+        connect_ssh_on_state_with(
+            state,
+            tcp_test_config(),
+            |_connector, session_id, config| async move {
+                let session = ssh2::Session::new()
+                    .map_err(|error| format!("failed to create test SSH session: {error}"))?;
+                Ok(EstablishedSshConnection {
+                    session_id: session_id.clone(),
+                    session: Some(SshSession {
+                        id: session_id,
+                        session,
+                        config,
+                        connected_at: Utc::now(),
+                        last_activity: Utc::now(),
+                        port_forwards: HashMap::new(),
+                        keep_alive_handle: None,
+                        intermediate_sessions: Vec::new(),
+                        bridge_handles: Vec::new(),
+                        compression_stats: SshCompressionStats::default(),
+                    }),
+                })
+            },
+        )
+        .await
+        .expect("fake SSH session should be adopted")
+    }
+
+    #[tokio::test]
+    async fn disconnect_and_reconnect_clean_real_output_and_recording_lifecycle() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let first_session_id = connect_fake_service_session(&state).await;
+        let first_generation = ensure_terminal_buffer(&first_session_id).unwrap();
+        append_terminal_output(&first_session_id, "first output").unwrap();
+        start_recording_state(
+            &first_session_id,
+            "127.0.0.1".into(),
+            "tester".into(),
+            80,
+            24,
+            false,
+            RecordingLimits::default(),
+            RecordingClosePolicy::Discard,
+        )
+        .unwrap();
+        record_output_entry(&first_session_id, "first output");
+        assert!(is_recording_active(&first_session_id).unwrap());
+
+        state
+            .lock()
+            .await
+            .disconnect_ssh(&first_session_id)
+            .await
+            .expect("real disconnect path should clean the first session");
+        assert_eq!(terminal_buffer_text(&first_session_id).unwrap(), "");
+        let disconnected =
+            terminal_buffer_snapshot(&first_session_id, Some(first_generation), Some(0)).unwrap();
+        assert!(disconnected.gap);
+        assert!(disconnected.generation_changed);
+        assert!(!is_recording_active(&first_session_id).unwrap());
+        assert!(stop_recording_state(&first_session_id).is_err());
+
+        let second_session_id = connect_fake_service_session(&state).await;
+        assert_ne!(second_session_id, first_session_id);
+        assert_eq!(terminal_buffer_text(&second_session_id).unwrap(), "");
+        let second_generation = ensure_terminal_buffer(&second_session_id).unwrap();
+        assert_ne!(second_generation, first_generation);
+        let reconnected =
+            terminal_buffer_snapshot(&second_session_id, Some(second_generation), Some(0)).unwrap();
+        assert_eq!(reconnected.data, "");
+        assert!(!reconnected.gap);
+        assert!(!reconnected.generation_changed);
+
+        state
+            .lock()
+            .await
+            .disconnect_ssh(&second_session_id)
+            .await
+            .expect("second fake session should cleanly disconnect");
     }
 
     #[test]

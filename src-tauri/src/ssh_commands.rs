@@ -7,7 +7,6 @@
 
 mod types {
     pub use crate::ssh::types::*;
-    pub use crate::ssh::TERMINAL_BUFFERS;
 
     /// Information about an SSH key file.
     /// (Mirrored from commands.rs which is not compiled as a crate module.)
@@ -24,10 +23,13 @@ mod types {
 mod service {
     pub use crate::ssh::service::*;
 }
+mod output_state {
+    pub use crate::ssh::output_state::*;
+}
 mod automation {
 
     pub use crate::ssh::types::*;
-    pub use crate::ssh::{ACTIVE_AUTOMATIONS, TERMINAL_BUFFERS};
+    pub use crate::ssh::ACTIVE_AUTOMATIONS;
     pub use chrono::Utc;
     pub use regex::Regex;
     pub use std::time::Duration;
@@ -50,9 +52,8 @@ mod proxy_command {
 }
 mod recording {
 
+    pub use crate::ssh::output_state::*;
     pub use crate::ssh::types::*;
-    pub use crate::ssh::ACTIVE_RECORDINGS;
-    pub use chrono::Utc;
 }
 mod tunnels {
 

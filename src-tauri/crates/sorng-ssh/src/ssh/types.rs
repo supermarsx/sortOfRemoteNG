@@ -593,6 +593,22 @@ impl std::fmt::Debug for SshShellCommand {
 pub struct SshShellOutput {
     pub session_id: String,
     pub data: String,
+    /// Monotonic replay-buffer generation. Optional so legacy producers and
+    /// consumers that only understand `session_id` + `data` stay compatible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
+    /// Inclusive UTF-8 byte offset of `data` in this generation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence_start: Option<u64>,
+    /// Exclusive UTF-8 byte offset of `data` in this generation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence_end: Option<u64>,
+    /// Earliest byte offset still available from the bounded replay buffer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retained_start: Option<u64>,
+    /// Cumulative bytes evicted from this generation's replay buffer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dropped_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -735,6 +751,26 @@ pub struct SessionRecordingMetadata {
     pub rows: u32,
     pub duration_ms: u64,
     pub entry_count: usize,
+    /// UTF-8 payload bytes retained in `entries`.
+    #[serde(default)]
+    pub captured_bytes: u64,
+    /// Conservative in-memory estimate for metadata and every retained entry,
+    /// including zero-payload resize events and vector allocation headroom.
+    #[serde(default)]
+    pub estimated_bytes: u64,
+    /// Entries rejected after a configured byte/entry/duration limit.
+    #[serde(default)]
+    pub dropped_entries: u64,
+    /// Payload bytes rejected after a configured limit.
+    #[serde(default)]
+    pub dropped_bytes: u64,
+    /// True when one or more entries were rejected by a recording limit.
+    #[serde(default)]
+    pub truncated: bool,
+    /// Why the recording left the active map. Older serialized recordings omit
+    /// this field and deserialize as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_reason: Option<RecordingCloseReason>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -753,6 +789,39 @@ pub struct RecordingState {
     pub rows: u32,
     pub entries: Vec<SessionRecordingEntry>,
     pub record_input: bool,
+    pub captured_bytes: u64,
+    pub estimated_bytes: u64,
+    pub dropped_entries: u64,
+    pub dropped_bytes: u64,
+    pub limit_reached: bool,
+    pub limits: RecordingLimits,
+    pub close_policy: RecordingClosePolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingClosePolicy {
+    /// Drop the in-memory recording when its SSH session closes.
+    #[default]
+    Discard,
+    /// Finalize it into the bounded completed-recording cache so the existing
+    /// stop command can retrieve it after disconnect.
+    Finalize,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingCloseReason {
+    Manual,
+    Disconnect,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingLimits {
+    pub max_bytes: u64,
+    pub max_entries: usize,
+    pub max_duration_ms: u64,
 }
 
 // ===============================

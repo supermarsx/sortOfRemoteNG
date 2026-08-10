@@ -8,32 +8,25 @@ pub async fn start_session_recording(
     record_input: Option<bool>,
     initial_cols: Option<u32>,
     initial_rows: Option<u32>,
+    max_bytes: Option<u64>,
+    max_entries: Option<usize>,
+    max_duration_ms: Option<u64>,
+    close_policy: Option<RecordingClosePolicy>,
 ) -> Result<(), String> {
     let ssh = state.lock().await;
 
     let session = ssh.sessions.get(&session_id).ok_or("Session not found")?;
-
-    let mut recordings = ACTIVE_RECORDINGS
-        .lock()
-        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
-
-    if recordings.contains_key(&session_id) {
-        return Err("Recording already active for this session".to_string());
-    }
-
-    recordings.insert(
-        session_id.clone(),
-        RecordingState {
-            start_time: std::time::Instant::now(),
-            start_utc: Utc::now(),
-            host: session.config.host.clone(),
-            username: session.config.username.clone(),
-            cols: initial_cols.unwrap_or(80),
-            rows: initial_rows.unwrap_or(24),
-            entries: Vec::new(),
-            record_input: record_input.unwrap_or(false),
-        },
-    );
+    let limits = RecordingLimits::from_options(max_bytes, max_entries, max_duration_ms)?;
+    start_recording_state(
+        &session_id,
+        session.config.host.clone(),
+        session.config.username.clone(),
+        initial_cols.unwrap_or(80),
+        initial_rows.unwrap_or(24),
+        record_input.unwrap_or(false),
+        limits,
+        close_policy.unwrap_or_default(),
+    )?;
 
     log::info!("Started recording SSH session: {}", session_id);
     Ok(())
@@ -42,30 +35,8 @@ pub async fn start_session_recording(
 /// Stop recording and return the recording data
 #[tauri::command]
 pub fn stop_session_recording(session_id: String) -> Result<SessionRecording, String> {
-    let mut recordings = ACTIVE_RECORDINGS
-        .lock()
-        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
-
-    let state = recordings
-        .remove(&session_id)
-        .ok_or("No active recording for this session")?;
-
-    let duration_ms = state.start_time.elapsed().as_millis() as u64;
-
-    let recording = SessionRecording {
-        metadata: SessionRecordingMetadata {
-            session_id: session_id.clone(),
-            start_time: state.start_utc,
-            end_time: Some(Utc::now()),
-            host: state.host,
-            username: state.username,
-            cols: state.cols,
-            rows: state.rows,
-            duration_ms,
-            entry_count: state.entries.len(),
-        },
-        entries: state.entries,
-    };
+    let recording = stop_recording_state(&session_id)?;
+    let duration_ms = recording.metadata.duration_ms;
 
     log::info!(
         "Stopped recording SSH session: {} ({} entries, {}ms)",
@@ -80,10 +51,7 @@ pub fn stop_session_recording(session_id: String) -> Result<SessionRecording, St
 /// Check if a session is being recorded
 #[tauri::command]
 pub fn is_session_recording(session_id: String) -> Result<bool, String> {
-    let recordings = ACTIVE_RECORDINGS
-        .lock()
-        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
-    Ok(recordings.contains_key(&session_id))
+    is_recording_active(&session_id)
 }
 
 /// Get recording status for a session
@@ -91,26 +59,7 @@ pub fn is_session_recording(session_id: String) -> Result<bool, String> {
 pub fn get_recording_status(
     session_id: String,
 ) -> Result<Option<SessionRecordingMetadata>, String> {
-    let recordings = ACTIVE_RECORDINGS
-        .lock()
-        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
-
-    if let Some(state) = recordings.get(&session_id) {
-        let duration_ms = state.start_time.elapsed().as_millis() as u64;
-        Ok(Some(SessionRecordingMetadata {
-            session_id: session_id.clone(),
-            start_time: state.start_utc,
-            end_time: None,
-            host: state.host.clone(),
-            username: state.username.clone(),
-            cols: state.cols,
-            rows: state.rows,
-            duration_ms,
-            entry_count: state.entries.len(),
-        }))
-    } else {
-        Ok(None)
-    }
+    recording_status(&session_id)
 }
 
 /// Export recording to asciicast v2 format (compatible with asciinema)
@@ -186,8 +135,5 @@ pub fn export_recording_script(recording: SessionRecording) -> Result<String, St
 /// List all active recordings
 #[tauri::command]
 pub fn list_active_recordings() -> Result<Vec<String>, String> {
-    let recordings = ACTIVE_RECORDINGS
-        .lock()
-        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
-    Ok(recordings.keys().cloned().collect())
+    active_recording_ids()
 }

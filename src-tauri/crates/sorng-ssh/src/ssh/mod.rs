@@ -7,6 +7,7 @@ pub mod diagnostics;
 pub mod fido2;
 pub mod highlighting;
 pub mod integration;
+pub mod output_state;
 pub mod proxy_command;
 pub mod recording;
 pub mod service;
@@ -17,16 +18,6 @@ pub mod x11;
 
 // Maximum buffer size in bytes (1MB)
 pub const MAX_BUFFER_SIZE: usize = 1024 * 1024;
-
-// Global terminal buffer storage
-lazy_static::lazy_static! {
-    pub static ref TERMINAL_BUFFERS: StdMutex<HashMap<String, String>> = StdMutex::new(HashMap::new());
-}
-
-// Global storage for active recordings
-lazy_static::lazy_static! {
-    pub static ref ACTIVE_RECORDINGS: StdMutex<HashMap<String, types::RecordingState>> = StdMutex::new(HashMap::new());
-}
 
 // Global storage for active automations
 lazy_static::lazy_static! {

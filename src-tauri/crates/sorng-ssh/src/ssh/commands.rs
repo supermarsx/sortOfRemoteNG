@@ -1,5 +1,4 @@
 use super::types::*;
-use super::TERMINAL_BUFFERS;
 
 // ===============================
 // Core SSH Tauri Commands

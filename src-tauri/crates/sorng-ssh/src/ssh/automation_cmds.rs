@@ -1,4 +1,5 @@
 use super::automation::*;
+use super::output_state::terminal_buffer_text;
 
 /// Start automation on a session - patterns will be matched against terminal output
 #[tauri::command]
@@ -157,15 +158,13 @@ pub async fn expect_and_send(
             return Err("Timeout waiting for expected pattern".to_string());
         }
 
-        if let Ok(buffers) = TERMINAL_BUFFERS.lock() {
-            if let Some(buffer) = buffers.get(&session_id) {
-                if let Some(captures) = pattern.captures(buffer) {
-                    let matched_text = captures
-                        .get(0)
-                        .map(|m| m.as_str().to_string())
-                        .unwrap_or_default();
-                    return Ok(matched_text);
-                }
+        if let Ok(buffer) = terminal_buffer_text(&session_id) {
+            if let Some(captures) = pattern.captures(&buffer) {
+                let matched_text = captures
+                    .get(0)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+                return Ok(matched_text);
             }
         }
 
@@ -201,12 +200,8 @@ pub async fn execute_command_sequence(
 
         tokio::time::sleep(delay).await;
 
-        if let Ok(buffers) = TERMINAL_BUFFERS.lock() {
-            if let Some(buffer) = buffers.get(&session_id) {
-                results.push(buffer.clone());
-            } else {
-                results.push(String::new());
-            }
+        if let Ok(buffer) = terminal_buffer_text(&session_id) {
+            results.push(buffer);
         }
     }
 

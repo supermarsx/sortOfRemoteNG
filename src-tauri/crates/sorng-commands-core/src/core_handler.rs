@@ -476,6 +476,7 @@ pub fn is_command(command: &str) -> bool {
             | "detect_sk_key_type"
             | "validate_ssh_key_file_extended"
             | "get_terminal_buffer"
+            | "get_terminal_buffer_snapshot"
             | "clear_terminal_buffer"
             | "is_session_alive"
             | "get_shell_info"
@@ -1872,6 +1873,7 @@ define_command_group!(
         ssh_commands::detect_sk_key_type,
         ssh_commands::validate_ssh_key_file_extended,
         ssh_commands::get_terminal_buffer,
+        ssh_commands::get_terminal_buffer_snapshot,
         ssh_commands::clear_terminal_buffer,
         ssh_commands::is_session_alive,
         ssh_commands::get_shell_info,
@@ -3098,6 +3100,23 @@ mod tests {
                     "{command} missing from generate_handler"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn ssh_terminal_replay_commands_preserve_legacy_and_register_snapshot() {
+        let source = include_str!("core_handler.rs");
+        for command in [
+            "get_terminal_buffer",
+            "clear_terminal_buffer",
+            "get_terminal_buffer_snapshot",
+        ] {
+            assert!(is_command(command), "{command} missing from is_command");
+            let registration = format!("ssh_commands::{command},");
+            assert!(
+                source.contains(&registration),
+                "{command} missing from generate_handler"
+            );
         }
     }
 

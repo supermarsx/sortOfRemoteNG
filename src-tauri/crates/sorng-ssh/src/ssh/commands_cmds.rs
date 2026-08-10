@@ -1,3 +1,4 @@
+use super::output_state::*;
 use super::types::*;
 
 fn redact_result<T>(result: Result<T, String>) -> Result<T, String> {
@@ -246,19 +247,24 @@ pub async fn generate_ssh_key(
 /// Get the terminal buffer for a session
 #[tauri::command]
 pub fn get_terminal_buffer(session_id: String) -> Result<String, String> {
-    let buffers = TERMINAL_BUFFERS
-        .lock()
-        .map_err(|e| format!("Failed to lock buffer: {}", e))?;
-    Ok(buffers.get(&session_id).cloned().unwrap_or_default())
+    terminal_buffer_text(&session_id)
+}
+
+/// Get a sequence-aware bounded terminal replay snapshot. The legacy plain
+/// string command above remains available for older renderers.
+#[tauri::command]
+pub fn get_terminal_buffer_snapshot(
+    session_id: String,
+    generation: Option<u64>,
+    after_sequence: Option<u64>,
+) -> Result<TerminalBufferSnapshot, String> {
+    terminal_buffer_snapshot(&session_id, generation, after_sequence)
 }
 
 /// Clear the terminal buffer for a session
 #[tauri::command]
 pub fn clear_terminal_buffer(session_id: String) -> Result<(), String> {
-    let mut buffers = TERMINAL_BUFFERS
-        .lock()
-        .map_err(|e| format!("Failed to lock buffer: {}", e))?;
-    buffers.remove(&session_id);
+    clear_terminal_buffer_state(&session_id)?;
     Ok(())
 }
 
