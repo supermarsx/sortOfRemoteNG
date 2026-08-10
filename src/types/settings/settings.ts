@@ -251,7 +251,7 @@ export interface GlobalSettings {
   copyOnSelect: boolean;
   /** Paste clipboard on right-click in terminal */
   pasteOnRightClick: boolean;
-  /** Clear clipboard N seconds after a password paste (0 = off) */
+  /** Clear clipboard N seconds after a terminal paste (0 = off) */
   clearClipboardAfterSeconds: number;
   /** Trim whitespace from pasted text */
   trimPastedWhitespace: boolean;

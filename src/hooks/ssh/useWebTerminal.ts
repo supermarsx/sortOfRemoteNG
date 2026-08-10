@@ -285,6 +285,9 @@ export function useWebTerminal(
   const isDisposed = useRef(false);
   const disconnectIntentRef = useRef<SshDisconnectIntent>("none");
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clipboardClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const sshAttemptWatchdogTimersRef = useRef(
     new Set<ReturnType<typeof setTimeout>>(),
   );
@@ -398,6 +401,8 @@ export function useWebTerminal(
   incomingCleanupQuarantineRef.current = session.vpnLeaseCleanupQuarantine;
   const connectionRef = useRef(connection);
   const settingsRef = useRef(settings);
+  const sshTerminalConfigRef = useRef(sshTerminalConfig);
+  sshTerminalConfigRef.current = sshTerminalConfig;
   const connectionsRef = useRef(state.connections);
   connectionsRef.current = state.connections;
   const isSsh = session.protocol === "ssh";
@@ -2291,14 +2296,14 @@ export function useWebTerminal(
 
   const handleInput = useCallback(
     async (data: string) => {
-      if (!termRef.current || isDisposed.current) return;
+      if (!termRef.current || isDisposed.current) return false;
       if (isSsh) {
         if (
           !sshSessionId.current ||
           !isSshReady.current ||
           isConnecting.current
         )
-          return;
+          return false;
         const currentMacroRecorder = macroRecorderRef.current;
         if (currentMacroRecorder.isRecording) {
           currentMacroRecorder.recordInput(data);
@@ -2308,15 +2313,147 @@ export function useWebTerminal(
             sessionId: sshSessionId.current,
             data,
           });
+          return true;
         } catch (err) {
           console.error("Failed to send SSH input:", err);
+          return false;
         }
-        return;
       }
       safeWrite(data);
+      return true;
     },
     [isSsh, safeWrite],
   );
+
+  const cancelClipboardClearTimer = useCallback(() => {
+    if (clipboardClearTimerRef.current === null) return;
+    clearTimeout(clipboardClearTimerRef.current);
+    clipboardClearTimerRef.current = null;
+  }, []);
+
+  const reportClipboardFailure = useCallback(
+    (operation: "read" | "clear" | "confirm", error: unknown) => {
+      const message =
+        operation === "read"
+          ? "Failed to read from the clipboard"
+          : operation === "clear"
+            ? "Failed to clear the clipboard"
+            : "Failed to confirm the terminal paste";
+      console.error(`${message}:`, error);
+      toast.error(message, 3000);
+    },
+    [toast],
+  );
+
+  const scheduleClipboardClear = useCallback(
+    (delaySeconds: number, sourceClipboardText: string) => {
+      cancelClipboardClearTimer();
+      if (!Number.isFinite(delaySeconds) || delaySeconds <= 0) return;
+
+      clipboardClearTimerRef.current = setTimeout(() => {
+        clipboardClearTimerRef.current = null;
+        void (async () => {
+          try {
+            if (
+              !navigator.clipboard?.readText ||
+              !navigator.clipboard?.writeText
+            ) {
+              throw new Error("Clipboard read/write access is unavailable");
+            }
+            const currentClipboardText = await navigator.clipboard.readText();
+            if (currentClipboardText !== sourceClipboardText) return;
+            await navigator.clipboard.writeText("");
+          } catch (error) {
+            reportClipboardFailure("clear", error);
+          }
+        })();
+      }, delaySeconds * 1000);
+    },
+    [cancelClipboardClearTimer, reportClipboardFailure],
+  );
+
+  /**
+   * The single policy boundary for all clipboard-originated terminal input.
+   * Ordinary xterm onData input intentionally bypasses this callback.
+   */
+  const pasteTerminalText = useCallback(
+    async (clipboardText: string): Promise<boolean> => {
+      if (isDisposed.current) return false;
+
+      const currentSettings = settingsRef.current;
+      const text = currentSettings.trimPastedWhitespace
+        ? clipboardText.trim()
+        : clipboardText;
+      if (!text) return false;
+
+      const maxPasteLength = Number.isFinite(
+        currentSettings.maxPasteLengthChars,
+      )
+        ? Math.max(0, currentSettings.maxPasteLengthChars ?? 0)
+        : 0;
+      const warnings: string[] = [];
+      if (
+        (currentSettings.warnOnMultiLinePaste ?? true) &&
+        /[\r\n]/.test(text)
+      ) {
+        warnings.push("contains multiple lines");
+      }
+      if (maxPasteLength > 0 && text.length > maxPasteLength) {
+        warnings.push(
+          `contains ${text.length.toLocaleString()} characters (configured threshold: ${maxPasteLength.toLocaleString()})`,
+        );
+      }
+
+      if (warnings.length > 0) {
+        let confirmed = false;
+        try {
+          confirmed = window.confirm(
+            `This terminal paste ${warnings.join(" and ")}. It may execute commands immediately. Continue?`,
+          );
+        } catch (error) {
+          reportClipboardFailure("confirm", error);
+          return false;
+        }
+        if (!confirmed) return false;
+      }
+
+      try {
+        const sent = await handleInput(text);
+        if (!sent) return false;
+        scheduleClipboardClear(
+          currentSettings.clearClipboardAfterSeconds ?? 0,
+          clipboardText,
+        );
+        return true;
+      } catch (error) {
+        console.error("Failed to paste into the terminal:", error);
+        toast.error("Failed to paste into the terminal", 3000);
+        return false;
+      }
+    },
+    [handleInput, reportClipboardFailure, scheduleClipboardClear, toast],
+  );
+
+  const pasteFromClipboard = useCallback(async (): Promise<boolean> => {
+    try {
+      if (!navigator.clipboard?.readText) {
+        throw new Error("Clipboard read access is unavailable");
+      }
+      const text = await navigator.clipboard.readText();
+      return await pasteTerminalText(text);
+    } catch (error) {
+      reportClipboardFailure("read", error);
+      return false;
+    }
+  }, [pasteTerminalText, reportClipboardFailure]);
+
+  useEffect(() => {
+    if ((settings.clearClipboardAfterSeconds ?? 0) <= 0) {
+      cancelClipboardClearTimer();
+    }
+  }, [cancelClipboardClearTimer, settings.clearClipboardAfterSeconds]);
+
+  useEffect(() => cancelClipboardClearTimer, [cancelClipboardClearTimer]);
 
   /* ── Run script ── */
 
@@ -2676,6 +2813,32 @@ export function useWebTerminal(
     resizeObserver?.observe(container);
 
     const dataDisposable = term.onData(handleInput);
+    const handleTerminalPaste = (event: ClipboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const clipboardText = event.clipboardData?.getData("text/plain");
+      if (clipboardText !== undefined) {
+        void pasteTerminalText(clipboardText);
+        return;
+      }
+      void pasteFromClipboard();
+    };
+    const handleTerminalContextMenu = (event: MouseEvent) => {
+      // SSH has a protocol-specific setting (including per-connection
+      // overrides); other sessions using this hook retain the global behavior
+      // toggle. This keeps the two persisted controls' scopes explicit.
+      const pasteOnRightClick = isSsh
+        ? (sshTerminalConfigRef.current?.pasteOnRightClick ?? true)
+        : (settingsRef.current.pasteOnRightClick ?? true);
+      if (!pasteOnRightClick) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      void pasteFromClipboard();
+    };
+    container.addEventListener("paste", handleTerminalPaste, true);
+    container.addEventListener("contextmenu", handleTerminalContextMenu, true);
 
     let cancelled = false;
     let outputBuffer: string[] = [];
@@ -2919,6 +3082,12 @@ export function useWebTerminal(
       if (bellResetTimer) clearTimeout(bellResetTimer);
       if (bellSilenceTimer) clearTimeout(bellSilenceTimer);
       window.removeEventListener("resize", scheduleFit);
+      container.removeEventListener("paste", handleTerminalPaste, true);
+      container.removeEventListener(
+        "contextmenu",
+        handleTerminalContextMenu,
+        true,
+      );
       resizeObserver?.disconnect();
       dataDisposable.dispose();
       outputUnlistenRef.current?.();
@@ -2947,6 +3116,8 @@ export function useWebTerminal(
     initSsh,
     isSsh,
     onResize,
+    pasteFromClipboard,
+    pasteTerminalText,
     disconnectCurrentSsh,
     session.id,
     safeWrite,
@@ -3044,15 +3215,6 @@ export function useWebTerminal(
       .then(() => toast.success("Copied to clipboard", 2000))
       .catch(() => toast.error("Failed to copy to clipboard", 2000));
   }, [toast]);
-
-  const pasteFromClipboard = useCallback(async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      await handleInput(text);
-    } catch (err) {
-      console.error("Failed to paste from clipboard:", err);
-    }
-  }, [handleInput]);
 
   const sendCancel = useCallback(async () => {
     if (!isSsh || !sshSessionId.current || !isSshReady.current) return;

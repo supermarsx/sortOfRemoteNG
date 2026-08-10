@@ -329,8 +329,8 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   {
     key: "clearClipboardAfterSeconds",
     label: "Clear Clipboard Timer",
-    description: "Auto-clear clipboard after paste",
-    tags: ["clipboard", "clear", "security", "password", "timeout"],
+    description: "Auto-clear clipboard after a terminal paste",
+    tags: ["clipboard", "clear", "security", "terminal", "timeout"],
     section: "behavior",
     sectionLabel: "Behavior",
   },

@@ -1,7 +1,12 @@
 import type { SectionProps } from "./types";
 import React from "react";
 import { Clipboard, ShieldAlert, Eraser, Type } from "lucide-react";
-import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SectionHeader,
+  SliderRow,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
@@ -55,12 +60,12 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
         unit="s"
         onChange={(v) => u({ clearClipboardAfterSeconds: v })}
         settingKey="clearClipboardAfterSeconds"
-        infoTooltip="Automatically clear the clipboard a set number of seconds after pasting a password. Set to 0 to disable this security feature."
+        infoTooltip="Automatically clear the clipboard a set number of seconds after pasting into a terminal. Set to 0 to disable this security feature."
       />
       <div className="text-[10px] text-[var(--color-textMuted)] pl-1">
         {s.clearClipboardAfterSeconds === 0
           ? "Disabled — clipboard is never cleared automatically"
-          : `Clipboard will be cleared ${s.clearClipboardAfterSeconds}s after pasting a password`}
+          : `Clipboard will be cleared ${s.clearClipboardAfterSeconds}s after a terminal paste`}
       </div>
       <SliderRow
         label="Max paste length"

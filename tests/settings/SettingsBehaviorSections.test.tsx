@@ -133,4 +133,23 @@ describe("Behavior settings section accents", () => {
       document.querySelector('[data-setting-key="autoReconnectMaxDelaySecs"]'),
     ).toBeTruthy();
   });
+
+  it("describes clipboard clearing as applying to terminal pastes", () => {
+    render(
+      <BehaviorSettings settings={behaviorSettings} updateSettings={vi.fn()} />,
+    );
+
+    const clearClipboardRow = document.querySelector(
+      '[data-setting-key="clearClipboardAfterSeconds"]',
+    );
+    expect(clearClipboardRow).toBeTruthy();
+    expect(
+      within(clearClipboardRow as HTMLElement).getByLabelText(
+        /after pasting into a terminal/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Clipboard will be cleared 30s after a terminal paste"),
+    ).toBeInTheDocument();
+  });
 });

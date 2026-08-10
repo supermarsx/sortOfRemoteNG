@@ -1,6 +1,6 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
   hasSessionLifecycleActorAttempt,
@@ -92,6 +92,11 @@ const mocks = vi.hoisted(() => {
     success: vi.fn(),
     warning: vi.fn(),
   });
+  const clipboard = {
+    readText: vi.fn(async () => ""),
+    writeText: vi.fn(async (_text: string) => undefined),
+  };
+  const confirmPaste = vi.fn((_message: string) => true);
   const listeners = new Map<string, (event: { payload: any }) => void>();
   const runtimePath = {
     protocol: "ssh" as const,
@@ -117,6 +122,8 @@ const mocks = vi.hoisted(() => {
     context,
     settingsContext,
     toast,
+    clipboard,
+    confirmPaste,
     invoke: vi.fn(),
     addHistoryEntry: vi.fn(),
     listen: vi.fn(async (..._args: unknown[]) => vi.fn()),
@@ -246,6 +253,20 @@ beforeEach(() => {
   mocks.toast.info.mockClear();
   mocks.toast.success.mockClear();
   mocks.toast.warning.mockClear();
+  mocks.clipboard.readText.mockReset();
+  mocks.clipboard.readText.mockResolvedValue("");
+  mocks.clipboard.writeText.mockReset();
+  mocks.clipboard.writeText.mockResolvedValue(undefined);
+  mocks.confirmPaste.mockReset();
+  mocks.confirmPaste.mockReturnValue(true);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: mocks.clipboard,
+  });
+  Object.defineProperty(window, "confirm", {
+    configurable: true,
+    value: mocks.confirmPaste,
+  });
   mocks.listeners.clear();
   mocks.listen.mockReset();
   mocks.listen.mockImplementation(async (...args: unknown[]) => {
@@ -300,6 +321,10 @@ beforeEach(() => {
     if (command === "start_shell") return Promise.resolve("shell-ssh-1");
     return Promise.resolve(undefined);
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("useWebTerminal input lifecycle", () => {
@@ -899,6 +924,394 @@ describe("useWebTerminal input lifecycle", () => {
       data: "whoami",
     });
     expect(mocks.addHistoryEntry).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary xterm input outside clipboard policy", async () => {
+    mocks.settingsContext.settings = {
+      trimPastedWhitespace: true,
+      warnOnMultiLinePaste: true,
+      maxPasteLengthChars: 1,
+    };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await act(async () => {
+      await mocks.MockTerminal.instances[0].emitInput("  typed\ninput  ");
+    });
+
+    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("send_ssh_input", {
+      sessionId: "backend-ssh-1",
+      data: "  typed\ninput  ",
+    });
+  });
+
+  it("uses the default multiline warning and fails closed when cancelled", async () => {
+    mocks.clipboard.readText.mockResolvedValue("first\nsecond");
+    mocks.confirmPaste.mockReturnValue(false);
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const pasted = await model!.pasteFromClipboard();
+
+    expect(pasted).toBe(false);
+    expect(mocks.confirmPaste).toHaveBeenCalledOnce();
+    expect(mocks.confirmPaste).toHaveBeenCalledWith(
+      expect.stringContaining("contains multiple lines"),
+    );
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "send_ssh_input",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("combines paste risks into one prompt, trims, and sends once", async () => {
+    mocks.settingsContext.settings = {
+      trimPastedWhitespace: true,
+      warnOnMultiLinePaste: true,
+      maxPasteLengthChars: 5,
+    };
+    mocks.clipboard.readText.mockResolvedValue("  one\ntwo  ");
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const pasted = await model!.pasteFromClipboard();
+
+    expect(pasted).toBe(true);
+    expect(mocks.confirmPaste).toHaveBeenCalledOnce();
+    expect(mocks.confirmPaste.mock.calls[0][0]).toContain(
+      "contains multiple lines and contains 7 characters",
+    );
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "send_ssh_input",
+      ),
+    ).toEqual([
+      ["send_ssh_input", { sessionId: "backend-ssh-1", data: "one\ntwo" }],
+    ]);
+  });
+
+  it("prompts only when processed text is strictly over the max length", async () => {
+    mocks.settingsContext.settings = {
+      trimPastedWhitespace: true,
+      warnOnMultiLinePaste: false,
+      maxPasteLengthChars: 5,
+    };
+    mocks.clipboard.readText
+      .mockResolvedValueOnce("  12345  ")
+      .mockResolvedValueOnce("123456");
+    mocks.confirmPaste.mockReturnValue(false);
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(await model!.pasteFromClipboard()).toBe(true);
+    expect(await model!.pasteFromClipboard()).toBe(false);
+
+    expect(mocks.confirmPaste).toHaveBeenCalledOnce();
+    expect(mocks.confirmPaste).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "contains 6 characters (configured threshold: 5)",
+      ),
+    );
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "send_ssh_input",
+      ),
+    ).toEqual([
+      ["send_ssh_input", { sessionId: "backend-ssh-1", data: "12345" }],
+    ]);
+  });
+
+  it("bypasses the multiline prompt when the warning is disabled", async () => {
+    mocks.settingsContext.settings = {
+      warnOnMultiLinePaste: false,
+      maxPasteLengthChars: 0,
+    };
+    mocks.clipboard.readText.mockResolvedValue("first\nsecond");
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(await model!.pasteFromClipboard()).toBe(true);
+
+    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("send_ssh_input", {
+      sessionId: "backend-ssh-1",
+      data: "first\nsecond",
+    });
+  });
+
+  it("captures native xterm paste and routes it through the same policy gate", async () => {
+    mocks.confirmPaste.mockReturnValue(false);
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} data-testid="canvas" />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const pasteEvent = new Event("paste", {
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: { getData: () => "first\nsecond" },
+    });
+
+    await act(async () => {
+      view.getByTestId("canvas").dispatchEvent(pasteEvent);
+      await Promise.resolve();
+    });
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(mocks.confirmPaste).toHaveBeenCalledOnce();
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "send_ssh_input",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    { sshEnabled: true, globalEnabled: false, shouldPaste: true },
+    { sshEnabled: false, globalEnabled: true, shouldPaste: false },
+  ])(
+    "uses SSH paste-on-right-click=$sshEnabled ahead of global=$globalEnabled",
+    async ({ sshEnabled, globalEnabled, shouldPaste }) => {
+      mocks.terminalConfig = { pasteOnRightClick: sshEnabled };
+      mocks.settingsContext.settings = {
+        pasteOnRightClick: globalEnabled,
+        warnOnMultiLinePaste: false,
+      };
+      mocks.clipboard.readText.mockResolvedValue("right-click paste");
+      let model: WebTerminalMgr | null = null;
+      const Harness = () => {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} data-testid="canvas" />;
+      };
+
+      const view = render(<Harness />);
+      await waitFor(() => expect(model?.status).toBe("connected"));
+      const contextMenuEvent = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+      });
+      await act(async () => {
+        view.getByTestId("canvas").dispatchEvent(contextMenuEvent);
+        await Promise.resolve();
+      });
+
+      expect(contextMenuEvent.defaultPrevented).toBe(shouldPaste);
+      expect(mocks.clipboard.readText).toHaveBeenCalledTimes(
+        shouldPaste ? 1 : 0,
+      );
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "send_ssh_input",
+        ),
+      ).toHaveLength(shouldPaste ? 1 : 0);
+    },
+  );
+
+  it("uses the global right-click setting for non-SSH terminal sessions", async () => {
+    mocks.terminalConfig = { pasteOnRightClick: false };
+    mocks.settingsContext.settings = {
+      pasteOnRightClick: true,
+      warnOnMultiLinePaste: false,
+    };
+    mocks.clipboard.readText.mockResolvedValue("global right-click paste");
+    const nonSshSession: ConnectionSession = {
+      ...session,
+      id: "frontend-telnet-1",
+      protocol: "telnet",
+    };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(nonSshSession);
+      return <div ref={model.containerRef} data-testid="canvas" />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+    });
+    await act(async () => {
+      view.getByTestId("canvas").dispatchEvent(contextMenuEvent);
+      await Promise.resolve();
+    });
+
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+    expect(mocks.clipboard.readText).toHaveBeenCalledOnce();
+    expect(mocks.MockTerminal.instances[0].write).toHaveBeenCalledWith(
+      "global right-click paste",
+    );
+  });
+
+  it("replaces the clear timer and clears only an unchanged clipboard", async () => {
+    mocks.settingsContext.settings = {
+      warnOnMultiLinePaste: false,
+      clearClipboardAfterSeconds: 5,
+    };
+    let clipboardValue = "first paste";
+    mocks.clipboard.readText.mockImplementation(async () => clipboardValue);
+    mocks.clipboard.writeText.mockImplementation(async (text: string) => {
+      clipboardValue = text;
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    vi.useFakeTimers();
+    await model!.pasteFromClipboard();
+    await act(async () => vi.advanceTimersByTimeAsync(4_000));
+
+    clipboardValue = "second paste";
+    await model!.pasteFromClipboard();
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+
+    await act(async () => vi.advanceTimersByTimeAsync(4_000));
+    expect(mocks.clipboard.writeText).toHaveBeenCalledOnce();
+    expect(mocks.clipboard.writeText).toHaveBeenCalledWith("");
+  });
+
+  it("preserves clipboard content copied after a configured terminal paste", async () => {
+    mocks.settingsContext.settings = {
+      warnOnMultiLinePaste: false,
+      clearClipboardAfterSeconds: 5,
+    };
+    let clipboardValue = "terminal paste";
+    mocks.clipboard.readText.mockImplementation(async () => clipboardValue);
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    vi.useFakeTimers();
+    await model!.pasteFromClipboard();
+    clipboardValue = "newer unrelated copy";
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+    expect(mocks.toast.error).not.toHaveBeenCalled();
+  });
+
+  it("cancels a scheduled clipboard clear when the terminal unmounts", async () => {
+    mocks.settingsContext.settings = {
+      warnOnMultiLinePaste: false,
+      clearClipboardAfterSeconds: 5,
+    };
+    mocks.clipboard.readText.mockResolvedValue("terminal paste");
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    vi.useFakeTimers();
+    await model!.pasteFromClipboard();
+    view.unmount();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+    expect(mocks.toast.error).not.toHaveBeenCalled();
+  });
+
+  it("never schedules clipboard clearing when the setting is disabled", async () => {
+    mocks.settingsContext.settings = {
+      warnOnMultiLinePaste: false,
+      clearClipboardAfterSeconds: 0,
+    };
+    mocks.clipboard.readText.mockResolvedValue("terminal paste");
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    vi.useFakeTimers();
+    await model!.pasteFromClipboard();
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it("surfaces clipboard read and guarded-clear failures without rejecting", async () => {
+    mocks.settingsContext.settings = {
+      warnOnMultiLinePaste: false,
+      clearClipboardAfterSeconds: 1,
+    };
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    mocks.clipboard.readText.mockRejectedValueOnce(new Error("read denied"));
+    await expect(model!.pasteFromClipboard()).resolves.toBe(false);
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      "Failed to read from the clipboard",
+      3000,
+    );
+
+    mocks.clipboard.readText.mockResolvedValueOnce("terminal paste");
+    vi.useFakeTimers();
+    await model!.pasteFromClipboard();
+    mocks.clipboard.readText.mockRejectedValueOnce(new Error("verify denied"));
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+
+    expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      "Failed to clear the clipboard",
+      3000,
+    );
+    consoleError.mockRestore();
   });
 
   it("records one verified connected and disconnected lifecycle even when VPN cleanup later fails", async () => {
