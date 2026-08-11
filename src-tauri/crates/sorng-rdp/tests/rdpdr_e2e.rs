@@ -34,11 +34,11 @@ use sorng_rdp::rdp::rdpdr::pdu::{
     FILE_OPEN_IF, IRP_MJ_CREATE, IRP_MJ_WRITE, STATUS_ACCESS_DENIED, STATUS_SUCCESS,
 };
 use sorng_rdp::rdp::session_runner::{
-    effective_drive_redirections, run_rdp_session, should_register_rdpdr,
+    effective_drive_redirections, run_rdp_session, should_register_rdpdr, RDP_LOG_CHANNEL_CAPACITY,
 };
 use sorng_rdp::rdp::settings::{ClipboardDirection, DriveRedirectionConfig, ResolvedSettings};
 use sorng_rdp::rdp::stats::RdpSessionStats;
-use sorng_rdp::rdp::types::RdpLogEntry;
+use sorng_rdp::rdp::types::{RdpLogEntry, RdpSessionActivityControl};
 use sorng_rdp::rdp::wake_channel::{create_wake_channel, WakeSender};
 use sorng_rdp::rdp::RdpSettingsPayload;
 use sorng_rdp_vendor::ironrdp_cliprdr::pdu::{
@@ -138,7 +138,8 @@ impl SessionHarness {
         let stats = Arc::new(RdpSessionStats::new());
         let frame_store = SharedFrameStore::new();
         let frame_channel: DynFrameChannel = Arc::new(NoopFrameChannel);
-        let (log_tx, _log_rx) = std::sync::mpsc::channel::<RdpLogEntry>();
+        let (log_tx, _log_rx) =
+            std::sync::mpsc::sync_channel::<RdpLogEntry>(RDP_LOG_CHANNEL_CAPACITY);
 
         let host = env_or("RDP_HOST", RDP_HOST_DEFAULT);
         let port = env_or("RDP_PORT", &RDP_PORT_DEFAULT.to_string())
@@ -172,6 +173,7 @@ impl SessionHarness {
                 frame_store,
                 frame_channel,
                 log_tx,
+                Arc::new(RdpSessionActivityControl::default()),
             );
         });
 
