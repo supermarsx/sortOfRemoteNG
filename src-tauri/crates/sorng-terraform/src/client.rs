@@ -664,8 +664,7 @@ fn is_direct_executable(path: &Path) -> bool {
 
     #[cfg(windows)]
     {
-        path
-            .extension()
+        path.extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| {
                 extension.eq_ignore_ascii_case("exe") || extension.eq_ignore_ascii_case("com")
@@ -675,10 +674,9 @@ fn is_direct_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        return path
-            .metadata()
+        path.metadata()
             .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false);
+            .unwrap_or(false)
     }
 
     #[cfg(not(any(windows, unix)))]
