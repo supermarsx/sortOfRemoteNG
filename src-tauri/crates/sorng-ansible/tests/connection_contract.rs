@@ -123,11 +123,8 @@ async fn nonzero_version_probe_fails_without_map_insertion() {
         .expect_err("non-zero version probe must fail connect");
     assert_eq!(error.kind, AnsibleErrorKind::ProcessError);
     assert!(error.message.contains("exit code 7"));
-    assert!(error
-        .details
-        .as_deref()
-        .unwrap_or("")
-        .contains("probe failed"));
+    assert!(error.details.is_none());
+    assert!(!error.to_string().contains("probe failed"));
     assert!(service.list_connections().is_empty());
 }
 
