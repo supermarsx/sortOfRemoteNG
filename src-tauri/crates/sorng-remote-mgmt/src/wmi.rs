@@ -8,8 +8,11 @@ use uuid::Uuid;
 
 const DEFAULT_WMI_TIMEOUT_SECS: u64 = 30;
 const MAX_WMI_TIMEOUT_SECS: u64 = 120;
+#[cfg(target_os = "windows")]
 const MAX_WMI_INPUT_BYTES: usize = 128 * 1024;
+#[cfg(target_os = "windows")]
 const MAX_WMI_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(target_os = "windows")]
 const WMI_POWERSHELL_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $payload = ([Console]::In.ReadToEnd() | ConvertFrom-Json)
