@@ -229,7 +229,7 @@ pub async fn connect_rdp(
 
     loop {
         match close_rdp_connection(
-            &*state,
+            &state,
             &replacement_selector,
             "replaced by a newer connect request",
             RDP_WORKER_SHUTDOWN_GRACE,
@@ -353,7 +353,7 @@ pub async fn disconnect_rdp(
     let mut outcome = RdpCloseOutcome::NotFound;
     if let Some(session_id) = session_id {
         outcome = close_rdp_connection(
-            &*state,
+            &state,
             &RdpConnectionSelector::SessionId(session_id),
             "disconnect requested",
             RDP_WORKER_SHUTDOWN_GRACE,
@@ -364,7 +364,7 @@ pub async fn disconnect_rdp(
     if matches!(outcome, RdpCloseOutcome::NotFound) {
         if let Some(connection_id) = connection_id {
             outcome = close_rdp_connection(
-                &*state,
+                &state,
                 &RdpConnectionSelector::ConnectionId(connection_id),
                 "disconnect requested",
                 RDP_WORKER_SHUTDOWN_GRACE,

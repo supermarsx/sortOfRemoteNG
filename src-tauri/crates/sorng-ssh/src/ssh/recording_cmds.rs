@@ -2,6 +2,7 @@ use super::recording::*;
 
 /// Start recording an SSH session's terminal output
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_session_recording(
     state: tauri::State<'_, SshServiceState>,
     session_id: String,
