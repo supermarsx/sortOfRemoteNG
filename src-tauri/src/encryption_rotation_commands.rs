@@ -376,25 +376,61 @@ async fn rotate_master_key_full_inner_impl(
     }
 
     // ── Step 3c: backups across every enabled destination ─────────
-    let backup_paths = {
+    let backup_pairs = {
         let svc = backup_state.lock().await;
-        svc.list_v2_files().await
+        svc.list_v2_backup_pairs().await
     };
-    for path in backup_paths {
-        match prepare_stage(&transaction_id, "backup", &path, failure_injector) {
-            Ok(item) => {
-                let result = sorng_storage::backup::BackupService::rewrite_backup_with(
-                    &item.staged,
-                    &old_state,
-                    &new_state,
-                )
-                .await;
-                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
-                    report.backups_rewritten += 1;
-                    report.bytes_rewritten += n;
-                });
+    for pair in backup_pairs {
+        let archive_item = match prepare_stage(
+            &transaction_id,
+            "backup",
+            &pair.archive_path,
+            failure_injector,
+        ) {
+            Ok(item) => item,
+            Err(reason) => {
+                push_failure(&mut report, "backup", &pair.archive_path, reason);
+                continue;
             }
-            Err(reason) => push_failure(&mut report, "backup", &path, reason),
+        };
+        let metadata_item = match prepare_stage(
+            &transaction_id,
+            "backup",
+            &pair.metadata_path,
+            failure_injector,
+        ) {
+            Ok(item) => item,
+            Err(reason) => {
+                push_failure(&mut report, "backup", &pair.metadata_path, reason);
+                discard_artifact_sidecars(&archive_item);
+                continue;
+            }
+        };
+
+        let result = sorng_storage::backup::BackupService::rewrite_backup_pair_with(
+            &archive_item.staged,
+            &metadata_item.staged,
+            &old_state,
+            &new_state,
+        )
+        .await
+        .and_then(|bytes| {
+            sync_regular_file(&archive_item.staged)?;
+            sync_regular_file(&metadata_item.staged)?;
+            Ok(bytes)
+        });
+        match result {
+            Ok(bytes) => {
+                report.backups_rewritten += 1;
+                report.bytes_rewritten += bytes;
+                staged.push(archive_item);
+                staged.push(metadata_item);
+            }
+            Err(reason) => {
+                push_failure(&mut report, "backup", &pair.archive_path, reason);
+                discard_artifact_sidecars(&archive_item);
+                discard_artifact_sidecars(&metadata_item);
+            }
         }
     }
 
@@ -592,6 +628,13 @@ fn rotating_tmp_path(path: &Path) -> PathBuf {
     ))
 }
 
+fn rollback_tmp_path(path: &Path) -> PathBuf {
+    path.with_extension(format!(
+        "{}.rollback",
+        path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
+    ))
+}
+
 fn sync_regular_file(path: &Path) -> Result<(), String> {
     std::fs::OpenOptions::new()
         .read(true)
@@ -731,11 +774,15 @@ fn rollback_artifacts(staged: &[StagedArtifact]) -> Vec<String> {
 fn discard_artifact_sidecars(item: &StagedArtifact) {
     let staged_tmp = rotating_tmp_path(&item.staged);
     let backup_tmp = rotating_tmp_path(&item.backup);
+    let staged_rollback = rollback_tmp_path(&item.staged);
+    let backup_rollback = rollback_tmp_path(&item.backup);
     for path in [
         item.staged.as_path(),
         item.backup.as_path(),
         staged_tmp.as_path(),
         backup_tmp.as_path(),
+        staged_rollback.as_path(),
+        backup_rollback.as_path(),
     ] {
         if path.exists() {
             let _ = std::fs::remove_file(path);
@@ -752,7 +799,8 @@ fn discard_rotation_files(staged: &[StagedArtifact]) {
 fn discard_staged_files(staged: &[StagedArtifact]) {
     for item in staged {
         let staged_tmp = rotating_tmp_path(&item.staged);
-        for path in [&item.staged, &staged_tmp] {
+        let staged_rollback = rollback_tmp_path(&item.staged);
+        for path in [&item.staged, &staged_tmp, &staged_rollback] {
             if path.exists() {
                 let _ = std::fs::remove_file(path);
             }
@@ -851,7 +899,7 @@ mod tests {
 
     use sorng_encryption::envelope::EnvelopeHeader;
     use sorng_recording::service::RecordingService;
-    use sorng_storage::backup::BackupService;
+    use sorng_storage::backup::{BackupRewritePair, BackupService};
     use sorng_storage::storage::{SecureStorage, StorageData};
 
     struct ReceiptFixture {
@@ -915,6 +963,33 @@ mod tests {
             settings_payload,
             old_dek_bytes,
         }
+    }
+
+    async fn create_encrypted_backup(
+        fixture: &ReceiptFixture,
+        payload: &serde_json::Value,
+    ) -> (String, BackupRewritePair) {
+        let mut service = fixture.backup_state.lock().await;
+        let mut config = service.get_config();
+        config.destination_path = fixture
+            .app_data
+            .join("backups")
+            .to_string_lossy()
+            .into_owned();
+        config.compress_backups = false;
+        service.update_config(config);
+        service.set_encryption_state(fixture.enc_state.clone());
+        let metadata = service
+            .run_backup("manual", payload)
+            .await
+            .expect("create encrypted backup");
+        let pair = service
+            .list_v2_backup_pairs()
+            .await
+            .into_iter()
+            .next()
+            .expect("encrypted backup pair");
+        (metadata.id, pair)
     }
 
     async fn password_receipt_fixture(seed: u8, password: &str) -> ReceiptFixture {
@@ -1190,6 +1265,156 @@ mod tests {
                 "{name}: rotation must install a fresh key"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn rotation_rekeys_backup_archive_and_integrity_sidecar_together() {
+        let fixture = receipt_fixture(73).await;
+        let backup_payload = json!({
+            "connections": [{ "id": "backup-c1", "host": "backup.example.test" }]
+        });
+        let (backup_id, backup_pair) = create_encrypted_backup(&fixture, &backup_payload).await;
+        let metadata_before: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&backup_pair.metadata_path).expect("backup sidecar before rotation"),
+        )
+        .expect("parse backup sidecar before rotation");
+
+        let captured_vault = std::sync::Mutex::new(None::<[u8; 32]>);
+        let vault_writer = |bytes: &[u8; 32]| {
+            *captured_vault.lock().expect("vault writer lock") = Some(*bytes);
+            Ok(())
+        };
+        let report = rotate_master_key_full_inner_impl(
+            &fixture.app_data,
+            &fixture.enc_state,
+            &fixture.storage_state,
+            &fixture.backup_state,
+            &fixture.recording_state,
+            None,
+            true,
+            None,
+            Some(&vault_writer),
+            None,
+        )
+        .await
+        .expect("rotate backup master key");
+
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert_eq!(report.backups_rewritten, 1);
+        let archive_after = std::fs::read(&backup_pair.archive_path).expect("rotated backup");
+        let metadata_after: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&backup_pair.metadata_path).expect("rotated backup sidecar"),
+        )
+        .expect("parse rotated backup sidecar");
+        assert_ne!(metadata_after["checksum"], metadata_before["checksum"]);
+        assert_eq!(
+            metadata_after["sizeBytes"].as_u64(),
+            Some(archive_after.len() as u64)
+        );
+
+        let old_state = EncryptionState::new();
+        old_state
+            .install(MasterDek::from_bytes(&fixture.old_dek_bytes).expect("old backup DEK"))
+            .await;
+        assert!(
+            sorng_encryption::artifacts::backups::read(&old_state, &archive_after)
+                .await
+                .is_err()
+        );
+        let restored = fixture
+            .backup_state
+            .lock()
+            .await
+            .restore_backup_from_target(&backup_id, "legacy-default")
+            .await
+            .expect("restore rotated backup with updated integrity sidecar");
+        assert_eq!(restored, backup_payload);
+        assert!(
+            std::fs::read_dir(backup_pair.archive_path.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .all(|entry| {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    !name.contains(".sorng-rotation-") && !name.ends_with(".rollback")
+                })
+        );
+    }
+
+    #[test]
+    fn discard_artifact_sidecars_removes_nested_rewrite_artifacts() {
+        let temp = tempdir().expect("temporary rotation directory");
+        let item = StagedArtifact {
+            artifact: "backup",
+            canonical: temp.path().join("backup.json"),
+            staged: temp.path().join("backup.json.sorng-rotation-test.staged"),
+            backup: temp.path().join("backup.json.sorng-rotation-test.backup"),
+        };
+        std::fs::write(&item.canonical, b"canonical").expect("write canonical fixture");
+        let sidecars = [
+            item.staged.clone(),
+            item.backup.clone(),
+            rotating_tmp_path(&item.staged),
+            rotating_tmp_path(&item.backup),
+            rollback_tmp_path(&item.staged),
+            rollback_tmp_path(&item.backup),
+        ];
+        for path in &sidecars {
+            std::fs::write(path, b"old-key ciphertext").expect("write sidecar fixture");
+        }
+
+        discard_artifact_sidecars(&item);
+
+        assert!(
+            item.canonical.exists(),
+            "canonical artifact must be preserved"
+        );
+        assert!(sidecars.iter().all(|path| !path.exists()));
+    }
+
+    #[tokio::test]
+    async fn missing_backup_sidecar_aborts_rotation_and_removes_paired_stage() {
+        let fixture = receipt_fixture(74).await;
+        let (_, backup_pair) = create_encrypted_backup(
+            &fixture,
+            &json!({ "connections": [{ "id": "missing-sidecar" }] }),
+        )
+        .await;
+        let archive_before =
+            std::fs::read(&backup_pair.archive_path).expect("backup before failed rotation");
+        std::fs::remove_file(&backup_pair.metadata_path).expect("remove backup sidecar");
+        let vault_writer = |_: &[u8; 32]| Ok(());
+
+        let report = rotate_master_key_full_inner_impl(
+            &fixture.app_data,
+            &fixture.enc_state,
+            &fixture.storage_state,
+            &fixture.backup_state,
+            &fixture.recording_state,
+            None,
+            true,
+            None,
+            Some(&vault_writer),
+            None,
+        )
+        .await
+        .expect("missing sidecar returns a retryable report");
+
+        assert_eq!(report.backups_rewritten, 0);
+        assert_eq!(report.failures.len(), 1, "{:?}", report.failures);
+        assert_eq!(report.failures[0].artifact, "backup");
+        assert_eq!(
+            std::fs::read(&backup_pair.archive_path).unwrap(),
+            archive_before
+        );
+        assert!(
+            std::fs::read_dir(backup_pair.archive_path.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .all(|entry| {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    !name.contains(".sorng-rotation-") && !name.ends_with(".rollback")
+                })
+        );
     }
 
     #[tokio::test]

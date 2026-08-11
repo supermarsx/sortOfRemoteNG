@@ -279,6 +279,16 @@ pub struct BackupMetadata {
     pub target_id: Option<String>,
 }
 
+/// Canonical archive and integrity-sidecar paths that must be rotated
+/// together. The full master-key rotation stages both files before calling
+/// [`BackupService::rewrite_backup_pair_with`], then commits or rolls them
+/// back as one transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupRewritePair {
+    pub archive_path: PathBuf,
+    pub metadata_path: PathBuf,
+}
+
 /// Backup status for frontend updates
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1093,14 +1103,13 @@ impl BackupService {
         Ok(())
     }
 
-    /// List every v2-envelope backup file across every enabled
-    /// destination. Used by the master-key rotation orchestrator to
-    /// snapshot every file's plaintext before swapping the DEK. The
-    /// returned vec carries the absolute path of each file; the
-    /// caller reads + re-encrypts via
-    /// [`encrypt_backup_v2`]/[`decrypt_backup_v2`].
-    pub async fn list_v2_files(&self) -> Vec<PathBuf> {
+    /// List every v2-envelope backup archive and its integrity sidecar across
+    /// every enabled destination. Master-key rotation must stage and commit
+    /// both paths because re-encryption changes the archive checksum and may
+    /// change its byte length.
+    pub async fn list_v2_backup_pairs(&self) -> Vec<BackupRewritePair> {
         let mut out = Vec::new();
+        let mut seen_archives = std::collections::HashSet::new();
         for target in self.config.effective_destinations() {
             if !target.enabled {
                 continue;
@@ -1122,7 +1131,11 @@ impl BackupService {
                     Some(n) => n.to_string(),
                     None => continue,
                 };
-                if !name.starts_with("backup_") || name.contains(".meta.") {
+                if !name.starts_with("backup_")
+                    || [".meta.", ".rotating", ".rollback", ".sorng-rotation-"]
+                        .iter()
+                        .any(|marker| name.contains(marker))
+                {
                     continue;
                 }
                 // Quick magic-byte sniff so we don't load whole
@@ -1131,7 +1144,16 @@ impl BackupService {
                 if let Ok(mut f) = std::fs::File::open(&path) {
                     use std::io::Read;
                     if f.read(&mut buf).is_ok() && self.is_v2_backup(&buf) {
-                        out.push(path);
+                        let archive_identity =
+                            fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                        if !seen_archives.insert(archive_identity) {
+                            continue;
+                        }
+                        let metadata_path = path.with_file_name(format!("{name}.meta.json"));
+                        out.push(BackupRewritePair {
+                            archive_path: path,
+                            metadata_path,
+                        });
                     }
                 }
             }
@@ -1139,16 +1161,85 @@ impl BackupService {
         out
     }
 
-    /// Re-encrypt a backup file in place: decrypt with `from`, re-
-    /// encrypt under `to`, atomically swap. Used only by the rotation
-    /// orchestrator — production write/read still flow through
-    /// `perform_backup` / `restore_backup_from_target`.
+    /// Backwards-compatible archive-only view for callers that only need to
+    /// enumerate encrypted backup data files.
+    pub async fn list_v2_files(&self) -> Vec<PathBuf> {
+        self.list_v2_backup_pairs()
+            .await
+            .into_iter()
+            .map(|pair| pair.archive_path)
+            .collect()
+    }
+
+    /// Re-encrypt a canonical backup archive and its conventional adjacent
+    /// `<archive>.meta.json` integrity sidecar. Retained for API compatibility;
+    /// the transaction orchestrator uses [`Self::rewrite_backup_pair_with`]
+    /// because its archive and metadata staging filenames are independent.
     pub async fn rewrite_backup_with(
         path: &std::path::Path,
         from: &sorng_encryption::EncryptionState,
         to: &sorng_encryption::EncryptionState,
     ) -> Result<u64, String> {
-        let bytes = fs::read(path).map_err(|e| format!("read: {e}"))?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| "backup archive path has no file name".to_string())?;
+        let mut metadata_name = file_name.to_os_string();
+        metadata_name.push(".meta.json");
+        let metadata_path = path.with_file_name(metadata_name);
+        Self::rewrite_backup_pair_with_inner(path, &metadata_path, from, to, false, true).await
+    }
+
+    /// Re-encrypt a staged backup archive and update its staged integrity
+    /// sidecar: decrypt with `from`, re-encrypt under `to`, then replace both
+    /// caller-provided staging files. The rotation orchestrator owns the
+    /// outer transaction that commits or rolls back both canonical paths.
+    pub async fn rewrite_backup_pair_with(
+        path: &std::path::Path,
+        metadata_path: &std::path::Path,
+        from: &sorng_encryption::EncryptionState,
+        to: &sorng_encryption::EncryptionState,
+    ) -> Result<u64, String> {
+        let archive_rollback = backup_rewrite_sidecar_path(path, "rollback");
+        let result =
+            Self::rewrite_backup_pair_with_inner(path, metadata_path, from, to, false, false).await;
+        let cleanup = remove_backup_rewrite_sidecar(&archive_rollback).map_err(|error| {
+            format!(
+                "remove staged archive rollback {}: {error}",
+                archive_rollback.display()
+            )
+        });
+        match (result, cleanup) {
+            (Ok(bytes), Ok(())) => Ok(bytes),
+            (Ok(_), Err(cleanup_error)) => Err(cleanup_error),
+            (Err(error), Ok(())) => Err(error),
+            (Err(error), Err(cleanup_error)) => Err(format!("{error}; {cleanup_error}")),
+        }
+    }
+
+    async fn rewrite_backup_pair_with_inner(
+        path: &std::path::Path,
+        metadata_path: &std::path::Path,
+        from: &sorng_encryption::EncryptionState,
+        to: &sorng_encryption::EncryptionState,
+        inject_metadata_replace_failure: bool,
+        retain_recovery_on_rollback_failure: bool,
+    ) -> Result<u64, String> {
+        let metadata_json = read_backup_metadata(metadata_path)
+            .map_err(|e| format!("read backup metadata: {e}"))?;
+        let mut metadata: BackupMetadata = serde_json::from_str(&metadata_json)
+            .map_err(|e| format!("parse backup metadata: {e}"))?;
+        let bytes = read_and_verify_current_archive(path, &metadata)
+            .map_err(|e| format!("verify backup archive: {e}"))?;
+        if !metadata.encrypted
+            || bytes.len() < sorng_encryption::envelope::MAGIC.len()
+            || &bytes[..sorng_encryption::envelope::MAGIC.len()]
+                != sorng_encryption::envelope::MAGIC
+        {
+            return Err(
+                "Backup integrity check failed: encryption metadata does not match archive encoding"
+                    .to_string(),
+            );
+        }
         let plaintext = sorng_encryption::artifacts::backups::read(from, &bytes)
             .await
             .map_err(|e| format!("decrypt: {e}"))?;
@@ -1161,12 +1252,73 @@ impl BackupService {
         )
         .await
         .map_err(|e| format!("encrypt: {e}"))?;
-        let tmp = path.with_extension(format!(
-            "{}.rotating",
-            path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
-        ));
-        fs::write(&tmp, &blob).map_err(|e| format!("write tmp: {e}"))?;
-        fs::rename(&tmp, path).map_err(|e| format!("rename: {e}"))?;
+        metadata.checksum = sha256_hex(&blob);
+        metadata.checksum_scope = Some(CURRENT_ARCHIVE_CHECKSUM_SCOPE.to_string());
+        metadata.encrypted = true;
+        metadata.size_bytes = blob.len() as u64;
+        let metadata_blob = serde_json::to_vec_pretty(&metadata)
+            .map_err(|e| format!("serialize backup metadata: {e}"))?;
+
+        let tmp = backup_rewrite_sidecar_path(path, "rotating");
+        let metadata_tmp = backup_rewrite_sidecar_path(metadata_path, "rotating");
+        let archive_rollback = backup_rewrite_sidecar_path(path, "rollback");
+        fs::write(&tmp, &blob).map_err(|e| format!("write archive tmp: {e}"))?;
+        if let Err(error) = fs::write(&metadata_tmp, metadata_blob) {
+            let _ = fs::remove_file(&tmp);
+            let _ = fs::remove_file(&metadata_tmp);
+            return Err(format!("write metadata tmp: {error}"));
+        }
+        if let Err(error) = fs::write(&archive_rollback, &bytes) {
+            let _ = fs::remove_file(&tmp);
+            let _ = fs::remove_file(&metadata_tmp);
+            let cleanup = remove_backup_rewrite_sidecar(&archive_rollback);
+            return match cleanup {
+                Ok(()) => Err(format!("write archive rollback: {error}")),
+                Err(cleanup_error) => Err(format!(
+                    "write archive rollback: {error}; remove partial rollback {}: {cleanup_error}",
+                    archive_rollback.display()
+                )),
+            };
+        }
+        if let Err(error) = fs::rename(&tmp, path) {
+            let _ = fs::remove_file(&tmp);
+            let _ = fs::remove_file(&metadata_tmp);
+            let cleanup = remove_backup_rewrite_sidecar(&archive_rollback);
+            return match cleanup {
+                Ok(()) => Err(format!("replace staged archive: {error}")),
+                Err(cleanup_error) => Err(format!(
+                    "replace staged archive: {error}; remove unused rollback {}: {cleanup_error}",
+                    archive_rollback.display()
+                )),
+            };
+        }
+        let metadata_replace = if inject_metadata_replace_failure {
+            Err("injected metadata replacement failure".to_string())
+        } else {
+            fs::rename(&metadata_tmp, metadata_path)
+                .map_err(|error| format!("replace staged metadata: {error}"))
+        };
+        if let Err(error) = metadata_replace {
+            let rollback = fs::rename(&archive_rollback, path)
+                .map_err(|rollback_error| format!("restore original archive: {rollback_error}"));
+            let _ = fs::remove_file(&metadata_tmp);
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) if retain_recovery_on_rollback_failure => Err(format!(
+                    "{error}; {rollback_error}; recovery copy retained at {}",
+                    archive_rollback.display()
+                )),
+                Err(rollback_error) => Err(format!("{error}; {rollback_error}")),
+            };
+        }
+        if retain_recovery_on_rollback_failure {
+            remove_backup_rewrite_sidecar(&archive_rollback).map_err(|error| {
+                format!(
+                    "remove obsolete archive rollback {}: {error}",
+                    archive_rollback.display()
+                )
+            })?;
+        }
         Ok(blob.len() as u64)
     }
 
@@ -1302,6 +1454,24 @@ const MAX_BACKUP_EXPANSION_RATIO: usize = 100;
 const BACKUP_EXPANSION_SLACK_BYTES: usize = 64 * 1024;
 const BACKUP_IO_BUFFER_BYTES: usize = 32 * 1024;
 const BACKUP_SAFETY_LIMIT_ERROR: &str = "Backup restore rejected by safety limits";
+
+fn backup_rewrite_sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+    path.with_extension(format!(
+        "{}.{}",
+        path.extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("bin"),
+        suffix
+    ))
+}
+
+fn remove_backup_rewrite_sidecar(path: &Path) -> Result<(), std::io::Error> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
 
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -2732,6 +2902,7 @@ mod tests {
 
         let payload = serde_json::json!({ "connections": [{ "id": "c1" }] });
         let result = svc.perform_backup("manual", &payload).await.unwrap();
+        let backup_id = result.primary_metadata.as_ref().unwrap().id.clone();
         let backup_path = std::fs::read_dir(&tmp)
             .unwrap()
             .flatten()
@@ -2740,12 +2911,44 @@ mod tests {
                 (n.starts_with("backup_") && !n.contains(".meta.")).then_some(e.path())
             })
             .unwrap();
+        let metadata_path = backup_path.with_file_name(format!(
+            "{}.meta.json",
+            backup_path.file_name().unwrap().to_string_lossy()
+        ));
+        let metadata_before: BackupMetadata =
+            serde_json::from_slice(&std::fs::read(&metadata_path).unwrap()).unwrap();
 
         // Stand up state B with a different DEK.
         let enc_b = sorng_encryption::EncryptionState::new();
         enc_b
             .install(sorng_encryption::MasterDek::from_bytes(&[42u8; 32]).unwrap())
             .await;
+
+        let archive_before = std::fs::read(&backup_path).unwrap();
+        let metadata_bytes_before = std::fs::read(&metadata_path).unwrap();
+        let error = BackupService::rewrite_backup_pair_with_inner(
+            &backup_path,
+            &metadata_path,
+            &enc_a,
+            &enc_b,
+            true,
+            true,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("injected metadata replacement failure"));
+        assert_eq!(std::fs::read(&backup_path).unwrap(), archive_before);
+        assert_eq!(
+            std::fs::read(&metadata_path).unwrap(),
+            metadata_bytes_before
+        );
+        assert!(std::fs::read_dir(&tmp)
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                !name.ends_with(".rotating") && !name.ends_with(".rollback")
+            }));
 
         let n = BackupService::rewrite_backup_with(&backup_path, &enc_a, &enc_b)
             .await
@@ -2754,6 +2957,14 @@ mod tests {
 
         // state B now decrypts; state A no longer does.
         let bytes = std::fs::read(&backup_path).unwrap();
+        let metadata_after: BackupMetadata =
+            serde_json::from_slice(&std::fs::read(&metadata_path).unwrap()).unwrap();
+        assert_ne!(metadata_after.checksum, metadata_before.checksum);
+        assert_eq!(metadata_after.checksum, sha256_hex(&bytes));
+        assert_eq!(metadata_after.size_bytes, bytes.len() as u64);
+        assert_eq!(metadata_after.id, metadata_before.id);
+        assert_eq!(metadata_after.payload_hash, metadata_before.payload_hash);
+        assert_eq!(metadata_after.target_id, metadata_before.target_id);
         assert!(sorng_encryption::artifacts::backups::read(&enc_b, &bytes)
             .await
             .is_ok());
@@ -2772,7 +2983,7 @@ mod tests {
             s
         }));
         let restored = svc
-            .restore_backup_from_target(&result.primary_metadata.unwrap().id, "legacy-default")
+            .restore_backup_from_target(&backup_id, "legacy-default")
             .await
             .unwrap();
         assert_eq!(restored, payload);
@@ -2789,13 +3000,31 @@ mod tests {
         let enc = unlocked_enc_state().await;
         svc.set_encryption_state(enc);
 
-        // 1 v2 backup, plus a stray plain-JSON file that must NOT
-        // be listed.
+        // One canonical v2 backup, plus plain data and v2-shaped rewrite
+        // artifacts that must never be enumerated as independent backups.
         let _ = svc
             .perform_backup("manual", &serde_json::json!({ "k": "v" }))
             .await
             .unwrap();
         std::fs::write(tmp.join("backup_not_a_v2.json"), b"{\"foo\":1}").unwrap();
+        let canonical_pair = svc.list_v2_backup_pairs().await.pop().unwrap();
+        let v2_bytes = std::fs::read(&canonical_pair.archive_path).unwrap();
+        for reserved_name in [
+            "backup_reserved.meta.json",
+            "backup_reserved.json.rotating",
+            "backup_reserved.json.rollback",
+            "backup_reserved.json.sorng-rotation-test.staged",
+        ] {
+            std::fs::write(tmp.join(reserved_name), &v2_bytes).unwrap();
+        }
+        svc.update_config(config_with_targets(vec![
+            test_target("duplicate-a", &tmp),
+            test_target("duplicate-b", &tmp),
+        ]));
+        let pairs = svc.list_v2_backup_pairs().await;
+        assert_eq!(pairs.len(), 1, "canonical archive paths must be unique");
+        assert_eq!(pairs[0].archive_path, canonical_pair.archive_path);
+        assert!(pairs[0].metadata_path.exists());
         let files = svc.list_v2_files().await;
         assert_eq!(files.len(), 1);
 
