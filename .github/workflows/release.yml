@@ -123,7 +123,7 @@ jobs:
           fi
 
       - name: Checkout the exact source commit
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -451,7 +451,7 @@ jobs:
       SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
     steps:
       - name: Checkout immutable release snapshot
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.snapshot_commit }}
           fetch-depth: 0
@@ -498,7 +498,7 @@ jobs:
           }
 
       - name: Check out pinned OPKSSH source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openpubkey/opkssh
           ref: 193d79871f3bad3cd27cfb94734c265773a99c9b
@@ -1838,7 +1838,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout immutable release snapshot
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.snapshot_commit }}
           fetch-depth: 0
