@@ -146,7 +146,9 @@ async fn connect_rejects_non_success_without_inserting_connection() {
         .await
         .expect_err("401 must fail connect");
     assert_eq!(error.kind, JiraErrorKind::AuthError);
-    assert!(error.message.contains("token rejected"));
+    assert_eq!(error.message, "Jira API returned HTTP 401");
+    assert!(!error.message.contains("token rejected"));
+    assert!(!error.to_string().contains("token rejected"));
     assert!(service.list_connections().is_empty());
     server.finish();
 }
