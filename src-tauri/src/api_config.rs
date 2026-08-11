@@ -289,9 +289,13 @@ impl ApiRuntimeConfig {
         // even if persisted settings attempt to disable the control.
         let rate_limiting_on = get_bool(r, "rateLimiting").unwrap_or(false);
         let configured_rate_limit = get_u64(r, "maxRequestsPerMinute")
-            .map(|value| value.clamp(1, MAX_RATE_LIMIT_PER_MINUTE as u64) as u32);
+            .map(|value| value.min(MAX_RATE_LIMIT_PER_MINUTE as u64) as u32);
         let rate_limit_required = allow_remote || !cfg!(debug_assertions);
-        let rate_limit_per_minute = if rate_limit_required || rate_limiting_on {
+        let rate_limit_per_minute = if rate_limit_required {
+            configured_rate_limit
+                .filter(|limit| *limit > 0)
+                .unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
+        } else if rate_limiting_on {
             configured_rate_limit.unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
         } else {
             0
