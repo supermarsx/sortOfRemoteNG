@@ -1,78 +1,436 @@
 name: cargo-update
 
-# Weekly Rust dependency refresh.
-#
-# Runs `cargo update` inside the `src-tauri/` workspace and opens (or
-# updates) a single long-lived PR containing the resulting `Cargo.lock`
-# diff. Reviewers must cross-check any upstream bumps against
-# `src-tauri/crates/VENDORED.md` and bump the relevant "Last sync"
-# rows in the same PR when a vendored / patched crate has moved.
-
 on:
   schedule:
-    # 04:00 UTC every Monday.
+    # Run before the Monday npm updater and advisory audit windows.
     - cron: "0 4 * * 1"
   workflow_dispatch: {}
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
+
+concurrency:
+  group: cargo-compatible-update
+  cancel-in-progress: false
 
 jobs:
-  cargo-update:
-    name: cargo update (weekly)
+  candidate:
+    name: Build and validate read-only Cargo candidate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: src-tauri
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.candidate.outputs.changed }}
+      candidate-sha256: ${{ steps.candidate.outputs.candidate-sha256 }}
+      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+      source-sha: ${{ steps.source.outputs.source-sha }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Checkout immutable source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Validate immutable candidate source
+        id: source
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Invalid candidate source::Expected github.sha to be one lowercase 40-character Git object ID."
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+          echo "source-sha=${SOURCE_SHA}" >> "${GITHUB_OUTPUT}"
 
-      - name: Cache cargo registry & git
-        uses: actions/cache@v5
+      - name: Set up Node 24 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
+
+      - name: Cache Cargo registry, sources, and build output
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-update-${{ hashFiles('src-tauri/Cargo.lock') }}
+            src-tauri/target
+          key: cargo-compatible-update-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: |
-            cargo-update-
+            cargo-compatible-update-${{ runner.os }}-
 
-      - name: Run cargo update
-        run: cargo update --verbose
-
-      - name: Check for Cargo.lock changes
-        id: diff
+      - name: Verify read-only candidate toolchains
+        shell: bash
         run: |
-          if git diff --quiet -- Cargo.lock; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          test "$(node --version)" = "v$(tr -d '\r\n' < .node-version)"
+          rustc --version
+          cargo --version
+
+      - name: Generate and seal one Cargo.lock candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo update --manifest-path src-tauri/Cargo.toml --verbose
+          node scripts/ci/check-cargo-update-candidate.mjs --github-output
+
+      - name: Stage sealed lock without executing candidate code
+        env:
+          EXPECTED_CANDIDATE_SHA256: ${{ steps.candidate.outputs.candidate-sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_root="${RUNNER_TEMP:?}/cargo-lock-candidate"
+          mkdir -- "${candidate_root}"
+          cp -- src-tauri/Cargo.lock "${candidate_root}/Cargo.lock"
+          staged_sha256="$(sha256sum "${candidate_root}/Cargo.lock" | awk '{print $1}')"
+          test "${staged_sha256}" = "${EXPECTED_CANDIDATE_SHA256}"
+
+      - name: Upload immutable sealed Cargo.lock
+        id: artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-lock-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cargo-lock-candidate/Cargo.lock
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Verify immutable artifact identity
+        env:
+          ARTIFACT_ID: ${{ steps.artifact.outputs.artifact-id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${ARTIFACT_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error title=Candidate artifact identity missing::upload-artifact did not return one immutable numeric artifact ID."
+            exit 1
           fi
 
-      - name: Create Pull Request
-        if: steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
+      # The sealed artifact exists before this point. Newly selected build
+      # scripts and proc macros execute only in this contents-read job.
+      - name: Install locked-workspace Linux prerequisites
+        if: steps.candidate.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential \
+            cmake \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libsoup-3.0-dev \
+            libudev-dev \
+            libwebkit2gtk-4.1-dev \
+            pkg-config \
+            librsvg2-dev
+
+      - name: Verify version projection and locked workspace
+        if: steps.candidate.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run version:floor:check
+          npm run version:check
+          cargo metadata --manifest-path src-tauri/Cargo.toml --locked --format-version 1 --no-deps > /dev/null
+          cargo check --manifest-path src-tauri/Cargo.toml --workspace --exclude sorng-kafka --locked
+
+  delivery:
+    name: Deliver sealed Cargo candidate
+    needs: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout immutable source without persisted credentials
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          commit-message: "chore(deps): weekly cargo update"
-          title: "chore(deps): weekly cargo update"
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 24 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+
+      - name: Validate candidate job outputs
+        env:
+          CHANGED: ${{ needs.candidate.outputs.changed }}
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.candidate.outputs.candidate-sha256 }}
+          ARTIFACT_ID: ${{ needs.candidate.outputs.artifact-id }}
+          SOURCE_SHA: ${{ needs.candidate.outputs.source-sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(tr -d '\r\n' < .node-version)"
+          if [[ ! "${CHANGED:-}" =~ ^(true|false)$ ]]; then
+            echo "::error title=Invalid candidate change state::Expected true or false; received ${CHANGED:-missing}."
+            exit 1
+          fi
+          if [[ ! "${EXPECTED_CANDIDATE_SHA256:-}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error title=Invalid candidate seal::The read-only job did not expose a lowercase SHA-256."
+            exit 1
+          fi
+          if [[ ! "${ARTIFACT_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error title=Invalid candidate artifact::The read-only job did not expose one immutable numeric artifact ID."
+            exit 1
+          fi
+          if [[ ! "${SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ || "$(git rev-parse HEAD)" != "${SOURCE_SHA}" ]]; then
+            echo "::error title=Invalid candidate source::Delivery did not check out the read-only job's exact source SHA."
+            exit 1
+          fi
+
+      - name: Download the exact sealed Cargo.lock artifact
+        if: needs.candidate.outputs.changed == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact-id }}
+          path: ${{ runner.temp }}/cargo-lock-candidate
+          merge-multiple: true
+
+      - name: Reconstruct and verify the changed candidate
+        if: needs.candidate.outputs.changed == 'true'
+        env:
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.candidate.outputs.candidate-sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_root="${RUNNER_TEMP:?}/cargo-lock-candidate"
+          expected_artifact="${candidate_root}/Cargo.lock"
+          if [[ ! -d "${candidate_root}" || -L "${candidate_root}" ]]; then
+            echo "::error title=Unsafe candidate artifact root::Expected a real directory beneath RUNNER_TEMP."
+            exit 1
+          fi
+          mapfile -d '' artifact_entries < <(find "${candidate_root}" -mindepth 1 -print0)
+          if [[ "${#artifact_entries[@]}" -ne 1 || "${artifact_entries[0]}" != "${expected_artifact}" || ! -f "${expected_artifact}" || -L "${expected_artifact}" ]]; then
+            echo "::error title=Candidate artifact escaped its boundary::Expected exactly one regular Cargo.lock file."
+            exit 1
+          fi
+          artifact_sha256="$(sha256sum "${expected_artifact}" | awk '{print $1}')"
+          if [[ "${artifact_sha256}" != "${EXPECTED_CANDIDATE_SHA256}" ]]; then
+            echo "::error title=Candidate artifact seal changed::The exact downloaded artifact does not match the read-only job."
+            exit 1
+          fi
+          cp -- "${expected_artifact}" src-tauri/Cargo.lock
+          if git diff --quiet -- src-tauri/Cargo.lock; then
+            echo "::error title=Changed artifact has no diff::The read-only job reported a change but delivered the base lock."
+            exit 1
+          fi
+          node scripts/ci/check-cargo-update-candidate.mjs \
+            --expect-sha256 "${EXPECTED_CANDIDATE_SHA256}"
+          git diff --check -- src-tauri/Cargo.lock
+
+      - name: Verify the no-change candidate
+        if: needs.candidate.outputs.changed == 'false'
+        env:
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.candidate.outputs.candidate-sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/ci/check-cargo-update-candidate.mjs \
+            --expect-sha256 "${EXPECTED_CANDIDATE_SHA256}"
+          git diff --quiet --exit-code
+
+      - name: Diagnose pull-request authority
+        env:
+          GH_TOKEN: ${{ secrets.CARGO_UPDATE_TOKEN || github.token }}
+          CARGO_UPDATE_TOKEN: ${{ secrets.CARGO_UPDATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CARGO_UPDATE_TOKEN:-}" ]]; then
+            echo "::notice title=Default updater authority::Using GITHUB_TOKEN. The repository's create/approve pull-request setting is not introspectable with workflow-granted permissions; PR creation will fail closed with the exact Settings remediation if the host policy blocks it."
+            exit 0
+          fi
+
+          if ! workflow_permissions="$(gh api "repos/${GITHUB_REPOSITORY}/actions/permissions/workflow" 2>&1)"; then
+            echo "::error title=CARGO_UPDATE_TOKEN cannot inspect workflow permissions::The optional token must have repository Administration: read, Contents: write, and Pull requests: write. GitHub response: ${workflow_permissions}"
+            exit 1
+          fi
+          if ! repository_permissions="$(gh api "repos/${GITHUB_REPOSITORY}" 2>&1)"; then
+            echo "::error title=CARGO_UPDATE_TOKEN cannot inspect repository access::Verify repository Administration: read, Contents: write, and Pull requests: write. GitHub response: ${repository_permissions}"
+            exit 1
+          fi
+          if [[ "$(jq -r '.permissions.push // false' <<<"${repository_permissions}")" != "true" ]]; then
+            echo "::error title=CARGO_UPDATE_TOKEN cannot write contents::Grant the updater token Contents: write in addition to Administration: read and Pull requests: write."
+            exit 1
+          fi
+
+          can_approve="$(jq -r '.can_approve_pull_request_reviews // false' <<<"${workflow_permissions}")"
+          echo "::notice title=Dedicated updater authority::CARGO_UPDATE_TOKEN passed Administration/read and Contents/write preflight. Repository GITHUB_TOKEN create/approve setting: ${can_approve}. Pull requests/write is verified by the captured create-pull-request outcome."
+
+      - name: Require unchanged main immediately before delivery
+        id: base-guard
+        env:
+          GH_TOKEN: ${{ secrets.CARGO_UPDATE_TOKEN || github.token }}
+          SOURCE_SHA: ${{ needs.candidate.outputs.source-sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          before_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          git fetch --no-tags origin "refs/heads/main:refs/remotes/origin/main"
+          fetched_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "${before_main_sha}" != "${SOURCE_SHA}" || "${fetched_main_sha}" != "${SOURCE_SHA}" ]]; then
+            echo "::error title=Main advanced before Cargo delivery::Rerun against the new immutable main source."
+            exit 1
+          fi
+          echo "before-main-sha=${before_main_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create, refresh, or close the single update pull request
+        id: pull-request
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ secrets.CARGO_UPDATE_TOKEN || github.token }}
+          base: main
           branch: automation/cargo-update
           delete-branch: true
+          draft: always-true
+          commit-message: "chore(deps): weekly compatible cargo update"
+          title: "chore(deps): weekly compatible cargo update"
           add-paths: |
             src-tauri/Cargo.lock
-          labels: |
-            dependencies
-            automated
           body: |
-            Automated weekly `cargo update` run.
+            Automated weekly compatible Cargo dependency refresh.
 
-            Review notes:
-            - Confirm all downstream crates still build (CI will run).
-            - If any crate listed in `src-tauri/crates/VENDORED.md`
-              has moved upstream, bump the **Last sync** column in
-              the same PR and re-sync the vendored / patched source.
+            Policy:
+            - changes only src-tauri/Cargo.lock and preserves every manifest range;
+            - validates the canonical version and allocated release floor;
+            - resolves and checks the non-Kafka workspace with the sealed lock;
+            - keeps vendored sources and manifests outside automation;
+            - opens no automatic merge path.
+
+            Review any upstream movement against src-tauri/crates/VENDORED.md.
+            If a patched or vendored crate moved upstream, update its Last sync
+            entry and source in a separate, explicitly reviewed change.
+
+      - name: Verify exact remote pull-request delivery
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.CARGO_UPDATE_TOKEN || github.token }}
+          CHANGED: ${{ needs.candidate.outputs.changed }}
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.candidate.outputs.candidate-sha256 }}
+          OUTCOME: ${{ steps.pull-request.outcome }}
+          OPERATION: ${{ steps.pull-request.outputs.pull-request-operation }}
+          PR_NUMBER: ${{ steps.pull-request.outputs.pull-request-number }}
+          PR_URL: ${{ steps.pull-request.outputs.pull-request-url }}
+          PR_HEAD_SHA: ${{ steps.pull-request.outputs.pull-request-head-sha }}
+          SOURCE_SHA: ${{ needs.candidate.outputs.source-sha }}
+          BEFORE_MAIN_SHA: ${{ steps.base-guard.outputs.before-main-sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${OUTCOME:-skipped}" == "failure" ]]; then
+            echo "::error title=Automated updater PR delivery failed::If the preceding action says GitHub Actions is not permitted to create or approve pull requests, open Settings > Actions > General > Workflow permissions, enable 'Allow GitHub Actions to create and approve pull requests', and rerun. Otherwise configure CARGO_UPDATE_TOKEN with repository Administration: read, Contents: write, and Pull requests: write, then inspect the preceding API error."
+            exit 1
+          fi
+          if [[ "${OUTCOME:-skipped}" != "success" ]]; then
+            echo "::error title=Updater did not reconcile its pull request::create-pull-request outcome was ${OUTCOME:-skipped}; inspect the preceding failed or skipped gate."
+            exit 1
+          fi
+
+          after_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+
+          open_prs="$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/pulls" \
+              -f state=open \
+              -f head="${GITHUB_REPOSITORY_OWNER}:automation/cargo-update" \
+              -f per_page=2 \
+              --jq '[.[] | {
+                number: .number,
+                url: .html_url,
+                headRefName: .head.ref,
+                baseRefName: .base.ref,
+                headRefOid: .head.sha,
+                baseRefOid: .base.sha,
+                headRepository: .head.repo.full_name,
+                baseRepository: .base.repo.full_name,
+                isDraft: .draft
+              }]'
+          )"
+          open_count="$(jq 'length' <<<"${open_prs}")"
+          remote_files='[]'
+          remote_lock_sha256=''
+          initial_head_sha=''
+          final_head_sha=''
+
+          if [[ "${CHANGED:-false}" == "true" && "${open_count}" -eq 1 ]]; then
+            remote_number="$(jq -r '.[0].number' <<<"${open_prs}")"
+            initial_head_sha="$(jq -r '.[0].headRefOid' <<<"${open_prs}")"
+            remote_files="$(
+              gh api --method GET \
+                "repos/${GITHUB_REPOSITORY}/pulls/${remote_number}/files" \
+                -f per_page=2 \
+                --jq '[.[].filename]'
+            )"
+            remote_lock_sha256="$(
+              gh api \
+                -H "Accept: application/vnd.github.raw+json" \
+                "repos/${GITHUB_REPOSITORY}/contents/src-tauri/Cargo.lock?ref=${initial_head_sha}" |
+                sha256sum |
+                awk '{print $1}'
+            )"
+            final_head_sha="$(
+              gh api "repos/${GITHUB_REPOSITORY}/pulls/${remote_number}" --jq '.head.sha'
+            )"
+          fi
+
+          state_path="$(mktemp "${RUNNER_TEMP:?}/cargo-pr-delivery-XXXXXX.json")"
+          jq -n \
+            --arg changed "${CHANGED:-false}" \
+            --arg outcome "${OUTCOME:-skipped}" \
+            --arg operation "${OPERATION:-}" \
+            --arg pullRequestNumber "${PR_NUMBER:-}" \
+            --arg pullRequestUrl "${PR_URL:-}" \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg expectedSha256 "${EXPECTED_CANDIDATE_SHA256:-}" \
+            --arg actionHeadSha "${PR_HEAD_SHA:-}" \
+            --arg sourceSha "${SOURCE_SHA:-}" \
+            --arg beforeMainSha "${BEFORE_MAIN_SHA:-}" \
+            --arg afterMainSha "${after_main_sha}" \
+            --arg remoteCargoLockSha256 "${remote_lock_sha256}" \
+            --arg initialHeadSha "${initial_head_sha}" \
+            --arg finalHeadSha "${final_head_sha}" \
+            --argjson openPullRequests "${open_prs}" \
+            --argjson remoteFiles "${remote_files}" \
+            '{
+              changed: ($changed == "true"),
+              outcome: $outcome,
+              operation: $operation,
+              pullRequestNumber: $pullRequestNumber,
+              pullRequestUrl: $pullRequestUrl,
+              repository: $repository,
+              expectedSha256: $expectedSha256,
+              actionHeadSha: $actionHeadSha,
+              sourceSha: $sourceSha,
+              beforeMainSha: $beforeMainSha,
+              afterMainSha: $afterMainSha,
+              remoteCargoLockSha256: $remoteCargoLockSha256,
+              initialHeadSha: $initialHeadSha,
+              finalHeadSha: $finalHeadSha,
+              openPullRequests: $openPullRequests,
+              remoteFiles: $remoteFiles
+            }' > "${state_path}"
+          node scripts/ci/check-cargo-update-candidate.mjs \
+            --delivery-state "${state_path}"

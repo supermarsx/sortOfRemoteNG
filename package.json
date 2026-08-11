@@ -22,6 +22,7 @@
     "deps:npm:update:dry-run": "node ./scripts/ci/update-npm-compatible.mjs --dry-run",
     "deps:npm:update:compatible": "node ./scripts/ci/update-npm-compatible.mjs --write",
     "deps:npm:update:test": "node --test ./tests/tooling/npmUpdateAutomation.node-test.mjs",
+    "deps:cargo:update:test": "node --test ./tests/tooling/cargoUpdateAutomation.node-test.mjs",
     "i18n:styled:generate": "node ./scripts/styled-english-locales.mjs",
     "i18n:styled:check": "node ./scripts/styled-english-locales.mjs --check",
     "release:test": "node --test ./tests/release/*.test.mjs",
