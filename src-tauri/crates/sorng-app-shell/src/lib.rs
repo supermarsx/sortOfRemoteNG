@@ -1,7 +1,9 @@
 pub mod commands {
     use std::io::Read;
     use std::path::{Path, PathBuf};
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     use std::process::{Command, Stdio};
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     use std::time::{Duration, Instant};
     use tauri::Manager;
 
@@ -27,15 +29,19 @@ pub mod commands {
     const MAX_SHORTCUT_SCAN_RESULTS: usize = 1024;
     #[cfg(target_os = "linux")]
     const MAX_SHORTCUT_FILE_BYTES: u64 = 64 * 1024;
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     const MAX_HELPER_OUTPUT_BYTES: usize = 64 * 1024;
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     const HELPER_TIMEOUT: Duration = Duration::from_secs(15);
 
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     struct BoundedCommandOutput {
         success: bool,
         stdout: Vec<u8>,
         stderr: Vec<u8>,
     }
 
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     fn drain_bounded<R: Read>(mut reader: R, limit: usize) -> std::io::Result<Vec<u8>> {
         let mut retained = Vec::with_capacity(limit.min(8192));
         let mut buffer = [0_u8; 8192];
@@ -49,6 +55,7 @@ pub mod commands {
         }
     }
 
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     fn bounded_output_text(bytes: &[u8]) -> String {
         String::from_utf8_lossy(bytes)
             .chars()
@@ -59,6 +66,7 @@ pub mod commands {
             .to_string()
     }
 
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     fn run_bounded_command(
         command: &mut Command,
         label: &str,
