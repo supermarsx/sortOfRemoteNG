@@ -288,18 +288,14 @@ impl ApiRuntimeConfig {
         // Remote listeners and every release build receive a non-zero baseline
         // even if persisted settings attempt to disable the control.
         let rate_limiting_on = get_bool(r, "rateLimiting").unwrap_or(false);
-        let configured_rate_limit = get_u64(r, "maxRequestsPerMinute")
-            .map(|value| value.min(MAX_RATE_LIMIT_PER_MINUTE as u64) as u32);
+        let configured_rate_limit =
+            get_u64(r, "maxRequestsPerMinute").map(|value| value.min(u32::MAX as u64) as u32);
         let rate_limit_required = allow_remote || !cfg!(debug_assertions);
-        let rate_limit_per_minute = if rate_limit_required {
-            configured_rate_limit
-                .filter(|limit| *limit > 0)
-                .unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
-        } else if rate_limiting_on {
-            configured_rate_limit.unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
-        } else {
-            0
-        };
+        let rate_limit_per_minute = resolve_rate_limit_per_minute(
+            configured_rate_limit,
+            rate_limiting_on,
+            rate_limit_required,
+        );
 
         let cors_enabled = get_bool(r, "corsEnabled").unwrap_or(false);
 
@@ -423,6 +419,19 @@ fn safe_settings_user_store_path(raw: &str, app_dir: &Path) -> Option<PathBuf> {
 }
 
 // --- helpers -------------------------------------------------------------
+
+fn resolve_rate_limit_per_minute(configured: Option<u32>, enabled: bool, required: bool) -> u32 {
+    let configured = configured.map(|limit| limit.min(MAX_RATE_LIMIT_PER_MINUTE));
+    if required {
+        configured
+            .filter(|limit| *limit > 0)
+            .unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
+    } else if enabled {
+        configured.unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
+    } else {
+        0
+    }
+}
 
 fn get_bool(v: &serde_json::Value, key: &str) -> Option<bool> {
     v.get(key).and_then(|x| x.as_bool())
@@ -766,6 +775,53 @@ mod tests {
             "restApi": { "rateLimiting": true, "maxRequestsPerMinute": 0 }
         }));
         assert_eq!(cfg.rate_limit_per_minute, 0);
+    }
+
+    #[test]
+    fn rate_limit_policy_matrix_covers_required_and_optional_modes() {
+        let oversized = Some(u32::MAX);
+        let required_cases = [
+            ("absent", None, DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE),
+            ("zero", Some(0), DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE),
+            ("positive", Some(37), 37),
+            ("oversized", oversized, MAX_RATE_LIMIT_PER_MINUTE),
+        ];
+        for (case, configured, expected) in required_cases {
+            for enabled in [false, true] {
+                assert_eq!(
+                    resolve_rate_limit_per_minute(configured, enabled, true),
+                    expected,
+                    "required/{case}/enabled={enabled}",
+                );
+            }
+        }
+
+        let optional_enabled_cases = [
+            ("absent", None, DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE),
+            ("zero", Some(0), 0),
+            ("positive", Some(37), 37),
+            ("oversized", oversized, MAX_RATE_LIMIT_PER_MINUTE),
+        ];
+        for (case, configured, expected) in optional_enabled_cases {
+            assert_eq!(
+                resolve_rate_limit_per_minute(configured, true, false),
+                expected,
+                "optional/enabled/{case}",
+            );
+        }
+
+        for (case, configured) in [
+            ("absent", None),
+            ("zero", Some(0)),
+            ("positive", Some(37)),
+            ("oversized", oversized),
+        ] {
+            assert_eq!(
+                resolve_rate_limit_per_minute(configured, false, false),
+                0,
+                "optional/disabled/{case}",
+            );
+        }
     }
 
     #[test]
