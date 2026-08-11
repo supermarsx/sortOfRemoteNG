@@ -47,6 +47,12 @@ enum FixtureMode {
     RejectAuth,
 }
 
+// The production TOFU verifier intentionally fails closed when another trust
+// decision is in progress. Keep each local HTTPS fixture's lifetime exclusive
+// so parallel test threads cannot turn that security boundary into a fixture
+// race; this does not relax or bypass certificate verification.
+static HTTPS_FIXTURE_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[derive(Debug, Default)]
 struct FixtureState {
     authenticated: bool,
@@ -73,6 +79,7 @@ impl FixtureState {
 }
 
 struct SoapFixture {
+    _fixture_guard: tokio::sync::MutexGuard<'static, ()>,
     endpoint: String,
     state: Arc<Mutex<FixtureState>>,
     trust: WinRmTestTrust,
@@ -83,6 +90,7 @@ struct SoapFixture {
 
 impl SoapFixture {
     async fn start(mode: FixtureMode) -> Self {
+        let fixture_guard = HTTPS_FIXTURE_GATE.lock().await;
         let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
         let certificate =
             rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()]).unwrap();
@@ -161,6 +169,7 @@ impl SoapFixture {
             }
         });
         Self {
+            _fixture_guard: fixture_guard,
             endpoint: format!("https://{address}/custom/wsman/wsman"),
             state,
             trust,
