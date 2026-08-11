@@ -36,7 +36,7 @@
     "stage:opkssh-vendor:disable": "node ./scripts/stage-opkssh-vendor.mjs --disable",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit --pretty false",
+    "typecheck": "next typegen && tsc --noEmit --pretty false",
     "format": "node ./scripts/format-changed.mjs --check",
     "format:write": "node ./scripts/format-changed.mjs --write",
     "test": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --run",

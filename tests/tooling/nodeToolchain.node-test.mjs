@@ -83,6 +83,25 @@ test("runs the toolchain contract under the supported Node LTS", () => {
   );
 });
 
+test("regenerates Next.js declarations instead of tracking generated state", async () => {
+  const [gitignore, packageJson, tsconfig] = await Promise.all([
+    readRepoFile(".gitignore"),
+    readRepoJson("package.json"),
+    readRepoJson("tsconfig.json"),
+  ]);
+
+  assert.match(gitignore, /^\/next-env\.d\.ts$/m);
+  assert.equal(
+    packageJson.scripts?.typecheck,
+    "next typegen && tsc --noEmit --pretty false",
+  );
+  assert.ok(tsconfig.include?.includes("next-env.d.ts"));
+  assert.ok(tsconfig.include?.includes(".next/types/**/*.ts"));
+  assert.ok(tsconfig.include?.includes(".next/dev/types/**/*.ts"));
+  assert.ok(tsconfig.include?.includes(".next-tauri-dev/types/**/*.ts"));
+  assert.ok(tsconfig.include?.includes(".next-tauri-dev/dev/types/**/*.ts"));
+});
+
 test("pins the canonical Bun lock writer for dependency automation", async () => {
   const [bunVersionText, workflow] = await Promise.all([
     readRepoFile(".bun-version"),

@@ -24,6 +24,7 @@ Thumbs.db
 *.sln
 *.sw?
 .env
+/next-env.d.ts
 /.next
 /.next-tauri-dev
 /out
