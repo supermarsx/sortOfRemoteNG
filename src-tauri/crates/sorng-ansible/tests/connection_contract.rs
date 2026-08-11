@@ -105,15 +105,16 @@ async fn connect_and_info_require_successful_version_process_and_cleanup_map() {
 #[tokio::test]
 async fn nonzero_version_probe_fails_without_map_insertion() {
     let fixture = FixtureDir::new();
+    let secret_stderr = "SORNG_ANSIBLE_SECRET_STDERR_4F3B2D91";
     #[cfg(windows)]
     let program = fixture.program(
         "ansible-failure",
-        "echo ansible [core 2.16.3]\necho version probe failed 1>&2\nexit /b 7",
+        &format!("echo ansible [core 2.16.3]\necho {secret_stderr} 1>&2\nexit /b 7"),
     );
     #[cfg(not(windows))]
     let program = fixture.program(
         "ansible-failure-unix",
-        "echo 'ansible [core 2.16.3]'\necho 'version probe failed' >&2\nexit 7",
+        &format!("echo 'ansible [core 2.16.3]'\necho '{secret_stderr}' >&2\nexit 7"),
     );
     let mut service = AnsibleService::new();
 
@@ -124,7 +125,7 @@ async fn nonzero_version_probe_fails_without_map_insertion() {
     assert_eq!(error.kind, AnsibleErrorKind::ProcessError);
     assert!(error.message.contains("exit code 7"));
     assert!(error.details.is_none());
-    assert!(!error.to_string().contains("probe failed"));
+    assert!(!error.to_string().contains(secret_stderr));
     assert!(service.list_connections().is_empty());
 }
 
