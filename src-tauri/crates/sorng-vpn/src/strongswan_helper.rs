@@ -482,7 +482,17 @@ fn open_regular_file_no_follow(
     };
     // SAFETY: parent is a verified directory descriptor and file_name is one
     // NUL-free component. O_NOFOLLOW and O_NONBLOCK reject link/FIFO hazards.
-    let file_fd = unsafe { libc::openat(parent.as_raw_fd(), file_name.as_ptr(), flags, mode) };
+    // `openat` is variadic when O_CREAT is present. On platforms where
+    // `mode_t` is narrower than `c_uint` (notably macOS), C's default argument
+    // promotions require the mode to be passed as `c_uint`.
+    let file_fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            file_name.as_ptr(),
+            flags,
+            mode as libc::c_uint,
+        )
+    };
     if file_fd < 0 {
         let error = std::io::Error::last_os_error();
         if create_mode.is_none() && error.kind() == std::io::ErrorKind::NotFound {
@@ -857,19 +867,20 @@ async fn ensure_managed_include(
 #[cfg(not(windows))]
 async fn verify_file_unchanged(path: &Path, initial: Option<FileIdentity>) -> Result<(), String> {
     let verify_path = path.to_path_buf();
-    let verify_task = tokio::task::spawn_blocking(move || {
-        let current = open_regular_file_no_follow(
-            &verify_path,
-            libc::O_RDONLY,
-            None,
-            false,
-            MANAGED_CONFIG_LIMIT,
-        )?;
-        match current {
-            Some(file) => Ok(Some(FileIdentity::from_metadata(&file.metadata()?))),
-            None => Ok(None),
-        }
-    });
+    let verify_task =
+        tokio::task::spawn_blocking(move || -> std::io::Result<Option<FileIdentity>> {
+            let current = open_regular_file_no_follow(
+                &verify_path,
+                libc::O_RDONLY,
+                None,
+                false,
+                MANAGED_CONFIG_LIMIT,
+            )?;
+            match current {
+                Some(file) => Ok(Some(FileIdentity::from_metadata(&file.metadata()?))),
+                None => Ok(None),
+            }
+        });
     let current = tokio::time::timeout(FILE_PROCESS_TIMEOUT, verify_task)
         .await
         .map_err(|_| format!("Timed out while revalidating {}", path.display()))?
