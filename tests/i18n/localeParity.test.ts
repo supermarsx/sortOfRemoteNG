@@ -74,12 +74,22 @@ function interpolations(source: string): string[] {
     .sort();
 }
 
+function sameStringArray(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 function escapeRegExp(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 const enLeafPaths = collectLeafPaths(enUS);
 const enEntries = new Map(collectLeafEntries(enUS));
+const enInterpolationTokens = new Map(
+  [...enEntries].map(([key, value]) => [key, interpolations(value)]),
+);
 const accepted = acceptedIdentical as Record<string, string[]>;
 
 describe("repo-wide locale parity + translation ratchet", () => {
@@ -94,32 +104,57 @@ describe("repo-wide locale parity + translation ratchet", () => {
   });
 
   it("preserves every {{interpolation}} token per key in every locale", () => {
+    const mismatches: Array<{
+      locale: string;
+      key: string;
+      expected: string[];
+      received: string[];
+    }> = [];
+
     for (const [name, locale] of Object.entries(nonEnLocales)) {
       for (const [key, value] of collectLeafEntries(locale)) {
-        expect(interpolations(value), `${name}: ${key}`).toEqual(
-          interpolations(enEntries.get(key) ?? ""),
-        );
+        const received = interpolations(value);
+        const expected = enInterpolationTokens.get(key) ?? [];
+        if (!sameStringArray(received, expected)) {
+          mismatches.push({ locale: name, key, expected, received });
+        }
       }
     }
+
+    expect(mismatches, "locale interpolation-token mismatches").toEqual([]);
   });
 
   it("never leaves a blank or whitespace-only value in any locale", () => {
+    const blankValues: string[] = [];
+
     for (const [name, locale] of Object.entries(allLocales)) {
       for (const [key, value] of collectLeafEntries(locale)) {
-        expect(value.trim(), `${name}: ${key}`).not.toBe("");
+        if (value.trim() === "") {
+          blankValues.push(`${name}: ${key}`);
+        }
       }
     }
+
+    expect(blankValues, "blank locale values").toEqual([]);
   });
 
   it("exposes no _-prefixed metadata key as a translatable leaf", () => {
+    const leakedKeys: string[] = [];
+
     for (const [name, locale] of Object.entries(allLocales)) {
       for (const key of collectLeafPaths(locale)) {
         const leaked = key
           .split(".")
           .some((segment) => segment.startsWith("_"));
-        expect(leaked, `${name}: ${key}`).toBe(false);
+        if (leaked) {
+          leakedKeys.push(`${name}: ${key}`);
+        }
       }
     }
+
+    expect(leakedKeys, "metadata keys exposed as translatable leaves").toEqual(
+      [],
+    );
   });
 
   // THE RATCHET. Every leaf whose value still equals en-US must be a member of
@@ -155,11 +190,14 @@ describe("repo-wide locale parity + translation ratchet", () => {
       glossary as { mangledDe: { stems: string[] } }
     ).mangledDe.stems.filter((stem) => stem !== "breit");
     const mangled = new RegExp(`(${stems.map(escapeRegExp).join("|")})`, "i");
+    const mangledValues: Array<{ key: string; value: string }> = [];
+
     for (const [key, value] of collectLeafEntries(deDE)) {
-      expect(
-        mangled.test(value),
-        `de-DE: ASCII-mangled German at ${key}: ${value}`,
-      ).toBe(false);
+      if (mangled.test(value)) {
+        mangledValues.push({ key, value });
+      }
     }
+
+    expect(mangledValues, "de-DE ASCII-mangled German values").toEqual([]);
   });
 });
