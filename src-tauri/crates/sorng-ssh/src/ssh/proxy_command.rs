@@ -15,13 +15,13 @@
 //! The module converts the child process's stdio into a `std::net::TcpStream`
 //! compatible pipe by using an intermediate TCP socket pair.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Condvar, Mutex as StdMutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -160,19 +160,33 @@ fn require_proxy_command_confirmation(expanded_cmd: &str) -> Result<(), String> 
 const RELAY_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const STOP_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 const CHILD_REAP_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_PROXY_COMMAND_REAPERS: usize = 4;
+const MAX_PROXY_COMMAND_LIFECYCLES: usize = 128;
 const MAX_STDERR_BYTES_RECORDED: usize = 64 * 1024;
 const MAX_PROXY_COMMAND_DIAGNOSTIC_BYTES: usize = 16 * 1024;
 const PROXY_COMMAND_TRUNCATED_MARKER: &str = "...[TRUNCATED]";
+static NEXT_PROXY_COMMAND_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LifecycleStage {
     Bind,
     Accept,
     Registry,
+    Reaper,
     #[cfg(windows)]
     BeforeAttach,
     AfterSpawn,
 }
+
+#[cfg(test)]
+#[derive(Default)]
+struct LifecyclePublicationGateState {
+    entered: bool,
+    released: bool,
+}
+
+#[cfg(test)]
+type LifecyclePublicationGate = Arc<(StdMutex<LifecyclePublicationGateState>, Condvar)>;
 
 #[derive(Default)]
 struct LifecycleHooks {
@@ -180,6 +194,10 @@ struct LifecycleHooks {
     failure: Option<LifecycleStage>,
     #[cfg(test)]
     spawned_pid: Option<Arc<std::sync::atomic::AtomicU32>>,
+    #[cfg(test)]
+    lifecycle_count_override: Option<usize>,
+    #[cfg(test)]
+    publication_gate: Option<LifecyclePublicationGate>,
 }
 
 impl LifecycleHooks {
@@ -203,12 +221,113 @@ impl LifecycleHooks {
         #[cfg(not(test))]
         let _ = pid;
     }
+
+    fn lifecycle_count(&self, actual: usize) -> usize {
+        #[cfg(test)]
+        {
+            self.lifecycle_count_override.unwrap_or(actual)
+        }
+        #[cfg(not(test))]
+        {
+            actual
+        }
+    }
+
+    fn wait_before_publication(&self) {
+        #[cfg(test)]
+        if let Some(gate) = &self.publication_gate {
+            let (state, changed) = &**gate;
+            let mut state = state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.entered = true;
+            changed.notify_all();
+            while !state.released {
+                state = changed
+                    .wait(state)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+        }
+    }
 }
 
 struct ManagedThread {
     name: &'static str,
     done: Receiver<()>,
     handle: Option<JoinHandle<()>>,
+}
+
+#[derive(Clone)]
+struct ProxyCommandCleanupCompletion {
+    state: Arc<(StdMutex<bool>, Condvar)>,
+}
+
+impl ProxyCommandCleanupCompletion {
+    fn pending() -> Self {
+        Self {
+            state: Arc::new((StdMutex::new(false), Condvar::new())),
+        }
+    }
+
+    fn completed() -> Self {
+        let completion = Self::pending();
+        completion.complete();
+        completion
+    }
+
+    fn complete(&self) {
+        let (completed, changed) = &*self.state;
+        *completed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+        changed.notify_all();
+    }
+
+    fn wait(&self) {
+        let (completed, changed) = &*self.state;
+        let mut completed = completed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        while !*completed {
+            completed = changed
+                .wait(completed)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+    }
+
+    fn wait_until(&self, deadline: Instant) -> bool {
+        let (completed, changed) = &*self.state;
+        let mut completed = completed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        while !*completed {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
+            let (next, timed_out) = changed
+                .wait_timeout(completed, remaining)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            completed = next;
+            if timed_out.timed_out() && !*completed {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[cfg(test)]
+    fn is_complete(&self) -> bool {
+        *self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn same_as(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
 }
 
 impl std::fmt::Debug for ManagedThread {
@@ -238,22 +357,26 @@ impl ManagedThread {
         })
     }
 
-    fn join_until(mut self, deadline: Instant) {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let finished = match self.done.recv_timeout(remaining) {
-            Ok(()) | Err(RecvTimeoutError::Disconnected) => true,
-            Err(RecvTimeoutError::Timeout) => false,
-        };
+    fn join_inner(&mut self) {
+        let _ = self.done.recv();
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
 
-        if finished {
-            if let Some(handle) = self.handle.take() {
-                let _ = handle.join();
-            }
-        } else {
-            log::warn!(
-                "ProxyCommand worker '{}' did not stop before its join deadline",
+    fn join(mut self) {
+        self.join_inner();
+    }
+}
+
+impl Drop for ManagedThread {
+    fn drop(&mut self) {
+        if self.handle.is_some() {
+            log::error!(
+                "ProxyCommand worker '{}' reached fallback Drop; joining instead of detaching",
                 self.name
             );
+            self.join_inner();
         }
     }
 }
@@ -471,6 +594,20 @@ pub struct ProxyCommandState {
     stderr_bytes: Arc<AtomicUsize>,
     stderr_truncated: Arc<AtomicBool>,
     stopping: bool,
+    cleanup_completion: Option<ProxyCommandCleanupCompletion>,
+    cleanup_enqueued: bool,
+    generation: u64,
+    active: bool,
+    producer_released: bool,
+    native_cleanup_complete: bool,
+    #[cfg(test)]
+    cleanup_gate: Option<Receiver<()>>,
+    #[cfg(test)]
+    reject_cleanup_enqueue_once: bool,
+    #[cfg(test)]
+    panic_cleanup_before_claim_once: bool,
+    #[cfg(test)]
+    panic_cleanup_after_claim_once: bool,
 }
 
 struct StderrCaptureCounters {
@@ -496,27 +633,52 @@ impl std::fmt::Debug for ProxyCommandState {
 }
 
 impl ProxyCommandState {
-    fn active(
-        session_id: &str,
+    fn reserved(session_id: &str, generation: u64) -> Self {
+        Self {
+            session_id: session_id.to_string(),
+            command: String::new(),
+            child: None,
+            process_tree: None,
+            control_socket: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
+            relay_handles: Vec::new(),
+            stderr_bytes: Arc::new(AtomicUsize::new(0)),
+            stderr_truncated: Arc::new(AtomicBool::new(false)),
+            stopping: false,
+            cleanup_completion: None,
+            cleanup_enqueued: false,
+            generation,
+            active: false,
+            producer_released: false,
+            native_cleanup_complete: false,
+            #[cfg(test)]
+            cleanup_gate: None,
+            #[cfg(test)]
+            reject_cleanup_enqueue_once: false,
+            #[cfg(test)]
+            panic_cleanup_before_claim_once: false,
+            #[cfg(test)]
+            panic_cleanup_after_claim_once: false,
+        }
+    }
+
+    fn activate(
+        &mut self,
         expanded_command: &str,
         child: Arc<StdMutex<Child>>,
         process_tree: Arc<ProcessTreeGuard>,
         control_socket: TcpStream,
         cancelled: Arc<AtomicBool>,
         stderr: StderrCaptureCounters,
-    ) -> Self {
-        Self {
-            session_id: session_id.to_string(),
-            command: redact_proxy_credentials(expanded_command),
-            child: Some(child),
-            process_tree: Some(process_tree),
-            control_socket: Some(control_socket),
-            cancelled,
-            relay_handles: Vec::new(),
-            stderr_bytes: stderr.bytes,
-            stderr_truncated: stderr.truncated,
-            stopping: false,
-        }
+    ) {
+        self.command = redact_proxy_credentials(expanded_command);
+        self.child = Some(child);
+        self.process_tree = Some(process_tree);
+        self.control_socket = Some(control_socket);
+        self.cancelled = cancelled;
+        self.stderr_bytes = stderr.bytes;
+        self.stderr_truncated = stderr.truncated;
+        self.active = true;
     }
 
     #[cfg(test)]
@@ -537,6 +699,20 @@ impl ProxyCommandState {
             stderr_bytes: Arc::new(AtomicUsize::new(0)),
             stderr_truncated: Arc::new(AtomicBool::new(false)),
             stopping: false,
+            cleanup_completion: None,
+            cleanup_enqueued: false,
+            generation: 0,
+            active: true,
+            producer_released: true,
+            native_cleanup_complete: false,
+            #[cfg(test)]
+            cleanup_gate: None,
+            #[cfg(test)]
+            reject_cleanup_enqueue_once: false,
+            #[cfg(test)]
+            panic_cleanup_before_claim_once: false,
+            #[cfg(test)]
+            panic_cleanup_after_claim_once: false,
         }
     }
 }
@@ -553,6 +729,435 @@ fn proxy_commands_lock() -> std::sync::MutexGuard<'static, HashMap<String, Proxy
         log::error!("ProxyCommand registry lock was poisoned; recovering for cleanup");
         poisoned.into_inner()
     })
+}
+
+fn validate_proxy_command_registration(
+    commands: &HashMap<String, ProxyCommandState>,
+    session_id: &str,
+    lifecycle_count: usize,
+) -> Result<(), String> {
+    if commands.contains_key(session_id) {
+        return Err(format!(
+            "ProxyCommand session '{session_id}' is already active or stopping"
+        ));
+    }
+    if lifecycle_count >= MAX_PROXY_COMMAND_LIFECYCLES {
+        return Err(format!(
+            "ProxyCommand lifecycle limit reached ({MAX_PROXY_COMMAND_LIFECYCLES} active or stopping)"
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) struct ProxyCommandProducerReservation {
+    session_id: String,
+    generation: u64,
+}
+
+impl ProxyCommandProducerReservation {
+    fn matches(&self, session_id: &str, generation: u64) -> bool {
+        self.session_id == session_id && self.generation == generation
+    }
+}
+
+impl Drop for ProxyCommandProducerReservation {
+    fn drop(&mut self) {
+        acknowledge_proxy_command_producer(&self.session_id, self.generation);
+    }
+}
+
+fn insert_proxy_command_reservation(
+    commands: &mut HashMap<String, ProxyCommandState>,
+    session_id: &str,
+    lifecycle_count: usize,
+) -> Result<ProxyCommandProducerReservation, String> {
+    validate_proxy_command_registration(commands, session_id, lifecycle_count)?;
+    let generation = NEXT_PROXY_COMMAND_GENERATION.fetch_add(1, Ordering::AcqRel);
+    commands.insert(
+        session_id.to_string(),
+        ProxyCommandState::reserved(session_id, generation),
+    );
+    Ok(ProxyCommandProducerReservation {
+        session_id: session_id.to_string(),
+        generation,
+    })
+}
+
+pub(crate) fn reserve_proxy_command_session(
+    session_id: &str,
+) -> Result<ProxyCommandProducerReservation, String> {
+    relay_reaper_queue()?;
+    let mut commands = proxy_commands_lock();
+    let lifecycle_count = commands.len();
+    insert_proxy_command_reservation(&mut commands, session_id, lifecycle_count)
+}
+
+fn reserve_proxy_command_session_with_hooks(
+    session_id: &str,
+    hooks: &LifecycleHooks,
+) -> Result<ProxyCommandProducerReservation, String> {
+    let mut commands = proxy_commands_lock();
+    let lifecycle_count = hooks.lifecycle_count(commands.len());
+    insert_proxy_command_reservation(&mut commands, session_id, lifecycle_count)
+}
+
+fn acknowledge_proxy_command_producer(session_id: &str, generation: u64) {
+    let mut commands = proxy_commands_lock();
+    let Some(state) = commands.get_mut(session_id) else {
+        return;
+    };
+    if state.generation != generation {
+        return;
+    }
+    state.producer_released = true;
+    let should_remove = !state.active || (state.stopping && state.native_cleanup_complete);
+    let completion = should_remove
+        .then(|| state.cleanup_completion.clone())
+        .flatten();
+    if should_remove {
+        commands.remove(session_id);
+    }
+    drop(commands);
+    if let Some(completion) = completion {
+        completion.complete();
+    }
+}
+
+struct RelayReapTask {
+    session_id: String,
+    child: Option<Arc<StdMutex<Child>>>,
+    process_tree: Option<Arc<ProcessTreeGuard>>,
+    control_socket: Option<TcpStream>,
+    workers: Vec<ManagedThread>,
+    completion: ProxyCommandCleanupCompletion,
+    stderr_bytes: Arc<AtomicUsize>,
+    stderr_truncated: Arc<AtomicBool>,
+    #[cfg(test)]
+    cleanup_gate: Option<Receiver<()>>,
+}
+
+#[derive(Clone)]
+struct RelayReapTicket {
+    session_id: String,
+    completion: ProxyCommandCleanupCompletion,
+    #[cfg(test)]
+    reject_enqueue: bool,
+    #[cfg(test)]
+    panic_before_claim: bool,
+    #[cfg(test)]
+    panic_after_claim: bool,
+}
+
+struct RelayReaperQueueState {
+    tickets: VecDeque<RelayReapTicket>,
+    shutting_down: bool,
+}
+
+struct RelayReaperShared {
+    state: StdMutex<RelayReaperQueueState>,
+    changed: Condvar,
+}
+
+struct RelayReaper {
+    shared: Arc<RelayReaperShared>,
+    _workers: Vec<JoinHandle<()>>,
+}
+
+static RELAY_REAPER_QUEUE: OnceLock<Result<RelayReaper, String>> = OnceLock::new();
+static ACTIVE_RELAY_REAPERS: AtomicUsize = AtomicUsize::new(0);
+static PEAK_RELAY_REAPERS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+static RELAY_REAP_PANIC_RECOVERIES: AtomicUsize = AtomicUsize::new(0);
+
+fn finish_proxy_command_cleanup(task: &mut RelayReapTask) {
+    #[cfg(test)]
+    if let Some(gate) = task.cleanup_gate.take() {
+        let _ = gate.recv();
+    }
+
+    if let Some(child_handle) = &task.child {
+        let pid = child_pid(child_handle);
+        if let Some(process_tree) = &task.process_tree {
+            process_tree.terminate(pid);
+        } else {
+            terminate_unmanaged_process_tree(pid);
+        }
+        let mut child_guard = child_handle
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = child_guard.kill();
+        let deadline = Instant::now() + CHILD_REAP_TIMEOUT;
+        loop {
+            match child_guard.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if Instant::now() < deadline => {
+                    drop(child_guard);
+                    std::thread::sleep(Duration::from_millis(10));
+                    child_guard = child_handle
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                }
+                _ => {
+                    let _ = child_guard.kill();
+                    let _ = child_guard.wait();
+                    break;
+                }
+            }
+        }
+    }
+
+    while let Some(worker) = task.workers.pop() {
+        worker.join();
+    }
+    drop(task.control_socket.take());
+    drop(task.process_tree.take());
+    drop(task.child.take());
+
+    let mut commands = proxy_commands_lock();
+    let complete_now = if let Some(state) = commands.get_mut(&task.session_id) {
+        let owns_cleanup = state
+            .cleanup_completion
+            .as_ref()
+            .is_some_and(|current| current.same_as(&task.completion));
+        if owns_cleanup {
+            state.native_cleanup_complete = true;
+            if state.producer_released {
+                commands.remove(&task.session_id);
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        }
+    } else {
+        true
+    };
+    drop(commands);
+
+    log::info!(
+        "[{}] ProxyCommand stopped (stderr drained: {} bytes{})",
+        task.session_id,
+        task.stderr_bytes.load(Ordering::Relaxed),
+        if task.stderr_truncated.load(Ordering::Relaxed) {
+            ", truncated"
+        } else {
+            ""
+        }
+    );
+    if complete_now {
+        task.completion.complete();
+    }
+}
+
+fn finish_proxy_command_cleanup_slot(slot: &Arc<StdMutex<Option<RelayReapTask>>>) {
+    let mut task = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(task) = task.as_mut() {
+        finish_proxy_command_cleanup(task);
+    }
+    task.take();
+}
+
+fn claim_proxy_command_cleanup(ticket: &RelayReapTicket) -> Option<RelayReapTask> {
+    let mut commands = proxy_commands_lock();
+    let state = commands.get_mut(&ticket.session_id)?;
+    let owns_cleanup = state
+        .cleanup_completion
+        .as_ref()
+        .is_some_and(|current| current.same_as(&ticket.completion));
+    if !owns_cleanup || !state.active {
+        return None;
+    }
+    Some(RelayReapTask {
+        session_id: ticket.session_id.clone(),
+        child: state.child.take(),
+        process_tree: state.process_tree.take(),
+        control_socket: state.control_socket.take(),
+        workers: std::mem::take(&mut state.relay_handles),
+        completion: ticket.completion.clone(),
+        stderr_bytes: state.stderr_bytes.clone(),
+        stderr_truncated: state.stderr_truncated.clone(),
+        #[cfg(test)]
+        cleanup_gate: state.cleanup_gate.take(),
+    })
+}
+
+fn claim_proxy_command_cleanup_from_slot(
+    ticket_slot: &Arc<StdMutex<Option<RelayReapTicket>>>,
+) -> Option<(RelayReapTask, bool)> {
+    let mut ticket_slot = ticket_slot
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let ticket = ticket_slot.as_mut()?;
+    #[cfg(test)]
+    if std::mem::take(&mut ticket.panic_before_claim) {
+        panic!("injected ProxyCommand cleanup panic before ownership claim");
+    }
+    let Some(task) = claim_proxy_command_cleanup(ticket) else {
+        ticket_slot.take();
+        return None;
+    };
+    #[cfg(test)]
+    let panic_after_claim = ticket.panic_after_claim;
+    #[cfg(not(test))]
+    let panic_after_claim = false;
+    ticket_slot.take();
+    Some((task, panic_after_claim))
+}
+
+fn process_relay_reap_ticket(ticket: RelayReapTicket) -> Option<RelayReapTicket> {
+    let ticket_slot = Arc::new(StdMutex::new(Some(ticket)));
+    let claim_slot = Arc::clone(&ticket_slot);
+    let claimed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        claim_proxy_command_cleanup_from_slot(&claim_slot)
+    }));
+    let (task, panic_after_claim) = (match claimed {
+        Ok(claimed) => claimed,
+        Err(_) => {
+            #[cfg(test)]
+            RELAY_REAP_PANIC_RECOVERIES.fetch_add(1, Ordering::AcqRel);
+            log::error!(
+                "ProxyCommand cleanup attempt panicked before claim; requeueing retained ticket"
+            );
+            return ticket_slot
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+        }
+    })?;
+    #[cfg(not(test))]
+    let _ = panic_after_claim;
+    let task_slot = Arc::new(StdMutex::new(Some(task)));
+    let worker_slot = Arc::clone(&task_slot);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        #[cfg(test)]
+        if panic_after_claim {
+            panic!("injected ProxyCommand cleanup panic after ownership claim");
+        }
+        finish_proxy_command_cleanup_slot(&worker_slot);
+    }));
+    if result.is_err() {
+        #[cfg(test)]
+        RELAY_REAP_PANIC_RECOVERIES.fetch_add(1, Ordering::AcqRel);
+        log::error!("ProxyCommand cleanup attempt panicked after claim; retrying owned task");
+        finish_proxy_command_cleanup_slot(&task_slot);
+    }
+    None
+}
+
+fn relay_reaper_worker(shared: Arc<RelayReaperShared>) {
+    loop {
+        let ticket = {
+            let mut state = shared
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            while state.tickets.is_empty() && !state.shutting_down {
+                state = shared
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+            if state.shutting_down {
+                return;
+            }
+            let Some(ticket) = state.tickets.pop_front() else {
+                continue;
+            };
+            ticket
+        };
+        let active = ACTIVE_RELAY_REAPERS.fetch_add(1, Ordering::AcqRel) + 1;
+        PEAK_RELAY_REAPERS.fetch_max(active, Ordering::AcqRel);
+        if let Some(ticket) = process_relay_reap_ticket(ticket) {
+            let mut state = shared
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.tickets.push_back(ticket);
+            drop(state);
+            shared.changed.notify_one();
+            std::thread::yield_now();
+        }
+        ACTIVE_RELAY_REAPERS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn build_relay_reaper(
+    mut spawn_worker: impl FnMut(usize, Arc<RelayReaperShared>) -> std::io::Result<JoinHandle<()>>,
+) -> Result<RelayReaper, String> {
+    let shared = Arc::new(RelayReaperShared {
+        state: StdMutex::new(RelayReaperQueueState {
+            tickets: VecDeque::new(),
+            shutting_down: false,
+        }),
+        changed: Condvar::new(),
+    });
+    let mut workers = Vec::with_capacity(MAX_PROXY_COMMAND_REAPERS);
+    for index in 0..MAX_PROXY_COMMAND_REAPERS {
+        match spawn_worker(index, Arc::clone(&shared)) {
+            Ok(worker) => workers.push(worker),
+            Err(error) => {
+                shared
+                    .state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .shutting_down = true;
+                shared.changed.notify_all();
+                for worker in workers {
+                    let _ = worker.join();
+                }
+                return Err(format!(
+                    "Failed to initialize ProxyCommand cleanup reaper {index}: {error}"
+                ));
+            }
+        }
+    }
+    Ok(RelayReaper {
+        shared,
+        _workers: workers,
+    })
+}
+
+fn initialize_relay_reaper() -> Result<RelayReaper, String> {
+    build_relay_reaper(|index, shared| {
+        std::thread::Builder::new()
+            .name(format!("proxy-relay-reaper-{index}"))
+            .spawn(move || relay_reaper_worker(shared))
+    })
+}
+
+fn relay_reaper_queue() -> Result<&'static RelayReaper, String> {
+    match RELAY_REAPER_QUEUE.get_or_init(initialize_relay_reaper) {
+        Ok(reaper) => Ok(reaper),
+        Err(error) => Err(error.clone()),
+    }
+}
+
+impl RelayReaper {
+    fn enqueue(&self, ticket: RelayReapTicket) -> Result<(), String> {
+        #[cfg(test)]
+        if ticket.reject_enqueue {
+            return Err("ProxyCommand cleanup queue rejected an injected ticket".to_string());
+        }
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.shutting_down {
+            return Err("ProxyCommand cleanup reaper is shutting down".to_string());
+        }
+        if state.tickets.len() >= MAX_PROXY_COMMAND_LIFECYCLES {
+            return Err(
+                "ProxyCommand cleanup queue invariant exceeded; ownership retained for retry"
+                    .to_string(),
+            );
+        }
+        state.tickets.push_back(ticket);
+        drop(state);
+        self.shared.changed.notify_one();
+        Ok(())
+    }
 }
 
 // ── Template expansion ────────────────────────────────────────────────
@@ -774,9 +1379,34 @@ pub fn spawn_proxy_command(
         username,
         connect_timeout,
         &LifecycleHooks::default(),
+        None,
     )
 }
 
+pub(crate) fn spawn_reserved_proxy_command(
+    reservation: &ProxyCommandProducerReservation,
+    session_id: &str,
+    config: &ProxyCommandConfig,
+    host: &str,
+    port: u16,
+    username: &str,
+    connect_timeout: u64,
+) -> Result<TcpStream, String> {
+    spawn_proxy_command_inner(
+        session_id,
+        config,
+        host,
+        port,
+        username,
+        connect_timeout,
+        &LifecycleHooks::default(),
+        Some(reservation),
+    )
+}
+
+// Keeping the connection fields explicit makes the production and failure-injection
+// call sites auditable; bundling them would only hide this lifecycle boundary.
+#[allow(clippy::too_many_arguments)]
 fn spawn_proxy_command_inner(
     session_id: &str,
     config: &ProxyCommandConfig,
@@ -785,8 +1415,32 @@ fn spawn_proxy_command_inner(
     username: &str,
     connect_timeout: u64,
     hooks: &LifecycleHooks,
+    reserved_by: Option<&ProxyCommandProducerReservation>,
 ) -> Result<TcpStream, String> {
     let cmd_string = build_command_string(config, host, port, username)?;
+
+    if hooks.should_fail(LifecycleStage::Reaper) {
+        return Err(
+            "Failed to initialize ProxyCommand cleanup reaper: injected failure".to_string(),
+        );
+    }
+    // Cleanup infrastructure must exist before confirmation is consumed and
+    // before a listener, helper, process-tree handle, or relay worker exists.
+    relay_reaper_queue()?;
+    let local_reservation = if reserved_by.is_none() {
+        Some(reserve_proxy_command_session_with_hooks(session_id, hooks)?)
+    } else {
+        None
+    };
+    let reservation = reserved_by
+        .or(local_reservation.as_ref())
+        .expect("ProxyCommand spawn always owns or borrows a producer reservation");
+    if reservation.session_id != session_id {
+        return Err(format!(
+            "ProxyCommand reservation for '{}' cannot spawn session '{session_id}'",
+            reservation.session_id
+        ));
+    }
 
     // ── Import-confirmation gate ──────────────────────────────────────
     // ProxyCommand stays fully free-form, but the exact expanded command must
@@ -878,9 +1532,22 @@ fn spawn_proxy_command_inner(
     // Thus a helper cannot exist unless its listener is ready and the registry
     // is ready to retain a controllable process-tree handle.
     let mut commands = proxy_commands_lock();
-    if commands.contains_key(session_id) {
+    let state = commands
+        .get(session_id)
+        .ok_or_else(|| format!("ProxyCommand session '{session_id}' lost its reservation"))?;
+    if !reservation.matches(session_id, state.generation) {
         return Err(format!(
-            "ProxyCommand session '{session_id}' is already active or stopping"
+            "ProxyCommand session '{session_id}' reservation generation changed before helper spawn"
+        ));
+    }
+    if state.stopping {
+        return Err(format!(
+            "ProxyCommand session '{session_id}' was cancelled before helper spawn"
+        ));
+    }
+    if state.active {
+        return Err(format!(
+            "ProxyCommand session '{session_id}' is already active"
         ));
     }
 
@@ -929,10 +1596,11 @@ fn spawn_proxy_command_inner(
     let cancelled = Arc::new(AtomicBool::new(false));
     let stderr_bytes = Arc::new(AtomicUsize::new(0));
     let stderr_truncated = Arc::new(AtomicBool::new(false));
-    commands.insert(
-        session_id.to_string(),
-        ProxyCommandState::active(
-            session_id,
+    hooks.wait_before_publication();
+    commands
+        .get_mut(session_id)
+        .expect("reserved ProxyCommand remains locked through publication")
+        .activate(
             &cmd_string,
             child.clone(),
             process_tree.clone(),
@@ -942,8 +1610,7 @@ fn spawn_proxy_command_inner(
                 bytes: stderr_bytes.clone(),
                 truncated: stderr_truncated.clone(),
             },
-        ),
-    );
+        );
 
     if hooks.should_fail(LifecycleStage::AfterSpawn) {
         drop(commands);
@@ -1156,84 +1823,163 @@ fn spawn_proxy_command_inner(
     Ok(stream)
 }
 
-/// Stop a ProxyCommand process for a session.
-pub fn stop_proxy_command(session_id: &str) -> Result<(), String> {
-    let (cancelled, socket, child, process_tree, workers, stderr_bytes, stderr_truncated) = {
-        let mut commands = proxy_commands_lock();
-        let Some(state) = commands.get_mut(session_id) else {
-            return Ok(());
+fn begin_proxy_command_cleanup(session_id: &str) -> Result<ProxyCommandCleanupCompletion, String> {
+    {
+        let commands = proxy_commands_lock();
+        let Some(state) = commands.get(session_id) else {
+            return Ok(ProxyCommandCleanupCompletion::completed());
         };
-        if state.stopping {
-            return Ok(());
+        if state.cleanup_enqueued {
+            if let Some(completion) = &state.cleanup_completion {
+                return Ok(completion.clone());
+            }
+            log::error!("ProxyCommand '{session_id}' marked cleanup-enqueued without a completion");
         }
-        state.stopping = true;
-        state.cancelled.store(true, Ordering::Release);
-        (
-            state.cancelled.clone(),
-            state.control_socket.take(),
-            state.child.take(),
-            state.process_tree.take(),
-            std::mem::take(&mut state.relay_handles),
-            state.stderr_bytes.clone(),
-            state.stderr_truncated.clone(),
-        )
-    };
-
-    cancelled.store(true, Ordering::Release);
-    if let Some(socket) = socket {
-        let _ = socket.shutdown(Shutdown::Both);
     }
 
-    if let Some(child_handle) = &child {
-        let pid = child_pid(child_handle);
-        if let Some(process_tree) = &process_tree {
-            process_tree.terminate(pid);
-        } else {
-            terminate_unmanaged_process_tree(pid);
+    // Every production ProxyCommand initializes this pool before helper spawn.
+    // Resolve it again before taking ownership so an injected/test-only state
+    // also fails without losing any relay handles.
+    let reaper = relay_reaper_queue()?;
+    let mut commands = proxy_commands_lock();
+    let Some(state) = commands.get_mut(session_id) else {
+        return Ok(ProxyCommandCleanupCompletion::completed());
+    };
+    let completion = state
+        .cleanup_completion
+        .get_or_insert_with(ProxyCommandCleanupCompletion::pending)
+        .clone();
+    state.stopping = true;
+    state.cancelled.store(true, Ordering::Release);
+    if !state.active {
+        state.native_cleanup_complete = true;
+        let producer_released = state.producer_released;
+        if producer_released {
+            commands.remove(session_id);
         }
-        let mut child_guard = child_handle
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let _ = child_guard.kill();
-        let deadline = Instant::now() + CHILD_REAP_TIMEOUT;
-        loop {
-            match child_guard.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) if Instant::now() < deadline => {
-                    drop(child_guard);
-                    std::thread::sleep(Duration::from_millis(10));
-                    child_guard = child_handle
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                }
-                _ => {
-                    let _ = child_guard.kill();
-                    let _ = child_guard.wait();
-                    break;
-                }
+        drop(commands);
+        if producer_released {
+            completion.complete();
+        }
+        return Ok(completion);
+    }
+    if !state.cleanup_enqueued {
+        if let Some(socket) = &state.control_socket {
+            let _ = socket.shutdown(Shutdown::Both);
+        }
+        reaper.enqueue(RelayReapTicket {
+            session_id: session_id.to_string(),
+            completion: completion.clone(),
+            #[cfg(test)]
+            reject_enqueue: std::mem::take(&mut state.reject_cleanup_enqueue_once),
+            #[cfg(test)]
+            panic_before_claim: std::mem::take(&mut state.panic_cleanup_before_claim_once),
+            #[cfg(test)]
+            panic_after_claim: std::mem::take(&mut state.panic_cleanup_after_claim_once),
+        })?;
+        state.cleanup_enqueued = true;
+    }
+    drop(commands);
+    Ok(completion)
+}
+
+/// Stop a ProxyCommand process for a session. All native cleanup ownership is
+/// transferred immediately to the fixed reaper pool. The compatibility caller
+/// waits only until the API-entry deadline; actual cleanup continues under the
+/// retained registry tombstone.
+pub fn stop_proxy_command(session_id: &str) -> Result<(), String> {
+    let deadline = Instant::now() + STOP_JOIN_TIMEOUT;
+    let completion = begin_proxy_command_cleanup(session_id)?;
+    let _ = completion.wait_until(deadline);
+    Ok(())
+}
+
+/// Stop a ProxyCommand and wait until every relay thread has actually exited.
+/// Callers retaining resource-accounting leases should use this inside their
+/// detached cleanup worker.
+pub fn stop_proxy_command_and_wait(session_id: &str) -> Result<(), String> {
+    loop {
+        match begin_proxy_command_cleanup(session_id) {
+            Ok(completion) => {
+                completion.wait();
+                return Ok(());
+            }
+            Err(error) => {
+                // Lease-owning service callers must never release admission
+                // while a retryable tombstone still owns native resources.
+                log::error!(
+                    "[{session_id}] ProxyCommand cleanup enqueue failed; retaining ownership and retrying: {error}"
+                );
+                std::thread::sleep(Duration::from_millis(10));
             }
         }
     }
+}
 
-    let join_deadline = Instant::now() + STOP_JOIN_TIMEOUT;
-    for worker in workers {
-        worker.join_until(join_deadline);
+#[cfg(test)]
+pub(crate) fn install_blocked_relay_for_accounting_test(
+    session_id: &str,
+    release: Receiver<()>,
+) -> Result<(), String> {
+    relay_reaper_queue()?;
+    {
+        let mut commands = proxy_commands_lock();
+        validate_proxy_command_registration(&commands, session_id, commands.len())?;
+        commands.insert(
+            session_id.to_string(),
+            ProxyCommandState::retained(
+                session_id,
+                "test-helper",
+                Arc::new(AtomicBool::new(false)),
+                Vec::new(),
+            ),
+        );
     }
-    drop(process_tree);
-    drop(child);
-
-    proxy_commands_lock().remove(session_id);
-    log::info!(
-        "[{}] ProxyCommand stopped (stderr drained: {} bytes{})",
-        session_id,
-        stderr_bytes.load(Ordering::Relaxed),
-        if stderr_truncated.load(Ordering::Relaxed) {
-            ", truncated"
-        } else {
-            ""
+    let worker = ManagedThread::spawn("proxy-accounting-test-relay", move || {
+        let _ = release.recv();
+    });
+    let worker = match worker {
+        Ok(worker) => worker,
+        Err(error) => {
+            proxy_commands_lock().remove(session_id);
+            return Err(format!("Failed to start accounting test relay: {error}"));
         }
-    );
+    };
+    let mut commands = proxy_commands_lock();
+    commands
+        .get_mut(session_id)
+        .expect("accounting test reservation remains registered")
+        .relay_handles
+        .push(worker);
     Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn reject_next_cleanup_enqueue_for_test(session_id: &str) -> Result<(), String> {
+    let mut commands = proxy_commands_lock();
+    let state = commands
+        .get_mut(session_id)
+        .ok_or_else(|| "ProxyCommand cleanup rejection test session is missing".to_string())?;
+    state.reject_cleanup_enqueue_once = true;
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn begin_proxy_command_cleanup_for_test(session_id: &str) -> Result<(), String> {
+    begin_proxy_command_cleanup(session_id).map(drop)
+}
+
+#[cfg(test)]
+pub(crate) fn has_proxy_command_lifecycle_for_test(session_id: &str) -> bool {
+    has_proxy_command_lifecycle(session_id)
+}
+
+/// Reports registry ownership, including Reserved and Stopping tombstones that
+/// are deliberately hidden from the user-facing status API. SSH service
+/// producers reserve before their native worker launches, so an absent entry at
+/// disconnect cannot appear later for that same service attempt.
+pub(crate) fn has_proxy_command_lifecycle(session_id: &str) -> bool {
+    proxy_commands_lock().contains_key(session_id)
 }
 
 /// Get ProxyCommand status for a session.
@@ -1242,6 +1988,9 @@ pub fn get_proxy_command_status(session_id: &str) -> Result<Option<ProxyCommandS
     let Some(state) = commands.get_mut(session_id) else {
         return Ok(None);
     };
+    if state.stopping || !state.active {
+        return Ok(None);
+    }
     let pid = state.child.as_ref().map(child_pid);
     let alive = if state.cancelled.load(Ordering::Acquire) || state.stopping {
         false
@@ -1407,7 +2156,10 @@ mod tests {
             &LifecycleHooks {
                 failure,
                 spawned_pid: Some(spawned_pid),
+                lifecycle_count_override: None,
+                publication_gate: None,
             },
+            None,
         )
     }
 
@@ -1443,6 +2195,530 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         predicate()
+    }
+
+    fn gated_managed_thread(
+        gate: Arc<(StdMutex<bool>, Condvar)>,
+        exited: Arc<AtomicUsize>,
+    ) -> ManagedThread {
+        ManagedThread::spawn("proxy-test-gated-relay", move || {
+            let (open, changed) = &*gate;
+            let mut open = open.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            while !*open {
+                open = changed
+                    .wait(open)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+            exited.fetch_add(1, Ordering::AcqRel);
+        })
+        .expect("gated ProxyCommand test relay should start")
+    }
+
+    fn open_gate(gate: &Arc<(StdMutex<bool>, Condvar)>) {
+        let (open, changed) = &**gate;
+        *open.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+        changed.notify_all();
+    }
+
+    fn wait_for_publication_gate(gate: &LifecyclePublicationGate) -> bool {
+        wait_until(
+            || {
+                gate.0
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .entered
+            },
+            Duration::from_secs(2),
+        )
+    }
+
+    fn release_publication_gate(gate: &LifecyclePublicationGate) {
+        let (state, changed) = &**gate;
+        state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .released = true;
+        changed.notify_all();
+    }
+
+    #[test]
+    fn producer_drop_after_pre_spawn_error_releases_exact_reservation() {
+        let session_id = format!(
+            "proxy-producer-drop-{}",
+            FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let reservation =
+            reserve_proxy_command_session(&session_id).expect("reservation should succeed");
+        let config = fake_helper_config("idle", None);
+        let spawned_pid = Arc::new(AtomicU32::new(0));
+
+        let error = spawn_proxy_command_inner(
+            &session_id,
+            &config,
+            "host.example.com",
+            22,
+            "user",
+            2,
+            &LifecycleHooks {
+                spawned_pid: Some(Arc::clone(&spawned_pid)),
+                ..LifecycleHooks::default()
+            },
+            Some(&reservation),
+        )
+        .expect_err("unconfirmed command should fail before helper spawn");
+        assert!(error.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE));
+        assert_eq!(spawned_pid.load(Ordering::SeqCst), 0);
+        assert!(proxy_commands_lock().contains_key(&session_id));
+        assert!(get_proxy_command_status(&session_id).unwrap().is_none());
+
+        drop(reservation);
+        assert!(wait_until(
+            || !proxy_commands_lock().contains_key(&session_id),
+            Duration::from_secs(2)
+        ));
+    }
+
+    #[test]
+    fn stop_before_reservation_claim_prevents_helper_spawn_until_producer_ack() {
+        let session_id = format!(
+            "proxy-stop-before-claim-{}",
+            FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let reservation =
+            reserve_proxy_command_session(&session_id).expect("reservation should succeed");
+        let completion = begin_proxy_command_cleanup(&session_id)
+            .expect("reserved lifecycle should enter stopping state");
+        assert!(!completion.is_complete());
+
+        let config = fake_helper_config("idle", None);
+        let expanded = build_command_string(&config, "host.example.com", 22, "user").unwrap();
+        mark_proxy_command_confirmed(&expanded);
+        let spawned_pid = Arc::new(AtomicU32::new(0));
+        let error = spawn_proxy_command_inner(
+            &session_id,
+            &config,
+            "host.example.com",
+            22,
+            "user",
+            2,
+            &LifecycleHooks {
+                spawned_pid: Some(Arc::clone(&spawned_pid)),
+                ..LifecycleHooks::default()
+            },
+            Some(&reservation),
+        )
+        .expect_err("stopped reservation must fail before helper spawn");
+        assert!(error.contains("cancelled before helper spawn"));
+        assert_eq!(spawned_pid.load(Ordering::SeqCst), 0);
+        assert!(proxy_commands_lock().contains_key(&session_id));
+
+        drop(reservation);
+        assert!(wait_until(
+            || completion.is_complete(),
+            Duration::from_secs(2)
+        ));
+        assert!(!proxy_commands_lock().contains_key(&session_id));
+    }
+
+    #[test]
+    fn stop_during_guarded_spawn_waits_for_publication_and_reaps_helper() {
+        let session_id = format!(
+            "proxy-stop-during-publication-{}",
+            FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let reservation =
+            reserve_proxy_command_session(&session_id).expect("reservation should succeed");
+        let config = fake_helper_config("idle", None);
+        let expanded = build_command_string(&config, "host.example.com", 22, "user").unwrap();
+        mark_proxy_command_confirmed(&expanded);
+        let spawned_pid = Arc::new(AtomicU32::new(0));
+        let publication_gate: LifecyclePublicationGate = Arc::default();
+        let spawn_gate = Arc::clone(&publication_gate);
+        let spawn_pid = Arc::clone(&spawned_pid);
+        let spawn_session_id = session_id.clone();
+        let spawn_thread = std::thread::spawn(move || {
+            spawn_proxy_command_inner(
+                &spawn_session_id,
+                &config,
+                "host.example.com",
+                22,
+                "user",
+                2,
+                &LifecycleHooks {
+                    spawned_pid: Some(spawn_pid),
+                    publication_gate: Some(spawn_gate),
+                    ..LifecycleHooks::default()
+                },
+                Some(&reservation),
+            )
+        });
+
+        assert!(wait_for_publication_gate(&publication_gate));
+        let pid = spawned_pid.load(Ordering::SeqCst);
+        assert_ne!(pid, 0, "helper must exist before Active publication");
+        let (stop_started_tx, stop_started_rx) = mpsc::channel();
+        let (stop_done_tx, stop_done_rx) = mpsc::channel();
+        let stop_session_id = session_id.clone();
+        let stop_thread = std::thread::spawn(move || {
+            stop_started_tx.send(()).unwrap();
+            let result = stop_proxy_command_and_wait(&stop_session_id);
+            stop_done_tx.send(result).unwrap();
+        });
+        stop_started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop thread should start before publication is released");
+        assert!(
+            stop_done_rx
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "stop cannot finish while guarded publication owns the registry lock"
+        );
+
+        release_publication_gate(&publication_gate);
+        let stream = spawn_thread
+            .join()
+            .expect("spawn worker should not panic")
+            .expect("guarded helper should publish before stop claims it");
+        drop(stream);
+        stop_done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("stop should finish after producer acknowledgement")
+            .expect("published helper cleanup should succeed");
+        stop_thread.join().expect("stop worker should not panic");
+        assert!(wait_until(
+            || !process_is_alive(pid),
+            Duration::from_secs(2)
+        ));
+        assert!(!proxy_commands_lock().contains_key(&session_id));
+    }
+
+    #[test]
+    fn relay_reaper_initialization_fails_closed_at_first_and_partial_worker() {
+        let first =
+            build_relay_reaper(|_, _| Err(std::io::Error::other("injected first-worker failure")));
+        assert!(matches!(first, Err(error) if error.contains("reaper 0")));
+
+        let partial = build_relay_reaper(|index, shared| {
+            if index == 1 {
+                Err(std::io::Error::other("injected partial-worker failure"))
+            } else {
+                std::thread::Builder::new()
+                    .name("proxy-test-partial-reaper".to_string())
+                    .spawn(move || relay_reaper_worker(shared))
+            }
+        });
+        assert!(matches!(partial, Err(error) if error.contains("reaper 1")));
+    }
+
+    #[test]
+    fn slow_cleanup_keeps_tombstone_but_stop_obeys_api_entry_deadline() {
+        relay_reaper_queue().expect("cleanup reaper should initialize");
+        let session_id = format!(
+            "proxy-slow-cleanup-{}",
+            FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let (release, cleanup_gate) = mpsc::channel();
+        let mut state = ProxyCommandState::retained(
+            &session_id,
+            "test-helper",
+            Arc::new(AtomicBool::new(false)),
+            Vec::new(),
+        );
+        state.cleanup_gate = Some(cleanup_gate);
+        proxy_commands_lock().insert(session_id.clone(), state);
+
+        let started = Instant::now();
+        stop_proxy_command(&session_id).expect("bounded stop should enqueue cleanup");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= STOP_JOIN_TIMEOUT.saturating_sub(Duration::from_millis(100)),
+            "stop returned before its completion wait: {elapsed:?}"
+        );
+        assert!(
+            elapsed < STOP_JOIN_TIMEOUT + Duration::from_secs(2),
+            "stop exceeded its API-entry deadline excessively: {elapsed:?}"
+        );
+        let completion = proxy_commands_lock()
+            .get(&session_id)
+            .and_then(|state| state.cleanup_completion.clone())
+            .expect("slow cleanup must retain its tombstone and completion");
+        assert!(!completion.is_complete());
+
+        release.send(()).expect("release slow cleanup");
+        assert!(wait_until(
+            || completion.is_complete(),
+            Duration::from_secs(2)
+        ));
+        assert!(!proxy_commands_lock().contains_key(&session_id));
+    }
+
+    #[test]
+    fn rejected_cleanup_ticket_retains_ownership_and_retries_same_completion() {
+        relay_reaper_queue().expect("cleanup reaper should initialize");
+        let session_id = format!(
+            "proxy-rejected-ticket-{}",
+            FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let gate = Arc::new((StdMutex::new(false), Condvar::new()));
+        let exited = Arc::new(AtomicUsize::new(0));
+        let worker = gated_managed_thread(Arc::clone(&gate), Arc::clone(&exited));
+        let mut state = ProxyCommandState::retained(
+            &session_id,
+            "test-helper",
+            Arc::new(AtomicBool::new(false)),
+            vec![worker],
+        );
+        state.reject_cleanup_enqueue_once = true;
+        proxy_commands_lock().insert(session_id.clone(), state);
+        let error = match begin_proxy_command_cleanup(&session_id) {
+            Ok(_) => panic!("injected queue rejection must surface"),
+            Err(error) => error,
+        };
+        assert!(error.contains("rejected"));
+        let retained_completion = {
+            let commands = proxy_commands_lock();
+            let state = commands
+                .get(&session_id)
+                .expect("rejected ticket keeps its tombstone");
+            assert!(!state.cleanup_enqueued);
+            assert_eq!(state.relay_handles.len(), 1);
+            state.cleanup_completion.clone().unwrap()
+        };
+        assert!(!retained_completion.is_complete());
+        assert_eq!(exited.load(Ordering::Acquire), 0);
+
+        let retry = begin_proxy_command_cleanup(&session_id)
+            .expect("retry should enqueue the retained tombstone");
+        assert!(retry.same_as(&retained_completion));
+        open_gate(&gate);
+        assert!(wait_until(|| retry.is_complete(), Duration::from_secs(2)));
+        assert_eq!(exited.load(Ordering::Acquire), 1);
+        assert!(!proxy_commands_lock().contains_key(&session_id));
+    }
+
+    #[test]
+    fn before_claim_panic_requeues_ticket_and_worker_processes_next_ticket() {
+        relay_reaper_queue().expect("cleanup reaper should initialize");
+        let recovered_before = RELAY_REAP_PANIC_RECOVERIES.load(Ordering::Acquire);
+        let exited = Arc::new(AtomicUsize::new(0));
+        let mut session_ids = Vec::new();
+        for index in 0..2 {
+            let session_id = format!(
+                "proxy-preclaim-panic-recovery-{}-{index}",
+                FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            );
+            let worker_exited = Arc::clone(&exited);
+            let worker = ManagedThread::spawn("proxy-test-preclaim-relay", move || {
+                worker_exited.fetch_add(1, Ordering::AcqRel);
+            })
+            .expect("completed relay should start");
+            let mut state = ProxyCommandState::retained(
+                &session_id,
+                "test-helper",
+                Arc::new(AtomicBool::new(false)),
+                vec![worker],
+            );
+            if index == 0 {
+                state.panic_cleanup_before_claim_once = true;
+            }
+            proxy_commands_lock().insert(session_id.clone(), state);
+            session_ids.push(session_id);
+        }
+
+        let first = begin_proxy_command_cleanup(&session_ids[0]).unwrap();
+        let second = begin_proxy_command_cleanup(&session_ids[1]).unwrap();
+        assert!(wait_until(|| first.is_complete(), Duration::from_secs(2)));
+        assert!(wait_until(|| second.is_complete(), Duration::from_secs(2)));
+        assert_eq!(exited.load(Ordering::Acquire), 2);
+        assert!(
+            RELAY_REAP_PANIC_RECOVERIES.load(Ordering::Acquire) > recovered_before,
+            "injected pre-claim panic was not recovered"
+        );
+        for session_id in session_ids {
+            assert!(!proxy_commands_lock().contains_key(&session_id));
+        }
+    }
+
+    #[test]
+    fn after_claim_panic_retries_owned_task_and_worker_processes_next_ticket() {
+        relay_reaper_queue().expect("cleanup reaper should initialize");
+        let recovered_before = RELAY_REAP_PANIC_RECOVERIES.load(Ordering::Acquire);
+        let exited = Arc::new(AtomicUsize::new(0));
+        let mut session_ids = Vec::new();
+        for index in 0..2 {
+            let session_id = format!(
+                "proxy-panic-recovery-{}-{index}",
+                FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            );
+            let worker_exited = Arc::clone(&exited);
+            let worker = ManagedThread::spawn("proxy-test-completed-relay", move || {
+                worker_exited.fetch_add(1, Ordering::AcqRel);
+            })
+            .expect("completed relay should start");
+            let mut state = ProxyCommandState::retained(
+                &session_id,
+                "test-helper",
+                Arc::new(AtomicBool::new(false)),
+                vec![worker],
+            );
+            if index == 0 {
+                state.panic_cleanup_after_claim_once = true;
+            }
+            proxy_commands_lock().insert(session_id.clone(), state);
+            session_ids.push(session_id);
+        }
+
+        let first = begin_proxy_command_cleanup(&session_ids[0]).unwrap();
+        let second = begin_proxy_command_cleanup(&session_ids[1]).unwrap();
+        assert!(wait_until(|| first.is_complete(), Duration::from_secs(2)));
+        assert!(wait_until(|| second.is_complete(), Duration::from_secs(2)));
+        assert_eq!(exited.load(Ordering::Acquire), 2);
+        assert!(
+            RELAY_REAP_PANIC_RECOVERIES.load(Ordering::Acquire) > recovered_before,
+            "injected after-claim panic was not recovered"
+        );
+        for session_id in session_ids {
+            assert!(!proxy_commands_lock().contains_key(&session_id));
+        }
+    }
+
+    #[test]
+    fn lifecycle_cap_accepts_128_and_rejects_helper_129_before_spawn() {
+        let mut lifecycles = HashMap::new();
+        for index in 0..MAX_PROXY_COMMAND_LIFECYCLES {
+            let session_id = format!("proxy-cap-reservation-{index}");
+            validate_proxy_command_registration(&lifecycles, &session_id, lifecycles.len())
+                .expect("each lifecycle through 128 should be accepted");
+            lifecycles.insert(
+                session_id.clone(),
+                ProxyCommandState::retained(
+                    &session_id,
+                    "test-helper",
+                    Arc::new(AtomicBool::new(false)),
+                    Vec::new(),
+                ),
+            );
+        }
+        assert!(validate_proxy_command_registration(
+            &lifecycles,
+            "proxy-cap-local-129",
+            lifecycles.len(),
+        )
+        .unwrap_err()
+        .contains("lifecycle limit"));
+
+        let config = fake_helper_config("idle", None);
+        let expanded = build_command_string(&config, "host.example.com", 22, "user").unwrap();
+        mark_proxy_command_confirmed(&expanded);
+        let spawned_pid = Arc::new(AtomicU32::new(0));
+        let error = spawn_proxy_command_inner(
+            "proxy-cap-129",
+            &config,
+            "host.example.com",
+            22,
+            "user",
+            2,
+            &LifecycleHooks {
+                failure: None,
+                spawned_pid: Some(Arc::clone(&spawned_pid)),
+                lifecycle_count_override: Some(MAX_PROXY_COMMAND_LIFECYCLES),
+                publication_gate: None,
+            },
+            None,
+        )
+        .expect_err("the 129th ProxyCommand must fail before helper spawn");
+        assert!(error.contains("lifecycle limit"));
+        assert_eq!(spawned_pid.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn timed_out_relay_join_transfers_handle_and_shared_completion_to_reaper() {
+        let session_id = format!(
+            "proxy-blocked-relay-{}",
+            FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let gate = Arc::new((StdMutex::new(false), Condvar::new()));
+        let exited = Arc::new(AtomicUsize::new(0));
+        let worker = gated_managed_thread(Arc::clone(&gate), Arc::clone(&exited));
+        proxy_commands_lock().insert(
+            session_id.clone(),
+            ProxyCommandState::retained(
+                &session_id,
+                "test-helper",
+                Arc::new(AtomicBool::new(false)),
+                vec![worker],
+            ),
+        );
+
+        let started = Instant::now();
+        let completion =
+            begin_proxy_command_cleanup(&session_id).expect("blocked relay cleanup should start");
+        assert!(started.elapsed() < Duration::from_millis(500));
+        assert!(!completion.is_complete());
+        assert_eq!(exited.load(Ordering::Acquire), 0);
+        assert!(get_proxy_command_status(&session_id).unwrap().is_none());
+        assert!(proxy_commands_lock().contains_key(&session_id));
+
+        let same_completion = begin_proxy_command_cleanup(&session_id)
+            .expect("concurrent cleanup should reuse its completion");
+        assert!(completion.same_as(&same_completion));
+
+        open_gate(&gate);
+        assert!(wait_until(
+            || completion.is_complete(),
+            Duration::from_secs(2)
+        ));
+        assert_eq!(exited.load(Ordering::Acquire), 1);
+        assert!(!proxy_commands_lock().contains_key(&session_id));
+    }
+
+    #[test]
+    fn relay_reaper_pool_is_fixed_and_queued_jobs_eventually_join() {
+        let reaper = relay_reaper_queue().expect("cleanup reaper should initialize");
+        assert_eq!(reaper._workers.len(), MAX_PROXY_COMMAND_REAPERS);
+        let gate = Arc::new((StdMutex::new(false), Condvar::new()));
+        let exited = Arc::new(AtomicUsize::new(0));
+        let job_count = MAX_PROXY_COMMAND_REAPERS * 2;
+        let mut session_ids = Vec::with_capacity(job_count);
+        let mut completions = Vec::with_capacity(job_count);
+
+        for index in 0..job_count {
+            let session_id = format!(
+                "proxy-reaper-bound-{}-{index}",
+                FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            );
+            let worker = gated_managed_thread(Arc::clone(&gate), Arc::clone(&exited));
+            proxy_commands_lock().insert(
+                session_id.clone(),
+                ProxyCommandState::retained(
+                    &session_id,
+                    "test-helper",
+                    Arc::new(AtomicBool::new(false)),
+                    vec![worker],
+                ),
+            );
+            completions.push(
+                begin_proxy_command_cleanup(&session_id)
+                    .expect("queued relay cleanup should start"),
+            );
+            session_ids.push(session_id);
+        }
+
+        assert!(
+            PEAK_RELAY_REAPERS.load(Ordering::Acquire) <= MAX_PROXY_COMMAND_REAPERS,
+            "detached cleanup spawned beyond the fixed reaper pool"
+        );
+        open_gate(&gate);
+        for completion in &completions {
+            assert!(wait_until(
+                || completion.is_complete(),
+                Duration::from_secs(5)
+            ));
+        }
+        assert_eq!(exited.load(Ordering::Acquire), job_count);
+        for session_id in session_ids {
+            assert!(!proxy_commands_lock().contains_key(&session_id));
+        }
     }
 
     #[test]
@@ -1487,6 +2763,7 @@ mod tests {
     #[test]
     fn lifecycle_preflight_failures_never_spawn_or_register_a_helper() {
         for (index, stage) in [
+            LifecycleStage::Reaper,
             LifecycleStage::Bind,
             LifecycleStage::Accept,
             LifecycleStage::Registry,

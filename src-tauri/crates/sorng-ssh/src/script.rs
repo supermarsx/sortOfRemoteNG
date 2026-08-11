@@ -1,4 +1,6 @@
-use crate::ssh::{SshCompressionConfig, SshConnectionConfig, SshServiceState};
+use crate::ssh::{
+    service::connect_ssh_on_state, SshCompressionConfig, SshConnectionConfig, SshServiceState,
+};
 use rquickjs::prelude::Async;
 use rquickjs::{AsyncContext, AsyncRuntime, Function, Object};
 use secrecy::SecretString;
@@ -320,8 +322,7 @@ impl ScriptService {
                                                                     sk_application: None,
                                                                 };
 
-                                                                let mut service = ssh_service.lock().await;
-                            service.connect_ssh(config).await.map_err(|_e| rquickjs::Error::Exception)
+                            connect_ssh_on_state(&ssh_service, config).await.map_err(|_e| rquickjs::Error::Exception)
                                                             }
                                                         })));
 

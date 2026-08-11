@@ -228,8 +228,7 @@ pub async fn test_ssh_connection(
     state: tauri::State<'_, SshServiceState>,
     config: SshConnectionConfig,
 ) -> Result<String, String> {
-    let ssh = state.lock().await;
-    redact_result(ssh.test_ssh_connection(config).await)
+    redact_result(super::service::test_ssh_connection_on_state(state.inner(), config).await)
 }
 
 #[tauri::command]
@@ -337,8 +336,7 @@ pub async fn test_mixed_chain_connection(
     state: tauri::State<'_, SshServiceState>,
     config: super::types::SshConnectionConfig,
 ) -> Result<String, String> {
-    let ssh = state.lock().await;
-    redact_result(ssh.test_ssh_connection(config).await)
+    redact_result(super::service::test_ssh_connection_on_state(state.inner(), config).await)
 }
 
 /// Check whether the system supports security-key (FIDO2/U2F) SSH key types.

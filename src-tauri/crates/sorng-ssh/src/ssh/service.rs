@@ -3,19 +3,19 @@ use secrecy::{ExposeSecret, SecretString};
 use socket2::{SockRef, TcpKeepalive};
 use sorng_core::events::DynEventEmitter;
 use ssh2::{ErrorCode as SshErrorCode, KeyboardInteractivePrompt, MethodType, Prompt, Session};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::io::{ErrorKind, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 #[cfg(windows)]
 use std::os::windows::io::AsRawSocket;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream as AsyncTcpStream;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 
 use super::automation::process_automation_output;
@@ -51,6 +51,79 @@ const SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS: u32 = 5_000;
 const SCRIPT_OUTPUT_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 const SCRIPT_OUTPUT_LIMIT_ERROR: &str = "Remote script output exceeded the 4 MiB safety limit";
 const SCRIPT_OUTPUT_READ_POLL_INTERVAL: Duration = Duration::from_millis(2);
+
+/// Hard process-wide ceiling for SSH sessions that are either establishing or
+/// retained. This is intentionally aligned with the native shell ceiling: a
+/// connection without a shell is cheaper, but it still owns sockets, libssh2
+/// state, credentials, tunnel metadata, and keepalive work.
+pub const MAX_ACTIVE_OR_PENDING_SSH_SESSIONS: usize = 128;
+
+/// Hard process-wide ceiling for concurrent DNS/TCP/proxy/libssh2 connection
+/// workers. Establishment can block in native libraries, so this is
+/// deliberately smaller than the retained-session ceiling.
+pub const MAX_CONCURRENT_SSH_HANDSHAKES: usize = 16;
+
+/// Maximum retained configuration payload for one active or pending SSH
+/// connection. Public JSON plus serde-skipped secret bytes are both counted.
+pub const MAX_SSH_RETAINED_CONFIG_BYTES: usize = 256 * 1024;
+
+/// Aggregate retained SSH configuration budget across the process.
+pub const MAX_SSH_RETAINED_CONFIG_BUDGET_BYTES: usize =
+    MAX_ACTIVE_OR_PENDING_SSH_SESSIONS * MAX_SSH_RETAINED_CONFIG_BYTES;
+
+const DEFAULT_SSH_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(15);
+const MIN_SSH_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_SSH_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(120);
+const MIN_SSH_HOP_TIMEOUT: Duration = Duration::from_millis(100);
+const MAX_SSH_HOP_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_CONCURRENT_SSH_LOCAL_PHASES: usize = 4;
+const MAX_HTTP_PROXY_RESPONSE_LINE_BYTES: usize = 8 * 1024;
+const MAX_HTTP_PROXY_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
+const HTTP_PROXY_RESPONSE_LIMIT_ERROR: &str =
+    "HTTP proxy response headers exceeded the bounded parsing limit";
+
+static SSH_LOCAL_PHASE_ADMISSION: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn ssh_local_phase_admission() -> Arc<Semaphore> {
+    Arc::clone(
+        SSH_LOCAL_PHASE_ADMISSION
+            .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_SSH_LOCAL_PHASES))),
+    )
+}
+
+async fn read_bounded_http_proxy_line<R>(
+    reader: &mut R,
+    consumed_header_bytes: &mut usize,
+) -> Result<Vec<u8>, String>
+where
+    R: AsyncBufRead + Unpin,
+{
+    let mut line = Vec::new();
+    loop {
+        let available = reader
+            .fill_buf()
+            .await
+            .map_err(|_| "Failed to read HTTP proxy response".to_string())?;
+        if available.is_empty() {
+            return Err("HTTP proxy response ended before headers completed".to_string());
+        }
+        let take = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(available.len(), |index| index + 1);
+        if line.len().saturating_add(take) > MAX_HTTP_PROXY_RESPONSE_LINE_BYTES
+            || consumed_header_bytes.saturating_add(take) > MAX_HTTP_PROXY_RESPONSE_HEADER_BYTES
+        {
+            return Err(HTTP_PROXY_RESPONSE_LIMIT_ERROR.to_string());
+        }
+        line.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        *consumed_header_bytes += take;
+        if line.last() == Some(&b'\n') {
+            return Ok(line);
+        }
+    }
+}
 
 struct ZeroingCommandInput(Vec<u8>);
 
@@ -668,31 +741,32 @@ fn emit_shell_error(session_id: &str, message: &str, emitter: &DynEventEmitter) 
 
 #[derive(Debug)]
 struct PendingSshConnection {
-    cancelled: AtomicBool,
-    cancellation_notify: Notify,
+    cancellation: tokio::sync::watch::Sender<bool>,
 }
 
 impl PendingSshConnection {
     fn new() -> Self {
-        Self {
-            cancelled: AtomicBool::new(false),
-            cancellation_notify: Notify::new(),
-        }
+        let (cancellation, _receiver) = tokio::sync::watch::channel(false);
+        Self { cancellation }
     }
 
     fn cancel(&self) {
-        if !self.cancelled.swap(true, Ordering::AcqRel) {
-            self.cancellation_notify.notify_one();
-        }
+        self.cancellation.send_replace(true);
     }
 
     fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
+        *self.cancellation.borrow()
     }
 
     async fn cancelled(&self) {
-        if !self.is_cancelled() {
-            self.cancellation_notify.notified().await;
+        let mut cancellation = self.cancellation.subscribe();
+        if *cancellation.borrow_and_update() {
+            return;
+        }
+        while cancellation.changed().await.is_ok() {
+            if *cancellation.borrow_and_update() {
+                return;
+            }
         }
     }
 }
@@ -700,17 +774,1140 @@ impl PendingSshConnection {
 type PendingSshConnections =
     std::sync::Arc<StdMutex<HashMap<String, std::sync::Arc<PendingSshConnection>>>>;
 
-fn cleanup_pending_connection_artifacts(session_id: &str) {
-    if let Ok(mut pending_prompts) = PENDING_HOST_KEY_PROMPTS.lock() {
-        pending_prompts.remove(session_id);
+pub const SSH_CONNECTION_TIMEOUT_ERROR_CODE: &str = "SSH_CONNECTION_TIMEOUT";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SshConnectionTimeoutError {
+    Phase { phase: String, timeout_ms: u64 },
+}
+
+impl std::fmt::Display for SshConnectionTimeoutError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Phase { phase, timeout_ms } => write!(
+                formatter,
+                "{SSH_CONNECTION_TIMEOUT_ERROR_CODE}: SSH establishment phase '{phase}' exceeded its {timeout_ms} ms deadline"
+            ),
+        }
     }
-    let _ = super::proxy_command::stop_proxy_command(session_id);
+}
+
+impl std::error::Error for SshConnectionTimeoutError {}
+
+fn contextualize_ssh_connection_error(context: &str, error: String) -> String {
+    if let Some(detail) = error.strip_prefix(SSH_CONNECTION_TIMEOUT_ERROR_CODE) {
+        let detail = detail.trim_start_matches(':').trim_start();
+        format!("{SSH_CONNECTION_TIMEOUT_ERROR_CODE}: {context}: {detail}")
+    } else {
+        format!("{context}: {error}")
+    }
+}
+
+const ESTABLISHMENT_ACTIVE: u8 = 0;
+const ESTABLISHMENT_TIMED_OUT: u8 = 1;
+const ESTABLISHMENT_CANCELLED: u8 = 2;
+const ESTABLISHMENT_COMPLETED: u8 = 3;
+
+fn clamped_ssh_establishment_timeout(configured_secs: Option<u64>) -> Duration {
+    Duration::from_secs(configured_secs.unwrap_or(DEFAULT_SSH_ESTABLISHMENT_TIMEOUT.as_secs()))
+        .clamp(MIN_SSH_ESTABLISHMENT_TIMEOUT, MAX_SSH_ESTABLISHMENT_TIMEOUT)
+}
+
+fn clamped_ssh_hop_timeout(configured_ms: u64) -> Duration {
+    Duration::from_millis(configured_ms).clamp(MIN_SSH_HOP_TIMEOUT, MAX_SSH_HOP_TIMEOUT)
+}
+
+fn duration_millis_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn is_native_ssh_socket_timeout(error: &str) -> bool {
+    error.contains("[Session(-9)]") || error.contains("Timed out waiting on socket")
+}
+
+fn shutdown_establishment_sockets(sockets: &StdMutex<Vec<TcpStream>>) {
+    let sockets = sockets
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for socket in sockets.iter() {
+        let _ = socket.shutdown(Shutdown::Both);
+    }
+}
+
+struct SshEstablishmentControl {
+    deadline: Instant,
+    overall_timeout: Duration,
+    cancellation: Arc<PendingSshConnection>,
+    sockets: Arc<StdMutex<Vec<TcpStream>>>,
+    outcome: Arc<AtomicU8>,
+    runtime: tokio::runtime::Handle,
+    watchdog: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl SshEstablishmentControl {
+    fn new(
+        config: &SshConnectionConfig,
+        cancellation: Arc<PendingSshConnection>,
+    ) -> Result<Arc<Self>, String> {
+        Self::new_with_timeout(
+            clamped_ssh_establishment_timeout(config.connect_timeout),
+            cancellation,
+        )
+    }
+
+    fn new_with_timeout(
+        overall_timeout: Duration,
+        cancellation: Arc<PendingSshConnection>,
+    ) -> Result<Arc<Self>, String> {
+        let overall_timeout = overall_timeout.clamp(
+            #[cfg(not(test))]
+            MIN_SSH_ESTABLISHMENT_TIMEOUT,
+            #[cfg(test)]
+            Duration::from_millis(10),
+            MAX_SSH_ESTABLISHMENT_TIMEOUT,
+        );
+        let runtime = tokio::runtime::Handle::try_current()
+            .map_err(|error| format!("SSH establishment requires a Tokio runtime: {error}"))?;
+        let deadline = Instant::now() + overall_timeout;
+        let sockets = Arc::new(StdMutex::new(Vec::new()));
+        let outcome = Arc::new(AtomicU8::new(ESTABLISHMENT_ACTIVE));
+        let watchdog_sockets = Arc::clone(&sockets);
+        let watchdog_outcome = Arc::clone(&outcome);
+        let watchdog_cancellation = Arc::clone(&cancellation);
+        let watchdog = runtime.spawn(async move {
+            tokio::select! {
+                biased;
+                _ = watchdog_cancellation.cancelled() => {
+                    if watchdog_outcome.compare_exchange(
+                        ESTABLISHMENT_ACTIVE,
+                        ESTABLISHMENT_CANCELLED,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ).is_ok() {
+                        shutdown_establishment_sockets(&watchdog_sockets);
+                    }
+                }
+                _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                    if watchdog_outcome.compare_exchange(
+                        ESTABLISHMENT_ACTIVE,
+                        ESTABLISHMENT_TIMED_OUT,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ).is_ok() {
+                        shutdown_establishment_sockets(&watchdog_sockets);
+                    }
+                }
+            }
+        });
+
+        Ok(Arc::new(Self {
+            deadline,
+            overall_timeout,
+            cancellation,
+            sockets,
+            outcome,
+            runtime,
+            watchdog: StdMutex::new(Some(watchdog)),
+        }))
+    }
+
+    fn timeout_error(&self, phase: &str, timeout: Duration) -> String {
+        SshConnectionTimeoutError::Phase {
+            phase: phase.to_string(),
+            timeout_ms: duration_millis_u64(timeout),
+        }
+        .to_string()
+    }
+
+    fn trigger(&self, outcome: u8) {
+        let transition = self.outcome.compare_exchange(
+            ESTABLISHMENT_ACTIVE,
+            outcome,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+        if transition.is_ok() || transition == Err(outcome) {
+            shutdown_establishment_sockets(&self.sockets);
+        }
+    }
+
+    fn expire_phase(&self, deadline: Instant) {
+        if deadline >= self.deadline {
+            self.trigger(ESTABLISHMENT_TIMED_OUT);
+        } else {
+            shutdown_establishment_sockets(&self.sockets);
+        }
+    }
+
+    fn ensure_active(&self, phase: &str) -> Result<(), String> {
+        if self.cancellation.is_cancelled()
+            || self.outcome.load(Ordering::Acquire) == ESTABLISHMENT_CANCELLED
+        {
+            self.trigger(ESTABLISHMENT_CANCELLED);
+            return Err("SSH connection cancelled".to_string());
+        }
+        if Instant::now() >= self.deadline
+            || self.outcome.load(Ordering::Acquire) == ESTABLISHMENT_TIMED_OUT
+        {
+            self.trigger(ESTABLISHMENT_TIMED_OUT);
+            return Err(self.timeout_error(phase, self.overall_timeout));
+        }
+        Ok(())
+    }
+
+    fn effective_deadline(&self, requested: Duration) -> Result<(Instant, Duration), String> {
+        self.ensure_active("overall")?;
+        let now = Instant::now();
+        let remaining = self.deadline.saturating_duration_since(now);
+        let effective = requested.min(remaining);
+        Ok((now + effective, effective))
+    }
+
+    async fn run_async_phase<T, F>(
+        &self,
+        phase: &str,
+        requested: Duration,
+        future: F,
+    ) -> Result<T, String>
+    where
+        F: Future<Output = Result<T, String>>,
+    {
+        let (deadline, effective) = self.effective_deadline(requested)?;
+        self.run_async_until(phase, deadline, effective, future)
+            .await
+    }
+
+    async fn run_async_until<T, F>(
+        &self,
+        phase: &str,
+        deadline: Instant,
+        effective: Duration,
+        future: F,
+    ) -> Result<T, String>
+    where
+        F: Future<Output = Result<T, String>>,
+    {
+        tokio::pin!(future);
+        tokio::select! {
+            biased;
+            _ = self.cancellation.cancelled() => {
+                self.trigger(ESTABLISHMENT_CANCELLED);
+                Err("SSH connection cancelled".to_string())
+            }
+            _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                self.expire_phase(deadline);
+                Err(self.timeout_error(phase, effective))
+            }
+            result = &mut future => result,
+        }
+    }
+
+    async fn run_isolated_local_phase<T, F>(
+        self: &Arc<Self>,
+        phase: &str,
+        requested: Duration,
+        session_lease: Option<Arc<SshSessionAdmissionLease>>,
+        operation: F,
+    ) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&SshIsolatedPhaseContext) -> Result<T, String> + Send + 'static,
+    {
+        self.run_isolated_local_phase_with_admission(
+            phase,
+            requested,
+            session_lease,
+            ssh_local_phase_admission(),
+            operation,
+        )
+        .await
+    }
+
+    async fn run_isolated_local_phase_with_admission<T, F>(
+        self: &Arc<Self>,
+        phase: &str,
+        requested: Duration,
+        session_lease: Option<Arc<SshSessionAdmissionLease>>,
+        admission: Arc<Semaphore>,
+        operation: F,
+    ) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&SshIsolatedPhaseContext) -> Result<T, String> + Send + 'static,
+    {
+        let (deadline, effective) = self.effective_deadline(requested)?;
+        let permit = self
+            .run_async_until(phase, deadline, effective, async move {
+                admission
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| "SSH local phase admission is closed".to_string())
+            })
+            .await?;
+        let context = SshIsolatedPhaseContext {
+            control: Arc::clone(self),
+            phase: phase.to_string(),
+            deadline,
+            effective,
+        };
+        let worker = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let _session_lease = session_lease;
+            operation(&context)
+        });
+        self.run_async_until(phase, deadline, effective, async move {
+            worker
+                .await
+                .map_err(|error| format!("SSH local phase worker failed: {error}"))?
+        })
+        .await
+    }
+
+    fn track_blocking_socket(&self, stream: &TcpStream, phase: &str) -> Result<(), String> {
+        self.ensure_active(phase)?;
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            self.trigger(ESTABLISHMENT_TIMED_OUT);
+            return Err(self.timeout_error(phase, self.overall_timeout));
+        }
+        // Windows socket clones do not reliably share SO_RCVTIMEO/SO_SNDTIMEO
+        // resets with the retained handle. The watchdog's shutdown clone plus
+        // libssh2's per-call timeout provide the deadline there without leaking
+        // a one-shot establishment timeout into the live session.
+        #[cfg(not(windows))]
+        {
+            let remaining = remaining.max(Duration::from_millis(1));
+            stream.set_read_timeout(Some(remaining)).map_err(|error| {
+                format!("Failed to configure SSH establishment read deadline: {error}")
+            })?;
+            stream.set_write_timeout(Some(remaining)).map_err(|error| {
+                format!("Failed to configure SSH establishment write deadline: {error}")
+            })?;
+        }
+        let tracked = stream
+            .try_clone()
+            .map_err(|error| format!("Failed to track SSH establishment socket: {error}"))?;
+        self.sockets
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(tracked);
+        self.ensure_active(phase)
+    }
+
+    fn complete(&self) -> Result<(), String> {
+        self.ensure_active("overall")?;
+        if self
+            .outcome
+            .compare_exchange(
+                ESTABLISHMENT_ACTIVE,
+                ESTABLISHMENT_COMPLETED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_err()
+        {
+            self.ensure_active("overall")?;
+            return Err("SSH establishment state transition failed".to_string());
+        }
+        if let Some(watchdog) = self
+            .watchdog
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            watchdog.abort();
+        }
+        let mut sockets = self
+            .sockets
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        #[cfg(not(windows))]
+        let reset_result = {
+            let mut reset_error = None;
+            for socket in sockets.iter() {
+                if let Err(error) = socket.set_read_timeout(None) {
+                    reset_error.get_or_insert_with(|| {
+                        format!("Failed to clear SSH establishment read deadline: {error}")
+                    });
+                }
+                if let Err(error) = socket.set_write_timeout(None) {
+                    reset_error.get_or_insert_with(|| {
+                        format!("Failed to clear SSH establishment write deadline: {error}")
+                    });
+                }
+            }
+            reset_error
+        };
+        #[cfg(not(windows))]
+        if let Some(error) = reset_result {
+            for socket in sockets.iter() {
+                let _ = socket.shutdown(Shutdown::Both);
+            }
+            sockets.clear();
+            return Err(error);
+        }
+        sockets.clear();
+        Ok(())
+    }
+
+    fn arm_blocking_phase(
+        self: &Arc<Self>,
+        phase: &str,
+        requested: Duration,
+    ) -> Result<SshBlockingPhaseGuard, String> {
+        let (deadline, effective) = self.effective_deadline(requested)?;
+        let cancellation = Arc::clone(&self.cancellation);
+        let sockets = Arc::clone(&self.sockets);
+        let outcome = Arc::clone(&self.outcome);
+        let is_overall_deadline = deadline >= self.deadline;
+        let task = self.runtime.spawn(async move {
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => {
+                    if outcome.compare_exchange(
+                        ESTABLISHMENT_ACTIVE,
+                        ESTABLISHMENT_CANCELLED,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ).is_ok() {
+                        shutdown_establishment_sockets(&sockets);
+                    }
+                }
+                _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                    if is_overall_deadline {
+                        if outcome.compare_exchange(
+                            ESTABLISHMENT_ACTIVE,
+                            ESTABLISHMENT_TIMED_OUT,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        ).is_ok() {
+                            shutdown_establishment_sockets(&sockets);
+                        }
+                    } else {
+                        shutdown_establishment_sockets(&sockets);
+                    }
+                }
+            }
+        });
+        Ok(SshBlockingPhaseGuard {
+            control: Arc::clone(self),
+            phase: phase.to_string(),
+            deadline,
+            effective,
+            is_overall_deadline,
+            task: Some(task),
+        })
+    }
+
+    fn run_blocking_phase<T, F>(
+        self: &Arc<Self>,
+        phase: &str,
+        requested: Duration,
+        operation: F,
+    ) -> Result<T, String>
+    where
+        F: FnOnce(&SshBlockingPhaseGuard) -> Result<T, String>,
+    {
+        let guard = self.arm_blocking_phase(phase, requested)?;
+        let result = operation(&guard);
+        guard.finish(result)
+    }
+}
+
+impl Drop for SshEstablishmentControl {
+    fn drop(&mut self) {
+        if let Ok(watchdog) = self.watchdog.get_mut() {
+            if let Some(watchdog) = watchdog.take() {
+                watchdog.abort();
+            }
+        }
+        self.sockets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
+}
+
+struct SshBlockingPhaseGuard {
+    control: Arc<SshEstablishmentControl>,
+    phase: String,
+    deadline: Instant,
+    effective: Duration,
+    is_overall_deadline: bool,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
+trait SshDeadlinePhase {
+    fn ensure_active(&self) -> Result<(), String>;
+    fn configure_session_timeout(&self, session: &Session) -> Result<(), String>;
+}
+
+struct SshIsolatedPhaseContext {
+    control: Arc<SshEstablishmentControl>,
+    phase: String,
+    deadline: Instant,
+    effective: Duration,
+}
+
+impl SshIsolatedPhaseContext {
+    async fn run_async<T, F>(&self, future: F) -> Result<T, String>
+    where
+        F: Future<Output = Result<T, String>>,
+    {
+        self.control
+            .run_async_until(&self.phase, self.deadline, self.effective, future)
+            .await
+    }
+}
+
+impl SshDeadlinePhase for SshIsolatedPhaseContext {
+    fn ensure_active(&self) -> Result<(), String> {
+        self.control.ensure_active(&self.phase)?;
+        if Instant::now() >= self.deadline {
+            self.control.expire_phase(self.deadline);
+            return Err(self.control.timeout_error(&self.phase, self.effective));
+        }
+        Ok(())
+    }
+
+    fn configure_session_timeout(&self, session: &Session) -> Result<(), String> {
+        self.ensure_active()?;
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        let timeout_ms = remaining
+            .as_millis()
+            .saturating_add(1)
+            .clamp(1, u32::MAX as u128) as u32;
+        session.set_timeout(timeout_ms);
+        Ok(())
+    }
+}
+
+impl SshDeadlinePhase for SshBlockingPhaseGuard {
+    fn ensure_active(&self) -> Result<(), String> {
+        self.control.ensure_active(&self.phase)?;
+        if Instant::now() >= self.deadline {
+            self.control.expire_phase(self.deadline);
+            return Err(self.control.timeout_error(&self.phase, self.effective));
+        }
+        Ok(())
+    }
+
+    fn configure_session_timeout(&self, session: &Session) -> Result<(), String> {
+        self.ensure_active()?;
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        let timeout_ms = remaining
+            .as_millis()
+            .saturating_add(1)
+            .clamp(1, u32::MAX as u128) as u32;
+        session.set_timeout(timeout_ms);
+        Ok(())
+    }
+}
+
+impl SshBlockingPhaseGuard {
+    fn finish<T>(mut self, result: Result<T, String>) -> Result<T, String> {
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+        if self.control.cancellation.is_cancelled()
+            || self.control.outcome.load(Ordering::Acquire) == ESTABLISHMENT_CANCELLED
+        {
+            self.control.trigger(ESTABLISHMENT_CANCELLED);
+            return Err("SSH connection cancelled".to_string());
+        }
+        let native_socket_timeout = result
+            .as_ref()
+            .is_err_and(|error| is_native_ssh_socket_timeout(error));
+        if Instant::now() >= self.deadline
+            || self.control.outcome.load(Ordering::Acquire) == ESTABLISHMENT_TIMED_OUT
+            || native_socket_timeout
+        {
+            if self.is_overall_deadline {
+                self.control.trigger(ESTABLISHMENT_TIMED_OUT);
+            } else {
+                shutdown_establishment_sockets(&self.control.sockets);
+            }
+            return Err(self.control.timeout_error(&self.phase, self.effective));
+        }
+        result
+    }
+}
+
+impl Drop for SshBlockingPhaseGuard {
+    fn drop(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+pub const SSH_SESSION_CAPACITY_ERROR_CODE: &str = "SSH_SESSION_CAPACITY";
+pub const SSH_HANDSHAKE_CAPACITY_ERROR_CODE: &str = "SSH_HANDSHAKE_CAPACITY";
+pub const SSH_CONFIG_CAPACITY_ERROR_CODE: &str = "SSH_CONFIG_CAPACITY";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SshConnectionAdmissionError {
+    SessionCapacity { limit: usize },
+    HandshakeCapacity { limit: usize },
+    ConfigTooLarge { bytes: usize, limit: usize },
+    ConfigBudget { bytes: usize, limit: usize },
+    ConfigAccounting,
+}
+
+impl std::fmt::Display for SshConnectionAdmissionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SessionCapacity { limit } => write!(
+                formatter,
+                "{SSH_SESSION_CAPACITY_ERROR_CODE}: active or pending SSH session limit reached ({limit})"
+            ),
+            Self::HandshakeCapacity { limit } => write!(
+                formatter,
+                "{SSH_HANDSHAKE_CAPACITY_ERROR_CODE}: concurrent SSH handshake limit reached ({limit})"
+            ),
+            Self::ConfigTooLarge { bytes, limit } => write!(
+                formatter,
+                "{SSH_CONFIG_CAPACITY_ERROR_CODE}: retained SSH connection configuration is {bytes} bytes; limit is {limit} bytes"
+            ),
+            Self::ConfigBudget { bytes, limit } => write!(
+                formatter,
+                "{SSH_CONFIG_CAPACITY_ERROR_CODE}: aggregate retained SSH configuration budget reached while reserving {bytes} bytes ({limit} byte limit)"
+            ),
+            Self::ConfigAccounting => write!(
+                formatter,
+                "{SSH_CONFIG_CAPACITY_ERROR_CODE}: SSH configuration size accounting overflowed"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SshConnectionAdmissionError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SshConnectionAdmissionLimits {
+    max_sessions: usize,
+    max_handshakes: usize,
+    max_config_bytes: usize,
+    config_budget_bytes: usize,
+}
+
+impl Default for SshConnectionAdmissionLimits {
+    fn default() -> Self {
+        Self {
+            max_sessions: MAX_ACTIVE_OR_PENDING_SSH_SESSIONS,
+            max_handshakes: MAX_CONCURRENT_SSH_HANDSHAKES,
+            max_config_bytes: MAX_SSH_RETAINED_CONFIG_BYTES,
+            config_budget_bytes: MAX_SSH_RETAINED_CONFIG_BUDGET_BYTES,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SshConnectionAdmission {
+    session_slots: Arc<Semaphore>,
+    handshake_slots: Arc<Semaphore>,
+    config_bytes: Arc<Semaphore>,
+    limits: SshConnectionAdmissionLimits,
+}
+
+impl SshConnectionAdmission {
+    fn new(limits: SshConnectionAdmissionLimits) -> Arc<Self> {
+        assert!(limits.max_sessions > 0);
+        assert!(limits.max_handshakes > 0);
+        assert!(limits.max_config_bytes > 0);
+        assert!(limits.config_budget_bytes > 0);
+        assert!(limits.max_handshakes < limits.max_sessions);
+        assert!(u32::try_from(limits.config_budget_bytes).is_ok());
+        Arc::new(Self {
+            session_slots: Arc::new(Semaphore::new(limits.max_sessions)),
+            handshake_slots: Arc::new(Semaphore::new(limits.max_handshakes)),
+            config_bytes: Arc::new(Semaphore::new(limits.config_budget_bytes)),
+            limits,
+        })
+    }
+
+    fn reserve_session(
+        self: &Arc<Self>,
+        config: &SshConnectionConfig,
+    ) -> Result<Arc<SshSessionAdmissionLease>, SshConnectionAdmissionError> {
+        let payload_bytes = retained_ssh_config_bytes(config)?;
+        if payload_bytes > self.limits.max_config_bytes {
+            return Err(SshConnectionAdmissionError::ConfigTooLarge {
+                bytes: payload_bytes,
+                limit: self.limits.max_config_bytes,
+            });
+        }
+        // Reserve the full per-session ceiling up front. Runtime auth updates
+        // may replace serde-skipped secrets, so charging only the initial byte
+        // count would let retained state grow beyond the aggregate budget.
+        let reserved_bytes = self.limits.max_config_bytes;
+        let payload_permits = u32::try_from(reserved_bytes)
+            .map_err(|_| SshConnectionAdmissionError::ConfigAccounting)?;
+        let session_slot = Arc::clone(&self.session_slots)
+            .try_acquire_owned()
+            .map_err(|_| SshConnectionAdmissionError::SessionCapacity {
+                limit: self.limits.max_sessions,
+            })?;
+        let config_bytes =
+            match Arc::clone(&self.config_bytes).try_acquire_many_owned(payload_permits) {
+                Ok(permit) => permit,
+                Err(_) => {
+                    drop(session_slot);
+                    return Err(SshConnectionAdmissionError::ConfigBudget {
+                        bytes: reserved_bytes,
+                        limit: self.limits.config_budget_bytes,
+                    });
+                }
+            };
+        Ok(Arc::new(SshSessionAdmissionLease {
+            _session_slot: session_slot,
+            _config_bytes: config_bytes,
+            _retained_config_bytes: reserved_bytes,
+        }))
+    }
+
+    fn reserve_handshake(
+        self: &Arc<Self>,
+    ) -> Result<OwnedSemaphorePermit, SshConnectionAdmissionError> {
+        Arc::clone(&self.handshake_slots)
+            .try_acquire_owned()
+            .map_err(|_| SshConnectionAdmissionError::HandshakeCapacity {
+                limit: self.limits.max_handshakes,
+            })
+    }
+
+    #[cfg(test)]
+    fn snapshot(&self) -> SshConnectionAdmissionSnapshot {
+        SshConnectionAdmissionSnapshot {
+            active_or_pending: self
+                .limits
+                .max_sessions
+                .saturating_sub(self.session_slots.available_permits()),
+            active_handshakes: self
+                .limits
+                .max_handshakes
+                .saturating_sub(self.handshake_slots.available_permits()),
+            retained_config_bytes: self
+                .limits
+                .config_budget_bytes
+                .saturating_sub(self.config_bytes.available_permits()),
+        }
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SshConnectionAdmissionSnapshot {
+    active_or_pending: usize,
+    active_handshakes: usize,
+    retained_config_bytes: usize,
+}
+
+#[derive(Debug)]
+struct SshSessionAdmissionLease {
+    _session_slot: OwnedSemaphorePermit,
+    _config_bytes: OwnedSemaphorePermit,
+    _retained_config_bytes: usize,
+}
+
+struct SshConnectionWorkerLease {
+    _session: Arc<SshSessionAdmissionLease>,
+    _handshake: OwnedSemaphorePermit,
+    cleanup_key: PendingSshCleanupKey,
+    _proxy_command_reservation: Option<super::proxy_command::ProxyCommandProducerReservation>,
+}
+
+static PROCESS_SSH_CONNECTION_ADMISSION: OnceLock<Arc<SshConnectionAdmission>> = OnceLock::new();
+
+fn process_ssh_connection_admission() -> Arc<SshConnectionAdmission> {
+    Arc::clone(
+        PROCESS_SSH_CONNECTION_ADMISSION
+            .get_or_init(|| SshConnectionAdmission::new(SshConnectionAdmissionLimits::default())),
+    )
+}
+
+fn checked_add_retained_bytes(
+    total: &mut usize,
+    bytes: usize,
+) -> Result<(), SshConnectionAdmissionError> {
+    *total = total
+        .checked_add(bytes)
+        .ok_or(SshConnectionAdmissionError::ConfigAccounting)?;
+    Ok(())
+}
+
+fn add_secret_bytes(
+    total: &mut usize,
+    secret: Option<&SecretString>,
+) -> Result<(), SshConnectionAdmissionError> {
+    if let Some(secret) = secret {
+        checked_add_retained_bytes(total, secret.expose_secret().len())?;
+    }
+    Ok(())
+}
+
+fn add_secret_list_bytes(
+    total: &mut usize,
+    secrets: &[SecretString],
+) -> Result<(), SshConnectionAdmissionError> {
+    for secret in secrets {
+        checked_add_retained_bytes(total, secret.expose_secret().len())?;
+    }
+    Ok(())
+}
+
+fn add_jump_secret_bytes(
+    total: &mut usize,
+    jump: &JumpHostConfig,
+) -> Result<(), SshConnectionAdmissionError> {
+    add_secret_bytes(total, jump.password.as_ref())?;
+    add_secret_bytes(total, jump.private_key_passphrase.as_ref())?;
+    add_secret_bytes(total, jump.totp_secret.as_ref())?;
+    add_secret_list_bytes(total, &jump.keyboard_interactive_responses)
+}
+
+fn add_proxy_secret_bytes(
+    total: &mut usize,
+    proxy: &ProxyConfig,
+) -> Result<(), SshConnectionAdmissionError> {
+    add_secret_bytes(total, proxy.password.as_ref())
+}
+
+fn retained_ssh_config_bytes(
+    config: &SshConnectionConfig,
+) -> Result<usize, SshConnectionAdmissionError> {
+    let mut total = serde_json::to_vec(config)
+        .map_err(|_| SshConnectionAdmissionError::ConfigAccounting)?
+        .len();
+    add_secret_bytes(&mut total, config.password.as_ref())?;
+    add_secret_bytes(&mut total, config.private_key_passphrase.as_ref())?;
+    add_secret_bytes(&mut total, config.totp_secret.as_ref())?;
+    add_secret_list_bytes(&mut total, &config.keyboard_interactive_responses)?;
+    add_secret_bytes(&mut total, config.sk_pin.as_ref())?;
+    for jump in &config.jump_hosts {
+        add_jump_secret_bytes(&mut total, jump)?;
+    }
+    if let Some(proxy) = &config.proxy_config {
+        add_proxy_secret_bytes(&mut total, proxy)?;
+    }
+    if let Some(chain) = &config.proxy_chain {
+        for proxy in &chain.proxies {
+            add_proxy_secret_bytes(&mut total, proxy)?;
+        }
+    }
+    if let Some(chain) = &config.mixed_chain {
+        for hop in &chain.hops {
+            match hop {
+                ChainHop::SshJump(jump) => add_jump_secret_bytes(&mut total, jump)?,
+                ChainHop::Proxy(proxy) => add_proxy_secret_bytes(&mut total, proxy)?,
+            }
+        }
+    }
+    if let Some(proxy_command) = &config.proxy_command {
+        add_secret_bytes(&mut total, proxy_command.proxy_password.as_ref())?;
+    }
+    Ok(total.max(1))
+}
+
+const MAX_DETACHED_SSH_CLEANUP_WORKERS: usize = 4;
+static NEXT_SSH_CLEANUP_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct PendingSshCleanupKey {
+    session_id: String,
+    generation: u64,
+}
+
+impl PendingSshCleanupKey {
+    fn new(session_id: &str) -> Self {
+        Self {
+            session_id: session_id.to_string(),
+            generation: NEXT_SSH_CLEANUP_GENERATION.fetch_add(1, Ordering::AcqRel),
+        }
+    }
+}
+
+static PENDING_SSH_ARTIFACT_CLEANUPS: OnceLock<StdMutex<HashSet<PendingSshCleanupKey>>> =
+    OnceLock::new();
+
+fn pending_ssh_artifact_cleanups_lock(
+) -> std::sync::MutexGuard<'static, HashSet<PendingSshCleanupKey>> {
+    PENDING_SSH_ARTIFACT_CLEANUPS
+        .get_or_init(|| StdMutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| {
+            log::error!("Pending SSH artifact-cleanup registry was poisoned; recovering");
+            poisoned.into_inner()
+        })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DetachedSshCleanupOutcome {
+    Complete,
+    Retry,
+}
+
+type DetachedSshCleanupTask = Box<dyn FnMut() -> DetachedSshCleanupOutcome + Send + 'static>;
+type DetachedSshCleanupSlot = Arc<StdMutex<Option<DetachedSshCleanupTask>>>;
+
+struct DetachedSshCleanupQueueState {
+    tasks: VecDeque<DetachedSshCleanupSlot>,
+    in_flight: usize,
+    shutting_down: bool,
+}
+
+struct DetachedSshCleanupShared {
+    state: StdMutex<DetachedSshCleanupQueueState>,
+    changed: std::sync::Condvar,
+}
+
+struct DetachedSshCleanupExecutor {
+    shared: Arc<DetachedSshCleanupShared>,
+    _workers: Vec<std::thread::JoinHandle<()>>,
+}
+
+static DETACHED_SSH_CLEANUP_EXECUTOR: OnceLock<Result<DetachedSshCleanupExecutor, String>> =
+    OnceLock::new();
+
+fn run_detached_ssh_cleanup_slot(slot: &DetachedSshCleanupSlot) -> DetachedSshCleanupOutcome {
+    let mut task = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let outcome = match task.as_mut() {
+        Some(task) => task(),
+        None => DetachedSshCleanupOutcome::Complete,
+    };
+    if outcome == DetachedSshCleanupOutcome::Complete {
+        task.take();
+    }
+    outcome
+}
+
+fn attempt_detached_ssh_cleanup(slot: &DetachedSshCleanupSlot) -> DetachedSshCleanupOutcome {
+    let attempt_slot = Arc::clone(slot);
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        run_detached_ssh_cleanup_slot(&attempt_slot)
+    })) {
+        Ok(outcome) => outcome,
+        Err(_) => {
+            log::error!("Detached SSH cleanup task panicked; retaining task for retry");
+            DetachedSshCleanupOutcome::Retry
+        }
+    }
+}
+
+fn run_detached_ssh_cleanup_until_complete(slot: &DetachedSshCleanupSlot) {
+    while attempt_detached_ssh_cleanup(slot) == DetachedSshCleanupOutcome::Retry {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn detached_ssh_cleanup_worker(shared: Arc<DetachedSshCleanupShared>) {
+    loop {
+        let slot = {
+            let mut state = shared
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            while state.tasks.is_empty() && !state.shutting_down {
+                state = shared
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+            if state.shutting_down {
+                return;
+            }
+            let Some(slot) = state.tasks.pop_front() else {
+                continue;
+            };
+            state.in_flight += 1;
+            slot
+        };
+        let outcome = attempt_detached_ssh_cleanup(&slot);
+        if outcome == DetachedSshCleanupOutcome::Retry {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let mut state = shared
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        debug_assert!(state.in_flight > 0);
+        state.in_flight -= 1;
+        let retry_synchronously =
+            outcome == DetachedSshCleanupOutcome::Retry && state.shutting_down;
+        if outcome == DetachedSshCleanupOutcome::Retry && !state.shutting_down {
+            state.tasks.push_back(Arc::clone(&slot));
+        }
+        drop(state);
+        shared.changed.notify_all();
+        if retry_synchronously {
+            run_detached_ssh_cleanup_until_complete(&slot);
+        }
+    }
+}
+
+fn build_detached_ssh_cleanup_executor(
+    mut spawn_worker: impl FnMut(
+        usize,
+        Arc<DetachedSshCleanupShared>,
+    ) -> std::io::Result<std::thread::JoinHandle<()>>,
+) -> Result<DetachedSshCleanupExecutor, String> {
+    let shared = Arc::new(DetachedSshCleanupShared {
+        state: StdMutex::new(DetachedSshCleanupQueueState {
+            tasks: VecDeque::new(),
+            in_flight: 0,
+            shutting_down: false,
+        }),
+        changed: std::sync::Condvar::new(),
+    });
+    let mut workers = Vec::with_capacity(MAX_DETACHED_SSH_CLEANUP_WORKERS);
+    for index in 0..MAX_DETACHED_SSH_CLEANUP_WORKERS {
+        match spawn_worker(index, Arc::clone(&shared)) {
+            Ok(worker) => workers.push(worker),
+            Err(error) => {
+                shared
+                    .state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .shutting_down = true;
+                shared.changed.notify_all();
+                for worker in workers {
+                    let _ = worker.join();
+                }
+                return Err(format!(
+                    "Failed to initialize detached SSH cleanup worker {index}: {error}"
+                ));
+            }
+        }
+    }
+    Ok(DetachedSshCleanupExecutor {
+        shared,
+        _workers: workers,
+    })
+}
+
+fn initialize_detached_ssh_cleanup_executor() -> Result<DetachedSshCleanupExecutor, String> {
+    build_detached_ssh_cleanup_executor(|index, shared| {
+        std::thread::Builder::new()
+            .name(format!("ssh-cleanup-reaper-{index}"))
+            .spawn(move || detached_ssh_cleanup_worker(shared))
+    })
+}
+
+fn detached_ssh_cleanup_executor() -> Result<&'static DetachedSshCleanupExecutor, String> {
+    match DETACHED_SSH_CLEANUP_EXECUTOR.get_or_init(initialize_detached_ssh_cleanup_executor) {
+        Ok(executor) => Ok(executor),
+        Err(error) => Err(error.clone()),
+    }
+}
+
+impl DetachedSshCleanupExecutor {
+    fn enqueue(&self, slot: DetachedSshCleanupSlot) -> Result<(), String> {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.shutting_down {
+            return Err("Detached SSH cleanup executor is shutting down".to_string());
+        }
+        while state.tasks.len().saturating_add(state.in_flight)
+            >= MAX_ACTIVE_OR_PENDING_SSH_SESSIONS
+            && !state.shutting_down
+        {
+            state = self
+                .shared
+                .changed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        if state.shutting_down {
+            return Err("Detached SSH cleanup executor is shutting down".to_string());
+        }
+        state.tasks.push_back(slot);
+        drop(state);
+        self.shared.changed.notify_all();
+        Ok(())
+    }
+}
+
+fn dispatch_detached_ssh_cleanup_with(
+    task: impl FnMut() -> DetachedSshCleanupOutcome + Send + 'static,
+    enqueue: impl FnOnce(DetachedSshCleanupSlot) -> Result<(), String>,
+) {
+    let slot: DetachedSshCleanupSlot = Arc::new(StdMutex::new(Some(Box::new(task))));
+    let queued = enqueue(Arc::clone(&slot));
+    if let Err(error) = queued {
+        log::error!("{error}");
+        // The original slot still owns the closure whenever initialization or
+        // enqueue fails, so exceptional fallback cannot detach native handles.
+        run_detached_ssh_cleanup_until_complete(&slot);
+    }
+}
+
+fn dispatch_detached_ssh_cleanup(task: impl FnMut() -> DetachedSshCleanupOutcome + Send + 'static) {
+    dispatch_detached_ssh_cleanup_with(task, |slot| detached_ssh_cleanup_executor()?.enqueue(slot));
+}
+
+fn dispatch_deduplicated_pending_ssh_cleanup(
+    cleanup_key: &PendingSshCleanupKey,
+    admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+    mut cleanup_native: impl FnMut() -> Result<(), String> + Send + 'static,
+    enqueue: impl FnOnce(DetachedSshCleanupSlot) -> Result<(), String>,
+) {
+    if !pending_ssh_artifact_cleanups_lock().insert(cleanup_key.clone()) {
+        // The first cleanup owns an equivalent Arc admission lease and retains
+        // the key through every retry. A duplicate Attempt/SetupGuard request
+        // can return without consuming another bounded executor slot.
+        return;
+    }
+    let cleanup_key = cleanup_key.clone();
+    let mut admission_lease = admission_lease;
+    let cleanup = move || {
+        if cleanup_native().is_ok() {
+            drop(admission_lease.take());
+            pending_ssh_artifact_cleanups_lock().remove(&cleanup_key);
+            DetachedSshCleanupOutcome::Complete
+        } else {
+            DetachedSshCleanupOutcome::Retry
+        }
+    };
+    dispatch_detached_ssh_cleanup_with(cleanup, enqueue);
+}
+
+fn cleanup_pending_connection_artifacts_with(
+    cleanup_key: &PendingSshCleanupKey,
+    admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+    enqueue: impl FnOnce(DetachedSshCleanupSlot) -> Result<(), String>,
+) {
+    if let Ok(mut pending_prompts) = PENDING_HOST_KEY_PROMPTS.lock() {
+        pending_prompts.remove(&cleanup_key.session_id);
+    }
+    let session_id = cleanup_key.session_id.clone();
+    dispatch_deduplicated_pending_ssh_cleanup(
+        cleanup_key,
+        admission_lease,
+        move || super::proxy_command::stop_proxy_command_and_wait(&session_id),
+        enqueue,
+    );
+}
+
+fn cleanup_pending_connection_artifacts(
+    cleanup_key: &PendingSshCleanupKey,
+    admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+) {
+    cleanup_pending_connection_artifacts_with(cleanup_key, admission_lease, |slot| {
+        detached_ssh_cleanup_executor()?.enqueue(slot)
+    });
 }
 
 struct SshConnectionAttempt {
     session_id: String,
     cancellation: std::sync::Arc<PendingSshConnection>,
     pending_connections: PendingSshConnections,
+    session_lease: Arc<SshSessionAdmissionLease>,
+    handshake_lease: Option<OwnedSemaphorePermit>,
+    cleanup_key: PendingSshCleanupKey,
+    proxy_command_reservation: Option<super::proxy_command::ProxyCommandProducerReservation>,
     registered: bool,
 }
 
@@ -727,10 +1924,23 @@ impl SshConnectionAttempt {
         self.registered = false;
     }
 
-    fn finish(mut self) -> bool {
+    fn take_worker_lease(&mut self) -> SshConnectionWorkerLease {
+        SshConnectionWorkerLease {
+            _session: Arc::clone(&self.session_lease),
+            _handshake: self
+                .handshake_lease
+                .take()
+                .expect("SSH connection attempt owns one handshake permit"),
+            cleanup_key: self.cleanup_key.clone(),
+            _proxy_command_reservation: self.proxy_command_reservation.take(),
+        }
+    }
+
+    fn finish(mut self) -> (bool, Arc<SshSessionAdmissionLease>) {
         let cancelled = self.cancellation.is_cancelled();
+        let session_lease = Arc::clone(&self.session_lease);
         self.unregister();
-        cancelled
+        (cancelled, session_lease)
     }
 }
 
@@ -739,22 +1949,43 @@ impl Drop for SshConnectionAttempt {
         if self.registered {
             self.cancellation.cancel();
             self.unregister();
-            cleanup_pending_connection_artifacts(&self.session_id);
+            // Producer acknowledgement must precede any cleanup dispatch that
+            // can backpressure on the bounded queue. Otherwise a queued stop
+            // can wait for this guard while this same Drop waits for capacity.
+            drop(self.proxy_command_reservation.take());
+            cleanup_pending_connection_artifacts(
+                &self.cleanup_key,
+                Some(Arc::clone(&self.session_lease)),
+            );
         }
     }
 }
 
 struct SshConnectionSetupGuard {
-    session_id: String,
+    cleanup_key: PendingSshCleanupKey,
+    admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+    proxy_command_reservation: Option<super::proxy_command::ProxyCommandProducerReservation>,
     armed: bool,
 }
 
 impl SshConnectionSetupGuard {
-    fn new(session_id: String) -> Self {
+    fn new(
+        cleanup_key: PendingSshCleanupKey,
+        admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+        proxy_command_reservation: Option<super::proxy_command::ProxyCommandProducerReservation>,
+    ) -> Self {
         Self {
-            session_id,
+            cleanup_key,
+            admission_lease,
+            proxy_command_reservation,
             armed: true,
         }
+    }
+
+    fn proxy_command_reservation(
+        &self,
+    ) -> Option<&super::proxy_command::ProxyCommandProducerReservation> {
+        self.proxy_command_reservation.as_ref()
     }
 
     fn disarm(&mut self) {
@@ -764,41 +1995,107 @@ impl SshConnectionSetupGuard {
 
 impl Drop for SshConnectionSetupGuard {
     fn drop(&mut self) {
+        // Release the exact producer generation before cleanup can wait for it
+        // or backpressure on a queue filled with older cleanup requests.
+        drop(self.proxy_command_reservation.take());
         if self.armed {
-            cleanup_pending_connection_artifacts(&self.session_id);
+            cleanup_pending_connection_artifacts(&self.cleanup_key, self.admission_lease.take());
         }
+    }
+}
+
+struct EstablishmentBridgeCleanup {
+    intermediate_sessions: Vec<Session>,
+    bridge_handles: Vec<std::thread::JoinHandle<()>>,
+    admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+}
+
+impl EstablishmentBridgeCleanup {
+    fn new(admission_lease: Option<Arc<SshSessionAdmissionLease>>) -> Result<Self, String> {
+        detached_ssh_cleanup_executor()?;
+        Ok(Self {
+            intermediate_sessions: Vec::new(),
+            bridge_handles: Vec::new(),
+            admission_lease,
+        })
+    }
+
+    fn from_parts(
+        intermediate_sessions: Vec<Session>,
+        bridge_handles: Vec<std::thread::JoinHandle<()>>,
+        admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+    ) -> Self {
+        Self {
+            intermediate_sessions,
+            bridge_handles,
+            admission_lease,
+        }
+    }
+
+    fn take_parts(&mut self) -> (Vec<Session>, Vec<std::thread::JoinHandle<()>>) {
+        (
+            std::mem::take(&mut self.intermediate_sessions),
+            std::mem::take(&mut self.bridge_handles),
+        )
+    }
+}
+
+impl Drop for EstablishmentBridgeCleanup {
+    fn drop(&mut self) {
+        if self.intermediate_sessions.is_empty() && self.bridge_handles.is_empty() {
+            return;
+        }
+        let mut intermediate_sessions = Some(std::mem::take(&mut self.intermediate_sessions));
+        let mut bridge_handles = std::mem::take(&mut self.bridge_handles);
+        let mut admission_lease = self.admission_lease.take();
+        dispatch_detached_ssh_cleanup(move || {
+            drop(intermediate_sessions.take());
+            while let Some(handle) = bridge_handles.pop() {
+                let _ = handle.join();
+            }
+            drop(admission_lease.take());
+            DetachedSshCleanupOutcome::Complete
+        });
     }
 }
 
 struct EstablishedSshConnection {
     session_id: String,
     session: Option<SshSession>,
+    cleanup_session_lease: Option<Arc<SshSessionAdmissionLease>>,
 }
 
 impl Drop for EstablishedSshConnection {
     fn drop(&mut self) {
-        let Some(mut session) = self.session.take() else {
+        let Some(session) = self.session.take() else {
             return;
         };
+        let session_id = self.session_id.clone();
+        let cleanup = DetachedSessionCleanup {
+            session,
+            admission_lease: self.cleanup_session_lease.take(),
+        };
+        if let Ok(mut pending_prompts) = PENDING_HOST_KEY_PROMPTS.lock() {
+            pending_prompts.remove(&session_id);
+        }
 
-        if let Some(handle) = session.keep_alive_handle.take() {
-            handle.abort();
-        }
-        for (_, forward) in session.port_forwards.drain() {
-            forward.handle.abort();
-        }
-
-        drop(session.session);
-        while let Some(intermediate) = session.intermediate_sessions.pop() {
-            drop(intermediate);
-        }
-        for handle in session.bridge_handles.drain(..) {
-            if handle.is_finished() {
-                let _ = handle.join();
+        let mut proxy_cleaned = false;
+        let mut cleanup = Some(cleanup);
+        let reap = move || {
+            // Keep the session lease inside `cleanup` until ProxyCommand and
+            // every native bridge worker have actually exited.
+            if !proxy_cleaned {
+                if super::proxy_command::stop_proxy_command_and_wait(&session_id).is_err() {
+                    return DetachedSshCleanupOutcome::Retry;
+                }
+                proxy_cleaned = true;
             }
-        }
-
-        cleanup_pending_connection_artifacts(&self.session_id);
+            if let Some(cleanup) = cleanup.take() {
+                let _ = cleanup.finish_bridges(Instant::now() + SHELL_STOP_TIMEOUT);
+            }
+            DetachedSshCleanupOutcome::Complete
+        };
+        dispatch_detached_ssh_cleanup(reap);
     }
 }
 
@@ -858,10 +2155,15 @@ impl DetachedShellCleanup {
 
 struct DetachedSessionCleanup {
     session: SshSession,
+    admission_lease: Option<Arc<SshSessionAdmissionLease>>,
 }
 
 impl DetachedSessionCleanup {
     fn finish_bridges(self, deadline: Instant) -> Result<(), String> {
+        let DetachedSessionCleanup {
+            session,
+            admission_lease,
+        } = self;
         let SshSession {
             id: session_id,
             session,
@@ -870,7 +2172,7 @@ impl DetachedSessionCleanup {
             mut intermediate_sessions,
             mut bridge_handles,
             ..
-        } = self.session;
+        } = session;
 
         if let Some(handle) = keep_alive_handle {
             handle.abort();
@@ -885,24 +2187,35 @@ impl DetachedSessionCleanup {
         while let Some(intermediate) = intermediate_sessions.pop() {
             drop(intermediate);
         }
+        let mut errors = Vec::new();
+        let mut deadline_exceeded = false;
         for (index, handle) in bridge_handles.drain(..).enumerate() {
             while !handle.is_finished() {
                 if Instant::now() >= deadline {
-                    return Err(format!(
-                        "Timed out waiting for SSH bridge {} to stop for session {}; worker detached safely",
-                        index, session_id
-                    ));
+                    deadline_exceeded = true;
                 }
                 std::thread::sleep(Duration::from_millis(5));
             }
             if handle.join().is_err() {
-                return Err(format!(
+                errors.push(format!(
                     "SSH bridge {} panicked while disconnecting session {}",
                     index, session_id
                 ));
             }
         }
-        Ok(())
+        if deadline_exceeded {
+            errors.push(format!(
+                "Timed out waiting for SSH bridges to stop for session {}; cleanup completed after the deadline",
+                session_id
+            ));
+        }
+        // Explicitly retain admission until all bridge joins above complete.
+        drop(admission_lease);
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
     }
 }
 
@@ -911,6 +2224,23 @@ struct SshDisconnectPlan {
     pending_connection: Option<Arc<PendingSshConnection>>,
     shell: Option<DetachedShellCleanup>,
     session: Option<DetachedSessionCleanup>,
+}
+
+fn dispatch_proxy_command_disconnect_cleanup(
+    session_id: String,
+    admission_lease: Option<Arc<SshSessionAdmissionLease>>,
+) -> Option<tokio::task::JoinHandle<Result<(), String>>> {
+    // `begin_connection_attempt` reserves every service-owned ProxyCommand
+    // before its native worker can launch. A confirmed-absent registry entry
+    // therefore cannot late-register for this attempt, and avoiding a needless
+    // blocking-pool job keeps non-ProxyCommand disconnects responsive at scale.
+    if !super::proxy_command::has_proxy_command_lifecycle(&session_id) {
+        return None;
+    }
+    Some(tokio::task::spawn_blocking(move || {
+        let _admission_lease = admission_lease;
+        super::proxy_command::stop_proxy_command_and_wait(&session_id)
+    }))
 }
 
 impl SshDisconnectPlan {
@@ -940,10 +2270,11 @@ impl SshDisconnectPlan {
             errors.push(error);
         }
 
-        let proxy_session_id = session_id.clone();
-        let proxy_cleanup = tokio::task::spawn_blocking(move || {
-            super::proxy_command::stop_proxy_command(&proxy_session_id)
-        });
+        let proxy_admission_lease = session
+            .as_ref()
+            .and_then(|cleanup| cleanup.admission_lease.clone());
+        let proxy_cleanup =
+            dispatch_proxy_command_disconnect_cleanup(session_id.clone(), proxy_admission_lease);
         let session_cleanup = async move {
             let Some(session) = session else {
                 return Ok(());
@@ -966,6 +2297,9 @@ impl SshDisconnectPlan {
             }
         };
         let proxy_cleanup = async move {
+            let Some(proxy_cleanup) = proxy_cleanup else {
+                return Ok(());
+            };
             match tokio::time::timeout_at(deadline, proxy_cleanup).await {
                 Ok(Ok(result)) => result,
                 Ok(Err(error)) => Err(format!("ProxyCommand cleanup task failed: {error}")),
@@ -1012,6 +2346,7 @@ impl SshDisconnectPlan {
 
 pub struct SshService {
     pub sessions: HashMap<String, SshSession>,
+    session_admission_leases: HashMap<String, Arc<SshSessionAdmissionLease>>,
     #[allow(dead_code)]
     connection_pool: HashMap<String, Vec<SshSession>>,
     #[allow(dead_code)]
@@ -1019,6 +2354,9 @@ pub struct SshService {
     pub shells: HashMap<String, SshShellHandle>,
     pub event_emitter: Option<DynEventEmitter>,
     pending_connections: PendingSshConnections,
+    connection_admission: Arc<SshConnectionAdmission>,
+    establishment_control: Option<Arc<SshEstablishmentControl>>,
+    establishment_session_lease: Option<Arc<SshSessionAdmissionLease>>,
     shell_admission: Arc<ShellAdmission>,
 }
 
@@ -1026,11 +2364,15 @@ impl SshService {
     pub fn new() -> SshServiceState {
         std::sync::Arc::new(tokio::sync::Mutex::new(SshService {
             sessions: HashMap::new(),
+            session_admission_leases: HashMap::new(),
             connection_pool: HashMap::new(),
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: None,
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            connection_admission: process_ssh_connection_admission(),
+            establishment_control: None,
+            establishment_session_lease: None,
             shell_admission: process_shell_admission(),
         }))
     }
@@ -1038,16 +2380,51 @@ impl SshService {
     pub fn new_with_emitter(emitter: DynEventEmitter) -> SshServiceState {
         std::sync::Arc::new(tokio::sync::Mutex::new(SshService {
             sessions: HashMap::new(),
+            session_admission_leases: HashMap::new(),
             connection_pool: HashMap::new(),
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: Some(emitter),
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            connection_admission: process_ssh_connection_admission(),
+            establishment_control: None,
+            establishment_session_lease: None,
             shell_admission: process_shell_admission(),
         }))
     }
 
-    fn begin_connection_attempt(&self) -> Result<(Self, SshConnectionAttempt), String> {
+    #[cfg(test)]
+    fn new_with_connection_limits(limits: SshConnectionAdmissionLimits) -> SshServiceState {
+        std::sync::Arc::new(tokio::sync::Mutex::new(SshService {
+            sessions: HashMap::new(),
+            session_admission_leases: HashMap::new(),
+            connection_pool: HashMap::new(),
+            known_hosts: HashMap::new(),
+            shells: HashMap::new(),
+            event_emitter: None,
+            pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            connection_admission: SshConnectionAdmission::new(limits),
+            establishment_control: None,
+            establishment_session_lease: None,
+            shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
+        }))
+    }
+
+    fn begin_connection_attempt(
+        &self,
+        config: &SshConnectionConfig,
+    ) -> Result<(Self, SshConnectionAttempt), String> {
+        // Establish cleanup capacity before leases, sessions, or native bridge
+        // handles can exist for this attempt.
+        detached_ssh_cleanup_executor()?;
+        let session_lease = self
+            .connection_admission
+            .reserve_session(config)
+            .map_err(|error| error.to_string())?;
+        let handshake_lease = self
+            .connection_admission
+            .reserve_handshake()
+            .map_err(|error| error.to_string())?;
         let mut pending = self
             .pending_connections
             .lock()
@@ -1059,27 +2436,198 @@ impl SshService {
                 break candidate;
             }
         };
+        let cleanup_key = PendingSshCleanupKey::new(&session_id);
+        let proxy_command_reservation = config
+            .proxy_command
+            .as_ref()
+            .filter(|proxy| proxy.command.is_some() || proxy.template.is_some())
+            .map(|_| super::proxy_command::reserve_proxy_command_session(&session_id))
+            .transpose()?;
         let cancellation = std::sync::Arc::new(PendingSshConnection::new());
+        let establishment_control =
+            SshEstablishmentControl::new(config, Arc::clone(&cancellation))?;
         pending.insert(session_id.clone(), cancellation.clone());
         drop(pending);
 
         let connector = Self {
             sessions: HashMap::new(),
+            session_admission_leases: HashMap::new(),
             connection_pool: HashMap::new(),
             known_hosts: self.known_hosts.clone(),
             shells: HashMap::new(),
             event_emitter: self.event_emitter.clone(),
             pending_connections: self.pending_connections.clone(),
+            connection_admission: Arc::clone(&self.connection_admission),
+            establishment_control: Some(establishment_control),
+            establishment_session_lease: Some(Arc::clone(&session_lease)),
             shell_admission: Arc::clone(&self.shell_admission),
         };
         let attempt = SshConnectionAttempt {
             session_id,
             cancellation,
             pending_connections: self.pending_connections.clone(),
+            session_lease,
+            handshake_lease: Some(handshake_lease),
+            cleanup_key,
+            proxy_command_reservation,
             registered: true,
         };
 
         Ok((connector, attempt))
+    }
+
+    fn establishment_control(
+        &self,
+        config: &SshConnectionConfig,
+    ) -> Result<Arc<SshEstablishmentControl>, String> {
+        match &self.establishment_control {
+            Some(control) => Ok(Arc::clone(control)),
+            None => SshEstablishmentControl::new(config, Arc::new(PendingSshConnection::new())),
+        }
+    }
+
+    fn local_phase_worker(&self) -> Self {
+        Self {
+            sessions: HashMap::new(),
+            session_admission_leases: HashMap::new(),
+            connection_pool: HashMap::new(),
+            known_hosts: self.known_hosts.clone(),
+            shells: HashMap::new(),
+            event_emitter: self.event_emitter.clone(),
+            pending_connections: Arc::clone(&self.pending_connections),
+            connection_admission: Arc::clone(&self.connection_admission),
+            establishment_control: self.establishment_control.clone(),
+            establishment_session_lease: self.establishment_session_lease.clone(),
+            shell_admission: Arc::clone(&self.shell_admission),
+        }
+    }
+
+    async fn resolve_establishment_addresses(
+        &self,
+        host: String,
+        port: u16,
+        control: &Arc<SshEstablishmentControl>,
+        phase: &str,
+        timeout: Duration,
+    ) -> Result<Vec<SocketAddr>, String> {
+        if let Ok(address) = host.parse::<IpAddr>() {
+            return Ok(vec![SocketAddr::new(address, port)]);
+        }
+
+        control
+            .run_isolated_local_phase(
+                phase,
+                timeout,
+                self.establishment_session_lease.clone(),
+                move |context| {
+                    context.ensure_active()?;
+                    let addresses = (host.as_str(), port)
+                        .to_socket_addrs()
+                        .map_err(|_| "Failed to resolve SSH establishment endpoint".to_string())?
+                        .collect::<Vec<_>>();
+                    context.ensure_active()?;
+                    if addresses.is_empty() {
+                        Err("SSH establishment resolver returned no addresses".to_string())
+                    } else {
+                        Ok(addresses)
+                    }
+                },
+            )
+            .await
+    }
+
+    async fn connect_establishment_addresses(
+        &self,
+        addresses: Vec<SocketAddr>,
+        control: &Arc<SshEstablishmentControl>,
+        phase: &str,
+        timeout: Duration,
+    ) -> Result<AsyncTcpStream, String> {
+        control
+            .run_async_phase(phase, timeout, async move {
+                let mut last_error = None;
+                for address in addresses {
+                    match AsyncTcpStream::connect(address).await {
+                        Ok(stream) => return Ok(stream),
+                        Err(error) => last_error = Some(error),
+                    }
+                }
+                Err(match last_error {
+                    Some(error) => {
+                        format!("Failed to connect to SSH establishment endpoint: {error}")
+                    }
+                    None => "SSH establishment resolver returned no addresses".to_string(),
+                })
+            })
+            .await
+    }
+
+    async fn authenticate_session_isolated(
+        &self,
+        mut session: Session,
+        config: SshConnectionConfig,
+        control: &Arc<SshEstablishmentControl>,
+        phase: &str,
+        timeout: Duration,
+    ) -> Result<Session, String> {
+        control
+            .run_isolated_local_phase(
+                phase,
+                timeout,
+                self.establishment_session_lease.clone(),
+                move |context| {
+                    Self::authenticate_session(&mut session, &config, context)?;
+                    Ok(session)
+                },
+            )
+            .await
+    }
+
+    async fn authenticate_jump_session_isolated(
+        &self,
+        mut session: Session,
+        jump: JumpHostConfig,
+        control: &Arc<SshEstablishmentControl>,
+        phase: &str,
+        timeout: Duration,
+    ) -> Result<Session, String> {
+        control
+            .run_isolated_local_phase(
+                phase,
+                timeout,
+                self.establishment_session_lease.clone(),
+                move |context| {
+                    Self::authenticate_jump_session(&mut session, &jump, context)?;
+                    Ok(session)
+                },
+            )
+            .await
+    }
+
+    async fn verify_host_key_isolated(
+        &self,
+        mut session: Session,
+        session_id: String,
+        config: SshConnectionConfig,
+        control: &Arc<SshEstablishmentControl>,
+    ) -> Result<Session, String> {
+        let worker = self.local_phase_worker();
+        let runtime = tokio::runtime::Handle::current();
+        control
+            .run_isolated_local_phase(
+                "host-key-verification",
+                control.overall_timeout,
+                self.establishment_session_lease.clone(),
+                move |context| {
+                    runtime.block_on(context.run_async(worker.verify_host_key(
+                        &session_id,
+                        &mut session,
+                        &config,
+                    )))?;
+                    Ok(session)
+                },
+            )
+            .await
     }
 
     fn pending_connection(
@@ -1098,8 +2646,13 @@ impl SshService {
     fn adopt_connection(
         &mut self,
         mut connection: EstablishedSshConnection,
+        admission_lease: Arc<SshSessionAdmissionLease>,
     ) -> Result<String, String> {
-        if self.sessions.contains_key(&connection.session_id) {
+        if self.sessions.contains_key(&connection.session_id)
+            || self
+                .session_admission_leases
+                .contains_key(&connection.session_id)
+        {
             return Err(format!(
                 "SSH session id collision while adopting {}",
                 connection.session_id
@@ -1112,6 +2665,8 @@ impl SshService {
             .take()
             .ok_or_else(|| "Established SSH connection has no session".to_string())?;
         self.sessions.insert(session_id.clone(), session);
+        self.session_admission_leases
+            .insert(session_id.clone(), admission_lease);
         Ok(session_id)
     }
 
@@ -1199,10 +2754,14 @@ impl SshService {
         let pending_connection = self.pending_connection(session_id)?;
         let shell = self.detach_shell_cleanup(session_id)?;
 
+        let admission_lease = self.session_admission_leases.remove(session_id);
         let session = self
             .sessions
             .remove(session_id)
-            .map(|session| DetachedSessionCleanup { session });
+            .map(|session| DetachedSessionCleanup {
+                session,
+                admission_lease,
+            });
 
         Ok(SshDisconnectPlan {
             session_id: session_id.to_string(),
@@ -1229,18 +2788,20 @@ impl SshService {
             .map(|shell| shell.id.clone())
     }
 
-    pub async fn connect_ssh(&mut self, config: SshConnectionConfig) -> Result<String, String> {
-        let session_id = Uuid::new_v4().to_string();
-        let connection = self.establish_ssh_connection(session_id, config).await?;
-        self.adopt_connection(connection)
-    }
-
     async fn establish_ssh_connection(
         &mut self,
         session_id: String,
         config: SshConnectionConfig,
+        cleanup_key: PendingSshCleanupKey,
+        proxy_command_reservation: Option<super::proxy_command::ProxyCommandProducerReservation>,
     ) -> Result<EstablishedSshConnection, String> {
-        let mut setup_guard = SshConnectionSetupGuard::new(session_id.clone());
+        let mut setup_guard = SshConnectionSetupGuard::new(
+            cleanup_key,
+            self.establishment_session_lease.clone(),
+            proxy_command_reservation,
+        );
+        let control = self.establishment_control(&config)?;
+        control.ensure_active("overall")?;
 
         // Connection method priority:
         // 0. ProxyCommand (spawns external command whose stdio IS the transport)
@@ -1264,14 +2825,27 @@ impl SshService {
         let (final_stream, intermediate_sessions, bridge_handles) =
             if let Some(ref proxy_cmd) = config.proxy_command {
                 if proxy_cmd.command.is_some() || proxy_cmd.template.is_some() {
-                    let s = super::proxy_command::spawn_proxy_command(
-                        &session_id,
-                        proxy_cmd,
-                        &config.host,
-                        config.port,
-                        &config.username,
-                        config.connect_timeout.unwrap_or(15),
+                    let s = control.run_blocking_phase(
+                        "proxy-command-spawn",
+                        control.overall_timeout,
+                        |_phase| {
+                            let reservation =
+                                setup_guard.proxy_command_reservation().ok_or_else(|| {
+                                    "SSH connection worker is missing its ProxyCommand reservation"
+                                        .to_string()
+                                })?;
+                            super::proxy_command::spawn_reserved_proxy_command(
+                                reservation,
+                                &session_id,
+                                proxy_cmd,
+                                &config.host,
+                                config.port,
+                                &config.username,
+                                control.overall_timeout.as_secs(),
+                            )
+                        },
                     )?;
+                    control.track_blocking_socket(&s, "proxy-command-relay")?;
                     (s, Vec::new(), Vec::new())
                 } else if let Some(ref mixed_chain) = config.mixed_chain {
                     self.establish_mixed_chain_connection(&config, mixed_chain)
@@ -1299,19 +2873,17 @@ impl SshService {
                 let s = self.establish_direct_connection(&config).await?;
                 (s, Vec::new(), Vec::new())
             };
+        let mut bridge_cleanup = EstablishmentBridgeCleanup::from_parts(
+            intermediate_sessions,
+            bridge_handles,
+            self.establishment_session_lease.clone(),
+        );
+        control.track_blocking_socket(&final_stream, "final-ssh-transport")?;
 
         // Configure both application-level SSH keepalives and operating-system
         // TCP keepalives. The latter was previously represented in the config
         // but never applied to the socket.
         configure_tcp_options(&final_stream, &config);
-
-        let timeout_secs = config.connect_timeout.unwrap_or(15);
-        final_stream
-            .set_read_timeout(Some(Duration::from_secs(timeout_secs * 2)))
-            .ok();
-        final_stream
-            .set_write_timeout(Some(Duration::from_secs(timeout_secs)))
-            .ok();
 
         let mut sess = Session::new().map_err(|e| format!("Failed to create session: {}", e))?;
         sess.set_tcp_stream(final_stream);
@@ -1349,15 +2921,34 @@ impl SshService {
                 .map_err(|e| format!("Failed to set host-key algorithm preferences: {}", e))?;
         }
 
-        sess.handshake()
-            .map_err(|e| format!("SSH handshake failed: {}", e))?;
+        control.run_blocking_phase("final-ssh-handshake", control.overall_timeout, |phase| {
+            phase.configure_session_timeout(&sess)?;
+            sess.handshake()
+                .map_err(|e| format!("SSH handshake failed: {}", e))
+        })?;
 
         if config.strict_host_key_checking {
-            self.verify_host_key(&session_id, &mut sess, &config)
+            sess = self
+                .verify_host_key_isolated(sess, session_id.clone(), config.clone(), &control)
                 .await?;
         }
 
-        self.authenticate_session(&mut sess, &config)?;
+        sess = self
+            .authenticate_session_isolated(
+                sess,
+                config.clone(),
+                &control,
+                "final-ssh-authentication",
+                control.overall_timeout,
+            )
+            .await?;
+        control.complete()?;
+        sess.set_timeout(0);
+        for intermediate_session in &bridge_cleanup.intermediate_sessions {
+            intermediate_session.set_timeout(0);
+        }
+
+        let (intermediate_sessions, bridge_handles) = bridge_cleanup.take_parts();
 
         let mut session = SshSession {
             id: session_id.clone(),
@@ -1387,30 +2978,58 @@ impl SshService {
         Ok(EstablishedSshConnection {
             session_id,
             session: Some(session),
+            cleanup_session_lease: self.establishment_session_lease.clone(),
         })
     }
 
-    pub async fn establish_direct_connection(
+    async fn establish_direct_connection(
         &self,
         config: &SshConnectionConfig,
     ) -> Result<TcpStream, String> {
+        let owns_control = self.establishment_control.is_none();
+        let control = self.establishment_control(config)?;
+        let stream = self
+            .establish_direct_connection_with_control(config, &control)
+            .await?;
+        if owns_control {
+            control.complete()?;
+        }
+        Ok(stream)
+    }
+
+    async fn establish_direct_connection_with_control(
+        &self,
+        config: &SshConnectionConfig,
+        control: &Arc<SshEstablishmentControl>,
+    ) -> Result<TcpStream, String> {
         if let Some(proxy_config) = &config.proxy_config {
-            return self.establish_proxy_connection(config, proxy_config).await;
+            return self
+                .establish_proxy_connection_with_control(
+                    config,
+                    proxy_config,
+                    control,
+                    control.overall_timeout,
+                )
+                .await;
         }
 
-        let addr = format!("{}:{}", config.host, config.port);
-        let timeout = config.connect_timeout.unwrap_or(15);
-
-        let async_stream =
-            tokio::time::timeout(Duration::from_secs(timeout), AsyncTcpStream::connect(&addr))
-                .await
-                .map_err(|_| {
-                    format!(
-                        "Connection timeout after {} seconds - host may be unreachable",
-                        timeout
-                    )
-                })?
-                .map_err(|e| format!("Failed to connect to {}: {}", addr, e))?;
+        let addresses = self
+            .resolve_establishment_addresses(
+                config.host.clone(),
+                config.port,
+                control,
+                "direct-dns-resolution",
+                control.overall_timeout,
+            )
+            .await?;
+        let async_stream = self
+            .connect_establishment_addresses(
+                addresses,
+                control,
+                "direct-tcp-connect",
+                control.overall_timeout,
+            )
+            .await?;
 
         let std_stream = async_stream
             .into_std()
@@ -1419,42 +3038,93 @@ impl SshService {
         std_stream
             .set_nonblocking(false)
             .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+        control.track_blocking_socket(&std_stream, "direct-tcp-connect")?;
 
         Ok(std_stream)
     }
 
-    pub async fn establish_proxy_connection(
+    async fn establish_proxy_connection(
         &self,
         config: &SshConnectionConfig,
         proxy_config: &ProxyConfig,
     ) -> Result<TcpStream, String> {
-        let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(15));
+        let owns_control = self.establishment_control.is_none();
+        let control = self.establishment_control(config)?;
+        let stream = self
+            .establish_proxy_connection_with_control(
+                config,
+                proxy_config,
+                &control,
+                control.overall_timeout,
+            )
+            .await?;
+        if owns_control {
+            control.complete()?;
+        }
+        Ok(stream)
+    }
 
-        let proxy_addr = format!("{}:{}", proxy_config.host, proxy_config.port);
-        let proxy_stream = tokio::time::timeout(timeout, AsyncTcpStream::connect(&proxy_addr))
-            .await
-            .map_err(|_| format!("Proxy connection timeout to {}", proxy_addr))?
-            .map_err(|e| format!("Failed to connect to proxy {}: {}", proxy_addr, e))?;
+    async fn establish_proxy_connection_with_control(
+        &self,
+        config: &SshConnectionConfig,
+        proxy_config: &ProxyConfig,
+        control: &Arc<SshEstablishmentControl>,
+        phase_timeout: Duration,
+    ) -> Result<TcpStream, String> {
+        let proxy_addresses = self
+            .resolve_establishment_addresses(
+                proxy_config.host.clone(),
+                proxy_config.port,
+                control,
+                "proxy-dns-resolution",
+                phase_timeout,
+            )
+            .await?;
+        let proxy_stream = self
+            .connect_establishment_addresses(
+                proxy_addresses,
+                control,
+                "proxy-tcp-connect",
+                phase_timeout,
+            )
+            .await?;
 
         let target = format!("{}:{}", config.host, config.port);
 
-        match &proxy_config.proxy_type {
+        let stream = match &proxy_config.proxy_type {
             ProxyType::Socks5 => {
-                self.connect_through_socks5(proxy_stream, &target, proxy_config)
+                control
+                    .run_async_phase(
+                        "socks5-proxy-negotiation",
+                        phase_timeout,
+                        self.connect_through_socks5(proxy_stream, &target, proxy_config),
+                    )
                     .await
             }
             ProxyType::Socks4 => {
-                self.connect_through_socks4(proxy_stream, &target, proxy_config)
+                control
+                    .run_async_phase(
+                        "socks4-proxy-negotiation",
+                        phase_timeout,
+                        self.connect_through_socks4(proxy_stream, &target, proxy_config),
+                    )
                     .await
             }
             ProxyType::Http | ProxyType::Https => {
-                self.connect_through_http_proxy(proxy_stream, &target, proxy_config)
+                control
+                    .run_async_phase(
+                        "http-proxy-negotiation",
+                        phase_timeout,
+                        self.connect_through_http_proxy(proxy_stream, &target, proxy_config),
+                    )
                     .await
             }
-        }
+        }?;
+        control.track_blocking_socket(&stream, "proxy-negotiation")?;
+        Ok(stream)
     }
 
-    pub async fn connect_through_socks5(
+    async fn connect_through_socks5(
         &self,
         mut stream: AsyncTcpStream,
         target: &str,
@@ -1647,7 +3317,7 @@ impl SshService {
         target: &str,
         proxy_config: &ProxyConfig,
     ) -> Result<TcpStream, String> {
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        use tokio::io::BufReader;
 
         let mut request = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
 
@@ -1665,18 +3335,18 @@ impl SshService {
             .map_err(|e| format!("Failed to send HTTP CONNECT: {}", e))?;
 
         let mut reader = BufReader::new(&mut stream);
-        let mut response_line = String::new();
-        reader
-            .read_line(&mut response_line)
-            .await
-            .map_err(|e| format!("Failed to read HTTP response: {}", e))?;
-
-        let parts: Vec<&str> = response_line.split_whitespace().collect();
-        if parts.len() < 2 {
-            return Err("Invalid HTTP proxy response".to_string());
-        }
-
-        let status_code: u16 = parts[1]
+        let mut consumed_header_bytes = 0_usize;
+        let response_line =
+            read_bounded_http_proxy_line(&mut reader, &mut consumed_header_bytes).await?;
+        let response_line = std::str::from_utf8(&response_line)
+            .map_err(|_| "Invalid HTTP proxy response".to_string())?;
+        let mut parts = response_line.split_whitespace();
+        let _version = parts
+            .next()
+            .ok_or_else(|| "Invalid HTTP proxy response".to_string())?;
+        let status_code: u16 = parts
+            .next()
+            .ok_or_else(|| "Invalid HTTP proxy response".to_string())?
             .parse()
             .map_err(|_| "Invalid HTTP status code".to_string())?;
 
@@ -1685,12 +3355,9 @@ impl SshService {
         }
 
         loop {
-            let mut header_line = String::new();
-            reader
-                .read_line(&mut header_line)
-                .await
-                .map_err(|e| format!("Failed to read HTTP headers: {}", e))?;
-            if header_line.trim().is_empty() {
+            let header_line =
+                read_bounded_http_proxy_line(&mut reader, &mut consumed_header_bytes).await?;
+            if header_line == b"\r\n" || header_line == b"\n" {
                 break;
             }
         }
@@ -1707,7 +3374,7 @@ impl SshService {
     }
 
     /// Establish connection through a proxy chain
-    pub async fn establish_proxy_chain_connection(
+    async fn establish_proxy_chain_connection(
         &self,
         config: &SshConnectionConfig,
         chain_config: &ProxyChainConfig,
@@ -1716,39 +3383,67 @@ impl SshService {
             return Err("Proxy chain is empty".to_string());
         }
 
-        match chain_config.mode {
+        let owns_control = self.establishment_control.is_none();
+        let control = self.establishment_control(config)?;
+        let hop_timeout = clamped_ssh_hop_timeout(chain_config.hop_timeout_ms);
+
+        let stream = match chain_config.mode {
             ProxyChainMode::Strict => {
-                self.establish_strict_proxy_chain(config, chain_config)
+                self.establish_strict_proxy_chain(config, chain_config, &control, hop_timeout)
                     .await
             }
             ProxyChainMode::Dynamic => {
-                self.establish_dynamic_proxy_chain(config, chain_config)
+                self.establish_dynamic_proxy_chain(config, chain_config, &control, hop_timeout)
                     .await
             }
-            ProxyChainMode::Random => self.establish_random_proxy(config, chain_config).await,
+            ProxyChainMode::Random => {
+                self.establish_random_proxy(config, chain_config, &control, hop_timeout)
+                    .await
+            }
+        }?;
+        if owns_control {
+            control.complete()?;
         }
+        Ok(stream)
     }
 
     async fn establish_strict_proxy_chain(
         &self,
         config: &SshConnectionConfig,
         chain_config: &ProxyChainConfig,
+        control: &Arc<SshEstablishmentControl>,
+        hop_timeout: Duration,
     ) -> Result<TcpStream, String> {
         if chain_config.proxies.len() == 1 {
             return self
-                .establish_proxy_connection(config, &chain_config.proxies[0])
+                .establish_proxy_connection_with_control(
+                    config,
+                    &chain_config.proxies[0],
+                    control,
+                    hop_timeout,
+                )
                 .await;
         }
 
         let first_proxy = &chain_config.proxies[0];
-        let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(15));
 
-        let proxy_addr = format!("{}:{}", first_proxy.host, first_proxy.port);
-        let mut current_stream =
-            tokio::time::timeout(timeout, AsyncTcpStream::connect(&proxy_addr))
-                .await
-                .map_err(|_| format!("Proxy chain timeout connecting to {}", proxy_addr))?
-                .map_err(|e| format!("Failed to connect to first proxy {}: {}", proxy_addr, e))?;
+        let proxy_addresses = self
+            .resolve_establishment_addresses(
+                first_proxy.host.clone(),
+                first_proxy.port,
+                control,
+                "proxy-chain-hop-1-dns-resolution",
+                hop_timeout,
+            )
+            .await?;
+        let mut current_stream = self
+            .connect_establishment_addresses(
+                proxy_addresses,
+                control,
+                "proxy-chain-hop-1-tcp",
+                hop_timeout,
+            )
+            .await?;
 
         for (i, proxy) in chain_config.proxies.iter().skip(1).enumerate() {
             let target = if i == chain_config.proxies.len() - 2 {
@@ -1757,10 +3452,20 @@ impl SshService {
                 format!("{}:{}", proxy.host, proxy.port)
             };
 
-            current_stream = self
-                .socks5_connect_internal(current_stream, &target, first_proxy)
+            let phase = format!("proxy-chain-hop-{}-negotiation", i + 1);
+            current_stream = control
+                .run_async_phase(
+                    &phase,
+                    hop_timeout,
+                    self.socks5_connect_internal(current_stream, &target, first_proxy),
+                )
                 .await
-                .map_err(|e| format!("Chain hop {} failed: {}", i + 1, e))?
+                .map_err(|error| {
+                    contextualize_ssh_connection_error(
+                        &format!("Chain hop {} failed", i + 1),
+                        error,
+                    )
+                })?
                 .0;
         }
 
@@ -1770,9 +3475,14 @@ impl SshService {
             .last()
             .expect("chain_config.proxies checked non-empty");
 
-        let std_stream = self
-            .connect_through_socks5(current_stream, &final_target, last_proxy)
+        let std_stream = control
+            .run_async_phase(
+                "proxy-chain-final-negotiation",
+                hop_timeout,
+                self.connect_through_socks5(current_stream, &final_target, last_proxy),
+            )
             .await?;
+        control.track_blocking_socket(&std_stream, "proxy-chain-final-negotiation")?;
         Ok(std_stream)
     }
 
@@ -1869,11 +3579,16 @@ impl SshService {
         &self,
         config: &SshConnectionConfig,
         chain_config: &ProxyChainConfig,
+        control: &Arc<SshEstablishmentControl>,
+        hop_timeout: Duration,
     ) -> Result<TcpStream, String> {
         let mut last_error = String::from("No proxies available");
 
         for proxy in &chain_config.proxies {
-            match self.establish_proxy_connection(config, proxy).await {
+            match self
+                .establish_proxy_connection_with_control(config, proxy, control, hop_timeout)
+                .await
+            {
                 Ok(stream) => return Ok(stream),
                 Err(e) => {
                     log::warn!(
@@ -1897,6 +3612,8 @@ impl SshService {
         &self,
         config: &SshConnectionConfig,
         chain_config: &ProxyChainConfig,
+        control: &Arc<SshEstablishmentControl>,
+        hop_timeout: Duration,
     ) -> Result<TcpStream, String> {
         use rand::Rng;
 
@@ -1906,7 +3623,8 @@ impl SshService {
         };
 
         let proxy = &chain_config.proxies[index];
-        self.establish_proxy_connection(config, proxy).await
+        self.establish_proxy_connection_with_control(config, proxy, control, hop_timeout)
+            .await
     }
 
     #[allow(dead_code)] // Retained for future opt-in tunnel-mode wiring (see e10 notes).
@@ -1941,6 +3659,10 @@ impl SshService {
         let local_addr = listener
             .local_addr()
             .map_err(|e| format!("Bridge addr failed: {}", e))?;
+        // Establish the client side before a native worker owns the listener,
+        // so every post-spawn path can transfer or join the worker handle.
+        let stream =
+            TcpStream::connect(local_addr).map_err(|e| format!("Bridge connect failed: {}", e))?;
 
         let handle = std::thread::spawn(move || {
             let Ok((mut stream, _)) = listener.accept() else {
@@ -1987,8 +3709,6 @@ impl SshService {
             }
         });
 
-        let stream =
-            TcpStream::connect(local_addr).map_err(|e| format!("Bridge connect failed: {}", e))?;
         Ok((stream, handle))
     }
 
@@ -2010,19 +3730,30 @@ impl SshService {
         if config.jump_hosts.is_empty() {
             return Err("No jump hosts configured".to_string());
         }
+        let control = self.establishment_control(config)?;
 
-        let mut intermediate_sessions: Vec<Session> = Vec::new();
-        let mut bridge_handles: Vec<std::thread::JoinHandle<()>> = Vec::new();
+        let mut bridge_cleanup =
+            EstablishmentBridgeCleanup::new(self.establishment_session_lease.clone())?;
 
         // 1. TCP-connect to the first jump host
         let first = &config.jump_hosts[0];
-        let addr = format!("{}:{}", first.host, first.port);
-        let timeout = config.connect_timeout.unwrap_or(15);
-        let async_stream =
-            tokio::time::timeout(Duration::from_secs(timeout), AsyncTcpStream::connect(&addr))
-                .await
-                .map_err(|_| format!("Timeout connecting to first jump host {}", addr))?
-                .map_err(|e| format!("Failed to connect to first jump host {}: {}", addr, e))?;
+        let addresses = self
+            .resolve_establishment_addresses(
+                first.host.clone(),
+                first.port,
+                &control,
+                "jump-hop-1-dns-resolution",
+                control.overall_timeout,
+            )
+            .await?;
+        let async_stream = self
+            .connect_establishment_addresses(
+                addresses,
+                &control,
+                "jump-hop-1-tcp",
+                control.overall_timeout,
+            )
+            .await?;
 
         let current_stream = async_stream
             .into_std()
@@ -2030,15 +3761,27 @@ impl SshService {
         current_stream
             .set_nonblocking(false)
             .map_err(|e| format!("set_nonblocking failed: {}", e))?;
+        control.track_blocking_socket(&current_stream, "jump-hop-1-tcp")?;
 
         // 2. SSH session on first jump host
         let mut sess =
             Session::new().map_err(|e| format!("Failed to create jump session: {}", e))?;
         Self::apply_jump_cipher_prefs(&mut sess, first);
         sess.set_tcp_stream(current_stream);
-        sess.handshake()
-            .map_err(|e| format!("Jump host {} handshake failed: {}", first.host, e))?;
-        self.authenticate_jump_session(&mut sess, first)?;
+        control.run_blocking_phase("jump-hop-1-handshake", control.overall_timeout, |phase| {
+            phase.configure_session_timeout(&sess)?;
+            sess.handshake()
+                .map_err(|e| format!("Jump host {} handshake failed: {}", first.host, e))
+        })?;
+        sess = self
+            .authenticate_jump_session_isolated(
+                sess,
+                first.clone(),
+                &control,
+                "jump-hop-1-authentication",
+                control.overall_timeout,
+            )
+            .await?;
 
         // 3. Chain through remaining jump hosts
         for (i, jump) in config.jump_hosts.iter().skip(1).enumerate() {
@@ -2049,27 +3792,48 @@ impl SshService {
                 jump.port
             );
 
-            let channel = sess
-                .channel_direct_tcpip(&jump.host, jump.port, None)
-                .map_err(|e| {
-                    format!(
-                        "channel_direct_tcpip to {}:{} failed: {}",
-                        jump.host, jump.port, e
-                    )
+            let channel_phase = format!("jump-hop-{}-channel-open", i + 1);
+            let channel =
+                control.run_blocking_phase(&channel_phase, control.overall_timeout, |phase| {
+                    phase.configure_session_timeout(&sess)?;
+                    sess.channel_direct_tcpip(&jump.host, jump.port, None)
+                        .map_err(|e| {
+                            format!(
+                                "channel_direct_tcpip to {}:{} failed: {}",
+                                jump.host, jump.port, e
+                            )
+                        })
                 })?;
 
             // Switch session to non-blocking so the bridge thread can poll
             sess.set_blocking(false);
             let (bridged, handle) = Self::bridge_channel_to_stream(channel)?;
-            bridge_handles.push(handle);
-            intermediate_sessions.push(sess);
+            bridge_cleanup.bridge_handles.push(handle);
+            control.track_blocking_socket(&bridged, &channel_phase)?;
+            bridge_cleanup.intermediate_sessions.push(sess);
 
             sess = Session::new().map_err(|e| format!("Failed to create jump session: {}", e))?;
             Self::apply_jump_cipher_prefs(&mut sess, jump);
             sess.set_tcp_stream(bridged);
-            sess.handshake()
-                .map_err(|e| format!("Jump host {} handshake failed: {}", jump.host, e))?;
-            self.authenticate_jump_session(&mut sess, jump)?;
+            let hop_number = i + 2;
+            control.run_blocking_phase(
+                &format!("jump-hop-{hop_number}-handshake"),
+                control.overall_timeout,
+                |phase| {
+                    phase.configure_session_timeout(&sess)?;
+                    sess.handshake()
+                        .map_err(|e| format!("Jump host {} handshake failed: {}", jump.host, e))
+                },
+            )?;
+            sess = self
+                .authenticate_jump_session_isolated(
+                    sess,
+                    jump.clone(),
+                    &control,
+                    &format!("jump-hop-{hop_number}-authentication"),
+                    control.overall_timeout,
+                )
+                .await?;
         }
 
         // 4. Final tunnel to the actual target
@@ -2078,20 +3842,28 @@ impl SshService {
             config.host,
             config.port
         );
-        let channel = sess
-            .channel_direct_tcpip(&config.host, config.port, None)
-            .map_err(|e| {
-                format!(
-                    "channel_direct_tcpip to {}:{} failed: {}",
-                    config.host, config.port, e
-                )
-            })?;
+        let channel = control.run_blocking_phase(
+            "jump-final-channel-open",
+            control.overall_timeout,
+            |phase| {
+                phase.configure_session_timeout(&sess)?;
+                sess.channel_direct_tcpip(&config.host, config.port, None)
+                    .map_err(|e| {
+                        format!(
+                            "channel_direct_tcpip to {}:{} failed: {}",
+                            config.host, config.port, e
+                        )
+                    })
+            },
+        )?;
 
         sess.set_blocking(false);
         let (final_stream, handle) = Self::bridge_channel_to_stream(channel)?;
-        bridge_handles.push(handle);
-        intermediate_sessions.push(sess);
+        bridge_cleanup.bridge_handles.push(handle);
+        control.track_blocking_socket(&final_stream, "jump-final-channel-open")?;
+        bridge_cleanup.intermediate_sessions.push(sess);
 
+        let (intermediate_sessions, bridge_handles) = bridge_cleanup.take_parts();
         Ok((final_stream, intermediate_sessions, bridge_handles))
     }
 
@@ -2109,9 +3881,11 @@ impl SshService {
         if chain.hops.is_empty() {
             return Err("Mixed chain has no hops".to_string());
         }
+        let control = self.establishment_control(config)?;
+        let hop_timeout = clamped_ssh_hop_timeout(chain.hop_timeout_ms);
 
-        let mut intermediate_sessions: Vec<Session> = Vec::new();
-        let mut bridge_handles: Vec<std::thread::JoinHandle<()>> = Vec::new();
+        let mut bridge_cleanup =
+            EstablishmentBridgeCleanup::new(self.establishment_session_lease.clone())?;
 
         // Build the target list: for hop[i] the target is hop[i+1].address(),
         // except for the last hop whose target is the final SSH destination.
@@ -2127,19 +3901,23 @@ impl SshService {
 
         // TCP-connect to the first hop
         let first_addr = chain.hops[0].address();
-        let timeout = config.connect_timeout.unwrap_or(15);
-        let first_stream = tokio::time::timeout(
-            Duration::from_secs(timeout),
-            AsyncTcpStream::connect(format!("{}:{}", first_addr.0, first_addr.1)),
-        )
-        .await
-        .map_err(|_| {
-            format!(
-                "Timeout connecting to first chain hop {}:{}",
-                first_addr.0, first_addr.1
+        let addresses = self
+            .resolve_establishment_addresses(
+                first_addr.0,
+                first_addr.1,
+                &control,
+                "mixed-chain-hop-1-dns-resolution",
+                hop_timeout,
             )
-        })?
-        .map_err(|e| format!("Failed to connect to first chain hop: {}", e))?;
+            .await?;
+        let first_stream = self
+            .connect_establishment_addresses(
+                addresses,
+                &control,
+                "mixed-chain-hop-1-tcp",
+                hop_timeout,
+            )
+            .await?;
 
         // We track the stream in an enum so we can switch between async / sync
         // as needed by different hop types.
@@ -2190,22 +3968,39 @@ impl SshService {
             match hop {
                 ChainHop::Proxy(proxy) => {
                     let async_stream = current.into_async()?;
+                    let phase = format!("mixed-chain-hop-{}-proxy-negotiation", i + 1);
                     match proxy.proxy_type {
                         ProxyType::Socks5 => {
-                            let (s, _) = self
-                                .socks5_connect_internal(async_stream, &target_str, proxy)
+                            let (s, _) = control
+                                .run_async_phase(
+                                    &phase,
+                                    hop_timeout,
+                                    self.socks5_connect_internal(async_stream, &target_str, proxy),
+                                )
                                 .await?;
                             current = MixedStream::Async(s);
                         }
                         ProxyType::Http | ProxyType::Https => {
-                            let std_s = self
-                                .connect_through_http_proxy(async_stream, &target_str, proxy)
+                            let std_s = control
+                                .run_async_phase(
+                                    &phase,
+                                    hop_timeout,
+                                    self.connect_through_http_proxy(
+                                        async_stream,
+                                        &target_str,
+                                        proxy,
+                                    ),
+                                )
                                 .await?;
                             current = MixedStream::Sync(std_s);
                         }
                         ProxyType::Socks4 => {
-                            let std_s = self
-                                .connect_through_socks4(async_stream, &target_str, proxy)
+                            let std_s = control
+                                .run_async_phase(
+                                    &phase,
+                                    hop_timeout,
+                                    self.connect_through_socks4(async_stream, &target_str, proxy),
+                                )
                                 .await?;
                             current = MixedStream::Sync(std_s);
                         }
@@ -2213,25 +4008,43 @@ impl SshService {
                 }
                 ChainHop::SshJump(jump) => {
                     let std_stream = current.into_sync()?;
+                    let handshake_phase = format!("mixed-chain-hop-{}-ssh-handshake", i + 1);
+                    control.track_blocking_socket(&std_stream, &handshake_phase)?;
 
                     let mut sess =
                         Session::new().map_err(|e| format!("Session::new failed: {}", e))?;
                     Self::apply_jump_cipher_prefs(&mut sess, jump);
                     sess.set_tcp_stream(std_stream);
-                    sess.handshake()
-                        .map_err(|e| format!("SSH jump {} handshake failed: {}", jump.host, e))?;
-                    self.authenticate_jump_session(&mut sess, jump)?;
+                    control.run_blocking_phase(&handshake_phase, hop_timeout, |phase| {
+                        phase.configure_session_timeout(&sess)?;
+                        sess.handshake()
+                            .map_err(|e| format!("SSH jump {} handshake failed: {}", jump.host, e))
+                    })?;
+                    sess = self
+                        .authenticate_jump_session_isolated(
+                            sess,
+                            jump.clone(),
+                            &control,
+                            &format!("mixed-chain-hop-{}-ssh-authentication", i + 1),
+                            hop_timeout,
+                        )
+                        .await?;
 
-                    let channel = sess
-                        .channel_direct_tcpip(target_host, *target_port, None)
-                        .map_err(|e| {
-                            format!("channel_direct_tcpip to {} failed: {}", target_str, e)
+                    let channel_phase = format!("mixed-chain-hop-{}-channel-open", i + 1);
+                    let channel =
+                        control.run_blocking_phase(&channel_phase, hop_timeout, |phase| {
+                            phase.configure_session_timeout(&sess)?;
+                            sess.channel_direct_tcpip(target_host, *target_port, None)
+                                .map_err(|e| {
+                                    format!("channel_direct_tcpip to {} failed: {}", target_str, e)
+                                })
                         })?;
 
                     sess.set_blocking(false);
                     let (bridged, handle) = Self::bridge_channel_to_stream(channel)?;
-                    bridge_handles.push(handle);
-                    intermediate_sessions.push(sess);
+                    bridge_cleanup.bridge_handles.push(handle);
+                    control.track_blocking_socket(&bridged, &channel_phase)?;
+                    bridge_cleanup.intermediate_sessions.push(sess);
 
                     current = MixedStream::Sync(bridged);
                 }
@@ -2239,6 +4052,8 @@ impl SshService {
         }
 
         let final_stream = current.into_sync()?;
+        control.track_blocking_socket(&final_stream, "mixed-chain-final-transport")?;
+        let (intermediate_sessions, bridge_handles) = bridge_cleanup.take_parts();
         Ok((final_stream, intermediate_sessions, bridge_handles))
     }
 
@@ -2265,12 +4080,13 @@ impl SshService {
     }
 
     fn authenticate_session(
-        &self,
         session: &mut Session,
         config: &SshConnectionConfig,
+        phase: &dyn SshDeadlinePhase,
     ) -> Result<(), String> {
         // Try public key authentication first if key is provided
         if let Some(private_key_path) = &config.private_key_path {
+            phase.ensure_active()?;
             if let Ok(private_key_content) = std::fs::read_to_string(private_key_path) {
                 // Check if this is an SK (security-key) type — these require FIDO2 touch
                 if super::fido2::is_sk_private_key(&private_key_content) {
@@ -2292,6 +4108,7 @@ impl SshService {
                     .as_ref()
                     .map(|secret| secret.expose_secret().as_str());
 
+                phase.configure_session_timeout(session)?;
                 if session
                     .userauth_pubkey_file(
                         &config.username,
@@ -2303,17 +4120,21 @@ impl SshService {
                 {
                     return Ok(());
                 }
+                phase.ensure_active()?;
             }
+            phase.ensure_active()?;
         }
 
         // Try password authentication if password is provided
         if let Some(password) = &config.password {
+            phase.configure_session_timeout(session)?;
             if session
                 .userauth_password(&config.username, password.expose_secret())
                 .is_ok()
             {
                 return Ok(());
             }
+            phase.ensure_active()?;
         }
 
         // Try keyboard-interactive authentication (for MFA/2FA)
@@ -2380,26 +4201,30 @@ impl SshService {
                 responses: config.keyboard_interactive_responses.clone(),
             };
 
+            phase.configure_session_timeout(session)?;
             if session
                 .userauth_keyboard_interactive(&config.username, &mut handler)
                 .is_ok()
             {
                 return Ok(());
             }
+            phase.ensure_active()?;
         }
 
         // Try agent authentication
+        phase.configure_session_timeout(session)?;
         if session.userauth_agent(&config.username).is_ok() {
             return Ok(());
         }
+        phase.ensure_active()?;
 
         Err("All authentication methods failed".to_string())
     }
 
     fn authenticate_jump_session(
-        &self,
         session: &mut Session,
         jump_config: &JumpHostConfig,
+        phase: &dyn SshDeadlinePhase,
     ) -> Result<(), String> {
         // 1. Public key
         if let Some(private_key_path) = &jump_config.private_key_path {
@@ -2407,6 +4232,7 @@ impl SshService {
                 .private_key_passphrase
                 .as_ref()
                 .map(|secret| secret.expose_secret().as_str());
+            phase.configure_session_timeout(session)?;
             if session
                 .userauth_pubkey_file(
                     &jump_config.username,
@@ -2418,16 +4244,19 @@ impl SshService {
             {
                 return Ok(());
             }
+            phase.ensure_active()?;
         }
 
         // 2. Password
         if let Some(password) = &jump_config.password {
+            phase.configure_session_timeout(session)?;
             if session
                 .userauth_password(&jump_config.username, password.expose_secret())
                 .is_ok()
             {
                 return Ok(());
             }
+            phase.ensure_active()?;
         }
 
         // 3. Keyboard-interactive (TOTP / MFA)
@@ -2495,18 +4324,22 @@ impl SshService {
                 responses: jump_config.keyboard_interactive_responses.clone(),
             };
 
+            phase.configure_session_timeout(session)?;
             if session
                 .userauth_keyboard_interactive(&jump_config.username, &mut handler)
                 .is_ok()
             {
                 return Ok(());
             }
+            phase.ensure_active()?;
         }
 
         // 4. SSH agent
+        phase.configure_session_timeout(session)?;
         if session.userauth_agent(&jump_config.username).is_ok() {
             return Ok(());
         }
+        phase.ensure_active()?;
 
         Err("All jump host authentication methods failed".to_string())
     }
@@ -2518,22 +4351,40 @@ impl SshService {
         private_key_path: Option<String>,
         private_key_passphrase: Option<String>,
     ) -> Result<(), String> {
-        let session = self
+        let mut next_config = self
             .sessions
-            .get_mut(session_id)
-            .ok_or("Session not found")?;
+            .get(session_id)
+            .ok_or("Session not found")?
+            .config
+            .clone();
 
         if let Some(password) = password {
-            session.config.password = Some(SecretString::new(password));
+            next_config.password = Some(SecretString::new(password));
         }
 
         if let Some(private_key_path) = private_key_path {
-            session.config.private_key_path = Some(private_key_path);
+            next_config.private_key_path = Some(private_key_path);
         }
 
         if let Some(passphrase) = private_key_passphrase {
-            session.config.private_key_passphrase = Some(SecretString::new(passphrase));
+            next_config.private_key_passphrase = Some(SecretString::new(passphrase));
         }
+
+        let retained_bytes =
+            retained_ssh_config_bytes(&next_config).map_err(|error| error.to_string())?;
+        let limit = self.connection_admission.limits.max_config_bytes;
+        if retained_bytes > limit {
+            return Err(SshConnectionAdmissionError::ConfigTooLarge {
+                bytes: retained_bytes,
+                limit,
+            }
+            .to_string());
+        }
+
+        self.sessions
+            .get_mut(session_id)
+            .ok_or("Session not found")?
+            .config = next_config;
 
         Ok(())
     }
@@ -3051,19 +4902,45 @@ impl SshService {
         })
     }
 
-    pub async fn test_ssh_connection(&self, config: SshConnectionConfig) -> Result<String, String> {
+    async fn test_ssh_connection_inner(
+        &self,
+        session_id: String,
+        config: SshConnectionConfig,
+        cleanup_key: PendingSshCleanupKey,
+        proxy_command_reservation: Option<super::proxy_command::ProxyCommandProducerReservation>,
+    ) -> Result<String, String> {
+        let setup_guard = SshConnectionSetupGuard::new(
+            cleanup_key,
+            self.establishment_session_lease.clone(),
+            proxy_command_reservation,
+        );
+        let control = self.establishment_control(&config)?;
+        control.ensure_active("overall")?;
         // Use the same priority as connect_ssh (including ProxyCommand)
-        let (final_stream, _intermediate, _handles) =
+        let (final_stream, intermediate_sessions, bridge_handles) =
             if let Some(ref proxy_cmd) = config.proxy_command {
                 if proxy_cmd.command.is_some() || proxy_cmd.template.is_some() {
-                    let s = super::proxy_command::spawn_proxy_command(
-                        &uuid::Uuid::new_v4().to_string(),
-                        proxy_cmd,
-                        &config.host,
-                        config.port,
-                        &config.username,
-                        config.connect_timeout.unwrap_or(15),
+                    let s = control.run_blocking_phase(
+                        "proxy-command-spawn",
+                        control.overall_timeout,
+                        |_phase| {
+                            let reservation =
+                            setup_guard.proxy_command_reservation().ok_or_else(|| {
+                                "SSH connection test worker is missing its ProxyCommand reservation"
+                                    .to_string()
+                            })?;
+                            super::proxy_command::spawn_reserved_proxy_command(
+                                reservation,
+                                &session_id,
+                                proxy_cmd,
+                                &config.host,
+                                config.port,
+                                &config.username,
+                                control.overall_timeout.as_secs(),
+                            )
+                        },
                     )?;
+                    control.track_blocking_socket(&s, "proxy-command-relay")?;
                     (s, Vec::new(), Vec::new())
                 } else if let Some(ref mixed_chain) = config.mixed_chain {
                     self.establish_mixed_chain_connection(&config, mixed_chain)
@@ -3091,16 +4968,44 @@ impl SshService {
                 let s = self.establish_direct_connection(&config).await?;
                 (s, Vec::new(), Vec::new())
             };
+        let bridge_cleanup = EstablishmentBridgeCleanup::from_parts(
+            intermediate_sessions,
+            bridge_handles,
+            self.establishment_session_lease.clone(),
+        );
+        control.track_blocking_socket(&final_stream, "final-ssh-transport")?;
 
         let mut sess =
             Session::new().map_err(|e| format!("Failed to create test session: {}", e))?;
         sess.set_tcp_stream(final_stream);
-        sess.handshake()
-            .map_err(|e| format!("SSH handshake failed: {}", e))?;
+        control.run_blocking_phase("final-ssh-handshake", control.overall_timeout, |phase| {
+            phase.configure_session_timeout(&sess)?;
+            sess.handshake()
+                .map_err(|e| format!("SSH handshake failed: {}", e))
+        })?;
 
-        self.authenticate_session(&mut sess, &config)?;
+        if config.strict_host_key_checking {
+            sess = self
+                .verify_host_key_isolated(sess, session_id.clone(), config.clone(), &control)
+                .await?;
+        }
 
-        // _intermediate sessions and _handles will be dropped, cleaning up the tunnel.
+        sess = self
+            .authenticate_session_isolated(
+                sess,
+                config.clone(),
+                &control,
+                "final-ssh-authentication",
+                control.overall_timeout,
+            )
+            .await?;
+        control.complete()?;
+        sess.set_timeout(0);
+
+        // The guard drops intermediate sessions and joins every native bridge;
+        // its session lease remains retained until that cleanup actually exits.
+        drop(sess);
+        drop(bridge_cleanup);
         Ok("SSH connection test successful".to_string())
     }
 
@@ -4556,12 +6461,6 @@ impl SshService {
         Ok(())
     }
 
-    pub async fn disconnect_ssh(&mut self, session_id: &str) -> Result<(), String> {
-        self.detach_disconnect(session_id)?
-            .execute(SHELL_STOP_TIMEOUT)
-            .await
-    }
-
     pub async fn get_session_info(&self, session_id: &str) -> Result<SshSessionInfo, String> {
         let session = self.sessions.get(session_id).ok_or("Session not found")?;
 
@@ -5050,19 +6949,37 @@ impl SshService {
         session_id: &str,
         new_config: SshCompressionConfig,
     ) -> Result<SshCompressionInfo, String> {
+        let current = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+        if !current.config.compression_config.allow_runtime_update {
+            return Err("Runtime compression updates are not allowed for this session".to_string());
+        }
+
+        let mut next_config = current.config.clone();
+        // Update only the mutable parts (adaptive settings, tracking, etc.)
+        next_config.compression_config.adaptive = new_config.adaptive;
+        next_config.compression_config.track_statistics = new_config.track_statistics;
+        next_config.compression_config.compress_sftp = new_config.compress_sftp;
+
+        let retained_bytes =
+            retained_ssh_config_bytes(&next_config).map_err(|error| error.to_string())?;
+        let limit = self.connection_admission.limits.max_config_bytes;
+        if retained_bytes > limit {
+            return Err(SshConnectionAdmissionError::ConfigTooLarge {
+                bytes: retained_bytes,
+                limit,
+            }
+            .to_string());
+        }
+
         let session = self
             .sessions
             .get_mut(session_id)
             .ok_or_else(|| format!("Session not found: {session_id}"))?;
-
-        if !session.config.compression_config.allow_runtime_update {
-            return Err("Runtime compression updates are not allowed for this session".to_string());
-        }
-
-        // Update only the mutable parts (adaptive settings, tracking, etc.)
-        session.config.compression_config.adaptive = new_config.adaptive;
-        session.config.compression_config.track_statistics = new_config.track_statistics;
-        session.config.compression_config.compress_sftp = new_config.compress_sftp;
+        session.config = next_config;
 
         Ok(SshCompressionInfo {
             session_id: session_id.to_string(),
@@ -5170,14 +7087,124 @@ pub async fn connect_ssh_on_state(
     state: &SshServiceState,
     config: SshConnectionConfig,
 ) -> Result<String, String> {
-    connect_ssh_on_state_with(
-        state,
-        config,
-        |mut connector, session_id, config| async move {
-            connector.establish_ssh_connection(session_id, config).await
+    connect_ssh_on_state_with(state, config, establish_ssh_in_blocking_worker).await
+}
+
+/// Test an SSH path under the same process-wide admission and blocking-worker
+/// contract as a retained connection, without holding the shared service lock.
+pub async fn test_ssh_connection_on_state(
+    state: &SshServiceState,
+    config: SshConnectionConfig,
+) -> Result<String, String> {
+    let (connector, attempt) = {
+        let service = state.lock().await;
+        service.begin_connection_attempt(&config)?
+    };
+    run_admitted_ssh_connection_test(connector, attempt, config).await
+}
+
+async fn finish_timed_out_proxy_command_cleanup(
+    session_id: String,
+    admission_lease: Arc<SshSessionAdmissionLease>,
+) {
+    const CLEANUP_WAIT: Duration = Duration::from_millis(2_500);
+    let deadline = tokio::time::Instant::now() + CLEANUP_WAIT;
+    let cleanup_session_id = session_id.clone();
+    let cleanup = tokio::task::spawn_blocking(move || {
+        let _admission_lease = admission_lease;
+        super::proxy_command::stop_proxy_command_and_wait(&cleanup_session_id)
+    });
+    let _ = tokio::time::timeout_at(deadline, cleanup).await;
+
+    // The establishment worker may have won the cleanup race. In that case its
+    // stop call owns the registry entry until native relay joins finish, so wait
+    // for the same bounded cleanup instead of returning a typed timeout while a
+    // visible helper entry is still retained.
+    while tokio::time::Instant::now() < deadline {
+        match super::proxy_command::get_proxy_command_status(&session_id) {
+            Ok(None) | Err(_) => return,
+            Ok(Some(_)) => tokio::time::sleep(Duration::from_millis(5)).await,
+        }
+    }
+}
+
+async fn run_admitted_ssh_connection_test(
+    connector: SshService,
+    mut attempt: SshConnectionAttempt,
+    config: SshConnectionConfig,
+) -> Result<String, String> {
+    let session_id = attempt.session_id.clone();
+    let cancellation = Arc::clone(&attempt.cancellation);
+    let control = connector
+        .establishment_control
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "SSH connection test is missing establishment control".to_string())?;
+    let worker_lease = attempt.take_worker_lease();
+    let timeout_session_id = session_id.clone();
+    let timeout_session_lease = Arc::clone(&attempt.session_lease);
+    let runtime = tokio::runtime::Handle::current();
+    let worker = tokio::task::spawn_blocking(move || {
+        let mut worker_lease = worker_lease;
+        let cleanup_key = worker_lease.cleanup_key.clone();
+        let proxy_command_reservation = worker_lease._proxy_command_reservation.take();
+        let result = runtime.block_on(connector.test_ssh_connection_inner(
+            session_id,
+            config,
+            cleanup_key,
+            proxy_command_reservation,
+        ));
+        drop(worker_lease);
+        result
+    });
+    let result = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err("SSH connection cancelled".to_string()),
+        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(control.deadline)) => {
+            control.trigger(ESTABLISHMENT_TIMED_OUT);
+            finish_timed_out_proxy_command_cleanup(
+                timeout_session_id,
+                timeout_session_lease,
+            ).await;
+            Err(control.timeout_error("overall", control.overall_timeout))
         },
-    )
+        result = worker => result
+            .map_err(|error| format!("SSH connection test worker failed: {error}"))?,
+    };
+    let (cancelled, session_lease) = attempt.finish();
+    drop(session_lease);
+    if cancelled {
+        drop(result);
+        return Err("SSH connection cancelled".to_string());
+    }
+    result
+}
+
+async fn establish_ssh_in_blocking_worker(
+    mut connector: SshService,
+    session_id: String,
+    config: SshConnectionConfig,
+    worker_lease: SshConnectionWorkerLease,
+) -> Result<EstablishedSshConnection, String> {
+    let runtime = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || {
+        // Both permits belong to the real native worker. Dropping the async
+        // JoinHandle cannot release capacity while DNS, TCP, proxy, libssh2
+        // handshake, host-key verification, or authentication is still alive.
+        let mut worker_lease = worker_lease;
+        let cleanup_key = worker_lease.cleanup_key.clone();
+        let proxy_command_reservation = worker_lease._proxy_command_reservation.take();
+        let result = runtime.block_on(connector.establish_ssh_connection(
+            session_id,
+            config,
+            cleanup_key,
+            proxy_command_reservation,
+        ));
+        drop(worker_lease);
+        result
+    })
     .await
+    .map_err(|error| format!("SSH connection worker failed: {error}"))?
 }
 
 async fn connect_ssh_on_state_with<F, Fut>(
@@ -5186,32 +7213,1546 @@ async fn connect_ssh_on_state_with<F, Fut>(
     establish: F,
 ) -> Result<String, String>
 where
-    F: FnOnce(SshService, String, SshConnectionConfig) -> Fut,
+    F: FnOnce(SshService, String, SshConnectionConfig, SshConnectionWorkerLease) -> Fut,
     Fut: Future<Output = Result<EstablishedSshConnection, String>>,
 {
-    let (connector, attempt) = {
+    let (connector, mut attempt) = {
         let service = state.lock().await;
-        service.begin_connection_attempt()?
+        service.begin_connection_attempt(&config)?
     };
     let session_id = attempt.session_id.clone();
     let cancellation = attempt.cancellation.clone();
+    let control = connector
+        .establishment_control
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "SSH connection attempt is missing establishment control".to_string())?;
+    let worker_lease = attempt.take_worker_lease();
+    let timeout_session_id = session_id.clone();
+    let timeout_session_lease = Arc::clone(&attempt.session_lease);
 
     let result = tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err("SSH connection cancelled".to_string()),
-        result = establish(connector, session_id, config) => result,
+        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(control.deadline)) => {
+            control.trigger(ESTABLISHMENT_TIMED_OUT);
+            finish_timed_out_proxy_command_cleanup(
+                timeout_session_id,
+                timeout_session_lease,
+            ).await;
+            Err(control.timeout_error("overall", control.overall_timeout))
+        },
+        result = establish(connector, session_id, config, worker_lease) => result,
     };
 
     // Keep the attempt registered until the service lock is reacquired. This
     // makes adoption atomic with a concurrent disconnect of the provisional id.
     let mut service = state.lock().await;
-    let cancelled = attempt.finish();
+    let (cancelled, session_lease) = attempt.finish();
     if cancelled {
         drop(result);
         return Err("SSH connection cancelled".to_string());
     }
 
-    service.adopt_connection(result?)
+    service.adopt_connection(result?, session_lease)
+}
+
+#[cfg(test)]
+mod connection_admission_tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::{Condvar, Mutex};
+    use tokio::net::TcpListener as TokioTcpListener;
+
+    #[derive(Default)]
+    struct BlockingGate {
+        open: Mutex<bool>,
+        changed: Condvar,
+    }
+
+    impl BlockingGate {
+        fn wait(&self) {
+            let mut open = self.open.lock().expect("gate mutex poisoned");
+            while !*open {
+                open = self.changed.wait(open).expect("gate mutex poisoned");
+            }
+        }
+
+        fn open(&self) {
+            *self.open.lock().expect("gate mutex poisoned") = true;
+            self.changed.notify_all();
+        }
+    }
+
+    fn config() -> SshConnectionConfig {
+        serde_json::from_value(json!({
+            "host": "127.0.0.1",
+            "port": 22,
+            "username": "admission-test",
+            "password": null,
+            "private_key_path": null,
+            "private_key_passphrase": null,
+            "jump_hosts": [],
+            "proxy_config": null,
+            "proxy_chain": null,
+            "mixed_chain": null,
+            "openvpn_config": null,
+            "connect_timeout": 1,
+            "keep_alive_interval": 30,
+            "strict_host_key_checking": false,
+            "known_hosts_path": null,
+            "totp_secret": null,
+            "keyboard_interactive_responses": []
+        }))
+        .expect("valid SSH admission test config")
+    }
+
+    fn limits(max_sessions: usize, max_handshakes: usize) -> SshConnectionAdmissionLimits {
+        SshConnectionAdmissionLimits {
+            max_sessions,
+            max_handshakes,
+            max_config_bytes: MAX_SSH_RETAINED_CONFIG_BYTES,
+            config_budget_bytes: max_sessions * MAX_SSH_RETAINED_CONFIG_BYTES,
+        }
+    }
+
+    async fn await_proxy_disconnect_cleanup(
+        handle: tokio::task::JoinHandle<Result<(), String>>,
+        stage: &str,
+    ) {
+        tokio::time::timeout(Duration::from_secs(3), handle)
+            .await
+            .unwrap_or_else(|_| panic!("{stage} ProxyCommand cleanup timed out"))
+            .unwrap_or_else(|error| panic!("{stage} ProxyCommand cleanup task failed: {error}"))
+            .unwrap_or_else(|error| panic!("{stage} ProxyCommand cleanup failed: {error}"));
+    }
+
+    #[test]
+    fn timeout_contract_is_clamped_typed_and_secret_free() {
+        assert_eq!(
+            clamped_ssh_establishment_timeout(None),
+            DEFAULT_SSH_ESTABLISHMENT_TIMEOUT
+        );
+        assert_eq!(
+            clamped_ssh_establishment_timeout(Some(0)),
+            MIN_SSH_ESTABLISHMENT_TIMEOUT
+        );
+        assert_eq!(
+            clamped_ssh_establishment_timeout(Some(u64::MAX)),
+            MAX_SSH_ESTABLISHMENT_TIMEOUT
+        );
+        assert_eq!(clamped_ssh_hop_timeout(0), MIN_SSH_HOP_TIMEOUT);
+        assert_eq!(clamped_ssh_hop_timeout(u64::MAX), MAX_SSH_HOP_TIMEOUT);
+
+        let error = SshConnectionTimeoutError::Phase {
+            phase: "final-ssh-authentication".to_string(),
+            timeout_ms: 1_250,
+        }
+        .to_string();
+        assert_eq!(
+            error,
+            "SSH_CONNECTION_TIMEOUT: SSH establishment phase 'final-ssh-authentication' exceeded its 1250 ms deadline"
+        );
+        let contextual = contextualize_ssh_connection_error("Chain hop 2 failed", error.clone());
+        assert!(contextual.starts_with(SSH_CONNECTION_TIMEOUT_ERROR_CODE));
+        assert!(contextual.contains("Chain hop 2 failed"));
+        assert!(contextual.contains("final-ssh-authentication"));
+        for sensitive in ["secret-password", "private-user", "sensitive.example"] {
+            assert!(!error.contains(sensitive));
+            assert!(!contextual.contains(sensitive));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn four_stalled_resolvers_block_a_fifth_spawn_and_recover_accounting() {
+        let local_admission = Arc::new(Semaphore::new(MAX_CONCURRENT_SSH_LOCAL_PHASES));
+        let admission = SshConnectionAdmission::new(limits(8, 1));
+        let gate = Arc::new(BlockingGate::default());
+        let entered = Arc::new(AtomicUsize::new(0));
+        let mut workers = Vec::new();
+
+        for _ in 0..MAX_CONCURRENT_SSH_LOCAL_PHASES {
+            let control = SshEstablishmentControl::new_with_timeout(
+                Duration::from_secs(5),
+                Arc::new(PendingSshConnection::new()),
+            )
+            .unwrap();
+            let session_lease = admission.reserve_session(&config()).unwrap();
+            let worker_gate = Arc::clone(&gate);
+            let worker_entered = Arc::clone(&entered);
+            let worker_admission = Arc::clone(&local_admission);
+            workers.push(tokio::spawn(async move {
+                let result = control
+                    .run_isolated_local_phase_with_admission(
+                        "dns-resolution",
+                        Duration::from_secs(5),
+                        Some(session_lease),
+                        worker_admission,
+                        move |context| {
+                            context.ensure_active()?;
+                            worker_entered.fetch_add(1, Ordering::AcqRel);
+                            worker_gate.wait();
+                            context.ensure_active()
+                        },
+                    )
+                    .await;
+                if result.is_ok() {
+                    control.complete().unwrap();
+                }
+                result
+            }));
+        }
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while entered.load(Ordering::Acquire) != MAX_CONCURRENT_SSH_LOCAL_PHASES {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("four injected resolver workers should enter the local lane");
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot {
+                active_or_pending: MAX_CONCURRENT_SSH_LOCAL_PHASES,
+                active_handshakes: 0,
+                retained_config_bytes: MAX_CONCURRENT_SSH_LOCAL_PHASES
+                    * MAX_SSH_RETAINED_CONFIG_BYTES,
+            }
+        );
+
+        let fifth_started = Arc::new(AtomicUsize::new(0));
+        let fifth_started_worker = Arc::clone(&fifth_started);
+        let fifth_control = SshEstablishmentControl::new_with_timeout(
+            Duration::from_millis(50),
+            Arc::new(PendingSshConnection::new()),
+        )
+        .unwrap();
+        let fifth_error = fifth_control
+            .run_isolated_local_phase_with_admission(
+                "dns-resolution",
+                Duration::from_millis(50),
+                Some(admission.reserve_session(&config()).unwrap()),
+                Arc::clone(&local_admission),
+                move |_context| {
+                    fifth_started_worker.fetch_add(1, Ordering::AcqRel);
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(fifth_error.starts_with(SSH_CONNECTION_TIMEOUT_ERROR_CODE));
+        assert_eq!(
+            fifth_started.load(Ordering::Acquire),
+            0,
+            "the fifth resolver operation must not spawn without a local permit"
+        );
+
+        gate.open();
+        for worker in workers {
+            worker.await.unwrap().unwrap();
+        }
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+    }
+
+    #[test]
+    fn detached_cleanup_executor_init_fails_closed_at_first_and_partial_worker() {
+        let first = build_detached_ssh_cleanup_executor(|_, _| {
+            Err(std::io::Error::other(
+                "injected first cleanup worker failure",
+            ))
+        });
+        assert!(matches!(first, Err(error) if error.contains("worker 0")));
+
+        let partial = build_detached_ssh_cleanup_executor(|index, shared| {
+            if index == 1 {
+                Err(std::io::Error::other(
+                    "injected partial cleanup worker failure",
+                ))
+            } else {
+                std::thread::Builder::new()
+                    .name("ssh-test-partial-cleanup".to_string())
+                    .spawn(move || detached_ssh_cleanup_worker(shared))
+            }
+        });
+        assert!(matches!(partial, Err(error) if error.contains("worker 1")));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn saturated_cleanup_queue_deduplicates_all_producer_side_requests() {
+        let executor = Arc::new(
+            build_detached_ssh_cleanup_executor(|index, shared| {
+                std::thread::Builder::new()
+                    .name(format!("ssh-test-saturated-cleanup-{index}"))
+                    .spawn(move || detached_ssh_cleanup_worker(shared))
+            })
+            .expect("test cleanup executor should initialize"),
+        );
+        let admission = SshConnectionAdmission::new(limits(
+            MAX_ACTIVE_OR_PENDING_SSH_SESSIONS,
+            MAX_CONCURRENT_SSH_HANDSHAKES,
+        ));
+        let mut cleanup_keys = Vec::with_capacity(MAX_ACTIVE_OR_PENDING_SSH_SESSIONS);
+        let mut producer_gates = Vec::with_capacity(MAX_ACTIVE_OR_PENDING_SSH_SESSIONS);
+        let mut duplicate_leases = Vec::with_capacity(MAX_ACTIVE_OR_PENDING_SSH_SESSIONS);
+        for _ in 0..MAX_ACTIVE_OR_PENDING_SSH_SESSIONS {
+            let cleanup_key =
+                PendingSshCleanupKey::new(&format!("saturated-dedup-{}", Uuid::new_v4()));
+            let producer_released = Arc::new(AtomicBool::new(false));
+            let cleanup_released = Arc::clone(&producer_released);
+            let lease = admission.reserve_session(&config()).unwrap();
+            duplicate_leases.push(Arc::clone(&lease));
+            cleanup_keys.push(cleanup_key.clone());
+            producer_gates.push(producer_released);
+            let task_executor = Arc::clone(&executor);
+            dispatch_deduplicated_pending_ssh_cleanup(
+                &cleanup_key,
+                Some(lease),
+                move || {
+                    while !cleanup_released.load(Ordering::Acquire) {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    Ok(())
+                },
+                move |slot| task_executor.enqueue(slot),
+            );
+        }
+        {
+            let state = executor
+                .shared
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert_eq!(
+                state.tasks.len() + state.in_flight,
+                MAX_ACTIVE_OR_PENDING_SSH_SESSIONS
+            );
+        }
+        assert_eq!(
+            admission.snapshot().active_or_pending,
+            MAX_ACTIVE_OR_PENDING_SSH_SESSIONS
+        );
+        assert!(cleanup_keys
+            .iter()
+            .all(|key| pending_ssh_artifact_cleanups_lock().contains(key)));
+
+        let duplicate_enqueues = Arc::new(AtomicUsize::new(0));
+        let enqueued_duplicates = Arc::clone(&duplicate_enqueues);
+        let duplicate_executor = Arc::clone(&executor);
+        let (duplicates_done, duplicates_finished) = std::sync::mpsc::channel();
+        let duplicate_keys = cleanup_keys.clone();
+        let duplicates = std::thread::spawn(move || {
+            for (cleanup_key, lease) in duplicate_keys.iter().zip(duplicate_leases) {
+                let executor = Arc::clone(&duplicate_executor);
+                let enqueue_count = Arc::clone(&enqueued_duplicates);
+                dispatch_deduplicated_pending_ssh_cleanup(
+                    cleanup_key,
+                    Some(lease),
+                    || Ok(()),
+                    move |slot| {
+                        enqueue_count.fetch_add(1, Ordering::AcqRel);
+                        executor.enqueue(slot)
+                    },
+                );
+            }
+            duplicates_done.send(()).unwrap();
+        });
+
+        let duplicates_returned_before_release = duplicates_finished
+            .recv_timeout(Duration::from_secs(1))
+            .is_ok();
+        let duplicate_enqueue_count_before_release = duplicate_enqueues.load(Ordering::Acquire);
+        let retained_before_release = admission.snapshot().active_or_pending;
+        let executor_load_before_release = {
+            let state = executor
+                .shared
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.tasks.len() + state.in_flight
+        };
+
+        for gate in &producer_gates {
+            gate.store(true, Ordering::Release);
+        }
+        duplicates
+            .join()
+            .expect("duplicate producer should not panic");
+
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let drained = {
+                    let state = executor
+                        .shared
+                        .state
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    state.tasks.is_empty() && state.in_flight == 0
+                };
+                if drained {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("test cleanup executor should drain");
+        {
+            let mut state = executor
+                .shared
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.shutting_down = true;
+        }
+        executor.shared.changed.notify_all();
+        let executor = match Arc::try_unwrap(executor) {
+            Ok(executor) => executor,
+            Err(_) => panic!("test cleanup executor should have one owner"),
+        };
+        for worker in executor._workers {
+            worker.join().expect("test cleanup worker should stop");
+        }
+
+        assert!(
+            duplicates_returned_before_release,
+            "all duplicate producer-side requests must return while the queue is saturated"
+        );
+        assert_eq!(duplicate_enqueue_count_before_release, 0);
+        assert_eq!(retained_before_release, MAX_ACTIVE_OR_PENDING_SSH_SESSIONS);
+        assert_eq!(
+            executor_load_before_release,
+            MAX_ACTIVE_OR_PENDING_SSH_SESSIONS
+        );
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot::default()
+        );
+        assert!(cleanup_keys
+            .iter()
+            .all(|key| !pending_ssh_artifact_cleanups_lock().contains(key)));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn setup_guard_acknowledges_exact_proxy_generation_before_cleanup() {
+        let session_id = format!("proxy-setup-guard-ack-{}", Uuid::new_v4());
+        let cleanup_key = PendingSshCleanupKey::new(&session_id);
+        let reservation =
+            super::super::proxy_command::reserve_proxy_command_session(&session_id).unwrap();
+        let guard = SshConnectionSetupGuard::new(cleanup_key.clone(), None, Some(reservation));
+
+        drop(guard);
+        assert!(
+            !super::super::proxy_command::has_proxy_command_lifecycle_for_test(&session_id),
+            "armed setup guard must acknowledge its exact reservation before dispatch"
+        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while pending_ssh_artifact_cleanups_lock().contains(&cleanup_key) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("setup-guard cleanup should drain its generation key");
+    }
+
+    #[test]
+    fn deduplicated_cleanup_enqueue_failure_retries_and_clears_generation_key() {
+        let admission = SshConnectionAdmission::new(limits(2, 1));
+        let cleanup_key =
+            PendingSshCleanupKey::new(&format!("dedup-enqueue-failure-{}", Uuid::new_v4()));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let cleanup_attempts = Arc::clone(&attempts);
+        let mut panic_once = true;
+
+        dispatch_deduplicated_pending_ssh_cleanup(
+            &cleanup_key,
+            Some(admission.reserve_session(&config()).unwrap()),
+            move || {
+                cleanup_attempts.fetch_add(1, Ordering::AcqRel);
+                if panic_once {
+                    panic_once = false;
+                    panic!("injected deduplicated cleanup panic");
+                }
+                Ok(())
+            },
+            |_| Err("injected deduplicated cleanup enqueue failure".to_string()),
+        );
+
+        assert_eq!(attempts.load(Ordering::Acquire), 2);
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot::default()
+        );
+        assert!(!pending_ssh_artifact_cleanups_lock().contains(&cleanup_key));
+    }
+
+    #[test]
+    fn detached_cleanup_enqueue_failure_joins_bridge_and_releases_lease_once() {
+        let admission = SshConnectionAdmission::new(limits(2, 1));
+        let lease = admission.reserve_session(&config()).unwrap();
+        let bridge_exits = Arc::new(AtomicUsize::new(0));
+        let bridge_exited = Arc::clone(&bridge_exits);
+        let bridge = std::thread::spawn(move || {
+            bridge_exited.fetch_add(1, Ordering::AcqRel);
+        });
+        let cleanup_runs = Arc::new(AtomicUsize::new(0));
+        let cleanup_ran = Arc::clone(&cleanup_runs);
+        let mut bridge = Some(bridge);
+        let mut lease = Some(lease);
+
+        dispatch_detached_ssh_cleanup_with(
+            move || {
+                cleanup_ran.fetch_add(1, Ordering::AcqRel);
+                if let Some(bridge) = bridge.take() {
+                    let _ = bridge.join();
+                }
+                drop(lease.take());
+                DetachedSshCleanupOutcome::Complete
+            },
+            |_| Err("injected cleanup worker spawn failure".to_string()),
+        );
+
+        assert_eq!(cleanup_runs.load(Ordering::Acquire), 1);
+        assert_eq!(bridge_exits.load(Ordering::Acquire), 1);
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot::default()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn detached_cleanup_panic_retries_bridge_and_next_task_exactly_once() {
+        detached_ssh_cleanup_executor().expect("cleanup executor should initialize");
+        let admission = SshConnectionAdmission::new(limits(4, 1));
+        let gate = Arc::new(BlockingGate::default());
+        let bridge_gate = Arc::clone(&gate);
+        let bridge_exits = Arc::new(AtomicUsize::new(0));
+        let bridge_exited = Arc::clone(&bridge_exits);
+        let bridge = std::thread::spawn(move || {
+            bridge_gate.wait();
+            bridge_exited.fetch_add(1, Ordering::AcqRel);
+        });
+        let mut bridge_handles = vec![bridge];
+        let mut lease = Some(admission.reserve_session(&config()).unwrap());
+        let mut panic_once = true;
+        dispatch_detached_ssh_cleanup(move || {
+            if panic_once {
+                panic_once = false;
+                panic!("injected detached SSH task panic after claim");
+            }
+            while let Some(handle) = bridge_handles.pop() {
+                let _ = handle.join();
+            }
+            drop(lease.take());
+            DetachedSshCleanupOutcome::Complete
+        });
+        assert_eq!(admission.snapshot().active_or_pending, 1);
+        gate.open();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+        assert_eq!(bridge_exits.load(Ordering::Acquire), 1);
+
+        let next_runs = Arc::new(AtomicUsize::new(0));
+        let next_ran = Arc::clone(&next_runs);
+        dispatch_detached_ssh_cleanup(move || {
+            next_ran.fetch_add(1, Ordering::AcqRel);
+            DetachedSshCleanupOutcome::Complete
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while next_runs.load(Ordering::Acquire) != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cleanup worker should continue after recovered panic");
+        assert_eq!(next_runs.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn detached_cleanup_retry_requeues_fairly_before_later_complete_task() {
+        detached_ssh_cleanup_executor().expect("cleanup executor should initialize");
+        let retry_open = Arc::new(AtomicBool::new(false));
+        let retry_gate = Arc::clone(&retry_open);
+        let retry_attempts = Arc::new(AtomicUsize::new(0));
+        let attempts = Arc::clone(&retry_attempts);
+        let retry_returns = Arc::new(AtomicUsize::new(0));
+        let retry_returned = Arc::clone(&retry_returns);
+        let first_completions = Arc::new(AtomicUsize::new(0));
+        let first_completed = Arc::clone(&first_completions);
+        dispatch_detached_ssh_cleanup(move || {
+            attempts.fetch_add(1, Ordering::AcqRel);
+            if !retry_gate.load(Ordering::Acquire) {
+                retry_returned.fetch_add(1, Ordering::AcqRel);
+                return DetachedSshCleanupOutcome::Retry;
+            }
+            first_completed.fetch_add(1, Ordering::AcqRel);
+            DetachedSshCleanupOutcome::Complete
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while retry_returns.load(Ordering::Acquire) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("retrying cleanup should make its first attempt");
+
+        let second_completions = Arc::new(AtomicUsize::new(0));
+        let second_completed = Arc::clone(&second_completions);
+        dispatch_detached_ssh_cleanup(move || {
+            second_completed.fetch_add(1, Ordering::AcqRel);
+            DetachedSshCleanupOutcome::Complete
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while second_completions.load(Ordering::Acquire) != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("later cleanup must not be starved by a retrying task");
+        assert_eq!(first_completions.load(Ordering::Acquire), 0);
+        assert!(retry_attempts.load(Ordering::Acquire) >= 1);
+
+        retry_open.store(true, Ordering::Release);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while first_completions.load(Ordering::Acquire) != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("retrying cleanup should complete after its gate opens");
+        assert_eq!(first_completions.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn proxy_disconnect_dispatch_covers_absent_reserved_active_and_stopping() {
+        let admission = SshConnectionAdmission::new(limits(4, 1));
+
+        let absent_id = format!("proxy-dispatch-absent-{}", Uuid::new_v4());
+        let absent = dispatch_proxy_command_disconnect_cleanup(
+            absent_id,
+            Some(admission.reserve_session(&config()).unwrap()),
+        );
+        assert!(absent.is_none(), "absent lifecycle must dispatch no worker");
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot::default()
+        );
+
+        let reserved_id = format!("proxy-dispatch-reserved-{}", Uuid::new_v4());
+        let reservation =
+            super::super::proxy_command::reserve_proxy_command_session(&reserved_id).unwrap();
+        let reserved = dispatch_proxy_command_disconnect_cleanup(
+            reserved_id.clone(),
+            Some(admission.reserve_session(&config()).unwrap()),
+        )
+        .expect("reserved lifecycle must dispatch cleanup");
+        assert_eq!(admission.snapshot().active_or_pending, 1);
+        drop(reservation);
+        await_proxy_disconnect_cleanup(reserved, "reserved").await;
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+
+        let active_id = format!("proxy-dispatch-active-{}", Uuid::new_v4());
+        let (release_active, blocked_active) = std::sync::mpsc::channel();
+        super::super::proxy_command::install_blocked_relay_for_accounting_test(
+            &active_id,
+            blocked_active,
+        )
+        .unwrap();
+        let active = dispatch_proxy_command_disconnect_cleanup(
+            active_id,
+            Some(admission.reserve_session(&config()).unwrap()),
+        )
+        .expect("active lifecycle must dispatch cleanup");
+        assert_eq!(admission.snapshot().active_or_pending, 1);
+        release_active.send(()).unwrap();
+        await_proxy_disconnect_cleanup(active, "active").await;
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+
+        let stopping_id = format!("proxy-dispatch-stopping-{}", Uuid::new_v4());
+        let (release_stopping, blocked_stopping) = std::sync::mpsc::channel();
+        super::super::proxy_command::install_blocked_relay_for_accounting_test(
+            &stopping_id,
+            blocked_stopping,
+        )
+        .unwrap();
+        super::super::proxy_command::begin_proxy_command_cleanup_for_test(&stopping_id).unwrap();
+        let stopping = dispatch_proxy_command_disconnect_cleanup(
+            stopping_id,
+            Some(admission.reserve_session(&config()).unwrap()),
+        )
+        .expect("stopping lifecycle must dispatch cleanup");
+        assert_eq!(admission.snapshot().active_or_pending, 1);
+        release_stopping.send(()).unwrap();
+        await_proxy_disconnect_cleanup(stopping, "stopping").await;
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rejected_proxy_cleanup_keeps_admission_until_retry_and_actual_join() {
+        let admission = SshConnectionAdmission::new(limits(4, 1));
+        let session_id = format!("proxy-retry-accounting-{}", Uuid::new_v4());
+        let (release, blocked_relay) = std::sync::mpsc::channel();
+        super::super::proxy_command::install_blocked_relay_for_accounting_test(
+            &session_id,
+            blocked_relay,
+        )
+        .unwrap();
+        super::super::proxy_command::reject_next_cleanup_enqueue_for_test(&session_id).unwrap();
+        let lease = admission.reserve_session(&config()).unwrap();
+        cleanup_pending_connection_artifacts(&PendingSshCleanupKey::new(&session_id), Some(lease));
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(super::super::proxy_command::has_proxy_command_lifecycle_for_test(&session_id));
+        assert_eq!(admission.snapshot().active_or_pending, 1);
+
+        release.send(()).unwrap();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+        assert!(!super::super::proxy_command::has_proxy_command_lifecycle_for_test(&session_id));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pre_adoption_bridge_reaper_retains_capacity_until_native_exit() {
+        let admission = SshConnectionAdmission::new(limits(4, 1));
+        let gate = Arc::new(BlockingGate::default());
+        let worker_gate = Arc::clone(&gate);
+        let exited = Arc::new(AtomicBool::new(false));
+        let worker_exited = Arc::clone(&exited);
+        let handle = std::thread::spawn(move || {
+            worker_gate.wait();
+            worker_exited.store(true, Ordering::Release);
+        });
+        let cleanup = EstablishmentBridgeCleanup::from_parts(
+            Vec::new(),
+            vec![handle],
+            Some(admission.reserve_session(&config()).unwrap()),
+        );
+        drop(cleanup);
+
+        assert_eq!(admission.snapshot().active_or_pending, 1);
+        gate.open();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+        assert!(exited.load(Ordering::Acquire));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn blocked_proxy_relay_retains_session_accounting_through_actual_join() {
+        let admission = SshConnectionAdmission::new(limits(4, 1));
+        let session_id = format!("proxy-accounting-{}", Uuid::new_v4());
+        let (release, blocked_relay) = std::sync::mpsc::channel();
+        super::super::proxy_command::install_blocked_relay_for_accounting_test(
+            &session_id,
+            blocked_relay,
+        )
+        .unwrap();
+        let session_lease = admission.reserve_session(&config()).unwrap();
+        let cleanup_session_id = session_id.clone();
+        let cleanup = tokio::task::spawn_blocking(move || {
+            let _session_lease = session_lease;
+            super::super::proxy_command::stop_proxy_command_and_wait(&cleanup_session_id)
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if super::super::proxy_command::get_proxy_command_status(&session_id)
+                    .unwrap()
+                    .is_none()
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("blocked relay should enter stopping state");
+        tokio::time::sleep(Duration::from_millis(2_100)).await;
+        assert!(!cleanup.is_finished());
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot {
+                active_or_pending: 1,
+                active_handshakes: 0,
+                retained_config_bytes: MAX_SSH_RETAINED_CONFIG_BYTES,
+            }
+        );
+
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), cleanup)
+            .await
+            .expect("actual ProxyCommand relay cleanup should complete")
+            .unwrap()
+            .unwrap();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+        assert!(
+            super::super::proxy_command::get_proxy_command_status(&session_id)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    async fn assert_stalling_proxy_protocol_times_out(proxy_type: ProxyType, expected_phase: &str) {
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut peer, _) = listener.accept().await.unwrap();
+            let mut first_request = [0_u8; 256];
+            let read = peer.read(&mut first_request).await.unwrap();
+            assert!(read > 0, "proxy client should send its negotiation request");
+            std::future::pending::<()>().await;
+        });
+        let proxy = ProxyConfig {
+            proxy_type,
+            host: "127.0.0.1".to_string(),
+            port: address.port(),
+            username: None,
+            password: None,
+        };
+        let control = SshEstablishmentControl::new_with_timeout(
+            Duration::from_millis(200),
+            Arc::new(PendingSshConnection::new()),
+        )
+        .unwrap();
+        let state = SshService::new();
+        let service = state.lock().await;
+        let error = service
+            .establish_proxy_connection_with_control(
+                &config(),
+                &proxy,
+                &control,
+                Duration::from_millis(50),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error.starts_with(&format!(
+                "{SSH_CONNECTION_TIMEOUT_ERROR_CODE}: SSH establishment phase '{expected_phase}'"
+            )),
+            "unexpected proxy timeout: {error}"
+        );
+        peer.abort();
+        let _ = peer.await;
+    }
+
+    #[tokio::test]
+    async fn stalled_socks5_and_http_negotiations_have_typed_deadlines() {
+        assert_stalling_proxy_protocol_times_out(ProxyType::Socks5, "socks5-proxy-negotiation")
+            .await;
+        assert_stalling_proxy_protocol_times_out(ProxyType::Http, "http-proxy-negotiation").await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn oversized_http_connect_line_is_bounded_and_releases_accounting() {
+        let state = SshService::new_with_connection_limits(limits(4, 1));
+        let admission = Arc::clone(&state.lock().await.connection_admission);
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut peer, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let read = peer.read(&mut request).await.unwrap();
+            assert!(read > 0, "HTTP proxy should receive CONNECT request");
+            peer.write_all(&vec![b'A'; MAX_HTTP_PROXY_RESPONSE_LINE_BYTES + 1])
+                .await
+                .unwrap();
+            peer.shutdown().await.unwrap();
+        });
+
+        let mut attempt_config = config();
+        attempt_config.connect_timeout = Some(2);
+        attempt_config.proxy_config = Some(ProxyConfig {
+            proxy_type: ProxyType::Http,
+            host: "127.0.0.1".to_string(),
+            port: address.port(),
+            username: None,
+            password: None,
+        });
+        let error = connect_ssh_on_state(&state, attempt_config)
+            .await
+            .unwrap_err();
+        assert_eq!(error, HTTP_PROXY_RESPONSE_LIMIT_ERROR);
+        peer.await.unwrap();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_broadcast_wakes_every_waiter_and_closes_tracked_socket() {
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = AsyncTcpStream::connect(address).await.unwrap();
+        let (mut peer, _) = listener.accept().await.unwrap();
+        let client = client.into_std().unwrap();
+        client.set_nonblocking(false).unwrap();
+        let cancellation = Arc::new(PendingSshConnection::new());
+        let control = SshEstablishmentControl::new_with_timeout(
+            Duration::from_secs(10),
+            Arc::clone(&cancellation),
+        )
+        .unwrap();
+        control
+            .track_blocking_socket(&client, "cancellation-broadcast-test")
+            .unwrap();
+
+        let mut waiters = Vec::new();
+        for _ in 0..8 {
+            let waiter = Arc::clone(&cancellation);
+            waiters.push(tokio::spawn(async move { waiter.cancelled().await }));
+        }
+        tokio::task::yield_now().await;
+        cancellation.cancel();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            for waiter in waiters {
+                waiter.await.unwrap();
+            }
+        })
+        .await
+        .expect("broadcast cancellation did not wake every waiter");
+
+        let mut byte = [0_u8; 1];
+        let closure = tokio::time::timeout(Duration::from_secs(1), peer.read(&mut byte))
+            .await
+            .expect("tracked socket did not close after broadcast cancellation");
+        assert!(
+            matches!(closure, Ok(0))
+                || closure.as_ref().is_err_and(|error| {
+                    error.kind() == std::io::ErrorKind::ConnectionReset
+                        || error.kind() == std::io::ErrorKind::ConnectionAborted
+                        || error.raw_os_error() == Some(10053)
+                        || error.raw_os_error() == Some(10054)
+                }),
+            "unexpected tracked-socket closure result: {closure:?}"
+        );
+        assert_eq!(
+            control.outcome.load(Ordering::Acquire),
+            ESTABLISHMENT_CANCELLED
+        );
+    }
+
+    #[tokio::test]
+    async fn standalone_direct_helper_clears_socket_deadlines_before_return() {
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap().0 });
+        let mut direct_config = config();
+        direct_config.port = address.port();
+        let state = SshService::new();
+        let stream = state
+            .lock()
+            .await
+            .establish_direct_connection(&direct_config)
+            .await
+            .unwrap();
+        assert_eq!(stream.read_timeout().unwrap(), None);
+        assert_eq!(stream.write_timeout().unwrap(), None);
+        drop(stream);
+        drop(accept.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn expired_socket_tracking_returns_typed_timeout_not_invalid_input() {
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = AsyncTcpStream::connect(address).await.unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+        let client = client.into_std().unwrap();
+        client.set_nonblocking(false).unwrap();
+        let control = SshEstablishmentControl::new_with_timeout(
+            Duration::from_millis(10),
+            Arc::new(PendingSshConnection::new()),
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let error = control
+            .track_blocking_socket(&client, "expired-track")
+            .unwrap_err();
+        assert!(error.starts_with(SSH_CONNECTION_TIMEOUT_ERROR_CODE));
+        assert!(!error.contains("Invalid argument"));
+    }
+
+    fn fake_connection(
+        session_id: String,
+        config: SshConnectionConfig,
+    ) -> EstablishedSshConnection {
+        let session = ssh2::Session::new().expect("create fake SSH session");
+        EstablishedSshConnection {
+            session_id: session_id.clone(),
+            session: Some(SshSession {
+                id: session_id,
+                session,
+                config,
+                connected_at: Utc::now(),
+                last_activity: Utc::now(),
+                port_forwards: HashMap::new(),
+                keep_alive_handle: None,
+                intermediate_sessions: Vec::new(),
+                bridge_handles: Vec::new(),
+                compression_stats: SshCompressionStats::default(),
+            }),
+            cleanup_session_lease: None,
+        }
+    }
+
+    async fn wait_for_snapshot(
+        admission: &SshConnectionAdmission,
+        expected: SshConnectionAdmissionSnapshot,
+    ) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if admission.snapshot() == expected {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "SSH admission did not reach {expected:?}; current snapshot: {:?}",
+                admission.snapshot()
+            )
+        });
+    }
+
+    async fn connect_fake(state: &SshServiceState, config: SshConnectionConfig) -> String {
+        connect_ssh_on_state_with(
+            state,
+            config,
+            |_connector, session_id, config, worker_lease| async move {
+                let _worker_lease = worker_lease;
+                Ok(fake_connection(session_id, config))
+            },
+        )
+        .await
+        .expect("fake SSH connection should be adopted")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn state_wrapper_100_500_1000_pressure_is_fail_fast_and_exactly_bounded() {
+        for attempts in [100_usize, 500, 1_000] {
+            let state = SshService::new_with_connection_limits(limits(
+                MAX_ACTIVE_OR_PENDING_SSH_SESSIONS,
+                MAX_CONCURRENT_SSH_HANDSHAKES,
+            ));
+            let admission = Arc::clone(&state.lock().await.connection_admission);
+            let gate = Arc::new(tokio::sync::Semaphore::new(0));
+            let entered = Arc::new(AtomicUsize::new(0));
+            let rejected_settled = Arc::new(AtomicUsize::new(0));
+            let mut tasks = Vec::with_capacity(attempts);
+
+            for _ in 0..attempts {
+                let connecting_state = Arc::clone(&state);
+                let worker_gate = Arc::clone(&gate);
+                let worker_entered = Arc::clone(&entered);
+                let task_rejected_settled = Arc::clone(&rejected_settled);
+                tasks.push(tokio::spawn(async move {
+                    let result = connect_ssh_on_state_with(
+                        &connecting_state,
+                        config(),
+                        move |_connector, session_id, config, worker_lease| async move {
+                            let _worker_lease = worker_lease;
+                            worker_entered.fetch_add(1, Ordering::AcqRel);
+                            let _gate_permit = worker_gate
+                                .acquire()
+                                .await
+                                .expect("fake establishment gate should remain open");
+                            Ok(fake_connection(session_id, config))
+                        },
+                    )
+                    .await;
+                    if result.is_err() {
+                        task_rejected_settled.fetch_add(1, Ordering::AcqRel);
+                    }
+                    result
+                }));
+            }
+
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while entered.load(Ordering::Acquire) + rejected_settled.load(Ordering::Acquire)
+                    != attempts
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("all bounded fake establishment tasks should enter");
+
+            assert_eq!(
+                admission.snapshot(),
+                SshConnectionAdmissionSnapshot {
+                    active_or_pending: MAX_CONCURRENT_SSH_HANDSHAKES,
+                    active_handshakes: MAX_CONCURRENT_SSH_HANDSHAKES,
+                    retained_config_bytes: MAX_CONCURRENT_SSH_HANDSHAKES
+                        * MAX_SSH_RETAINED_CONFIG_BYTES,
+                }
+            );
+
+            gate.add_permits(MAX_CONCURRENT_SSH_HANDSHAKES);
+            let mut sessions = Vec::with_capacity(MAX_CONCURRENT_SSH_HANDSHAKES);
+            let mut rejected = 0_usize;
+            for task in tasks {
+                match task.await.expect("wrapper task should not panic") {
+                    Ok(session_id) => sessions.push(session_id),
+                    Err(error) => {
+                        assert!(
+                            error.starts_with(SSH_HANDSHAKE_CAPACITY_ERROR_CODE),
+                            "unexpected wrapper rejection: {error}"
+                        );
+                        rejected += 1;
+                    }
+                }
+            }
+            assert_eq!(sessions.len(), MAX_CONCURRENT_SSH_HANDSHAKES);
+            assert_eq!(rejected, attempts - MAX_CONCURRENT_SSH_HANDSHAKES);
+
+            for session_id in sessions {
+                disconnect_ssh_on_state(&state, &session_id).await.unwrap();
+            }
+            wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+        }
+    }
+
+    #[test]
+    fn retained_config_counts_secrets_and_enforces_per_session_and_aggregate_budgets() {
+        let mut with_secret = config();
+        with_secret.password = Some(SecretString::new("secret-value".to_string()));
+        let public_bytes = serde_json::to_vec(&with_secret).unwrap().len();
+        let retained_bytes = retained_ssh_config_bytes(&with_secret).unwrap();
+        assert_eq!(retained_bytes, public_bytes + "secret-value".len());
+
+        let admission = SshConnectionAdmission::new(SshConnectionAdmissionLimits {
+            max_sessions: 4,
+            max_handshakes: 1,
+            max_config_bytes: retained_bytes,
+            config_budget_bytes: retained_bytes * 2,
+        });
+        let first = admission.reserve_session(&with_secret).unwrap();
+        let second = admission.reserve_session(&with_secret).unwrap();
+        assert_eq!(first._retained_config_bytes, retained_bytes);
+        assert_eq!(second._retained_config_bytes, retained_bytes);
+        assert_eq!(
+            admission.reserve_session(&with_secret).unwrap_err(),
+            SshConnectionAdmissionError::ConfigBudget {
+                bytes: retained_bytes,
+                limit: retained_bytes * 2,
+            }
+        );
+        drop((first, second));
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot::default()
+        );
+
+        let mut oversized = config();
+        oversized
+            .environment
+            .insert("PAYLOAD".into(), "x".repeat(MAX_SSH_RETAINED_CONFIG_BYTES));
+        assert!(matches!(
+            SshConnectionAdmission::new(SshConnectionAdmissionLimits::default())
+                .reserve_session(&oversized),
+            Err(SshConnectionAdmissionError::ConfigTooLarge {
+                limit: MAX_SSH_RETAINED_CONFIG_BYTES,
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn runtime_config_growth_is_rejected_transactionally_for_auth_and_compression() {
+        let mut initial_config = config();
+        initial_config.compression_config.allow_runtime_update = true;
+        let retained_bytes = retained_ssh_config_bytes(&initial_config).unwrap();
+        let per_session_limit = retained_bytes + 128;
+        let state = SshService::new_with_connection_limits(SshConnectionAdmissionLimits {
+            max_sessions: 4,
+            max_handshakes: 1,
+            max_config_bytes: per_session_limit,
+            config_budget_bytes: per_session_limit * 4,
+        });
+        let admission = Arc::clone(&state.lock().await.connection_admission);
+        let session_id = connect_fake(&state, initial_config).await;
+
+        let mut service = state.lock().await;
+        let auth_error = service
+            .update_session_auth(
+                &session_id,
+                Some("secret".repeat(per_session_limit)),
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(auth_error.starts_with(SSH_CONFIG_CAPACITY_ERROR_CODE));
+        assert!(service.sessions[&session_id].config.password.is_none());
+
+        let original_extensions = service.sessions[&session_id]
+            .config
+            .compression_config
+            .adaptive
+            .incompressible_extensions
+            .clone();
+        let mut compression = service.sessions[&session_id]
+            .config
+            .compression_config
+            .clone();
+        compression.adaptive.incompressible_extensions =
+            vec!["extension".repeat(per_session_limit)];
+        let compression_error = service
+            .update_compression_config(&session_id, compression)
+            .unwrap_err();
+        assert!(compression_error.starts_with(SSH_CONFIG_CAPACITY_ERROR_CODE));
+        assert_eq!(
+            service.sessions[&session_id]
+                .config
+                .compression_config
+                .adaptive
+                .incompressible_extensions,
+            original_extensions
+        );
+        drop(service);
+
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot {
+                active_or_pending: 1,
+                active_handshakes: 0,
+                retained_config_bytes: per_session_limit,
+            }
+        );
+        disconnect_ssh_on_state(&state, &session_id).await.unwrap();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancelled_attempt_keeps_worker_owned_capacity_until_native_work_exits() {
+        let state = SshService::new_with_connection_limits(limits(4, 1));
+        let admission = Arc::clone(&state.lock().await.connection_admission);
+        let gate = Arc::new(BlockingGate::default());
+        let worker_gate = Arc::clone(&gate);
+        let (session_id_tx, session_id_rx) = tokio::sync::oneshot::channel();
+        let connecting_state = Arc::clone(&state);
+        let connect = tokio::spawn(async move {
+            connect_ssh_on_state_with(
+                &connecting_state,
+                config(),
+                move |_connector, session_id, _config, worker_lease| async move {
+                    tokio::task::spawn_blocking(move || {
+                        let _worker_lease = worker_lease;
+                        session_id_tx
+                            .send(session_id)
+                            .expect("publish provisional session id");
+                        worker_gate.wait();
+                        Err("fake native worker stopped".to_string())
+                    })
+                    .await
+                    .expect("fake native worker should not panic")
+                },
+            )
+            .await
+        });
+
+        let session_id = session_id_rx.await.expect("worker should start");
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot {
+                active_or_pending: 1,
+                active_handshakes: 1,
+                retained_config_bytes: MAX_SSH_RETAINED_CONFIG_BYTES,
+            }
+        );
+        disconnect_ssh_on_state(&state, &session_id)
+            .await
+            .expect("pending connect cancellation should succeed");
+        assert_eq!(
+            connect
+                .await
+                .expect("connect task should not panic")
+                .unwrap_err(),
+            "SSH connection cancelled"
+        );
+        assert_eq!(
+            admission.snapshot().active_or_pending,
+            1,
+            "detached native worker must retain its session permit"
+        );
+        assert_eq!(admission.snapshot().active_handshakes, 1);
+
+        gate.open();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+    }
+
+    #[tokio::test]
+    async fn adoption_and_disconnect_churn_transfer_and_release_the_same_lease() {
+        let state = SshService::new_with_connection_limits(limits(4, 2));
+        let admission = Arc::clone(&state.lock().await.connection_admission);
+        let config = config();
+        // Duplicate endpoints remain valid SSH sessions; admission is strictly
+        // resource-based and does not silently introduce VNC-style deduping.
+        let first = connect_fake(&state, config.clone()).await;
+        let second = connect_fake(&state, config.clone()).await;
+        assert_ne!(first, second);
+        assert_eq!(
+            admission.snapshot(),
+            SshConnectionAdmissionSnapshot {
+                active_or_pending: 2,
+                active_handshakes: 0,
+                retained_config_bytes: MAX_SSH_RETAINED_CONFIG_BYTES * 2,
+            }
+        );
+        disconnect_ssh_on_state(&state, &first).await.unwrap();
+        disconnect_ssh_on_state(&state, &second).await.unwrap();
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+
+        for _ in 0..100 {
+            let session_id = connect_fake(&state, config.clone()).await;
+            assert_eq!(admission.snapshot().active_or_pending, 1);
+            disconnect_ssh_on_state(&state, &session_id).await.unwrap();
+            assert_eq!(
+                admission.snapshot(),
+                SshConnectionAdmissionSnapshot::default()
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn watchdog_reaps_all_sixteen_stalled_workers_before_next_admission() {
+        let state = SshService::new_with_connection_limits(limits(32, 16));
+        let admission = Arc::clone(&state.lock().await.connection_admission);
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut tasks = Vec::with_capacity(16);
+
+        for _ in 0..16 {
+            let connecting_state = Arc::clone(&state);
+            let mut attempt_config = config();
+            attempt_config.port = address.port();
+            attempt_config.connect_timeout = Some(2);
+            tasks.push(tokio::spawn(async move {
+                connect_ssh_on_state(&connecting_state, attempt_config).await
+            }));
+        }
+
+        let mut stalled_peers = Vec::with_capacity(16);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while stalled_peers.len() < 16 {
+                stalled_peers.push(listener.accept().await.unwrap().0);
+            }
+        })
+        .await
+        .expect("all sixteen bounded workers should reach the loopback listener");
+        assert_eq!(admission.snapshot().active_handshakes, 16);
+
+        for task in tasks {
+            let error = tokio::time::timeout(Duration::from_secs(4), task)
+                .await
+                .expect("watchdog did not stop a stalled SSH worker")
+                .expect("stalled SSH worker task should not panic")
+                .unwrap_err();
+            assert!(
+                error.starts_with(SSH_CONNECTION_TIMEOUT_ERROR_CODE),
+                "stalled worker returned an untyped error: {error}"
+            );
+        }
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+        drop(stalled_peers);
+
+        let connecting_state = Arc::clone(&state);
+        let mut next_config = config();
+        next_config.port = address.port();
+        next_config.connect_timeout = Some(2);
+        let next =
+            tokio::spawn(async move { connect_ssh_on_state(&connecting_state, next_config).await });
+        let (mut next_peer, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+            .await
+            .expect("the seventeenth attempt was not admitted")
+            .unwrap();
+        assert_eq!(admission.snapshot().active_handshakes, 1);
+        let _ = next_peer.write_all(b"not-an-ssh-server\r\n").await;
+        let _ = next_peer.shutdown().await;
+        drop(next_peer);
+        let error = next.await.unwrap().unwrap_err();
+        assert!(!error.starts_with(SSH_HANDSHAKE_CAPACITY_ERROR_CODE));
+        assert!(!error.starts_with(SSH_SESSION_CAPACITY_ERROR_CODE));
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+    }
+
+    #[cfg(windows)]
+    fn process_is_alive(pid: u32) -> bool {
+        use windows_sys::Win32::Foundation::{CloseHandle, WAIT_TIMEOUT};
+        use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject};
+        const SYNCHRONIZE_ACCESS: u32 = 0x0010_0000;
+
+        // SAFETY: the handle is checked for null and closed on every successful
+        // OpenProcess path; no ownership escapes this helper.
+        unsafe {
+            let process = OpenProcess(SYNCHRONIZE_ACCESS, 0, pid);
+            if process.is_null() {
+                return false;
+            }
+            let alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+            CloseHandle(process);
+            alive
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn process_is_alive(pid: u32) -> bool {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn proxy_command_timeout_reaps_helper_and_registry_before_capacity_release() {
+        #[cfg(windows)]
+        let command =
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Start-Sleep -Seconds 60"
+                .to_string();
+        #[cfg(not(windows))]
+        let command = "sleep 60".to_string();
+
+        let mut attempt_config = config();
+        attempt_config.connect_timeout = Some(1);
+        attempt_config.proxy_command = Some(ProxyCommandConfig {
+            command: Some(command.clone()),
+            template: None,
+            proxy_host: None,
+            proxy_port: None,
+            proxy_username: None,
+            proxy_password: None,
+            proxy_type: None,
+            timeout_secs: Some(1),
+            command_confirmed: false,
+        });
+        super::super::proxy_command::mark_proxy_command_confirmed(&command);
+
+        let state = SshService::new_with_connection_limits(limits(4, 1));
+        let admission = Arc::clone(&state.lock().await.connection_admission);
+        let connecting_state = Arc::clone(&state);
+        let connect =
+            tokio::spawn(
+                async move { connect_ssh_on_state(&connecting_state, attempt_config).await },
+            );
+
+        let session_id = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(session_id) = state
+                    .lock()
+                    .await
+                    .pending_connections
+                    .lock()
+                    .unwrap()
+                    .keys()
+                    .next()
+                    .cloned()
+                {
+                    break session_id;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("ProxyCommand attempt should register");
+        let helper_pid = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(status) =
+                    super::super::proxy_command::get_proxy_command_status(&session_id).unwrap()
+                {
+                    break status.pid.expect("ProxyCommand helper should have a pid");
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("ProxyCommand helper should become visible");
+
+        let error = tokio::time::timeout(Duration::from_secs(4), connect)
+            .await
+            .expect("ProxyCommand timeout did not stop its worker")
+            .expect("ProxyCommand connection task should not panic")
+            .unwrap_err();
+        assert!(error.starts_with(SSH_CONNECTION_TIMEOUT_ERROR_CODE));
+        assert!(
+            super::super::proxy_command::get_proxy_command_status(&session_id)
+                .unwrap()
+                .is_none(),
+            "timed-out ProxyCommand must leave no registry entry"
+        );
+        assert!(
+            !process_is_alive(helper_pid),
+            "timed-out ProxyCommand helper process {helper_pid} is still alive"
+        );
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn real_loopback_cancellation_closes_worker_socket_before_capacity_releases() {
+        let state = SshService::new_with_connection_limits(limits(4, 1));
+        let admission = Arc::clone(&state.lock().await.connection_admission);
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        for _ in 0..8 {
+            let mut attempt_config = config();
+            attempt_config.port = address.port();
+            let connecting_state = Arc::clone(&state);
+            let connect = tokio::spawn(async move {
+                connect_ssh_on_state(&connecting_state, attempt_config).await
+            });
+            let (mut peer, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                .await
+                .expect("real loopback connect timed out")
+                .unwrap();
+            let pending = Arc::clone(&state.lock().await.pending_connections);
+            let session_id = pending
+                .lock()
+                .unwrap()
+                .keys()
+                .next()
+                .cloned()
+                .expect("provisional loopback session should be registered");
+            assert_eq!(
+                admission.snapshot(),
+                SshConnectionAdmissionSnapshot {
+                    active_or_pending: 1,
+                    active_handshakes: 1,
+                    retained_config_bytes: MAX_SSH_RETAINED_CONFIG_BYTES,
+                }
+            );
+
+            disconnect_ssh_on_state(&state, &session_id).await.unwrap();
+            assert_eq!(
+                connect.await.unwrap().unwrap_err(),
+                "SSH connection cancelled"
+            );
+            let _ = peer.write_all(b"not-an-ssh-server\r\n").await;
+            let _ = peer.shutdown().await;
+            let mut observed_client_bytes = 0_usize;
+            tokio::time::timeout(Duration::from_secs(3), async {
+                let mut bytes = [0_u8; 256];
+                loop {
+                    match peer.read(&mut bytes).await {
+                        Ok(0) => break,
+                        Ok(read) => {
+                            observed_client_bytes = observed_client_bytes.saturating_add(read);
+                            assert!(
+                                observed_client_bytes <= 4 * 1024,
+                                "invalid loopback server received unbounded client handshake bytes"
+                            );
+                        }
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::ConnectionReset
+                                || error.kind() == std::io::ErrorKind::ConnectionAborted
+                                || error.raw_os_error() == Some(10053)
+                                || error.raw_os_error() == Some(10054) =>
+                        {
+                            break;
+                        }
+                        Err(error) => panic!("unexpected loopback peer read error: {error}"),
+                    }
+                }
+            })
+            .await
+            .expect("SSH loopback worker did not close its socket");
+            wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -5239,11 +8780,17 @@ mod host_key_prompt_tests {
     fn test_service(emitter: DynEventEmitter) -> SshService {
         SshService {
             sessions: HashMap::new(),
+            session_admission_leases: HashMap::new(),
             connection_pool: HashMap::new(),
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: Some(emitter),
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            connection_admission: SshConnectionAdmission::new(
+                SshConnectionAdmissionLimits::default(),
+            ),
+            establishment_control: None,
+            establishment_session_lease: None,
             shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
         }
     }
@@ -5464,7 +9011,8 @@ mod host_key_prompt_tests {
             connect_ssh_on_state_with(
                 &connecting_state,
                 config,
-                move |connector, session_id, config| async move {
+                move |connector, session_id, config, worker_lease| async move {
+                    let _worker_lease = worker_lease;
                     session_id_tx
                         .send(session_id.clone())
                         .expect("test should receive provisional session id");
@@ -5662,11 +9210,17 @@ mod tests {
     fn empty_test_service() -> SshService {
         SshService {
             sessions: HashMap::new(),
+            session_admission_leases: HashMap::new(),
             connection_pool: HashMap::new(),
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: None,
             pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
+            connection_admission: SshConnectionAdmission::new(
+                SshConnectionAdmissionLimits::default(),
+            ),
+            establishment_control: None,
+            establishment_session_lease: None,
             shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
         }
     }
@@ -5698,7 +9252,8 @@ mod tests {
         connect_ssh_on_state_with(
             state,
             tcp_test_config(),
-            |_connector, session_id, config| async move {
+            |_connector, session_id, config, worker_lease| async move {
+                let _worker_lease = worker_lease;
                 let session = ssh2::Session::new()
                     .map_err(|error| format!("failed to create test SSH session: {error}"))?;
                 Ok(EstablishedSshConnection {
@@ -5715,6 +9270,7 @@ mod tests {
                         bridge_handles: Vec::new(),
                         compression_stats: SshCompressionStats::default(),
                     }),
+                    cleanup_session_lease: None,
                 })
             },
         )
@@ -5819,7 +9375,6 @@ mod tests {
 
         let disconnect_state = Arc::clone(&state);
         let disconnect_session_id = session_id.clone();
-        let started = tokio::time::Instant::now();
         let disconnect = tokio::spawn(async move {
             disconnect_ssh_on_state_with_timeout(
                 &disconnect_state,
@@ -5859,7 +9414,6 @@ mod tests {
             .expect("disconnect task must not panic")
             .expect_err("the deliberately stalled worker must time out");
         assert!(error.contains("worker detached safely"));
-        assert!(started.elapsed() < Duration::from_millis(250));
         assert_eq!(terminal_buffer_text(&session_id).unwrap(), "");
 
         // The timed-out generation remains tombstoned, so it cannot overlap a

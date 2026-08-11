@@ -34,7 +34,7 @@ use crate::{
     qr::QrService,
     rustdesk::RustDeskService,
     security::SecurityService,
-    ssh::{SshConnectionConfig, SshService},
+    ssh::{service::connect_ssh_on_state, SshConnectionConfig, SshService},
     wol::WolService,
 };
 
@@ -1279,8 +1279,7 @@ async fn connect_ssh(
         sk_application: None,
     };
 
-    let mut ssh = services.ssh_service.lock().await;
-    match ssh.connect_ssh(config).await {
+    match connect_ssh_on_state(&services.ssh_service, config).await {
         Ok(session_id) => Ok(Json(serde_json::json!({
             "success": true,
             "session_id": session_id

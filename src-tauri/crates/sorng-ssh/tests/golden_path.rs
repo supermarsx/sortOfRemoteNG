@@ -19,7 +19,7 @@
 #![cfg(feature = "docker-e2e")]
 
 use secrecy::SecretString;
-use sorng_ssh::ssh::service::SshService;
+use sorng_ssh::ssh::service::{connect_ssh_on_state, disconnect_ssh_on_state, SshService};
 use sorng_ssh::ssh::types::{SshCompressionConfig, SshConnectionConfig};
 use ssh2::{MethodType, Session};
 use std::collections::HashMap;
@@ -89,17 +89,17 @@ fn fixture_fallback_kex_is_supported_by_linked_libssh2() {
 #[ignore = "requires `docker compose up test-ssh` on port 2222; opt in via --features docker-e2e"]
 async fn ssh_connect_exec_disconnect_golden_path() {
     let state = SshService::new();
-    let mut svc = state.lock().await;
 
     // ── connect ──────────────────────────────────────────────────────────
-    let session_id = svc
-        .connect_ssh(test_config())
+    let session_id = connect_ssh_on_state(&state, test_config())
         .await
         .expect("SSH connect failed — is the openssh docker container up on :2222?");
     assert!(!session_id.is_empty(), "expected non-empty session id");
 
     // ── exec ─────────────────────────────────────────────────────────────
-    let output = svc
+    let output = state
+        .lock()
+        .await
         .execute_command(
             &session_id,
             "echo sorng-golden-path".to_string(),
@@ -113,11 +113,11 @@ async fn ssh_connect_exec_disconnect_golden_path() {
     );
 
     // ── disconnect ───────────────────────────────────────────────────────
-    svc.disconnect_ssh(&session_id)
+    disconnect_ssh_on_state(&state, &session_id)
         .await
         .expect("disconnect failed");
     assert!(
-        !svc.sessions.contains_key(&session_id),
+        !state.lock().await.sessions.contains_key(&session_id),
         "session should be gone after disconnect"
     );
 }

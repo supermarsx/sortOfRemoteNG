@@ -13,7 +13,10 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
-use super::{service::SshService, types::SshConnectionConfig};
+use super::{
+    service::{connect_ssh_on_state, disconnect_ssh_on_state, SshService},
+    types::SshConnectionConfig,
+};
 
 /// Compatibility capture budget used by [`IntegrationSshSession::execute`].
 ///
@@ -208,33 +211,37 @@ impl IntegrationSshSession {
         }
     }
 
+    async fn ensure_connected(&self, session_id: &mut Option<String>) -> Result<String, String> {
+        if let Some(id) = session_id.as_ref() {
+            return Ok(id.clone());
+        }
+        let id = connect_ssh_on_state(&self.service, self.config.clone())
+            .await
+            .map_err(cap_command_error)?;
+        *session_id = Some(id.clone());
+        Ok(id)
+    }
+
     /// Execute through the retained actor session, connecting once on first
     /// use. A failed transport is discarded so the following call reconnects.
     pub async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String> {
-        let mut service = self.service.lock().await;
         let mut session_id = self.session_id.lock().await;
-        let id = match session_id.as_ref() {
-            Some(id) => id.clone(),
-            None => {
-                let id = service
-                    .connect_ssh(self.config.clone())
-                    .await
-                    .map_err(cap_command_error)?;
-                *session_id = Some(id.clone());
-                id
-            }
+        let id = self.ensure_connected(&mut session_id).await?;
+        let execution = {
+            let mut service = self.service.lock().await;
+            service
+                .execute_command(&id, command.to_string(), timeout_ms)
+                .await
         };
 
-        match service
-            .execute_command(&id, command.to_string(), timeout_ms)
-            .await
-        {
+        match execution {
             Ok(output) => Ok(output),
             Err(error) => {
                 if is_recoverable_transport_error(&error) {
-                    if let Err(teardown_error) =
-                        apply_teardown_result(&mut session_id, service.disconnect_ssh(&id).await)
-                    {
+                    if let Err(teardown_error) = apply_teardown_result(
+                        &mut session_id,
+                        disconnect_ssh_on_state(&self.service, &id).await,
+                    ) {
                         return Err(cap_command_error(format!(
                             "{error}; failed to tear down retained SSH session {id}: {teardown_error}"
                         )));
@@ -257,30 +264,23 @@ impl IntegrationSshSession {
         timeout_ms: Option<u64>,
         max_output_bytes: usize,
     ) -> Result<SshCommandOutput, String> {
-        let mut service = self.service.lock().await;
         let mut session_id = self.session_id.lock().await;
-        let id = match session_id.as_ref() {
-            Some(id) => id.clone(),
-            None => {
-                let id = service
-                    .connect_ssh(self.config.clone())
-                    .await
-                    .map_err(cap_command_error)?;
-                *session_id = Some(id.clone());
-                id
-            }
+        let id = self.ensure_connected(&mut session_id).await?;
+        let execution = {
+            let mut service = self.service.lock().await;
+            service
+                .execute_command_capped(&id, command.to_string(), timeout_ms, max_output_bytes)
+                .await
         };
 
-        match service
-            .execute_command_capped(&id, command.to_string(), timeout_ms, max_output_bytes)
-            .await
-        {
+        match execution {
             Ok(output) => Ok(output),
             Err(error) => {
                 if is_recoverable_transport_error(&error) {
-                    if let Err(teardown_error) =
-                        apply_teardown_result(&mut session_id, service.disconnect_ssh(&id).await)
-                    {
+                    if let Err(teardown_error) = apply_teardown_result(
+                        &mut session_id,
+                        disconnect_ssh_on_state(&self.service, &id).await,
+                    ) {
                         return Err(cap_command_error(format!(
                             "{error}; failed to tear down retained SSH session {id}: {teardown_error}"
                         )));
@@ -307,32 +307,28 @@ impl IntegrationSshSession {
             ));
         }
 
-        let mut service = self.service.lock().await;
         let mut session_id = self.session_id.lock().await;
-        let id = match session_id.as_ref() {
-            Some(id) => id.clone(),
-            None => match service.connect_ssh(self.config.clone()).await {
-                Ok(id) => {
-                    *session_id = Some(id.clone());
-                    id
-                }
-                Err(error) => {
-                    input.fill(0);
-                    return Err(cap_command_error(error));
-                }
-            },
+        let id = match self.ensure_connected(&mut session_id).await {
+            Ok(id) => id,
+            Err(error) => {
+                input.fill(0);
+                return Err(error);
+            }
+        };
+        let execution = {
+            let mut service = self.service.lock().await;
+            service
+                .execute_command_capped_with_input(
+                    &id,
+                    command.to_string(),
+                    timeout_ms,
+                    DEFAULT_COMMAND_OUTPUT_LIMIT_BYTES,
+                    Some(input),
+                )
+                .await
         };
 
-        match service
-            .execute_command_capped_with_input(
-                &id,
-                command.to_string(),
-                timeout_ms,
-                DEFAULT_COMMAND_OUTPUT_LIMIT_BYTES,
-                Some(input),
-            )
-            .await
-        {
+        match execution {
             Ok(output) if output.exit_status != 0 => Err(format!(
                 "Command failed with exit code {}",
                 output.exit_status
@@ -345,9 +341,10 @@ impl IntegrationSshSession {
                 .map_err(|_| "SSH command returned non-UTF-8 output".to_string()),
             Err(error) => {
                 if is_recoverable_transport_error(&error) {
-                    if let Err(teardown_error) =
-                        apply_teardown_result(&mut session_id, service.disconnect_ssh(&id).await)
-                    {
+                    if let Err(teardown_error) = apply_teardown_result(
+                        &mut session_id,
+                        disconnect_ssh_on_state(&self.service, &id).await,
+                    ) {
                         return Err(cap_command_error(format!(
                             "{error}; failed to tear down retained SSH session {id}: {teardown_error}"
                         )));
@@ -375,10 +372,12 @@ impl IntegrationSshSession {
     }
 
     pub async fn disconnect(&self) -> Result<(), String> {
-        let mut service = self.service.lock().await;
         let mut session_id = self.session_id.lock().await;
         if let Some(id) = session_id.as_ref().cloned() {
-            apply_teardown_result(&mut session_id, service.disconnect_ssh(&id).await)?;
+            apply_teardown_result(
+                &mut session_id,
+                disconnect_ssh_on_state(&self.service, &id).await,
+            )?;
         }
         Ok(())
     }
