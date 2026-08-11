@@ -239,22 +239,12 @@ impl From<UpdateFault> for UpdatePhase {
     }
 }
 
+#[derive(Default)]
 struct UpdateOptions {
     payload_override: Option<Vec<u8>>,
     fail_at: Option<UpdatePhase>,
     policy: DownloadPolicy,
     defer_finalize: bool,
-}
-
-impl Default for UpdateOptions {
-    fn default() -> Self {
-        Self {
-            payload_override: None,
-            fail_at: None,
-            policy: DownloadPolicy::default(),
-            defer_finalize: false,
-        }
-    }
 }
 
 impl UpdateOptions {

@@ -49,7 +49,11 @@ pub struct MarketplaceService {
 }
 
 impl MarketplaceService {
-    /// Create a new `MarketplaceService` wrapped in `Arc<Mutex<..>>`.
+    /// Create a new `MarketplaceService` wrapped in managed shared state.
+    ///
+    /// This constructor intentionally returns the Tauri-managed state wrapper
+    /// that callers register, rather than a bare service that cannot be shared.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> MarketplaceServiceState {
         let service = Self {
             registry: MarketplaceRegistry::new(),
