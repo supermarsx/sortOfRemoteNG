@@ -3097,14 +3097,14 @@ async fn get_cloudflare_analytics_api(
 mod middleware_tests {
     //! Unit tests for the security-critical decision logic that lives in
     //! `api.rs`: the auth gate (`decide_auth`), the hand-rolled rate limiter,
-    //! constant-time key compare, and the mutating-method classifier. These
-    //! deliberately avoid constructing an `ApiService` (which needs every
-    //! backend service) — full HTTP end-to-end coverage is the integration
-    //! suite's job (t41-e8).
+    //! constant-time key compare, and the mutating-method classifier. The
+    //! readonly-role regression also drives the real in-process Axum router so
+    //! the production middleware order and response bodies remain covered.
 
     use super::*;
     use serde_json::json;
     use std::path::Path;
+    use tower::ServiceExt;
 
     // 32-byte (256-bit) secret — the HS256 minimum enforced by sorng-auth.
     const SECRET: &str = "0123456789abcdef0123456789abcdef";
@@ -3135,6 +3135,54 @@ mod middleware_tests {
         let mut h = HeaderMap::new();
         h.insert(name, value.parse().unwrap());
         h
+    }
+
+    /// Construct the same complete service registry used by production while
+    /// keeping its file-backed auth store isolated from every real user store.
+    fn real_router_services() -> Arc<ApiService> {
+        let auth_store = std::env::temp_dir().join(format!(
+            "sortofremoteng-api-router-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        assert!(
+            !auth_store.exists(),
+            "router test auth-store path must be unused"
+        );
+
+        Arc::new(ApiService::new(
+            AuthService::new(auth_store.to_string_lossy().into_owned()),
+            SshService::new(),
+            DbService::new(),
+            FtpService::new(),
+            NetworkService::new(),
+            SecurityService::new(),
+            WolService::new(),
+            QrService::new(),
+            RustDeskService::new(),
+            crate::wmi::WmiService::new(),
+            crate::rpc::RpcService::new(),
+            crate::meshcentral::MeshCentralService::new(),
+            crate::agent::AgentService::new(),
+            crate::commander::CommanderService::new(),
+            crate::aws::AwsService::new(),
+            crate::vercel::VercelService::new(),
+            crate::cloudflare::CloudflareService::new(),
+        ))
+    }
+
+    async fn response_json(response: Response) -> serde_json::Value {
+        assert!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("application/json")),
+            "router response must be JSON"
+        );
+        let body = axum::body::to_bytes(response.into_body(), 8 * 1024)
+            .await
+            .expect("read router response body");
+        serde_json::from_slice(&body).expect("parse router response JSON")
     }
 
     #[test]
@@ -3254,6 +3302,73 @@ mod middleware_tests {
             decide_auth(&c, &bearer, "/ssh/sessions", &Method::GET, &h),
             AuthDecision::Allow(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn readonly_token_is_enforced_by_real_router() {
+        let mut config = cfg(true, 0);
+        let run_secret = derive_run_jwt_secret(&config.jwt_secret, &[0x5a; 32]);
+        config.jwt_secret = run_secret.clone();
+
+        let bearer = BearerAuthService::new();
+        let issued = bearer
+            .lock()
+            .await
+            .issue_session_token(run_secret.as_bytes(), "guest", Role::Readonly, 600)
+            .expect("mint legitimate readonly session token");
+        let authorization = format!("Bearer {}", issued.token);
+
+        let state = ApiState {
+            services: real_router_services(),
+            rate_limiter: Arc::new(RateLimiter::new(config.rate_limit_per_minute)),
+            request_slots: Arc::new(Semaphore::new(config.max_threads)),
+            config: Arc::new(config),
+            bearer,
+        };
+        let router = create_router(state);
+
+        let forbidden = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/ssh/connect")
+                    .header(header::AUTHORIZATION, authorization.as_str())
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from("{}"))
+                    .expect("build readonly mutation request"),
+            )
+            .await
+            .expect("route readonly mutation request");
+        assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response_json(forbidden).await,
+            json!({
+                "error": "readonly",
+                "message": "This token has the readonly role and cannot perform mutating requests.",
+            })
+        );
+
+        let whoami = router
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/auth/whoami")
+                    .header(header::AUTHORIZATION, authorization)
+                    .body(axum::body::Body::empty())
+                    .expect("build readonly whoami request"),
+            )
+            .await
+            .expect("route readonly whoami request");
+        assert_eq!(whoami.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(whoami).await,
+            json!({
+                "principal": "guest",
+                "role": "readonly",
+                "auth": "bearer",
+            })
+        );
     }
 
     #[tokio::test]

@@ -12,9 +12,10 @@
 //! The matrix mirrors `.orchestration/plans/t41.md` §5 and the §6 security
 //! invariants: 401 without a key, 200 with the key, Bearer-JWT login/accept,
 //! 429 rate limiting, capability-gate 403 even when authenticated, `/health`
-//! auth exemption, loopback-vs-remote bind resolution, readonly-role mutation
-//! rejection, `alg:none`/tampered-JWT rejection, logout revocation, and a
-//! response-body scan proving no stored credential is ever serialized.
+//! auth exemption, loopback-vs-remote bind resolution, rejection of session
+//! tokens forged with the persistent JWT secret, `alg:none`/tampered-JWT
+//! rejection, logout revocation, and a response-body scan proving no stored
+//! credential is ever serialized.
 
 use std::sync::Arc;
 
@@ -132,7 +133,7 @@ mod e2e {
     struct TestServer {
         base: String,
         api_key: String,
-        jwt_secret: String,
+        persistent_jwt_secret: String,
         _tmp: tempfile::TempDir,
         shutdown: Option<oneshot::Sender<()>>,
         handle: tokio::task::JoinHandle<()>,
@@ -195,11 +196,33 @@ mod e2e {
         ))
     }
 
-    /// Resolve a runtime config from a `restApi` settings fragment via the real
-    /// resolver (no env), then start the real server on a loopback ephemeral
-    /// port and wait until `/health` answers. Retries the whole spawn a few
-    /// times to absorb the free-port race.
+    #[derive(Clone, Copy)]
+    enum UnauthenticatedDebugOverride {
+        Disabled,
+        Enabled,
+    }
+
+    /// Start an authenticated server. Keeping the normal helper fail-closed
+    /// prevents unrelated tests from accidentally opting out of authentication.
     async fn start_test_server(rest_api: serde_json::Value, disabled_caps: &[&str]) -> TestServer {
+        start_test_server_with_debug_override(
+            rest_api,
+            disabled_caps,
+            UnauthenticatedDebugOverride::Disabled,
+        )
+        .await
+    }
+
+    /// Resolve a runtime config from a `restApi` settings fragment via the real
+    /// resolver, then start the real server on a loopback ephemeral port and
+    /// wait until `/health` answers. The debug-only unauthenticated override is
+    /// explicit so authenticated tests cannot accidentally bypass the gate.
+    /// Retries the whole spawn a few times to absorb the free-port race.
+    async fn start_test_server_with_debug_override(
+        rest_api: serde_json::Value,
+        disabled_caps: &[&str],
+        unauthenticated_debug_override: UnauthenticatedDebugOverride,
+    ) -> TestServer {
         for _attempt in 0..6 {
             let port = free_port();
             let mut rest = rest_api.clone();
@@ -227,14 +250,21 @@ mod e2e {
             let config = ApiRuntimeConfig::resolve_with_env_and_secrets(
                 &settings,
                 tmp.path(),
-                |key| (key == "SORNG_ALLOW_UNAUTHENTICATED_REST_API").then(|| "1".to_string()),
+                |key| {
+                    (key == "SORNG_ALLOW_UNAUTHENTICATED_REST_API"
+                        && matches!(
+                            unauthenticated_debug_override,
+                            UnauthenticatedDebugOverride::Enabled
+                        ))
+                    .then(|| "1".to_string())
+                },
                 Some("integration-api-key-0123456789abcdef"),
                 Some("0123456789abcdef0123456789abcdef"),
             );
             // The server binds a concrete loopback port here (no random port).
             assert_eq!(config.bind_ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
             let api_key = config.api_key.clone();
-            let jwt_secret = config.jwt_secret.clone();
+            let persistent_jwt_secret = config.jwt_secret.clone();
             let base = format!("http://127.0.0.1:{port}");
 
             let (tx, rx) = oneshot::channel();
@@ -246,7 +276,7 @@ mod e2e {
                 return TestServer {
                     base,
                     api_key,
-                    jwt_secret,
+                    persistent_jwt_secret,
                     _tmp: tmp,
                     shutdown: Some(tx),
                     handle,
@@ -501,21 +531,38 @@ mod e2e {
     async fn loopback_and_remote_bind_resolution() {
         let app_dir = Path::new("/opt/app-test");
 
-        // Local, auth toggled off → loopback bind, auth not required.
+        // Persisted settings cannot weaken the production authentication
+        // boundary, even for a loopback-only server.
         let local = ApiRuntimeConfig::resolve_with_env(
             &json!({ "restApi": { "authentication": false, "allowRemoteConnections": false } }),
             app_dir,
             |_| None,
         );
         assert_eq!(local.bind_ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
-        assert!(!local.auth_required);
+        assert!(
+            local.auth_required,
+            "loopback still requires auth without the explicit debug override"
+        );
 
-        // Remote allowed → bind all interfaces AND auth is FORCED on even
-        // though the toggle is false (defense-in-depth §6 invariant).
+        // Local unauthenticated access exists only behind the explicit,
+        // process-local debug override.
+        let debug_local = ApiRuntimeConfig::resolve_with_env(
+            &json!({ "restApi": { "authentication": true, "allowRemoteConnections": false } }),
+            app_dir,
+            |key| (key == "SORNG_ALLOW_UNAUTHENTICATED_REST_API").then(|| "1".to_string()),
+        );
+        assert_eq!(debug_local.bind_ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert!(
+            !debug_local.auth_required,
+            "explicit debug override should permit unauthenticated loopback"
+        );
+
+        // Remote exposure forces auth even when both persisted settings and
+        // the process-local debug override request unauthenticated access.
         let remote = ApiRuntimeConfig::resolve_with_env(
             &json!({ "restApi": { "authentication": false, "allowRemoteConnections": true } }),
             app_dir,
-            |_| None,
+            |key| (key == "SORNG_ALLOW_UNAUTHENTICATED_REST_API").then(|| "1".to_string()),
         );
         assert_eq!(remote.bind_ip, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         assert!(
@@ -537,57 +584,56 @@ mod e2e {
         assert_eq!(resp.status().as_u16(), 200);
     }
 
-    // ── 8. readonly role rejects mutation, permits reads ────────────────────
+    // ── 8. persistent secret cannot forge a run-scoped token ──────────
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn readonly_role_rejects_mutation_allows_read() {
+    async fn persistent_secret_cannot_forge_readonly_session() {
         let srv = start_test_server(auth_on(), &[]).await;
 
-        // Forge a readonly session token signed with the SERVER's own resolved
-        // JWT secret (HS256 is stateless, so a token signed elsewhere with the
-        // same secret verifies at the gate — this exercises the real readonly
-        // enforcement path, since /auth/login only mints Admin tokens in v1).
-        let readonly_token = {
+        // The configured secret is persistent, but each server run derives a
+        // fresh signing secret from it. Even a correctly formed readonly token
+        // signed with the persistent secret must therefore fail at the gate.
+        // Readonly authorization itself is covered by the middleware unit test;
+        // `/auth/login` intentionally mints only Admin tokens in v1.
+        let forged_readonly_token = {
             let bearer = BearerAuthService::new();
             let guard = bearer.lock().await;
             guard
                 .issue_session_token(
-                    srv.jwt_secret.as_bytes(),
+                    srv.persistent_jwt_secret.as_bytes(),
                     READONLY_USER,
                     Role::Readonly,
                     600,
                 )
-                .expect("issue readonly token")
+                .expect("issue token with persistent secret")
                 .token
         };
 
-        // Mutating route (POST) → 403 readonly. The gate rejects before the
-        // body is parsed, so an empty body is fine.
+        // Both mutating and read routes reject the forged token before role
+        // authorization can run.
         let resp = http()
             .post(srv.url("/ssh/connect"))
-            .bearer_auth(&readonly_token)
+            .bearer_auth(&forged_readonly_token)
             .json(&json!({}))
             .send()
             .await
-            .expect("readonly POST");
+            .expect("forged readonly POST");
         assert_eq!(
             resp.status().as_u16(),
-            403,
-            "readonly token must be forbidden on a mutating route"
+            401,
+            "persistent secret must not mint a run-scoped session token"
         );
-        let body: serde_json::Value = resp.json().await.expect("403 body");
-        assert_eq!(body["error"], "readonly");
 
-        // Read route (GET) → 200, and the role/subject survive the round-trip.
         let resp = http()
             .get(srv.url("/auth/whoami"))
-            .bearer_auth(&readonly_token)
+            .bearer_auth(&forged_readonly_token)
             .send()
             .await
-            .expect("readonly GET");
-        assert_eq!(resp.status().as_u16(), 200, "readonly may read");
-        let who: serde_json::Value = resp.json().await.expect("whoami body");
-        assert_eq!(who["role"], "readonly");
-        assert_eq!(who["principal"], READONLY_USER);
+            .expect("forged readonly GET");
+        assert_eq!(
+            resp.status().as_u16(),
+            401,
+            "persistent secret must not authorize a read route"
+        );
     }
 
     // ── 9. alg:none and tampered JWTs are rejected ──────────────────────────
@@ -672,12 +718,13 @@ mod e2e {
         );
     }
 
-    // ── Default posture: auth off + loopback → open without a key ───────────
+    // ── Explicit debug override: loopback may open without a key ───────────
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn no_auth_required_when_toggle_off_and_local() {
-        let srv = start_test_server(
-            json!({ "enabled": true, "authentication": false, "allowRemoteConnections": false }),
+    async fn explicit_debug_override_allows_unauthenticated_loopback() {
+        let srv = start_test_server_with_debug_override(
+            auth_on(),
             &[],
+            UnauthenticatedDebugOverride::Enabled,
         )
         .await;
         let resp = http()
@@ -688,7 +735,7 @@ mod e2e {
         assert_eq!(
             resp.status().as_u16(),
             200,
-            "with auth off on loopback, no key is required"
+            "the explicit debug override should permit unauthenticated loopback"
         );
     }
 
@@ -738,7 +785,7 @@ mod e2e {
             .expect("whoami body");
         assert!(!who.contains(&srv.api_key), "api key leaked in whoami");
         assert!(
-            !who.contains(&srv.jwt_secret),
+            !who.contains(&srv.persistent_jwt_secret),
             "jwt secret leaked in whoami"
         );
     }
