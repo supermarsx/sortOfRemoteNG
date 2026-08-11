@@ -50,11 +50,16 @@ function collectFrontendInvokes(): InvokeCall[] {
     ),
   ).flatMap((file) => {
     const source = fs.readFileSync(file, "utf8");
+    // A direct `invoke(...)` call necessarily contains this identifier. Avoid
+    // constructing a full TypeScript AST for the large majority of frontend
+    // files that cannot contribute a command registration.
+    if (!source.includes("invoke")) return [];
+
     const sf = ts.createSourceFile(
       file,
       source,
       ts.ScriptTarget.Latest,
-      true,
+      false,
       file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
     const calls: InvokeCall[] = [];
