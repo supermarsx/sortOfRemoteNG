@@ -416,10 +416,7 @@ impl SecretToolRunner for ProcessRunner {
         let stdout_result = stdout_worker.wait(worker_deadline);
         let stderr_result = stderr_worker.wait(worker_deadline);
 
-        let status = match status {
-            Ok(status) => status,
-            Err(error) => return Err(error),
-        };
+        let status = status?;
         if let Some(error) = first_worker_error(&stdin_result, &stdout_result, &stderr_result) {
             terminate_and_reap(&mut child, Instant::now() + CLEANUP_TIMEOUT);
             return Err(error);
