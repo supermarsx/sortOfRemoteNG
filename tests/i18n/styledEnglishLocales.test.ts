@@ -38,6 +38,29 @@ describe("styled English locales", () => {
     expect(enPirate).toEqual(generated["en-x-pirate"]);
   });
 
+  it("gives every API rate-limit string a deliberate pirate rendering", () => {
+    const english = enUS.settings.api;
+    const pirate = enPirate.settings.api;
+    const keys = [
+      "rateLimit",
+      "maxRequests",
+      "enableRateLimiting",
+      "rateLimitingDescription",
+      "rateLimitingTooltip",
+      "maxRequestsTooltip",
+    ] as const;
+
+    for (const key of keys) {
+      expect(pirate[key], key).not.toBe(english[key]);
+    }
+    expect(pirate.rateLimit).toBe("Request rationing");
+    expect(pirate.maxRequests).toBe("Most requests each bell");
+    expect(pirate.enableRateLimiting).toBe("Ration the request tide");
+    expect(pirate.rateLimitingDescription).toContain("local bilge-checking");
+    expect(pirate.rateLimitingTooltip).toContain("Striking this flag");
+    expect(pirate.maxRequestsTooltip).toContain("one matey");
+  });
+
   it("uses deterministic transformations and protects operational syntax", () => {
     const source =
       "Save {{count}} files from https://vpn.example.test --force C:\\vpn\\client.ovpn";

@@ -308,7 +308,7 @@ export const defaultSettings: GlobalSettings = {
     useRandomPort: false,
     authentication: false,
     corsEnabled: true,
-    rateLimiting: false,
+    rateLimiting: true,
     startOnLaunch: false,
     allowRemoteConnections: false,
     sslEnabled: false,

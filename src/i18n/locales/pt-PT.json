@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "Endereço de vinculação",
       "authEnforced": "Obrigatória",
-      "authForcedRemoteNote": "A autenticação é obrigatória porque as ligações remotas estão ativadas."
+      "authForcedRemoteNote": "A autenticação é obrigatória porque as ligações remotas estão ativadas.",
+      "rateLimit": "Limitação de pedidos",
+      "maxRequests": "Máximo de pedidos por minuto",
+      "enableRateLimiting": "Ativar limitação de pedidos",
+      "rateLimitingDescription": "Aplica-se à utilização de depuração local. Os serviços de escuta remotos e as compilações de lançamento aplicam sempre um limite seguro.",
+      "rateLimitingTooltip": "Desativar esta opção só remove o limite num servidor API de loopback numa compilação de depuração. O acesso remoto e as compilações de lançamento aplicam sempre um limite diferente de zero.",
+      "maxRequestsTooltip": "Máximo de pedidos por minuto de um cliente. O valor 0 desativa o limite apenas para depuração local; os serviços de escuta remotos e as compilações de lançamento usam o valor de recurso obrigatório de 120."
     },
     "title": "Definições",
     "general": "Geral",

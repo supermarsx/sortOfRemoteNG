@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "Dirección de enlace",
       "authEnforced": "Obligatoria",
-      "authForcedRemoteNote": "La autenticación es obligatoria porque las conexiones remotas están habilitadas."
+      "authForcedRemoteNote": "La autenticación es obligatoria porque las conexiones remotas están habilitadas.",
+      "rateLimit": "Limitación de solicitudes",
+      "maxRequests": "Máximo de solicitudes por minuto",
+      "enableRateLimiting": "Habilitar limitación de solicitudes",
+      "rateLimitingDescription": "Se aplica al uso de depuración local. Los servicios de escucha remotos y las compilaciones de lanzamiento siempre aplican un límite seguro.",
+      "rateLimitingTooltip": "Desactivar esta opción solo elimina el límite para un servidor API de bucle invertido en una compilación de depuración. El acceso remoto y las compilaciones de lanzamiento siempre aplican un límite distinto de cero.",
+      "maxRequestsTooltip": "Máximo de solicitudes por minuto de un cliente. El valor 0 desactiva el límite solo para la depuración local; los servicios de escucha remotos y las compilaciones de lanzamiento usan el valor alternativo obligatorio de 120."
     },
     "title": "Configuración",
     "general": "generales",

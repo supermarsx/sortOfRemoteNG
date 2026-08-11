@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "Bind address",
       "authEnforced": "Enforced",
-      "authForcedRemoteNote": "Authentication is enforced because remote connections are enabled."
+      "authForcedRemoteNote": "Authentication is enforced because remote connections are enabled.",
+      "rateLimit": "Rate Limiting",
+      "maxRequests": "Max Requests Per Minute",
+      "enableRateLimiting": "Enable rate limiting",
+      "rateLimitingDescription": "Applies to local debug use. Remote listeners and release builds always enforce a safe limit.",
+      "rateLimitingTooltip": "Turning this off only disables rate limiting for a loopback API server in a debug build. Remote access and release builds always enforce a non-zero limit.",
+      "maxRequestsTooltip": "Maximum requests per minute from one client. A value of 0 disables the limit only for local debug use; remote listeners and release builds substitute the mandatory fallback of 120."
     },
     "title": "Settings",
     "general": "General",

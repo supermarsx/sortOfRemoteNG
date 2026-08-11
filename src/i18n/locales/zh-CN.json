@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "绑定地址",
       "authEnforced": "已强制",
-      "authForcedRemoteNote": "由于已启用远程连接，身份验证已强制启用。"
+      "authForcedRemoteNote": "由于已启用远程连接，身份验证已强制启用。",
+      "rateLimit": "速率限制",
+      "maxRequests": "每分钟最大请求数",
+      "enableRateLimiting": "启用速率限制",
+      "rateLimitingDescription": "适用于本地调试。远程监听器和发布版本始终强制执行安全限制。",
+      "rateLimitingTooltip": "关闭此选项只会为调试版本中的环回 API 服务器禁用速率限制。远程访问和发布版本始终强制执行非零限制。",
+      "maxRequestsTooltip": "单个客户端每分钟的最大请求数。值 0 仅在本地调试时禁用限制；远程监听器和发布版本会改用强制后备值 120。"
     },
     "title": "设置",
     "general": "常规",

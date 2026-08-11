@@ -5,6 +5,7 @@ import {
   Card,
   SettingsSectionHeader as SectionHeader,
   SettingsNumberRow,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 
@@ -19,15 +20,34 @@ export const RateLimitSection: React.FC<{
     />
 
     <Card>
+      <Toggle
+        settingKey="restApi.rateLimiting"
+        icon={<Gauge size={16} />}
+        label={mgr.t("settings.api.enableRateLimiting", "Enable rate limiting")}
+        description={mgr.t(
+          "settings.api.rateLimitingDescription",
+          "Applies to local debug use. Remote listeners and release builds always enforce a safe limit.",
+        )}
+        checked={settings.restApi?.rateLimiting ?? true}
+        onChange={(v) => mgr.updateRestApi({ rateLimiting: v })}
+        infoTooltip={mgr.t(
+          "settings.api.rateLimitingTooltip",
+          "Turning this off only disables rate limiting for a loopback API server in a debug build. Remote access and release builds always enforce a non-zero limit.",
+        )}
+      />
+
       <SettingsNumberRow
         settingKey="restApi.maxRequestsPerMinute"
         icon={<Gauge size={16} />}
         label={mgr.t("settings.api.maxRequests", "Max Requests Per Minute")}
-        value={settings.restApi?.maxRequestsPerMinute || 60}
+        value={settings.restApi?.maxRequestsPerMinute ?? 60}
         min={0}
         max={10000}
         onChange={(v) => mgr.updateRestApi({ maxRequestsPerMinute: v })}
-        infoTooltip="Maximum number of API requests allowed per minute from a single client. Set to 0 to disable rate limiting entirely. Recommended: 60-120 for normal use."
+        infoTooltip={mgr.t(
+          "settings.api.maxRequestsTooltip",
+          "Maximum requests per minute from one client. A value of 0 disables the limit only for local debug use; remote listeners and release builds substitute the mandatory fallback of 120.",
+        )}
       />
     </Card>
   </div>

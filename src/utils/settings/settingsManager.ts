@@ -1129,10 +1129,19 @@ export class SettingsManager {
         normalizedStored.certificateTrustPolicy ??
         DEFAULT_SETTINGS.certificateTrustPolicy,
       networkDiscovery: {
-        ...normalizeNetworkDiscoverySettings(
-          normalizedStored.networkDiscovery,
-        ),
+        ...normalizeNetworkDiscoverySettings(normalizedStored.networkDiscovery),
       },
+      restApi: normalizedStored.restApi
+        ? {
+            ...normalizedStored.restApi,
+            rateLimiting:
+              normalizedStored.restApi.rateLimiting ??
+              DEFAULT_SETTINGS.restApi.rateLimiting,
+            maxRequestsPerMinute:
+              normalizedStored.restApi.maxRequestsPerMinute ??
+              DEFAULT_SETTINGS.restApi.maxRequestsPerMinute,
+          }
+        : DEFAULT_SETTINGS.restApi,
       toolDisplayModes: mergeToolDisplayModes(
         normalizedStored.toolDisplayModes,
       ),

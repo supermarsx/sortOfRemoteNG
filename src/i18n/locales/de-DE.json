@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "Bind-Adresse",
       "authEnforced": "Erzwungen",
-      "authForcedRemoteNote": "Die Authentifizierung wird erzwungen, da Remote-Verbindungen aktiviert sind."
+      "authForcedRemoteNote": "Die Authentifizierung wird erzwungen, da Remote-Verbindungen aktiviert sind.",
+      "rateLimit": "Ratenbegrenzung",
+      "maxRequests": "Maximale Anfragen pro Minute",
+      "enableRateLimiting": "Ratenbegrenzung aktivieren",
+      "rateLimitingDescription": "Gilt für lokale Debug-Nutzung. Remote-Listener und Release-Builds erzwingen immer eine sichere Begrenzung.",
+      "rateLimitingTooltip": "Wenn Sie dies deaktivieren, wird die Ratenbegrenzung nur für einen Loopback-API-Server in einem Debug-Build ausgeschaltet. Remote-Zugriff und Release-Builds erzwingen immer eine von null verschiedene Begrenzung.",
+      "maxRequestsTooltip": "Maximale Anfragen pro Minute von einem Client. Der Wert 0 deaktiviert die Begrenzung nur bei lokaler Debug-Nutzung; Remote-Listener und Release-Builds verwenden stattdessen den obligatorischen Rückfallwert 120."
     },
     "title": "Einstellungen",
     "general": "Allgemein",

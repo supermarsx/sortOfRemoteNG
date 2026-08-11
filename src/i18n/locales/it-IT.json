@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "Indirizzo di bind",
       "authEnforced": "Obbligatoria",
-      "authForcedRemoteNote": "L'autenticazione è obbligatoria perché le connessioni remote sono abilitate."
+      "authForcedRemoteNote": "L'autenticazione è obbligatoria perché le connessioni remote sono abilitate.",
+      "rateLimit": "Limitazione delle richieste",
+      "maxRequests": "Richieste massime al minuto",
+      "enableRateLimiting": "Abilita limitazione delle richieste",
+      "rateLimitingDescription": "Si applica all'uso locale di debug. I listener remoti e le build di rilascio applicano sempre un limite sicuro.",
+      "rateLimitingTooltip": "La disattivazione elimina il limite solo per un server API di loopback in una build di debug. L'accesso remoto e le build di rilascio applicano sempre un limite diverso da zero.",
+      "maxRequestsTooltip": "Numero massimo di richieste al minuto da un client. Il valore 0 disattiva il limite solo per il debug locale; i listener remoti e le build di rilascio usano il valore di ripiego obbligatorio di 120."
     },
     "title": "Impostazioni",
     "general": "Generale",

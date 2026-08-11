@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "81nd 4ddr355",
       "authEnforced": "3nf0rc3d",
-      "authForcedRemoteNote": "4u7h3n71c4710n 15 3nf0rc3d 83c4u53 r3m073 c0nn3c710n5 4r3 3n4813d."
+      "authForcedRemoteNote": "4u7h3n71c4710n 15 3nf0rc3d 83c4u53 r3m073 c0nn3c710n5 4r3 3n4813d.",
+      "rateLimit": "R473 11m171n6",
+      "maxRequests": "M4x R3qu3575 P3r M1nu73",
+      "enableRateLimiting": "3n4813 r473 11m171n6",
+      "rateLimitingDescription": "4pp1135 70 10c41 d38u6 u53. R3m073 11573n3r5 4nd r313453 8u11d5 41w4y5 3nf0rc3 4 54f3 11m17.",
+      "rateLimitingTooltip": "7urn1n6 7h15 0ff 0n1y d1548135 r473 11m171n6 f0r 4 100p84ck API 53rv3r 1n 4 d38u6 8u11d. R3m073 4cc355 4nd r313453 8u11d5 41w4y5 3nf0rc3 4 non-zero 11m17.",
+      "maxRequestsTooltip": "M4x1mum r3qu3575 p3r m1nu73 fr0m 0n3 c113n7. 4 v41u3 0f 0 d1548135 7h3 11m17 0n1y f0r 10c41 d38u6 u53; r3m073 11573n3r5 4nd r313453 8u11d5 5u85717u73 7h3 m4nd470ry f41184ck 0f 120."
     },
     "title": "53771n65",
     "general": "63n3r41",

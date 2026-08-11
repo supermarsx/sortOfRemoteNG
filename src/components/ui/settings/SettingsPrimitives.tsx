@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { cx } from '../lib/cx';
-import { Select } from '../forms/Select';
-import { PasswordInput } from '../forms/PasswordInput';
-import { InfoTooltip } from '../InfoTooltip';
+import React, { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { cx } from "../lib/cx";
+import { Select } from "../forms/Select";
+import { PasswordInput } from "../forms/PasswordInput";
+import { InfoTooltip } from "../InfoTooltip";
 
 interface BaseSettingProps {
   settingKey?: string;
@@ -15,7 +15,7 @@ export const SettingsSectionHeader: React.FC<{
   title: React.ReactNode;
   className?: string;
 }> = ({ icon, title, className }) => (
-  <h4 className={cx('sor-settings-section-header', className)}>
+  <h4 className={cx("sor-settings-section-header", className)}>
     {icon}
     {title}
   </h4>
@@ -25,7 +25,7 @@ export const SettingsCard: React.FC<{
   children: React.ReactNode;
   className?: string;
 }> = ({ children, className }) => (
-  <div className={cx('sor-settings-card', className)}>{children}</div>
+  <div className={cx("sor-settings-card", className)}>{children}</div>
 );
 
 interface SettingsToggleRowProps extends BaseSettingProps {
@@ -57,8 +57,8 @@ export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
   disabled,
 }) => (
   <label
-    className={cx('sor-settings-toggle-row', className)}
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+    className={cx("sor-settings-toggle-row", className)}
+    {...(settingKey ? { "data-setting-key": settingKey } : {})}
   >
     <input
       type="checkbox"
@@ -66,13 +66,18 @@ export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
       onChange={(e) => onChange(e.target.checked)}
       className="sor-settings-checkbox"
       {...(inputId ? { id: inputId } : {})}
-      {...(testId ? { 'data-testid': testId } : {})}
+      {...(testId ? { "data-testid": testId } : {})}
       disabled={disabled}
     />
     {icon && <div className="sor-settings-toggle-icon">{icon}</div>}
     <div className="min-w-0">
-      <span className="sor-settings-toggle-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
-      {description && <p className="sor-settings-toggle-description">{description}</p>}
+      <span className="sor-settings-toggle-label flex items-center gap-1">
+        {label}
+        {infoTooltip && <InfoTooltip text={infoTooltip} />}
+      </span>
+      {description && (
+        <p className="sor-settings-toggle-description">{description}</p>
+      )}
     </div>
   </label>
 );
@@ -98,20 +103,23 @@ export const SettingsSliderRow: React.FC<SettingsSliderRowProps> = ({
   min,
   max,
   step = 1,
-  unit = '',
+  unit = "",
   onChange,
   settingKey,
   className,
   infoTooltip,
 }) => (
   <div
-    className={cx('sor-settings-slider-row', className)}
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+    className={cx("sor-settings-slider-row", className)}
+    {...(settingKey ? { "data-setting-key": settingKey } : {})}
   >
     <div className="min-w-0">
       <span className="sor-settings-row-label flex items-center gap-1">
-        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
-        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+        {icon && (
+          <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>
+        )}
+        {label}
+        {infoTooltip && <InfoTooltip text={infoTooltip} />}
       </span>
       {description && (
         <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
@@ -169,13 +177,16 @@ export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
   searchPlaceholder,
 }) => (
   <div
-    className={cx('sor-settings-select-row', className)}
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+    className={cx("sor-settings-select-row", className)}
+    {...(settingKey ? { "data-setting-key": settingKey } : {})}
   >
     <div className="min-w-0">
       <span className="sor-settings-row-label flex items-center gap-1">
-        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
-        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+        {icon && (
+          <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>
+        )}
+        {label}
+        {infoTooltip && <InfoTooltip text={infoTooltip} />}
       </span>
       {description && (
         <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
@@ -204,7 +215,7 @@ export const SettingsCollapsibleSection: React.FC<{
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className={cx('sor-settings-collapsible', className)}>
+    <div className={cx("sor-settings-collapsible", className)}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
@@ -216,7 +227,9 @@ export const SettingsCollapsibleSection: React.FC<{
         </div>
         {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
       </button>
-      {isOpen && <div className="sor-settings-collapsible-body">{children}</div>}
+      {isOpen && (
+        <div className="sor-settings-collapsible-body">{children}</div>
+      )}
     </div>
   );
 };
@@ -246,13 +259,16 @@ export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
   trailing,
 }) => (
   <div
-    className={cx('sor-settings-select-row', className)}
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+    className={cx("sor-settings-select-row", className)}
+    {...(settingKey ? { "data-setting-key": settingKey } : {})}
   >
     <div className="min-w-0">
       <span className="sor-settings-row-label flex items-center gap-1">
-        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
-        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+        {icon && (
+          <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>
+        )}
+        {label}
+        {infoTooltip && <InfoTooltip text={infoTooltip} />}
       </span>
       {description && (
         <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
@@ -268,7 +284,7 @@ export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
           className="sor-settings-input"
-          style={{ width: '22rem' }}
+          style={{ width: "22rem" }}
         />
         {trailing}
       </div>
@@ -312,13 +328,17 @@ export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
   infoTooltip,
 }) => (
   <div
-    className={cx('sor-settings-select-row', className)}
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+    className={cx("sor-settings-select-row", className)}
+    {...(settingKey ? { "data-setting-key": settingKey } : {})}
   >
     <div className="min-w-0">
       <span className="sor-settings-row-label flex items-center gap-1">
-        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
-        {label}{unit && ` (${unit})`}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+        {icon && (
+          <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>
+        )}
+        {label}
+        {unit && ` (${unit})`}
+        {infoTooltip && <InfoTooltip text={infoTooltip} />}
       </span>
       {description && (
         <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
@@ -328,13 +348,14 @@ export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
     </div>
     <input
       type="number"
+      aria-label={label}
       value={value}
       min={min}
       max={max}
       step={step}
       onChange={(e) => onChange(Number(e.target.value))}
       className="sor-settings-input"
-      style={{ width: '5rem' }}
+      style={{ width: "5rem" }}
     />
   </div>
 );
@@ -364,24 +385,29 @@ export const SettingsColorRow: React.FC<SettingsColorRowProps> = ({
   description,
   value,
   onChange,
-  fallbackValue = '#3b82f6',
+  fallbackValue = "#3b82f6",
   chipLabel,
   settingKey,
   className,
   infoTooltip,
   trailing,
 }) => {
-  const pickerValue = value && value.startsWith('#') ? value : fallbackValue;
-  const chip = chipLabel ?? value ?? '';
+  const pickerValue = value && value.startsWith("#") ? value : fallbackValue;
+  const chip = chipLabel ?? value ?? "";
   return (
     <div
-      className={cx('sor-settings-select-row', className)}
-      {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+      className={cx("sor-settings-select-row", className)}
+      {...(settingKey ? { "data-setting-key": settingKey } : {})}
     >
       <div className="min-w-0">
         <span className="sor-settings-row-label flex items-center gap-1">
-          {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
-          {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+          {icon && (
+            <span className="text-[var(--color-textSecondary)] mr-1">
+              {icon}
+            </span>
+          )}
+          {label}
+          {infoTooltip && <InfoTooltip text={infoTooltip} />}
         </span>
         {description && (
           <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
@@ -442,18 +468,21 @@ export const SettingsPasswordRow: React.FC<SettingsPasswordRowProps> = ({
   className,
   infoTooltip,
   disabled,
-  inputWidth = '18rem',
+  inputWidth = "18rem",
   revealable,
   isSaved,
 }) => (
   <div
-    className={cx('sor-settings-select-row', className)}
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+    className={cx("sor-settings-select-row", className)}
+    {...(settingKey ? { "data-setting-key": settingKey } : {})}
   >
     <div className="min-w-0">
       <span className="sor-settings-row-label flex items-center gap-1">
-        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
-        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+        {icon && (
+          <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>
+        )}
+        {label}
+        {infoTooltip && <InfoTooltip text={infoTooltip} />}
       </span>
       {description && (
         <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">

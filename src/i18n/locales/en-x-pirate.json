@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "Bind address",
       "authEnforced": "Enforced",
-      "authForcedRemoteNote": "Authentication is enforced because remote voyages are shipshape."
+      "authForcedRemoteNote": "Authentication is enforced because remote voyages are shipshape.",
+      "rateLimit": "Request rationing",
+      "maxRequests": "Most requests each bell",
+      "enableRateLimiting": "Ration the request tide",
+      "rateLimitingDescription": "Serves local bilge-checking only. Faraway lookouts and release ships always enforce the captain's safe ration.",
+      "rateLimitingTooltip": "Striking this flag only stops request rationing for a loopback API ship's server in a bilge-check build. Faraway boarding and release ships always enforce a non-zero limit.",
+      "maxRequestsTooltip": "Most requests each minute from one matey. A value of 0 stops the ration only for local bilge-checking; faraway lookouts and release ships use the captain's mandatory fallback of 120."
     },
     "title": "Ship's settings",
     "general": "General",

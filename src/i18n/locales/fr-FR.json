@@ -693,7 +693,13 @@
     "api": {
       "bindAddress": "Adresse de liaison",
       "authEnforced": "Appliquée",
-      "authForcedRemoteNote": "L'authentification est imposée car les connexions distantes sont activées."
+      "authForcedRemoteNote": "L'authentification est imposée car les connexions distantes sont activées.",
+      "rateLimit": "Limitation du débit",
+      "maxRequests": "Nombre maximal de requêtes par minute",
+      "enableRateLimiting": "Activer la limitation du débit",
+      "rateLimitingDescription": "S'applique à l'utilisation locale de débogage. Les écouteurs distants et les versions de publication imposent toujours une limite sûre.",
+      "rateLimitingTooltip": "La désactivation ne supprime la limite que pour un serveur API en boucle locale dans une version de débogage. L'accès distant et les versions de publication imposent toujours une limite non nulle.",
+      "maxRequestsTooltip": "Nombre maximal de requêtes par minute pour un client. La valeur 0 désactive la limite uniquement pour le débogage local ; les écouteurs distants et les versions de publication utilisent la valeur de repli obligatoire de 120."
     },
     "title": "Paramètres",
     "general": "Général",

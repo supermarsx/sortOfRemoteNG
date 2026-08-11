@@ -130,6 +130,54 @@ describe("SettingsManager save-before-load race", () => {
 });
 
 describe("SettingsManager loadSettings", () => {
+  it("backfills REST API rate-limit defaults in partial legacy snapshots", async () => {
+    seedStoredSettings({
+      restApi: {
+        enabled: true,
+      } as GlobalSettings["restApi"],
+    });
+
+    const settings = await SettingsManager.getInstance().loadSettings();
+    expect(settings.restApi.enabled).toBe(true);
+    expect(settings.restApi.rateLimiting).toBe(true);
+    expect(settings.restApi.maxRequestsPerMinute).toBe(60);
+    expect(settings.restApi.port).toBeUndefined();
+  });
+
+  it("preserves explicit false and zero in partial legacy REST API snapshots", async () => {
+    seedStoredSettings({
+      restApi: {
+        enabled: true,
+        rateLimiting: false,
+        maxRequestsPerMinute: 0,
+      } as GlobalSettings["restApi"],
+    });
+
+    const settings = await SettingsManager.getInstance().loadSettings();
+    expect(settings.restApi.enabled).toBe(true);
+    expect(settings.restApi.rateLimiting).toBe(false);
+    expect(settings.restApi.maxRequestsPerMinute).toBe(0);
+    expect(settings.restApi.port).toBeUndefined();
+  });
+
+  it("round-trips an explicit local-debug rate-limit opt-out and zero", async () => {
+    const manager = SettingsManager.getInstance();
+    const defaults = await manager.loadSettings();
+
+    await manager.saveSettings({
+      restApi: {
+        ...defaults.restApi,
+        rateLimiting: false,
+        maxRequestsPerMinute: 0,
+      },
+    });
+    SettingsManager.resetInstance();
+
+    const restored = await SettingsManager.getInstance().loadSettings();
+    expect(restored.restApi.rateLimiting).toBe(false);
+    expect(restored.restApi.maxRequestsPerMinute).toBe(0);
+  });
+
   it("defaults to bounded SSH recovery and preserves explicit persisted choices", async () => {
     const defaults = await SettingsManager.getInstance().loadSettings();
 

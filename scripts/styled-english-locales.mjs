@@ -43,6 +43,18 @@ const LEET_MAP = new Map(
 );
 
 const PIRATE_PHRASES = {
+  "maximum requests per minute from one client. a value of 0 disables the limit only for local debug use; remote listeners and release builds substitute the mandatory fallback of 120":
+    "most requests each minute from one matey. A value of 0 stops the ration only for local bilge-checking; faraway lookouts and release ships use the captain's mandatory fallback of 120",
+  "applies to local debug use. remote listeners and release builds always enforce a safe limit":
+    "serves local bilge-checking only. Faraway lookouts and release ships always enforce the captain's safe ration",
+  "turning this off only disables rate limiting for a loopback":
+    "striking this flag only stops request rationing for a loopback",
+  "server in a debug build": "ship's server in a bilge-check build",
+  "remote access and release builds always enforce a":
+    "faraway boarding and release ships always enforce a",
+  "max requests per minute": "most requests each bell",
+  "enable rate limiting": "ration the request tide",
+  "rate limiting": "request rationing",
   "are you sure": "be ye sure",
   "connection failed": "voyage failed",
   "connection successful": "voyage successful",
