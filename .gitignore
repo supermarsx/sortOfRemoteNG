@@ -32,6 +32,8 @@ tsconfig.tsbuildinfo
 /.claude
 
 # Temporary build/test output files
+__pycache__/
+*.py[cod]
 *-output.txt
 *-err.txt
 *-test.txt
