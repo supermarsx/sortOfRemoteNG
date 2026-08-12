@@ -363,7 +363,7 @@ fn open_verified_directory(path: &Path) -> std::io::Result<File> {
     // SAFETY: this opens the static root path and returns a new descriptor.
     let root_fd = unsafe {
         libc::open(
-            b"/\0".as_ptr().cast(),
+            c"/".as_ptr(),
             libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
         )
     };
