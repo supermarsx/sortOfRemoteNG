@@ -314,6 +314,7 @@ export default function ConnectionTemplates({
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const templatesRef = useRef<ConnectionTemplate[]>([]);
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const mountedRef = useRef(false);
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedTemplate, setSelectedTemplate] =
@@ -335,10 +336,11 @@ export default function ConnectionTemplates({
   /* ---- durable load and serialized commits ---- */
   useEffect(() => {
     let cancelled = false;
+    mountedRef.current = true;
     templatesStore
       .load()
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled || !mountedRef.current) return;
         const templates = result.value ?? [];
         templatesRef.current = templates;
         setUserTemplates(templates);
@@ -349,7 +351,7 @@ export default function ConnectionTemplates({
         }
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (!cancelled && mountedRef.current) {
           setPersistenceError(
             `Connection templates could not be loaded: ${String(error)}`,
           );
@@ -357,6 +359,7 @@ export default function ConnectionTemplates({
       });
     return () => {
       cancelled = true;
+      mountedRef.current = false;
     };
   }, []);
 
@@ -367,12 +370,14 @@ export default function ConnectionTemplates({
       const operation = persistenceQueueRef.current.then(async () => {
         const result = await templatesStore.save(update(templatesRef.current));
         templatesRef.current = result.value;
-        setUserTemplates(result.value);
-        setPersistenceError(
-          result.changed
-            ? "Secret-bearing template fields were omitted from durable storage."
-            : null,
-        );
+        if (mountedRef.current) {
+          setUserTemplates(result.value);
+          setPersistenceError(
+            result.changed
+              ? "Secret-bearing template fields were omitted from durable storage."
+              : null,
+          );
+        }
         return result.value;
       });
       persistenceQueueRef.current = operation.then(
@@ -380,9 +385,11 @@ export default function ConnectionTemplates({
         () => undefined,
       );
       operation.catch((error) => {
-        setPersistenceError(
-          `Connection templates could not be saved: ${String(error)}`,
-        );
+        if (mountedRef.current) {
+          setPersistenceError(
+            `Connection templates could not be saved: ${String(error)}`,
+          );
+        }
       });
       return operation;
     },
@@ -409,11 +416,15 @@ export default function ConnectionTemplates({
   const handleUseTemplate = useCallback(
     (tpl: ConnectionTemplate) => {
       /* bump usage count for user templates */
-      void commitTemplates((current) =>
-        current.map((u) =>
-          u.id === tpl.id ? { ...u, usageCount: u.usageCount + 1 } : u,
-        ),
-      ).catch(() => undefined);
+      if (
+        templatesRef.current.some((userTemplate) => userTemplate.id === tpl.id)
+      ) {
+        void commitTemplates((current) =>
+          current.map((u) =>
+            u.id === tpl.id ? { ...u, usageCount: u.usageCount + 1 } : u,
+          ),
+        ).catch(() => undefined);
+      }
       onCreateFromTemplate?.(tpl);
     },
     [commitTemplates, onCreateFromTemplate],
@@ -502,6 +513,7 @@ export default function ConnectionTemplates({
       };
       await commitTemplates((current) => [...current, newTpl]);
     }
+    if (!mountedRef.current) return;
     setShowCreateForm(false);
     resetForm();
   }, [
@@ -522,7 +534,9 @@ export default function ConnectionTemplates({
       await commitTemplates((current) =>
         current.filter((template) => template.id !== id),
       );
-      if (selectedTemplate?.id === id) setSelectedTemplate(null);
+      if (mountedRef.current && selectedTemplate?.id === id) {
+        setSelectedTemplate(null);
+      }
     },
     [commitTemplates, selectedTemplate],
   );
@@ -573,9 +587,11 @@ export default function ConnectionTemplates({
             return [...current, ...fresh];
           });
         } catch (error) {
-          setPersistenceError(
-            `Templates could not be imported: ${String(error)}`,
-          );
+          if (mountedRef.current) {
+            setPersistenceError(
+              `Templates could not be imported: ${String(error)}`,
+            );
+          }
         }
       };
       reader.readAsText(file);
@@ -590,7 +606,7 @@ export default function ConnectionTemplates({
         connections?: Array<{ name: string; protocol: string; port: number }>;
       }>("load_data");
       const connections = data?.connections ?? [];
-      if (connections?.length) {
+      if (mountedRef.current && connections?.length) {
         const conn = connections[0];
         setFormName(conn.name + " (template)");
         setFormProtocol(conn.protocol ?? "SSH");
