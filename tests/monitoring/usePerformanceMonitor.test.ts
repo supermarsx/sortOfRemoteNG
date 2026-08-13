@@ -57,13 +57,8 @@ describe("usePerformanceMonitor", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
   });
 
-  afterEach(async () => {
-    // Tests that open the monitor (isOpen=true) kick off an async
-    // updateCurrentMetrics() whose fetch can resolve after the hook unmounts and
-    // then call the shared recordPerformanceMetric mock. Let that in-flight work
-    // settle here so it fires (and gets cleared by the next beforeEach) instead
-    // of leaking a phantom call into the following test.
-    await new Promise((r) => setTimeout(r, 0));
+  afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -280,10 +275,47 @@ describe("usePerformanceMonitor", () => {
     expect(result.current.avgLatency).toBe(20);
   });
 
-  it("does not poll when closed", async () => {
+  it("does not poll when closed", () => {
+    vi.useFakeTimers();
+
     renderHook(() => usePerformanceMonitor(false));
 
-    await new Promise((r) => setTimeout(r, 50));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.recordPerformanceMetric).not.toHaveBeenCalled();
+  });
+
+  it("discards an in-flight sample when closed", async () => {
+    let resolveFetch!: (response: Response) => void;
+    const pendingFetch = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockReturnValue(pendingFetch);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { rerender } = renderHook(
+      ({ isOpen }: { isOpen: boolean }) => usePerformanceMonitor(isOpen),
+      { initialProps: { isOpen: true } },
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const signals = fetchMock.mock.calls.map(
+      ([, requestInit]) => requestInit?.signal,
+    );
+    rerender({ isOpen: false });
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((signal) => signal?.aborted)).toBe(true);
+
+    await act(async () => {
+      resolveFetch({} as Response);
+      await pendingFetch;
+    });
 
     expect(mocks.recordPerformanceMetric).not.toHaveBeenCalled();
   });

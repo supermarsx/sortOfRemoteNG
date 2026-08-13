@@ -15,13 +15,18 @@ const normalizeLatencyTarget = (target: string): string => {
   return `https://${trimmed}`;
 };
 
-const measureLatency = async (target: string): Promise<number> => {
+const measureLatency = async (
+  target: string,
+  signal: AbortSignal,
+): Promise<number | null> => {
   const url = normalizeLatencyTarget(target);
   const start = performance.now();
   try {
-    await fetch(url, { mode: "no-cors", cache: "no-store" });
+    await fetch(url, { mode: "no-cors", cache: "no-store", signal });
+    if (signal.aborted) return null;
     return performance.now() - start;
   } catch {
+    if (signal.aborted) return null;
     return Math.random() * 50 + 10;
   }
 };
@@ -53,26 +58,31 @@ export function usePerformanceMonitor(isOpen: boolean) {
     setMetrics(storedMetrics);
   }, [settingsManager]);
 
-  const updateCurrentMetrics = useCallback(async () => {
-    const now = performance.now();
-    const memoryInfo = (performance as any).memory;
-    const latency = await measureLatency(latencyTarget);
+  const updateCurrentMetrics = useCallback(
+    async (signal: AbortSignal) => {
+      const now = performance.now();
+      const memoryInfo = (performance as any).memory;
+      const latency = await measureLatency(latencyTarget, signal);
+      if (latency === null || signal.aborted) return false;
 
-    const currentMetric: PerformanceMetrics = {
-      connectionTime: 0,
-      dataTransferred: 0,
-      latency,
-      throughput: Math.random() * 1000 + 500,
-      cpuUsage: Math.random() * 30 + 10,
-      memoryUsage: memoryInfo
-        ? (memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize) * 100
-        : Math.random() * 50 + 20,
-      timestamp: now,
-    };
+      const currentMetric: PerformanceMetrics = {
+        connectionTime: 0,
+        dataTransferred: 0,
+        latency,
+        throughput: Math.random() * 1000 + 500,
+        cpuUsage: Math.random() * 30 + 10,
+        memoryUsage: memoryInfo
+          ? (memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize) * 100
+          : Math.random() * 50 + 20,
+        timestamp: now,
+      };
 
-    setCurrentMetrics(currentMetric);
-    settingsManager.recordPerformanceMetric(currentMetric);
-  }, [latencyTarget, settingsManager]);
+      setCurrentMetrics(currentMetric);
+      settingsManager.recordPerformanceMetric(currentMetric);
+      return true;
+    },
+    [latencyTarget, settingsManager],
+  );
 
   const handlePollIntervalChange = useCallback(
     (seconds: number) => {
@@ -156,15 +166,22 @@ export function usePerformanceMonitor(isOpen: boolean) {
     if (!isOpen) return;
 
     const intervalDuration = pollIntervalMs || 20000;
-    updateCurrentMetrics()
-      .then(() => loadMetrics())
-      .catch(console.error);
-    const interval = window.setInterval(() => {
-      updateCurrentMetrics()
-        .then(() => loadMetrics())
+    const controller = new AbortController();
+    const refreshMetrics = () =>
+      updateCurrentMetrics(controller.signal)
+        .then((updated) => {
+          if (updated && !controller.signal.aborted) loadMetrics();
+        })
         .catch(console.error);
+
+    refreshMetrics();
+    const interval = window.setInterval(() => {
+      refreshMetrics();
     }, intervalDuration);
-    return () => clearInterval(interval);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
   }, [isOpen, pollIntervalMs, updateCurrentMetrics, loadMetrics]);
 
   /* ---- derived / memos ---- */
