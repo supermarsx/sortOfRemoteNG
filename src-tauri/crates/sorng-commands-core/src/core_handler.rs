@@ -1486,6 +1486,16 @@ define_command_group!(
         opkssh_inner_commands::opkssh_get_audit_results,
         #[cfg(feature = "opkssh")]
         opkssh_inner_commands::opkssh_get_status,
+    ]
+);
+
+define_command_group!(
+    is_command_j,
+    build_j,
+    GROUP_J_COMMANDS,
+    [
+        // Interactive session protocols share this group so the foundational
+        // app-shell group remains below the bounded Tauri macro expansion.
         ssh_commands::connect_ssh,
         ssh_commands::ssh_respond_to_host_key_prompt,
         ssh_commands::start_shell,
@@ -1509,14 +1519,6 @@ define_command_group!(
         ssh_commands::jump_hosts_to_mixed_chain,
         ssh_commands::proxy_chain_to_mixed_chain,
         ssh_commands::test_mixed_chain_connection,
-    ]
-);
-
-define_command_group!(
-    is_command_j,
-    build_j,
-    GROUP_J_COMMANDS,
-    [
         rdp_commands::connect_rdp,
         rdp_commands::disconnect_rdp,
         rdp_commands::attach_rdp_session,
@@ -2840,6 +2842,49 @@ mod tests {
     };
     use std::collections::HashSet;
 
+    const COMMAND_ROUTES: [fn(&str) -> bool; 10] = [
+        is_command_a,
+        is_command_j,
+        is_command_b,
+        is_command_c,
+        is_command_d,
+        is_command_e,
+        is_command_f,
+        is_command_g,
+        is_command_h,
+        is_command_i,
+    ];
+
+    const FOUNDATIONAL_SSH_COMMANDS: &[&str] = &[
+        "connect_ssh",
+        "ssh_respond_to_host_key_prompt",
+        "start_shell",
+        "execute_command",
+        "execute_command_interactive",
+        "execute_script",
+        "transfer_file_scp",
+        "get_system_info",
+        "monitor_process",
+        "reattach_session",
+        "send_ssh_input",
+        "resize_ssh_shell",
+        "setup_port_forward",
+        "list_directory",
+        "upload_file",
+        "download_file",
+        "disconnect_ssh",
+        "get_session_info",
+        "list_sessions",
+        "validate_mixed_chain",
+        "jump_hosts_to_mixed_chain",
+        "proxy_chain_to_mixed_chain",
+        "test_mixed_chain_connection",
+    ];
+
+    fn command_route_count(command: &str) -> usize {
+        COMMAND_ROUTES.iter().filter(|route| route(command)).count()
+    }
+
     #[test]
     fn runtime_capabilities_are_always_recognized_and_registered() {
         assert!(is_command("get_runtime_capabilities"));
@@ -2878,6 +2923,30 @@ mod tests {
     }
 
     #[test]
+    fn foundational_ssh_commands_are_exactly_routed_to_the_session_group() {
+        for command in FOUNDATIONAL_SSH_COMMANDS {
+            assert!(is_command(command), "{command} is not publicly recognized");
+            assert!(
+                !GROUP_A_COMMANDS.contains(command),
+                "{command} leaked back into the foundational app-shell group"
+            );
+            assert!(
+                GROUP_J_COMMANDS.contains(command),
+                "{command} is not registered in the interactive-session group"
+            );
+            assert!(
+                is_command_j(command),
+                "{command} does not route to the interactive-session handler"
+            );
+            assert_eq!(
+                command_route_count(command),
+                1,
+                "{command} must route to exactly one generated handler"
+            );
+        }
+    }
+
+    #[test]
     fn generated_command_groups_are_unique_recognized_and_exactly_routed() {
         let groups = [
             GROUP_A_COMMANDS,
@@ -2890,18 +2959,6 @@ mod tests {
             GROUP_G_COMMANDS,
             GROUP_H_COMMANDS,
             GROUP_I_COMMANDS,
-        ];
-        let routes: [fn(&str) -> bool; 10] = [
-            is_command_a,
-            is_command_j,
-            is_command_b,
-            is_command_c,
-            is_command_d,
-            is_command_e,
-            is_command_f,
-            is_command_g,
-            is_command_h,
-            is_command_i,
         ];
         let mut seen = HashSet::new();
 
@@ -2917,12 +2974,12 @@ mod tests {
                 );
                 assert!(is_command(command), "{command} is not publicly recognized");
                 assert!(
-                    routes[expected_route](command),
+                    COMMAND_ROUTES[expected_route](command),
                     "{command} was not routed to its registration group"
                 );
-                let route_count = routes.iter().filter(|route| route(command)).count();
                 assert_eq!(
-                    route_count, 1,
+                    command_route_count(command),
+                    1,
                     "{command} must route to exactly one generated handler"
                 );
             }
@@ -2933,7 +2990,7 @@ mod tests {
 
         let unknown = "__not_a_registered_core_command__";
         assert!(!is_command(unknown));
-        assert_eq!(routes.iter().filter(|route| route(unknown)).count(), 0);
+        assert_eq!(command_route_count(unknown), 0);
     }
 
     const RLOGIN_COMMANDS: &[&str] = &[
