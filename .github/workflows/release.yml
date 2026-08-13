@@ -866,7 +866,7 @@ jobs:
           }
 
       - name: Build native bundles with static Kafka
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           # Next's TypeScript worker can exceed Node's default heap on the
           # macOS Intel runner. Scope the larger heap to Tauri and its
