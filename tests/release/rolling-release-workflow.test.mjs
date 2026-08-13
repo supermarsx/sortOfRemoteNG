@@ -1618,8 +1618,14 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     stageStep,
-    /rpm2cpio "\$rpm_source" \| cpio -idm --quiet[\s\S]*?rpm_desktop_entry="\$rpm_extract_root\/usr\/share\/applications\/sortOfRemoteNG\.desktop"[\s\S]*?grep -Fx "Icon=\$FLATPAK_APP_ID" "\$rpm_desktop_entry"[\s\S]*?cmp "\$\{expected_linux_icon_sources\[\$index\]\}"/,
+    /rpm_extract_root="\$RUNNER_TEMP\/\$\{ARTIFACT_ID\}-rpm-extract"[\s\S]*?if \[ -e "\$rpm_extract_root" \] \|\| \[ -L "\$rpm_extract_root" \]; then[\s\S]*?Refusing to replace unexpected RPM extraction path \$rpm_extract_root\.[\s\S]*?exit 1[\s\S]*?fi[\s\S]*?mkdir -p "\$rpm_extract_root"/,
   );
+  assert.match(
+    stageStep,
+    /rpm2archive "\$rpm_source" \| tar -xzf - --no-same-owner[\s\S]*?rpm_desktop_entry="\$rpm_extract_root\/usr\/share\/applications\/sortOfRemoteNG\.desktop"[\s\S]*?grep -Fx "Icon=\$FLATPAK_APP_ID" "\$rpm_desktop_entry"[\s\S]*?cmp "\$\{expected_linux_icon_sources\[\$index\]\}"/,
+  );
+  assert.doesNotMatch(stageStep, /rpm2cpio|\bcpio\s+-idm\b/);
+  assert.doesNotMatch(nativePrerequisites, /\bcpio\b/);
   assert.doesNotMatch(
     stageStep,
     /expected_linux_icon_paths\[@\].*deb_payload_files/,
