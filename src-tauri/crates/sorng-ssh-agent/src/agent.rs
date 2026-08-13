@@ -859,6 +859,39 @@ mod tests {
         )
     }
 
+    fn valid_ed25519_add(comment: &str) -> (AgentMessage, Vec<u8>) {
+        let private_key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+        let (key_data, public_blob) = ed25519_agent_key_data(&private_key, comment);
+        (
+            AgentMessage::AddIdentity {
+                key_type: "ssh-ed25519".to_string(),
+                key_data,
+                comment: comment.to_string(),
+            },
+            public_blob,
+        )
+    }
+
+    fn public_only_test_key(id: &str, public_key_blob: Vec<u8>) -> AgentKey {
+        AgentKey {
+            id: id.to_string(),
+            comment: id.to_string(),
+            algorithm: KeyAlgorithm::Ed25519,
+            bits: 256,
+            fingerprint_sha256: format!("SHA256:{id}"),
+            fingerprint_md5: String::new(),
+            public_key_blob,
+            public_key_openssh: String::new(),
+            source: KeySource::Imported,
+            constraints: Vec::new(),
+            certificate: None,
+            added_at: chrono::Utc::now(),
+            last_used_at: None,
+            sign_count: 0,
+            metadata: HashMap::new(),
+        }
+    }
+
     fn rsa_agent_key_data(private_key: &PrivateKey, comment: &str) -> (Vec<u8>, Vec<u8>) {
         let KeypairData::Rsa(keypair) = private_key.key_data() else {
             unreachable!("expected RSA test key");
@@ -907,11 +940,7 @@ mod tests {
     #[tokio::test]
     async fn test_add_and_list() {
         let mut agent = make_agent();
-        let add = AgentMessage::AddIdentity {
-            key_type: "ssh-ed25519".to_string(),
-            key_data: vec![1, 2, 3, 4],
-            comment: "test-key".to_string(),
-        };
+        let (add, public_blob) = valid_ed25519_add("test-key");
         let resp = agent.process_message(add).await;
         assert!(matches!(resp, AgentMessage::Success));
 
@@ -921,20 +950,35 @@ mod tests {
         };
         assert_eq!(identities.len(), 1);
         assert_eq!(identities[0].comment, "test-key");
+        assert_eq!(identities[0].key_blob, public_blob);
+    }
+
+    #[tokio::test]
+    async fn test_malformed_add_identity_is_rejected_without_mutating_store() {
+        let mut agent = make_agent();
+        let response = agent
+            .process_message(AgentMessage::AddIdentity {
+                key_type: "ssh-ed25519".to_string(),
+                key_data: vec![1, 2, 3, 4],
+                comment: "malformed-key".to_string(),
+            })
+            .await;
+
+        assert!(matches!(response, AgentMessage::Failure));
+        assert_eq!(agent.store.key_count(), 0);
     }
 
     #[tokio::test]
     async fn test_remove_identity() {
         let mut agent = make_agent();
-        let add = AgentMessage::AddIdentity {
-            key_type: "ssh-ed25519".to_string(),
-            key_data: vec![5, 6, 7],
-            comment: "rm-test".to_string(),
-        };
-        agent.process_message(add).await;
+        let (add, public_blob) = valid_ed25519_add("rm-test");
+        assert!(matches!(
+            agent.process_message(add).await,
+            AgentMessage::Success
+        ));
 
         let rm = AgentMessage::RemoveIdentity {
-            key_blob: vec![5, 6, 7],
+            key_blob: public_blob,
         };
         let resp = agent.process_message(rm).await;
         assert!(matches!(resp, AgentMessage::Success));
@@ -944,12 +988,11 @@ mod tests {
     #[tokio::test]
     async fn test_lock_unlock() {
         let mut agent = make_agent();
-        let add = AgentMessage::AddIdentity {
-            key_type: "ssh-ed25519".to_string(),
-            key_data: vec![8, 9],
-            comment: "lock-test".to_string(),
-        };
-        agent.process_message(add).await;
+        let (add, _) = valid_ed25519_add("lock-test");
+        assert!(matches!(
+            agent.process_message(add).await,
+            AgentMessage::Success
+        ));
 
         let resp = agent
             .process_message(AgentMessage::Lock {
@@ -959,9 +1002,10 @@ mod tests {
         assert!(matches!(resp, AgentMessage::Success));
 
         let resp = agent.process_message(AgentMessage::RequestIdentities).await;
-        if let AgentMessage::IdentitiesAnswer { identities } = resp {
-            assert!(identities.is_empty()); // locked
-        }
+        let AgentMessage::IdentitiesAnswer { identities } = resp else {
+            unreachable!("Expected IdentitiesAnswer while locked");
+        };
+        assert!(identities.is_empty());
 
         let resp = agent
             .process_message(AgentMessage::Unlock {
@@ -969,19 +1013,25 @@ mod tests {
             })
             .await;
         assert!(matches!(resp, AgentMessage::Success));
+
+        let resp = agent.process_message(AgentMessage::RequestIdentities).await;
+        let AgentMessage::IdentitiesAnswer { identities } = resp else {
+            unreachable!("Expected IdentitiesAnswer");
+        };
+        assert_eq!(identities.len(), 1);
     }
 
     #[tokio::test]
     async fn test_remove_all() {
         let mut agent = make_agent();
         for i in 0..3 {
-            let add = AgentMessage::AddIdentity {
-                key_type: "ssh-ed25519".to_string(),
-                key_data: vec![i],
-                comment: format!("key-{}", i),
-            };
-            agent.process_message(add).await;
+            let (add, _) = valid_ed25519_add(&format!("key-{i}"));
+            assert!(matches!(
+                agent.process_message(add).await,
+                AgentMessage::Success
+            ));
         }
+        assert_eq!(agent.store.key_count(), 3);
         let resp = agent
             .process_message(AgentMessage::RemoveAllIdentities)
             .await;
@@ -993,15 +1043,10 @@ mod tests {
     async fn test_sign_request_fails_without_private_key_signer() {
         let mut agent = make_agent();
         let key_blob = vec![1, 2, 3, 4];
-        let add = AgentMessage::AddIdentity {
-            key_type: "ssh-ed25519".to_string(),
-            key_data: key_blob.clone(),
-            comment: "sign-test".to_string(),
-        };
-        assert!(matches!(
-            agent.process_message(add).await,
-            AgentMessage::Success
-        ));
+        agent
+            .store
+            .add_key(public_only_test_key("sign-test", key_blob.clone()))
+            .unwrap();
 
         let resp = agent
             .process_message(AgentMessage::SignRequest {
@@ -1078,7 +1123,6 @@ mod tests {
         for (flags, expected_algorithm) in [
             (msg::SSH_AGENT_RSA_SHA2_256, "rsa-sha2-256"),
             (msg::SSH_AGENT_RSA_SHA2_512, "rsa-sha2-512"),
-            (0, "ssh-rsa"),
         ] {
             let resp = agent
                 .process_message(AgentMessage::SignRequest {
@@ -1093,5 +1137,14 @@ mod tests {
             };
             assert_eq!(signature_algorithm(&signature), expected_algorithm);
         }
+
+        let legacy_sha1 = agent
+            .process_message(AgentMessage::SignRequest {
+                key_blob: public_blob,
+                data: b"rsa session data".to_vec(),
+                flags: 0,
+            })
+            .await;
+        assert!(matches!(legacy_sha1, AgentMessage::Failure));
     }
 }

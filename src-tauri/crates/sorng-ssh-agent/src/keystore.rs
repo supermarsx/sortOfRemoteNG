@@ -31,7 +31,7 @@ pub struct KeyStore {
     blob_index: HashMap<Vec<u8>, String>,
     /// Private signing keys, keyed by their public key blob.
     private_keys: HashMap<Vec<u8>, PrivateKey>,
-    /// Maximum number of keys allowed (0 = unlimited).
+    /// Maximum number of keys allowed, clamped to the supported range.
     max_keys: usize,
     /// Whether the store is locked (all operations disallowed until unlock).
     locked: bool,
@@ -484,6 +484,12 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
+    const TEST_KEY_CAPACITY: usize = 16;
+
+    fn make_store() -> KeyStore {
+        KeyStore::new(TEST_KEY_CAPACITY)
+    }
+
     fn make_key(id: &str, blob: &[u8]) -> AgentKey {
         AgentKey {
             id: id.to_string(),
@@ -506,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_add_and_find() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         let key = make_key("k1", &[1, 2, 3]);
         store.add_key(key).unwrap();
 
@@ -517,7 +523,7 @@ mod tests {
 
     #[test]
     fn test_duplicate_rejected() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         let k1 = make_key("k1", &[1, 2]);
         let k2 = make_key("k2", &[1, 2]);
         store.add_key(k1).unwrap();
@@ -526,7 +532,7 @@ mod tests {
 
     #[test]
     fn test_remove() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         let key = make_key("k1", &[5, 6]);
         store.add_key(key).unwrap();
         store.remove_key("k1").unwrap();
@@ -535,7 +541,7 @@ mod tests {
 
     #[test]
     fn test_remove_by_blob() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         let key = make_key("k1", &[7, 8]);
         store.add_key(key).unwrap();
         store.remove_key_by_blob(&[7, 8]).unwrap();
@@ -544,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_remove_all() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         store.add_key(make_key("k1", &[1])).unwrap();
         store.add_key(make_key("k2", &[2])).unwrap();
         assert_eq!(store.remove_all_keys(), 2);
@@ -560,8 +566,16 @@ mod tests {
     }
 
     #[test]
-    fn test_lock_unlock() {
+    fn test_zero_capacity_fails_closed_at_one_key() {
         let mut store = KeyStore::new(0);
+        store.add_key(make_key("k1", &[1])).unwrap();
+        let error = store.add_key(make_key("k2", &[2])).unwrap_err();
+        assert_eq!(error, "Maximum key limit reached (1)");
+    }
+
+    #[test]
+    fn test_lock_unlock() {
+        let mut store = make_store();
         store.add_key(make_key("k1", &[1])).unwrap();
         store.lock("pw").unwrap();
         assert!(store.is_locked());
@@ -576,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_expire_keys() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         let mut key = make_key("k1", &[1]);
         key.added_at = Utc::now() - chrono::Duration::seconds(120);
         key.constraints.push(KeyConstraint::Lifetime(60));
@@ -590,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_record_sign() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         store.add_key(make_key("k1", &[1])).unwrap();
         let allowed = store.record_sign(&[1]).unwrap();
         assert!(allowed);
@@ -602,7 +616,7 @@ mod tests {
 
     #[test]
     fn test_host_restriction() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         let mut key = make_key("k1", &[1]);
         key.constraints.push(KeyConstraint::HostRestriction(vec![
             "*.example.com".to_string(),
@@ -617,7 +631,7 @@ mod tests {
 
     #[test]
     fn test_needs_confirmation() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         let mut key = make_key("k1", &[1]);
         key.constraints.push(KeyConstraint::ConfirmBeforeUse);
         store.add_key(key).unwrap();
@@ -627,7 +641,7 @@ mod tests {
 
     #[test]
     fn test_list_identities() {
-        let mut store = KeyStore::new(0);
+        let mut store = make_store();
         store.add_key(make_key("k1", &[1])).unwrap();
         store.add_key(make_key("k2", &[2])).unwrap();
         let ids = store.list_identities();

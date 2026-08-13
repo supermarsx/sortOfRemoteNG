@@ -344,7 +344,7 @@ pub struct AgentConfig {
     pub pkcs11_providers: Vec<String>,
 
     // ── Built-in agent ──
-    /// Maximum concurrent keys in the built-in agent (0 = unlimited).
+    /// Maximum concurrent keys in the built-in agent (1–1024).
     #[serde(default = "default_max_keys")]
     pub max_loaded_keys: usize,
     /// Automatically connect to system SSH agent on start.
