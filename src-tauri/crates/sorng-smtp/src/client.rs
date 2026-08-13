@@ -575,11 +575,19 @@ mod tests {
     }
 
     #[test]
-    fn set_authenticated() {
+    fn authentication_state_requires_tls() {
         let mut client = SmtpClient::new(SmtpConfig::default());
         assert!(!client.is_authenticated());
+
+        client.set_authenticated(true);
+        assert!(!client.is_authenticated());
+
+        client.tls_active = true;
         client.set_authenticated(true);
         assert!(client.is_authenticated());
+
+        client.set_authenticated(false);
+        assert!(!client.is_authenticated());
     }
 
     #[test]
