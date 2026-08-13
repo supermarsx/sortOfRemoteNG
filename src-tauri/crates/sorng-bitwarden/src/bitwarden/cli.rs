@@ -1024,20 +1024,56 @@ mod tests {
 
     // ── Error classification tests (would need integration for full coverage) ──
 
+    fn missing_cli_fixture() -> (tempfile::TempDir, String) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let binary_name = if cfg!(windows) {
+            "missing-bw.exe"
+        } else {
+            "missing-bw"
+        };
+        let missing_cli = temp_dir.path().join(binary_name);
+        assert!(missing_cli.is_absolute());
+        assert!(matches!(missing_cli.try_exists(), Ok(false)));
+        let missing_cli = missing_cli
+            .to_str()
+            .expect("temporary CLI path must be valid UTF-8")
+            .to_owned();
+        (temp_dir, missing_cli)
+    }
+
     #[tokio::test]
     async fn check_available_not_found() {
-        let cli = BitwardenCli::new().with_cli_path("nonexistent_bw_binary_path");
-        let result = cli.check_available().await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
+        let (_temp_dir, missing_cli) = missing_cli_fixture();
+        let cli = BitwardenCli::new().with_cli_path(&missing_cli);
+        let err = cli.check_available().await.unwrap_err();
         assert_eq!(err.kind, BitwardenErrorKind::CliNotFound);
+        assert_eq!(
+            err.message,
+            "Configured Bitwarden CLI executable is unavailable"
+        );
+    }
+
+    #[tokio::test]
+    async fn check_available_rejects_relative_configured_path() {
+        let cli = BitwardenCli::new().with_cli_path("nonexistent_bw_binary_path");
+        let err = cli.check_available().await.unwrap_err();
+        assert_eq!(err.kind, BitwardenErrorKind::InvalidConfig);
+        assert_eq!(
+            err.message,
+            "Configured Bitwarden CLI path must be absolute"
+        );
     }
 
     #[tokio::test]
     async fn status_with_missing_cli() {
-        let cli = BitwardenCli::new().with_cli_path("nonexistent_bw_binary_path");
-        let result = cli.status().await;
-        assert!(result.is_err());
+        let (_temp_dir, missing_cli) = missing_cli_fixture();
+        let cli = BitwardenCli::new().with_cli_path(&missing_cli);
+        let err = cli.status().await.unwrap_err();
+        assert_eq!(err.kind, BitwardenErrorKind::CliNotFound);
+        assert_eq!(
+            err.message,
+            "Configured Bitwarden CLI executable is unavailable"
+        );
     }
 
     // ── Generate args construction ──────────────────────────────────
