@@ -50,6 +50,7 @@ pub fn parse_listing(raw: &str) -> Vec<FtpEntry> {
         .take(MAX_LISTING_ENTRIES)
         .filter(|l| !l.trim().is_empty())
         .filter_map(|line| parse_line(line.trim()))
+        // Keep pseudo-entry filtering centralized after format-specific parsing.
         .filter(|e| e.name != "." && e.name != "..")
         .collect()
 }
@@ -304,8 +305,6 @@ fn parse_windows_date(date: &str, time: &str) -> Option<DateTime<Utc>> {
 fn safe_entry_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_NAME_BYTES
-        && name != "."
-        && name != ".."
         && !name.contains('/')
         && !name.contains('\\')
         && !name.chars().any(|ch| ch.is_control())
@@ -358,6 +357,37 @@ mod tests {
         let entries = parse_listing(raw);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "real.txt");
+    }
+
+    #[test]
+    fn filters_dot_entries_from_every_supported_listing_format() {
+        let raw = concat!(
+            "type=cdir;perm=el; .\n",
+            "type=pdir;perm=el; ..\n",
+            "drwxr-xr-x 2 owner group 4096 Jan  1 12:00 .\n",
+            "drwxr-xr-x 2 owner group 4096 Jan  1 12:00 ..\n",
+            "01-01-26  12:00AM <DIR> .\n",
+            "01-01-26  12:00AM <DIR> ..\n",
+            ".\n",
+            "..\n",
+            "plain.txt",
+        );
+
+        let entries = parse_listing(raw);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "plain.txt");
+        assert_eq!(entries[0].kind, FtpEntryKind::Unknown);
+    }
+
+    #[test]
+    fn ambiguous_mlsd_punctuation_remains_a_plain_filename() {
+        let entries = parse_listing("a=b;c");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "a=b;c");
+        assert_eq!(entries[0].kind, FtpEntryKind::Unknown);
+        assert!(entries[0].facts.is_empty());
     }
 
     #[test]
