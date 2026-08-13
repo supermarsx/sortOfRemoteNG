@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   lookupVendor,
@@ -54,6 +54,9 @@ function wakeStatus(mac: string, outcome?: WolSendOutcome): StatusMessage {
 }
 
 export function useWOLQuickTool(onClose: () => void) {
+  const mountedRef = useRef(true);
+  const scanGenerationRef = useRef(0);
+  const scanAbortControllerRef = useRef<AbortController | null>(null);
   const [macAddress, setMacAddress] = useState("");
   const [broadcastAddress, setBroadcastAddress] = useState("255.255.255.255");
   const [targetAddress, setTargetAddress] = useState("");
@@ -74,6 +77,17 @@ export function useWOLQuickTool(onClose: () => void) {
   const [recentMacs, setRecentMacs] = useState<string[]>([]);
   const [currentVendor, setCurrentVendor] = useState<string | null>(null);
   const [showScheduleManager, setShowScheduleManager] = useState(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      scanGenerationRef.current += 1;
+      scanAbortControllerRef.current?.abort();
+      scanAbortControllerRef.current = null;
+    };
+  }, []);
 
   // Load recent MACs from localStorage
   useEffect(() => {
@@ -123,10 +137,22 @@ export function useWOLQuickTool(onClose: () => void) {
   );
 
   const handleScan = useCallback(async () => {
+    scanAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    const scanGeneration = scanGenerationRef.current + 1;
+    scanGenerationRef.current = scanGeneration;
+    scanAbortControllerRef.current = abortController;
+    const isCurrentScan = () =>
+      mountedRef.current &&
+      !abortController.signal.aborted &&
+      scanGenerationRef.current === scanGeneration;
+
     setIsScanning(true);
+    setIsLookingUp(false);
     setStatus({ type: null, message: "" });
     try {
       const result = await invoke<WolDevice[]>("discover_wol_devices");
+      if (!isCurrentScan()) return;
 
       const devicesWithLocalVendor: WolDevice[] = result.map((device) => ({
         ...device,
@@ -146,7 +172,9 @@ export function useWOLQuickTool(onClose: () => void) {
             try {
               const { vendor, source } = await lookupVendor(
                 updatedDevices[i].mac,
+                abortController.signal,
               );
+              if (!isCurrentScan()) return;
               if (vendor) {
                 updatedDevices[i] = {
                   ...updatedDevices[i],
@@ -160,12 +188,19 @@ export function useWOLQuickTool(onClose: () => void) {
             }
           }
         }
-        setIsLookingUp(false);
       }
     } catch (error) {
-      setStatus({ type: "error", message: `Scan failed: ${error}` });
+      if (isCurrentScan()) {
+        setStatus({ type: "error", message: `Scan failed: ${error}` });
+      }
     } finally {
-      setIsScanning(false);
+      if (isCurrentScan()) {
+        setIsLookingUp(false);
+        setIsScanning(false);
+      }
+      if (scanAbortControllerRef.current === abortController) {
+        scanAbortControllerRef.current = null;
+      }
     }
   }, []);
 

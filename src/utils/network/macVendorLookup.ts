@@ -1,6 +1,6 @@
 /**
  * MAC Address Vendor Lookup Service
- * 
+ *
  * Uses multiple sources to identify the manufacturer/vendor of a network device
  * based on its MAC address (first 3 octets = OUI - Organizationally Unique Identifier)
  */
@@ -67,7 +67,7 @@ const MAC_VENDORS: Record<string, string> = {
   "04:E5:36": "Apple",
   "04:F1:3E": "Apple",
   "04:F7:E4": "Apple",
-  
+
   // Microsoft / Xbox
   "00:03:FF": "Microsoft",
   "00:0D:3A": "Microsoft",
@@ -89,7 +89,7 @@ const MAC_VENDORS: Record<string, string> = {
   "B4:0E:DE": "Microsoft",
   "C8:3F:26": "Microsoft",
   "D4:81:D7": "Microsoft",
-  
+
   // Dell
   "00:06:5B": "Dell",
   "00:08:74": "Dell",
@@ -129,7 +129,7 @@ const MAC_VENDORS: Record<string, string> = {
   "28:F1:0E": "Dell",
   "34:17:EB": "Dell",
   "34:E6:D7": "Dell",
-  
+
   // HP / Hewlett Packard
   "00:01:E6": "HP",
   "00:01:E7": "HP",
@@ -170,7 +170,7 @@ const MAC_VENDORS: Record<string, string> = {
   "00:25:B3": "HP",
   "00:26:55": "HP",
   "00:27:0D": "HP",
-  
+
   // Intel
   "00:02:B3": "Intel",
   "00:03:47": "Intel",
@@ -217,7 +217,7 @@ const MAC_VENDORS: Record<string, string> = {
   "00:26:C6": "Intel",
   "00:26:C7": "Intel",
   "00:27:10": "Intel",
-  
+
   // Cisco
   "00:00:0C": "Cisco",
   "00:01:42": "Cisco",
@@ -261,7 +261,7 @@ const MAC_VENDORS: Record<string, string> = {
   "00:04:C1": "Cisco",
   "00:04:DD": "Cisco",
   "00:04:DE": "Cisco",
-  
+
   // Samsung
   "00:00:F0": "Samsung",
   "00:07:AB": "Samsung",
@@ -308,7 +308,7 @@ const MAC_VENDORS: Record<string, string> = {
   "00:26:37": "Samsung",
   "00:26:5D": "Samsung",
   "00:26:5F": "Samsung",
-  
+
   // ASUS / ASUSTek
   "00:0C:6E": "ASUS",
   "00:0E:A6": "ASUS",
@@ -345,7 +345,7 @@ const MAC_VENDORS: Record<string, string> = {
   "30:5A:3A": "ASUS",
   "30:85:A9": "ASUS",
   "34:97:F6": "ASUS",
-  
+
   // Lenovo
   "00:09:2D": "Lenovo",
   "00:0B:82": "Lenovo",
@@ -383,7 +383,7 @@ const MAC_VENDORS: Record<string, string> = {
   "A4:4C:C8": "Lenovo",
   "AC:16:2D": "Lenovo",
   "B4:40:A4": "Lenovo",
-  
+
   // Netgear
   "00:09:5B": "Netgear",
   "00:0F:B5": "Netgear",
@@ -424,7 +424,7 @@ const MAC_VENDORS: Record<string, string> = {
   "E4:F4:C6": "Netgear",
   "E8:FC:AF": "Netgear",
   "F8:E9:03": "Netgear",
-  
+
   // TP-Link
   "00:1D:0F": "TP-Link",
   "00:23:CD": "TP-Link",
@@ -480,7 +480,7 @@ const MAC_VENDORS: Record<string, string> = {
   "F8:1A:67": "TP-Link",
   "F8:C0:91": "TP-Link",
   "FC:EC:DA": "TP-Link",
-  
+
   // D-Link
   "00:05:5D": "D-Link",
   "00:0D:88": "D-Link",
@@ -525,7 +525,7 @@ const MAC_VENDORS: Record<string, string> = {
   "E4:6F:13": "D-Link",
   "E8:CC:18": "D-Link",
   "F0:7D:68": "D-Link",
-  
+
   // Linksys
   "00:04:5A": "Linksys",
   "00:06:25": "Linksys",
@@ -561,7 +561,7 @@ const MAC_VENDORS: Record<string, string> = {
   "E0:60:66": "Linksys",
   "E4:32:CB": "Linksys",
   "E8:9F:80": "Linksys",
-  
+
   // Google / Nest
   "00:1A:11": "Google",
   "1C:F2:9A": "Google",
@@ -595,7 +595,7 @@ const MAC_VENDORS: Record<string, string> = {
   "F8:0F:F9": "Google",
   "F8:8F:CA": "Google",
   "FA:8F:CA": "Google",
-  
+
   // Amazon / Echo
   "00:FC:8B": "Amazon",
   "0C:47:C9": "Amazon",
@@ -637,7 +637,7 @@ const MAC_VENDORS: Record<string, string> = {
   "F0:81:73": "Amazon",
   "FC:65:DE": "Amazon",
   "FC:A1:83": "Amazon",
-  
+
   // Sony / PlayStation
   "00:00:C3": "Sony",
   "00:01:4A": "Sony",
@@ -677,7 +677,7 @@ const MAC_VENDORS: Record<string, string> = {
   "30:52:CB": "Sony",
   "30:A9:DE": "Sony",
   "40:B8:37": "Sony",
-  
+
   // Nintendo
   "00:09:BF": "Nintendo",
   "00:17:AB": "Nintendo",
@@ -725,20 +725,20 @@ const MAC_VENDORS: Record<string, string> = {
   "9C:E6:35": "Nintendo",
   "A4:38:CC": "Nintendo",
   "A4:C0:E1": "Nintendo",
-  
+
   // Raspberry Pi
   "B8:27:EB": "Raspberry Pi",
   "DC:A6:32": "Raspberry Pi",
   "E4:5F:01": "Raspberry Pi",
-  
+
   // VMware
   "00:0C:29": "VMware",
   "00:50:56": "VMware",
   "00:05:69": "VMware",
-  
+
   // VirtualBox
   "08:00:27": "VirtualBox",
-  
+
   // Ubiquiti
   "00:27:22": "Ubiquiti",
   "04:18:D6": "Ubiquiti",
@@ -761,9 +761,9 @@ const MAC_VENDORS: Record<string, string> = {
  * Normalize a MAC address to uppercase with colons
  */
 export function normalizeMac(mac: string): string {
-  const clean = mac.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  const clean = mac.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
   if (clean.length !== 12) return mac.toUpperCase();
-  return clean.match(/.{2}/g)!.join(':');
+  return clean.match(/.{2}/g)!.join(":");
 }
 
 /**
@@ -785,21 +785,25 @@ export function lookupVendorLocal(mac: string): string | null {
 /**
  * Look up vendor from online API (maclookup.app)
  */
-export async function lookupVendorOnline(mac: string): Promise<string | null> {
+export async function lookupVendorOnline(
+  mac: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   try {
-    const cleanMac = mac.replace(/[^0-9a-fA-F]/g, '');
+    const cleanMac = mac.replace(/[^0-9a-fA-F]/g, "");
     const response = await fetch(
       `https://api.maclookup.app/v2/macs/${cleanMac}`,
       {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'Accept': 'application/json',
+          Accept: "application/json",
         },
-      }
+        ...(signal ? { signal } : {}),
+      },
     );
-    
+
     if (!response.ok) return null;
-    
+
     const data = await response.json();
     if (data.success && data.company) {
       return data.company;
@@ -813,18 +817,22 @@ export async function lookupVendorOnline(mac: string): Promise<string | null> {
 /**
  * Look up vendor from macvendors.com API
  */
-export async function lookupVendorMacVendors(mac: string): Promise<string | null> {
+export async function lookupVendorMacVendors(
+  mac: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   try {
-    const cleanMac = mac.replace(/[^0-9a-fA-F:.-]/g, '');
+    const cleanMac = mac.replace(/[^0-9a-fA-F:.-]/g, "");
     const response = await fetch(
       `https://api.macvendors.com/${encodeURIComponent(cleanMac)}`,
       {
-        method: 'GET',
-      }
+        method: "GET",
+        ...(signal ? { signal } : {}),
+      },
     );
-    
+
     if (!response.ok) return null;
-    
+
     const text = await response.text();
     return text.trim() || null;
   } catch {
@@ -835,36 +843,47 @@ export async function lookupVendorMacVendors(mac: string): Promise<string | null
 /**
  * Look up vendor trying local first, then online APIs
  */
-export async function lookupVendor(mac: string): Promise<{
+export async function lookupVendor(
+  mac: string,
+  signal?: AbortSignal,
+): Promise<{
   vendor: string | null;
-  source: 'local' | 'maclookup' | 'macvendors' | null;
+  source: "local" | "maclookup" | "macvendors" | null;
 }> {
+  if (signal?.aborted) {
+    return { vendor: null, source: null };
+  }
+
   // Try local database first
   const localVendor = lookupVendorLocal(mac);
   if (localVendor) {
-    return { vendor: localVendor, source: 'local' };
+    return { vendor: localVendor, source: "local" };
   }
-  
+
   // Try maclookup.app API
   try {
-    const onlineVendor = await lookupVendorOnline(mac);
+    const onlineVendor = await lookupVendorOnline(mac, signal);
     if (onlineVendor) {
-      return { vendor: onlineVendor, source: 'maclookup' };
+      return { vendor: onlineVendor, source: "maclookup" };
     }
   } catch {
     // Continue to next source
   }
-  
+
+  if (signal?.aborted) {
+    return { vendor: null, source: null };
+  }
+
   // Try macvendors.com API as fallback
   try {
-    const macVendorsResult = await lookupVendorMacVendors(mac);
+    const macVendorsResult = await lookupVendorMacVendors(mac, signal);
     if (macVendorsResult) {
-      return { vendor: macVendorsResult, source: 'macvendors' };
+      return { vendor: macVendorsResult, source: "macvendors" };
     }
   } catch {
     // All sources failed
   }
-  
+
   return { vendor: null, source: null };
 }
 
@@ -872,10 +891,10 @@ export async function lookupVendor(mac: string): Promise<{
  * Batch lookup multiple MAC addresses
  */
 export async function batchLookupVendors(
-  macs: string[]
+  macs: string[],
 ): Promise<Map<string, string | null>> {
   const results = new Map<string, string | null>();
-  
+
   // Process in parallel with rate limiting
   const BATCH_SIZE = 5;
   for (let i = 0; i < macs.length; i += BATCH_SIZE) {
@@ -884,17 +903,17 @@ export async function batchLookupVendors(
       const { vendor } = await lookupVendor(mac);
       return { mac: normalizeMac(mac), vendor };
     });
-    
+
     const batchResults = await Promise.all(promises);
     for (const { mac, vendor } of batchResults) {
       results.set(mac, vendor);
     }
-    
+
     // Small delay between batches to avoid rate limiting
     if (i + BATCH_SIZE < macs.length) {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
-  
+
   return results;
 }
