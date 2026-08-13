@@ -10,8 +10,8 @@ use std::time::Duration;
 mod process_boundary;
 
 use process_boundary::{
-    append_environment_passthrough, execute, resolve_trusted_executable,
-    ProcessBoundaryError, DEFAULT_OPERATION_TIMEOUT, MAX_CAPTURE_BYTES,
+    append_environment_passthrough, execute, resolve_trusted_executable, ProcessBoundaryError,
+    DEFAULT_OPERATION_TIMEOUT, MAX_CAPTURE_BYTES,
 };
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -473,7 +473,7 @@ impl ComposeCli {
             return Err(error);
         }
 
-        if output.stdout.truncated {
+        if output.stdout.truncated || output.stderr.truncated {
             return Err(ComposeError::with_details(
                 ComposeErrorKind::CommandFailed,
                 "Docker Compose output exceeded the safety limit",
@@ -796,6 +796,9 @@ mod tests {
     use std::io::Write;
     use std::thread;
 
+    const PROCESS_HELPER_TEST_NAME: &str = "cli::tests::compose_cli_process_helper";
+    const PROCESS_HELPER_MARKER: &str = "sorng-compose-cli-helper-ran";
+
     #[test]
     fn rm_without_force_does_not_add_force() {
         let args = rm_args(&ComposeRmConfig::default());
@@ -861,6 +864,13 @@ mod tests {
                 std::io::stdout().write_all(&payload).unwrap();
                 std::io::stderr().write_all(&payload).unwrap();
             }
+            "stderr-flood" => {
+                let payload = vec![b'x'; MAX_CAPTURE_BYTES + 1024];
+                std::io::stderr().write_all(&payload).unwrap();
+            }
+            "marker" => std::io::stdout()
+                .write_all(PROCESS_HELPER_MARKER.as_bytes())
+                .unwrap(),
             _ => {}
         }
     }
@@ -869,12 +879,31 @@ mod tests {
         ComposeCli {
             program: env::current_exe().unwrap(),
             prefix_args: vec![
-                "compose_cli_process_helper".to_string(),
+                PROCESS_HELPER_TEST_NAME.to_string(),
                 "--exact".to_string(),
                 "--nocapture".to_string(),
                 "--test-threads=1".to_string(),
             ],
         }
+    }
+
+    #[test]
+    fn fake_cli_runs_the_exact_process_helper() {
+        let output = fake_cli()
+            .run_with_timeout(
+                Vec::new(),
+                vec![(
+                    "SORNG_COMPOSE_CLI_TEST_MODE".to_string(),
+                    "marker".to_string(),
+                )],
+                PROBE_TIMEOUT,
+            )
+            .expect("the fake CLI process helper should run successfully");
+
+        assert!(
+            output.contains(PROCESS_HELPER_MARKER),
+            "the exact test filter did not execute the process helper: {output}"
+        );
     }
 
     #[test]
@@ -887,13 +916,12 @@ mod tests {
             )],
             Duration::from_millis(100),
         );
-        assert!(matches!(
-            result,
-            Err(ComposeError {
-                kind: ComposeErrorKind::Timeout,
-                ..
-            })
-        ));
+        let error = result.expect_err("the hanging helper should exceed its deadline");
+        assert!(matches!(error.kind, ComposeErrorKind::Timeout));
+        assert_eq!(
+            error.message,
+            "Docker Compose command exceeded its execution deadline"
+        );
     }
 
     #[test]
@@ -906,12 +934,42 @@ mod tests {
             )],
             PROBE_TIMEOUT,
         );
-        assert!(matches!(
-            result,
-            Err(ComposeError {
-                kind: ComposeErrorKind::CommandFailed,
-                ..
-            })
-        ));
+        let error = result.expect_err("the flooded helper output should be rejected");
+        assert!(matches!(error.kind, ComposeErrorKind::CommandFailed));
+        assert_eq!(
+            error.message,
+            "Docker Compose output exceeded the safety limit"
+        );
+        let details = error
+            .details
+            .expect("the bounded output error should include capture metadata");
+        assert!(details.contains(&format!("stdout_bytes={MAX_CAPTURE_BYTES}")));
+        assert!(details.contains(&format!("stderr_bytes={MAX_CAPTURE_BYTES}")));
+        assert!(details.contains("stdout_truncated=true"));
+        assert!(details.contains("stderr_truncated=true"));
+    }
+
+    #[test]
+    fn flooded_stderr_alone_returns_a_bounded_error() {
+        let result = fake_cli().run_with_timeout(
+            Vec::new(),
+            vec![(
+                "SORNG_COMPOSE_CLI_TEST_MODE".to_string(),
+                "stderr-flood".to_string(),
+            )],
+            PROBE_TIMEOUT,
+        );
+        let error = result.expect_err("flooded stderr should be rejected even when stdout fits");
+        assert!(matches!(error.kind, ComposeErrorKind::CommandFailed));
+        assert_eq!(
+            error.message,
+            "Docker Compose output exceeded the safety limit"
+        );
+        let details = error
+            .details
+            .expect("the bounded stderr error should include capture metadata");
+        assert!(details.contains("stdout_truncated=false"));
+        assert!(details.contains(&format!("stderr_bytes={MAX_CAPTURE_BYTES}")));
+        assert!(details.contains("stderr_truncated=true"));
     }
 }
