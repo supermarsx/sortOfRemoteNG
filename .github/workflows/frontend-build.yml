@@ -39,7 +39,7 @@ jobs:
         run: npm run build:cold:check
       - name: Upload build output (debug on failure)
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: next-build-output
           path: |
