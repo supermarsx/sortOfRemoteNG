@@ -8668,6 +8668,11 @@ mod connection_admission_tests {
             .expect("ProxyCommand connection task should not panic")
             .unwrap_err();
         assert!(error.starts_with(SSH_CONNECTION_TIMEOUT_ERROR_CODE));
+        // Connection errors return before detached native cleanup finishes by
+        // design. The admission lease is retained until stop-and-wait has
+        // reaped the helper, so capacity release is the observable cleanup
+        // completion barrier for callers and for this regression.
+        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
         assert!(
             super::super::proxy_command::get_proxy_command_status(&session_id)
                 .unwrap()
@@ -8678,7 +8683,6 @@ mod connection_admission_tests {
             !process_is_alive(helper_pid),
             "timed-out ProxyCommand helper process {helper_pid} is still alive"
         );
-        wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
