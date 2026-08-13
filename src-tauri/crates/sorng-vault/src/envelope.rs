@@ -311,18 +311,37 @@ mod tests {
     fn malformed_nonce_is_rejected_without_panicking() {
         let (meta, ciphertext) = encrypt("correct", b"data").unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&meta).unwrap();
-        value["nonce_b64"] =
+        assert!(value.get("nonceB64").is_some());
+        assert!(value.get("nonce_b64").is_none());
+        value["nonceB64"] =
             serde_json::Value::String(general_purpose::STANDARD.encode([1u8; NONCE_LEN - 1]));
 
-        assert!(decrypt("correct", &value.to_string(), &ciphertext).is_err());
+        let error = decrypt("correct", &value.to_string(), &ciphertext).unwrap_err();
+        assert!(matches!(error.kind, VaultErrorKind::CryptoError));
+        assert_eq!(
+            error.message,
+            format!(
+                "Invalid nonce length: expected {NONCE_LEN}, got {}",
+                NONCE_LEN - 1
+            )
+        );
     }
 
     #[test]
     fn hostile_argon2_memory_cost_is_rejected_before_derivation() {
         let (meta, ciphertext) = encrypt("correct", b"data").unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&meta).unwrap();
-        value["kdf_memory_kib"] = serde_json::json!(u32::MAX);
+        assert!(value.get("kdfMemoryKib").is_some());
+        assert!(value.get("kdf_memory_kib").is_none());
+        value["kdfMemoryKib"] = serde_json::json!(u32::MAX);
 
-        assert!(decrypt("correct", &value.to_string(), &ciphertext).is_err());
+        let error = decrypt("correct", &value.to_string(), &ciphertext).unwrap_err();
+        assert!(matches!(error.kind, VaultErrorKind::KdfError));
+        assert_eq!(
+            error.message,
+            format!(
+                "Argon2 memory cost must be between {MIN_ARGON2_MEMORY_KIB} and {MAX_ARGON2_MEMORY_KIB} KiB"
+            )
+        );
     }
 }
