@@ -648,7 +648,7 @@ mod tests {
 
 #[cfg(test)]
 mod legacy_provider_tests {
-    use super::Persistable;
+    use super::{Persistable, PROFILE_RESTORE_UNREADABLE, PROFILE_STORAGE_WRITE_FAILED};
     use crate::ikev2::{IKEv2Config, IKEv2Service, IKEv2Status};
     use crate::ipsec::{IPsecConfig, IPsecService, IPsecStatus};
     use crate::l2tp::{L2TPConfig, L2TPService, L2TPStatus};
@@ -1139,44 +1139,70 @@ mod legacy_provider_tests {
         ($state:expr, $config:expr) => {{
             let state = $state;
             let mut service = state.lock().await;
-            assert!(service
+            let error = service
                 .create_connection("Unsaved".to_string(), $config)
                 .await
-                .is_err());
+                .unwrap_err();
+            assert!(
+                error.contains(PROFILE_STORAGE_WRITE_FAILED),
+                "expected a storage write failure, got: {error}"
+            );
+            assert!(
+                !error.contains(PROFILE_RESTORE_UNREADABLE),
+                "the provider must restore successfully before the write fails: {error}"
+            );
+            assert!(
+                error.contains("has been rolled back"),
+                "the provider must report rollback after the write fails: {error}"
+            );
             assert!(service.list_connections().await.unwrap().is_empty());
+        }};
+    }
+
+    macro_rules! assert_empty_restore {
+        ($state:expr) => {{
+            assert!($state
+                .lock()
+                .await
+                .list_connections()
+                .await
+                .expect("a missing store must restore as an empty provider")
+                .is_empty());
         }};
     }
 
     #[tokio::test]
     async fn failed_storage_write_rolls_back_every_provider_mutation() {
         let root = temp_root("rollback");
-        std::fs::create_dir_all(&root).unwrap();
-        let blocker = root.join("not-a-directory");
-        std::fs::write(&blocker, b"block").unwrap();
-        let storage = sorng_storage::storage::SecureStorage::new(
-            blocker.join("connections.json").to_string_lossy().into(),
-        );
+        let path = root.join("connections.json");
+        assert!(!root.exists());
+        let storage = sorng_storage::storage::SecureStorage::new(path.to_string_lossy().into());
+        let pptp = PPTPService::new_persistent(emitter(), storage.clone());
+        let l2tp = L2TPService::new_persistent(emitter(), storage.clone());
+        let ikev2 = IKEv2Service::new_persistent(emitter(), storage.clone());
+        let ipsec = IPsecService::new_persistent(emitter(), storage.clone());
+        let sstp = SSTPService::new_persistent(emitter(), storage.clone());
 
-        assert_failed_save_rolls_back!(
-            PPTPService::new_persistent(emitter(), storage.clone()),
-            pptp_config()
-        );
-        assert_failed_save_rolls_back!(
-            L2TPService::new_persistent(emitter(), storage.clone()),
-            l2tp_config()
-        );
-        assert_failed_save_rolls_back!(
-            IKEv2Service::new_persistent(emitter(), storage.clone()),
-            ikev2_config()
-        );
-        assert_failed_save_rolls_back!(
-            IPsecService::new_persistent(emitter(), storage.clone()),
-            ipsec_config()
-        );
-        assert_failed_save_rolls_back!(
-            SSTPService::new_persistent(emitter(), storage),
-            sstp_config()
-        );
-        std::fs::remove_dir_all(root).unwrap();
+        assert_empty_restore!(pptp);
+        assert_empty_restore!(l2tp);
+        assert_empty_restore!(ikev2);
+        assert_empty_restore!(ipsec);
+        assert_empty_restore!(sstp);
+
+        // Loading a missing store remains valid while a fresh encryption
+        // state is locked, but saving must fail rather than downgrade to
+        // plaintext. This reaches each provider's write rollback path
+        // without relying on platform-specific filesystem permissions.
+        let locked_state = Arc::new(EncryptionState::new());
+        assert!(!locked_state.is_unlocked().await);
+        storage.lock().await.set_encryption_state(locked_state);
+
+        assert_failed_save_rolls_back!(pptp, pptp_config());
+        assert_failed_save_rolls_back!(l2tp, l2tp_config());
+        assert_failed_save_rolls_back!(ikev2, ikev2_config());
+        assert_failed_save_rolls_back!(ipsec, ipsec_config());
+        assert_failed_save_rolls_back!(sstp, sstp_config());
+        assert!(!path.exists(), "a failed write must not create the store");
+        assert!(!root.exists(), "a failed write must not create its parent");
     }
 }
