@@ -625,25 +625,82 @@ mod tests {
     }
 
     #[test]
-    fn connection_config_serde_roundtrip() {
+    fn connection_config_serialization_omits_secrets_and_roundtrips_metadata() {
+        const ACCESS_KEY_ID_SENTINEL: &str = "sensitive-access-key-id-A1";
+        const SECRET_ACCESS_KEY_SENTINEL: &str = "sensitive-secret-access-key-B2";
+        const SESSION_TOKEN_SENTINEL: &str = "sensitive-session-token-C3";
+        const MFA_CODE_SENTINEL: &str = "sensitive-mfa-code-D4";
+        const EXTERNAL_ID_SENTINEL: &str = "sensitive-external-id-E5";
+
         let cfg = AwsConnectionConfig {
             region: "us-east-1".to_string(),
-            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfi".to_string(),
-            session_token: Some("token123".to_string()),
+            access_key_id: ACCESS_KEY_ID_SENTINEL.to_string(),
+            secret_access_key: SECRET_ACCESS_KEY_SENTINEL.to_string(),
+            session_token: Some(SESSION_TOKEN_SENTINEL.to_string()),
             profile_name: Some("prod".to_string()),
             role_arn: Some("arn:aws:iam::123456789012:role/Admin".to_string()),
-            mfa_serial: None,
-            mfa_code: None,
-            endpoint_url: None,
+            mfa_serial: Some("arn:aws:iam::123456789012:mfa/admin".to_string()),
+            mfa_code: Some(MFA_CODE_SENTINEL.to_string()),
+            endpoint_url: Some("http://localhost:4566".to_string()),
             session_duration: Some(3600),
-            external_id: Some("ext-123".to_string()),
+            external_id: Some(EXTERNAL_ID_SENTINEL.to_string()),
             tags: Some(HashMap::from([("Owner".to_string(), "team-a".to_string())])),
         };
-        let json = serde_json::to_string(&cfg).unwrap();
-        let back: AwsConnectionConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.region, "us-east-1");
+
+        let sensitive_fields = [
+            ("access_key_id", ACCESS_KEY_ID_SENTINEL),
+            ("secret_access_key", SECRET_ACCESS_KEY_SENTINEL),
+            ("session_token", SESSION_TOKEN_SENTINEL),
+            ("mfa_code", MFA_CODE_SENTINEL),
+            ("external_id", EXTERNAL_ID_SENTINEL),
+        ];
+        let serialized = serde_json::to_string(&cfg).unwrap();
+        for (secret_field, sentinel) in sensitive_fields {
+            assert!(
+                !sentinel.is_empty(),
+                "{secret_field} sentinel must be nonempty"
+            );
+            assert!(
+                !serialized.contains(sentinel),
+                "{secret_field} leaked into serialized JSON"
+            );
+        }
+
+        let json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        for (secret_field, _) in sensitive_fields {
+            assert!(json.get(secret_field).is_none());
+        }
+
+        let back: AwsConnectionConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(back.region, cfg.region);
+        assert_eq!(back.profile_name, cfg.profile_name);
         assert_eq!(back.role_arn, cfg.role_arn);
-        assert_eq!(back.external_id, cfg.external_id);
+        assert_eq!(back.mfa_serial, cfg.mfa_serial);
+        assert_eq!(back.endpoint_url, cfg.endpoint_url);
+        assert_eq!(back.session_duration, cfg.session_duration);
+        assert_eq!(back.tags, cfg.tags);
+        assert!(back.access_key_id.is_empty());
+        assert!(back.secret_access_key.is_empty());
+        assert_eq!(back.session_token, None);
+        assert_eq!(back.mfa_code, None);
+        assert_eq!(back.external_id, None);
+
+        let inbound: AwsConnectionConfig = serde_json::from_value(serde_json::json!({
+            "region": "us-west-2",
+            "access_key_id": ACCESS_KEY_ID_SENTINEL,
+            "secret_access_key": SECRET_ACCESS_KEY_SENTINEL,
+            "session_token": SESSION_TOKEN_SENTINEL,
+            "mfa_code": MFA_CODE_SENTINEL,
+            "external_id": EXTERNAL_ID_SENTINEL,
+        }))
+        .unwrap();
+        assert_eq!(inbound.access_key_id, ACCESS_KEY_ID_SENTINEL);
+        assert_eq!(inbound.secret_access_key, SECRET_ACCESS_KEY_SENTINEL);
+        assert_eq!(
+            inbound.session_token.as_deref(),
+            Some(SESSION_TOKEN_SENTINEL)
+        );
+        assert_eq!(inbound.mfa_code.as_deref(), Some(MFA_CODE_SENTINEL));
+        assert_eq!(inbound.external_id.as_deref(), Some(EXTERNAL_ID_SENTINEL));
     }
 }
