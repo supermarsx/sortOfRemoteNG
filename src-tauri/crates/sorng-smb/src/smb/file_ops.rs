@@ -2284,7 +2284,7 @@ mod unix_impl {
         }
 
         #[cfg(unix)]
-        fn fake_helper(script: &str) -> NamedTempFile {
+        fn fake_helper(script: &str) -> tempfile::TempPath {
             let mut helper = TempFileBuilder::new()
                 .prefix("sorng-smb-fake-helper-")
                 .tempfile()
@@ -2295,7 +2295,7 @@ mod unix_impl {
                 .as_file()
                 .set_permissions(std::fs::Permissions::from_mode(0o700))
                 .unwrap();
-            helper
+            helper.into_temp_path()
         }
 
         #[cfg(unix)]
@@ -2321,10 +2321,20 @@ mod unix_impl {
             assert!(argv.contains("client smb encrypt=required"));
 
             let helper = fake_helper("#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
-            let output = run_helper(helper.path(), &auth.args, Duration::from_secs(2), 4096)
-                .await
-                .unwrap();
+            let mut helper_args = Vec::with_capacity(auth.args.len() + 1);
+            helper_args.push(helper.as_os_str().to_owned());
+            helper_args.extend(auth.args.iter().cloned());
+            let output = run_helper(
+                Path::new("/bin/sh"),
+                &helper_args,
+                Duration::from_secs(2),
+                4096,
+            )
+            .await
+            .unwrap();
+            assert!(output.status.success());
             let observed = String::from_utf8(output.stdout).unwrap();
+            assert!(observed.contains("client min protocol=SMB2_02"));
             assert!(!observed.contains(secret));
             assert!(!observed.contains("alice%"));
 
@@ -2336,15 +2346,13 @@ mod unix_impl {
         #[test]
         fn resolver_accepts_only_absolute_protected_executables() {
             let helper = fake_helper("#!/bin/sh\nexit 0\n");
-            let resolved = resolve_smbclient_from_candidates([helper.path()]).unwrap();
+            let helper_path: &Path = helper.as_ref();
+            let resolved = resolve_smbclient_from_candidates([helper_path]).unwrap();
             assert!(resolved.is_absolute());
 
             assert!(resolve_smbclient_from_candidates([Path::new("smbclient")]).is_err());
-            helper
-                .as_file()
-                .set_permissions(std::fs::Permissions::from_mode(0o777))
-                .unwrap();
-            assert!(resolve_smbclient_from_candidates([helper.path()]).is_err());
+            std::fs::set_permissions(helper_path, std::fs::Permissions::from_mode(0o777)).unwrap();
+            assert!(resolve_smbclient_from_candidates([helper_path]).is_err());
 
             let unsafe_parent = tempfile::tempdir().unwrap();
             std::fs::set_permissions(unsafe_parent.path(), std::fs::Permissions::from_mode(0o777))
@@ -2382,12 +2390,24 @@ mod unix_impl {
         #[tokio::test]
         async fn fake_helper_timeout_kills_and_reaps() {
             let helper = fake_helper("#!/bin/sh\nwhile :; do :; done\n");
-            let error = match run_helper(helper.path(), &[], Duration::from_millis(25), 1024).await
+            let helper_args = [helper.as_os_str().to_owned()];
+            let error = match run_helper(
+                Path::new("/bin/sh"),
+                &helper_args,
+                Duration::from_millis(25),
+                1024,
+            )
+            .await
             {
                 Err(error) => error,
                 Ok(_) => panic!("busy helper must time out"),
             };
-            assert!(error.to_string().contains("timed out"));
+            match error {
+                SmbError::Backend(message) => {
+                    assert_eq!(message, "SMB client helper timed out");
+                }
+                other => panic!("unexpected helper error: {other}"),
+            }
         }
 
         #[cfg(unix)]
