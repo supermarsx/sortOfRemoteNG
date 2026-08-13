@@ -767,8 +767,7 @@ mod tests {
     async fn test_service_session_not_found() {
         let service = SerialService::new();
         let result = service.send_raw("nonexistent", b"x".to_vec()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Session not found"));
+        assert_eq!(result, Err("Serial session not found".to_string()));
     }
 
     #[tokio::test]

@@ -733,7 +733,7 @@ mod tests {
         use crate::serial::transport::SimulatedTransport;
 
         let transport = SimulatedTransport::new("COM1");
-        transport.open(&SerialConfig::default()).await.unwrap();
+        transport.open(&valid_test_config("COM1")).await.unwrap();
         // Inject a response
         transport.inject_rx(b"AT\r\nOK\r\n").await;
 
@@ -747,7 +747,7 @@ mod tests {
         use crate::serial::transport::SimulatedTransport;
 
         let transport = SimulatedTransport::new("COM1");
-        transport.open(&SerialConfig::default()).await.unwrap();
+        transport.open(&valid_test_config("COM1")).await.unwrap();
         transport
             .inject_rx(b"AT+CGMI\r\nTestManufacturer\r\nOK\r\n")
             .await;

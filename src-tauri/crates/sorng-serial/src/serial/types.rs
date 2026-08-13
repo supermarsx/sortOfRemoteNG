@@ -332,6 +332,14 @@ impl Default for SerialConfig {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn valid_test_config(port_name: &str) -> SerialConfig {
+    SerialConfig {
+        port_name: port_name.to_string(),
+        ..Default::default()
+    }
+}
+
 impl SerialConfig {
     /// Validate all resource-affecting fields before opening a device or
     /// allocating session buffers.
@@ -1151,6 +1159,7 @@ mod tests {
     #[test]
     fn test_default_config_values() {
         let cfg = SerialConfig::default();
+        assert_eq!(cfg.port_name, "");
         assert_eq!(cfg.baud_rate, BaudRate::Baud9600);
         assert_eq!(cfg.data_bits, DataBits::Eight);
         assert_eq!(cfg.parity, Parity::None);
@@ -1160,5 +1169,13 @@ mod tests {
         assert!(cfg.rts_on_open);
         assert_eq!(cfg.line_ending, LineEnding::CrLf);
         assert_eq!(cfg.read_timeout_ms, 100);
+    }
+
+    #[test]
+    fn test_default_config_requires_a_port_name() {
+        assert_eq!(
+            SerialConfig::default().validate(),
+            Err("Serial port name cannot be empty".to_string())
+        );
     }
 }

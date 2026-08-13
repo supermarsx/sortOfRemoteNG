@@ -496,7 +496,8 @@ mod tests {
     #[tokio::test]
     async fn test_open_nonexistent_port() {
         let t = NativeTransport::new("COM_NONEXISTENT_999");
-        let config = SerialConfig::default();
+        let config = valid_test_config("COM_NONEXISTENT_999");
+        assert_eq!(config.validate(), Ok(()));
         let result = t.open(&config).await;
         assert!(result.is_err());
         assert!(!t.is_open());
@@ -536,7 +537,19 @@ mod tests {
     #[tokio::test]
     async fn test_reconfigure_on_closed_port() {
         let t = NativeTransport::new("COM99");
-        assert!(t.reconfigure(&SerialConfig::default()).await.is_err());
+        assert_eq!(
+            t.reconfigure(&valid_test_config("COM99")).await,
+            Err("Port is not open".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reconfigure_rejects_a_different_port() {
+        let t = NativeTransport::new("COM99");
+        assert_eq!(
+            t.reconfigure(&valid_test_config("COM98")).await,
+            Err("Cannot change the native transport port name".to_string())
+        );
     }
 
     #[test]

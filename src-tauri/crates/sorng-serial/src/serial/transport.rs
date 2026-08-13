@@ -588,7 +588,7 @@ mod tests {
     async fn test_simulated_transport_open_close() {
         let t = SimulatedTransport::new("COM1");
         assert!(!t.is_open());
-        t.open(&SerialConfig::default()).await.unwrap();
+        t.open(&valid_test_config("COM1")).await.unwrap();
         assert!(t.is_open());
         t.close().await.unwrap();
         assert!(!t.is_open());
@@ -597,7 +597,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulated_transport_write_read() {
         let t = SimulatedTransport::new("COM1");
-        let cfg = SerialConfig::default();
+        let cfg = valid_test_config("COM1");
         t.open(&cfg).await.unwrap();
 
         t.inject_rx(b"Hello").await;
@@ -609,7 +609,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulated_transport_loopback() {
         let t = SimulatedTransport::new("COM1");
-        t.open(&SerialConfig::default()).await.unwrap();
+        t.open(&valid_test_config("COM1")).await.unwrap();
         t.set_loopback(true);
 
         t.write(b"echo").await.unwrap();
@@ -624,7 +624,7 @@ mod tests {
         let cfg = SerialConfig {
             dtr_on_open: true,
             rts_on_open: false,
-            ..Default::default()
+            ..valid_test_config("COM1")
         };
         t.open(&cfg).await.unwrap();
 
@@ -635,6 +635,16 @@ mod tests {
         t.set_rts(true).await.unwrap();
         let cl2 = t.read_control_lines().await.unwrap();
         assert!(cl2.rts);
+    }
+
+    #[tokio::test]
+    async fn test_simulated_transport_rejects_a_different_port() {
+        let t = SimulatedTransport::new("COM1");
+        assert_eq!(
+            t.open(&valid_test_config("COM2")).await,
+            Err("Simulated transport port does not match its configuration".to_string())
+        );
+        assert!(!t.is_open());
     }
 
     #[tokio::test]
