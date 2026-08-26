@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
+  hasSerialMatchFilter,
   normalizeSerialSettings,
   toNativeSerialConfig,
   type SerialBackendSession,
   type SerialControlLines,
   type SerialLineEnding,
+  type SerialPortSelectionMode,
 } from "../../types/protocols/serial";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
@@ -63,7 +65,37 @@ interface PendingSerialOutputBucket {
   controlLines: SerialControlLines | null;
 }
 
-const boundedSerialEventMessage = (value: unknown, fallback: string): string => {
+const PORT_NOT_FOUND_PREFIX = "PortNotFound:";
+
+/** Short human labels for the auto selection modes (badge + error copy). */
+export const SERIAL_SELECTION_MODE_LABELS: Readonly<
+  Record<SerialPortSelectionMode, string>
+> = Object.freeze({
+  fixed: "fixed device",
+  firstAny: "first device",
+  firstUsb: "first USB",
+  match: "match",
+});
+
+/**
+ * Map a backend `PortNotFound: …` rejection to a friendly message; every other
+ * message is returned unchanged.
+ */
+export function describeSerialConnectError(
+  raw: string,
+  mode: SerialPortSelectionMode,
+): string {
+  const trimmed = raw.trimStart();
+  if (!trimmed.startsWith(PORT_NOT_FOUND_PREFIX)) return raw;
+  const detail = trimmed.slice(PORT_NOT_FOUND_PREFIX.length).trim();
+  const headline = `No serial device is attached that matches "${SERIAL_SELECTION_MODE_LABELS[mode]}". Plug in the adapter and reconnect.`;
+  return detail ? `${headline}\n${detail}` : headline;
+}
+
+const boundedSerialEventMessage = (
+  value: unknown,
+  fallback: string,
+): string => {
   const raw =
     typeof value === "string"
       ? value.slice(0, MAX_SERIAL_EVENT_MESSAGE_CHARS)
@@ -144,6 +176,11 @@ export function useSerialSession(session: ConnectionSession) {
     useState<SerialControlLines>(EMPTY_CONTROL_LINES);
   const [requestedDtr, setRequestedDtr] = useState(settings.dtrOnOpen);
   const [requestedRts, setRequestedRts] = useState(settings.rtsOnOpen);
+  const [resolvedPortName, setResolvedPortName] = useState<string | null>(null);
+  const [resolvedDisplayName, setResolvedDisplayName] = useState<string | null>(
+    null,
+  );
+  const [autoSelected, setAutoSelected] = useState(false);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -205,6 +242,19 @@ export function useSerialSession(session: ConnectionSession) {
 
       backendRef.current = backend.id;
       setBackendSessionId(backend.id);
+      const wasAutoSelected = backend.autoSelected === true;
+      const portName =
+        typeof backend.portName === "string" && backend.portName.length > 0
+          ? sanitizeBehaviorText(backend.portName).slice(0, 256)
+          : null;
+      const displayName =
+        typeof backend.portDisplayName === "string" &&
+        backend.portDisplayName.length > 0
+          ? sanitizeBehaviorText(backend.portDisplayName).slice(0, 256)
+          : null;
+      setResolvedPortName(portName);
+      setResolvedDisplayName(displayName);
+      setAutoSelected(wasAutoSelected);
       setControlLines(pending?.controlLines ?? backend.controlLines);
       setOutputChunks((current) => {
         let next: readonly Uint8Array[] = sessionChanged ? [] : current;
@@ -232,6 +282,9 @@ export function useSerialSession(session: ConnectionSession) {
         backendSessionId: backend.id,
         status: nextStatus,
         errorMessage: fatalError ?? warning ?? undefined,
+        // The resolved device is a display snapshot on the session only; it is
+        // never written back into the connection record.
+        ...(wasAutoSelected && portName ? { hostname: portName } : {}),
       });
     },
     [updateSession],
@@ -246,7 +299,10 @@ export function useSerialSession(session: ConnectionSession) {
             ? value
             : "Serial operation failed.";
       const message = sanitizeBehaviorText(
-        raw.slice(0, MAX_SERIAL_EVENT_MESSAGE_CHARS),
+        describeSerialConnectError(
+          raw.slice(0, MAX_SERIAL_EVENT_MESSAGE_CHARS),
+          settingsRef.current.portSelection.mode,
+        ),
       ).slice(0, MAX_SERIAL_EVENT_MESSAGE_CHARS);
       connectingRef.current = false;
       pendingOutputRef.current.clear();
@@ -268,13 +324,25 @@ export function useSerialSession(session: ConnectionSession) {
       const currentSettings = normalizeSerialSettings(
         currentConnection.serialSettings,
       );
-      if (!currentSettings.portName) {
+      const selection = currentSettings.portSelection;
+      if (selection.mode === "fixed" && !currentSettings.portName) {
         markError("Choose a local serial device before connecting.");
+        return;
+      }
+      if (selection.mode === "match" && !hasSerialMatchFilter(selection)) {
+        markError(
+          "Add a VID, PID, or name filter for the matching serial device.",
+        );
         return;
       }
 
       setStatus("connecting");
       setError(null);
+      // Auto modes re-resolve on every connect; drop the previous snapshot so
+      // a failed reconnect never shows a stale device name.
+      setResolvedPortName(null);
+      setResolvedDisplayName(null);
+      setAutoSelected(false);
       connectingRef.current = true;
       pendingOutputRef.current.clear();
 
@@ -632,6 +700,10 @@ export function useSerialSession(session: ConnectionSession) {
     controlLines,
     requestedDtr,
     requestedRts,
+    resolvedPortName,
+    resolvedDisplayName,
+    autoSelected,
+    selectionMode: settings.portSelection.mode,
     sendBytes,
     sendInput,
     sendBreak,

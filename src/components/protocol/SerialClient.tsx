@@ -11,7 +11,10 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useSerialSession } from "../../hooks/protocol/useSerialSession";
+import {
+  SERIAL_SELECTION_MODE_LABELS,
+  useSerialSession,
+} from "../../hooks/protocol/useSerialSession";
 import type { ConnectionSession } from "../../types/connection/connection";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 
@@ -119,18 +122,32 @@ export function SerialClient({ session }: { session: ConnectionSession }) {
   const shorthand = `${model.settings.baudRate}-${model.settings.dataBits}${parityLetter(model.settings.parity)}${model.settings.stopBits}`;
   const connected = model.status === "connected";
   const shownError = actionError ?? model.error;
+  const shownPortName =
+    model.resolvedPortName || model.settings.portName || session.hostname;
+  const autoBadge = model.autoSelected
+    ? `auto · ${SERIAL_SELECTION_MODE_LABELS[model.selectionMode]}`
+    : null;
 
   return (
     <section
       className="flex h-full min-h-0 flex-col bg-[var(--color-background)] text-[var(--color-text)]"
-      aria-label={`Serial session on ${model.settings.portName}`}
+      aria-label={`Serial session on ${shownPortName}`}
       data-testid="serial-client"
     >
       <header className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs">
         <Cable size={14} aria-hidden />
-        <span className="font-medium">
-          Serial · {model.settings.portName || session.hostname}
+        <span className="font-medium" data-testid="serial-client-port">
+          Serial · {shownPortName}
         </span>
+        {autoBadge ? (
+          <span
+            className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[var(--color-textMuted)]"
+            data-testid="serial-client-auto-badge"
+            title={model.resolvedDisplayName ?? undefined}
+          >
+            {autoBadge}
+          </span>
+        ) : null}
         <span className="font-mono text-[var(--color-textSecondary)]">
           {shorthand}
         </span>

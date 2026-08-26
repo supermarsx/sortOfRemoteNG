@@ -4,7 +4,11 @@ import type {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
-import type { SerialBackendSession } from "../../types/protocols/serial";
+import {
+  serialHostnameFor,
+  type SerialBackendSession,
+  type SerialPortSelection,
+} from "../../types/protocols/serial";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -29,6 +33,7 @@ vi.mock("../../contexts/useConnections", () => ({
 }));
 
 import {
+  describeSerialConnectError,
   encodeSerialTerminalInput,
   useSerialSession,
 } from "./useSerialSession";
@@ -43,6 +48,7 @@ const connection: Connection = {
   serialSettings: {
     version: 1,
     portName: "COM7",
+    portSelection: { mode: "fixed" },
     baudRate: 115200,
     dataBits: "8",
     parity: "none",
@@ -94,6 +100,22 @@ const createSession = (
   ...patch,
 });
 
+const withSelection = (
+  portSelection: SerialPortSelection,
+  portName = connection.serialSettings!.portName,
+): Connection => ({
+  ...connection,
+  hostname: serialHostnameFor({ portName, portSelection }),
+  serialSettings: { ...connection.serialSettings!, portName, portSelection },
+});
+
+const useConnection = (value: Connection) => {
+  mocks.useConnections.mockReturnValue({
+    state: { connections: [value], sessions: [] },
+    dispatch: mocks.dispatch,
+  });
+};
+
 const emit = (eventName: string, payload: unknown) => {
   const handler = mocks.listeners.get(eventName);
   if (!handler) throw new Error(`No listener registered for ${eventName}`);
@@ -144,6 +166,7 @@ describe("useSerialSession", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("serial_connect", {
       config: {
         portName: "COM7",
+        portSelection: { mode: "fixed" },
         baudRate: "115200",
         dataBits: "8",
         parity: "none",
@@ -175,6 +198,150 @@ describe("useSerialSession", () => {
     });
     expect(connectedAction.payload).not.toHaveProperty("serialSettings");
     expect(connectedAction.payload).not.toHaveProperty("password");
+    expect(connectedAction.payload.hostname).toBe("COM7");
+    expect(result.current.resolvedPortName).toBe("COM7");
+    expect(result.current.autoSelected).toBe(false);
+    expect(result.current.selectionMode).toBe("fixed");
+  });
+
+  it("sends a blank portName plus the selection for firstUsb and adopts the resolved port", async () => {
+    useConnection(withSelection({ mode: "firstUsb" }, ""));
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "serial_connect"
+        ? Promise.resolve({
+            ...backend,
+            portName: "COM7",
+            autoSelected: true,
+            portDisplayName: "COM7 - FTDI FT232R",
+          })
+        : Promise.resolve(undefined),
+    );
+
+    const { result } = renderHook(() =>
+      useSerialSession(createSession({ hostname: "auto:first-usb" })),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+    expect(mocks.invoke).toHaveBeenCalledWith("serial_connect", {
+      config: expect.objectContaining({
+        portName: "",
+        portSelection: { mode: "firstUsb" },
+      }),
+    });
+    const connectedAction = mocks.dispatch.mock.calls.find(
+      ([action]) => action.payload?.status === "connected",
+    )?.[0];
+    expect(connectedAction).toEqual({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        id: "frontend-serial-1",
+        backendSessionId: "backend-serial-1",
+        status: "connected",
+        hostname: "COM7",
+      }),
+    });
+    expect(result.current.resolvedPortName).toBe("COM7");
+    expect(result.current.resolvedDisplayName).toBe("COM7 - FTDI FT232R");
+    expect(result.current.autoSelected).toBe(true);
+    expect(result.current.selectionMode).toBe("firstUsb");
+  });
+
+  it("refuses a fixed selection with no port before invoking the backend", async () => {
+    useConnection(withSelection({ mode: "fixed" }, ""));
+    const { result } = renderHook(() =>
+      useSerialSession(createSession({ hostname: "" })),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toBe(
+      "Choose a local serial device before connecting.",
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "serial_connect",
+      expect.anything(),
+    );
+  });
+
+  it("refuses a match selection without filters before invoking the backend", async () => {
+    useConnection(withSelection({ mode: "match" }, ""));
+    const { result } = renderHook(() =>
+      useSerialSession(createSession({ hostname: "auto:match" })),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toBe(
+      "Add a VID, PID, or name filter for the matching serial device.",
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "serial_connect",
+      expect.anything(),
+    );
+  });
+
+  it("maps a PortNotFound rejection to a friendly error and keeps the detail", async () => {
+    useConnection(withSelection({ mode: "firstUsb" }, ""));
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "serial_connect"
+        ? Promise.reject(
+            'PortNotFound: no serial device found for mode "first USB device"; seen 1 device: COM1 (native)',
+          )
+        : Promise.resolve(undefined),
+    );
+
+    const { result } = renderHook(() =>
+      useSerialSession(createSession({ hostname: "auto:first-usb" })),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toContain("No serial device is attached");
+    expect(result.current.error).toContain('"first USB"');
+    expect(result.current.error).toContain("seen 1 device: COM1 (native)");
+    expect(result.current.error).not.toContain("PortNotFound:");
+    expect(result.current.resolvedPortName).toBeNull();
+    expect(result.current.autoSelected).toBe(false);
+    const errorAction = mocks.dispatch.mock.calls.find(
+      ([action]) => action.payload?.status === "error",
+    )?.[0];
+    expect(errorAction.payload.errorMessage).toContain(
+      "No serial device is attached",
+    );
+  });
+
+  it("re-resolves the device on reconnect by calling serial_connect again", async () => {
+    useConnection(withSelection({ mode: "firstUsb" }, ""));
+    let attempt = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command !== "serial_connect") return Promise.resolve(undefined);
+      attempt += 1;
+      return Promise.resolve({
+        ...backend,
+        id: `backend-serial-${attempt}`,
+        portName: attempt === 1 ? "COM7" : "COM9",
+        autoSelected: true,
+        portDisplayName: null,
+      });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) =>
+        useSerialSession(createSession({ id, hostname: "auto:first-usb" })),
+      { initialProps: { id: "frontend-serial-1" } },
+    );
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+    expect(result.current.resolvedPortName).toBe("COM7");
+
+    rerender({ id: "frontend-serial-2" });
+    await waitFor(() => expect(result.current.resolvedPortName).toBe("COM9"));
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "serial_connect",
+      ),
+    ).toHaveLength(2);
+    expect(mocks.invoke).toHaveBeenCalledWith("serial_disconnect", {
+      sessionId: "backend-serial-1",
+    });
+    expect(result.current.resolvedDisplayName).toBeNull();
+    expect(result.current.status).toBe("connected");
   });
 
   it("sends raw bytes, relies on one backend echo, and exposes supported controls", async () => {
@@ -284,6 +451,22 @@ describe("useSerialSession", () => {
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "serial_connect",
       expect.anything(),
+    );
+  });
+});
+
+describe("describeSerialConnectError", () => {
+  it("rewrites only PortNotFound-prefixed messages", () => {
+    expect(
+      describeSerialConnectError("PortNotFound: nothing", "firstAny"),
+    ).toBe(
+      'No serial device is attached that matches "first device". Plug in the adapter and reconnect.\nnothing',
+    );
+    expect(describeSerialConnectError("PortNotFound:", "match")).toBe(
+      'No serial device is attached that matches "match". Plug in the adapter and reconnect.',
+    );
+    expect(describeSerialConnectError("PortBusy: COM7", "firstUsb")).toBe(
+      "PortBusy: COM7",
     );
   });
 });

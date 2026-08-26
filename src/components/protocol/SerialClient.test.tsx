@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../types/connection/connection";
+import type {
+  SerialPortSelection,
+  SerialPortSelectionMode,
+} from "../../types/protocols/serial";
 
 const mocks = vi.hoisted(() => ({
   hook: vi.fn(),
@@ -12,7 +16,10 @@ const mocks = vi.hoisted(() => ({
   inputHandler: null as ((data: string) => void) | null,
 }));
 
-vi.mock("../../hooks/protocol/useSerialSession", () => ({
+vi.mock("../../hooks/protocol/useSerialSession", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../hooks/protocol/useSerialSession")
+  >()),
   useSerialSession: (...args: unknown[]) => mocks.hook(...args),
 }));
 
@@ -63,6 +70,7 @@ const createModel = () => ({
   settings: {
     version: 1 as const,
     portName: "COM7",
+    portSelection: { mode: "fixed" } as SerialPortSelection,
     baudRate: 115200,
     dataBits: "8" as const,
     parity: "none" as const,
@@ -89,6 +97,10 @@ const createModel = () => ({
   },
   requestedDtr: true,
   requestedRts: false,
+  resolvedPortName: "COM7" as string | null,
+  resolvedDisplayName: null as string | null,
+  autoSelected: false,
+  selectionMode: "fixed" as SerialPortSelectionMode,
   sendBytes: vi.fn().mockResolvedValue(undefined),
   sendInput: vi.fn().mockResolvedValue(undefined),
   sendBreak: vi.fn().mockResolvedValue(undefined),
@@ -137,6 +149,68 @@ describe("SerialClient", () => {
     expect(
       screen.getByText(/Terminal resizing is local only/),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId("serial-client-auto-badge")).toBeNull();
+    expect(screen.getByTestId("serial-client")).toHaveAttribute(
+      "aria-label",
+      "Serial session on COM7",
+    );
+  });
+
+  it("shows the resolved port and an auto badge for an auto-selected device", () => {
+    const model = createModel();
+    model.settings.portName = "";
+    model.settings.portSelection = { mode: "firstUsb" };
+    model.resolvedPortName = "COM9";
+    model.resolvedDisplayName = "COM9 - FTDI FT232R";
+    model.autoSelected = true;
+    model.selectionMode = "firstUsb";
+    mocks.hook.mockReturnValue(model);
+    render(
+      <SerialClient session={{ ...session, hostname: "auto:first-usb" }} />,
+    );
+
+    expect(screen.getByTestId("serial-client-port")).toHaveTextContent(
+      "Serial · COM9",
+    );
+    const badge = screen.getByTestId("serial-client-auto-badge");
+    expect(badge).toHaveTextContent("auto · first USB");
+    expect(badge).toHaveAttribute("title", "COM9 - FTDI FT232R");
+    expect(screen.getByTestId("serial-client")).toHaveAttribute(
+      "aria-label",
+      "Serial session on COM9",
+    );
+  });
+
+  it("labels the other auto modes and falls back to the hostname token before resolution", () => {
+    const model = createModel();
+    model.settings.portName = "";
+    model.settings.portSelection = { mode: "firstAny" };
+    model.status = "connecting" as never;
+    model.resolvedPortName = null;
+    model.autoSelected = false;
+    model.selectionMode = "firstAny";
+    mocks.hook.mockReturnValue(model);
+    const { rerender } = render(
+      <SerialClient session={{ ...session, hostname: "auto:first-device" }} />,
+    );
+    expect(screen.getByTestId("serial-client-port")).toHaveTextContent(
+      "Serial · auto:first-device",
+    );
+    expect(screen.queryByTestId("serial-client-auto-badge")).toBeNull();
+
+    mocks.hook.mockReturnValue({
+      ...model,
+      resolvedPortName: "/dev/ttyUSB0",
+      autoSelected: true,
+      selectionMode: "match",
+    });
+    rerender(<SerialClient session={{ ...session, hostname: "auto:match" }} />);
+    expect(screen.getByTestId("serial-client-port")).toHaveTextContent(
+      "Serial · /dev/ttyUSB0",
+    );
+    expect(screen.getByTestId("serial-client-auto-badge")).toHaveTextContent(
+      "auto · match",
+    );
   });
 
   it("sends terminal data and exposes only supported serial controls", async () => {
