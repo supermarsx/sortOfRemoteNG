@@ -337,10 +337,10 @@ export const S = {
   // App.tsx moves `title` into `data-tooltip` at runtime; match either.
   scriptManagerOpen:
     'button[data-tooltip="Script Manager"], button[title="Script Manager"]',
-  scriptManagerNewScript: 'button*=New Script',
+  scriptManagerNewScript: "button*=New Script",
   scriptManagerEditName: 'input[placeholder="Enter script name"]',
   scriptManagerEditScript: 'textarea[placeholder="Enter your script here..."]',
-  scriptManagerSave: 'button*=Save',
+  scriptManagerSave: "button*=Save",
   scriptManagerRunOnSsh:
     'button[data-tooltip="Run on SSH"], button[title="Run on SSH"]',
 
