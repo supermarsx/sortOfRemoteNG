@@ -156,6 +156,37 @@ pub async fn execute_script(
     )
 }
 
+/// Streaming script execution: returns the execution id immediately; output
+/// arrives as `ssh-script-output` events followed by one
+/// `ssh-script-finished`. The service lock is held only for upload + exec.
+#[tauri::command]
+pub async fn execute_script_stream(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    script: String,
+    interpreter: Option<String>,
+    execution_id: Option<String>,
+) -> Result<String, String> {
+    let mut ssh = state.lock().await;
+    redact_result(ssh.execute_script_stream(
+        &session_id,
+        &script,
+        interpreter.as_deref(),
+        execution_id,
+    ))
+}
+
+/// Cancels an in-flight streamed script execution. Returns whether the
+/// execution was still running.
+#[tauri::command]
+pub async fn cancel_script_execution(
+    state: tauri::State<'_, SshServiceState>,
+    execution_id: String,
+) -> Result<bool, String> {
+    let ssh = state.lock().await;
+    Ok(ssh.cancel_script_execution(&execution_id))
+}
+
 #[tauri::command]
 pub async fn transfer_file_scp(
     state: tauri::State<'_, SshServiceState>,

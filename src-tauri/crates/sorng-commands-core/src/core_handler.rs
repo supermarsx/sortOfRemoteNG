@@ -124,6 +124,8 @@ pub fn is_command(command: &str) -> bool {
             | "execute_command"
             | "execute_command_interactive"
             | "execute_script"
+            | "execute_script_stream"
+            | "cancel_script_execution"
             | "transfer_file_scp"
             | "get_system_info"
             | "monitor_process"
@@ -1502,6 +1504,8 @@ define_command_group!(
         ssh_commands::execute_command,
         ssh_commands::execute_command_interactive,
         ssh_commands::execute_script,
+        ssh_commands::execute_script_stream,
+        ssh_commands::cancel_script_execution,
         ssh_commands::transfer_file_scp,
         ssh_commands::get_system_info,
         ssh_commands::monitor_process,
@@ -2862,6 +2866,8 @@ mod tests {
         "execute_command",
         "execute_command_interactive",
         "execute_script",
+        "execute_script_stream",
+        "cancel_script_execution",
         "transfer_file_scp",
         "get_system_info",
         "monitor_process",

@@ -669,6 +669,531 @@ where
     ))
 }
 
+// ── Streaming script execution ──────────────────────────────────────────────
+//
+// `execute_script_stream` keeps the SCP upload + `exec` under the service lock
+// exactly like the blocking path, then moves the exec channel into a worker
+// thread and releases the lock. The worker drains stdout/stderr concurrently
+// under the same 5-minute deadline and 4 MiB combined budget, emitting
+// `ssh-script-output` chunks (≤ 16 KiB, coalesced per ~16 ms) followed by one
+// `ssh-script-finished` event. Temp-file cleanup and `resume_shell_io` run in
+// the worker's guard so they happen on every exit path, including panics.
+//
+// Thread-safety invariant (libssh2): `ssh2::Session` serialises every call on
+// a shared handle through its own internal mutex, so the worker and the
+// keepalive task may hold clones safely. The interactive shell reader of the
+// same session is paused (`pause_shell_io`) for the whole run because the
+// worker flips the session between blocking and non-blocking mode; while a
+// streamed run is in flight, other commands must not change that mode on the
+// same session. Other sessions are independent and stay fully responsive.
+
+/// Maximum decoded bytes carried by one `ssh-script-output` event.
+const SCRIPT_STREAM_CHUNK_BYTES: usize = 16 * 1024;
+/// Reads arriving within this window are coalesced into one event.
+const SCRIPT_STREAM_COALESCE_WINDOW: Duration = Duration::from_millis(16);
+const SCRIPT_EXIT_SENTINEL_PREFIX: &[u8] = b"__SORNG_EXIT:";
+const SCRIPT_EXECUTION_ID_MAX_LEN: usize = 128;
+
+/// Cancellation flags of in-flight streamed executions, keyed by execution id.
+pub type ScriptExecutionRegistry = Arc<StdMutex<HashMap<String, Arc<AtomicBool>>>>;
+
+fn new_script_execution_registry() -> ScriptExecutionRegistry {
+    Arc::new(StdMutex::new(HashMap::new()))
+}
+
+fn registry_remove(registry: &ScriptExecutionRegistry, execution_id: &str) {
+    if let Ok(mut executions) = registry.lock() {
+        executions.remove(execution_id);
+    }
+}
+
+/// Destination for streamed chunks. Abstracted so the reader can be unit
+/// tested without an SSH channel or a Tauri event loop.
+trait ScriptChunkSink: Sync {
+    fn emit_chunk(&self, stream: ScriptOutputStreamKind, data: String);
+}
+
+/// Emits `ssh-script-output` events with a strictly increasing sequence.
+/// The sequence is assigned and the event emitted under one lock so the
+/// order observed by the consumer equals the sequence order.
+struct ScriptEventSink {
+    emitter: DynEventEmitter,
+    execution_id: String,
+    session_id: String,
+    next_sequence: StdMutex<u64>,
+}
+
+impl ScriptEventSink {
+    fn new(emitter: DynEventEmitter, execution_id: String, session_id: String) -> Self {
+        Self {
+            emitter,
+            execution_id,
+            session_id,
+            next_sequence: StdMutex::new(0),
+        }
+    }
+}
+
+impl ScriptChunkSink for ScriptEventSink {
+    fn emit_chunk(&self, stream: ScriptOutputStreamKind, data: String) {
+        let mut next = match self.next_sequence.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let payload = ScriptOutputChunk {
+            execution_id: self.execution_id.clone(),
+            session_id: self.session_id.clone(),
+            stream,
+            data,
+            sequence: *next,
+        };
+        *next += 1;
+        let _ = self.emitter.emit_event(
+            SSH_SCRIPT_OUTPUT_EVENT,
+            serde_json::to_value(&payload).unwrap_or_default(),
+        );
+    }
+}
+
+/// Holds back the tail of stdout that could still turn out to be the exit
+/// sentinel (`\n__SORNG_EXIT:<code>\n`) so it is never streamed to the
+/// consumer even when it arrives split across reads. Everything that cannot
+/// be part of the sentinel is released immediately.
+#[derive(Default)]
+struct ScriptSentinelFilter {
+    held: Vec<u8>,
+}
+
+impl ScriptSentinelFilter {
+    fn push(&mut self, bytes: &[u8]) -> Vec<u8> {
+        self.held.extend_from_slice(bytes);
+        let boundary = Self::release_boundary(&self.held);
+        self.held.drain(..boundary).collect()
+    }
+
+    fn line_is_suspicious(line: &[u8], partial: bool) -> bool {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            return true;
+        }
+        if line.starts_with(SCRIPT_EXIT_SENTINEL_PREFIX) {
+            return true;
+        }
+        partial && SCRIPT_EXIT_SENTINEL_PREFIX.starts_with(line)
+    }
+
+    /// Index up to which `buffer` can be released. Walks back from the end
+    /// over the partial trailing line and any complete lines that are blank
+    /// or sentinel-shaped; the first ordinary line ends the walk.
+    fn release_boundary(buffer: &[u8]) -> usize {
+        let mut end = buffer.len();
+        let mut partial = true;
+        loop {
+            // Complete lines end with the '\n' at `end - 1`; exclude it from
+            // both the content and the search for the line's start.
+            let line_end = if partial { end } else { end - 1 };
+            let start = buffer[..line_end]
+                .iter()
+                .rposition(|byte| *byte == b'\n')
+                .map(|pos| pos + 1)
+                .unwrap_or(0);
+            if !Self::line_is_suspicious(&buffer[start..line_end], partial) {
+                return end;
+            }
+            if start == 0 {
+                return 0;
+            }
+            end = start;
+            partial = false;
+        }
+    }
+
+    /// Releases the held tail at EOF with the sentinel stripped (mirrors
+    /// `parse_script_stdout_and_exit`: trailing whitespace before the sentinel
+    /// is trimmed). Returns the exit code carried by the sentinel, if any.
+    fn finish(self) -> (Vec<u8>, Option<i32>) {
+        let sentinel_at = self
+            .held
+            .windows(SCRIPT_EXIT_SENTINEL_PREFIX.len())
+            .rposition(|window| window == SCRIPT_EXIT_SENTINEL_PREFIX);
+        match sentinel_at {
+            Some(pos) => {
+                let code =
+                    std::str::from_utf8(&self.held[pos + SCRIPT_EXIT_SENTINEL_PREFIX.len()..])
+                        .ok()
+                        .and_then(|rest| rest.trim().parse::<i32>().ok());
+                let mut before = self.held[..pos].to_vec();
+                while before.last().is_some_and(u8::is_ascii_whitespace) {
+                    before.pop();
+                }
+                (before, code)
+            }
+            None => (self.held, None),
+        }
+    }
+}
+
+struct ScriptStreamReaderResult {
+    delivered_bytes: u64,
+    sentinel_exit_code: Option<i32>,
+    error: Option<ScriptOutputReadError>,
+}
+
+/// Coalesces raw bytes into ≤ 16 KiB UTF-8 chunks and hands them to the sink.
+struct ScriptChunkBatcher<'a, S: ScriptChunkSink> {
+    sink: &'a S,
+    stream: ScriptOutputStreamKind,
+    decoder: StreamingUtf8Decoder,
+    pending: Vec<u8>,
+    pending_since: Option<Instant>,
+    delivered_bytes: u64,
+}
+
+impl<'a, S: ScriptChunkSink> ScriptChunkBatcher<'a, S> {
+    fn new(sink: &'a S, stream: ScriptOutputStreamKind) -> Self {
+        Self {
+            sink,
+            stream,
+            decoder: StreamingUtf8Decoder::new(),
+            pending: Vec::new(),
+            pending_since: None,
+            delivered_bytes: 0,
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.pending.extend_from_slice(bytes);
+        if self.pending_since.is_none() {
+            self.pending_since = Some(Instant::now());
+        }
+        if self.pending.len() >= SCRIPT_STREAM_CHUNK_BYTES {
+            self.flush(false);
+        } else if self.window_elapsed() {
+            self.flush(true);
+        }
+    }
+
+    fn window_elapsed(&self) -> bool {
+        self.pending_since
+            .is_some_and(|since| since.elapsed() >= SCRIPT_STREAM_COALESCE_WINDOW)
+    }
+
+    /// Flushes full chunks; with `force`, also the remaining partial chunk.
+    fn flush(&mut self, force: bool) {
+        while self.pending.len() >= SCRIPT_STREAM_CHUNK_BYTES || (force && !self.pending.is_empty())
+        {
+            let take = self.pending.len().min(SCRIPT_STREAM_CHUNK_BYTES);
+            let chunk: Vec<u8> = self.pending.drain(..take).collect();
+            let decoded = self.decoder.push(&chunk);
+            self.emit(decoded);
+        }
+        self.pending_since = if self.pending.is_empty() {
+            None
+        } else {
+            Some(Instant::now())
+        };
+    }
+
+    fn flush_if_window_elapsed(&mut self) {
+        if self.window_elapsed() {
+            self.flush(true);
+        }
+    }
+
+    fn finish(mut self) -> u64 {
+        self.flush(true);
+        let tail = self.decoder.finish();
+        self.emit(tail);
+        self.delivered_bytes
+    }
+
+    fn emit(&mut self, data: String) {
+        if data.is_empty() {
+            return;
+        }
+        self.delivered_bytes += data.len() as u64;
+        self.sink.emit_chunk(self.stream, data);
+    }
+}
+
+fn stream_script_stream_bounded<R: Read, S: ScriptChunkSink>(
+    mut reader: R,
+    stream: ScriptOutputStreamKind,
+    bytes_read: Arc<AtomicUsize>,
+    byte_limit: usize,
+    deadline: Instant,
+    cancelled: Arc<AtomicBool>,
+    sink: &S,
+) -> ScriptStreamReaderResult {
+    let mut batcher = ScriptChunkBatcher::new(sink, stream);
+    let mut sentinel_filter = match stream {
+        ScriptOutputStreamKind::Stdout => Some(ScriptSentinelFilter::default()),
+        ScriptOutputStreamKind::Stderr => None,
+    };
+    let mut chunk = [0_u8; 8 * 1024];
+
+    let outcome: Result<(), ScriptOutputReadError> = loop {
+        if cancelled.load(Ordering::Acquire) {
+            break Err(ScriptOutputReadError::Cancelled);
+        }
+        if Instant::now() >= deadline {
+            cancelled.store(true, Ordering::Release);
+            break Err(ScriptOutputReadError::DeadlineExceeded);
+        }
+
+        match reader.read(&mut chunk) {
+            Ok(0) => break Ok(()),
+            Ok(count) => {
+                if cancelled.load(Ordering::Acquire) {
+                    break Err(ScriptOutputReadError::Cancelled);
+                }
+                let reserved = bytes_read
+                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                        current
+                            .checked_add(count)
+                            .filter(|next| *next <= byte_limit)
+                    })
+                    .is_ok();
+                if !reserved {
+                    cancelled.store(true, Ordering::Release);
+                    break Err(ScriptOutputReadError::OutputLimitExceeded);
+                }
+                match sentinel_filter.as_mut() {
+                    Some(filter) => {
+                        let released = filter.push(&chunk[..count]);
+                        batcher.push(&released);
+                    }
+                    None => batcher.push(&chunk[..count]),
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                batcher.flush_if_window_elapsed();
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                std::thread::sleep(SCRIPT_OUTPUT_READ_POLL_INTERVAL.min(remaining));
+            }
+            Err(_) => {
+                cancelled.store(true, Ordering::Release);
+                break Err(match stream {
+                    ScriptOutputStreamKind::Stdout => ScriptOutputReadError::StdoutReadFailed,
+                    ScriptOutputStreamKind::Stderr => ScriptOutputReadError::StderrReadFailed,
+                });
+            }
+        }
+    };
+
+    // Release whatever was already collected within budget, stripping the
+    // sentinel when the stream completed normally.
+    let sentinel_exit_code = match sentinel_filter.take() {
+        Some(filter) => {
+            let (tail, code) = filter.finish();
+            batcher.push(&tail);
+            code
+        }
+        None => None,
+    };
+    let delivered_bytes = batcher.finish();
+
+    ScriptStreamReaderResult {
+        delivered_bytes,
+        sentinel_exit_code,
+        error: outcome.err(),
+    }
+}
+
+/// Summary of a streamed drain of both remote streams.
+struct ScriptStreamOutcome {
+    stdout_bytes: u64,
+    stderr_bytes: u64,
+    sentinel_exit_code: Option<i32>,
+    error: Option<ScriptOutputReadError>,
+}
+
+fn stream_script_output_bounded<Stdout, Stderr, S>(
+    stdout: Stdout,
+    stderr: Stderr,
+    byte_limit: usize,
+    deadline: Instant,
+    cancelled: Arc<AtomicBool>,
+    sink: &S,
+) -> ScriptStreamOutcome
+where
+    Stdout: Read + Send,
+    Stderr: Read + Send,
+    S: ScriptChunkSink,
+{
+    let bytes_read = Arc::new(AtomicUsize::new(0));
+    let (stdout_result, stderr_result) = std::thread::scope(|scope| {
+        let stdout_task = scope.spawn({
+            let bytes_read = Arc::clone(&bytes_read);
+            let cancelled = Arc::clone(&cancelled);
+            move || {
+                stream_script_stream_bounded(
+                    stdout,
+                    ScriptOutputStreamKind::Stdout,
+                    bytes_read,
+                    byte_limit,
+                    deadline,
+                    cancelled,
+                    sink,
+                )
+            }
+        });
+        let stderr_task = scope.spawn({
+            let bytes_read = Arc::clone(&bytes_read);
+            let cancelled = Arc::clone(&cancelled);
+            move || {
+                stream_script_stream_bounded(
+                    stderr,
+                    ScriptOutputStreamKind::Stderr,
+                    bytes_read,
+                    byte_limit,
+                    deadline,
+                    cancelled,
+                    sink,
+                )
+            }
+        });
+        let failed = |error: ScriptOutputReadError| ScriptStreamReaderResult {
+            delivered_bytes: 0,
+            sentinel_exit_code: None,
+            error: Some(error),
+        };
+        (
+            stdout_task
+                .join()
+                .unwrap_or_else(|_| failed(ScriptOutputReadError::StdoutReadFailed)),
+            stderr_task
+                .join()
+                .unwrap_or_else(|_| failed(ScriptOutputReadError::StderrReadFailed)),
+        )
+    });
+
+    let error = [stdout_result.error, stderr_result.error]
+        .into_iter()
+        .flatten()
+        .min_by_key(|error| error.priority());
+
+    ScriptStreamOutcome {
+        stdout_bytes: stdout_result.delivered_bytes,
+        stderr_bytes: stderr_result.delivered_bytes,
+        sentinel_exit_code: stdout_result.sentinel_exit_code,
+        error,
+    }
+}
+
+/// RAII wrapper around `pause_shell_io` so the interactive shell reader is
+/// resumed on every path, including a worker closure that is dropped unrun.
+struct ShellIoPause(Option<Arc<AtomicUsize>>);
+
+impl Drop for ShellIoPause {
+    fn drop(&mut self) {
+        SshService::resume_shell_io(self.0.take());
+    }
+}
+
+/// Runs on every worker exit path (normal, error, panic): deregisters the
+/// execution, resumes the paused shell reader, and emits the terminal event.
+struct ScriptWorkerGuard {
+    registry: ScriptExecutionRegistry,
+    execution_id: String,
+    session_id: String,
+    emitter: DynEventEmitter,
+    shell_pause: ShellIoPause,
+    started: Instant,
+    finished: Option<ScriptExecutionFinished>,
+}
+
+impl Drop for ScriptWorkerGuard {
+    fn drop(&mut self) {
+        registry_remove(&self.registry, &self.execution_id);
+        SshService::resume_shell_io(self.shell_pause.0.take());
+        let finished = self
+            .finished
+            .take()
+            .unwrap_or_else(|| ScriptExecutionFinished {
+                execution_id: self.execution_id.clone(),
+                session_id: self.session_id.clone(),
+                exit_code: None,
+                stdout_bytes: 0,
+                stderr_bytes: 0,
+                truncated: false,
+                duration_ms: self.started.elapsed().as_millis() as u64,
+                error: Some("Remote script worker terminated unexpectedly".to_string()),
+            });
+        let _ = self.emitter.emit_event(
+            SSH_SCRIPT_FINISHED_EVENT,
+            serde_json::to_value(&finished).unwrap_or_default(),
+        );
+    }
+}
+
+fn validate_script_execution_id(execution_id: Option<String>) -> Result<String, String> {
+    match execution_id.filter(|id| !id.is_empty()) {
+        None => Ok(Uuid::new_v4().to_string()),
+        Some(id) => {
+            let valid = id.len() <= SCRIPT_EXECUTION_ID_MAX_LEN
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+            if valid {
+                Ok(id)
+            } else {
+                Err("Invalid script execution id".to_string())
+            }
+        }
+    }
+}
+
+fn upload_script_via_scp(
+    session: &Session,
+    remote_path: &str,
+    script: &str,
+    interpreter: &str,
+) -> Result<(), String> {
+    let full_script = prepare_uploaded_script(script, interpreter);
+    let script_bytes = full_script.as_bytes();
+    let mut channel = session
+        .scp_send(
+            Path::new(remote_path),
+            0o700,
+            script_bytes.len() as u64,
+            None,
+        )
+        .map_err(|e| format!("Failed to open SCP channel for script upload: {}", e))?;
+    channel
+        .write_all(script_bytes)
+        .map_err(|e| format!("Failed to write script to remote: {}", e))?;
+    channel
+        .send_eof()
+        .map_err(|e| format!("SCP send_eof: {}", e))?;
+    channel
+        .wait_eof()
+        .map_err(|e| format!("SCP wait_eof: {}", e))?;
+    channel.close().map_err(|e| format!("SCP close: {}", e))?;
+    channel
+        .wait_close()
+        .map_err(|e| format!("SCP wait_close: {}", e))?;
+    Ok(())
+}
+
+/// Best-effort removal of the uploaded temp script. Expects blocking mode.
+fn remove_remote_script(session: &Session, remote_path: &str) {
+    session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+    if let Ok(mut rm_ch) = session.channel_session() {
+        let rm_cmd = format!(
+            "rm -f {}",
+            shell_escape::escape(remote_path.to_string().into())
+        );
+        let _ = rm_ch.exec(&rm_cmd);
+        let _ = rm_ch.send_eof();
+        let _ = rm_ch.close();
+        let _ = rm_ch.wait_close();
+    }
+}
+
 fn is_transient_shell_io_error(error: &std::io::Error) -> bool {
     matches!(
         error.kind(),
@@ -2358,6 +2883,9 @@ pub struct SshService {
     establishment_control: Option<Arc<SshEstablishmentControl>>,
     establishment_session_lease: Option<Arc<SshSessionAdmissionLease>>,
     shell_admission: Arc<ShellAdmission>,
+    /// In-flight streamed script executions keyed by execution id. Shared with
+    /// each worker thread so it can deregister itself without the service lock.
+    script_executions: ScriptExecutionRegistry,
 }
 
 impl SshService {
@@ -2374,6 +2902,7 @@ impl SshService {
             establishment_control: None,
             establishment_session_lease: None,
             shell_admission: process_shell_admission(),
+            script_executions: new_script_execution_registry(),
         }))
     }
 
@@ -2390,6 +2919,7 @@ impl SshService {
             establishment_control: None,
             establishment_session_lease: None,
             shell_admission: process_shell_admission(),
+            script_executions: new_script_execution_registry(),
         }))
     }
 
@@ -2407,6 +2937,7 @@ impl SshService {
             establishment_control: None,
             establishment_session_lease: None,
             shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
+            script_executions: new_script_execution_registry(),
         }))
     }
 
@@ -2461,6 +2992,7 @@ impl SshService {
             establishment_control: Some(establishment_control),
             establishment_session_lease: Some(Arc::clone(&session_lease)),
             shell_admission: Arc::clone(&self.shell_admission),
+            script_executions: Arc::clone(&self.script_executions),
         };
         let attempt = SshConnectionAttempt {
             session_id,
@@ -2499,6 +3031,7 @@ impl SshService {
             establishment_control: self.establishment_control.clone(),
             establishment_session_lease: self.establishment_session_lease.clone(),
             shell_admission: Arc::clone(&self.shell_admission),
+            script_executions: Arc::clone(&self.script_executions),
         }
     }
 
@@ -6719,6 +7252,205 @@ impl SshService {
         result
     }
 
+    /// Streaming variant of [`SshService::execute_script`]. Uploads and starts
+    /// the script under the service lock, then returns the execution id while
+    /// a worker thread streams `ssh-script-output` chunks and finally one
+    /// `ssh-script-finished` event. See the module notes above
+    /// `SCRIPT_STREAM_CHUNK_BYTES` for the threading invariant.
+    pub fn execute_script_stream(
+        &mut self,
+        session_id: &str,
+        script: &str,
+        interpreter: Option<&str>,
+        execution_id: Option<String>,
+    ) -> Result<String, String> {
+        let emitter = self
+            .event_emitter
+            .clone()
+            .ok_or_else(|| "No event emitter configured".to_string())?;
+        let execution_id = validate_script_execution_id(execution_id)?;
+        let interpreter = interpreter.unwrap_or("bash");
+        let script_id = Uuid::new_v4().to_string().replace('-', "");
+        let remote_path = format!("/tmp/.sorng_script_{}", &script_id[..16]);
+
+        if !self.sessions.contains_key(session_id) {
+            return Err("Session not found".to_string());
+        }
+
+        let cancelled = Arc::new(AtomicBool::new(false));
+        {
+            let mut executions = self
+                .script_executions
+                .lock()
+                .map_err(|_| "Script execution registry is poisoned".to_string())?;
+            if executions.contains_key(&execution_id) {
+                return Err("A script execution with this id is already running".to_string());
+            }
+            executions.insert(execution_id.clone(), Arc::clone(&cancelled));
+        }
+
+        let shell_pause = ShellIoPause(self.pause_shell_io(session_id));
+        let registry = Arc::clone(&self.script_executions);
+        let started = Instant::now();
+
+        let prepared = (|| -> Result<(ssh2::Channel, Session, bool), String> {
+            let session_entry = self
+                .sessions
+                .get_mut(session_id)
+                .ok_or("Session not found")?;
+            session_entry.last_activity = chrono::Utc::now();
+            let session = session_entry.session.clone();
+            let was_blocking = session.is_blocking();
+            session.set_blocking(true);
+
+            let setup = (|| -> Result<ssh2::Channel, String> {
+                upload_script_via_scp(&session, &remote_path, script, interpreter)?;
+                let exec_command = wrap_script_invocation_with_exit_sentinel(
+                    &build_script_invocation(&remote_path, interpreter),
+                );
+                let mut exec_ch = session
+                    .channel_session()
+                    .map_err(|e| format!("Failed to create exec channel: {}", e))?;
+                session.set_timeout(SCRIPT_EXECUTION_TIMEOUT.as_millis() as u32);
+                exec_ch
+                    .exec(&exec_command)
+                    .map_err(|e| format!("Failed to execute script: {}", e))?;
+                let _ = exec_ch.send_eof();
+                Ok(exec_ch)
+            })();
+
+            match setup {
+                Ok(exec_ch) => {
+                    // Non-blocking reads for the concurrent stdout/stderr drain.
+                    session.set_blocking(false);
+                    Ok((exec_ch, session, was_blocking))
+                }
+                Err(error) => {
+                    remove_remote_script(&session, &remote_path);
+                    if !was_blocking {
+                        session.set_blocking(false);
+                    }
+                    session.set_timeout(0);
+                    Err(error)
+                }
+            }
+        })();
+
+        let (exec_ch, session, was_blocking) = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                registry_remove(&registry, &execution_id);
+                drop(shell_pause);
+                return Err(error);
+            }
+        };
+
+        let deadline = started + SCRIPT_EXECUTION_TIMEOUT;
+        let worker_execution_id = execution_id.clone();
+        let worker_session_id = session_id.to_string();
+        let worker_emitter = emitter.clone();
+        let worker_registry = Arc::clone(&registry);
+        let spawn_result = std::thread::Builder::new()
+            .name(format!("ssh-script-{}", &script_id[..8]))
+            .spawn(move || {
+                let mut guard = ScriptWorkerGuard {
+                    registry: worker_registry,
+                    execution_id: worker_execution_id.clone(),
+                    session_id: worker_session_id.clone(),
+                    emitter: worker_emitter.clone(),
+                    shell_pause,
+                    started,
+                    finished: None,
+                };
+                let mut exec_ch = exec_ch;
+                let sink = ScriptEventSink::new(
+                    worker_emitter,
+                    worker_execution_id.clone(),
+                    worker_session_id.clone(),
+                );
+
+                let outcome = stream_script_output_bounded(
+                    exec_ch.stream(0),
+                    exec_ch.stderr(),
+                    SCRIPT_OUTPUT_LIMIT_BYTES,
+                    deadline,
+                    cancelled,
+                    &sink,
+                );
+                session.set_blocking(true);
+
+                if outcome.error.is_some() || Instant::now() >= deadline {
+                    session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+                    let _ = exec_ch.close();
+                    let _ = exec_ch.wait_close();
+                } else {
+                    let remaining_ms = deadline
+                        .saturating_duration_since(Instant::now())
+                        .as_millis()
+                        .clamp(1, u32::MAX as u128) as u32;
+                    session.set_timeout(remaining_ms);
+                    if exec_ch.wait_close().is_err() {
+                        let _ = exec_ch.close();
+                        session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+                        let _ = exec_ch.wait_close();
+                    }
+                }
+                let raw_exit = exec_ch.exit_status().unwrap_or(-1);
+                drop(exec_ch);
+
+                remove_remote_script(&session, &remote_path);
+                if !was_blocking {
+                    session.set_blocking(false);
+                }
+                session.set_timeout(0);
+
+                let exit_code = match outcome.error {
+                    None => Some(outcome.sentinel_exit_code.unwrap_or(raw_exit)),
+                    Some(_) => None,
+                };
+                guard.finished = Some(ScriptExecutionFinished {
+                    execution_id: worker_execution_id,
+                    session_id: worker_session_id,
+                    exit_code,
+                    stdout_bytes: outcome.stdout_bytes,
+                    stderr_bytes: outcome.stderr_bytes,
+                    truncated: outcome.error == Some(ScriptOutputReadError::OutputLimitExceeded),
+                    duration_ms: started.elapsed().as_millis() as u64,
+                    error: outcome.error.map(|error| error.user_message().to_string()),
+                });
+                // `guard` drops here: deregister, resume shell IO, emit finished.
+            });
+
+        match spawn_result {
+            Ok(_) => Ok(execution_id),
+            Err(error) => {
+                // The closure was never run: dropping it resumes shell IO via
+                // `ShellIoPause` and frees the channel; the remote temp file is
+                // left for the next successful run's cleanup pattern
+                // (`/tmp/.sorng_script_*`, best effort).
+                registry_remove(&registry, &execution_id);
+                Err(format!("Failed to spawn SSH script worker: {error}"))
+            }
+        }
+    }
+
+    /// Requests cancellation of an in-flight streamed script execution.
+    /// Returns `false` when no such execution is running (already finished or
+    /// unknown); the worker still emits its `ssh-script-finished` event.
+    pub fn cancel_script_execution(&self, execution_id: &str) -> bool {
+        let executions = match self.script_executions.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match executions.get(execution_id) {
+            Some(flag) => {
+                flag.store(true, Ordering::Release);
+                true
+            }
+            None => false,
+        }
+    }
+
     pub async fn transfer_file_scp(
         &mut self,
         session_id: &str,
@@ -8796,6 +9528,7 @@ mod host_key_prompt_tests {
             establishment_control: None,
             establishment_session_lease: None,
             shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
+            script_executions: new_script_execution_registry(),
         }
     }
 
@@ -9211,6 +9944,470 @@ mod tests {
         assert_eq!(error, ScriptOutputReadError::Cancelled);
     }
 
+    // ── Streaming script execution ──────────────────────────────────────
+
+    #[derive(Default)]
+    struct RecordingSink {
+        chunks: StdMutex<Vec<(ScriptOutputStreamKind, String)>>,
+    }
+
+    impl ScriptChunkSink for RecordingSink {
+        fn emit_chunk(&self, stream: ScriptOutputStreamKind, data: String) {
+            self.chunks
+                .lock()
+                .expect("recording sink poisoned")
+                .push((stream, data));
+        }
+    }
+
+    impl RecordingSink {
+        fn text(&self, wanted: ScriptOutputStreamKind) -> String {
+            self.chunks
+                .lock()
+                .expect("recording sink poisoned")
+                .iter()
+                .filter(|(stream, _)| *stream == wanted)
+                .map(|(_, data)| data.as_str())
+                .collect()
+        }
+
+        fn len(&self) -> usize {
+            self.chunks.lock().expect("recording sink poisoned").len()
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingScriptEmitter {
+        events: StdMutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl sorng_core::events::AppEventEmitter for RecordingScriptEmitter {
+        fn emit_event(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+            self.events
+                .lock()
+                .expect("recording emitter poisoned")
+                .push((event.to_string(), payload));
+            Ok(())
+        }
+    }
+
+    impl RecordingScriptEmitter {
+        fn events(&self) -> Vec<(String, serde_json::Value)> {
+            self.events
+                .lock()
+                .expect("recording emitter poisoned")
+                .clone()
+        }
+    }
+
+    /// Yields `step` bytes per read so multi-byte tokens straddle reads.
+    struct DribbleReader {
+        data: Vec<u8>,
+        offset: usize,
+        step: usize,
+    }
+
+    impl Read for DribbleReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if self.offset >= self.data.len() {
+                return Ok(0);
+            }
+            let end = (self.offset + self.step).min(self.data.len());
+            let count = (end - self.offset).min(buffer.len());
+            buffer[..count].copy_from_slice(&self.data[self.offset..self.offset + count]);
+            self.offset += count;
+            Ok(count)
+        }
+    }
+
+    fn stream_deadline() -> Instant {
+        Instant::now() + Duration::from_secs(5)
+    }
+
+    #[test]
+    fn script_stream_sentinel_filter_holds_only_sentinel_shaped_tail() {
+        let mut filter = ScriptSentinelFilter::default();
+        assert_eq!(filter.push(b"hello\n"), b"hello\n");
+        // A partial ordinary line is released immediately (progress output).
+        assert_eq!(filter.push(b"loading 50%"), b"loading 50%");
+        // Blank lines are held until a real line follows them.
+        assert_eq!(filter.push(b"\n\n"), b"");
+        assert_eq!(filter.push(b"done\n"), b"\n\ndone\n");
+        // A sentinel prefix split across reads never leaks.
+        assert_eq!(filter.push(b"\n__S"), b"");
+        assert_eq!(filter.push(b"ORNG_EXIT:4"), b"");
+        assert_eq!(filter.push(b"2\n"), b"");
+        let (tail, code) = filter.finish();
+        assert!(tail.is_empty(), "sentinel tail leaked: {tail:?}");
+        assert_eq!(code, Some(42));
+    }
+
+    #[test]
+    fn script_stream_sentinel_filter_releases_everything_without_sentinel() {
+        let mut filter = ScriptSentinelFilter::default();
+        assert_eq!(filter.push(b"a\n\n"), b"a\n");
+        let (tail, code) = filter.finish();
+        assert_eq!(tail, b"\n");
+        assert_eq!(code, None);
+    }
+
+    #[test]
+    fn script_stream_strips_sentinel_split_across_chunks() {
+        let sink = RecordingSink::default();
+        let stdout = DribbleReader {
+            data: b"hello\nworld\n\n__SORNG_EXIT:7\n".to_vec(),
+            offset: 0,
+            step: 3,
+        };
+        let outcome = stream_script_output_bounded(
+            stdout,
+            std::io::Cursor::new(Vec::new()),
+            SCRIPT_OUTPUT_LIMIT_BYTES,
+            stream_deadline(),
+            Arc::new(AtomicBool::new(false)),
+            &sink,
+        );
+
+        assert_eq!(outcome.error, None);
+        assert_eq!(outcome.sentinel_exit_code, Some(7));
+        assert_eq!(sink.text(ScriptOutputStreamKind::Stdout), "hello\nworld\n");
+        assert_eq!(outcome.stdout_bytes, "hello\nworld\n".len() as u64);
+        for (_, data) in sink.chunks.lock().unwrap().iter() {
+            assert!(
+                !data.contains("__SORNG"),
+                "sentinel leaked into chunk {data:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn script_stream_emits_ordered_sequence_across_interleaved_streams() {
+        let emitter = Arc::new(RecordingScriptEmitter::default());
+        let sink = ScriptEventSink::new(
+            emitter.clone() as DynEventEmitter,
+            "exec-1".to_string(),
+            "sess-1".to_string(),
+        );
+        let stdout = DribbleReader {
+            data: b"out-1\nout-2\nout-3\n__SORNG_EXIT:0\n".to_vec(),
+            offset: 0,
+            step: 4,
+        };
+        let stderr = DribbleReader {
+            data: b"err-1\nerr-2\n".to_vec(),
+            offset: 0,
+            step: 4,
+        };
+        let outcome = stream_script_output_bounded(
+            stdout,
+            stderr,
+            SCRIPT_OUTPUT_LIMIT_BYTES,
+            stream_deadline(),
+            Arc::new(AtomicBool::new(false)),
+            &sink,
+        );
+        assert_eq!(outcome.error, None);
+        assert_eq!(outcome.sentinel_exit_code, Some(0));
+
+        let events = emitter.events();
+        assert!(!events.is_empty());
+        let mut stdout_text = String::new();
+        let mut stderr_text = String::new();
+        for (index, (name, payload)) in events.iter().enumerate() {
+            assert_eq!(name, SSH_SCRIPT_OUTPUT_EVENT);
+            let chunk: ScriptOutputChunk =
+                serde_json::from_value(payload.clone()).expect("chunk payload shape");
+            assert_eq!(
+                chunk.sequence, index as u64,
+                "sequence must follow emission order"
+            );
+            assert_eq!(chunk.execution_id, "exec-1");
+            assert_eq!(chunk.session_id, "sess-1");
+            match chunk.stream {
+                ScriptOutputStreamKind::Stdout => stdout_text.push_str(&chunk.data),
+                ScriptOutputStreamKind::Stderr => stderr_text.push_str(&chunk.data),
+            }
+        }
+        assert_eq!(stdout_text, "out-1\nout-2\nout-3\n");
+        assert_eq!(stderr_text, "err-1\nerr-2\n");
+        assert_eq!(outcome.stderr_bytes, stderr_text.len() as u64);
+        // Wire format is snake_case with a lowercase stream tag.
+        let first = &events[0].1;
+        assert!(first.get("execution_id").is_some());
+        assert!(matches!(
+            first.get("stream").and_then(|v| v.as_str()),
+            Some("stdout") | Some("stderr")
+        ));
+    }
+
+    #[test]
+    fn script_stream_caps_chunks_and_coalesces_small_reads() {
+        let sink = RecordingSink::default();
+        let line_count = 20_000; // 40 KB of "a\n"
+        let payload: Vec<u8> = b"a\n".repeat(line_count);
+        let outcome = stream_script_output_bounded(
+            std::io::Cursor::new(payload.clone()),
+            DribbleReader {
+                data: b"e\n".repeat(200),
+                offset: 0,
+                step: 1,
+            },
+            SCRIPT_OUTPUT_LIMIT_BYTES,
+            stream_deadline(),
+            Arc::new(AtomicBool::new(false)),
+            &sink,
+        );
+        assert_eq!(outcome.error, None);
+        let chunks = sink.chunks.lock().unwrap();
+        let stdout_chunks: Vec<&String> = chunks
+            .iter()
+            .filter(|(s, _)| *s == ScriptOutputStreamKind::Stdout)
+            .map(|(_, d)| d)
+            .collect();
+        let stderr_chunks: Vec<&String> = chunks
+            .iter()
+            .filter(|(s, _)| *s == ScriptOutputStreamKind::Stderr)
+            .map(|(_, d)| d)
+            .collect();
+        assert!(stdout_chunks.len() >= 3, "40 KB must split into ≥3 chunks");
+        for data in &stdout_chunks {
+            assert!(
+                data.len() <= SCRIPT_STREAM_CHUNK_BYTES + 3,
+                "chunk exceeds cap: {}",
+                data.len()
+            );
+        }
+        let stdout_total: usize = stdout_chunks.iter().map(|d| d.len()).sum();
+        assert_eq!(stdout_total, payload.len());
+        // 400 one-byte reads inside the 16 ms window coalesce into few events.
+        assert!(
+            stderr_chunks.len() < 40,
+            "one-byte reads were not coalesced: {} events",
+            stderr_chunks.len()
+        );
+        assert_eq!(stderr_chunks.iter().map(|d| d.len()).sum::<usize>(), 400);
+    }
+
+    #[test]
+    fn script_stream_budget_overflow_reports_limit_error_and_keeps_prefix() {
+        let sink = RecordingSink::default();
+        let outcome = stream_script_output_bounded(
+            DribbleReader {
+                data: b"line-1\nline-2\nline-3\n".to_vec(),
+                offset: 0,
+                step: 7,
+            },
+            std::io::Cursor::new(Vec::new()),
+            15,
+            stream_deadline(),
+            Arc::new(AtomicBool::new(false)),
+            &sink,
+        );
+        assert_eq!(
+            outcome.error,
+            Some(ScriptOutputReadError::OutputLimitExceeded)
+        );
+        assert_eq!(outcome.sentinel_exit_code, None);
+        // Bytes accepted within the budget are still delivered.
+        assert_eq!(
+            sink.text(ScriptOutputStreamKind::Stdout),
+            "line-1\nline-2\n"
+        );
+    }
+
+    #[test]
+    fn script_stream_cancel_stops_both_readers() {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let sink = RecordingSink::default();
+        let outcome = stream_script_output_bounded(
+            CancellingReader {
+                inner: std::io::Cursor::new(vec![b'x'; 32]),
+                cancellation: Arc::clone(&cancellation),
+            },
+            std::io::Cursor::new(vec![b'y'; 32]),
+            SCRIPT_OUTPUT_LIMIT_BYTES,
+            stream_deadline(),
+            cancellation,
+            &sink,
+        );
+        assert_eq!(outcome.error, Some(ScriptOutputReadError::Cancelled));
+        assert_eq!(outcome.sentinel_exit_code, None);
+    }
+
+    struct NeverReadyReader;
+
+    impl Read for NeverReadyReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(ErrorKind::WouldBlock))
+        }
+    }
+
+    #[test]
+    fn script_stream_deadline_stops_readers() {
+        let sink = RecordingSink::default();
+        let outcome = stream_script_output_bounded(
+            NeverReadyReader,
+            NeverReadyReader,
+            SCRIPT_OUTPUT_LIMIT_BYTES,
+            Instant::now() + Duration::from_millis(30),
+            Arc::new(AtomicBool::new(false)),
+            &sink,
+        );
+        assert_eq!(outcome.error, Some(ScriptOutputReadError::DeadlineExceeded));
+        assert_eq!(sink.len(), 0);
+    }
+
+    fn registry_with(execution_id: &str) -> (ScriptExecutionRegistry, Arc<AtomicBool>) {
+        let registry = new_script_execution_registry();
+        let flag = Arc::new(AtomicBool::new(false));
+        registry
+            .lock()
+            .unwrap()
+            .insert(execution_id.to_string(), Arc::clone(&flag));
+        (registry, flag)
+    }
+
+    #[test]
+    fn script_worker_guard_resumes_shell_io_deregisters_and_emits_finished() {
+        let emitter = Arc::new(RecordingScriptEmitter::default());
+        let suspend_count = Arc::new(AtomicUsize::new(1));
+        let (registry, _flag) = registry_with("exec-9");
+
+        let guard = ScriptWorkerGuard {
+            registry: Arc::clone(&registry),
+            execution_id: "exec-9".to_string(),
+            session_id: "sess-9".to_string(),
+            emitter: emitter.clone() as DynEventEmitter,
+            shell_pause: ShellIoPause(Some(Arc::clone(&suspend_count))),
+            started: Instant::now(),
+            finished: Some(ScriptExecutionFinished {
+                execution_id: "exec-9".to_string(),
+                session_id: "sess-9".to_string(),
+                exit_code: Some(3),
+                stdout_bytes: 10,
+                stderr_bytes: 2,
+                truncated: false,
+                duration_ms: 5,
+                error: None,
+            }),
+        };
+        drop(guard);
+
+        assert_eq!(
+            suspend_count.load(Ordering::Acquire),
+            0,
+            "shell IO not resumed"
+        );
+        assert!(
+            registry.lock().unwrap().is_empty(),
+            "execution not deregistered"
+        );
+        let events = emitter.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, SSH_SCRIPT_FINISHED_EVENT);
+        let finished: ScriptExecutionFinished =
+            serde_json::from_value(events[0].1.clone()).expect("finished payload shape");
+        assert_eq!(finished.exit_code, Some(3));
+        assert!(
+            events[0].1.get("error").is_none(),
+            "error must be omitted when None"
+        );
+    }
+
+    #[test]
+    fn script_worker_guard_emits_failure_when_worker_dies_before_finishing() {
+        let emitter = Arc::new(RecordingScriptEmitter::default());
+        let suspend_count = Arc::new(AtomicUsize::new(2));
+        let (registry, _flag) = registry_with("exec-panic");
+
+        let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = ScriptWorkerGuard {
+                registry: Arc::clone(&registry),
+                execution_id: "exec-panic".to_string(),
+                session_id: "sess".to_string(),
+                emitter: emitter.clone() as DynEventEmitter,
+                shell_pause: ShellIoPause(Some(Arc::clone(&suspend_count))),
+                started: Instant::now(),
+                finished: None,
+            };
+            panic!("simulated worker panic");
+        }));
+        assert!(run.is_err());
+
+        assert_eq!(suspend_count.load(Ordering::Acquire), 1);
+        assert!(registry.lock().unwrap().is_empty());
+        let events = emitter.events();
+        assert_eq!(events.len(), 1);
+        let finished: ScriptExecutionFinished =
+            serde_json::from_value(events[0].1.clone()).expect("finished payload shape");
+        assert_eq!(finished.exit_code, None);
+        assert!(finished.error.is_some());
+    }
+
+    #[test]
+    fn shell_io_pause_guard_resumes_when_dropped_unrun() {
+        let suspend_count = Arc::new(AtomicUsize::new(1));
+        let pause = ShellIoPause(Some(Arc::clone(&suspend_count)));
+        let closure = move || {
+            let _keep = &pause;
+        };
+        drop(closure);
+        assert_eq!(suspend_count.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn cancel_script_execution_flags_only_known_executions() {
+        let service = empty_test_service();
+        let flag = Arc::new(AtomicBool::new(false));
+        service
+            .script_executions
+            .lock()
+            .unwrap()
+            .insert("running".to_string(), Arc::clone(&flag));
+
+        assert!(!service.cancel_script_execution("unknown"));
+        assert!(!flag.load(Ordering::Acquire));
+        assert!(service.cancel_script_execution("running"));
+        assert!(flag.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn execute_script_stream_rejects_missing_session_emitter_and_bad_ids() {
+        let mut service = empty_test_service();
+        assert_eq!(
+            service.execute_script_stream("missing", "echo hi", None, None),
+            Err("No event emitter configured".to_string())
+        );
+
+        let emitter = Arc::new(RecordingScriptEmitter::default());
+        service.event_emitter = Some(emitter.clone() as DynEventEmitter);
+        assert_eq!(
+            service.execute_script_stream("missing", "echo hi", None, None),
+            Err("Session not found".to_string())
+        );
+        assert_eq!(
+            service.execute_script_stream("missing", "echo hi", None, Some("bad id!".into())),
+            Err("Invalid script execution id".to_string())
+        );
+        assert!(service.script_executions.lock().unwrap().is_empty());
+        assert!(emitter.events().is_empty());
+    }
+
+    #[test]
+    fn validate_script_execution_id_generates_or_accepts_safe_ids() {
+        let generated = validate_script_execution_id(None).unwrap();
+        assert!(Uuid::parse_str(&generated).is_ok());
+        assert_eq!(
+            validate_script_execution_id(Some(String::new())).map(|id| id.len()),
+            Ok(36)
+        );
+        assert_eq!(
+            validate_script_execution_id(Some("run_1-a".into())),
+            Ok("run_1-a".to_string())
+        );
+        assert!(validate_script_execution_id(Some("x".repeat(129))).is_err());
+    }
+
     fn empty_test_service() -> SshService {
         SshService {
             sessions: HashMap::new(),
@@ -9226,6 +10423,7 @@ mod tests {
             establishment_control: None,
             establishment_session_lease: None,
             shell_admission: Arc::new(ShellAdmission::new(DEFAULT_MAX_ACTIVE_SSH_SHELLS)),
+            script_executions: new_script_execution_registry(),
         }
     }
 

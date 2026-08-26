@@ -698,6 +698,54 @@ pub struct ScriptExecutionResult {
     pub remote_path: String,
 }
 
+/// Event name for streamed script output chunks (`ScriptOutputChunk`).
+pub const SSH_SCRIPT_OUTPUT_EVENT: &str = "ssh-script-output";
+/// Event name for the single terminal streamed-script event
+/// (`ScriptExecutionFinished`).
+pub const SSH_SCRIPT_FINISHED_EVENT: &str = "ssh-script-finished";
+
+/// Which remote stream a streamed script chunk came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScriptOutputStreamKind {
+    Stdout,
+    Stderr,
+}
+
+/// One streamed chunk of remote script output (`ssh-script-output`).
+///
+/// Field names are snake_case on the wire, matching the sibling shell events
+/// (`SshShellOutput`); the frontend contract is frozen on these names.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ScriptOutputChunk {
+    pub execution_id: String,
+    pub session_id: String,
+    pub stream: ScriptOutputStreamKind,
+    pub data: String,
+    /// Monotonic per-execution sequence shared by both streams, assigned in
+    /// emission order so consumers can detect gaps and preserve interleaving.
+    pub sequence: u64,
+}
+
+/// Terminal event of a streamed script execution (`ssh-script-finished`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ScriptExecutionFinished {
+    pub execution_id: String,
+    pub session_id: String,
+    /// `None` when the run was cancelled, timed out, truncated, or failed
+    /// before an exit status could be recovered.
+    pub exit_code: Option<i32>,
+    /// Bytes of decoded stdout delivered to the consumer (sentinel excluded).
+    pub stdout_bytes: u64,
+    /// Bytes of decoded stderr delivered to the consumer.
+    pub stderr_bytes: u64,
+    /// `true` when the 4 MiB combined output budget stopped collection.
+    pub truncated: bool,
+    pub duration_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 // ===============================
 // Recording Types
 // ===============================
