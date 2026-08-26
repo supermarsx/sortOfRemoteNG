@@ -47,6 +47,13 @@ export interface TerminalOutputSchedulerConfig {
   tickBudgetMs: number;
   maxChunksPerSessionTurn: number;
   maxBytesPerSessionTurn: number;
+  /** Delay before retrying a delivery after `write` returned false. */
+  writeRetryDelayMs: number;
+  /**
+   * Consecutive `write:false` results tolerated before the registration is
+   * paused for good (until an explicit `resume()`). 0 disables retries.
+   */
+  maxWriteRetries: number;
 }
 
 export const DEFAULT_TERMINAL_OUTPUT_SCHEDULER_CONFIG: TerminalOutputSchedulerConfig =
@@ -57,12 +64,16 @@ export const DEFAULT_TERMINAL_OUTPUT_SCHEDULER_CONFIG: TerminalOutputSchedulerCo
     tickBudgetMs: 8,
     maxChunksPerSessionTurn: 8,
     maxBytesPerSessionTurn: 64 * 1024,
+    writeRetryDelayMs: 50,
+    maxWriteRetries: 40,
   };
 
 export interface TerminalOutputSchedulerClock {
   now: () => number;
   schedule: (callback: () => void) => unknown;
   cancel: (handle: unknown) => void;
+  /** Run `callback` once after `ms`; the returned function cancels it. */
+  scheduleAfter: (ms: number, callback: () => void) => () => void;
 }
 
 const defaultClock: TerminalOutputSchedulerClock = {
@@ -70,6 +81,10 @@ const defaultClock: TerminalOutputSchedulerClock = {
     typeof performance !== "undefined" ? performance.now() : Date.now(),
   schedule: (callback) => setTimeout(callback, 0),
   cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  scheduleAfter: (ms, callback) => {
+    const handle = setTimeout(callback, ms);
+    return () => clearTimeout(handle);
+  },
 };
 
 export interface TerminalOutputCursor {
@@ -85,6 +100,8 @@ export interface TerminalOutputRegistrationDiagnostics {
   queuedChunks: number;
   deliveredSequence?: number;
   pendingGap: boolean;
+  /** Consecutive `write:false` results since the last successful write. */
+  writeRetries: number;
 }
 
 export interface TerminalOutputRegistration {
@@ -127,6 +144,8 @@ interface SchedulerState {
   lastBackendDroppedBytes?: number;
   pendingGap: TerminalOutputGap | null;
   resetPending: boolean;
+  writeRetries: number;
+  cancelWriteRetry: (() => void) | null;
 }
 
 const encoder = new TextEncoder();
@@ -183,6 +202,9 @@ const takeFirstUtf8Bytes = (
   };
 };
 
+const finiteNonNegativeInteger = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
+
 const finitePositiveInteger = (value: number, fallback: number): number =>
   Number.isFinite(value) && value > 0
     ? Math.max(1, Math.floor(value))
@@ -227,6 +249,16 @@ const normalizeConfig = (
     ),
     DEFAULT_TERMINAL_OUTPUT_SCHEDULER_CONFIG.maxBytesPerSessionTurn,
   ),
+  writeRetryDelayMs: finiteNonNegativeInteger(
+    config.writeRetryDelayMs ??
+      DEFAULT_TERMINAL_OUTPUT_SCHEDULER_CONFIG.writeRetryDelayMs,
+    DEFAULT_TERMINAL_OUTPUT_SCHEDULER_CONFIG.writeRetryDelayMs,
+  ),
+  maxWriteRetries: finiteNonNegativeInteger(
+    config.maxWriteRetries ??
+      DEFAULT_TERMINAL_OUTPUT_SCHEDULER_CONFIG.maxWriteRetries,
+    DEFAULT_TERMINAL_OUTPUT_SCHEDULER_CONFIG.maxWriteRetries,
+  ),
 });
 
 /**
@@ -270,6 +302,8 @@ export class TerminalOutputScheduler {
       callbacks,
       pendingGap: null,
       resetPending: false,
+      writeRetries: 0,
+      cancelWriteRetry: null,
     };
     this.states.set(state.id, state);
 
@@ -312,6 +346,7 @@ export class TerminalOutputScheduler {
             queuedBytes: 0,
             queuedChunks: 0,
             pendingGap: false,
+            writeRetries: 0,
           },
           (live) => this.stateDiagnostics(live),
         ),
@@ -716,7 +751,15 @@ export class TerminalOutputScheduler {
   }
 
   private setPaused(state: SchedulerState, paused: boolean): void {
-    if (state.disposed || state.paused === paused) return;
+    if (state.disposed) return;
+    // Explicit pause()/resume() always resets the retry budget and drops any
+    // pending retry tick, even when the paused flag does not change.
+    this.cancelWriteRetry(state);
+    state.writeRetries = 0;
+    if (state.paused === paused) {
+      if (!paused) this.markReady(state);
+      return;
+    }
     state.paused = paused;
     if (paused) {
       this.readySet.delete(state.id);
@@ -739,6 +782,7 @@ export class TerminalOutputScheduler {
     if (
       state.disposed ||
       state.paused ||
+      state.cancelWriteRetry !== null ||
       !this.hasWork(state) ||
       this.readySet.has(state.id)
     ) {
@@ -820,11 +864,13 @@ export class TerminalOutputScheduler {
           const accepted = state.callbacks.write(delivery.data);
           if (accepted === false) {
             // The view became hidden or its renderer has not acquired valid
-            // dimensions yet. Pause without spinning; the view resumes after
-            // its next visibility/fit transition.
-            state.paused = true;
+            // dimensions yet. Retry a bounded number of times after a delay;
+            // once the budget is exhausted, pause without spinning until the
+            // view explicitly resumes after its next visibility/fit transition.
+            this.handleWriteRejected(state);
             break;
           }
+          state.writeRetries = 0;
           this.consumeRecordPrefix(state, record, delivery);
           turnChunks++;
           turnBytes += delivery.bytes;
@@ -873,9 +919,33 @@ export class TerminalOutputScheduler {
     this.totalQueuedBytes = Math.max(0, this.totalQueuedBytes - delivery.bytes);
   }
 
+  private handleWriteRejected(state: SchedulerState): void {
+    if (state.writeRetries >= this.config.maxWriteRetries) {
+      state.paused = true;
+      return;
+    }
+    state.writeRetries++;
+    this.cancelWriteRetry(state);
+    state.cancelWriteRetry = this.clock.scheduleAfter(
+      this.config.writeRetryDelayMs,
+      () => {
+        state.cancelWriteRetry = null;
+        this.markReady(state);
+      },
+    );
+  }
+
+  private cancelWriteRetry(state: SchedulerState): void {
+    if (state.cancelWriteRetry === null) return;
+    const cancel = state.cancelWriteRetry;
+    state.cancelWriteRetry = null;
+    cancel();
+  }
+
   private disposeState(state: SchedulerState): void {
     if (state.disposed) return;
     state.disposed = true;
+    this.cancelWriteRetry(state);
     this.readySet.delete(state.id);
     this.clearQueue(state, false);
     state.pendingGap = null;
@@ -904,6 +974,7 @@ export class TerminalOutputScheduler {
       queuedChunks: state.queue.length,
       deliveredSequence: state.deliveredSequence,
       pendingGap: state.pendingGap !== null,
+      writeRetries: state.writeRetries,
     };
   }
 }

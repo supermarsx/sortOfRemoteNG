@@ -30,12 +30,41 @@ class ManualClock implements TerminalOutputSchedulerClock {
     this.callbacks.delete(handle as number);
   };
 
+  private readonly timers = new Map<
+    number,
+    { at: number; callback: () => void }
+  >();
+
+  scheduleAfter = (ms: number, callback: () => void) => {
+    const handle = this.nextHandle++;
+    this.timers.set(handle, { at: this.time + ms, callback });
+    return () => {
+      this.timers.delete(handle);
+    };
+  };
+
+  get pendingTimers() {
+    return this.timers.size;
+  }
+
+  /** Fire every timer whose deadline has passed, in deadline order. */
+  runDueTimers(): void {
+    const due = [...this.timers.entries()]
+      .filter(([, timer]) => timer.at <= this.time)
+      .sort((a, b) => a[1].at - b[1].at);
+    for (const [handle, timer] of due) {
+      this.timers.delete(handle);
+      timer.callback();
+    }
+  }
+
   get pending() {
     return this.callbacks.size;
   }
 
   advance(milliseconds: number): void {
     this.time += milliseconds;
+    this.runDueTimers();
   }
 
   runOne(): void {
@@ -415,5 +444,168 @@ describe("TerminalOutputScheduler", () => {
     expect(secondWrite).toHaveBeenCalledWith("kept");
     second.dispose();
     expect(clock.pending).toBe(0);
+  });
+
+  describe("bounded write retry", () => {
+    const setup = (
+      config: { writeRetryDelayMs?: number; maxWriteRetries?: number } = {},
+    ) => {
+      const clock = new ManualClock();
+      const scheduler = new TerminalOutputScheduler(
+        { writeRetryDelayMs: 50, maxWriteRetries: 3, ...config },
+        clock,
+      );
+      let accept = false;
+      const write = vi.fn((_data: string) => accept);
+      const registration = scheduler.register("session", {
+        write,
+        onGap: vi.fn(),
+        onReset: vi.fn(),
+      });
+      return {
+        clock,
+        scheduler,
+        write,
+        registration,
+        setAccept: (value: boolean) => {
+          accept = value;
+        },
+      };
+    };
+
+    it("retries after the delay and delivers once write returns true", () => {
+      const { clock, write, registration, setAccept } = setup();
+      registration.enqueue({ data: "hello" });
+      clock.runAll();
+
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(registration.diagnostics()).toMatchObject({
+        paused: false,
+        writeRetries: 1,
+        queuedChunks: 1,
+      });
+      expect(clock.pending).toBe(0);
+      expect(clock.pendingTimers).toBe(1);
+
+      clock.advance(49);
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(1);
+
+      setAccept(true);
+      clock.advance(1);
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(2);
+      expect(write).toHaveBeenLastCalledWith("hello");
+      expect(registration.diagnostics()).toMatchObject({
+        paused: false,
+        writeRetries: 0,
+        queuedChunks: 0,
+      });
+      expect(clock.pendingTimers).toBe(0);
+    });
+
+    it("does not spin: new enqueues while a retry is pending wait for it", () => {
+      const { clock, write, registration, setAccept } = setup();
+      registration.enqueue({ data: "a" });
+      clock.runAll();
+      registration.enqueue({ data: "b" });
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(clock.pendingTimers).toBe(1);
+
+      setAccept(true);
+      clock.advance(50);
+      clock.runAll();
+      expect(write.mock.calls.map(([data]) => data)).toEqual(["a", "a", "b"]);
+    });
+
+    it("gives up after maxWriteRetries and stays paused until resume()", () => {
+      const { clock, write, registration, setAccept } = setup({
+        maxWriteRetries: 3,
+      });
+      registration.enqueue({ data: "x" });
+      clock.runAll();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        clock.advance(50);
+        clock.runAll();
+      }
+      // initial attempt + 3 retries, then paused with nothing pending
+      expect(write).toHaveBeenCalledTimes(4);
+      expect(registration.diagnostics()).toMatchObject({
+        paused: true,
+        writeRetries: 3,
+        queuedChunks: 1,
+      });
+      expect(clock.pendingTimers).toBe(0);
+      expect(clock.pending).toBe(0);
+
+      clock.advance(10_000);
+      clock.runAll();
+      registration.enqueue({ data: "y" });
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(4);
+
+      setAccept(true);
+      registration.resume();
+      clock.runAll();
+      expect(write.mock.calls.slice(4).map(([data]) => data)).toEqual([
+        "x",
+        "y",
+      ]);
+      expect(registration.diagnostics()).toMatchObject({
+        paused: false,
+        writeRetries: 0,
+        queuedChunks: 0,
+      });
+    });
+
+    it("explicit pause() cancels a pending retry and resets the counter", () => {
+      const { clock, write, registration, setAccept } = setup();
+      registration.enqueue({ data: "x" });
+      clock.runAll();
+      expect(clock.pendingTimers).toBe(1);
+
+      registration.pause();
+      expect(clock.pendingTimers).toBe(0);
+      expect(registration.diagnostics()).toMatchObject({
+        paused: true,
+        writeRetries: 0,
+      });
+      clock.advance(500);
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(1);
+
+      setAccept(true);
+      registration.resume();
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(2);
+      expect(write).toHaveBeenLastCalledWith("x");
+    });
+
+    it("dispose() cancels a pending retry", () => {
+      const { clock, write, registration } = setup();
+      registration.enqueue({ data: "x" });
+      clock.runAll();
+      expect(clock.pendingTimers).toBe(1);
+
+      registration.dispose();
+      expect(clock.pendingTimers).toBe(0);
+      expect(clock.pending).toBe(0);
+      clock.advance(500);
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    it("maxWriteRetries: 0 pauses immediately on the first rejected write", () => {
+      const { clock, write, registration } = setup({ maxWriteRetries: 0 });
+      registration.enqueue({ data: "x" });
+      clock.runAll();
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(clock.pendingTimers).toBe(0);
+      expect(registration.diagnostics()).toMatchObject({
+        paused: true,
+        writeRetries: 0,
+      });
+    });
   });
 });
