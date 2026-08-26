@@ -41,6 +41,7 @@ export const S = {
   editorPassword: '[data-testid="editor-password"]',
   editorSave: '[data-testid="editor-save"]',
   editorParentFolder: '[data-testid="editor-parent-folder"]',
+  editorTabProtocol: '[data-testid="connection-editor-tab-protocol"]',
 
   // Collection
   collectionSelector: '[data-testid="collection-selector"]',
@@ -331,4 +332,23 @@ export const S = {
 
   // Multi-select context menu
   multiSelectMenu: '[data-testid="multi-select-context-menu"]',
+
+  // Script Manager (tool panel, no dedicated testids: title/placeholder based)
+  // App.tsx moves `title` into `data-tooltip` at runtime; match either.
+  scriptManagerOpen:
+    'button[data-tooltip="Script Manager"], button[title="Script Manager"]',
+  scriptManagerNewScript: 'button*=New Script',
+  scriptManagerEditName: 'input[placeholder="Enter script name"]',
+  scriptManagerEditScript: 'textarea[placeholder="Enter your script here..."]',
+  scriptManagerSave: 'button*=Save',
+  scriptManagerRunOnSsh:
+    'button[data-tooltip="Run on SSH"], button[title="Run on SSH"]',
+
+  // Script execution output pane
+  scriptOutputPane: '[data-testid="script-output-pane"]',
+  scriptOutputScroller: '[data-testid="script-output-scroller"]',
+  scriptOutputText: '[data-testid="script-output-text"]',
+  scriptOutputFollow: '[data-testid="script-output-follow"]',
+  scriptOutputExit: '[data-testid="script-output-exit"]',
+  scriptOutputCancel: '[data-testid="script-output-cancel"]',
 } as const;
