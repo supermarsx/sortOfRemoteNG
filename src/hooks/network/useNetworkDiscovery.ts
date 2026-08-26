@@ -6,6 +6,7 @@ import { useConnections } from '../../contexts/useConnections';
 import { generateId } from '../../utils/core/id';
 import { discoveredHostsToCsv } from '../../utils/discovery/discoveredHostsCsv';
 import { NetworkScanner } from '../../utils/network/networkScanner';
+import { normalizeImportedProtocol } from '../../utils/connection/normalizeImportedProtocol';
 import { invoke } from '@tauri-apps/api/core';
 
 interface UseNetworkDiscoveryParams {
@@ -169,10 +170,16 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
       const host = discoveredHosts.find((h) => h.ip === hostIp);
       if (!host) return;
       host.services.forEach((service) => {
+        // Port evidence decides the protocol; unknown services become `raw`,
+        // never RDP.
+        const normalized = normalizeImportedProtocol({
+          raw: service.protocol,
+          port: service.port,
+        });
         const connection = {
           id: generateId(),
           name: `${host.hostname || host.ip} (${service.service})`,
-          protocol: service.protocol as any,
+          protocol: normalized.protocol,
           hostname: host.ip,
           port: service.port,
           isGroup: false,

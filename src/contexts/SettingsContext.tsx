@@ -291,8 +291,8 @@ export const defaultSettings: GlobalSettings = {
   networkDiscovery: {
     enabled: true,
     ipRange: "192.168.1.0/24",
-    portRanges: ["22", "3389", "5900"],
-    protocols: ["ssh", "rdp", "vnc"],
+    portRanges: ["22", "80", "443", "3389", "5900"],
+    protocols: ["ssh", "http", "https", "rdp", "vnc"],
     timeout: 1000,
     maxConcurrent: 50,
     maxPortConcurrent: 10,

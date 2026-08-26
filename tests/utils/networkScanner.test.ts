@@ -86,10 +86,10 @@ describe('NetworkScanner helper methods', () => {
     expect(result.protocol).toBe('ssh');
   });
 
-  it('identifyService handles unknown ports', () => {
+  it('identifyService reports ports without evidence as raw (never rdp)', () => {
     const result = scanner.identifyService(9999);
     expect(result.service).toBe('unknown');
-    expect(result.protocol).toBe('unknown');
+    expect(result.protocol).toBe('raw');
   });
 
   it('scanHost respects port concurrency limit', async () => {

@@ -3,6 +3,11 @@ import { DiscoveredHost, DiscoveredService } from "../../types/connection/connec
 import { NetworkDiscoveryConfig } from "../../types/settings/settings";
 import { Semaphore } from "../core/semaphore";
 import serviceMap from "../discovery/serviceMap";
+import {
+  FALLBACK_PROTOCOL,
+  normalizeImportedProtocol,
+  protocolFromPort,
+} from "../connection/normalizeImportedProtocol";
 import * as ipaddr from "ipaddr.js";
 
 interface CacheEntry<T> {
@@ -24,7 +29,114 @@ const HOST_ONLY_RAW_PROTOCOLS = new Set([
   "mysql",
   "ftp",
   "telnet",
+  "smb",
 ]);
+
+const HTTP_BANNER = /^\s*HTTP\/\d|<!doctype html|<html|^\s*server:\s*\S/i;
+const HTTP_SERVER_BANNER =
+  /\b(apache|nginx|iis|lighttpd|caddy|tomcat|jetty|gunicorn|express|kestrel|openresty|cloudflare)\b/i;
+// TLS record header: content type 0x16 (handshake), version 0x03 0x0[0-4].
+const TLS_HANDSHAKE_PREFIX = /^\x16\x03[\x00-\x04]/;
+
+/**
+ * Pure banner sniff: returns `http`/`https` when the banner carries web
+ * evidence, otherwise `undefined`. Used before a port is declared unknown.
+ */
+export const sniffBannerProtocol = (
+  banner?: string,
+  port?: number,
+): "http" | "https" | undefined => {
+  if (typeof banner !== "string" || banner.length === 0) return undefined;
+  if (TLS_HANDSHAKE_PREFIX.test(banner)) return "https";
+  if (HTTP_BANNER.test(banner) || HTTP_SERVER_BANNER.test(banner)) {
+    const byPort =
+      typeof port === "number" ? protocolFromPort(port) : undefined;
+    return byPort === "https" ? "https" : "http";
+  }
+  return undefined;
+};
+
+const extractVersion = (banner?: string): string | undefined => {
+  if (!banner) return undefined;
+
+  // Simple version extraction patterns
+  const patterns = [
+    /OpenSSH[_\s]+([\d.]+)/i,
+    /Apache[\/\s]+([\d.]+)/i,
+    /nginx[\/\s]+([\d.]+)/i,
+    /Microsoft[_\s]+IIS[\/\s]+([\d.]+)/i,
+    /MySQL[_\s]+([\d.]+)/i,
+    /PostgreSQL[_\s]+([\d.]+)/i,
+    /RFB\s+([\d.]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = banner.match(pattern);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * Classify an open port into a discovered service using, in order: the
+ * caller's VNC hint, the static service map, banner evidence, and the
+ * port-evidence table of the protocol normaliser. A port with no evidence is
+ * reported as `raw` (generic TCP) — never RDP.
+ */
+export const classifyDiscoveredService = (
+  port: number,
+  banner?: string,
+  protocolHint?: string,
+): DiscoveredService => {
+  if (protocolHint === "vnc") {
+    return {
+      port,
+      protocol: "vnc",
+      service: "vnc",
+      version: extractVersion(banner),
+      banner,
+    };
+  }
+  const serviceInfo = serviceMap[port];
+  if (serviceInfo) {
+    return {
+      port,
+      protocol: serviceInfo.protocol,
+      service: serviceInfo.service,
+      version: extractVersion(banner),
+      banner,
+    };
+  }
+  const sniffed = sniffBannerProtocol(banner, port);
+  if (sniffed) {
+    return {
+      port,
+      protocol: sniffed,
+      service: sniffed,
+      version: extractVersion(banner),
+      banner,
+    };
+  }
+  const normalized = normalizeImportedProtocol({ port });
+  if (normalized.source === "port") {
+    return {
+      port,
+      protocol: normalized.protocol,
+      service: normalized.protocol,
+      version: extractVersion(banner),
+      banner,
+    };
+  }
+  return {
+    port,
+    protocol: FALLBACK_PROTOCOL,
+    service: "unknown",
+    banner,
+  };
+};
 
 const isConfirmedRfbBanner = (banner?: string): boolean =>
   typeof banner === "string" && EXACT_RFB_BANNER.test(banner);
@@ -343,7 +455,12 @@ export class NetworkScanner {
     const configuredProtocol = config.protocols.find((protocol) =>
       config.customPorts[protocol]?.includes(port),
     );
-    return configuredProtocol || serviceMap[port]?.protocol || "default";
+    return (
+      configuredProtocol ||
+      serviceMap[port]?.protocol ||
+      protocolFromPort(port) ||
+      "default"
+    );
   }
 
   private async scanPort(
@@ -594,56 +711,11 @@ export class NetworkScanner {
     banner?: string,
     protocolHint?: string,
   ): DiscoveredService | null {
-    const serviceInfo = serviceMap[port];
-    if (protocolHint === "vnc") {
-      return {
-        port,
-        protocol: "vnc",
-        service: "vnc",
-        version: this.extractVersion(banner),
-        banner,
-      };
-    }
-    if (!serviceInfo) {
-      return {
-        port,
-        protocol: "unknown",
-        service: "unknown",
-        banner,
-      };
-    }
-
-    return {
-      port,
-      protocol: serviceInfo.protocol,
-      service: serviceInfo.service,
-      version: this.extractVersion(banner),
-      banner,
-    };
+    return classifyDiscoveredService(port, banner, protocolHint);
   }
 
   private extractVersion(banner?: string): string | undefined {
-    if (!banner) return undefined;
-
-    // Simple version extraction patterns
-    const patterns = [
-      /OpenSSH[_\s]+([\d.]+)/i,
-      /Apache[\/\s]+([\d.]+)/i,
-      /nginx[\/\s]+([\d.]+)/i,
-      /Microsoft[_\s]+IIS[\/\s]+([\d.]+)/i,
-      /MySQL[_\s]+([\d.]+)/i,
-      /PostgreSQL[_\s]+([\d.]+)/i,
-      /RFB\s+([\d.]+)/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = banner.match(pattern);
-      if (match) {
-        return match[1];
-      }
-    }
-
-    return undefined;
+    return extractVersion(banner);
   }
 
   private purgeCache<T>(cache: Map<string, CacheEntry<T>>, ttl: number): void {
