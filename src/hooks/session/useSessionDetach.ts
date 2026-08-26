@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { resolveConnectionRetryAttempts } from "../../utils/behavior/legacyBehavior";
@@ -13,8 +13,15 @@ import {
   advanceSessionLifecycleAuthority,
   hasSessionLifecycleActorAttempt,
 } from "../../utils/session/sessionLifecycle";
+import { hasNoLiveTransport } from "../../utils/session/sessionClassification";
+import { ToastContext } from "../../contexts/ToastContext";
 
 const DETACHED_SESSION_STORAGE_PREFIX = "detached-session-";
+export const DETACH_REFUSED_EVENT = "sorng:detach-refused";
+export const DETACH_REFUSED_IN_FLIGHT_MESSAGE =
+  "Cannot detach while the connection attempt is still in flight — wait for it to finish or close the tab";
+export const DETACH_REFUSED_BACKEND_MESSAGE =
+  "Cannot detach: the native session refused the window handoff — try again or close the tab";
 const DETACHED_SESSION_METADATA_VERSION = 2;
 const MAX_OPAQUE_ID_LENGTH = 512;
 
@@ -113,6 +120,12 @@ export function useSessionDetach(
   visibleSessionsRef.current = visibleSessions;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
+  // Non-throwing read: the hook may be mounted outside a ToastProvider
+  // (tests, detached shells). Without one, refusals fall back to console.warn
+  // plus a `sorng:detach-refused` CustomEvent so callers can still react.
+  const toastContext = useContext(ToastContext);
+  const toastRef = useRef(toastContext);
+  toastRef.current = toastContext;
 
   useEffect(() => {
     purgeLegacyDetachedSessionPayloads();
@@ -132,18 +145,43 @@ export function useSessionDetach(
         `[detach] session=${session.id}, protocol=${session.protocol}, backendSessionId=${session.backendSessionId}, connectionId=${session.connectionId}`,
       );
 
+      // A refused handoff must tell the user why instead of silently no-op'ing.
+      const refuseDetach = (
+        logDetail: string,
+        reason: string = DETACH_REFUSED_IN_FLIGHT_MESSAGE,
+      ) => {
+        console.warn(`[detach] aborted: ${logDetail}`);
+        const toast = toastRef.current?.toast;
+        if (toast) {
+          toast.warning(reason);
+        } else {
+          window.dispatchEvent(
+            new CustomEvent(DETACH_REFUSED_EVENT, {
+              detail: { sessionId: session.id, reason },
+            }),
+          );
+        }
+      };
+
+      // A session that never had a live transport (error / hung connecting,
+      // no active VPN route) and has no in-flight native actor attempt has
+      // nothing to hand off: skip every backend detach gate and move the row
+      // straight to the detached window, which renders the failure + Retry.
+      const abandoned =
+        hasNoLiveTransport(session) &&
+        !hasSessionLifecycleActorAttempt(session.id);
+
       // A window handoff cannot race an attempt whose native actor has not
       // finished publishing its reserved lifecycle generation. SSH also stays
       // fail-closed for the shell-start gap after connect_ssh returns.
       if (
-        hasSessionLifecycleActorAttempt(session.id) ||
-        (session.protocol === "ssh" &&
-          (session.status === "connecting" ||
-            session.status === "reconnecting"))
+        !abandoned &&
+        (hasSessionLifecycleActorAttempt(session.id) ||
+          (session.protocol === "ssh" &&
+            (session.status === "connecting" ||
+              session.status === "reconnecting")))
       ) {
-        console.warn(
-          `[detach] aborted: ${session.protocol} actor handoff is still in flight`,
-        );
+        refuseDetach(`${session.protocol} actor handoff is still in flight`);
         return;
       }
 
@@ -194,8 +232,8 @@ export function useSessionDetach(
               (current.status === "connecting" ||
                 current.status === "reconnecting")
             ) {
-              console.warn(
-                `[detach] ${command} aborted: native session is still connecting without an exact actor`,
+              refuseDetach(
+                `${command}: native session is still connecting without an exact actor`,
               );
               return false;
             }
@@ -217,6 +255,7 @@ export function useSessionDetach(
             );
           } catch (error) {
             console.warn(`[detach] ${command} failed:`, error);
+            refuseDetach(`${command} rejected`, DETACH_REFUSED_BACKEND_MESSAGE);
             return false;
           }
         }
@@ -228,66 +267,70 @@ export function useSessionDetach(
         return !currentActor || handledActors.has(currentActor);
       };
 
-      // For RDP sessions, explicitly detach the viewer from the backend
-      // *before* opening the new window. This ensures the backend session
-      // is in "detached" state so the new window can reattach without a
-      // race against the main window's component cleanup.
-      if (session.protocol === "rdp") {
-        const connection = getLatestConnection(getLatestSession() ?? session);
-        if (
-          !(await detachLatestBackend(
-            "detach_rdp_session",
-            connection ? { connectionId: connection.id } : undefined,
-            true,
-          ))
-        ) {
-          return;
+      // Abandoned sessions have no native actor to hand off; live sessions
+      // must complete every backend detach before the viewer is unmounted.
+      if (!abandoned) {
+        // For RDP sessions, explicitly detach the viewer from the backend
+        // *before* opening the new window. This ensures the backend session
+        // is in "detached" state so the new window can reattach without a
+        // race against the main window's component cleanup.
+        if (session.protocol === "rdp") {
+          const connection = getLatestConnection(getLatestSession() ?? session);
+          if (
+            !(await detachLatestBackend(
+              "detach_rdp_session",
+              connection ? { connectionId: connection.id } : undefined,
+              true,
+            ))
+          ) {
+            return;
+          }
         }
-      }
 
-      if (session.protocol === "raw") {
-        if (
-          !(await detachLatestBackend("detach_raw_socket", undefined, true))
-        ) {
-          return;
+        if (session.protocol === "raw") {
+          if (
+            !(await detachLatestBackend("detach_raw_socket", undefined, true))
+          ) {
+            return;
+          }
         }
-      }
 
-      // PowerShell's native session must be detached explicitly and awaited.
-      // Sensitive terminal state is never copied into browser persistence.
-      // The detached viewer must recover it from the exact native actor.
-      if (session.protocol === "winrm") {
-        if (
-          !(await detachLatestBackend(
-            "detach_powershell_session",
-            undefined,
-            true,
-          ))
-        ) {
-          return;
+        // PowerShell's native session must be detached explicitly and awaited.
+        // Sensitive terminal state is never copied into browser persistence.
+        // The detached viewer must recover it from the exact native actor.
+        if (session.protocol === "winrm") {
+          if (
+            !(await detachLatestBackend(
+              "detach_powershell_session",
+              undefined,
+              true,
+            ))
+          ) {
+            return;
+          }
         }
-      }
 
-      // RDP/raw can also be replaced while their first detach call is in
-      // flight. A second pass is a no-op for the same actor and detaches only
-      // a newly published backend ID.
-      if (session.protocol === "rdp") {
-        const latest = getLatestSession() ?? session;
-        const connection = getLatestConnection(latest);
-        if (
-          !(await detachLatestBackend(
-            "detach_rdp_session",
-            connection ? { connectionId: connection.id } : undefined,
-            true,
-          ))
-        ) {
-          return;
-        }
-      } else if (session.protocol === "raw") {
-        if (
-          !(await detachLatestBackend("detach_raw_socket", undefined, true))
-        ) {
-          return;
+        // RDP/raw can also be replaced while their first detach call is in
+        // flight. A second pass is a no-op for the same actor and detaches only
+        // a newly published backend ID.
+        if (session.protocol === "rdp") {
+          const latest = getLatestSession() ?? session;
+          const connection = getLatestConnection(latest);
+          if (
+            !(await detachLatestBackend(
+              "detach_rdp_session",
+              connection ? { connectionId: connection.id } : undefined,
+              true,
+            ))
+          ) {
+            return;
+          }
+        } else if (session.protocol === "raw") {
+          if (
+            !(await detachLatestBackend("detach_raw_socket", undefined, true))
+          ) {
+            return;
+          }
         }
       }
 
@@ -295,8 +338,8 @@ export function useSessionDetach(
       // backend immediately before the main viewer unmounts. It is deliberately
       // published only after every required native detach handoff succeeded.
       if (hasSessionLifecycleActorAttempt(session.id)) {
-        console.warn(
-          `[detach] aborted: ${session.protocol} actor reservation started during handoff`,
+        refuseDetach(
+          `${session.protocol} actor reservation started during handoff`,
         );
         return;
       }
@@ -308,7 +351,12 @@ export function useSessionDetach(
 
       // No await is permitted between this final freeze check and authority
       // advance; an old writer cannot reserve after the handoff commits.
-      if (hasSessionLifecycleActorAttempt(session.id)) return;
+      if (hasSessionLifecycleActorAttempt(session.id)) {
+        refuseDetach(
+          `${session.protocol} actor reservation started after the will-detach signal`,
+        );
+        return;
+      }
       const currentSession = advanceSessionLifecycleAuthority(
         getLatestSession() ?? session,
         windowLabel,

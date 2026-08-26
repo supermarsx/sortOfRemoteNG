@@ -1,12 +1,21 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useSessionDetach } from "../../src/hooks/session/useSessionDetach";
+import { ToastContext } from "../../src/contexts/ToastContext";
+import React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ConnectionSession,
   Connection,
 } from "../../src/types/connection/connection";
-import { resetSessionLifecycleAllocatorForTests } from "../../src/utils/session/sessionLifecycle";
+import {
+  reserveSessionLifecycleActorAttempt,
+  resetSessionLifecycleAllocatorForTests,
+} from "../../src/utils/session/sessionLifecycle";
+import {
+  DETACH_REFUSED_EVENT,
+  DETACH_REFUSED_IN_FLIGHT_MESSAGE,
+} from "../../src/hooks/session/useSessionDetach";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -319,6 +328,17 @@ describe("useSessionDetach", () => {
     const opening = makeSession("ps-race", "winrm", {
       backendSessionId: undefined,
       status: "connecting",
+      // The poll gate only applies to a non-abandoned session: a bare
+      // "connecting" row with no actor attempt now detaches directly, so this
+      // fixture carries an active VPN binding (route up = live transport).
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-poll",
+          backendSessionId: "be-poll",
+          protocol: "winrm",
+          status: "active",
+        },
+      ] as any,
     });
     const opened = {
       ...opening,
@@ -605,6 +625,17 @@ describe("useSessionDetach", () => {
     const opening = makeSession("winrm-delayed", "winrm", {
       backendSessionId: undefined,
       status: "connecting",
+      // The poll gate only applies to a non-abandoned session: a bare
+      // "connecting" row with no actor attempt now detaches directly, so this
+      // fixture carries an active VPN binding (route up = live transport).
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-poll",
+          backendSessionId: "be-poll",
+          protocol: "winrm",
+          status: "active",
+        },
+      ] as any,
     });
     const opened = {
       ...opening,
@@ -642,6 +673,17 @@ describe("useSessionDetach", () => {
     const opening = makeSession("winrm-unresolved", "winrm", {
       backendSessionId: undefined,
       status: "connecting",
+      // The poll gate only applies to a non-abandoned session: a bare
+      // "connecting" row with no actor attempt now detaches directly, so this
+      // fixture carries an active VPN binding (route up = live transport).
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-poll",
+          backendSessionId: "be-poll",
+          protocol: "winrm",
+          status: "active",
+        },
+      ] as any,
     });
     const { result, dispatch, registerWindow } = renderDetach({
       sessions: [opening],
@@ -680,5 +722,247 @@ describe("useSessionDetach", () => {
         payload: expect.objectContaining({ id: "rdp1", status: "connecting" }),
       }),
     );
+  });
+
+  describe("sessions with no live transport (t63 RC5)", () => {
+    const expectDetached = (
+      rendered: ReturnType<typeof renderDetach>,
+      id: string,
+    ) => {
+      expect(rendered.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({
+            id,
+            layout: expect.objectContaining({
+              isDetached: true,
+              windowId: `detached-${id}`,
+            }),
+          }),
+        }),
+      );
+      expect(rendered.registerWindow).toHaveBeenCalledWith(`detached-${id}`, [
+        id,
+      ]);
+      expect(mockWebviewCreate).toHaveBeenCalledOnce();
+      expect(localStorage.getItem(`detached-session-${id}`)).not.toBeNull();
+    };
+
+    it("detaches an errored SSH session without any native handoff", async () => {
+      const failed = makeSession("ssh-error", "ssh", {
+        status: "error",
+        backendSessionId: undefined,
+      });
+      const preserveSignal = vi.fn();
+      window.addEventListener("sorng:session-will-detach", preserveSignal);
+      const rendered = renderDetach({
+        sessions: [failed],
+        connections: [makeConnection("conn-ssh-error")],
+        visibleSessions: [failed],
+        activeSessionId: failed.id,
+      });
+      await act(async () =>
+        rendered.result.current.handleSessionDetach(failed.id),
+      );
+
+      expectDetached(rendered, failed.id);
+      expect(invoke).not.toHaveBeenCalled();
+      expect(preserveSignal).toHaveBeenCalledOnce();
+      window.removeEventListener("sorng:session-will-detach", preserveSignal);
+    });
+
+    it("detaches a hung connecting SSH session with no in-flight actor attempt", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const hung = makeSession("ssh-hung", "ssh", {
+        status: "connecting",
+        backendSessionId: undefined,
+      });
+      const rendered = renderDetach({
+        sessions: [hung],
+        connections: [makeConnection("conn-ssh-hung")],
+        visibleSessions: [hung],
+        activeSessionId: hung.id,
+      });
+      await act(async () =>
+        rendered.result.current.handleSessionDetach(hung.id),
+      );
+
+      expectDetached(rendered, hung.id);
+      expect(invoke).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("[detach] aborted"),
+      );
+      warn.mockRestore();
+    });
+
+    it("detaches a connecting RDP session immediately without the actor poll", async () => {
+      const connectingRdp = makeSession("rdp-connecting", "rdp", {
+        status: "connecting",
+        backendSessionId: undefined,
+      });
+      const rendered = renderDetach({
+        sessions: [connectingRdp],
+        connections: [makeConnection("conn-rdp-connecting", "rdp")],
+        visibleSessions: [connectingRdp],
+        activeSessionId: connectingRdp.id,
+      });
+      const started = Date.now();
+      await act(async () =>
+        rendered.result.current.handleSessionDetach(connectingRdp.id),
+      );
+
+      expect(Date.now() - started).toBeLessThan(400);
+      expectDetached(rendered, connectingRdp.id);
+      expect(invoke).not.toHaveBeenCalledWith(
+        "detach_rdp_session",
+        expect.anything(),
+      );
+    });
+
+    it("detaches an errored RDP session that still carries a backend id without detach_rdp_session", async () => {
+      const failedRdp = makeSession("rdp-error", "rdp", {
+        status: "error",
+        backendSessionId: "be-rdp-error",
+      });
+      const rendered = renderDetach({
+        sessions: [failedRdp],
+        connections: [makeConnection("conn-rdp-error", "rdp")],
+        visibleSessions: [failedRdp],
+        activeSessionId: failedRdp.id,
+      });
+      await act(async () =>
+        rendered.result.current.handleSessionDetach(failedRdp.id),
+      );
+
+      expectDetached(rendered, failedRdp.id);
+      expect(invoke).not.toHaveBeenCalledWith(
+        "detach_rdp_session",
+        expect.anything(),
+      );
+      expect(
+        JSON.parse(localStorage.getItem("detached-session-rdp-error")!)
+          .backendSessionId,
+      ).toBe("be-rdp-error");
+    });
+
+    it("still refuses a connecting SSH session with a live actor attempt and tells the user why", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const refused = vi.fn();
+      window.addEventListener(DETACH_REFUSED_EVENT, refused);
+      const inFlight = makeSession("ssh-inflight", "ssh", {
+        status: "connecting",
+        backendSessionId: undefined,
+      });
+      reserveSessionLifecycleActorAttempt(inFlight);
+      const rendered = renderDetach({
+        sessions: [inFlight],
+        connections: [makeConnection("conn-ssh-inflight")],
+        visibleSessions: [inFlight],
+        activeSessionId: inFlight.id,
+      });
+      await act(async () =>
+        rendered.result.current.handleSessionDetach(inFlight.id),
+      );
+
+      expect(rendered.dispatch).not.toHaveBeenCalled();
+      expect(rendered.registerWindow).not.toHaveBeenCalled();
+      expect(mockWebviewCreate).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("[detach] aborted"),
+      );
+      expect(refused).toHaveBeenCalledOnce();
+      expect((refused.mock.calls[0][0] as CustomEvent).detail).toEqual({
+        sessionId: inFlight.id,
+        reason: DETACH_REFUSED_IN_FLIGHT_MESSAGE,
+      });
+      window.removeEventListener(DETACH_REFUSED_EVENT, refused);
+      warn.mockRestore();
+    });
+
+    it("surfaces a refusal as a warning toast when mounted under a ToastProvider", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const refused = vi.fn();
+      window.addEventListener(DETACH_REFUSED_EVENT, refused);
+      const toast = {
+        success: vi.fn(),
+        error: vi.fn(),
+        warning: vi.fn(),
+        info: vi.fn(),
+      };
+      const inFlight = makeSession("ssh-toast", "ssh", {
+        status: "connecting",
+        backendSessionId: undefined,
+      });
+      reserveSessionLifecycleActorAttempt(inFlight);
+      const dispatch = vi.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(
+          ToastContext.Provider,
+          { value: { toast, removeAll: vi.fn() } },
+          children,
+        );
+      const { result } = renderHook(
+        () =>
+          useSessionDetach(
+            [inFlight],
+            [makeConnection("conn-ssh-toast")],
+            [inFlight],
+            inFlight.id,
+            dispatch,
+            vi.fn(),
+            vi.fn(),
+          ),
+        { wrapper },
+      );
+      await act(async () => result.current.handleSessionDetach(inFlight.id));
+
+      expect(toast.warning).toHaveBeenCalledWith(
+        DETACH_REFUSED_IN_FLIGHT_MESSAGE,
+      );
+      expect(refused).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalled();
+      window.removeEventListener(DETACH_REFUSED_EVENT, refused);
+      warn.mockRestore();
+    });
+
+    it("keeps the fail-closed rule for a connecting session with an active VPN binding", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const routed = makeSession("ssh-vpn-routed", "ssh", {
+        status: "connecting",
+        backendSessionId: undefined,
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-1",
+            backendSessionId: "be-x",
+            protocol: "ssh",
+            status: "active",
+          },
+        ] as any,
+      });
+      const rendered = renderDetach({
+        sessions: [routed],
+        connections: [makeConnection("conn-ssh-vpn-routed")],
+        visibleSessions: [routed],
+        activeSessionId: routed.id,
+      });
+      await act(async () =>
+        rendered.result.current.handleSessionDetach(routed.id),
+      );
+
+      expect(rendered.dispatch).not.toHaveBeenCalled();
+      expect(mockWebviewCreate).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("[detach] aborted"),
+      );
+      warn.mockRestore();
+    });
   });
 });
