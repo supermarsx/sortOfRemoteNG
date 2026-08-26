@@ -13,9 +13,58 @@ export type SerialStopBits = "1" | "2";
 export type SerialFlowControl = "none" | "xonXoff" | "rtsCts";
 export type SerialLineEnding = "none" | "cr" | "lf" | "crLf";
 
+/**
+ * How the concrete local device is chosen at connect time.
+ * - `fixed`: exactly `portName` (legacy behaviour).
+ * - `firstAny`: first detected device, USB adapters preferred.
+ * - `firstUsb`: first USB serial device only.
+ * - `match`: first device matching the given VID/PID/name filters.
+ * The backend resolves auto modes from a fresh enumeration on every connect.
+ */
+export type SerialPortSelectionMode =
+  | "fixed"
+  | "firstAny"
+  | "firstUsb"
+  | "match";
+
+export const SERIAL_PORT_SELECTION_MODES: readonly SerialPortSelectionMode[] =
+  Object.freeze(["fixed", "firstAny", "firstUsb", "match"]);
+
+export interface SerialPortSelection {
+  mode: SerialPortSelectionMode;
+  /** USB vendor id (0–65535); only meaningful for mode "match". */
+  vid?: number | null;
+  /** USB product id (0–65535); only meaningful for mode "match". */
+  pid?: number | null;
+  /**
+   * Case-insensitive substring over port name / manufacturer / description /
+   * serial number; only meaningful for mode "match".
+   */
+  match?: string;
+}
+
+export const DEFAULT_SERIAL_PORT_SELECTION: Readonly<SerialPortSelection> =
+  Object.freeze({ mode: "fixed" });
+
+export const SERIAL_MATCH_MAX_LENGTH = 128;
+
+/**
+ * Hostname token mirrored into `Connection.hostname` for the auto modes. Must
+ * stay non-empty and space-free so the connection validator accepts it.
+ */
+export const SERIAL_AUTO_HOSTNAME: Readonly<
+  Record<Exclude<SerialPortSelectionMode, "fixed">, string>
+> = Object.freeze({
+  firstAny: "auto:first-device",
+  firstUsb: "auto:first-usb",
+  match: "auto:match",
+});
+
 export interface SerialSettingsV1 {
   version: typeof SERIAL_SETTINGS_VERSION;
+  /** Device path for mode "fixed"; kept (but unused) for the auto modes. */
   portName: string;
+  portSelection: SerialPortSelection;
   baudRate: number;
   dataBits: SerialDataBits;
   parity: SerialParity;
@@ -36,6 +85,7 @@ export const DEFAULT_SERIAL_SETTINGS: Readonly<SerialSettingsV1> =
   Object.freeze({
     version: SERIAL_SETTINGS_VERSION,
     portName: "",
+    portSelection: DEFAULT_SERIAL_PORT_SELECTION,
     baudRate: 9600,
     dataBits: "8",
     parity: "none",
@@ -76,6 +126,70 @@ const enumValue = <T extends string>(
   fallback: T,
 ): T => (supported.includes(value as T) ? (value as T) : fallback);
 
+// Numbers only: a hex string such as "0403" must not be read as decimal 403.
+// Hex parsing is the editor's concern (see parseUsbId in SerialOptions).
+const usbId = (value: unknown): number | null =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= 0 &&
+  value <= 0xffff
+    ? value
+    : null;
+
+/**
+ * Canonicalize a port-selection record. Unknown modes fall back to `fixed`;
+ * VID/PID are bounded to 16-bit integers (else `null`); the name filter is
+ * trimmed and capped; filters are stripped for every mode except `match`.
+ */
+export function normalizeSerialPortSelection(
+  value: unknown,
+): SerialPortSelection {
+  const input = isRecord(value) ? value : {};
+  const mode = enumValue(
+    input.mode,
+    SERIAL_PORT_SELECTION_MODES,
+    DEFAULT_SERIAL_PORT_SELECTION.mode,
+  );
+  if (mode !== "match") {
+    return { mode };
+  }
+  const selection: SerialPortSelection = { mode };
+  const vid = usbId(input.vid);
+  const pid = usbId(input.pid);
+  const match =
+    typeof input.match === "string"
+      ? input.match.trim().slice(0, SERIAL_MATCH_MAX_LENGTH)
+      : "";
+  if (vid !== null) {
+    selection.vid = vid;
+  }
+  if (pid !== null) {
+    selection.pid = pid;
+  }
+  if (match) {
+    selection.match = match;
+  }
+  return selection;
+}
+
+/** True when a `match` selection carries at least one usable filter. */
+export const hasSerialMatchFilter = (selection: SerialPortSelection): boolean =>
+  selection.mode === "match" &&
+  (typeof selection.vid === "number" ||
+    typeof selection.pid === "number" ||
+    Boolean(selection.match));
+
+/**
+ * The single source for the `Connection.hostname` mirror used by both the
+ * editor and the persistence normalizer so the two never drift.
+ */
+export const serialHostnameFor = (
+  settings: Pick<SerialSettingsV1, "portName" | "portSelection">,
+): string => {
+  const mode = settings.portSelection?.mode ?? "fixed";
+  return mode === "fixed" ? settings.portName : SERIAL_AUTO_HOSTNAME[mode];
+};
+
 export function normalizeSerialSettings(value: unknown): SerialSettingsV1 {
   const input = isRecord(value) ? value : {};
   return {
@@ -84,6 +198,7 @@ export function normalizeSerialSettings(value: unknown): SerialSettingsV1 {
       input.portName ?? input.device ?? input.serialLine,
       DEFAULT_SERIAL_SETTINGS.portName,
     ),
+    portSelection: normalizeSerialPortSelection(input.portSelection),
     baudRate: boundedInteger(
       input.baudRate ?? input.serialSpeed,
       DEFAULT_SERIAL_SETTINGS.baudRate,
@@ -169,7 +284,9 @@ export function normalizeSerialSettings(value: unknown): SerialSettingsV1 {
 export type NativeSerialBaudRate = string | { Custom: number };
 
 export interface NativeSerialConfig {
+  /** Empty when the backend resolves the port from `portSelection`. */
   portName: string;
+  portSelection: SerialPortSelection;
   baudRate: NativeSerialBaudRate;
   dataBits: SerialDataBits;
   parity: SerialParity;
@@ -195,8 +312,10 @@ export const toNativeSerialConfig = (
   const standard = (SERIAL_STANDARD_BAUD_RATES as readonly number[]).includes(
     settings.baudRate,
   );
+  const fixed = settings.portSelection.mode === "fixed";
   return {
-    portName: settings.portName,
+    portName: fixed ? settings.portName : "",
+    portSelection: settings.portSelection,
     baudRate: standard
       ? String(settings.baudRate)
       : { Custom: settings.baudRate },
@@ -236,6 +355,10 @@ export interface SerialBackendSession {
   bytesRx: number;
   bytesTx: number;
   controlLines: SerialControlLines;
+  /** True when the backend chose `portName` from an auto selection mode. */
+  autoSelected?: boolean;
+  /** Human-readable name of the resolved device, e.g. `COM7 - FTDI FT232R`. */
+  portDisplayName?: string | null;
 }
 
 export interface SerialPortInfo {

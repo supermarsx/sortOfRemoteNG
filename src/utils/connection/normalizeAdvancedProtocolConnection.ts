@@ -4,7 +4,10 @@ import {
   normalizeRawSocketSettings,
 } from "../../types/protocols/rawSocket";
 import { normalizeArdSettings } from "../../types/protocols/ard";
-import { normalizeSerialSettings } from "../../types/protocols/serial";
+import {
+  normalizeSerialSettings,
+  serialHostnameFor,
+} from "../../types/protocols/serial";
 import { normalizePowerShellRemotingSettings } from "../powershell/normalizePowerShellRemoting";
 import { normalizeRloginSettings } from "../rlogin/rloginSettings";
 
@@ -209,7 +212,7 @@ export function normalizeAdvancedProtocolConnection(
 
   if (protocol === "raw" || protocol === "rlogin" || protocol === "serial") {
     if (protocol === "serial" && next.serialSettings) {
-      next.hostname = next.serialSettings.portName;
+      next.hostname = serialHostnameFor(next.serialSettings);
       next.port = 0;
     }
     next.username = undefined;

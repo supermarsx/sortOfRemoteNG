@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SERIAL_SETTINGS,
+  SERIAL_AUTO_HOSTNAME,
   SERIAL_SETTINGS_VERSION,
+  hasSerialMatchFilter,
+  normalizeSerialPortSelection,
   normalizeSerialSettings,
+  serialHostnameFor,
   toNativeSerialConfig,
 } from "./serial";
 
@@ -51,6 +55,7 @@ describe("serial settings contract", () => {
     ).toEqual({
       version: SERIAL_SETTINGS_VERSION,
       portName: "/dev/ttyUSB0",
+      portSelection: { mode: "fixed" },
       baudRate: 4_000_000,
       dataBits: "7",
       parity: "even",
@@ -106,6 +111,7 @@ describe("serial settings contract", () => {
       ),
     ).toEqual({
       portName: "COM7",
+      portSelection: { mode: "fixed" },
       baudRate: "115200",
       dataBits: "8",
       parity: "odd",
@@ -164,6 +170,106 @@ describe("serial settings contract", () => {
       expect(collectKeys(output).join(" ")).not.toMatch(
         /credential|password|passphrase|private.?key|secret|token|api.?key/i,
       );
+    }
+  });
+
+  it("defaults a legacy record without portSelection to the fixed mode", () => {
+    const normalized = normalizeSerialSettings({ portName: "COM3" });
+    expect(normalized.portSelection).toEqual({ mode: "fixed" });
+    expect(normalized.portName).toBe("COM3");
+    expect(toNativeSerialConfig({ portName: "COM3" })).toMatchObject({
+      portName: "COM3",
+      portSelection: { mode: "fixed" },
+    });
+  });
+
+  it("normalizes auto modes without a port name and blanks the native portName", () => {
+    const normalized = normalizeSerialSettings({
+      portSelection: { mode: "firstUsb" },
+    });
+    expect(normalized.portName).toBe("");
+    expect(normalized.portSelection).toEqual({ mode: "firstUsb" });
+    expect(toNativeSerialConfig(normalized)).toMatchObject({
+      portName: "",
+      portSelection: { mode: "firstUsb" },
+    });
+
+    // Auto modes keep the last typed device so switching back to fixed
+    // restores it, but never send it to the backend.
+    const kept = normalizeSerialSettings({
+      portName: "COM3",
+      portSelection: { mode: "firstAny" },
+    });
+    expect(kept.portName).toBe("COM3");
+    expect(toNativeSerialConfig(kept).portName).toBe("");
+  });
+
+  it("bounds match filters, strips them for other modes, and rejects unknown modes", () => {
+    expect(
+      normalizeSerialPortSelection({
+        mode: "match",
+        vid: 70_000,
+        pid: 24577,
+        match: "  ftdi  ",
+      }),
+    ).toEqual({ mode: "match", pid: 24577, match: "ftdi" });
+    expect(
+      normalizeSerialPortSelection({ mode: "match", vid: 1027, pid: -1 }),
+    ).toEqual({ mode: "match", vid: 1027 });
+    expect(
+      normalizeSerialPortSelection({ mode: "match", vid: "0403", pid: 1.5 }),
+    ).toEqual({ mode: "match" });
+    expect(
+      normalizeSerialPortSelection({ mode: "match", match: "x".repeat(200) })
+        .match,
+    ).toHaveLength(128);
+    expect(
+      normalizeSerialPortSelection({ mode: "fixed", vid: 1027, match: "ftdi" }),
+    ).toEqual({ mode: "fixed" });
+    expect(normalizeSerialPortSelection({ mode: "firstUsb", pid: 1 })).toEqual({
+      mode: "firstUsb",
+    });
+    expect(normalizeSerialPortSelection({ mode: "bogus" })).toEqual({
+      mode: "fixed",
+    });
+    expect(normalizeSerialPortSelection(undefined)).toEqual({ mode: "fixed" });
+    expect(normalizeSerialPortSelection("firstUsb")).toEqual({ mode: "fixed" });
+  });
+
+  it("reports whether a match selection carries a usable filter", () => {
+    expect(hasSerialMatchFilter({ mode: "match" })).toBe(false);
+    expect(hasSerialMatchFilter({ mode: "match", vid: 0 })).toBe(true);
+    expect(hasSerialMatchFilter({ mode: "match", match: "ftdi" })).toBe(true);
+    expect(hasSerialMatchFilter({ mode: "firstUsb" })).toBe(false);
+  });
+
+  it("pins the hostname tokens for every selection mode", () => {
+    expect(SERIAL_AUTO_HOSTNAME).toEqual({
+      firstAny: "auto:first-device",
+      firstUsb: "auto:first-usb",
+      match: "auto:match",
+    });
+    expect(
+      serialHostnameFor({ portName: "COM3", portSelection: { mode: "fixed" } }),
+    ).toBe("COM3");
+    expect(
+      serialHostnameFor({
+        portName: "COM3",
+        portSelection: { mode: "firstAny" },
+      }),
+    ).toBe("auto:first-device");
+    expect(
+      serialHostnameFor({ portName: "", portSelection: { mode: "firstUsb" } }),
+    ).toBe("auto:first-usb");
+    expect(
+      serialHostnameFor({
+        portName: "",
+        portSelection: { mode: "match", vid: 1027 },
+      }),
+    ).toBe("auto:match");
+    for (const token of Object.values(SERIAL_AUTO_HOSTNAME)) {
+      expect(token).not.toMatch(/\s/);
+      expect(token.length).toBeGreaterThan(0);
     }
   });
 });
