@@ -709,7 +709,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
   };
 
   return (
-    <div className="h-full bg-[var(--color-background)]">
+    <div className="h-full bg-[var(--color-background)]" data-session-viewer="">
       <FeatureErrorBoundary
         boundaryKey={`${session.id}:${session.status}:${session.protocol}:${session.backendSessionId ?? ""}`}
         title={`${session.protocol.toUpperCase()} panel failed`}

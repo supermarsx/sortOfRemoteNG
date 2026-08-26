@@ -73,6 +73,7 @@ import { useWindowControls } from "./hooks/window/useWindowControls";
 import { useWindowTheme } from "./hooks/window/useWindowTheme";
 import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
 import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
+import { useCloseTabShortcut } from "./hooks/session/useCloseTabShortcut";
 import { useWindowManager } from "./hooks/window/useWindowManager";
 import { useBehaviorWindowLifecycle } from "./hooks/window/useBehaviorWindowLifecycle";
 import { AppToolbar } from "./components/app/AppToolbar";
@@ -248,6 +249,7 @@ const AppContent: React.FC = () => {
     dispatch,
     setActiveSessionId,
   );
+  useCloseTabShortcut(state.sessions, activeSessionId, handleSessionClose);
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();

@@ -928,6 +928,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         draggable={enableReorder}
         data-tauri-disable-drag="true"
         data-testid="session-tab"
+        data-session-status={session.status}
         role="tab"
         aria-selected={isActive}
         aria-controls={MAIN_SESSION_PANEL_ID}
@@ -1058,6 +1059,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           onClick={(e) => handleDetachSession(session.id, e)}
           className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
           data-tooltip="Detach"
+          data-testid="session-tab-detach"
         >
           <ExternalLink size={12} />
         </button>
@@ -1547,6 +1549,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                 <button
                   onClick={() => act(() => onSessionDetach(sessionId))}
                   className="sor-menu-item"
+                  data-testid="session-tab-detach"
                 >
                   <ExternalLink size={14} className="mr-2" /> Detach to New
                   Window

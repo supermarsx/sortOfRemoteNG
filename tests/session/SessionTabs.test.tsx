@@ -194,6 +194,21 @@ describe("SessionTabs accessibility", () => {
     expect(secondTab).toHaveAttribute("aria-controls", "session-main-panel");
   });
 
+  it("exposes the session status on the tab for e2e observability", () => {
+    mockSessions[1] = { ...mockSessions[1], status: "error" };
+
+    renderTabs();
+
+    expect(screen.getByRole("tab", { name: /session one/i })).toHaveAttribute(
+      "data-session-status",
+      "connected",
+    );
+    expect(screen.getByRole("tab", { name: /session two/i })).toHaveAttribute(
+      "data-session-status",
+      "error",
+    );
+  });
+
   it("opens and closes submenu with keyboard and updates aria-expanded", async () => {
     renderTabs();
 
