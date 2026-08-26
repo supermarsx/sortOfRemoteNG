@@ -53,6 +53,7 @@ const BUILT_IN_PROTOCOLS = [
   "ilo",
   "lenovo",
   "supermicro",
+  "voip-phone",
 ] as const satisfies readonly BuiltInConnectionProtocol[];
 
 const READ_ONLY_MANAGEMENT_PROTOCOLS = [

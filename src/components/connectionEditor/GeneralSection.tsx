@@ -400,6 +400,10 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
       httpVerifySsl: ["http", "https"].includes(protocol)
         ? (prev.httpVerifySsl ?? true)
         : prev.httpVerifySsl,
+      voipPhoneSettings:
+        protocol === "voip-phone"
+          ? { vendor: "yealink", ...prev.voipPhoneSettings }
+          : prev.voipPhoneSettings,
     }));
   };
 

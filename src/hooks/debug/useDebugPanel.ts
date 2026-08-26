@@ -31,6 +31,7 @@ const PROTOCOLS = [
   "ilo",
   "lenovo",
   "supermicro",
+  "voip-phone",
 ] as const;
 
 const SESSION_STATUSES = [

@@ -44,6 +44,8 @@ export const DEFAULT_PORTS: Record<string, number> = {
   scaleway: 22,
   linode: 22,
   ovhcloud: 22,
+  // VoIP desk phones expose their web admin on plain HTTP by default.
+  "voip-phone": 80,
 };
 
 /**

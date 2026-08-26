@@ -132,3 +132,37 @@ describe("t57 picker reachability", () => {
     },
   );
 });
+
+describe("t66 voip-phone picker reachability", () => {
+  const protocol = "voip-phone" as const satisfies BuiltInConnectionProtocol;
+
+  it("is selectable once under networking with a client-owned, fully-interactive runtime", async () => {
+    expect(
+      PROTOCOL_OPTIONS.filter((option) => option.value === protocol),
+    ).toHaveLength(1);
+    expect(PROTOCOL_OPTIONS).toContainEqual(
+      expect.objectContaining({ value: protocol, category: "networking" }),
+    );
+    expect(BUILT_IN_HIDDEN_DIRECT_PROTOCOLS).not.toContain(protocol);
+    expect(BUILT_IN_MANAGEMENT_PROTOCOLS).not.toContain(protocol);
+    expect(getProtocolAvailability(protocol)).toEqual(
+      expect.objectContaining({
+        classification: "fully-interactive",
+        sessionEntry: "client-owned",
+      }),
+    );
+    expect(getDirectSessionUnavailableMessage(protocol)).toBeNull();
+
+    // The management-runtime descriptor is registered by the session-panel
+    // executor (t66-e4). Until it lands the picker entry is contract-only;
+    // once present it must resolve to a real panel like every t57 target.
+    const descriptor = findBuiltInManagementRuntime(protocol);
+    if (descriptor) {
+      expect(descriptor).toEqual(
+        expect.objectContaining({ protocol, category: "networking" }),
+      );
+      const panelModule = await descriptor.importPanel();
+      expect(panelModule.default).toBeTypeOf("function");
+    }
+  });
+});

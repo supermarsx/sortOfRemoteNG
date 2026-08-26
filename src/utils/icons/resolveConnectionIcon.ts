@@ -50,6 +50,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   ilo: "server-cog",
   lenovo: "server-cog",
   supermicro: "server-cog",
+  "voip-phone": "phone",
 });
 
 export type EffectiveConnectionIconSource =

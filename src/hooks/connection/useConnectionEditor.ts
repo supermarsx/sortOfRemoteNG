@@ -458,6 +458,16 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     color: "cyan",
     category: "cloud",
   },
+  {
+    value: "voip-phone",
+    label: "VoIP Phone (Yealink)",
+    desc: "Desk-phone web admin: status, web UI, reboot",
+    labelKey: "connectionEditor.protocolOptions.voipPhone.label",
+    descKey: "connectionEditor.protocolOptions.voipPhone.description",
+    icon: Phone,
+    color: "green",
+    category: "networking",
+  },
 ];
 
 export const INTEGRATION_PROTOCOL_OPTIONS: ProtocolOption[] =

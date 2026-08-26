@@ -428,6 +428,16 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     detail:
       "Read-only management overview. Native Supermicro client initialization is local-only; each dashboard, storage, or firmware section becomes provider-verified only after its registered read succeeds, with partial failures reported per section.",
   }),
+  "voip-phone": capability({
+    label: "VoIP Phone",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/voipPhone/VoipPhoneSessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-voip-phone",
+    testPath: "tests/voipPhone/VoipPhoneSessionPanel.test.tsx",
+    detail:
+      "The saved-connection panel owns the vendor web-admin login (Yealink first), status and SIP account reads, reboot with confirmation, and the auto-logged-in embedded web UI handoff through the registered native command family.",
+  }),
 } satisfies Record<BuiltInConnectionProtocol, ProtocolAvailability>;
 
 export const ADDITIONAL_PROTOCOL_AVAILABILITY = {

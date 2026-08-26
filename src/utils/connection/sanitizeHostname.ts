@@ -86,6 +86,7 @@ const KNOWN_SCHEMES = [
   "ilo",
   "lenovo",
   "supermicro",
+  "voip-phone",
   "ws",
   "wss",
 ] as const;

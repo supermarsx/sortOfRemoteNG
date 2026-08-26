@@ -113,6 +113,18 @@ vi.mock("../../connectionEditor/BMCOptions", () => ({
   ),
 }));
 
+vi.mock("../../connectionEditor/VoipPhoneOptions", () => ({
+  default: ({ formData, section }: any) => (
+    <div
+      data-testid="voip-phone-options"
+      data-protocol={formData.protocol}
+      data-section={section}
+    >
+      VoIP phone: {formData.protocol} / {section}
+    </div>
+  ),
+}));
+
 vi.mock("../../connectionEditor/SerialOptions", () => ({
   SerialOptions: ({ sections }: any) => (
     <div
@@ -225,9 +237,15 @@ const idsFor = (formData: Partial<Connection>) =>
   getProtocolSubtabs(formData).map((subtab) => subtab.id);
 
 describe("ProtocolSections", () => {
-  it.each(["idrac", "ilo", "lenovo", "supermicro"] as const)(
-    "routes every %s BMC subtab to the shared editor",
-    (protocol) => {
+  it.each([
+    ["idrac", "bmc-options"],
+    ["ilo", "bmc-options"],
+    ["lenovo", "bmc-options"],
+    ["supermicro", "bmc-options"],
+    ["voip-phone", "voip-phone-options"],
+  ] as const)(
+    "routes every %s management subtab to its sectioned editor",
+    (protocol, editorTestId) => {
       render(<Harness initial={{ protocol, isGroup: false }} />);
 
       expect(idsFor({ protocol })).toEqual([
@@ -237,17 +255,17 @@ describe("ProtocolSections", () => {
         "advanced",
         "recovery",
       ]);
-      expect(screen.getByTestId("bmc-options")).toHaveAttribute(
+      expect(screen.getByTestId(editorTestId)).toHaveAttribute(
         "data-protocol",
         protocol,
       );
-      expect(screen.getByTestId("bmc-options")).toHaveAttribute(
+      expect(screen.getByTestId(editorTestId)).toHaveAttribute(
         "data-section",
         "connection",
       );
 
       fireEvent.click(screen.getByRole("tab", { name: "Security" }));
-      expect(screen.getByTestId("bmc-options")).toHaveAttribute(
+      expect(screen.getByTestId(editorTestId)).toHaveAttribute(
         "data-section",
         "security",
       );

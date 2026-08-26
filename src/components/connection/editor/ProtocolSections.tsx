@@ -17,6 +17,9 @@ import RecoveryInfoSection from "../../connectionEditor/RecoveryInfoSection";
 import SecurityQuestionsSection from "../../connectionEditor/SecurityQuestionsSection";
 import SSHOptions from "../../connectionEditor/SSHOptions";
 import TOTPOptions from "../../connectionEditor/TOTPOptions";
+import VoipPhoneOptions, {
+  type VoipPhoneOptionsSection,
+} from "../../connectionEditor/VoipPhoneOptions";
 import WinRMOptions from "../../connectionEditor/WinRMOptions";
 import { normalizeRawSocketSettings } from "../../../types/protocols/rawSocket";
 import { normalizeRloginSettings } from "../../../utils/rlogin/rloginSettings";
@@ -26,6 +29,7 @@ import {
   getProtocolSubtabs,
   isBmcProtocol,
   isCloudProtocol,
+  isVoipPhoneProtocol,
   type ProtocolSubtabId,
 } from "./protocolSubtabs";
 
@@ -101,6 +105,24 @@ const ProtocolSubtabContent: React.FC<{
       : "connection";
     return (
       <BMCOptions
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+        section={section}
+      />
+    );
+  }
+
+  if (isVoipPhoneProtocol(protocol)) {
+    const section = [
+      "connection",
+      "authentication",
+      "security",
+      "advanced",
+    ].includes(subtabId)
+      ? (subtabId as VoipPhoneOptionsSection)
+      : "connection";
+    return (
+      <VoipPhoneOptions
         formData={mgr.formData}
         setFormData={mgr.setFormData}
         section={section}

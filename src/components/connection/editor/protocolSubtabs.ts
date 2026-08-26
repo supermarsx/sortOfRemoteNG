@@ -113,6 +113,9 @@ const BMC_PROTOCOLS = new Set(["idrac", "ilo", "lenovo", "supermicro"]);
 export const isBmcProtocol = (protocol: string): boolean =>
   BMC_PROTOCOLS.has(protocol);
 
+export const isVoipPhoneProtocol = (protocol: string): boolean =>
+  protocol === "voip-phone";
+
 const selectSubtabs = (
   ids: readonly ProtocolSubtabId[],
 ): readonly ProtocolSubtabDescriptor[] => ids.map((id) => SUBTABS[id]);
@@ -183,7 +186,7 @@ export function getProtocolSubtabs(
     ]);
   }
 
-  if (isBmcProtocol(protocol)) {
+  if (isBmcProtocol(protocol) || isVoipPhoneProtocol(protocol)) {
     return selectSubtabs([
       "connection",
       "authentication",

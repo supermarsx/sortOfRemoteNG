@@ -21,6 +21,7 @@ import type { XdmcpSavedConnectionOptions } from "../protocols/xdmcp";
 import type { X2goNativeSavedOptions } from "../protocols/x2goNative";
 import type { NxNativeSavedOptions } from "../protocols/nxNative";
 import type { ConnectionTypeCategory } from "../integrations/registry";
+import type { VoipPhoneSettings } from "../voipPhone";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -81,7 +82,8 @@ export type BuiltInConnectionProtocol =
   | "idrac"
   | "ilo"
   | "lenovo"
-  | "supermicro";
+  | "supermicro"
+  | "voip-phone";
 
 export type IntegrationConnectionProtocol =
   `${typeof INTEGRATION_PROTOCOL_PREFIX}${string}`;
@@ -437,6 +439,12 @@ export interface Connection
     authMethod?: "basic" | "session";
     timeoutSecs?: number;
   };
+
+  /**
+   * VoIP desk-phone web-admin settings (vendor driver, `yealink` first).
+   * Credentials remain on the parent connection; nothing secret lives here.
+   */
+  voipPhoneSettings?: VoipPhoneSettings;
 
   /** Non-secret GCP settings. The service-account JSON uses `password`. */
   gcpSettings?: {
