@@ -9,6 +9,7 @@ export const VNC_PORT = 15900;
 export const HTTP_PORT = 8443;
 export const MYSQL_PORT = 13306;
 export const FTP_PORT = 2121;
+export const PORTAINER_PORT = 19000;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COMPOSE_FILE = path.resolve(__dirname, '../docker-compose.yml');

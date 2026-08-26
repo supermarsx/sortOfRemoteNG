@@ -245,6 +245,25 @@ export const S = {
   proxmoxVmItem: '[data-testid="proxmox-vm-item"]',
   proxmoxDisconnectBtn: '[data-testid="proxmox-disconnect-btn"]',
 
+  // Portainer (t64; testids per .orchestration/plans/t64.md §e4)
+  portainerPanel: '[data-testid="portainer-panel"]',
+  portainerConnectionForm: '[data-testid="portainer-connection-form"]',
+  portainerBaseUrl: '[data-testid="portainer-base-url"]',
+  portainerAuthModePassword: '[data-testid="portainer-auth-mode-password"]',
+  portainerAuthModeApiKey: '[data-testid="portainer-auth-mode-apikey"]',
+  portainerUsername: '[data-testid="portainer-username"]',
+  portainerPassword: '[data-testid="portainer-password"]',
+  portainerApiKey: '[data-testid="portainer-api-key"]',
+  portainerTlsSkip: '[data-testid="portainer-tls-skip"]',
+  portainerConnectBtn: '[data-testid="portainer-connect-btn"]',
+  portainerDisconnectBtn: '[data-testid="portainer-disconnect-btn"]',
+  portainerStatus: '[data-testid="portainer-status"]',
+  portainerEndpointsTab: '[data-testid="portainer-tab-endpoints"]',
+  portainerContainersTab: '[data-testid="portainer-tab-containers"]',
+  portainerStacksTab: '[data-testid="portainer-tab-stacks"]',
+  portainerOpenWebUi: '[data-testid="portainer-open-web-ui"]',
+  portainerContainerRow: '[data-testid="portainer-container-row"]',
+
   // Debug Panel
   debugPanel: '[data-testid="debug-panel"]',
   debugActionList: '[data-testid="debug-action-list"]',

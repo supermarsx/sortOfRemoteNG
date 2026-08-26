@@ -59,6 +59,11 @@ env:
   SOFTETHER_USER: testuser
   SOFTETHER_PASSWORD: testpass123
   SOFTETHER_ADMIN_PWD: test-admin-pwd-CHANGE-ME
+  # t64-e5: Portainer CE fixture (e2e/docker-compose.yml `test-portainer`).
+  PORTAINER_URL: http://127.0.0.1:19000
+  PORTAINER_TLS_URL: https://127.0.0.1:19443
+  PORTAINER_USER: admin
+  PORTAINER_ADMIN_PASSWORD: portainer-e2e-pass1234
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
   # Keep registry bursts below Docker Hub's transient request limits.
@@ -135,12 +140,15 @@ jobs:
           SOFTETHER_USER=${{ env.SOFTETHER_USER }}
           SOFTETHER_PASSWORD=${{ env.SOFTETHER_PASSWORD }}
           SOFTETHER_ADMIN_PWD=${{ env.SOFTETHER_ADMIN_PWD }}
+          PORTAINER_ADMIN_PASSWORD=${{ env.PORTAINER_ADMIN_PASSWORD }}
           EOF
 
-      - name: Prepare and validate disposable HTTP fixtures
+      - name: Prepare and validate disposable HTTP + Portainer fixtures
         run: |
           node scripts/ci/e2e-http-fixtures.mjs prepare
           node scripts/ci/e2e-http-fixtures.mjs validate
+          node scripts/ci/e2e-portainer-fixture.mjs prepare
+          node scripts/ci/e2e-portainer-fixture.mjs validate
           docker compose \
             -f e2e/docker-compose.yml \
             -f docker/compose.e2e.yml \
@@ -287,6 +295,19 @@ jobs:
             --test golden_path -- --include-ignored --nocapture \
             2>&1 | tee ../e2e-ftp.log
 
+      # ── t64-e5: Portainer CE real-container e2e ───────────────────
+      # The portainer image is FROM scratch (no compose healthcheck is
+      # possible), so the fixture script's `wait` is the readiness gate:
+      # it polls /api/system/status and proves the admin login works.
+      - name: Portainer e2e (t64-e5)
+        if: always()
+        id: test-portainer
+        continue-on-error: true
+        working-directory: src-tauri
+        run: |
+          node ../scripts/ci/e2e-portainer-fixture.mjs wait
+          cargo test -p sorng-portainer --features docker-e2e             --test docker_e2e -- --include-ignored --nocapture             --test-threads=1 2>&1 | tee ../e2e-portainer.log
+
       # ── Artifacts + failure capture ────────────────────────────────
       - name: Collect container logs (always)
         if: always()
@@ -313,6 +334,7 @@ jobs:
             e2e-vnc.log
             e2e-softether.log
             e2e-ftp.log
+            e2e-portainer.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -349,6 +371,7 @@ jobs:
           echo "| vnc (t3-e7) | ${{ steps.test-vnc.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| softether (t3-e8) | ${{ steps.test-softether.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ftp (t3-e5) | ${{ steps.test-ftp.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| portainer (t64-e5) | ${{ steps.test-portainer.outcome }} |" >> $GITHUB_STEP_SUMMARY
           # Fail the job if any test step failed.
           fails=0
           for o in \
@@ -360,7 +383,7 @@ jobs:
             "${{ steps.test-rdpdr-live.outcome }}" \
             "${{ steps.test-vnc.outcome }}" \
             "${{ steps.test-softether.outcome }}" \
-            "${{ steps.test-ftp.outcome }}"; do
+            "${{ steps.test-ftp.outcome }}"             "${{ steps.test-portainer.outcome }}"; do
             if [ "$o" = "failure" ]; then fails=$((fails+1)); fi
           done
           if [ "$fails" -gt 0 ]; then
