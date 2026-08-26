@@ -60,6 +60,12 @@ pub enum ArtifactKind {
     /// the index slot fails authentication rather than decoding
     /// successfully under the wrong slot.
     DatabasesIndex,
+    /// `databases/<id>.trust.json` — the per-database trust store
+    /// (trusted certificates, host keys, policies; t62). Distinct
+    /// sub-key so a trust blob swapped into a database slot (or vice
+    /// versa) fails authentication instead of decoding under the
+    /// wrong slot.
+    TrustStore,
 }
 
 impl ArtifactKind {
@@ -75,6 +81,7 @@ impl ArtifactKind {
             ArtifactKind::Logs => "sorng-v1::logs",
             ArtifactKind::Macros => "sorng-v1::macros",
             ArtifactKind::DatabasesIndex => "sorng-v1::databases-index",
+            ArtifactKind::TrustStore => "sorng-v1::trust-store",
         }
     }
 
@@ -90,6 +97,7 @@ impl ArtifactKind {
             ArtifactKind::Logs,
             ArtifactKind::Macros,
             ArtifactKind::DatabasesIndex,
+            ArtifactKind::TrustStore,
         ]
     }
 }

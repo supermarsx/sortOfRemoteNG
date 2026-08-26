@@ -7,5 +7,6 @@
 pub mod backup;
 pub mod durable;
 pub mod payload_hash;
+pub mod sdbf;
 pub mod storage;
 pub mod trust_store;
