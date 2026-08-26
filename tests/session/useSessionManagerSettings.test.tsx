@@ -118,6 +118,7 @@ const singletonIntegrationProtocols = [
   "integration:exchange",
   "integration:gdrive",
   "integration:lxd",
+  "integration:proxmox",
   "integration:vmware",
   "integration:vmwareDesktop",
 ] satisfies readonly ConnectionProtocol[];

@@ -74,6 +74,7 @@ const SINGLETON_INTEGRATION_PROTOCOL_LABELS: Readonly<Record<string, string>> =
     "integration:exchange": "Exchange",
     "integration:gdrive": "Google Drive",
     "integration:lxd": "LXD / Incus",
+    "integration:proxmox": "Proxmox VE",
     "integration:vmware": "VMware vSphere",
     "integration:vmwareDesktop": "VMware Desktop",
   };

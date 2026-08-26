@@ -5,6 +5,7 @@ import type { IntegrationDescriptor } from "./registry";
 import { netboxDescriptor } from "../../components/integrations/netbox/descriptor";
 import { cpanelDescriptor } from "../../components/integrations/cpanel/descriptor";
 import { ansibleDescriptor } from "../../components/integrations/ansible/descriptor";
+import { proxmoxDescriptor } from "../../components/integrations/proxmox/descriptor";
 import {
   lxdDescriptor,
   pfsenseDescriptor,
@@ -22,4 +23,5 @@ export const infraIntegrations: IntegrationDescriptor[] = [
   cpanelDescriptor,
   ansibleDescriptor,
   draytekDescriptor,
+  proxmoxDescriptor,
 ];

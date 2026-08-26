@@ -96,9 +96,11 @@ const EXPECTED_PANELS: { key: string; category: ConnectionTypeCategory }[] = [
   { key: "jira", category: "business-app" },
   { key: "osticket", category: "business-app" },
   { key: "php", category: "web-server" },
+  // t67: Proxmox VE (src/components/integrations/proxmox/descriptor.ts)
+  { key: "proxmox", category: "virtualization" },
 ];
 
-const EXPECTED_PANEL_COUNT = 23;
+const EXPECTED_PANEL_COUNT = 24;
 
 // Category → sorted panel keys, derived from the manifest. This is the shape
 // `groupByCategory()` must reproduce over the registry (10 integration-populated
