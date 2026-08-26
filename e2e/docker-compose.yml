@@ -64,6 +64,29 @@ services:
       timeout: 3s
       retries: 10
 
+  test-voip-phone:
+    # Fake Yealink T2x web admin (t66): 8090 = legacy (HTTP Basic,
+    # ConfigManApp.com), 8091 = servlet (login form + JSESSIONID).
+    # ACTION_URI=1 makes `?key=Reboot` succeed; unset = 403 like a stock phone.
+    image: node:20-alpine
+    working_dir: /fixture
+    command: ["node", "server.mjs"]
+    ports:
+      - "8090:8090"
+      - "8091:8091"
+    environment:
+      - MODE=both
+      - PORT_LEGACY=8090
+      - PORT_SERVLET=8091
+      - ACTION_URI=${VOIP_PHONE_ACTION_URI:-0}
+    volumes:
+      - ./fixtures/voip-phone:/fixture:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8091/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   test-mysql:
     image: mysql:8.0
     ports:

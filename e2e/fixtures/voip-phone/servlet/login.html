@@ -1,0 +1,24 @@
+<html>
+  <head>
+    <title>Yealink SIP-T21P E2</title>
+    <!-- {{RSAKEY_SCRIPT}} -->
+  </head>
+  <body class="loginForm">
+    <div id="loginForm">
+      {{ERROR}}
+      <form
+        id="login"
+        name="loginForm"
+        method="post"
+        action="/servlet?m=mod_listener&amp;p=login&amp;q=login"
+      >
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" value="" />
+        <label for="pwd">Password</label>
+        <input type="password" id="pwd" name="pwd" value="" />
+        <input type="hidden" id="rsakey" name="rsakey" value="" />
+        <input type="submit" id="loginButton" value="Confirm" />
+      </form>
+    </div>
+  </body>
+</html>
