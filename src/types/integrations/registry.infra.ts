@@ -10,6 +10,7 @@ import {
   pfsenseDescriptor,
   vmwareDesktopDescriptor,
   vmwareDescriptor,
+  draytekDescriptor,
 } from "../../components/integrations/descriptors";
 
 export const infraIntegrations: IntegrationDescriptor[] = [
@@ -20,4 +21,5 @@ export const infraIntegrations: IntegrationDescriptor[] = [
   vmwareDescriptor,
   cpanelDescriptor,
   ansibleDescriptor,
+  draytekDescriptor,
 ];

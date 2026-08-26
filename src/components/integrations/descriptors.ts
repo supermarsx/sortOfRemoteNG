@@ -7,6 +7,7 @@ import {
   KeyRound,
   MonitorPlay,
   Network,
+  Router,
   Server,
   ShieldCheck,
   Waypoints,
@@ -138,4 +139,14 @@ export const keepassDescriptor: IntegrationDescriptor = {
   icon: KeyRound,
   defaultConnectionIconKey: "key-round",
   importPanel: () => import("./keepass/KeepassPanel"),
+};
+
+// ── t68: DrayTek Vigor (network appliance; vendor-generic shell) ─────────────
+export const draytekDescriptor: IntegrationDescriptor = {
+  key: "draytek",
+  label: "DrayTek Vigor",
+  category: "networking",
+  icon: Router,
+  defaultConnectionIconKey: "router",
+  importPanel: () => import("./draytek/DrayTekPanel"),
 };

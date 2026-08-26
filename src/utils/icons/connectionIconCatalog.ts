@@ -243,7 +243,11 @@ export const CONNECTION_ICON_CATALOG = [
     "topology",
     "netbox",
   ]),
-  defineIcon("router", "Router", "network", Router, ["gateway", "appliance"]),
+  defineIcon("router", "Router", "network", Router, [
+    "gateway",
+    "appliance",
+    "draytek",
+  ]),
   defineIcon("wifi", "Wireless", "network", Wifi, ["wifi", "wlan"]),
   defineIcon("cable", "Wired connection", "network", Cable, [
     "ethernet",
