@@ -9,7 +9,10 @@ import {
 } from "../../types/connection/connection";
 import { isToolProtocol } from "../../components/app/toolSession";
 import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel.helpers";
-import { isRealConnectionSession } from "../../utils/session/sessionClassification";
+import {
+  hasNoLiveTransport,
+  isRealConnectionSession,
+} from "../../utils/session/sessionClassification";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
 import { ScriptEngine } from "../../utils/recording/scriptEngine";
@@ -966,6 +969,22 @@ export const useSessionManager = () => {
         session.errorMessage?.includes("VPN cleanup needs attention") ===
           true ||
         session.errorMessage?.includes("VPN ownership") === true);
+    // A session that never reached a live transport (still connecting, or
+    // failed) must always close: no confirmations, no RDP detach, and
+    // backend/VPN cleanup is best-effort — failures are logged and surfaced
+    // via a non-blocking alert instead of keeping the tab. The one exception
+    // (an *active* VPN binding) is folded into `hasNoLiveTransport`.
+    const abandoned = hasNoLiveTransport(session);
+    const reportAbandonedCleanupIncomplete = (message: string) => {
+      console.error("Session cleanup incomplete:", message);
+      settingsManager.logAction(
+        "error",
+        "Session cleanup incomplete",
+        connection?.id,
+        message,
+      );
+      void showAlert(message);
+    };
 
     // Integration providers register their exact backend cleanup with the
     // mounted host. Await it before removing the owning session; host unmount
@@ -980,16 +999,22 @@ export const useSessionManager = () => {
             : error instanceof Error
               ? error.message
               : String(error);
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: {
-            ...session,
-            status: "error",
-            errorMessage: `Integration cleanup failed and the session was kept open so cleanup can be retried. Retry Close after resolving the provider error. ${detail}`,
-            lastActivity: new Date(),
-          },
-        });
-        return false;
+        if (abandoned) {
+          reportAbandonedCleanupIncomplete(
+            `Integration cleanup failed while closing "${session.name}" (the panel never connected). The provider may need manual cleanup. ${detail}`,
+          );
+        } else {
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: {
+              ...session,
+              status: "error",
+              errorMessage: `Integration cleanup failed and the session was kept open so cleanup can be retried. Retry Close after resolving the provider error. ${detail}`,
+              lastActivity: new Date(),
+            },
+          });
+          return false;
+        }
       }
       markSessionEnding(sessionId);
       lifecycle.beginEnding(sessionId);
@@ -1035,6 +1060,10 @@ export const useSessionManager = () => {
         // singleConnectionMode already obtained confirmation to close the old
         // connection. A detach would leave it running and violate that mode.
         disconnectRdpBackend = true;
+      } else if (abandoned) {
+        // Nothing is running for a failed/connecting attempt: never detach it
+        // into a hidden background row, and never ask about it.
+        disconnectRdpBackend = true;
       } else if (retryingVpnCleanup) {
         // A panel already closed the native backend. Retry only its retained
         // owners, regardless of the normal tab close/detach preference.
@@ -1076,7 +1105,7 @@ export const useSessionManager = () => {
         connection?.warnOnClose,
         settings.warnOnClose,
       );
-      if (shouldWarn && !authoritativeSession) {
+      if (shouldWarn && !authoritativeSession && !abandoned) {
         const confirmed = await showConfirm(t("dialogs.confirmClose"));
         if (!confirmed) return false;
       }
@@ -1158,16 +1187,20 @@ export const useSessionManager = () => {
         sessionVpnLeaseOwnerIds(targetSession).length > 0
       ) {
         const message = `${protocol.toUpperCase()} VPN ownership is from an older uncorrelated session record and cannot be released automatically. Verify the route in the VPN manager and remove it manually.`;
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: {
-            ...targetSession,
-            status: "error",
-            errorMessage: message,
-            lastActivity: new Date(),
-          },
-        });
-        return false;
+        if (abandoned) {
+          reportAbandonedCleanupIncomplete(message);
+        } else {
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: {
+              ...targetSession,
+              status: "error",
+              errorMessage: message,
+              lastActivity: new Date(),
+            },
+          });
+          return false;
+        }
       }
 
       let cleanupFailed = false;
@@ -1216,7 +1249,12 @@ export const useSessionManager = () => {
         }
       }
 
-      if (cleanupFailed) return false;
+      if (cleanupFailed) {
+        if (!abandoned) return false;
+        reportAbandonedCleanupIncomplete(
+          `${protocol.toUpperCase()} backend/VPN cleanup did not complete while closing "${session.name}" (the session never connected). The tab was closed; verify the route in the VPN manager and remove it manually if it is still present.`,
+        );
+      }
     }
 
     if (session.protocol === "raw" && session.backendSessionId) {
@@ -1554,8 +1592,9 @@ export const useSessionManager = () => {
     const cleanupQuarantined = hasSessionVpnCleanupQuarantine(sessionData);
     const restoredProtocol = connection.protocol;
 
-    // Check if session already exists (avoid duplicates)
-    const existingSession = state.sessions.find(
+    // Check if session already exists (avoid duplicates). Read the ref: the
+    // closure's `state` can be stale when restores run back-to-back.
+    const existingSession = stateRef.current.sessions.find(
       (s) =>
         s.id === sessionData.id ||
         (s.connectionId === sessionData.connectionId &&

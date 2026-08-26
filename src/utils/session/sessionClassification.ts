@@ -83,15 +83,86 @@ export function isIntegrationTabSession(session: {
 }
 
 /**
+ * Minimal shape needed to decide whether a session ever reached a live
+ * transport. Kept structural so tests and persistence helpers can pass
+ * partial rows.
+ */
+export interface LiveTransportProbe {
+  status?: ConnectionSession["status"];
+  vpnLeaseBindings?: ReadonlyArray<{ status?: string }>;
+}
+
+/**
+ * True iff the session has no live remote transport: it is still
+ * `connecting` (the attempt never completed) or ended in `error`, AND
+ * none of its VPN lease bindings is `active`.
+ *
+ * Closing such a tab must always succeed — there is nothing to lose, so
+ * no "close?" confirmation, no RDP detach-into-background and no
+ * fail-closed backend cleanup applies. The single exception is an
+ * *active* VPN binding: that means a route is up, and the normal
+ * fail-closed cleanup rule must still apply (see `handleSessionClose`).
+ *
+ * `connected`, `reconnecting` and `disconnected` (i.e. was live once)
+ * sessions are never "no live transport" here.
+ */
+export function hasNoLiveTransport(session: LiveTransportProbe): boolean {
+  const status = session.status;
+  if (status !== "error" && status !== "connecting") return false;
+  const bindings = session.vpnLeaseBindings ?? [];
+  return !bindings.some((binding) => binding.status === "active");
+}
+
+/**
+ * Minimal shape `isRestorableConnectionSession` inspects. Protocol is the
+ * classifier; the remaining fields decide whether an `error` row still
+ * carries VPN-cleanup evidence that must survive a reload.
+ */
+export interface RestorableSessionProbe extends LiveTransportProbe {
+  protocol?: string;
+  layout?: { isDetached?: boolean };
+  vpnLeaseOwnerIds?: ReadonlyArray<string>;
+  vpnLeaseReleaseTombstones?: ReadonlyArray<unknown>;
+  vpnLeaseCleanupQuarantine?: {
+    proofs?: ReadonlyArray<unknown>;
+    proofIncomplete?: boolean;
+  };
+}
+
+function hasVpnRecoveryEvidence(session: RestorableSessionProbe): boolean {
+  return (
+    (session.vpnLeaseBindings?.length ?? 0) > 0 ||
+    (session.vpnLeaseOwnerIds?.length ?? 0) > 0 ||
+    (session.vpnLeaseReleaseTombstones?.length ?? 0) > 0 ||
+    (session.vpnLeaseCleanupQuarantine?.proofs?.length ?? 0) > 0 ||
+    session.vpnLeaseCleanupQuarantine?.proofIncomplete === true
+  );
+}
+
+/**
  * Sessions worth reconstructing after an application reload. Integration tabs
  * are not counted as live remote transports, but their selected instance and
  * panel state must be restored so the user can explicitly reconnect.
+ *
+ * Excluded even when the protocol qualifies:
+ *   - detached "ghost" rows that never had a live transport (a failed RDP
+ *     attempt that an older build detached instead of closing) — restoring
+ *     them resurrects a failed tab the user already closed;
+ *   - `error` rows with no VPN-cleanup evidence (no bindings, owners,
+ *     tombstones or quarantine) — a plain failed attempt has nothing to
+ *     recover. Rows that *do* carry evidence keep persisting so the
+ *     fail-closed cleanup can be retried after reload.
  */
-export function isRestorableConnectionSession(session: {
-  protocol?: string;
-}): boolean {
+export function isRestorableConnectionSession(
+  session: RestorableSessionProbe,
+): boolean {
   const kind = classifyTabKind(session);
-  return kind === "connection" || kind === "integration";
+  if (kind !== "connection" && kind !== "integration") return false;
+  if (session.layout?.isDetached && hasNoLiveTransport(session)) return false;
+  if (session.status === "error" && !hasVpnRecoveryEvidence(session)) {
+    return false;
+  }
+  return true;
 }
 
 export interface PartitionedSessions<
