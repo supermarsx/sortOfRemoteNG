@@ -72,10 +72,13 @@ body {
 }
 
 /* ── xterm.js structural styles ──────────────────────────────────
-   Cherry-picked from @xterm/xterm/css/xterm.css so that xterm's
-   internal buffer-level selection renders correctly.
-   We skip the full import because it sets background-color:#000
-   on .xterm-viewport, which kills transparent/animated backgrounds.
+   Mirrors @xterm/xterm@6.0.0 css/xterm.css (checked by
+   tests/ssh/xtermCssParity.test.ts) so that xterm's internal
+   buffer-level selection and the ScrollableElement scrollbar render
+   correctly. We do not import the package CSS because it sets
+   background-color:#000 on .xterm-viewport, which kills
+   transparent/animated backgrounds — that is the ONE deliberate
+   deviation below. `.xterm:focus-visible` is a project addition.
    ─────────────────────────────────────────────────────────────── */
 
 /* Disable browser-native DOM selection — xterm handles selection
@@ -94,30 +97,6 @@ body {
 }
 .xterm:focus-visible {
   box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 50%);
-}
-
-/* Viewport: scrollable layer over the buffer. No background-color
-   so animated/transparent terminal backgrounds show through. */
-.xterm .xterm-viewport {
-  overflow-y: scroll;
-  cursor: default;
-  position: absolute;
-  right: 0;
-  left: 0;
-  top: 0;
-  bottom: 0;
-}
-
-/* Screen: positioned container so the selection overlay and row
-   rendering align to the same coordinate space */
-.xterm .xterm-screen {
-  position: relative;
-}
-
-.xterm .xterm-screen canvas {
-  position: absolute;
-  left: 0;
-  top: 0;
 }
 
 /* Helpers: offscreen textarea for keyboard capture + IME */
@@ -156,10 +135,31 @@ body {
   display: block;
 }
 
-/* Scroll area and char measurement (offscreen) */
-.xterm .xterm-scroll-area {
-  visibility: hidden;
+/* Viewport: scrollable layer over the buffer. No background-color
+   so animated/transparent terminal backgrounds show through. */
+.xterm .xterm-viewport {
+  overflow-y: scroll;
+  cursor: default;
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
 }
+
+/* Screen: positioned container so the selection overlay and row
+   rendering align to the same coordinate space */
+.xterm .xterm-screen {
+  position: relative;
+}
+
+.xterm .xterm-screen canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+/* Char measurement (offscreen) */
 .xterm-char-measure-element {
   display: inline-block;
   visibility: hidden;
@@ -170,10 +170,16 @@ body {
 }
 
 /* Cursor variants */
-.xterm.enable-mouse-events { cursor: default; }
+.xterm.enable-mouse-events {
+  cursor: default;
+}
 .xterm.xterm-cursor-pointer,
-.xterm .xterm-cursor-pointer { cursor: pointer; }
-.xterm.column-select.focus { cursor: crosshair; }
+.xterm .xterm-cursor-pointer {
+  cursor: pointer;
+}
+.xterm.column-select.focus {
+  cursor: crosshair;
+}
 
 /* Accessibility tree: allow user-select only here (screen reader) */
 .xterm .xterm-accessibility:not(.debug),
@@ -191,8 +197,13 @@ body {
   color: transparent;
 }
 .xterm .xterm-accessibility-tree {
+  font-family: monospace;
   user-select: text;
   white-space: pre;
+}
+.xterm .xterm-accessibility-tree > div {
+  transform-origin: left;
+  width: fit-content;
 }
 .xterm .live-region {
   position: absolute;
@@ -203,26 +214,54 @@ body {
 }
 
 /* Text decorations */
-.xterm-dim { opacity: 1 !important; }
-.xterm-underline-1 { text-decoration: underline; }
-.xterm-underline-2 { text-decoration: double underline; }
-.xterm-underline-3 { text-decoration: wavy underline; }
-.xterm-underline-4 { text-decoration: dotted underline; }
-.xterm-underline-5 { text-decoration: dashed underline; }
-.xterm-overline { text-decoration: overline; }
-.xterm-overline.xterm-underline-1 { text-decoration: overline underline; }
-.xterm-overline.xterm-underline-2 { text-decoration: overline double underline; }
-.xterm-overline.xterm-underline-3 { text-decoration: overline wavy underline; }
-.xterm-overline.xterm-underline-4 { text-decoration: overline dotted underline; }
-.xterm-overline.xterm-underline-5 { text-decoration: overline dashed underline; }
-.xterm-strikethrough { text-decoration: line-through; }
+.xterm-dim {
+  opacity: 1 !important;
+}
+.xterm-underline-1 {
+  text-decoration: underline;
+}
+.xterm-underline-2 {
+  text-decoration: double underline;
+}
+.xterm-underline-3 {
+  text-decoration: wavy underline;
+}
+.xterm-underline-4 {
+  text-decoration: dotted underline;
+}
+.xterm-underline-5 {
+  text-decoration: dashed underline;
+}
+.xterm-overline {
+  text-decoration: overline;
+}
+.xterm-overline.xterm-underline-1 {
+  text-decoration: overline underline;
+}
+.xterm-overline.xterm-underline-2 {
+  text-decoration: overline double underline;
+}
+.xterm-overline.xterm-underline-3 {
+  text-decoration: overline wavy underline;
+}
+.xterm-overline.xterm-underline-4 {
+  text-decoration: overline dotted underline;
+}
+.xterm-overline.xterm-underline-5 {
+  text-decoration: overline dashed underline;
+}
+.xterm-strikethrough {
+  text-decoration: line-through;
+}
 
 /* Decoration layers */
 .xterm-screen .xterm-decoration-container .xterm-decoration {
   z-index: 6;
   position: absolute;
 }
-.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer {
+.xterm-screen
+  .xterm-decoration-container
+  .xterm-decoration.xterm-decoration-top-layer {
   z-index: 7;
 }
 .xterm-decoration-overview-ruler {
@@ -237,3 +276,65 @@ body {
   position: relative;
 }
 
+/* ScrollableElement scrollbar (xterm 6 replaced the native viewport
+   scrollbar with VS Code's ScrollableElement). Derived from
+   vs/base/browser/ui/scrollbar/media/scrollbar.css. Without these the
+   `.xterm { cursor: text }` I-beam bleeds onto the scrollbar, it never
+   fades out, and it is painted under the selection layer. */
+.xterm .xterm-scrollable-element > .scrollbar {
+  cursor: default;
+}
+
+/* Arrows */
+.xterm .xterm-scrollable-element > .scrollbar > .scra {
+  cursor: pointer;
+  font-size: 11px !important;
+}
+
+.xterm .xterm-scrollable-element > .visible {
+  opacity: 1;
+  /* Background rule added for IE9 - to allow clicks on dom node */
+  background: rgba(0, 0, 0, 0);
+  transition: opacity 100ms linear;
+  /* In front of peek view */
+  z-index: 11;
+}
+.xterm .xterm-scrollable-element > .invisible {
+  opacity: 0;
+  pointer-events: none;
+}
+.xterm .xterm-scrollable-element > .invisible.fade {
+  transition: opacity 800ms linear;
+}
+
+/* Scrollable Content Inset Shadow */
+.xterm .xterm-scrollable-element > .shadow {
+  position: absolute;
+  display: none;
+}
+.xterm .xterm-scrollable-element > .shadow.top {
+  display: block;
+  top: 0;
+  left: 3px;
+  height: 3px;
+  width: 100%;
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 0 6px 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.left {
+  display: block;
+  top: 3px;
+  left: 0;
+  height: 100%;
+  width: 3px;
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.top-left-corner {
+  display: block;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 3px;
+}
+.xterm .xterm-scrollable-element > .shadow.top.left {
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
