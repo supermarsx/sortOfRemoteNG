@@ -25,29 +25,47 @@ export function useWindowPersistence(
 ): void {
   const windowSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const sidebarSaveTimeout = useRef<NodeJS.Timeout | null>(null);
+  // Latest settings snapshot, readable from effects without being a
+  // dependency. `appSettings` is replaced with a fresh object on every
+  // `settings-updated` broadcast, so depending on the whole object would
+  // re-run persistence effects after each save.
+  const latestSettingsRef = useRef<GlobalSettings>(appSettings);
+  latestSettingsRef.current = appSettings;
+
+  const persistSidebarWidth = appSettings?.persistSidebarWidth ?? false;
+  const persistSidebarPosition = appSettings?.persistSidebarPosition ?? false;
+  const persistSidebarCollapsed = appSettings?.persistSidebarCollapsed ?? false;
+  const savedSidebarWidth = appSettings?.sidebarWidth;
+  const savedSidebarPosition = appSettings?.sidebarPosition;
+  const savedSidebarCollapsed = appSettings?.sidebarCollapsed;
 
   // Restore sidebar width/position/collapsed state from settings
   useEffect(() => {
-    if (!appSettings) return;
-
-    if (appSettings.persistSidebarWidth && appSettings.sidebarWidth) {
-      setSidebarWidth(appSettings.sidebarWidth);
+    if (persistSidebarWidth && savedSidebarWidth) {
+      setSidebarWidth(savedSidebarWidth);
     }
 
-    if (appSettings.persistSidebarPosition && appSettings.sidebarPosition) {
-      setSidebarPosition(appSettings.sidebarPosition);
+    if (persistSidebarPosition && savedSidebarPosition) {
+      setSidebarPosition(savedSidebarPosition);
     }
 
-    if (
-      appSettings.persistSidebarCollapsed &&
-      typeof appSettings.sidebarCollapsed === "boolean"
-    ) {
+    if (persistSidebarCollapsed && typeof savedSidebarCollapsed === "boolean") {
       dispatch({
         type: "SET_SIDEBAR_COLLAPSED",
-        payload: appSettings.sidebarCollapsed,
+        payload: savedSidebarCollapsed,
       });
     }
-  }, [appSettings, dispatch, setSidebarWidth, setSidebarPosition]);
+  }, [
+    persistSidebarWidth,
+    persistSidebarPosition,
+    persistSidebarCollapsed,
+    savedSidebarWidth,
+    savedSidebarPosition,
+    savedSidebarCollapsed,
+    dispatch,
+    setSidebarWidth,
+    setSidebarPosition,
+  ]);
 
   // Restore window size and position
   useEffect(() => {
@@ -228,14 +246,21 @@ export function useWindowPersistence(
     settingsManager,
   ]);
 
-  // Persist sidebar state changes
+  // Persist sidebar state changes.
+  //
+  // Only the live sidebar values and the persist flags are dependencies —
+  // NOT `appSettings`. Every `saveSettings` broadcasts `settings-updated`,
+  // which hands App a brand-new settings object; if that object were a
+  // dependency this effect would re-run, re-save the unchanged sidebar
+  // values, broadcast again, and loop forever (~3 saves/s), re-rendering the
+  // whole app each time (measured: t61-e5). The values are also diffed
+  // against the latest snapshot so an already-persisted state is never
+  // re-saved.
   useEffect(() => {
-    if (!appSettings) return;
-
     if (
-      !appSettings.persistSidebarWidth &&
-      !appSettings.persistSidebarPosition &&
-      !appSettings.persistSidebarCollapsed
+      !persistSidebarWidth &&
+      !persistSidebarPosition &&
+      !persistSidebarCollapsed
     ) {
       return;
     }
@@ -245,14 +270,22 @@ export function useWindowPersistence(
     }
 
     sidebarSaveTimeout.current = setTimeout(() => {
+      sidebarSaveTimeout.current = null;
+      const current = latestSettingsRef.current;
       const updates: Partial<GlobalSettings> = {};
-      if (appSettings.persistSidebarWidth) {
+      if (persistSidebarWidth && current?.sidebarWidth !== sidebarWidth) {
         updates.sidebarWidth = sidebarWidth;
       }
-      if (appSettings.persistSidebarPosition) {
+      if (
+        persistSidebarPosition &&
+        current?.sidebarPosition !== sidebarPosition
+      ) {
         updates.sidebarPosition = sidebarPosition;
       }
-      if (appSettings.persistSidebarCollapsed) {
+      if (
+        persistSidebarCollapsed &&
+        current?.sidebarCollapsed !== sidebarCollapsed
+      ) {
         updates.sidebarCollapsed = sidebarCollapsed;
       }
 
@@ -266,10 +299,13 @@ export function useWindowPersistence(
     return () => {
       if (sidebarSaveTimeout.current) {
         clearTimeout(sidebarSaveTimeout.current);
+        sidebarSaveTimeout.current = null;
       }
     };
   }, [
-    appSettings,
+    persistSidebarWidth,
+    persistSidebarPosition,
+    persistSidebarCollapsed,
     sidebarWidth,
     sidebarPosition,
     sidebarCollapsed,
