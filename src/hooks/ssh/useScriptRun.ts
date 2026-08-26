@@ -290,9 +290,18 @@ export function useScriptRun(): ScriptRunApi {
             executionId,
           },
         );
-        return typeof accepted === "string" && accepted.length > 0
-          ? accepted
-          : executionId;
+        const finalId =
+          typeof accepted === "string" && accepted.length > 0
+            ? accepted
+            : executionId;
+        if (finalId !== executionId && bufferRef.current === buf) {
+          // Backend assigned its own id: events will carry that one.
+          buf.executionId = finalId;
+          if (mountedRef.current) {
+            setState((prev) => ({ ...prev, executionId: finalId }));
+          }
+        }
+        return finalId;
       } catch (err) {
         if (bufferRef.current === buf) {
           bufferRef.current = null;

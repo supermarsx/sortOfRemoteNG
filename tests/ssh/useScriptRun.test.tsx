@@ -277,6 +277,23 @@ describe("useScriptRun", () => {
     expect(listenerCount()).toBe(0);
   });
 
+  it("adopts a backend-assigned execution id for event filtering", async () => {
+    mocks.invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "execute_script_stream") return "backend-id";
+      return undefined;
+    });
+    const { result } = renderHook(() => useScriptRun());
+    const id = await startRun(result);
+    expect(id).toBe("backend-id");
+    expect(result.current.executionId).toBe("backend-id");
+    act(() => {
+      output("backend-id", 0, "hi");
+      finished("backend-id", { exit_code: 0 });
+    });
+    expect(result.current.text).toBe("hi");
+    expect(result.current.status).toBe("finished");
+  });
+
   it("cancel is a no-op when idle", async () => {
     const { result } = renderHook(() => useScriptRun());
     await act(async () => {
