@@ -163,6 +163,8 @@ impl SerialSessionHandle {
             bytes_rx: self.bytes_rx.load(Ordering::Relaxed),
             bytes_tx: self.bytes_tx.load(Ordering::Relaxed),
             control_lines: cl,
+            auto_selected: false,
+            port_display_name: None,
         }
     }
 

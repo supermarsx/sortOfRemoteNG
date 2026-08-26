@@ -3,6 +3,7 @@
 pub mod logging;
 pub mod modem;
 pub mod native_transport;
+pub mod port_resolver;
 pub mod port_scanner;
 pub mod protocols;
 pub mod runtime_check;

@@ -225,12 +225,66 @@ pub const MAX_SERIAL_BREAK_MS: u32 = 60 * 1000;
 pub const MAX_SERIAL_MODEM_COMMAND_BYTES: usize = 4096;
 pub const MAX_SERIAL_MODEM_RESPONSE_BYTES: usize = 1024 * 1024;
 
+pub const MAX_SERIAL_MATCH_PATTERN_BYTES: usize = 128;
+
+/// How the concrete serial device is chosen at connect time.
+///
+/// Wire shape (camelCase, internally tagged on `mode`):
+/// `{"mode":"fixed"}`, `{"mode":"firstAny"}`, `{"mode":"firstUsb"}`,
+/// `{"mode":"match","vid":1027,"pid":24577,"match":"ftdi"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(tag = "mode", rename_all = "camelCase")]
+pub enum SerialPortSelection {
+    /// Use `SerialConfig::port_name` verbatim (legacy behaviour).
+    #[default]
+    Fixed,
+    /// First detected serial device, USB adapters preferred.
+    FirstAny,
+    /// First USB serial device only.
+    FirstUsb,
+    /// First device satisfying every given filter.
+    Match {
+        /// USB vendor id.
+        #[serde(default)]
+        vid: Option<u16>,
+        /// USB product id.
+        #[serde(default)]
+        pid: Option<u16>,
+        /// Case-insensitive substring over port name / manufacturer /
+        /// description / serial number / display name.
+        #[serde(default, rename = "match")]
+        pattern: Option<String>,
+    },
+}
+
+impl SerialPortSelection {
+    /// `true` for every mode that resolves the port from an enumeration.
+    pub fn is_auto(&self) -> bool {
+        !matches!(self, Self::Fixed)
+    }
+
+    /// Short human label for the mode (used in error text and UI badges).
+    pub fn mode_label(&self) -> &'static str {
+        match self {
+            Self::Fixed => "fixed device",
+            Self::FirstAny => "first detected device",
+            Self::FirstUsb => "first USB device",
+            Self::Match { .. } => "matching device",
+        }
+    }
+}
+
 /// Complete serial port configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SerialConfig {
-    /// Port name (e.g. `COM3`, `/dev/ttyUSB0`).
+    /// Port name (e.g. `COM3`, `/dev/ttyUSB0`). May be empty when
+    /// `port_selection` is not `Fixed`.
     pub port_name: String,
+
+    /// How the concrete port is chosen at connect time.
+    #[serde(default)]
+    pub port_selection: SerialPortSelection,
 
     /// Baud rate.
     #[serde(default)]
@@ -313,6 +367,7 @@ impl Default for SerialConfig {
     fn default() -> Self {
         Self {
             port_name: String::new(),
+            port_selection: SerialPortSelection::default(),
             baud_rate: BaudRate::default(),
             data_bits: DataBits::default(),
             parity: Parity::default(),
@@ -344,8 +399,23 @@ impl SerialConfig {
     /// Validate all resource-affecting fields before opening a device or
     /// allocating session buffers.
     pub fn validate(&self) -> Result<(), String> {
-        if self.port_name.trim().is_empty() {
+        if self.port_name.trim().is_empty() && !self.port_selection.is_auto() {
             return Err("Serial port name cannot be empty".to_string());
+        }
+        if let SerialPortSelection::Match { vid, pid, pattern } = &self.port_selection {
+            let pattern = pattern.as_deref().map(str::trim).unwrap_or("");
+            if vid.is_none() && pid.is_none() && pattern.is_empty() {
+                return Err("Match selection needs a VID, PID, or name filter".to_string());
+            }
+            if pattern.len() > MAX_SERIAL_MATCH_PATTERN_BYTES {
+                return Err(format!(
+                    "Serial match filter exceeds {} bytes",
+                    MAX_SERIAL_MATCH_PATTERN_BYTES
+                ));
+            }
+            if pattern.chars().any(char::is_control) {
+                return Err("Serial match filter contains control characters".to_string());
+            }
         }
         if self.port_name.len() > MAX_SERIAL_PORT_NAME_BYTES {
             return Err(format!(
@@ -547,6 +617,12 @@ pub struct SerialSession {
     pub bytes_tx: u64,
     /// Current control line state.
     pub control_lines: ControlLines,
+    /// `true` when `port_name` was resolved from an auto selection mode.
+    #[serde(default)]
+    pub auto_selected: bool,
+    /// Friendly name of the resolved port (e.g. `COM7 - FTDI FT232R`).
+    #[serde(default)]
+    pub port_display_name: Option<String>,
 }
 
 /// Statistics for a session.
