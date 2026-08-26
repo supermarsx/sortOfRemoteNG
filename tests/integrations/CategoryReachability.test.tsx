@@ -96,11 +96,13 @@ const EXPECTED_PANELS: { key: string; category: ConnectionTypeCategory }[] = [
   { key: "jira", category: "business-app" },
   { key: "osticket", category: "business-app" },
   { key: "php", category: "web-server" },
+  // t68: DrayTek Vigor (src/components/integrations/descriptors.ts)
+  { key: "draytek", category: "networking" },
   // t67: Proxmox VE (src/components/integrations/proxmox/descriptor.ts)
   { key: "proxmox", category: "virtualization" },
 ];
 
-const EXPECTED_PANEL_COUNT = 24;
+const EXPECTED_PANEL_COUNT = 25;
 
 // Category → sorted panel keys, derived from the manifest. This is the shape
 // `groupByCategory()` must reproduce over the registry (10 integration-populated

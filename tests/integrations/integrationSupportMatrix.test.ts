@@ -15,7 +15,7 @@ const markerCount = (marker: string): number =>
 
 describe("integration support matrix", () => {
   it("has the expected registered surface", () => {
-    expect(integrationRegistry).toHaveLength(24);
+    expect(integrationRegistry).toHaveLength(25);
     expect(mailSubTabs).toHaveLength(9);
   });
 
