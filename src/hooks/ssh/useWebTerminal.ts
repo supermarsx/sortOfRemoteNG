@@ -787,39 +787,35 @@ export function useWebTerminal(
     return true;
   }, []);
 
-  const safeWrite = useCallback(
-    (text: string) => {
-      if (isDisposed.current || !termRef.current || !terminalActiveRef.current)
-        return false;
-      if (termRef.current.element && !termRef.current.element.isConnected)
-        return false;
-      if (!canRender()) return false;
-      try {
-        termRef.current.write(text);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [canRender],
-  );
+  // Writes are intentionally NOT gated on `canRender()`: xterm buffers writes
+  // issued before `open()` and flushes them once it is attached, so the
+  // connect banner (written synchronously by `initSsh()` while `term.open()`
+  // is still pending in a rAF) must be allowed through.
+  const safeWrite = useCallback((text: string) => {
+    if (isDisposed.current || !termRef.current || !terminalActiveRef.current)
+      return false;
+    if (termRef.current.element && !termRef.current.element.isConnected)
+      return false;
+    try {
+      termRef.current.write(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
-  const safeWriteln = useCallback(
-    (text: string) => {
-      if (isDisposed.current || !termRef.current || !terminalActiveRef.current)
-        return false;
-      if (termRef.current.element && !termRef.current.element.isConnected)
-        return false;
-      if (!canRender()) return false;
-      try {
-        termRef.current.writeln(text);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [canRender],
-  );
+  const safeWriteln = useCallback((text: string) => {
+    if (isDisposed.current || !termRef.current || !terminalActiveRef.current)
+      return false;
+    if (termRef.current.element && !termRef.current.element.isConnected)
+      return false;
+    try {
+      termRef.current.writeln(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   const writeLine = useCallback(
     (text: string) => {
@@ -2820,22 +2816,13 @@ export function useWebTerminal(
 
     term.onBell(handleBell);
 
-    const openTimer = requestAnimationFrame(() => {
-      if (isDisposed.current) return;
-      try {
-        term.open(container);
-        if (container.isConnected && !isDisposed.current) term.focus();
-      } catch (err) {
-        console.warn("Failed to open terminal:", err);
-      }
-    });
-
     termRef.current = term;
     fitRef.current = fit;
 
     let rafId = 0;
     let initRetryCount = 0;
     let replayInFlightRevision: number | null = null;
+    let renderFitDisposable: { dispose: () => void } | null = null;
     const maxInitRetries = 20;
 
     const canFit = () => {
@@ -2863,6 +2850,18 @@ export function useWebTerminal(
         if (initRetryCount < maxInitRetries) {
           initRetryCount++;
           setTimeout(doFit, 50);
+        } else if (!renderFitDisposable) {
+          // Retry budget exhausted: let the renderer tell us when it has
+          // dimensions instead of stalling output until the next resize.
+          try {
+            renderFitDisposable = term.onRender(() => {
+              renderFitDisposable?.dispose();
+              renderFitDisposable = null;
+              scheduleFit();
+            });
+          } catch {
+            /* ignore */
+          }
         }
         return;
       }
@@ -2886,9 +2885,33 @@ export function useWebTerminal(
 
     const scheduleFit = () => {
       if (isDisposed.current) return;
+      initRetryCount = 0;
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(doFit);
     };
+
+    const openTimer = requestAnimationFrame(() => {
+      if (isDisposed.current) return;
+      try {
+        term.open(container);
+        if (container.isConnected && !isDisposed.current) term.focus();
+      } catch (err) {
+        console.warn("Failed to open terminal:", err);
+        return;
+      }
+      // The renderer only exists after open(); fit (and thereby resume the
+      // paused output registration) as soon as it does.
+      scheduleFit();
+    });
+
+    const scrollOnOutputDisposable = term.onWriteParsed(() => {
+      if (!sshTerminalConfigRef.current?.scrollOnOutput) return;
+      try {
+        term.scrollToBottom();
+      } catch {
+        /* ignore */
+      }
+    });
 
     const resizeTimer = setTimeout(scheduleFit, 50);
     window.addEventListener("resize", scheduleFit);
@@ -3283,6 +3306,9 @@ export function useWebTerminal(
       );
       resizeObserver?.disconnect();
       dataDisposable.dispose();
+      scrollOnOutputDisposable.dispose();
+      renderFitDisposable?.dispose();
+      renderFitDisposable = null;
       unbindActor();
       bindSshEventActorRef.current = async () => undefined;
       unbindSshEventActorRef.current = () => undefined;
@@ -3342,6 +3368,15 @@ export function useWebTerminal(
     if (typeof window === "undefined") return;
     const handleSettingsUpdate = () => {
       applyTerminalTheme();
+      const term = termRef.current;
+      if (term && !isDisposed.current) {
+        try {
+          term.options.scrollOnUserInput =
+            sshTerminalConfigRef.current?.scrollOnKeystroke ?? true;
+        } catch {
+          /* ignore */
+        }
+      }
     };
     window.addEventListener("settings-updated", handleSettingsUpdate);
     return () =>

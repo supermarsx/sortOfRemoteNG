@@ -19,17 +19,38 @@ const mocks = vi.hoisted(() => {
         getLine: () => undefined,
       },
     };
-    readonly _core = {
+    /**
+     * When true, `_core` (and thus the render service) is undefined until
+     * `open()` runs — mirroring real xterm, which creates its render service
+     * inside `open()`.
+     */
+    static lazyCore = false;
+
+    readonly rawCore: {
+      renderService: {
+        dimensions: { css: { cell: { width: number } } } | undefined;
+      };
+    } = {
       renderService: {
         dimensions: { css: { cell: { width: 8 } } },
       },
     };
+    private opened = false;
+    readonly lazyCore = MockTerminal.lazyCore;
+    get _core() {
+      if (this.lazyCore && !this.opened) return undefined;
+      return this.rawCore;
+    }
     readonly options: Record<string, unknown> = {};
     element: HTMLElement | null = null;
     cols = 80;
     rows = 24;
     private inputHandler: ((data: string) => Promise<void> | void) | null =
       null;
+    private writeParsedHandlers = new Set<() => void>();
+    private renderHandlers = new Set<() => void>();
+    writeParsedDisposeCount = 0;
+    renderDisposeCount = 0;
 
     constructor() {
       MockTerminal.instances.push(this);
@@ -41,14 +62,47 @@ const mocks = vi.hoisted(() => {
       this.inputHandler = handler;
       return { dispose: vi.fn() };
     }
+    onWriteParsed(handler: () => void) {
+      this.writeParsedHandlers.add(handler);
+      return {
+        dispose: () => {
+          if (this.writeParsedHandlers.delete(handler)) {
+            this.writeParsedDisposeCount++;
+          }
+        },
+      };
+    }
+    onRender(handler: () => void) {
+      this.renderHandlers.add(handler);
+      return {
+        dispose: () => {
+          if (this.renderHandlers.delete(handler)) this.renderDisposeCount++;
+        },
+      };
+    }
+    get writeParsedHandlerCount(): number {
+      return this.writeParsedHandlers.size;
+    }
+    get renderHandlerCount(): number {
+      return this.renderHandlers.size;
+    }
+    emitRender(): void {
+      for (const handler of [...this.renderHandlers]) handler();
+    }
     open(container: HTMLElement): void {
       this.element = container;
+      this.opened = true;
     }
     focus(): void {}
     reset = vi.fn();
     clear = vi.fn();
-    write = vi.fn();
-    writeln = vi.fn();
+    scrollToBottom = vi.fn();
+    write = vi.fn((_text: string) => {
+      for (const handler of [...this.writeParsedHandlers]) handler();
+    });
+    writeln = vi.fn((_text: string) => {
+      for (const handler of [...this.writeParsedHandlers]) handler();
+    });
     dispose(): void {}
     getSelection(): string {
       return "";
@@ -249,6 +303,7 @@ const emitTauriEvent = (event: string, payload: unknown) => {
 beforeEach(() => {
   resetSessionLifecycleAllocatorForTests();
   mocks.MockTerminal.instances.length = 0;
+  mocks.MockTerminal.lazyCore = false;
   mocks.context.dispatch.mockReset();
   mocks.invoke.mockReset();
   mocks.addHistoryEntry.mockReset();
@@ -2329,6 +2384,219 @@ describe("useWebTerminal input lifecycle", () => {
         "B",
       ]),
     );
+
+    view.unmount();
+  });
+});
+
+describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", () => {
+  const sshOutputPayload = (data: string, start: number) => ({
+    session_id: "backend-ssh-1",
+    data,
+    generation: 1,
+    sequence_start: start,
+    sequence_end: start + data.length,
+    retained_start: 0,
+    dropped_bytes: 0,
+  });
+
+  it("delivers connect banner lines written before the open rAF once the terminal opens (lazy core)", async () => {
+    mocks.MockTerminal.lazyCore = true;
+    const Harness = () => {
+      const model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    vi.useFakeTimers();
+    const view = render(<Harness />);
+    const terminal = mocks.MockTerminal.instances[0];
+    expect(terminal).toBeDefined();
+    expect(terminal._core).toBeUndefined();
+    expect(terminal.element).toBeNull();
+
+    // initSsh() runs synchronously in the mount effect, before the open rAF.
+    const bannerWrites = terminal.writeln.mock.calls.map(([text]) => text);
+    expect(bannerWrites).toContain(
+      "\x1b[36mConnecting to SSH server...\x1b[0m",
+    );
+    expect(bannerWrites).toContain(
+      `\x1b[90mHost: ${mocks.connection.hostname}\x1b[0m`,
+    );
+
+    // The open rAF fires on the next frame and the buffered banner survives.
+    await act(async () => vi.advanceTimersByTimeAsync(20));
+    expect(terminal.element).not.toBeNull();
+    expect(terminal._core).toBeDefined();
+    expect(terminal.writeln.mock.calls.map(([text]) => text)).toEqual(
+      expect.arrayContaining(bannerWrites),
+    );
+
+    view.unmount();
+  });
+
+  it("writes ssh-output after open without any resize or ResizeObserver trigger (lazy core)", async () => {
+    mocks.MockTerminal.lazyCore = true;
+    const originalResizeObserver = (window as any).ResizeObserver;
+    (window as any).ResizeObserver = undefined;
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    vi.useFakeTimers();
+    try {
+      const view = render(<Harness />);
+      const terminal = mocks.MockTerminal.instances[0];
+      // Two frames (open rAF, then the fit rAF scheduled from open) but
+      // strictly less than the 50ms fallback fit timer.
+      await act(async () => vi.advanceTimersByTimeAsync(40));
+      expect(terminal.element).not.toBeNull();
+      expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+      expect(mocks.listeners.has("ssh-output")).toBe(true);
+
+      terminal.write.mockClear();
+      act(() => {
+        emitTauriEvent("ssh-output", sshOutputPayload("A", 0));
+      });
+      // Scheduler drains on a 0ms tick; stay under the 50ms fit timer.
+      await act(async () => vi.advanceTimersByTimeAsync(5));
+      expect(terminal.write).toHaveBeenCalledWith("A");
+
+      view.unmount();
+    } finally {
+      (window as any).ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it("scrolls to bottom on parsed output only while scrollOnOutput is enabled, and follows the live config", async () => {
+    mocks.terminalConfig = { scrollOnOutput: true };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(true));
+    const terminal = mocks.MockTerminal.instances[0];
+    expect(terminal.writeParsedHandlerCount).toBe(1);
+
+    terminal.scrollToBottom.mockClear();
+    act(() => {
+      emitTauriEvent("ssh-output", sshOutputPayload("A", 0));
+    });
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("A"));
+    expect(terminal.scrollToBottom).toHaveBeenCalled();
+
+    // Flip the setting off; a rerender refreshes the config ref, no remount.
+    mocks.terminalConfig = { scrollOnOutput: false };
+    mocks.settingsContext.settings = { sshTerminal: { revision: 2 } };
+    view.rerender(<Harness />);
+    expect(mocks.MockTerminal.instances).toHaveLength(1);
+    terminal.scrollToBottom.mockClear();
+    act(() => {
+      emitTauriEvent("ssh-output", sshOutputPayload("B", 1));
+    });
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("B"));
+    expect(terminal.scrollToBottom).not.toHaveBeenCalled();
+
+    // And back on again.
+    mocks.terminalConfig = { scrollOnOutput: true };
+    mocks.settingsContext.settings = { sshTerminal: { revision: 3 } };
+    view.rerender(<Harness />);
+    terminal.scrollToBottom.mockClear();
+    act(() => {
+      emitTauriEvent("ssh-output", sshOutputPayload("C", 2));
+    });
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("C"));
+    expect(terminal.scrollToBottom).toHaveBeenCalled();
+    expect(mocks.MockTerminal.instances).toHaveLength(1);
+
+    view.unmount();
+  });
+
+  it("does not scroll on output when scrollOnOutput is disabled", async () => {
+    mocks.terminalConfig = { scrollOnOutput: false };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(true));
+    const terminal = mocks.MockTerminal.instances[0];
+    terminal.scrollToBottom.mockClear();
+    act(() => {
+      emitTauriEvent("ssh-output", sshOutputPayload("A", 0));
+    });
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("A"));
+    expect(terminal.scrollToBottom).not.toHaveBeenCalled();
+
+    view.unmount();
+  });
+
+  it("disposes the onWriteParsed subscription on unmount", async () => {
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const terminal = mocks.MockTerminal.instances[0];
+    expect(terminal.writeParsedHandlerCount).toBe(1);
+
+    view.unmount();
+    expect(terminal.writeParsedHandlerCount).toBe(0);
+    expect(terminal.writeParsedDisposeCount).toBe(1);
+  });
+
+  it("falls back to a one-shot onRender fit once the retry budget is exhausted", async () => {
+    mocks.MockTerminal.lazyCore = true;
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    vi.useFakeTimers();
+    const view = render(<Harness />);
+    const terminal = mocks.MockTerminal.instances[0];
+    // Keep the render service dimension-less even after open() so every fit
+    // attempt fails and the retry budget (20 x 50ms) runs out.
+    const core = terminal.rawCore;
+    const dimensions = core.renderService.dimensions;
+    core.renderService.dimensions = undefined;
+
+    const resizeCalls = () =>
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "resize_ssh_shell",
+      );
+
+    await act(async () => vi.advanceTimersByTimeAsync(40));
+    expect(terminal.element).not.toBeNull();
+    expect(terminal.renderHandlerCount).toBe(0);
+    await act(async () => vi.advanceTimersByTimeAsync(1_200));
+    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+    // Budget spent: no fit ever succeeded, and a single onRender fallback is
+    // now armed instead of giving up for good.
+    expect(resizeCalls()).toHaveLength(0);
+    expect(terminal.renderHandlerCount).toBe(1);
+
+    // Once the renderer reports in, the fallback fires exactly once, disposes
+    // itself, and re-arms a fit that now succeeds.
+    core.renderService.dimensions = dimensions;
+    act(() => terminal.emitRender());
+    expect(terminal.renderHandlerCount).toBe(0);
+    expect(terminal.renderDisposeCount).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(40));
+    expect(resizeCalls()).toHaveLength(1);
+    expect(resizeCalls()[0][1]).toMatchObject({ sessionId: "backend-ssh-1" });
 
     view.unmount();
   });
