@@ -1,8 +1,17 @@
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
 import ScriptDetailView from "../../src/components/recording/scriptManager/ScriptDetailView";
-import { invoke } from "@tauri-apps/api/core";
-import type { ManagedScript, ScriptLanguage } from "../../src/components/recording/scriptManager/shared";
+import type {
+  ManagedScript,
+  ScriptLanguage,
+} from "../../src/components/recording/scriptManager/shared";
+import type { ScriptRunApi } from "../../src/types/ssh/scriptRun";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -30,10 +39,51 @@ vi.mock("../../src/contexts/useConnections", () => ({
   }),
 }));
 
+// Controllable mock of the streaming run hook. Tests mutate `mockRun`
+// and re-render to simulate chunks arriving / the run finishing.
+const mockRun: ScriptRunApi = {
+  status: "idle",
+  executionId: null,
+  chunks: [],
+  text: "",
+  stderrText: "",
+  exitCode: null,
+  truncated: false,
+  durationMs: null,
+  error: null,
+  notices: [],
+  start: vi.fn(async () => "exec-1"),
+  cancel: vi.fn(async () => undefined),
+  reset: vi.fn(),
+};
+
+function resetMockRun() {
+  Object.assign(mockRun, {
+    status: "idle",
+    executionId: null,
+    chunks: [],
+    text: "",
+    stderrText: "",
+    exitCode: null,
+    truncated: false,
+    durationMs: null,
+    error: null,
+    notices: [],
+  });
+  (mockRun.start as Mock).mockImplementation(async () => "exec-1");
+  (mockRun.cancel as Mock).mockImplementation(async () => undefined);
+}
+
+vi.mock("../../src/hooks/ssh/useScriptRun", () => ({
+  useScriptRun: () => ({ ...mockRun }),
+}));
+
 // Mock HighlightedCode to avoid complex dependencies
 vi.mock("../../src/components/ui/display/HighlightedCode", () => ({
   default: ({ code, language }: { code: string; language: string }) => (
-    <pre data-testid="highlighted-code" data-language={language}>{code}</pre>
+    <pre data-testid="highlighted-code" data-language={language}>
+      {code}
+    </pre>
   ),
 }));
 
@@ -94,27 +144,13 @@ function makeMgr(script: ManagedScript) {
   };
 }
 
-const successResult = {
-  stdout: "Hello World\n12:30:00 up 7 days",
-  stderr: "",
-  exitCode: 0,
-  remotePath: "/tmp/.sorng_script_abc",
-};
-
-const failedResult = {
-  stdout: "",
-  stderr: "bash: syntax error",
-  exitCode: 1,
-  remotePath: "/tmp/.sorng_script_abc",
-};
-
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe("ScriptDetailView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSessions.length = 0;
-    (invoke as Mock).mockResolvedValue(successResult);
+    resetMockRun();
   });
 
   afterEach(() => {
@@ -129,7 +165,9 @@ describe("ScriptDetailView", () => {
       render(<ScriptDetailView mgr={makeMgr(script) as any} />);
 
       expect(screen.getByText("My Test Script")).toBeInTheDocument();
-      expect(screen.getByText("A test script for unit tests")).toBeInTheDocument();
+      expect(
+        screen.getByText("A test script for unit tests"),
+      ).toBeInTheDocument();
     });
 
     it("should render language badge", () => {
@@ -284,11 +322,11 @@ describe("ScriptDetailView", () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith("execute_script", {
-          sessionId: "backend-1",
-          script: expect.stringContaining("echo Hello World"),
-          interpreter: "bash",
-        });
+        expect(mockRun.start).toHaveBeenCalledWith(
+          "backend-1",
+          expect.stringContaining("echo Hello World"),
+          "bash",
+        );
       });
     });
 
@@ -312,11 +350,11 @@ describe("ScriptDetailView", () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith("execute_script", {
-          sessionId: "backend-1",
-          script: "echo hello",
-          interpreter: "bash",
-        });
+        expect(mockRun.start).toHaveBeenCalledWith(
+          "backend-1",
+          "echo hello",
+          "bash",
+        );
       });
     });
 
@@ -388,11 +426,11 @@ describe("ScriptDetailView", () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith("execute_script", {
-          sessionId: "backend-2",
-          script: expect.any(String),
-          interpreter: "bash",
-        });
+        expect(mockRun.start).toHaveBeenCalledWith(
+          "backend-2",
+          expect.any(String),
+          "bash",
+        );
       });
     });
 
@@ -454,74 +492,111 @@ describe("ScriptDetailView", () => {
       });
     }
 
-    it("should show success result with stdout", async () => {
+    it("should not render the output pane while idle", () => {
       setupSingleSession();
+      render(<ScriptDetailView mgr={makeMgr(makeScript()) as any} />);
+      expect(screen.queryByTestId("script-output-pane")).toBeNull();
+    });
 
+    it("should stream chunks into the pane while running and offer Cancel", async () => {
+      setupSingleSession();
       const script = makeScript();
-      render(<ScriptDetailView mgr={makeMgr(script) as any} />);
+      const { rerender } = render(
+        <ScriptDetailView mgr={makeMgr(script) as any} />,
+      );
 
       await act(async () => {
         fireEvent.click(screen.getByTitle("Run on SSH"));
       });
+      expect(mockRun.reset).toHaveBeenCalled();
+      expect(mockRun.start).toHaveBeenCalledTimes(1);
 
-      await waitFor(() => {
-        expect(screen.getByText("Execution Output")).toBeInTheDocument();
+      mockRun.status = "running";
+      mockRun.chunks = [{ stream: "stdout", data: "line-1\n", sequence: 1 }];
+      rerender(<ScriptDetailView mgr={makeMgr(script) as any} />);
+
+      expect(screen.getByTestId("script-output-pane")).toBeInTheDocument();
+      expect(screen.getByText("Running…")).toBeInTheDocument();
+      expect(screen.getByText(/line-1/)).toBeInTheDocument();
+      expect(screen.queryByTestId("script-output-exit")).toBeNull();
+      // Run button is disabled while running.
+      expect(screen.getByTitle("Run on SSH")).toBeDisabled();
+
+      fireEvent.click(screen.getByTestId("script-output-cancel"));
+      expect(mockRun.cancel).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not start a second run while one is running", async () => {
+      setupSingleSession();
+      mockRun.status = "running";
+      render(<ScriptDetailView mgr={makeMgr(makeScript()) as any} />);
+      const btn = screen.getByTitle("Run on SSH");
+      expect(btn).toBeDisabled();
+      await act(async () => {
+        fireEvent.click(btn);
       });
+      expect(mockRun.start).not.toHaveBeenCalled();
+    });
 
-      expect(screen.getByText("exit 0")).toBeInTheDocument();
-      // The stdout appears in the result <pre> — match the full output to avoid matching the script preview
+    it("should show success result with stdout", () => {
+      setupSingleSession();
+      mockRun.status = "finished";
+      mockRun.exitCode = 0;
+      mockRun.durationMs = 1234;
+      mockRun.chunks = [
+        { stream: "stdout", data: "Hello World\n", sequence: 1 },
+        { stream: "stdout", data: "12:30:00 up 7 days", sequence: 2 },
+      ];
+      render(<ScriptDetailView mgr={makeMgr(makeScript()) as any} />);
+
+      expect(screen.getByText("Execution Output")).toBeInTheDocument();
+      expect(screen.getByTestId("script-output-exit")).toHaveTextContent(
+        "exit 0",
+      );
       expect(screen.getByText(/12:30:00 up 7 days/)).toBeInTheDocument();
+      expect(screen.getByText("1.2s")).toBeInTheDocument();
     });
 
-    it("should show (no output) when stdout is empty", async () => {
+    it("should show (no output) when stdout is empty", () => {
       setupSingleSession();
-      (invoke as Mock).mockResolvedValueOnce({
-        stdout: "",
-        stderr: "",
-        exitCode: 0,
-        remotePath: "/tmp/.sorng_script_x",
-      });
+      mockRun.status = "finished";
+      mockRun.exitCode = 0;
+      render(<ScriptDetailView mgr={makeMgr(makeScript()) as any} />);
+      expect(screen.getByText("(no output)")).toBeInTheDocument();
+    });
 
+    it("should show stderr tinted when script has errors", () => {
+      setupSingleSession();
+      mockRun.status = "finished";
+      mockRun.exitCode = 1;
+      mockRun.chunks = [
+        { stream: "stderr", data: "bash: syntax error", sequence: 1 },
+      ];
+      render(<ScriptDetailView mgr={makeMgr(makeScript()) as any} />);
+
+      expect(screen.getByTestId("script-output-exit")).toHaveTextContent(
+        "exit 1",
+      );
+      const err = screen.getByText("bash: syntax error");
+      expect(err).toHaveClass("script-output-stderr");
+      expect(err).toHaveAttribute("data-stream", "stderr");
+    });
+
+    it("should show failure state when start rejects", async () => {
+      setupSingleSession();
+      (mockRun.start as Mock).mockRejectedValueOnce("Connection refused");
       const script = makeScript();
-      render(<ScriptDetailView mgr={makeMgr(script) as any} />);
+      const { rerender } = render(
+        <ScriptDetailView mgr={makeMgr(script) as any} />,
+      );
 
       await act(async () => {
         fireEvent.click(screen.getByTitle("Run on SSH"));
       });
-
-      await waitFor(() => {
-        expect(screen.getByText("(no output)")).toBeInTheDocument();
-      });
-    });
-
-    it("should show stderr when script has errors", async () => {
-      setupSingleSession();
-      (invoke as Mock).mockResolvedValueOnce(failedResult);
-
-      const script = makeScript();
-      render(<ScriptDetailView mgr={makeMgr(script) as any} />);
-
-      await act(async () => {
-        fireEvent.click(screen.getByTitle("Run on SSH"));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("exit 1")).toBeInTheDocument();
-        expect(screen.getByText("stderr:")).toBeInTheDocument();
-        expect(screen.getByText("bash: syntax error")).toBeInTheDocument();
-      });
-    });
-
-    it("should show failure state when invoke rejects", async () => {
-      setupSingleSession();
-      (invoke as Mock).mockRejectedValueOnce("Connection refused");
-
-      const script = makeScript();
-      render(<ScriptDetailView mgr={makeMgr(script) as any} />);
-
-      await act(async () => {
-        fireEvent.click(screen.getByTitle("Run on SSH"));
-      });
+      // The hook reports the rejection through its state.
+      mockRun.status = "failed";
+      mockRun.error = "Connection refused";
+      rerender(<ScriptDetailView mgr={makeMgr(script) as any} />);
 
       await waitFor(() => {
         expect(screen.getByText("Execution Failed")).toBeInTheDocument();
@@ -529,23 +604,22 @@ describe("ScriptDetailView", () => {
       });
     });
 
-    it("should dismiss result panel when Dismiss is clicked", async () => {
+    it("should show cancelled state", () => {
       setupSingleSession();
+      mockRun.status = "cancelled";
+      render(<ScriptDetailView mgr={makeMgr(makeScript()) as any} />);
+      expect(screen.getByText("Execution Cancelled")).toBeInTheDocument();
+    });
 
-      const script = makeScript();
-      render(<ScriptDetailView mgr={makeMgr(script) as any} />);
+    it("should reset the run when Dismiss is clicked", () => {
+      setupSingleSession();
+      mockRun.status = "finished";
+      mockRun.exitCode = 0;
+      render(<ScriptDetailView mgr={makeMgr(makeScript()) as any} />);
 
-      await act(async () => {
-        fireEvent.click(screen.getByTitle("Run on SSH"));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("Execution Output")).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByText("Dismiss"));
-
-      expect(screen.queryByText("Execution Output")).not.toBeInTheDocument();
+      expect(screen.getByText("Execution Output")).toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText("Dismiss"));
+      expect(mockRun.reset).toHaveBeenCalled();
     });
   });
 
@@ -572,36 +646,48 @@ describe("ScriptDetailView", () => {
     it("should use 'sh' for sh language", async () => {
       const btn = setupAndRun("sh" as ScriptLanguage);
 
-      await act(async () => { fireEvent.click(btn); });
+      await act(async () => {
+        fireEvent.click(btn);
+      });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith("execute_script", expect.objectContaining({
-          interpreter: "sh",
-        }));
+        expect(mockRun.start).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(String),
+          "sh",
+        );
       });
     });
 
     it("should use 'powershell' for powershell language", async () => {
       const btn = setupAndRun("powershell" as ScriptLanguage);
 
-      await act(async () => { fireEvent.click(btn); });
+      await act(async () => {
+        fireEvent.click(btn);
+      });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith("execute_script", expect.objectContaining({
-          interpreter: "powershell",
-        }));
+        expect(mockRun.start).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(String),
+          "powershell",
+        );
       });
     });
 
     it("should default to 'bash' for bash language", async () => {
       const btn = setupAndRun("bash");
 
-      await act(async () => { fireEvent.click(btn); });
+      await act(async () => {
+        fireEvent.click(btn);
+      });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith("execute_script", expect.objectContaining({
-          interpreter: "bash",
-        }));
+        expect(mockRun.start).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(String),
+          "bash",
+        );
       });
     });
   });

@@ -1,11 +1,26 @@
 import { useState, useMemo, useCallback } from "react";
-import { languageIcons, languageLabels, OS_TAG_ICONS, OS_TAG_LABELS } from "./shared";
+import {
+  languageIcons,
+  languageLabels,
+  OS_TAG_ICONS,
+  OS_TAG_LABELS,
+} from "./shared";
 import HighlightedCode from "../../ui/display/HighlightedCode";
 import { useTranslation } from "react-i18next";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
-import { Check, ChevronDown, Copy, CopyPlus, Edit2, Loader2, Play, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  CopyPlus,
+  Edit2,
+  Loader2,
+  Play,
+  Trash2,
+} from "lucide-react";
 import { useConnections } from "../../../contexts/useConnections";
-import { invoke } from "@tauri-apps/api/core";
+import { useScriptRun } from "../../../hooks/ssh/useScriptRun";
+import ScriptOutputPane from "./ScriptOutputPane";
 
 function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
@@ -13,47 +28,48 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
   const script = mgr.selectedScript!;
 
   const [showRunMenu, setShowRunMenu] = useState(false);
-  const [runningSessionId, setRunningSessionId] = useState<string | null>(null);
-  const [runResult, setRunResult] = useState<{ output?: string; error?: string; exitCode?: number; stderr?: string } | null>(null);
+  const run = useScriptRun();
+  const { status: runStatus, start: startRun, reset: resetRun } = run;
+  const running = runStatus === "running";
 
   // Get active SSH sessions that can run scripts
-  const activeSshSessions = useMemo(() =>
-    state.sessions.filter(
-      (s) => s.protocol === "ssh" && s.status === "connected" && s.backendSessionId,
-    ),
+  const activeSshSessions = useMemo(
+    () =>
+      state.sessions.filter(
+        (s) =>
+          s.protocol === "ssh" &&
+          s.status === "connected" &&
+          s.backendSessionId,
+      ),
     [state.sessions],
   );
 
-  const handleRunOnSession = useCallback(async (backendSessionId: string) => {
-    setShowRunMenu(false);
-    setRunningSessionId(backendSessionId);
-    setRunResult(null);
+  const handleRunOnSession = useCallback(
+    async (backendSessionId: string) => {
+      setShowRunMenu(false);
+      if (runStatus === "running") return;
+      resetRun();
 
-    const interpreter = script.language === "powershell" ? "powershell"
-      : script.language === "sh" ? "sh"
-      : "bash";
+      const interpreter =
+        script.language === "powershell"
+          ? "powershell"
+          : script.language === "sh"
+            ? "sh"
+            : "bash";
 
-    const lines = script.script.split("\n").filter((l) => !l.startsWith("#!"));
-    const content = lines.join("\n");
+      const lines = script.script
+        .split("\n")
+        .filter((l) => !l.startsWith("#!"));
+      const content = lines.join("\n");
 
-    try {
-      const result = await invoke<{ stdout: string; stderr: string; exitCode: number }>("execute_script", {
-        sessionId: backendSessionId,
-        script: content,
-        interpreter,
-      });
-      setRunResult({
-        output: result.stdout || "(no output)",
-        stderr: result.stderr || undefined,
-        exitCode: result.exitCode,
-        error: result.exitCode !== 0 ? `Script exited with code ${result.exitCode}` : undefined,
-      });
-    } catch (err) {
-      setRunResult({ error: typeof err === "string" ? err : String(err) });
-    } finally {
-      setRunningSessionId(null);
-    }
-  }, [script]);
+      try {
+        await startRun(backendSessionId, content, interpreter);
+      } catch {
+        // The hook already surfaces the rejection as status "failed" + error.
+      }
+    },
+    [script, runStatus, startRun, resetRun],
+  );
 
   return (
     <div className="flex-1 overflow-y-auto p-5">
@@ -78,7 +94,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
               <span className="text-xs px-2 py-1 bg-primary/20 text-primary dark:text-primary rounded">
                 {languageLabels[script.language]}
               </span>
-              {script.id.startsWith('default-') && (
+              {script.id.startsWith("default-") && (
                 <span className="text-xs px-2 py-1 bg-[var(--color-secondary)]/20 text-[var(--color-textSecondary)] rounded">
                   Default
                 </span>
@@ -86,7 +102,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
             </div>
             {script.osTags && script.osTags.length > 0 && (
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                {script.osTags.map(tag => (
+                {script.osTags.map((tag) => (
                   <span
                     key={tag}
                     className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-primary/10 text-primary dark:text-primary rounded-full"
@@ -109,15 +125,18 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
                     setShowRunMenu(!showRunMenu);
                   }
                 }}
-                disabled={activeSshSessions.length === 0 || runningSessionId !== null}
+                disabled={activeSshSessions.length === 0 || running}
                 className="sor-icon-btn text-success disabled:opacity-40 disabled:cursor-not-allowed"
                 title={
                   activeSshSessions.length === 0
-                    ? t('scriptManager.noActiveSessions', 'No active SSH sessions')
-                    : t('scriptManager.runOnSsh', 'Run on SSH')
+                    ? t(
+                        "scriptManager.noActiveSessions",
+                        "No active SSH sessions",
+                      )
+                    : t("scriptManager.runOnSsh", "Run on SSH")
                 }
               >
-                {runningSessionId ? (
+                {running ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <Play size={16} />
@@ -144,7 +163,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
             <button
               onClick={() => mgr.handleCopyScript(script)}
               className="sor-icon-btn"
-              title={t('scriptManager.copyToClipboard', 'Copy to Clipboard')}
+              title={t("scriptManager.copyToClipboard", "Copy to Clipboard")}
             >
               {mgr.copiedId === script.id ? (
                 <Check size={16} className="text-success" />
@@ -155,21 +174,21 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
             <button
               onClick={() => mgr.handleDuplicateScript(script)}
               className="sor-icon-btn"
-              title={t('scriptManager.duplicate', 'Duplicate Script')}
+              title={t("scriptManager.duplicate", "Duplicate Script")}
             >
               <CopyPlus size={16} />
             </button>
             <button
               onClick={() => mgr.handleEditScript(script)}
               className="sor-icon-btn"
-              title={t('common.edit', 'Edit')}
+              title={t("common.edit", "Edit")}
             >
               <Edit2 size={16} />
             </button>
             <button
               onClick={() => mgr.handleDeleteScript(script.id)}
               className="sor-icon-btn-danger"
-              title={t('common.delete', 'Delete')}
+              title={t("common.delete", "Delete")}
             >
               <Trash2 size={16} />
             </button>
@@ -180,50 +199,26 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
           <HighlightedCode code={script.script} language={script.language} />
         </div>
 
-        {/* Execution result panel */}
-        {runResult && (
-          <div className={`mt-4 p-4 rounded-lg border ${runResult.exitCode !== undefined && runResult.exitCode !== 0 ? 'border-red-500/30 bg-red-500/5' : runResult.error ? 'border-red-500/30 bg-red-500/5' : 'border-green-500/30 bg-green-500/5'}`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className={`text-sm font-medium ${runResult.error || (runResult.exitCode !== undefined && runResult.exitCode !== 0) ? 'text-red-400' : 'text-green-400'}`}>
-                  {runResult.error ? 'Execution Failed' : 'Execution Output'}
-                </span>
-                {runResult.exitCode !== undefined && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${runResult.exitCode === 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                    exit {runResult.exitCode}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => setRunResult(null)}
-                className="text-xs text-[var(--color-textMuted)] hover:text-[var(--color-text)]"
-              >
-                Dismiss
-              </button>
-            </div>
-            {runResult.output && (
-              <pre className="text-xs whitespace-pre-wrap font-mono text-[var(--color-text)] max-h-[300px] overflow-auto">
-                {runResult.output}
-              </pre>
-            )}
-            {runResult.stderr && (
-              <div className="mt-2">
-                <span className="text-xs font-medium text-red-400">stderr:</span>
-                <pre className="text-xs whitespace-pre-wrap font-mono text-red-300 max-h-[150px] overflow-auto mt-1">
-                  {runResult.stderr}
-                </pre>
-              </div>
-            )}
-            {runResult.error && !runResult.output && (
-              <pre className="text-xs whitespace-pre-wrap font-mono text-red-300 max-h-[300px] overflow-auto">
-                {runResult.error}
-              </pre>
-            )}
-          </div>
+        {/* Execution output (streams live while the script runs) */}
+        {run.status !== "idle" && (
+          <ScriptOutputPane
+            chunks={run.chunks}
+            status={run.status}
+            exitCode={run.exitCode}
+            error={run.error}
+            truncated={run.truncated}
+            durationMs={run.durationMs}
+            notices={run.notices}
+            onCancel={() => {
+              void run.cancel();
+            }}
+            onDismiss={run.reset}
+          />
         )}
 
         <div className="mt-4 text-xs text-[var(--color-textMuted)]">
-          {t('scriptManager.lastUpdated', 'Last updated')}: {new Date(script.updatedAt).toLocaleString()}
+          {t("scriptManager.lastUpdated", "Last updated")}:{" "}
+          {new Date(script.updatedAt).toLocaleString()}
         </div>
       </div>
     </div>
