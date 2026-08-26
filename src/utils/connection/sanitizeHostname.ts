@@ -32,6 +32,8 @@
  * shape is valid for hostname fields in some configs.
  */
 
+import type { ConnectionProtocol } from "../../types/connection/connection";
+
 /**
  * Schemes the sanitiser recognises as "you probably pasted a URL".
  * Case-insensitive match. The trailing `://` is implied — we look
@@ -199,6 +201,70 @@ export function sanitizeHostname(raw: string): SanitizedHostname {
 export function stripSchemePrefix(raw: string): string {
   return sanitizeHostname(raw).hostname;
 }
+
+/**
+ * Map a stripped URL scheme (as returned in `SanitizedHostname.scheme`) to the
+ * app connection protocol it implies, or `undefined` when the scheme carries
+ * no protocol meaning (`redis`, `mongodb`, …). Case-insensitive.
+ *
+ * Kept next to `KNOWN_SCHEMES` so the two lists evolve together; the
+ * evidence-based importer normaliser (`normalizeImportedProtocol.ts`) is the
+ * main consumer.
+ */
+export function schemeToProtocol(
+  scheme: string | undefined | null,
+): ConnectionProtocol | undefined {
+  if (!scheme) return undefined;
+  return SCHEME_PROTOCOLS[scheme.trim().toLowerCase()];
+}
+
+const SCHEME_PROTOCOLS: Readonly<Record<string, ConnectionProtocol>> =
+  Object.freeze({
+    http: "http",
+    ws: "http",
+    https: "https",
+    wss: "https",
+    ssh: "ssh",
+    sftp: "sftp",
+    scp: "scp",
+    ftp: "ftp",
+    ftps: "ftp",
+    telnet: "telnet",
+    rdp: "rdp",
+    vnc: "vnc",
+    ard: "ard",
+    serial: "serial",
+    raw: "raw",
+    "raw-tcp": "raw",
+    "raw-udp": "raw",
+    spice: "spice",
+    xdmcp: "xdmcp",
+    x2go: "x2go",
+    nx: "nx",
+    rlogin: "rlogin",
+    winrm: "winrm",
+    wsman: "winrm",
+    powershell: "winrm",
+    anydesk: "anydesk",
+    rustdesk: "rustdesk",
+    smb: "smb",
+    cifs: "smb",
+    mysql: "mysql",
+    postgres: "postgresql",
+    postgresql: "postgresql",
+    gcp: "gcp",
+    azure: "azure",
+    "ibm-csp": "ibm-csp",
+    "digital-ocean": "digital-ocean",
+    heroku: "heroku",
+    scaleway: "scaleway",
+    linode: "linode",
+    ovhcloud: "ovhcloud",
+    ilo: "ilo",
+    lenovo: "lenovo",
+    supermicro: "supermicro",
+    "voip-phone": "voip-phone",
+  });
 
 export interface CanonicalWebAuthority {
   hostname: string;

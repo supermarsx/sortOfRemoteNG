@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseCanonicalWebAuthority,
   sanitizeHostname,
+  schemeToProtocol,
   stripSchemePrefix,
 } from "../../src/utils/connection/sanitizeHostname";
 
@@ -237,5 +238,42 @@ describe("parseCanonicalWebAuthority", () => {
     "ftp://device.local",
   ])("rejects unsafe or ambiguous authority %s", (input) => {
     expect(() => parseCanonicalWebAuthority(input)).toThrow();
+  });
+});
+
+describe("schemeToProtocol", () => {
+  it.each([
+    ["http", "http"],
+    ["HTTPS", "https"],
+    ["ws", "http"],
+    ["wss", "https"],
+    ["ssh", "ssh"],
+    ["sftp", "sftp"],
+    ["scp", "scp"],
+    ["ftp", "ftp"],
+    ["ftps", "ftp"],
+    ["telnet", "telnet"],
+    ["rdp", "rdp"],
+    ["vnc", "vnc"],
+    ["smb", "smb"],
+    ["cifs", "smb"],
+    ["mysql", "mysql"],
+    ["postgres", "postgresql"],
+    ["postgresql", "postgresql"],
+    ["raw-tcp", "raw"],
+    ["raw-udp", "raw"],
+    ["wsman", "winrm"],
+    ["powershell", "winrm"],
+    ["voip-phone", "voip-phone"],
+    ["ilo", "ilo"],
+  ])("maps %s:// → %s", (scheme, expected) => {
+    expect(schemeToProtocol(scheme)).toBe(expected);
+  });
+
+  it("returns undefined for schemes without a connection protocol", () => {
+    expect(schemeToProtocol("redis")).toBeUndefined();
+    expect(schemeToProtocol("mongodb")).toBeUndefined();
+    expect(schemeToProtocol("mailto")).toBeUndefined();
+    expect(schemeToProtocol("")).toBeUndefined();
   });
 });
