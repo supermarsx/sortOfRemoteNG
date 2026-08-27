@@ -228,7 +228,9 @@ describe("QuickConnect", () => {
       fireEvent.click(protocolTrigger);
 
       expect(screen.getByText("SSH (Secure Shell)")).toBeInTheDocument();
-      expect(screen.getByText("VNC (Virtual Network Computing)")).toBeInTheDocument();
+      expect(
+        screen.getByText("VNC (Virtual Network Computing)"),
+      ).toBeInTheDocument();
     });
   });
 
@@ -250,5 +252,74 @@ describe("QuickConnect", () => {
       // Should have proper labeling for accessibility
       expect(hostnameInput).toBeRequired();
     });
+  });
+});
+
+// ── t71: URL evidence → protocol (RC4) ──
+
+import {
+  deriveQuickConnectTarget,
+  QUICK_CONNECT_PROTOCOLS,
+} from "../../src/hooks/connection/useQuickConnect";
+
+describe("QuickConnect — protocol inferred from pasted URL", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+  });
+
+  it("deriveQuickConnectTarget maps scheme and keeps the port on the host", () => {
+    expect(
+      deriveQuickConnectTarget("https://portal.example.com:8443/login", "rdp"),
+    ).toEqual({ hostname: "portal.example.com:8443", protocol: "https" });
+    expect(
+      deriveQuickConnectTarget("http://router.local/admin", "rdp"),
+    ).toEqual({ hostname: "router.local", protocol: "http" });
+    expect(deriveQuickConnectTarget("ssh://box:2222", "rdp")).toEqual({
+      hostname: "box:2222",
+      protocol: "ssh",
+    });
+    // Same protocol: no switch, hostname still cleaned.
+    expect(deriveQuickConnectTarget("https://x/y", "https")).toEqual({
+      hostname: "x",
+      protocol: undefined,
+    });
+    // Scheme not offered by the picker: hostname cleaned, protocol untouched.
+    expect(deriveQuickConnectTarget("smb://nas/share", "rdp")).toEqual({
+      hostname: "nas",
+      protocol: undefined,
+    });
+    // Plain hostname: nothing to do.
+    expect(deriveQuickConnectTarget("server01", "rdp")).toBeUndefined();
+    expect(QUICK_CONNECT_PROTOCOLS).toContain("https");
+  });
+
+  it("switches the select to HTTPS and strips the URL on hostname blur", () => {
+    render(<QuickConnect {...mockProps} />);
+    const hostnameInput = screen.getByTestId("quick-connect-hostname");
+    fireEvent.change(hostnameInput, {
+      target: { value: "https://portal.example.com:8443/login" },
+    });
+    fireEvent.blur(hostnameInput);
+
+    expect(hostnameInput).toHaveValue("portal.example.com:8443");
+    expect(screen.getByTestId("quick-connect-protocol")).toHaveTextContent(
+      "HTTPS",
+    );
+  });
+
+  it("switches the select on paste", () => {
+    render(<QuickConnect {...mockProps} />);
+    const hostnameInput = screen.getByTestId("quick-connect-hostname");
+    fireEvent.paste(hostnameInput, {
+      clipboardData: { getData: () => "http://router.local/admin" },
+    });
+
+    expect(hostnameInput).toHaveValue("router.local");
+    expect(screen.getByTestId("quick-connect-protocol")).toHaveTextContent(
+      "HTTP",
+    );
   });
 });

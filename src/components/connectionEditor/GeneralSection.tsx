@@ -21,7 +21,10 @@ import {
 } from "../../utils/window/dragDropManager";
 import { Checkbox, NumberInput, Select, type SelectOption } from "../ui/forms";
 import { useTranslation } from "react-i18next";
-import { sanitizeHostname } from "../../utils/connection/sanitizeHostname";
+import {
+  sanitizeHostname,
+  schemeToProtocol,
+} from "../../utils/connection/sanitizeHostname";
 import { ToastContext } from "../../contexts/ToastContext";
 import {
   INTEGRATION_PROTOCOL_OPTIONS,
@@ -294,28 +297,61 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
   const sanitizeHostnameField = (raw: string) => {
     const result = sanitizeHostname(raw);
     if (!result.stripped && raw === result.hostname) return;
+    // t71: the pasted scheme is *evidence* for the protocol. Switch the
+    // record's protocol when the scheme maps to a protocol the picker
+    // offers and it differs from the current one — never leave a pasted
+    // `https://…` sitting on the RDP default.
+    const schemeProtocol = schemeToProtocol(result.scheme);
+    const switchedTo =
+      schemeProtocol &&
+      schemeProtocol !== formData.protocol &&
+      runtimeProtocolOptions.some(({ value }) => value === schemeProtocol)
+        ? schemeProtocol
+        : undefined;
     setFormData((prev) => {
       const next: Partial<Connection> = { ...prev, hostname: result.hostname };
-      // Only adopt the extracted port when (a) one was found and
-      // (b) the user hasn't already set a non-default port on the
-      // record. Don't clobber a deliberate choice.
-      if (
-        result.port &&
-        (!prev.port || prev.port === getDefaultPort(prev.protocol ?? "rdp"))
-      ) {
+      const prevDefault = getDefaultPort(prev.protocol ?? "rdp");
+      const portIsDefault = !prev.port || prev.port === prevDefault;
+      if (switchedTo) {
+        next.protocol = switchedTo;
+        if (["http", "https"].includes(switchedTo)) {
+          next.authType = "basic";
+          next.httpVerifySsl = prev.httpVerifySsl ?? true;
+        }
+        // Port = the one in the URL, else the new protocol's default —
+        // unless the user already set a deliberate non-default port.
+        if (result.port) {
+          if (portIsDefault) next.port = result.port;
+        } else if (portIsDefault) {
+          next.port = getDefaultPort(switchedTo);
+        }
+      } else if (result.port && portIsDefault) {
+        // Only adopt the extracted port when (a) one was found and
+        // (b) the user hasn't already set a non-default port on the
+        // record. Don't clobber a deliberate choice.
         next.port = result.port;
       }
       return next;
     });
     if (result.stripped) {
       const parts: string[] = [];
-      parts.push(
-        t(
-          "connectionEditor.hostnameNormalizedScheme",
-          "Removed the `{{scheme}}://` prefix — the protocol is set separately above.",
-          { scheme: result.scheme },
-        ) as string,
-      );
+      if (switchedTo) {
+        parts.push(
+          t(
+            "connectionEditor.hostnameSwitchedProtocol",
+            "Switched protocol to {{protocol}} because the pasted address starts with {{scheme}}://",
+            { protocol: switchedTo.toUpperCase(), scheme: result.scheme },
+          ) as string,
+        );
+      } else {
+        parts.push(
+          t(
+            "connectionEditor.hostnameNormalizedScheme",
+            "Removed the `{{scheme}}://` prefix — the protocol is set separately above.",
+            { scheme: result.scheme },
+          ) as string,
+        );
+      }
       if (result.port) {
         parts.push(
           t(

@@ -1,5 +1,47 @@
 import { useState, useEffect, useCallback } from "react";
 import { QuickConnectHistoryEntry } from "../../types/settings/settings";
+import {
+  sanitizeHostname,
+  schemeToProtocol,
+} from "../../utils/connection/sanitizeHostname";
+
+/** Protocols the Quick Connect picker offers (keep in sync with QuickConnect.tsx). */
+export const QUICK_CONNECT_PROTOCOLS = [
+  "rdp",
+  "ssh",
+  "vnc",
+  "http",
+  "https",
+  "telnet",
+] as const;
+
+/**
+ * Derive hostname/protocol from a pasted or typed address. A scheme is
+ * evidence: `https://portal:8443/x` → hostname `portal:8443`, protocol
+ * `https`. Returns the cleaned hostname and the protocol to switch to (only
+ * when the scheme maps to a picker option), or `undefined` when nothing
+ * changed. Pure — exported for tests.
+ */
+export function deriveQuickConnectTarget(
+  raw: string,
+  currentProtocol: string,
+): { hostname: string; protocol?: string } | undefined {
+  const result = sanitizeHostname(raw);
+  if (!result.stripped && raw === result.hostname) return undefined;
+  const schemeProtocol = schemeToProtocol(result.scheme);
+  const protocol =
+    schemeProtocol &&
+    schemeProtocol !== currentProtocol &&
+    (QUICK_CONNECT_PROTOCOLS as readonly string[]).includes(schemeProtocol)
+      ? schemeProtocol
+      : undefined;
+  // Quick Connect has no port field; keep an explicit URL port on the
+  // hostname (`host:8443`) so the session layer can pick it up.
+  const hostname = result.port
+    ? `${result.hostname}:${result.port}`
+    : result.hostname;
+  return { hostname, protocol };
+}
 
 export interface UseQuickConnectOptions {
   isOpen: boolean;
@@ -103,8 +145,7 @@ export function useQuickConnect({
       } else if (isHttp) {
         if (basicAuthUsername.trim())
           payload.basicAuthUsername = basicAuthUsername.trim();
-        if (basicAuthPassword)
-          payload.basicAuthPassword = basicAuthPassword;
+        if (basicAuthPassword) payload.basicAuthPassword = basicAuthPassword;
         if (isHttps) payload.httpVerifySsl = httpVerifySsl;
       } else if (isTelnet) {
         if (username.trim()) payload.username = username.trim();
@@ -139,23 +180,35 @@ export function useQuickConnect({
     ],
   );
 
-  const handleHistorySelect = useCallback(
-    (entry: QuickConnectHistoryEntry) => {
-      setHostname(entry.hostname);
-      setProtocol(entry.protocol);
-      setUsername(entry.username ?? "");
-      setAuthType(entry.authType ?? "password");
-      setPassword("");
-      setPrivateKey("");
-      setPassphrase("");
-      setShowHistory(false);
+  /**
+   * Normalise a pasted/typed URL: strip the scheme into the protocol
+   * select and keep only host[:port] in the hostname field.
+   */
+  const normalizeHostnameInput = useCallback(
+    (raw: string) => {
+      const derived = deriveQuickConnectTarget(raw, protocol);
+      if (!derived) return;
+      setHostname(derived.hostname);
+      if (derived.protocol) setProtocol(derived.protocol);
     },
-    [],
+    [protocol],
   );
+
+  const handleHistorySelect = useCallback((entry: QuickConnectHistoryEntry) => {
+    setHostname(entry.hostname);
+    setProtocol(entry.protocol);
+    setUsername(entry.username ?? "");
+    setAuthType(entry.authType ?? "password");
+    setPassword("");
+    setPrivateKey("");
+    setPassphrase("");
+    setShowHistory(false);
+  }, []);
 
   return {
     hostname,
     setHostname,
+    normalizeHostnameInput,
     protocol,
     setProtocol,
     username,

@@ -91,6 +91,17 @@ const HostnameField: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         required
         value={mgr.hostname}
         onChange={(e) => mgr.setHostname(e.target.value)}
+        onBlur={(e) => mgr.normalizeHostnameInput(e.target.value)}
+        onPaste={(e) => {
+          // A pasted `https://host:8443/x` should land as hostname
+          // `host:8443` + protocol https — defer one tick so React lets
+          // the paste land in the field first.
+          const text = e.clipboardData?.getData("text");
+          if (text) {
+            requestAnimationFrame(() => mgr.normalizeHostnameInput(text));
+          }
+        }}
+        data-testid="quick-connect-hostname"
         className="sor-form-input"
         placeholder={t(
           "quickConnect.hostnamePlaceholder",
@@ -168,6 +179,7 @@ const ProtocolSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </label>
       <Select
         id="protocol"
+        data-testid="quick-connect-protocol"
         value={mgr.protocol}
         onChange={(v: string) => mgr.setProtocol(v)}
         options={[
