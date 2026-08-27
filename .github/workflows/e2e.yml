@@ -41,6 +41,11 @@ env:
   MYSQL_ROOT_PASSWORD: rootpass
   MYSQL_USER: testuser
   MYSQL_PASSWORD: testpass
+  # t69-e6: MariaDB (test-mariadb, 13307) reuses MYSQL_*; MongoDB (test-mongo, 27117).
+  MONGO_ROOT_USER: root
+  MONGO_ROOT_PASSWORD: rootpass
+  MONGO_USER: testuser
+  MONGO_PASSWORD: testpass
   FTP_USER: testuser
   FTP_PASSWORD: testpass
   FTP_TEST_HOST: 127.0.0.1
@@ -132,6 +137,10 @@ jobs:
           MYSQL_ROOT_PASSWORD=${{ env.MYSQL_ROOT_PASSWORD }}
           MYSQL_USER=${{ env.MYSQL_USER }}
           MYSQL_PASSWORD=${{ env.MYSQL_PASSWORD }}
+          MONGO_ROOT_USER=${{ env.MONGO_ROOT_USER }}
+          MONGO_ROOT_PASSWORD=${{ env.MONGO_ROOT_PASSWORD }}
+          MONGO_USER=${{ env.MONGO_USER }}
+          MONGO_PASSWORD=${{ env.MONGO_PASSWORD }}
           FTP_USER=${{ env.FTP_USER }}
           FTP_PASSWORD=${{ env.FTP_PASSWORD }}
           SMB_USER=${{ env.SMB_USER }}
@@ -308,6 +317,41 @@ jobs:
           node ../scripts/ci/e2e-portainer-fixture.mjs wait
           cargo test -p sorng-portainer --features docker-e2e             --test docker_e2e -- --include-ignored --nocapture             --test-threads=1 2>&1 | tee ../e2e-portainer.log
 
+      # ── t69-e6: MySQL / MariaDB / MongoDB live tests ───────────────
+      # Fixtures: test-mysql (13306), test-mariadb (13307), test-mongo (27117),
+      # all seeded from e2e/fixtures/db/** and gated on compose "healthy"
+      # (which for these images implies the init scripts ran). The Rust live
+      # tests are `#[ignore]` and env-driven (SORNG_MYSQL_TEST_*,
+      # SORNG_MARIADB_TEST_PORT, SORNG_MONGO_TEST_*); defaults match the fixtures.
+      - name: MySQL + MariaDB live (t69-e1)
+        if: always()
+        id: test-mysql-live
+        continue-on-error: true
+        working-directory: src-tauri
+        env:
+          SORNG_MYSQL_TEST_HOST: 127.0.0.1
+          SORNG_MYSQL_TEST_PORT: "13306"
+          SORNG_MARIADB_TEST_PORT: "13307"
+          SORNG_MYSQL_TEST_USER: ${{ env.MYSQL_USER }}
+          SORNG_MYSQL_TEST_PASSWORD: ${{ env.MYSQL_PASSWORD }}
+          SORNG_MYSQL_TEST_DATABASE: testdb
+        run: |
+          cargo test -p sorng-mysql --test mysql_live             -- --include-ignored --nocapture --test-threads=1             2>&1 | tee ../e2e-mysql-live.log
+
+      - name: MongoDB live (t69-e4)
+        if: always()
+        id: test-mongo-live
+        continue-on-error: true
+        working-directory: src-tauri
+        env:
+          SORNG_MONGO_TEST_HOST: 127.0.0.1
+          SORNG_MONGO_TEST_PORT: "27117"
+          SORNG_MONGO_TEST_USER: ${{ env.MONGO_USER }}
+          SORNG_MONGO_TEST_PASSWORD: ${{ env.MONGO_PASSWORD }}
+          SORNG_MONGO_TEST_AUTH_DB: admin
+        run: |
+          cargo test -p sorng-mongodb --test mongo_live             -- --include-ignored --nocapture --test-threads=1             2>&1 | tee ../e2e-mongo-live.log
+
       # ── Artifacts + failure capture ────────────────────────────────
       - name: Collect container logs (always)
         if: always()
@@ -335,6 +379,8 @@ jobs:
             e2e-softether.log
             e2e-ftp.log
             e2e-portainer.log
+            e2e-mysql-live.log
+            e2e-mongo-live.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -372,6 +418,8 @@ jobs:
           echo "| softether (t3-e8) | ${{ steps.test-softether.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ftp (t3-e5) | ${{ steps.test-ftp.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| portainer (t64-e5) | ${{ steps.test-portainer.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| mysql+mariadb live (t69) | ${{ steps.test-mysql-live.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| mongodb live (t69) | ${{ steps.test-mongo-live.outcome }} |" >> $GITHUB_STEP_SUMMARY
           # Fail the job if any test step failed.
           fails=0
           for o in \
@@ -383,7 +431,7 @@ jobs:
             "${{ steps.test-rdpdr-live.outcome }}" \
             "${{ steps.test-vnc.outcome }}" \
             "${{ steps.test-softether.outcome }}" \
-            "${{ steps.test-ftp.outcome }}"             "${{ steps.test-portainer.outcome }}"; do
+            "${{ steps.test-ftp.outcome }}"             "${{ steps.test-portainer.outcome }}"             "${{ steps.test-mysql-live.outcome }}"             "${{ steps.test-mongo-live.outcome }}"; do
             if [ "$o" = "failure" ]; then fails=$((fails+1)); fi
           done
           if [ "$fails" -gt 0 ]; then

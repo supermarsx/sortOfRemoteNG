@@ -88,6 +88,8 @@ services:
       retries: 10
 
   test-mysql:
+    # MySQL 8 (t69). Seeded from fixtures/db/mysql/01-seed.sql on first init
+    # (table people + view + procedure). Default auth = caching_sha2_password.
     image: mysql:8.0
     ports:
       - "13306:3306"
@@ -96,11 +98,68 @@ services:
       - MYSQL_DATABASE=testdb
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - ./fixtures/db/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # mysqladmin ping answers before init SQL has run on first boot; the
+      # `-u`/`-p` SELECT proves the seeded schema is queryable as the app user.
+      test:
+        [
+          "CMD-SHELL",
+          'mysql -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" -e ''SELECT COUNT(*) FROM testdb.people'' >/dev/null 2>&1',
+        ]
       interval: 5s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 20
+
+  test-mariadb:
+    # MariaDB 11 (t69). Same seed file as test-mysql (common SQL subset) so the
+    # MySQL/MariaDB wdio specs and the parametrised Rust live test share data.
+    # MARIADB_* mirror the MYSQL_* .env values; app user auth = mysql_native_password.
+    image: mariadb:11
+    ports:
+      - "13307:3306"
+    environment:
+      - MARIADB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MARIADB_DATABASE=testdb
+      - MARIADB_USER=${MYSQL_USER}
+      - MARIADB_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - ./fixtures/db/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # healthcheck.sh ships in the image; --innodb_initialized is only true
+      # after the init scripts have run, so "healthy" implies "seeded".
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  test-mongo:
+    # MongoDB 7 (t69). fixtures/db/mongo/01-seed.js runs once as root on first
+    # init: testdb.people (5 docs, index city_1) + `testuser` (readWrite testdb,
+    # read admin). MONGO_USER/MONGO_PASSWORD are read by the seed script.
+    image: mongo:7
+    ports:
+      - "27117:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=testdb
+      - MONGO_USER=${MONGO_USER}
+      - MONGO_PASSWORD=${MONGO_PASSWORD}
+    volumes:
+      - ./fixtures/db/mongo:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Authenticate as the seeded app user: proves both the server and the
+      # init script (which creates that user) have completed.
+      test:
+        [
+          "CMD-SHELL",
+          'mongosh --quiet --host 127.0.0.1 -u "$$MONGO_USER" -p "$$MONGO_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(''ping'').ok" >/dev/null 2>&1',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   test-ftp:
     image: fauria/vsftpd
@@ -142,3 +201,27 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./.generated/portainer/admin_password:/run/portainer/admin_password:ro
+
+  test-draytek:
+    # Fake DrayTek Vigor (DrayOS) web admin (t68): 8092 = classic wlogin.cgi
+    # (aa/ab base64, fw < 4.4), 8093 = sFormAuthStr token variant (fw >= 4.4).
+    # DRAYTEK_RSA=1 turns 8093 into the RSA-login page the crate refuses.
+    # Login admin/admin; status at /doc/status.sht; reboot POST /cgi-bin/reboot.cgi.
+    image: node:20-alpine
+    working_dir: /fixture
+    command: ["node", "server.mjs"]
+    ports:
+      - "8092:8092"
+      - "8093:8093"
+    environment:
+      - MODE=both
+      - PORT_CLASSIC=8092
+      - PORT_TOKEN=8093
+      - RSA=${DRAYTEK_RSA:-0}
+    volumes:
+      - ./fixtures/draytek:/fixture:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8092/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

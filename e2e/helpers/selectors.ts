@@ -264,6 +264,59 @@ export const S = {
   portainerOpenWebUi: '[data-testid="portainer-open-web-ui"]',
   portainerContainerRow: '[data-testid="portainer-container-row"]',
 
+  // DrayTek Vigor panel (t68). The panel ships no data-testids yet, so these
+  // are text/placeholder selectors scoped by the spec to the panel root
+  // (the `h2` title's grandparent). Swap for testids once the panel adds them.
+  draytekPanelTitle: "h2*=DrayTek Vigor",
+  draytekHost: 'input[placeholder="192.168.1.1"]',
+  draytekName: 'input[placeholder="vigor-office"]',
+  draytekPort: 'input[inputmode="numeric"]',
+  draytekUsername: "label*=Username",
+  draytekPassword: 'input[type="password"]',
+  draytekUseTls: "label*=Use TLS",
+  draytekConnectBtn: "button*=Connect",
+  draytekDisconnectBtn: "button*=Disconnect",
+  draytekTabStatus: "button=Status",
+  draytekTabActions: "button=Actions",
+  draytekStatusTitle: "h3*=Device status",
+  draytekRebootBtn: "button*=Reboot router",
+  draytekRebootConfirm: '[role="alertdialog"]',
+  draytekRebootYes: "button*=Yes, reboot",
+  draytekRebootCancel: "button=Cancel",
+  draytekOpenWebUi: "button*=Open Web UI",
+
+  // MySQL / MariaDB workbench (t69; testids per .orchestration/plans/t69.md D1.2)
+  mysqlClient: '[data-testid="mysql-client"]',
+  mysqlStatus: '[data-testid="mysql-status"]',
+  mysqlDialect: '[data-testid="mysql-dialect"]',
+  mysqlQueryEditor: '[data-testid="mysql-query-editor"]',
+  mysqlExecute: '[data-testid="mysql-execute"]',
+  mysqlExplain: '[data-testid="mysql-explain"]',
+  mysqlMode: '[data-testid="mysql-mode"]',
+  mysqlResults: '[data-testid="mysql-results"]',
+  mysqlResultRow: '[data-testid="mysql-result-row"]',
+  mysqlResultCell: '[data-testid="mysql-result-cell"]',
+  mysqlDatabases: '[data-testid="mysql-databases"]',
+  mysqlTables: '[data-testid="mysql-tables"]',
+  mysqlColumns: '[data-testid="mysql-columns"]',
+
+  // MongoDB client (t69; testids per .orchestration/plans/t69.md D2.2)
+  mongodbClient: '[data-testid="mongodb-client"]',
+  mongodbStatus: '[data-testid="mongodb-status"]',
+  mongodbDatabases: '[data-testid="mongodb-databases"]',
+  mongodbCollections: '[data-testid="mongodb-collections"]',
+  mongodbFilter: '[data-testid="mongodb-filter"]',
+  mongodbLimit: '[data-testid="mongodb-limit"]',
+  mongodbSkip: '[data-testid="mongodb-skip"]',
+  mongodbFind: '[data-testid="mongodb-find"]',
+  mongodbResults: '[data-testid="mongodb-results"]',
+  mongodbResultRow: '[data-testid="mongodb-result-row"]',
+  mongodbResultCell: '[data-testid="mongodb-result-cell"]',
+  mongodbJsonToggle: '[data-testid="mongodb-json-toggle"]',
+  mongodbAggregateEditor: '[data-testid="mongodb-aggregate-editor"]',
+  mongodbAggregateRun: '[data-testid="mongodb-aggregate-run"]',
+  mongodbIndexes: '[data-testid="mongodb-indexes"]',
+
   // Debug Panel
   debugPanel: '[data-testid="debug-panel"]',
   debugActionList: '[data-testid="debug-action-list"]',
@@ -370,4 +423,21 @@ export const S = {
   scriptOutputFollow: '[data-testid="script-output-follow"]',
   scriptOutputExit: '[data-testid="script-output-exit"]',
   scriptOutputCancel: '[data-testid="script-output-cancel"]',
+
+  // Session tab status / actions (t63; SessionTabs.tsx `data-session-status`)
+  sessionTabClose: '[data-testid="session-tab-close"]',
+  sessionTabDetach: '[data-testid="session-tab-detach"]',
+  sessionTabDetachMenuItem: '.sor-menu-item[data-testid="session-tab-detach"]',
+  sessionTabError: '[data-testid="session-tab"][data-session-status="error"]',
+  sessionTabConnecting:
+    '[data-testid="session-tab"][data-session-status="connecting"]',
+  sessionTabConnected:
+    '[data-testid="session-tab"][data-session-status="connected"]',
 } as const;
+
+/** Session tab carrying the given `data-session-status` (t63). */
+export function sessionTabStatus(
+  status: "connecting" | "connected" | "disconnected" | "error",
+): string {
+  return `[data-testid="session-tab"][data-session-status="${status}"]`;
+}

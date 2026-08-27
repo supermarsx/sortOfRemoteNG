@@ -37,16 +37,16 @@ The project is under active development. Features that depend on an external ser
 
 ## What works today
 
-| Area            | Current capability                                                                                                                                                                                                                   |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL, PostgreSQL, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk, RustDesk, SPICE, X2Go, NoMachine, and XDMCP |
-| Files           | Native SFTP, passive FTP/FTPS, and SCP sessions with saved authentication, directory browsing, and direct file operations                                                                                                            |
-| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                                                            |
-| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                                                              |
-| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                                                                  |
-| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                                                                  |
-| Virtualization  | Proxmox VE management sessions (password, TFA, or API-token auth, pinned self-signed certificates) alongside the LXD and VMware panels; see the [Proxmox guide](docs/integrations/proxmox.md)                                        |
-| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                                                                    |
+| Area            | Current capability                                                                                                                                                                                                                                    |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL/MariaDB, PostgreSQL, MongoDB, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk, RustDesk, SPICE, X2Go, NoMachine, and XDMCP |
+| Files           | Native SFTP, passive FTP/FTPS, and SCP sessions with saved authentication, directory browsing, and direct file operations                                                                                                                             |
+| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                                                                             |
+| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                                                                               |
+| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                                                                                   |
+| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                                                                                   |
+| Virtualization  | Proxmox VE management sessions (password, TFA, or API-token auth, pinned self-signed certificates) alongside the LXD and VMware panels; see the [Proxmox guide](docs/integrations/proxmox.md)                                                         |
+| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                                                                                     |
 
 ### Capability boundaries
 

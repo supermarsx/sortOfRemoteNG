@@ -77,6 +77,8 @@ deeper configuration or session behavior.
 - [e2e/specs/07-rdp/rdp-settings.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/07-rdp/rdp-settings.spec.ts)
 - [e2e/specs/08-protocols/ftp-client.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/08-protocols/ftp-client.spec.ts)
 - [e2e/specs/08-protocols/http-viewer.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/08-protocols/http-viewer.spec.ts)
+- [e2e/specs/08-protocols/mariadb-client.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/08-protocols/mariadb-client.spec.ts)
+- [e2e/specs/08-protocols/mongodb-client.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/08-protocols/mongodb-client.spec.ts)
 - [e2e/specs/08-protocols/mysql-client.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/08-protocols/mysql-client.spec.ts)
 - [e2e/specs/08-protocols/vnc-connect.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/08-protocols/vnc-connect.spec.ts)
 - [e2e/specs/09-sessions/session-layouts.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/09-sessions/session-layouts.spec.ts)
@@ -158,6 +160,8 @@ tier model.
 ### Rust `opt-in`
 
 - [src-tauri/crates/sorng-ftp/tests/golden_path.rs](https://github.com/supermarsx/sortOfRemoteNG/blob/main/src-tauri/crates/sorng-ftp/tests/golden_path.rs)
+- [src-tauri/crates/sorng-mongodb/tests/mongo_live.rs](https://github.com/supermarsx/sortOfRemoteNG/blob/main/src-tauri/crates/sorng-mongodb/tests/mongo_live.rs) (t69; `test-mongo`, `SORNG_MONGO_TEST_*`)
+- [src-tauri/crates/sorng-mysql/tests/mysql_live.rs](https://github.com/supermarsx/sortOfRemoteNG/blob/main/src-tauri/crates/sorng-mysql/tests/mysql_live.rs) (t69; `test-mysql` + `test-mariadb`, `SORNG_MYSQL_TEST_*` / `SORNG_MARIADB_TEST_PORT`)
 - [src-tauri/crates/sorng-rdp/tests/golden_path.rs](https://github.com/supermarsx/sortOfRemoteNG/blob/main/src-tauri/crates/sorng-rdp/tests/golden_path.rs)
 - [src-tauri/crates/sorng-smb/tests/golden_path.rs](https://github.com/supermarsx/sortOfRemoteNG/blob/main/src-tauri/crates/sorng-smb/tests/golden_path.rs)
 - [src-tauri/crates/sorng-vnc/tests/golden_path.rs](https://github.com/supermarsx/sortOfRemoteNG/blob/main/src-tauri/crates/sorng-vnc/tests/golden_path.rs)

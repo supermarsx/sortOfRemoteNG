@@ -127,12 +127,14 @@ The template includes:
 
 - SSH / SFTP
 - VNC
-- MySQL
+- MySQL (`test-mysql`, host port 13306) and MariaDB (`test-mariadb`, host port 13307 — reuses the `MYSQL_*` values)
+- MongoDB (`test-mongo`, host port 27117; `MONGO_ROOT_*` for the container root, `MONGO_USER`/`MONGO_PASSWORD` for the seeded app user, auth database `admin`)
 - FTP
 - SMB
 - SoftEther
 
 The base compose file is `e2e/docker-compose.yml`.
+The database fixtures are seeded on first start from `e2e/fixtures/db/mysql/01-seed.sql` (shared by MySQL and MariaDB: table `people`, a view and a stored procedure) and `e2e/fixtures/db/mongo/01-seed.js` (`testdb.people`, index `city_1`, the `testuser` login). Their compose healthchecks only report `healthy` after the init scripts have run, and `waitForContainer("test-…")` in `e2e/helpers/docker.ts` waits for that health state before falling back to a TCP probe.
 The overlay that adds SMB and SoftEther is `docker/compose.e2e.yml`.
 
 ## Package Scripts

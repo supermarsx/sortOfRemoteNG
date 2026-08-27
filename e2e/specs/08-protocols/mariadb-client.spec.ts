@@ -8,21 +8,23 @@ import {
   isDockerAvailable,
   startContainers,
   stopContainers,
-  MYSQL_PORT,
+  MARIADB_PORT,
   waitForContainer,
 } from "../../helpers/docker";
 import { selectCustomOption } from "../../helpers/forms";
 import { openConnectionItem, waitForConnectionItem } from "../../helpers/ssh";
 
-// Tier: opt-in (Docker). Fixture: compose service `test-mysql` (mysql:8),
-// seeded by e2e/fixtures/db/mysql/01-seed.sql (table `people`, 5 rows).
-// Credentials come from e2e/.env (MYSQL_USER / MYSQL_PASSWORD), defaulting to
-// the .env.example values.
+// Tier: opt-in (Docker). Fixture: compose service `test-mariadb` (mariadb:11,
+// host port 13307), seeded by the SAME e2e/fixtures/db/mysql/01-seed.sql as
+// test-mysql. MariaDB is not a separate protocol id: it is the "MySQL /
+// MariaDB" engine with the dialect auto-detected after connect (plan t69
+// D1.3), so this spec proves parity plus the MariaDB badge. The MARIADB_*
+// container env mirrors MYSQL_USER / MYSQL_PASSWORD.
 const MYSQL_USER = process.env.MYSQL_USER ?? "testuser";
 const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD ?? "testpass";
-const SERVICE = "test-mysql";
+const SERVICE = "test-mariadb";
 
-async function createMySQLConnection(name: string): Promise<void> {
+async function createMariaDBConnection(name: string): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
   await addBtn.click();
 
@@ -39,7 +41,7 @@ async function createMySQLConnection(name: string): Promise<void> {
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
-  await portInput.setValue(String(MYSQL_PORT));
+  await portInput.setValue(String(MARIADB_PORT));
 
   const usernameInput = await $(S.editorUsername);
   await usernameInput.setValue(MYSQL_USER);
@@ -52,8 +54,8 @@ async function createMySQLConnection(name: string): Promise<void> {
   await waitForConnectionItem(name);
 }
 
-async function openMySQLClient(name: string): Promise<void> {
-  await createMySQLConnection(name);
+async function openMariaDBClient(name: string): Promise<void> {
+  await createMariaDBConnection(name);
   await openConnectionItem(name);
 
   const client = await $(S.mysqlClient);
@@ -64,7 +66,7 @@ async function openMySQLClient(name: string): Promise<void> {
     async () => /connected|ready/i.test(await status.getText().catch(() => "")),
     {
       timeout: 20_000,
-      timeoutMsg: "MySQL session did not reach connected state",
+      timeoutMsg: "MariaDB session did not reach connected state",
     },
   );
 }
@@ -89,13 +91,13 @@ async function runQuery(sql: string): Promise<void> {
   );
 }
 
-describe("MySQL Client", function () {
+describe("MariaDB Client", function () {
   before(async function () {
     if (!isDockerAvailable()) {
       this.skip();
     }
     startContainers([SERVICE]);
-    await waitForContainer(SERVICE, MYSQL_PORT, 120_000);
+    await waitForContainer(SERVICE, MARIADB_PORT, 120_000);
   });
 
   after(async () => {
@@ -106,15 +108,15 @@ describe("MySQL Client", function () {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection("MySQL Test");
+    await createCollection("MariaDB Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it("connects and shows the client with a connected status", async () => {
-    await openMySQLClient("Test MySQL");
+  it("connects on the MariaDB port and shows the client", async () => {
+    await openMariaDBClient("Test MariaDB");
 
     const client = await $(S.mysqlClient);
     expect(await client.isDisplayed()).toBe(true);
@@ -123,22 +125,18 @@ describe("MySQL Client", function () {
     expect(Number(await tabs.length)).toBeGreaterThan(0);
   });
 
-  it("reports the detected dialect as MySQL", async () => {
-    await openMySQLClient("MySQL Dialect");
+  it("reports the detected dialect as MariaDB", async () => {
+    await openMariaDBClient("MariaDB Dialect");
 
     const badge = await $(S.mysqlDialect);
     await badge.waitForDisplayed({ timeout: 10_000 });
     const text = await badge.getText();
-    expect(text).toMatch(/MySQL/i);
-    expect(text).not.toMatch(/MariaDB/i);
-    expect(text).toMatch(/8\./);
+    expect(text).toMatch(/MariaDB/i);
+    expect(text).toMatch(/11\./);
   });
 
-  it("shows the query editor and the seeded database in the schema browser", async () => {
-    await openMySQLClient("MySQL Schema");
-
-    const queryEditor = await $(S.mysqlQueryEditor);
-    expect(await queryEditor.isExisting()).toBe(true);
+  it("browses testdb > people in the schema tree", async () => {
+    await openMariaDBClient("MariaDB Schema");
 
     const databases = await $(S.mysqlDatabases);
     await databases.waitForDisplayed({ timeout: 10_000 });
@@ -165,7 +163,7 @@ describe("MySQL Client", function () {
   });
 
   it("executes a SELECT over the seeded rows and renders the grid", async () => {
-    await openMySQLClient("MySQL Query");
+    await openMariaDBClient("MariaDB Query");
 
     await runQuery("SELECT name FROM testdb.people ORDER BY id;");
 
@@ -177,7 +175,7 @@ describe("MySQL Client", function () {
   });
 
   it("lists testdb via SHOW DATABASES", async () => {
-    await openMySQLClient("MySQL DB List");
+    await openMariaDBClient("MariaDB DB List");
 
     await runQuery("SHOW DATABASES;");
 
@@ -185,13 +183,12 @@ describe("MySQL Client", function () {
     expect(await results.getText()).toContain("testdb");
   });
 
-  it("counts the seeded London rows", async () => {
-    await openMySQLClient("MySQL Count");
+  it("reads the seeded view (parity with MySQL)", async () => {
+    await openMariaDBClient("MariaDB View");
 
-    await runQuery(
-      "SELECT COUNT(*) AS n FROM testdb.people WHERE city = 'London';",
-    );
-    const cell = await $(S.mysqlResultCell);
-    expect((await cell.getText()).trim()).toBe("2");
+    await runQuery("SELECT name FROM testdb.people_in_london ORDER BY id;");
+
+    const rows = await $$(S.mysqlResultRow);
+    expect(Number(await rows.length)).toBe(2);
   });
 });
