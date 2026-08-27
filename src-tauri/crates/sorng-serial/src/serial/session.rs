@@ -131,6 +131,12 @@ pub struct SerialSessionHandle {
     pub bytes_rx: Arc<AtomicU64>,
     /// Bytes sent.
     pub bytes_tx: Arc<AtomicU64>,
+    /// Whether `port_name` was chosen by the port resolver (auto selection)
+    /// rather than typed by the user.
+    pub auto_selected: bool,
+    /// Friendly name of the resolved port (e.g. `COM7 - FTDI FT232R`), when
+    /// the port was auto-selected from an enumeration.
+    pub port_display_name: Option<String>,
 }
 
 impl SerialSessionHandle {
@@ -163,8 +169,8 @@ impl SerialSessionHandle {
             bytes_rx: self.bytes_rx.load(Ordering::Relaxed),
             bytes_tx: self.bytes_tx.load(Ordering::Relaxed),
             control_lines: cl,
-            auto_selected: false,
-            port_display_name: None,
+            auto_selected: self.auto_selected,
+            port_display_name: self.port_display_name.clone(),
         }
     }
 
@@ -607,6 +613,23 @@ pub async fn create_session(
     transport: Arc<dyn SerialTransport>,
     config: SerialConfig,
 ) -> Result<Arc<SerialSessionHandle>, String> {
+    create_session_resolved(id, transport, config, false, None).await
+}
+
+/// Create and start a new serial session whose port was chosen by the
+/// port resolver.
+///
+/// `config.port_name` must already hold the concrete resolved port;
+/// `auto_selected` / `port_display_name` are carried into every
+/// [`SerialSessionHandle::info`] snapshot so the frontend can show which
+/// device an auto-selection ended up on.
+pub async fn create_session_resolved(
+    id: String,
+    transport: Arc<dyn SerialTransport>,
+    config: SerialConfig,
+    auto_selected: bool,
+    port_display_name: Option<String>,
+) -> Result<Arc<SerialSessionHandle>, String> {
     config.validate()?;
     // Open the transport
     transport.open(&config).await?;
@@ -632,6 +655,8 @@ pub async fn create_session(
         connected_at: Utc::now(),
         bytes_rx: bytes_rx.clone(),
         bytes_tx: bytes_tx.clone(),
+        auto_selected,
+        port_display_name,
     });
 
     let runner = SessionRunner::new(

@@ -997,6 +997,7 @@ pub fn is_command(command: &str) -> bool {
             matches!(
                 command,
                 "serial_scan_ports"
+                    | "serial_resolve_port"
                     | "serial_connect"
                     | "serial_disconnect"
                     | "serial_disconnect_all"
@@ -2101,6 +2102,8 @@ define_command_group!(
         // ── Serial (COM / RS-232) — gated on protocol-serial{,-dynamic} (t3-e4) ──
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
         serial_commands::serial_scan_ports,
+        #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
+        serial_commands::serial_resolve_port,
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
         serial_commands::serial_connect,
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]

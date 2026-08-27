@@ -18,6 +18,20 @@ pub async fn serial_scan_ports(
     service.scan_ports(options.unwrap_or_default()).await
 }
 
+/// Preview which port an auto selection would resolve to right now.
+///
+/// Never opens the port. `port_name` is only consulted for `{"mode":"fixed"}`.
+/// Errors follow the `"PortNotFound: …"` string convention when nothing
+/// matches.
+#[tauri::command]
+pub async fn serial_resolve_port(
+    service: tauri::State<'_, SerialServiceState>,
+    selection: SerialPortSelection,
+    port_name: Option<String>,
+) -> Result<SerialPortInfo, String> {
+    service.resolve_port(selection, port_name).await
+}
+
 // ── Connection management ─────────────────────────────────────────
 
 #[tauri::command]

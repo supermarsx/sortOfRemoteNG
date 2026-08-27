@@ -6,11 +6,12 @@
 use crate::serial::logging::{DataDirection, LogEntry, LogWriter};
 use crate::serial::modem::{ModemController, ModemInfo, SignalQuality};
 use crate::serial::native_transport::NativeTransport;
+use crate::serial::port_resolver::{resolve_serial_port, resolver_error_string};
 use crate::serial::port_scanner::{self, ScanOptions, ScanResult};
 use crate::serial::session::{self, SerialSessionHandle, SessionCommand, SessionEvent};
 use crate::serial::types::*;
 use sorng_core::events::DynEventEmitter;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -113,11 +114,87 @@ impl SerialService {
         Ok(result)
     }
 
+    // ── Port resolution ───────────────────────────────────────────
+
+    /// Fresh enumeration of the native ports on a blocking thread.
+    async fn enumerate_ports_blocking() -> Result<Vec<SerialPortInfo>, String> {
+        tokio::task::spawn_blocking(port_scanner::enumerate_native_ports)
+            .await
+            .map_err(|e| format!("spawn_blocking join error: {}", e))
+    }
+
+    /// Port names currently held by our own connected sessions.
+    async fn busy_port_names(&self) -> HashSet<String> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .values()
+            .filter(|h| h.is_connected())
+            .map(|h| h.port_name.clone())
+            .collect()
+    }
+
+    /// Resolve the concrete port for an auto-selecting config.
+    ///
+    /// For `Fixed` selections this is a no-op returning `(false, None)`.
+    /// For every other mode the resolver runs over `candidates` (minus the
+    /// ports our own sessions hold), `config.port_name` is rewritten to the
+    /// chosen port and `(true, Some(display_name))` is returned. Never opens
+    /// a port.
+    async fn resolve_for_connect(
+        &self,
+        config: &mut SerialConfig,
+        candidates: &[SerialPortInfo],
+    ) -> Result<(bool, Option<String>), String> {
+        if !config.port_selection.is_auto() {
+            return Ok((false, None));
+        }
+        let busy = self.busy_port_names().await;
+        let chosen =
+            resolve_serial_port(&config.port_selection, &config.port_name, candidates, &busy)
+                .map_err(|e| resolver_error_string(&e))?;
+        config.port_name = chosen.port_name;
+        Ok((true, Some(chosen.display_name)))
+    }
+
+    /// Resolve which port a selection would pick right now, without opening
+    /// it. Backs the editor's "Preview" button (`serial_resolve_port`).
+    ///
+    /// `fixed_name` is only consulted for `SerialPortSelection::Fixed`.
+    pub async fn resolve_port(
+        &self,
+        selection: SerialPortSelection,
+        fixed_name: Option<String>,
+    ) -> Result<SerialPortInfo, String> {
+        let fixed_name = fixed_name.unwrap_or_default();
+        let probe = SerialConfig {
+            port_name: fixed_name.clone(),
+            port_selection: selection.clone(),
+            ..Default::default()
+        };
+        probe.validate()?;
+        let candidates = Self::enumerate_ports_blocking().await?;
+        let busy = self.busy_port_names().await;
+        let mut chosen = resolve_serial_port(&selection, &fixed_name, &candidates, &busy)
+            .map_err(|e| resolver_error_string(&e))?;
+        chosen.in_use = busy.contains(&chosen.port_name);
+        Ok(chosen)
+    }
+
     // ── Session management ────────────────────────────────────────
 
     /// Open a new serial session.
-    pub async fn connect(&self, config: SerialConfig) -> Result<SerialSession, String> {
+    ///
+    /// When `config.port_selection` is an auto mode the concrete port is
+    /// resolved from a fresh enumeration on every call (hot-plug and
+    /// reconnect aware) before the port is opened.
+    pub async fn connect(&self, mut config: SerialConfig) -> Result<SerialSession, String> {
         config.validate()?;
+        let (auto_selected, port_display_name) = if config.port_selection.is_auto() {
+            let candidates = Self::enumerate_ports_blocking().await?;
+            self.resolve_for_connect(&mut config, &candidates).await?
+        } else {
+            (false, None)
+        };
         let session_id = uuid::Uuid::new_v4().to_string();
 
         // Check for duplicate port
@@ -142,7 +219,14 @@ impl SerialService {
         // Create a real native transport for hardware COM / tty ports
         let transport = NativeTransport::new(&config.port_name);
 
-        let handle = session::create_session(session_id.clone(), transport, config.clone()).await?;
+        let handle = session::create_session_resolved(
+            session_id.clone(),
+            transport,
+            config.clone(),
+            auto_selected,
+            port_display_name,
+        )
+        .await?;
 
         let info = handle.info().await;
 
@@ -170,8 +254,22 @@ impl SerialService {
     /// Open a new serial session using a simulated transport (for testing).
     #[cfg(test)]
     pub async fn connect_simulated(&self, config: SerialConfig) -> Result<SerialSession, String> {
+        self.connect_simulated_with_candidates(config, Vec::new())
+            .await
+    }
+
+    /// Simulated-transport connect that resolves auto selections over an
+    /// injected candidate list instead of a native enumeration (for testing).
+    #[cfg(test)]
+    pub(crate) async fn connect_simulated_with_candidates(
+        &self,
+        mut config: SerialConfig,
+        candidates: Vec<SerialPortInfo>,
+    ) -> Result<SerialSession, String> {
         use crate::serial::transport::SimulatedTransport;
         config.validate()?;
+        let (auto_selected, port_display_name) =
+            self.resolve_for_connect(&mut config, &candidates).await?;
         let session_id = uuid::Uuid::new_v4().to_string();
 
         // Check for duplicate port
@@ -188,7 +286,14 @@ impl SerialService {
         }
 
         let transport = SimulatedTransport::new(&config.port_name);
-        let handle = session::create_session(session_id.clone(), transport, config.clone()).await?;
+        let handle = session::create_session_resolved(
+            session_id.clone(),
+            transport,
+            config.clone(),
+            auto_selected,
+            port_display_name,
+        )
+        .await?;
 
         let info = handle.info().await;
         {
@@ -698,6 +803,202 @@ mod tests {
         let result = service.connect_simulated(config).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("already in use"));
+    }
+
+    // ── t70: auto port selection on connect ───────────────────────
+
+    fn native(name: &str) -> SerialPortInfo {
+        port_scanner::build_port_info(name, None, None, Some("Communications Port"), None, None)
+    }
+
+    fn usb(name: &str) -> SerialPortInfo {
+        port_scanner::build_port_info(
+            name,
+            Some(0x0403),
+            Some(0x6001),
+            Some("USB Serial Port"),
+            Some("FTDI"),
+            Some("A50285BI"),
+        )
+    }
+
+    fn first_usb_config() -> SerialConfig {
+        SerialConfig {
+            port_name: String::new(),
+            port_selection: SerialPortSelection::FirstUsb,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_connect_first_usb_resolves_and_reports_resolved_port() {
+        let service = SerialService::new();
+        let info = service
+            .connect_simulated_with_candidates(
+                first_usb_config(),
+                vec![native("COM1"), usb("COM7")],
+            )
+            .await
+            .unwrap();
+        assert_eq!(info.port_name, "COM7");
+        assert!(info.auto_selected);
+        assert_eq!(
+            info.port_display_name.as_deref(),
+            Some(usb("COM7").display_name.as_str())
+        );
+        assert_eq!(info.state, SessionState::Connected);
+
+        // The handle keeps reporting the resolved values on later snapshots.
+        let again = service.get_session_info(&info.id).await.unwrap();
+        assert_eq!(again.port_name, "COM7");
+        assert!(again.auto_selected);
+        assert!(again.port_display_name.is_some());
+
+        // The opened transport is the resolved port, not the empty config name.
+        let handle = service.get_session(&info.id).await.unwrap();
+        assert_eq!(handle.port_name, "COM7");
+        assert_eq!(handle.config.read().await.port_name, "COM7");
+        service.disconnect(&info.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_connect_first_usb_skips_port_held_by_own_session() {
+        let service = SerialService::new();
+        let candidates = vec![native("COM1"), usb("COM7"), usb("COM9")];
+        let first = service
+            .connect_simulated_with_candidates(first_usb_config(), candidates.clone())
+            .await
+            .unwrap();
+        assert_eq!(first.port_name, "COM7");
+
+        let second = service
+            .connect_simulated_with_candidates(first_usb_config(), candidates)
+            .await
+            .unwrap();
+        assert_eq!(second.port_name, "COM9");
+        assert!(second.auto_selected);
+        assert_ne!(first.id, second.id);
+        assert_eq!(service.list_sessions().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_connect_first_usb_errors_when_only_usb_port_is_busy() {
+        let service = SerialService::new();
+        let candidates = vec![native("COM1"), usb("COM7")];
+        service
+            .connect_simulated_with_candidates(first_usb_config(), candidates.clone())
+            .await
+            .unwrap();
+
+        let err = service
+            .connect_simulated_with_candidates(first_usb_config(), candidates)
+            .await
+            .unwrap_err();
+        assert!(err.starts_with("PortNotFound:"), "got: {err}");
+        assert!(err.contains("COM7"), "got: {err}");
+        assert_eq!(service.list_sessions().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_connect_first_usb_errors_with_no_devices() {
+        let service = SerialService::new();
+        let err = service
+            .connect_simulated_with_candidates(first_usb_config(), Vec::new())
+            .await
+            .unwrap_err();
+        assert!(err.starts_with("PortNotFound:"), "got: {err}");
+        assert!(err.contains("first USB device"), "got: {err}");
+        assert!(service.list_sessions().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_connect_match_by_vid_resolves() {
+        let service = SerialService::new();
+        let config = SerialConfig {
+            port_name: String::new(),
+            port_selection: SerialPortSelection::Match {
+                vid: Some(0x0403),
+                pid: None,
+                pattern: None,
+            },
+            ..Default::default()
+        };
+        let info = service
+            .connect_simulated_with_candidates(config, vec![usb("COM7"), native("COM1")])
+            .await
+            .unwrap();
+        assert_eq!(info.port_name, "COM7");
+        assert!(info.auto_selected);
+    }
+
+    #[tokio::test]
+    async fn test_connect_fixed_still_errors_on_empty_name() {
+        let service = SerialService::new();
+        let config = SerialConfig {
+            port_name: String::new(),
+            port_selection: SerialPortSelection::Fixed,
+            ..Default::default()
+        };
+        let err = service
+            .connect_simulated_with_candidates(config, vec![usb("COM7")])
+            .await
+            .unwrap_err();
+        assert!(!err.starts_with("PortNotFound:"), "got: {err}");
+        assert!(service.list_sessions().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_connect_fixed_is_not_marked_auto_selected() {
+        let service = SerialService::new();
+        let config = SerialConfig {
+            port_name: "COM1".to_string(),
+            ..Default::default()
+        };
+        let info = service
+            .connect_simulated_with_candidates(config, vec![usb("COM7"), native("COM1")])
+            .await
+            .unwrap();
+        assert_eq!(info.port_name, "COM1");
+        assert!(!info.auto_selected);
+        assert!(info.port_display_name.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_port_never_opens_or_creates_a_session() {
+        let service = SerialService::new();
+        // Whatever the host has plugged in, resolving must not create a
+        // session; both the Ok and the PortNotFound outcome are acceptable.
+        let result = service
+            .resolve_port(SerialPortSelection::FirstAny, None)
+            .await;
+        if let Err(err) = &result {
+            assert!(err.starts_with("PortNotFound:"), "got: {err}");
+        }
+        assert!(service.list_sessions().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_port_rejects_invalid_selection_before_enumerating() {
+        let service = SerialService::new();
+        let err = service
+            .resolve_port(SerialPortSelection::Fixed, None)
+            .await
+            .unwrap_err();
+        assert!(!err.starts_with("PortNotFound:"), "got: {err}");
+
+        let err = service
+            .resolve_port(
+                SerialPortSelection::Match {
+                    vid: None,
+                    pid: None,
+                    pattern: None,
+                },
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(err.contains("Match selection needs"), "got: {err}");
+        assert!(service.list_sessions().await.is_empty());
     }
 
     #[tokio::test]
