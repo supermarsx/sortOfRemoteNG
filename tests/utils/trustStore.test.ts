@@ -3,6 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   records: [] as Array<Record<string, any>>,
   failReads: false,
+  /**
+   * `null` = the shell does not implement `trust_get_active_database`, which
+   * is what the pre-t62 suites below assume: the scope stays unresolved and
+   * the store behaves exactly as it did before.
+   */
+  activeDatabase: null as null | {
+    databaseId: string | null;
+    encrypted: boolean;
+    recordCount: number;
+    seededRecords: number;
+  },
   invoke: vi.fn(),
 }));
 
@@ -15,7 +26,10 @@ import {
   getAllTrustRecords,
   getEffectiveTrustPolicy,
   getStoredIdentity,
+  getTrustStoreScope,
   isCertificateTrustRecordType,
+  NoActiveDatabaseError,
+  refreshTrustStoreScope,
   removeIdentity,
   resetTrustStoreCacheForTests,
   resolveEffectiveTrustPolicy,
@@ -65,6 +79,12 @@ function nativeRecord(args: Record<string, any>) {
 function installNativeMock() {
   native.invoke.mockImplementation(
     async (command: string, args: Record<string, any> = {}) => {
+      if (command === "trust_get_active_database") {
+        if (!native.activeDatabase) {
+          throw new Error(`Unexpected command: ${command}`);
+        }
+        return { ...native.activeDatabase };
+      }
       if (command === "trust_get_all_records") {
         if (native.failReads) throw new Error("native trust store unavailable");
         return structuredClone(native.records);
@@ -144,6 +164,7 @@ describe("native-backed trustStore", () => {
     localStorage.clear();
     native.records = [];
     native.failReads = false;
+    native.activeDatabase = null;
     native.invoke.mockReset();
     installNativeMock();
     resetTrustStoreCacheForTests();
@@ -286,5 +307,89 @@ describe("native-backed trustStore", () => {
       "always-ask",
     );
     expect(getEffectiveTrustPolicy("inherit", "strict")).toBe("strict");
+  });
+});
+
+describe("database scope (t62)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    native.records = [];
+    native.failReads = false;
+    native.activeDatabase = null;
+    native.invoke.mockReset();
+    installNativeMock();
+    resetTrustStoreCacheForTests();
+  });
+
+  it("starts unresolved and stays permissive when the runtime cannot answer", async () => {
+    // `installNativeMock` throws on `trust_get_active_database`, standing in
+    // for a shell that predates the per-database trust store. The store must
+    // keep its pre-t62 behaviour rather than locking every host out.
+    expect(getTrustStoreScope()).toMatchObject({
+      databaseId: null,
+      resolved: false,
+    });
+
+    await expect(ensureTrustStoreReady()).resolves.toBeUndefined();
+    expect(getTrustStoreScope().resolved).toBe(false);
+  });
+
+  it("reports the active database and its encryption state", async () => {
+    native.activeDatabase = {
+      databaseId: "db-alpha",
+      encrypted: true,
+      recordCount: 4,
+      seededRecords: 2,
+    };
+
+    const scope = await refreshTrustStoreScope();
+
+    expect(scope).toEqual({
+      databaseId: "db-alpha",
+      encrypted: true,
+      recordCount: 4,
+      seededRecords: 2,
+      resolved: true,
+    });
+    expect(getTrustStoreScope()).toEqual(scope);
+  });
+
+  it("fails closed with NoActiveDatabaseError when no database is open", async () => {
+    native.activeDatabase = {
+      databaseId: null,
+      encrypted: false,
+      recordCount: 0,
+      seededRecords: 0,
+    };
+
+    await expect(ensureTrustStoreReady()).rejects.toBeInstanceOf(
+      NoActiveDatabaseError,
+    );
+    // The typed error is what separates "open a database" from "the Trust
+    // Center is broken" — callers branch on it.
+    await expect(
+      verifyIdentity("host", 22, "ssh", makeSshIdentity("SHA256:a")),
+    ).rejects.toBeInstanceOf(NoActiveDatabaseError);
+    expect(
+      native.invoke.mock.calls.some((c) => c[0] === "trust_get_all_records"),
+    ).toBe(false);
+  });
+
+  it("tracks the live record count of the active database", async () => {
+    native.activeDatabase = {
+      databaseId: "db-alpha",
+      encrypted: false,
+      recordCount: 0,
+      seededRecords: 0,
+    };
+
+    await ensureTrustStoreReady();
+    expect(getTrustStoreScope().recordCount).toBe(0);
+
+    await trustIdentity("host", 22, "ssh", makeSshIdentity("SHA256:a"));
+    expect(getTrustStoreScope()).toMatchObject({
+      databaseId: "db-alpha",
+      recordCount: 1,
+    });
   });
 });

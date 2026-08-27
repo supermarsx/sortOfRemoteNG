@@ -8,6 +8,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { onCurrentDatabaseChange } from "../connection/databaseManager";
 
 export type TrustPolicy = "tofu" | "always-ask" | "always-trust" | "strict";
 
@@ -95,6 +96,131 @@ export type TrustVerifyResult =
 export interface ConnectionTrustGroup {
   connectionId: string;
   records: TrustRecord[];
+}
+
+// ─────────────────────── database scope (t62 / D1, D6) ───────────────────────
+
+/**
+ * The full native policy vocabulary. Wider than {@link TrustPolicy}, which is
+ * the subset the frontend renders and can set; a store written by the Rust
+ * verifiers may legitimately carry any of these, and an export document must
+ * round-trip them unchanged rather than silently collapsing them.
+ */
+export type NativeTrustPolicy =
+  | "tofu"
+  | "tofu-with-expiry"
+  | "always-ask"
+  | "always-trust"
+  | "strict"
+  | "certificate-pinning"
+  | "key-rotation-grace"
+  | "trust-on-verify"
+  | "conditional-trust"
+  | "ca-trust-only"
+  | "threshold-trust";
+
+/**
+ * Policy knobs as they appear on the wire. Note the snake_case keys: unlike
+ * the export document itself, the Rust `TrustPolicyConfig` carries no
+ * `rename_all`, so these fields are *not* camelCased.
+ */
+export interface NativeTrustPolicyConfig {
+  expiry_days?: number | null;
+  rotation_grace_hours?: number | null;
+  threshold_count?: number | null;
+  allowed_networks?: string[];
+  trusted_ca_fingerprints?: string[];
+}
+
+/**
+ * One record inside a trust export document, in the native wire shape.
+ *
+ * This is deliberately the *native* record and not the camelCased
+ * {@link TrustRecord} the UI consumes: an export is opaque pass-through
+ * between `trust_export_database` and `trust_import_database`, and lossily
+ * projecting it through the display type would drop `stats`, `tags`,
+ * `first_trusted` and per-host policy config.
+ */
+export interface TrustExportRecord {
+  host: string;
+  record_type: string;
+  identity: Record<string, unknown>;
+  user_approved: boolean;
+  nickname?: string | null;
+  history?: unknown[];
+  host_policy?: NativeTrustPolicy | null;
+  host_policy_config?: NativeTrustPolicyConfig | null;
+  stats?: Record<string, unknown>;
+  first_trusted?: string | null;
+  trust_expires?: string | null;
+  revoked?: boolean;
+  tags?: string[];
+}
+
+/**
+ * Portable trust export for one database (t62 / D6). Contains public key
+ * material only — fingerprints and PEM — so it carries no secrets and is not
+ * subject to `redactConnectionSecrets`.
+ */
+export interface TrustExportDocument {
+  version: number;
+  records: TrustExportRecord[];
+  policy?: NativeTrustPolicy;
+  policyConfig?: NativeTrustPolicyConfig;
+}
+
+/**
+ * `merge` keeps an existing record for the same `type:host` unless the
+ * imported one was seen more recently, and never lets an unrevoked import
+ * overwrite a revoked record. `replace` takes the document verbatim.
+ */
+export type TrustImportMode = "merge" | "replace";
+
+export interface TrustImportOutcome {
+  imported: number;
+  skipped: number;
+}
+
+/** Which database the Trust Center is currently reading and writing. */
+export interface TrustStoreScope {
+  /** `null` = no database is active; trust operations fail closed. */
+  databaseId: string | null;
+  /** The trust file is written as a P4 envelope rather than plaintext SDBF. */
+  encrypted: boolean;
+  recordCount: number;
+  /** Records copied in from the legacy sidecars during the last activation. */
+  seededRecords: number;
+  /**
+   * `false` until the scope has been established — either by an explicit
+   * database transition or by a successful `trust_get_active_database`. While
+   * unresolved the store keeps its pre-t62 behaviour and hydrates optimistically,
+   * so a host without the native command (tests, browser dev server) is not
+   * locked out of the Trust Center.
+   */
+  resolved: boolean;
+}
+
+/**
+ * Thrown by {@link ensureTrustStoreReady} (and therefore by every trust
+ * decision) when no database is open. Typed so callers can tell "you need to
+ * open a database" apart from "the Trust Center is broken" and prompt
+ * accordingly.
+ */
+export class NoActiveDatabaseError extends Error {
+  readonly name = "NoActiveDatabaseError";
+
+  constructor(
+    message = "No database is open. Trust decisions are stored per database — open one to continue.",
+  ) {
+    super(message);
+  }
+}
+
+interface NativeActiveTrustDatabase {
+  databaseId?: string | null;
+  encrypted?: boolean;
+  recordCount?: number;
+  seededRecords?: number;
 }
 
 interface NativeCertChainEntry {
@@ -219,6 +345,29 @@ let hydrationFailureCount = 0;
 let nextHydrationAttemptAt = 0;
 let hydrationState: "idle" | "loading" | "ready" | "error" = "idle";
 let nextNativeOperationId = 1;
+
+const UNRESOLVED_SCOPE: TrustStoreScope = {
+  databaseId: null,
+  encrypted: false,
+  recordCount: 0,
+  seededRecords: 0,
+  resolved: false,
+};
+
+let activeScope: TrustStoreScope = { ...UNRESOLVED_SCOPE };
+let scopeResolution: Promise<TrustStoreScope> | null = null;
+/**
+ * Bumped on every scope change. Work started under an older generation
+ * (an in-flight hydration, a queued mutation refresh) must not install its
+ * result: those records belong to the database the user just left.
+ */
+let scopeGeneration = 0;
+/**
+ * Barrier for the in-flight `trust_set_active_database`. Every read and every
+ * mutation waits on it, so a connection attempted the instant a database
+ * opens cannot race ahead of the runtime being re-pointed. Never rejects.
+ */
+let scopeActivation: Promise<void> = Promise.resolve();
 
 interface NativeTrustOperation {
   timedOut: boolean;
@@ -849,14 +998,23 @@ function notifyTrustStoreChanged(): void {
 }
 
 async function refreshNativeCache(notify = true): Promise<void> {
+  const generation = scopeGeneration;
   try {
     const records = await invokeTrustNative<NativeTrustRecord[]>(
       "trust_get_all_records",
     );
+    // The active database changed while this read was in flight. Installing
+    // now would show database A's records under database B.
+    if (generation !== scopeGeneration) return;
     installNativeRecords(records);
+    // Live count of what this scope actually holds — fresher than the count
+    // `trust_get_active_database` reported at activation time.
+    activeScope = { ...activeScope, recordCount: records.length };
     hydrated = true;
     if (notify) notifyTrustStoreChanged();
   } catch (error) {
+    // A stale failure must not wipe the cache the new scope just filled.
+    if (generation !== scopeGeneration) return;
     clearCache();
     throw error;
   }
@@ -1122,9 +1280,13 @@ async function migrateLegacyLocalStorage(): Promise<void> {
 }
 
 async function hydrateTrustStore(): Promise<void> {
+  const generation = scopeGeneration;
   await refreshNativeCache(false);
+  if (generation !== scopeGeneration) return;
   await migrateLegacyLocalStorage();
+  if (generation !== scopeGeneration) return;
   await refreshNativeCache(false);
+  if (generation !== scopeGeneration) return;
   hydrated = true;
   hydrationState = "ready";
   hydrationFailureCount = 0;
@@ -1132,7 +1294,157 @@ async function hydrateTrustStore(): Promise<void> {
   notifyTrustStoreChanged();
 }
 
+/**
+ * Establish which database the Trust Center is pointed at.
+ *
+ * Deliberately fail-soft: if `trust_get_active_database` is unavailable
+ * (older shell, jsdom test, browser dev server) the scope stays *unresolved*
+ * and the store behaves exactly as it did before t62. Only a successful
+ * answer of `databaseId: null` — or an explicit close / lock transition —
+ * marks the scope resolved-and-empty, which is what makes
+ * {@link ensureTrustStoreReady} throw {@link NoActiveDatabaseError}. The
+ * durable fail-closed guarantee lives in Rust, where a verifier with no
+ * active database errors rather than accepting.
+ */
+async function resolveTrustStoreScope(): Promise<TrustStoreScope> {
+  if (activeScope.resolved) return activeScope;
+  if (!scopeResolution) {
+    const generation = scopeGeneration;
+    scopeResolution = invokeTrustNative<NativeActiveTrustDatabase | null>(
+      "trust_get_active_database",
+    )
+      .then((info) => {
+        if (generation !== scopeGeneration) return activeScope;
+        activeScope = {
+          databaseId:
+            typeof info?.databaseId === "string" ? info.databaseId : null,
+          encrypted: Boolean(info?.encrypted),
+          recordCount: asOptionalNumber(info?.recordCount) ?? 0,
+          seededRecords: asOptionalNumber(info?.seededRecords) ?? 0,
+          resolved: true,
+        };
+        return activeScope;
+      })
+      .catch(() => activeScope)
+      .finally(() => {
+        scopeResolution = null;
+      });
+  }
+  return scopeResolution;
+}
+
+/**
+ * The Trust Center's current database scope. Synchronous, for display
+ * consumers; call {@link refreshTrustStoreScope} to force a native re-read.
+ */
+export function getTrustStoreScope(): TrustStoreScope {
+  return { ...activeScope };
+}
+
+/** Re-read the active database from the native runtime. */
+export async function refreshTrustStoreScope(): Promise<TrustStoreScope> {
+  activeScope = { ...activeScope, resolved: false };
+  return resolveTrustStoreScope();
+}
+
+/**
+ * Move the cache to a new database scope.
+ *
+ * Everything hydrated for the previous database is dropped rather than
+ * filtered: per-connection records key on connection ids that only exist in
+ * one database, and a stale global record would read as "already trusted" in
+ * a database that never trusted it. Bumping the generation also disowns any
+ * hydration or mutation refresh still in flight for the old scope.
+ */
+function adoptTrustStoreScope(
+  databaseId: string | null,
+  activation: Promise<void>,
+): void {
+  scopeGeneration += 1;
+  scopeResolution = null;
+  scopeActivation = activation.catch(() => undefined);
+  // Synchronous, deliberately: a display consumer that reads between the
+  // transition and the re-hydration must see nothing, never the previous
+  // database's records.
+  clearCache();
+  hydrationPromise = null;
+  hydrationState = "idle";
+  hydrationFailureCount = 0;
+  nextHydrationAttemptAt = 0;
+  activeScope = {
+    databaseId,
+    encrypted: false,
+    recordCount: 0,
+    seededRecords: 0,
+    resolved: true,
+  };
+  notifyTrustStoreChanged();
+  if (databaseId === null) return;
+  void hydrateAdoptedScope(scopeGeneration, activation);
+}
+
+/**
+ * Re-hydrate after a switch, but only once the native runtime has actually
+ * been re-pointed — reading first would either serve the outgoing database's
+ * records or fail closed against a runtime that has not been told about the
+ * incoming one.
+ */
+async function hydrateAdoptedScope(
+  generation: number,
+  activation: Promise<void>,
+): Promise<void> {
+  try {
+    await activation;
+  } catch {
+    // Activation is best-effort; hydration will surface any real failure.
+  }
+  if (generation !== scopeGeneration) return;
+
+  try {
+    const info = await invokeTrustNative<NativeActiveTrustDatabase | null>(
+      "trust_get_active_database",
+    );
+    if (generation !== scopeGeneration) return;
+    if (typeof info?.databaseId === "string") {
+      activeScope = {
+        ...activeScope,
+        databaseId: info.databaseId,
+        encrypted: Boolean(info.encrypted),
+        seededRecords: asOptionalNumber(info.seededRecords) ?? 0,
+      };
+      notifyTrustStoreChanged();
+    }
+  } catch {
+    // The scope is already known from the transition itself; the extra
+    // detail (encrypted, seeded count) is display-only.
+  }
+  if (generation !== scopeGeneration) return;
+  startHydrationForDisplay();
+}
+
+/**
+ * Follow the active database (t62 / D1). Registered at module scope on the
+ * module-level registry, so it survives `DatabaseManager.resetInstance()`.
+ */
+onCurrentDatabaseChange((change) => {
+  const nextDatabaseId = change.database?.id ?? null;
+  // Events about a *different* database (create, unlocking a non-current one)
+  // leave the scope where it is.
+  if (change.databaseId !== nextDatabaseId) return;
+  if (activeScope.resolved && activeScope.databaseId === nextDatabaseId) {
+    // Same database. An unlock can make a previously unreadable store
+    // readable, so re-hydrate; a redundant open is a no-op.
+    if (change.reason !== "unlock") return;
+  }
+  adoptTrustStoreScope(nextDatabaseId, change.trustActivation);
+});
+
 export async function ensureTrustStoreReady(): Promise<void> {
+  await scopeActivation;
+  const scope = await resolveTrustStoreScope();
+  if (scope.resolved && scope.databaseId === null) {
+    throw new NoActiveDatabaseError();
+  }
   if (hydrated) return;
   if (Date.now() < nextHydrationAttemptAt) {
     throw new Error(
@@ -1525,4 +1837,8 @@ export function resetTrustStoreCacheForTests(): void {
   nextHydrationAttemptAt = 0;
   hydrationState = "idle";
   nativeTrustOperations.clear();
+  scopeGeneration += 1;
+  scopeResolution = null;
+  scopeActivation = Promise.resolve();
+  activeScope = { ...UNRESOLVED_SCOPE };
 }

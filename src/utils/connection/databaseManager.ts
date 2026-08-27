@@ -17,6 +17,14 @@ import {
 } from "../crypto/webCryptoAes";
 
 import { getInvoke } from "../tauri/invoke";
+// Type-only: keeps the trust export document owned by `trustStore.ts` (single
+// owner) without creating a runtime import edge. The dependency runs the other
+// way — the trust store subscribes to `onCurrentDatabaseChange` below.
+import type {
+  TrustExportDocument,
+  TrustImportMode,
+  TrustImportOutcome,
+} from "../auth/trustStore";
 
 /**
  * Envelope returned by the P1 file-storage commands
@@ -180,6 +188,101 @@ export interface ExportableDatabaseInfo extends ConnectionDatabase {
 }
 
 /**
+ * Why the current-database pointer moved. `create` is the odd one out: it
+ * reports a database that was just added to the index but is *not* active,
+ * so `database` still describes whatever was open (usually `null`).
+ */
+export type CurrentDatabaseChangeReason =
+  | "create"
+  | "open"
+  | "switch"
+  | "unlock"
+  | "lock"
+  | "close"
+  | "delete";
+
+/**
+ * Payload handed to `onCurrentDatabaseChange` subscribers.
+ *
+ * `database` is always the database that is active *after* the change, so a
+ * subscriber can treat `database === null` as "nothing is open". `databaseId`
+ * is the database the event is *about* — for `create` / `unlock` / `lock` /
+ * `delete` of a non-current database the two differ.
+ */
+export interface CurrentDatabaseChange {
+  reason: CurrentDatabaseChangeReason;
+  /** Active database after the change; `null` when none is open. */
+  database: ConnectionDatabase | null;
+  /**
+   * The database this event is about, expressed in the same terms as
+   * `database`: the id of the database that is active after the change when
+   * the event concerns the active database, and `null` when the change is a
+   * close / lock / delete of it. For an event about some *other* database
+   * (`create`, or unlocking a database that is not current) this holds that
+   * other database's id, which is how a subscriber tells the two apart.
+   */
+  databaseId: string | null;
+  /** Active database id before the change. */
+  previousDatabaseId: string | null;
+  /** Connection ids of the active database; empty when none is open. */
+  connectionIds: string[];
+  /**
+   * Resolves once the native Trust Center has been re-pointed at
+   * `database` (or told that nothing is open). Already-resolved when the
+   * event does not move the trust scope.
+   *
+   * Listeners fire synchronously so UI can react to the transition at once,
+   * but anything that *reads* trust data must await this first: hydrating
+   * ahead of the activation would read the outgoing database's store, or
+   * fail closed against a runtime that has not been told about the new one.
+   * Never rejects — activation is best-effort.
+   */
+  trustActivation: Promise<void>;
+}
+
+export type CurrentDatabaseChangeListener = (
+  change: CurrentDatabaseChange,
+) => void;
+
+/**
+ * Module-level, deliberately *not* per-instance: `DatabaseManager` is a
+ * singleton that tests reset via `resetInstance()`, and a subscriber
+ * registered at module-init time (the trust store does exactly that) must
+ * survive that reset.
+ */
+const currentDatabaseListeners = new Set<CurrentDatabaseChangeListener>();
+
+/**
+ * Subscribe to active-database transitions. Returns an unsubscribe function.
+ *
+ * A throwing listener is isolated: it never aborts the transition, and never
+ * prevents the remaining listeners from running.
+ */
+export function onCurrentDatabaseChange(
+  listener: CurrentDatabaseChangeListener,
+): () => void {
+  currentDatabaseListeners.add(listener);
+  return () => {
+    currentDatabaseListeners.delete(listener);
+  };
+}
+
+/** Test-only: drop every subscriber registered on the module registry. */
+export function resetCurrentDatabaseListenersForTests(): void {
+  currentDatabaseListeners.clear();
+}
+
+function emitCurrentDatabaseChange(change: CurrentDatabaseChange): void {
+  for (const listener of Array.from(currentDatabaseListeners)) {
+    try {
+      listener(change);
+    } catch (error) {
+      console.warn("A current-database listener threw", error);
+    }
+  }
+}
+
+/**
  * Immutable handle to the database that owned the currently-rendered
  * connection snapshot when the handle was captured.  The closures retain the
  * matching in-memory password so a delayed save can never drift onto whatever
@@ -203,6 +306,15 @@ export interface DatabaseExportSnapshot {
   settings: StorageData["settings"];
   tabGroups: StorageData["tabGroups"];
   colorTags: StorageData["colorTags"];
+  /**
+   * Trust Center records belonging to the exported database (t62 / D6).
+   *
+   * Absent when the caller opted out (`includeTrust: false`) or when the
+   * native Trust Center is unavailable — an export must never fail because
+   * trust records could not be read. Records carry public key material only
+   * (fingerprints, PEM), so `redactConnectionSecrets` does not apply.
+   */
+  trustRecords?: TrustExportDocument;
 }
 
 const SECRET_PLACEHOLDER = "***ENCRYPTED***";
@@ -258,6 +370,122 @@ export class DatabaseManager {
   }
 
   /**
+   * Subscribe to active-database transitions. Instance-level alias for the
+   * module-level {@link onCurrentDatabaseChange} so consumers holding only the
+   * singleton do not need a second import.
+   */
+  onCurrentDatabaseChange(listener: CurrentDatabaseChangeListener): () => void {
+    return onCurrentDatabaseChange(listener);
+  }
+
+  /**
+   * Announce a transition and, when the *active* database changed, tell the
+   * native Trust Center which database's records it should be reading and
+   * writing (t62 / D3).
+   *
+   * Deliberately best-effort: the Trust Center failing to switch must never
+   * stop a database from opening. Rust fails closed on its side — a verifier
+   * with no active database errors out rather than silently accepting — so a
+   * dropped activation degrades to "trust prompts reappear", never to
+   * "everything is trusted".
+   */
+  private announceDatabaseChange(
+    change: Omit<CurrentDatabaseChange, "trustActivation">,
+  ): void {
+    // Only events about the *active* database move the trust scope. Creating,
+    // unlocking, locking or deleting some other database leaves the Trust
+    // Center pointed exactly where it was.
+    const activeId = change.database?.id ?? null;
+    const trustActivation =
+      change.databaseId === activeId
+        ? this.syncActiveTrustDatabase(activeId, change.connectionIds)
+        : Promise.resolve();
+    emitCurrentDatabaseChange({ ...change, trustActivation });
+  }
+
+  private async syncActiveTrustDatabase(
+    databaseId: string | null,
+    connectionIds: string[],
+  ): Promise<void> {
+    try {
+      const invoke = await getInvoke();
+      if (!invoke) return;
+      await invoke("trust_set_active_database", {
+        databaseId,
+        connectionIds: databaseId ? connectionIds : [],
+      });
+    } catch (error) {
+      console.warn(
+        "Trust Center: could not switch the active trust database",
+        error,
+      );
+    }
+  }
+
+  /**
+   * Read a database's trust records. Returns `null` when the caller opted
+   * out, when there is no Tauri runtime, or when the native command fails —
+   * an export must not break because the Trust Center is unavailable.
+   */
+  private async readTrustRecords(
+    databaseId: string,
+    includeTrust: boolean,
+  ): Promise<TrustExportDocument | null> {
+    if (!includeTrust) return null;
+    try {
+      const invoke = await getInvoke();
+      if (!invoke) return null;
+      const document = await invoke<TrustExportDocument>(
+        "trust_export_database",
+        { databaseId },
+      );
+      return document ?? null;
+    } catch (error) {
+      console.warn(
+        "Trust Center: could not export trust records for the database",
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Apply a trust export document to a database. Best-effort for the same
+   * reason as {@link readTrustRecords}: a partial import is better than a
+   * failed one, and the outcome is reported so callers can surface it.
+   */
+  private async applyTrustRecords(
+    databaseId: string,
+    document: TrustExportDocument | undefined | null,
+    includeTrust: boolean,
+    mode: TrustImportMode = "merge",
+  ): Promise<TrustImportOutcome | null> {
+    if (!includeTrust || !document) return null;
+    if (!Array.isArray(document.records)) return null;
+    try {
+      const invoke = await getInvoke();
+      if (!invoke) return null;
+      return await invoke<TrustImportOutcome>("trust_import_database", {
+        databaseId,
+        document,
+        mode,
+      });
+    } catch (error) {
+      console.warn(
+        "Trust Center: could not import trust records into the database",
+        error,
+      );
+      return null;
+    }
+  }
+
+  private connectionIdsOf(data: StorageData | null | undefined): string[] {
+    return (data?.connections ?? [])
+      .map((connection) => connection?.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+  }
+
+  /**
    * Create and persist a new empty collection.
    *
    * A unique ID is generated and the collection metadata is appended to the
@@ -310,6 +538,16 @@ export class DatabaseManager {
       undefined,
       `Database "${name}" created${isEncrypted ? ' (encrypted)' : ''}`
     );
+
+    // A freshly created database is not yet the active one, so this is a
+    // notification only — no trust activation (see `announceDatabaseChange`).
+    this.announceDatabaseChange({
+      reason: "create",
+      database: this.currentDatabase,
+      databaseId: collection.id,
+      previousDatabaseId: this.currentDatabase?.id ?? null,
+      connectionIds: [],
+    });
 
     return collection;
   }
@@ -406,6 +644,7 @@ export class DatabaseManager {
     id: string,
     password?: string,
   ): Promise<void> {
+    const previousDatabaseId = this.currentDatabase?.id ?? null;
     const switchingDatabase =
       this.currentDatabase !== null && this.currentDatabase.id !== id;
     if (switchingDatabase) {
@@ -427,7 +666,7 @@ export class DatabaseManager {
       );
     }
 
-    await this.loadDatabaseData(id, resolvedPassword);
+    const loaded = await this.loadDatabaseData(id, resolvedPassword);
     // A database load can be slow. Flush edits made to the outgoing UI while
     // it was in flight before advancing the mutable current-database pointer.
     if (switchingDatabase) {
@@ -448,6 +687,17 @@ export class DatabaseManager {
       undefined,
       `Switched to database "${collection.name}"`
     );
+
+    // The database is now fully current: point the native Trust Center at
+    // `databases/<id>.trust.json` and hand it the connection ids so a legacy
+    // seed can scope per-connection records (t62 / D5).
+    this.announceDatabaseChange({
+      reason: switchingDatabase ? "switch" : "open",
+      database: collection,
+      databaseId: collection.id,
+      previousDatabaseId,
+      connectionIds: this.connectionIdsOf(loaded),
+    });
   }
 
   getCurrentDatabase(): ConnectionDatabase | null {
@@ -504,8 +754,21 @@ export class DatabaseManager {
     // password — it throws `InvalidPasswordError` on a bad password
     // (same one `selectDatabase` would have surfaced) without any
     // side effects on `currentDatabase` / `currentPassword`.
-    await this.loadDatabaseData(id, password);
+    const loaded = await this.loadDatabaseData(id, password);
     this.rememberUnlockedDatabase(collection, password);
+
+    // Unlocking does not change which database is active, so the active
+    // database in the payload is still `currentDatabase`. Re-activating the
+    // trust store matters only when the database that just became readable is
+    // the current one — its master-DEK sub-key may only now be derivable.
+    this.announceDatabaseChange({
+      reason: "unlock",
+      database: this.currentDatabase,
+      databaseId: id,
+      previousDatabaseId: this.currentDatabase?.id ?? null,
+      connectionIds:
+        this.currentDatabase?.id === id ? this.connectionIdsOf(loaded) : [],
+    });
   }
 
   /**
@@ -517,7 +780,7 @@ export class DatabaseManager {
    * was nothing to close — callers use that to decide whether to clear
    * downstream UI state (connections panel, auto-open-last setting).
    */
-  closeCurrentDatabase(): string | null {
+  closeCurrentDatabase(reason: "close" | "lock" = "close"): string | null {
     const closing = this.currentDatabase;
     if (!closing) return null;
     this.currentDatabase = null;
@@ -532,6 +795,17 @@ export class DatabaseManager {
       undefined,
       `Closed database "${closing.name}"`,
     );
+
+    // Nothing is open any more: the Trust Center must forget the active
+    // database so its verifiers fail closed instead of answering from a
+    // store the user just locked (t62 / D3).
+    this.announceDatabaseChange({
+      reason,
+      database: null,
+      databaseId: null,
+      previousDatabaseId: closing.id,
+      connectionIds: [],
+    });
     return closing.id;
   }
 
@@ -545,7 +819,7 @@ export class DatabaseManager {
    */
   lockDatabase(id: string): void {
     if (this.currentDatabase?.id === id) {
-      this.closeCurrentDatabase();
+      this.closeCurrentDatabase("lock");
       return;
     }
     if (!this.unlockedDatabasePasswords.has(id)) return;
@@ -556,6 +830,15 @@ export class DatabaseManager {
       undefined,
       `Locked database ${id}`,
     );
+    // A non-current database was locked: the active trust scope is unchanged,
+    // so this is a notification only.
+    this.announceDatabaseChange({
+      reason: "lock",
+      database: this.currentDatabase,
+      databaseId: id,
+      previousDatabaseId: this.currentDatabase?.id ?? null,
+      connectionIds: [],
+    });
   }
 
   isDatabaseUnlocked(databaseId: string): boolean {
@@ -644,8 +927,10 @@ export class DatabaseManager {
     collection: ConnectionDatabase,
     data: StorageData,
     includePasswords: boolean,
+    trustRecords?: TrustExportDocument | null,
   ): DatabaseExportSnapshot {
     return {
+      ...(trustRecords ? { trustRecords } : {}),
       collection: {
         id: collection.id,
         name: collection.name,
@@ -699,11 +984,23 @@ export class DatabaseManager {
       `Database "${collection?.name || id}" deleted`
     );
 
-    if (this.currentDatabase?.id === id) {
+    const wasCurrent = this.currentDatabase?.id === id;
+    if (wasCurrent) {
       this.currentDatabase = null;
       this.currentPassword = null;
     }
     this.forgetUnlockedDatabase(id);
+
+    // `delete_database_data` already unlinked `<id>.trust.json` on the Rust
+    // side, so there is nothing to clean up here — but if the deleted
+    // database was the open one, the Trust Center must stop pointing at it.
+    this.announceDatabaseChange({
+      reason: "delete",
+      database: this.currentDatabase,
+      databaseId: wasCurrent ? null : id,
+      previousDatabaseId: wasCurrent ? id : (this.currentDatabase?.id ?? null),
+      connectionIds: [],
+    });
   }
 
   async duplicateDatabase(
@@ -711,6 +1008,8 @@ export class DatabaseManager {
     options?: {
       password?: string;
       name?: string;
+      /** Copy the source database's trust records into the clone (t62 / D6). */
+      includeTrust?: boolean;
     },
   ): Promise<ConnectionDatabase> {
     const sourceCollection = await this.getDatabase(collectionId);
@@ -767,6 +1066,16 @@ export class DatabaseManager {
       duplicatedCollection.id,
       cloneStorageData(sourceData),
       sourceCollection.isEncrypted ? duplicatePassword : undefined,
+    );
+
+    // A clone is a copy of the whole database, trust included — otherwise the
+    // duplicate would re-prompt for every host the original already trusted.
+    const includeTrust = options?.includeTrust !== false;
+    await this.applyTrustRecords(
+      duplicatedCollection.id,
+      await this.readTrustRecords(collectionId, includeTrust),
+      includeTrust,
+      "replace",
     );
 
     SettingsManager.getInstance().logAction(
@@ -996,6 +1305,12 @@ export class DatabaseManager {
     includePasswords: boolean = false,
     options?: {
       collectionPassword?: string;
+      /**
+       * Carry the database's Trust Center records in the snapshot (t62 / D6).
+       * Defaults to `true`; the Export / Clone tabs expose it as the
+       * "Trusted hosts & certificates" inclusion toggle.
+       */
+      includeTrust?: boolean;
     },
   ): Promise<DatabaseExportSnapshot> {
     const collection = await this.getDatabase(collectionId);
@@ -1013,12 +1328,27 @@ export class DatabaseManager {
     }
 
     this.rememberUnlockedDatabase(collection, password);
-    return this.buildExportSnapshot(collection, data, includePasswords);
+    const trustRecords = await this.readTrustRecords(
+      collectionId,
+      options?.includeTrust !== false,
+    );
+    return this.buildExportSnapshot(
+      collection,
+      data,
+      includePasswords,
+      trustRecords,
+    );
   }
 
   async appendConnectionsToDatabase(
     collectionId: string,
     connections: Connection[],
+    options?: {
+      /** Trust records to merge into the target database (t62 / D6). */
+      trustRecords?: TrustExportDocument | null;
+      /** Defaults to `true`; ignored when `trustRecords` is absent. */
+      includeTrust?: boolean;
+    },
   ): Promise<void> {
     const collection = await this.getDatabase(collectionId);
     if (!collection) {
@@ -1045,6 +1375,15 @@ export class DatabaseManager {
     );
 
     this.rememberUnlockedDatabase(collection, password);
+
+    // Appending connections into an existing database also merges whatever
+    // trust the source carried. Merge never downgrades: an unrevoked import
+    // cannot overwrite a revoked record (enforced Rust-side).
+    await this.applyTrustRecords(
+      collectionId,
+      options?.trustRecords,
+      options?.includeTrust !== false,
+    );
   }
 
   async removePasswordFromDatabase(
@@ -1101,6 +1440,12 @@ export class DatabaseManager {
       importPassword?: string;
       collectionName?: string;
       encryptPassword?: string;
+      /**
+       * Apply the export's `trustRecords` to the new database (t62 / D6).
+       * Defaults to `true`. Exports written before t62 simply have no
+       * `trustRecords`, so an old file imports exactly as it always did.
+       */
+      includeTrust?: boolean;
     },
   ): Promise<ConnectionDatabase> {
     let parsed: any;
@@ -1179,6 +1524,12 @@ export class DatabaseManager {
             : {},
       },
       options?.encryptPassword,
+    );
+
+    await this.applyTrustRecords(
+      collection.id,
+      parsed?.trustRecords as TrustExportDocument | undefined,
+      options?.includeTrust !== false,
     );
 
     return collection;
