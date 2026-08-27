@@ -476,6 +476,35 @@ export const S = {
   protocolRepairDialog: '[data-testid="protocol-repair-dialog"]',
   protocolRepairRow: '[data-testid^="protocol-repair-row-"]',
   protocolRepairApply: '[data-testid="protocol-repair-apply"]',
+
+  // Nginx Proxy Manager (t65; data-testids from
+  // src/components/integrations/nginxProxyMgr/**)
+  npmPanel: '[data-testid="npm-panel"]',
+  npmConnectionForm: '[data-testid="npm-connection-form"]',
+  npmApiUrl: '[data-testid="npm-api-url"]',
+  npmAuthModePassword: '[data-testid="npm-auth-mode-password"]',
+  npmAuthModeToken: '[data-testid="npm-auth-mode-token"]',
+  npmEmail: '[data-testid="npm-email"]',
+  npmPassword: '[data-testid="npm-password"]',
+  npmToken: '[data-testid="npm-token"]',
+  npmTlsSkip: '[data-testid="npm-tls-skip"]',
+  npmTimeout: '[data-testid="npm-timeout"]',
+  npmConnectBtn: '[data-testid="npm-connect-btn"]',
+  npmDisconnectBtn: '[data-testid="npm-disconnect-btn"]',
+  npmStatus: '[data-testid="npm-status"]',
+  npmError: '[data-testid="npm-error"]',
+  npmRefreshTokenBtn: '[data-testid="npm-refresh-token-btn"]',
+  npmRefreshAllBtn: '[data-testid="npm-refresh-all-btn"]',
+  npmOpenWebUi: '[data-testid="npm-open-web-ui"]',
+  npmProxyHostsTab: '[data-testid="npm-proxy-hosts-tab"]',
+  npmRedirectionsTab: '[data-testid="npm-redirections-tab"]',
+  npmStreamsTab: '[data-testid="npm-streams-tab"]',
+  npmCertificatesTab: '[data-testid="npm-certificates-tab"]',
+  npmProxyHostRow: '[data-testid="npm-proxy-host-row"]',
+  npmProxyHostToggle: '[data-testid="npm-proxy-host-toggle"]',
+  npmRedirectionRow: '[data-testid="npm-redirection-row"]',
+  npmStreamRow: '[data-testid="npm-stream-row"]',
+  npmCertificateRow: '[data-testid="npm-certificate-row"]',
 } as const;
 
 /** Session tab carrying the given `data-session-status` (t63). */

@@ -69,6 +69,11 @@ env:
   PORTAINER_TLS_URL: https://127.0.0.1:19443
   PORTAINER_USER: admin
   PORTAINER_ADMIN_PASSWORD: portainer-e2e-pass1234
+  # t65-e5: Nginx Proxy Manager fixture (e2e/docker-compose.yml `test-npm`).
+  # The password must be >= 8 chars and must not be NPM's factory "changeme".
+  NPM_URL: http://127.0.0.1:18181
+  NPM_ADMIN_EMAIL: admin@example.com
+  NPM_ADMIN_PASSWORD: npm-e2e-pass1234
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
   # Keep registry bursts below Docker Hub's transient request limits.
@@ -150,14 +155,18 @@ jobs:
           SOFTETHER_PASSWORD=${{ env.SOFTETHER_PASSWORD }}
           SOFTETHER_ADMIN_PWD=${{ env.SOFTETHER_ADMIN_PWD }}
           PORTAINER_ADMIN_PASSWORD=${{ env.PORTAINER_ADMIN_PASSWORD }}
+          NPM_ADMIN_EMAIL=${{ env.NPM_ADMIN_EMAIL }}
+          NPM_ADMIN_PASSWORD=${{ env.NPM_ADMIN_PASSWORD }}
           EOF
 
-      - name: Prepare and validate disposable HTTP + Portainer fixtures
+      - name: Prepare and validate disposable HTTP + Portainer + NPM fixtures
         run: |
           node scripts/ci/e2e-http-fixtures.mjs prepare
           node scripts/ci/e2e-http-fixtures.mjs validate
           node scripts/ci/e2e-portainer-fixture.mjs prepare
           node scripts/ci/e2e-portainer-fixture.mjs validate
+          node scripts/ci/e2e-npm-fixture.mjs prepare
+          node scripts/ci/e2e-npm-fixture.mjs validate
           docker compose \
             -f e2e/docker-compose.yml \
             -f docker/compose.e2e.yml \
@@ -317,6 +326,25 @@ jobs:
           node ../scripts/ci/e2e-portainer-fixture.mjs wait
           cargo test -p sorng-portainer --features docker-e2e             --test docker_e2e -- --include-ignored --nocapture             --test-threads=1 2>&1 | tee ../e2e-portainer.log
 
+      # ── t65-e5: Nginx Proxy Manager real-container e2e ─────────────
+      # test-npm has a compose healthcheck, but `wait` additionally proves the
+      # admin credentials work: it repairs the factory-account / forced
+      # password-change path on image tags that ignore INITIAL_ADMIN_*, and
+      # creates the first admin when the instance reports `setup: false`.
+      # `verify-login-form` guards NPM_AUTO_LOGIN_SELECTORS (webUiLaunch.ts)
+      # against NPM renaming its own login fields in a new release.
+      - name: Nginx Proxy Manager e2e (t65-e5)
+        if: always()
+        id: test-npm
+        continue-on-error: true
+        working-directory: src-tauri
+        run: |
+          node ../scripts/ci/e2e-npm-fixture.mjs wait
+          node ../scripts/ci/e2e-npm-fixture.mjs verify-login-form
+          cargo test -p sorng-nginx-proxy-mgr --features docker-e2e \
+            --test docker_e2e -- --include-ignored --nocapture \
+            --test-threads=1 2>&1 | tee ../e2e-npm.log
+
       # ── t69-e6: MySQL / MariaDB / MongoDB live tests ───────────────
       # Fixtures: test-mysql (13306), test-mariadb (13307), test-mongo (27117),
       # all seeded from e2e/fixtures/db/** and gated on compose "healthy"
@@ -379,6 +407,7 @@ jobs:
             e2e-softether.log
             e2e-ftp.log
             e2e-portainer.log
+            e2e-npm.log
             e2e-mysql-live.log
             e2e-mongo-live.log
           if-no-files-found: warn
@@ -418,6 +447,7 @@ jobs:
           echo "| softether (t3-e8) | ${{ steps.test-softether.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ftp (t3-e5) | ${{ steps.test-ftp.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| portainer (t64-e5) | ${{ steps.test-portainer.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| nginx proxy manager (t65-e5) | ${{ steps.test-npm.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| mysql+mariadb live (t69) | ${{ steps.test-mysql-live.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| mongodb live (t69) | ${{ steps.test-mongo-live.outcome }} |" >> $GITHUB_STEP_SUMMARY
           # Fail the job if any test step failed.
@@ -431,7 +461,9 @@ jobs:
             "${{ steps.test-rdpdr-live.outcome }}" \
             "${{ steps.test-vnc.outcome }}" \
             "${{ steps.test-softether.outcome }}" \
-            "${{ steps.test-ftp.outcome }}"             "${{ steps.test-portainer.outcome }}"             "${{ steps.test-mysql-live.outcome }}"             "${{ steps.test-mongo-live.outcome }}"; do
+            "${{ steps.test-ftp.outcome }}"             "${{ steps.test-portainer.outcome }}" \
+            "${{ steps.test-npm.outcome }}" \
+            "${{ steps.test-mysql-live.outcome }}"             "${{ steps.test-mongo-live.outcome }}"; do
             if [ "$o" = "failure" ]; then fails=$((fails+1)); fi
           done
           if [ "$fails" -gt 0 ]; then

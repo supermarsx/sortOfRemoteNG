@@ -225,3 +225,38 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  test-npm:
+    # Nginx Proxy Manager (t65). Only the admin UI/API port (81) is published
+    # as 18181; the proxying ports 80/443 are deliberately NOT mapped so the
+    # fixture cannot collide with test-http (8080/8443) or a host web server.
+    #
+    # v2.10+ provisions the admin account from INITIAL_ADMIN_*. Older tags
+    # ignore those and create the classic admin@example.com / changeme account
+    # which NPM then forces to change on first login — that path is handled by
+    # `node scripts/ci/e2e-npm-fixture.mjs wait`, which is also the readiness
+    # gate that proves the API answers with the configured credentials.
+    #
+    # /data and /etc/letsencrypt must exist or the image's `prepare` service
+    # aborts with "... is not mounted" (s6-rc.d/prepare/20-paths.sh only tests
+    # `[ -d ... ]`). tmpfs satisfies that without a named volume, so the SQLite
+    # database is RAM-backed and every `up` starts from a clean install with
+    # nothing to prune afterwards.
+    image: jc21/nginx-proxy-manager:latest
+    ports:
+      - "18181:81"
+    environment:
+      - INITIAL_ADMIN_EMAIL=${NPM_ADMIN_EMAIL:-admin@example.com}
+      - INITIAL_ADMIN_PASSWORD=${NPM_ADMIN_PASSWORD}
+      - DISABLE_IPV6=true
+    tmpfs:
+      - /data:size=256m
+      - /etc/letsencrypt:size=16m
+    healthcheck:
+      # /usr/bin/check-health is the image's own healthcheck helper (it hits
+      # the local API and the nginx status page).
+      test: ["CMD", "/usr/bin/check-health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s

@@ -13,6 +13,8 @@ export const MARIADB_PORT = 13307;
 export const MONGO_PORT = 27117;
 export const FTP_PORT = 2121;
 export const PORTAINER_PORT = 19000;
+// t65: Nginx Proxy Manager admin API/UI (compose service test-npm, container 81).
+export const NPM_PORT = 18181;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COMPOSE_FILE = path.resolve(__dirname, '../docker-compose.yml');
