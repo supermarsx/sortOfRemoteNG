@@ -445,6 +445,10 @@
         "label": "Supermicro BMC",
         "description": "Supermicro サーバーの BMC 管理"
       },
+      "voipPhone": {
+        "label": "VoIP電話 (Yealink)",
+        "description": "卓上電話のWeb管理: ステータス、Web UI、再起動"
+      },
       "gcp": {
         "label": "Google Cloud",
         "description": "Google Cloud プロジェクトセッション"
@@ -2039,6 +2043,63 @@
       "x11": "X11（Redfish）",
       "x10": "X10（CGI + IPMI）",
       "x9": "X9 (IPMIのみ)"
+    }
+  },
+  "voipPhone": {
+    "title": "VoIP電話",
+    "status": "電話機のステータス",
+    "connecting": "電話機に接続しています…",
+    "accounts": "SIPアカウント",
+    "account": "アカウント",
+    "noAccounts": "電話機からSIPアカウントが報告されていません。",
+    "registered": "登録済み",
+    "unregistered": "未登録",
+    "openWebUi": "Web UIを開く",
+    "reboot": "再起動",
+    "rebootConfirm": "この電話機を再起動しますか?通話中の呼は切断され、電話機は約1分間使用できなくなります。",
+    "rebootDone": "{{method}} 経由で再起動要求が受け付けられました。",
+    "refresh": "更新",
+    "generation": "ファームウェア世代",
+    "generations": {
+      "legacy": "レガシーCGI",
+      "servlet": "サーブレット"
+    },
+    "firmware": "ファームウェア",
+    "hardware": "ハードウェア",
+    "model": "モデル",
+    "mac": "MACアドレス",
+    "ip": "IPアドレス",
+    "uptime": "稼働時間",
+    "vendor": "電話機のベンダー",
+    "vendorHelp": "対応機種: Yealink SIP-T20P / T21P (T21P E2を含む) のWeb管理。ファームウェア世代 (レガシーCGIまたはサーブレット) は自動検出されます。",
+    "vendors": {
+      "yealink": "Yealink"
+    },
+    "authentication": "Web管理ログイン",
+    "authMode": "ログインモード",
+    "authModeHelp": "自動検出は電話機を調査し、HTTP Basic (レガシーファームウェア) またはサーブレットのログインフォーム (T21P E2 / v8x以降) を選択します。検出に失敗した場合のみモードを強制してください。",
+    "authModes": {
+      "auto": "自動検出",
+      "basic": "HTTP Basic",
+      "form": "ログインフォーム"
+    },
+    "credentialsStoredOnConnection": "ユーザー名とパスワードは「基本」に保持されます (Yealinkの既定値は admin/admin)。電話機の設定に保存済みパスワードが複製されることはありません。",
+    "tlsSecurity": "トランスポートのセキュリティ",
+    "useSsl": "HTTPSを使用",
+    "useSslHelp": "平文HTTPではなくHTTPSで電話機のWeb管理に接続します。電話機がTLSを443番ポートで提供している場合はポートを443に変更してください。",
+    "verifyCert": "サーバー証明書を検証",
+    "verifyCertHelp": "電話機は自己署名証明書で出荷されます。最初のHTTPS接続がピン留めされ (初回使用時信頼)、以降の変更は拒否されます。証明書が更新される信頼できる電話機の場合のみ無効にしてください。",
+    "advanced": "リモート制御",
+    "actionUri": "電話機でAction URIが有効",
+    "actionUriHelp": "再起動はまずAction URI (?key=Reboot) を試みます。電話機で Features > Remote Control > Action URI を有効にし、このコンピューターのIPを許可してください。それ以外の場合、再起動はWeb管理の再起動フォームにフォールバックします。",
+    "timeout": "リクエストのタイムアウト (秒)",
+    "errors": {
+      "connection": "電話機のWeb管理に到達できませんでした。",
+      "auth": "電話機がWeb管理の資格情報を拒否しました。",
+      "unsupported": "この電話機のモデルまたはファームウェアはサポートされていません。",
+      "parse": "電話機のステータスページを解析できませんでした。",
+      "notConnected": "電話機のセッションが接続されていません。",
+      "forbidden": "電話機がリクエストを拒否しました。電話機のAction URI許可リストを確認してください。"
     }
   },
   "windowsBackup": {

@@ -445,6 +445,10 @@
         "label": "Supermicro BMC",
         "description": "Supermicro 服务器 BMC 管理"
       },
+      "voipPhone": {
+        "label": "VoIP 电话 (Yealink)",
+        "description": "桌面话机 Web 管理:状态、Web 界面、重启"
+      },
       "gcp": {
         "label": "Google Cloud",
         "description": "Google Cloud 项目会话"
@@ -2039,6 +2043,63 @@
       "x11": "X11（Redfish）",
       "x10": "X10（CGI + IPMI）",
       "x9": "X9 (IPMI仅)"
+    }
+  },
+  "voipPhone": {
+    "title": "VoIP 电话",
+    "status": "话机状态",
+    "connecting": "正在连接话机…",
+    "accounts": "SIP 账号",
+    "account": "账号",
+    "noAccounts": "话机未报告任何 SIP 账号。",
+    "registered": "已注册",
+    "unregistered": "未注册",
+    "openWebUi": "打开 Web 界面",
+    "reboot": "重启",
+    "rebootConfirm": "要重启此话机吗?正在进行的通话将被中断,话机将有约一分钟不可用。",
+    "rebootDone": "重启请求已通过 {{method}} 接受。",
+    "refresh": "刷新",
+    "generation": "固件代次",
+    "generations": {
+      "legacy": "传统 CGI",
+      "servlet": "Servlet"
+    },
+    "firmware": "固件",
+    "hardware": "硬件",
+    "model": "型号",
+    "mac": "MAC 地址",
+    "ip": "IP 地址",
+    "uptime": "运行时间",
+    "vendor": "话机厂商",
+    "vendorHelp": "支持:Yealink SIP-T20P / T21P(含 T21P E2)Web 管理。固件代次(传统 CGI 或 Servlet)会自动检测。",
+    "vendors": {
+      "yealink": "Yealink"
+    },
+    "authentication": "Web 管理登录",
+    "authMode": "登录模式",
+    "authModeHelp": "自动检测会探测话机并选择 HTTP Basic(旧版固件)或 Servlet 登录表单(T21P E2 / v8x+)。仅在检测失败时才强制指定模式。",
+    "authModes": {
+      "auto": "自动检测",
+      "basic": "HTTP Basic",
+      "form": "登录表单"
+    },
+    "credentialsStoredOnConnection": "用户名和密码保留在“基本”中(Yealink 默认 admin/admin)。话机设置绝不会复制已保存的密码。",
+    "tlsSecurity": "传输安全",
+    "useSsl": "使用 HTTPS",
+    "useSslHelp": "通过 HTTPS 而非明文 HTTP 连接话机的 Web 管理。如果话机在 443 端口提供 TLS,请将端口改为 443。",
+    "verifyCert": "验证服务器证书",
+    "verifyCertHelp": "话机出厂时使用自签名证书:首次 HTTPS 连接会被固定(首次使用即信任),之后的变更将被拒绝。仅对证书会轮换的可信话机禁用此项。",
+    "advanced": "远程控制",
+    "actionUri": "话机上已启用 Action URI",
+    "actionUriHelp": "重启会先尝试 Action URI(?key=Reboot)。请在话机上启用 Features > Remote Control > Action URI 并允许本机 IP;否则重启将回退到 Web 管理的重启表单。",
+    "timeout": "请求超时(秒)",
+    "errors": {
+      "connection": "无法访问话机的 Web 管理。",
+      "auth": "话机拒绝了 Web 管理凭据。",
+      "unsupported": "不支持此话机型号或固件。",
+      "parse": "无法解析话机的状态页面。",
+      "notConnected": "话机会话未连接。",
+      "forbidden": "话机拒绝了请求。请检查话机上的 Action URI 允许列表。"
     }
   },
   "windowsBackup": {

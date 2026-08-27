@@ -445,6 +445,10 @@
         "label": "Supermicro BMC",
         "description": "Supermicro 서버 BMC 관리"
       },
+      "voipPhone": {
+        "label": "VoIP 전화기 (Yealink)",
+        "description": "탁상 전화기 웹 관리: 상태, 웹 UI, 재부팅"
+      },
       "gcp": {
         "label": "Google Cloud",
         "description": "Google Cloud 프로젝트 세션"
@@ -2039,6 +2043,63 @@
       "x11": "X11 (Redfish)",
       "x10": "X10 (CGI + IPMI)",
       "x9": "X9 (IPMI 만)"
+    }
+  },
+  "voipPhone": {
+    "title": "VoIP 전화기",
+    "status": "전화기 상태",
+    "connecting": "전화기에 연결하는 중…",
+    "accounts": "SIP 계정",
+    "account": "계정",
+    "noAccounts": "전화기가 보고한 SIP 계정이 없습니다.",
+    "registered": "등록됨",
+    "unregistered": "등록되지 않음",
+    "openWebUi": "웹 UI 열기",
+    "reboot": "재부팅",
+    "rebootConfirm": "이 전화기를 재부팅하시겠습니까? 진행 중인 통화가 끊기고 전화기를 약 1분간 사용할 수 없습니다.",
+    "rebootDone": "{{method}}을(를) 통해 재부팅 요청이 수락되었습니다.",
+    "refresh": "새로 고침",
+    "generation": "펌웨어 세대",
+    "generations": {
+      "legacy": "레거시 CGI",
+      "servlet": "서블릿"
+    },
+    "firmware": "펌웨어",
+    "hardware": "하드웨어",
+    "model": "모델",
+    "mac": "MAC 주소",
+    "ip": "IP 주소",
+    "uptime": "가동 시간",
+    "vendor": "전화기 제조사",
+    "vendorHelp": "지원: Yealink SIP-T20P / T21P(T21P E2 포함) 웹 관리. 펌웨어 세대(레거시 CGI 또는 서블릿)는 자동으로 감지됩니다.",
+    "vendors": {
+      "yealink": "Yealink"
+    },
+    "authentication": "웹 관리 로그인",
+    "authMode": "로그인 모드",
+    "authModeHelp": "자동 감지는 전화기를 조사하여 HTTP Basic(레거시 펌웨어) 또는 서블릿 로그인 양식(T21P E2 / v8x 이상)을 선택합니다. 감지에 실패할 때만 모드를 강제하십시오.",
+    "authModes": {
+      "auto": "자동 감지",
+      "basic": "HTTP Basic",
+      "form": "로그인 양식"
+    },
+    "credentialsStoredOnConnection": "사용자 이름과 비밀번호는 기본 정보에 유지됩니다(Yealink 기본값 admin/admin). 전화기 설정은 저장된 비밀번호를 절대 복제하지 않습니다.",
+    "tlsSecurity": "전송 보안",
+    "useSsl": "HTTPS 사용",
+    "useSslHelp": "일반 HTTP 대신 HTTPS로 전화기 웹 관리에 연결합니다. 전화기가 443 포트에서 TLS를 제공하면 포트를 443으로 변경하십시오.",
+    "verifyCert": "서버 인증서 확인",
+    "verifyCertHelp": "전화기는 자체 서명 인증서로 출고됩니다. 첫 HTTPS 연결이 고정되며(최초 사용 시 신뢰) 이후 변경은 거부됩니다. 인증서가 교체되는 신뢰할 수 있는 전화기에서만 비활성화하십시오.",
+    "advanced": "원격 제어",
+    "actionUri": "전화기에서 Action URI 활성화됨",
+    "actionUriHelp": "재부팅은 먼저 Action URI(?key=Reboot)를 시도합니다. 전화기에서 Features > Remote Control > Action URI를 활성화하고 이 컴퓨터의 IP를 허용하십시오. 그렇지 않으면 재부팅은 웹 관리 재부팅 양식으로 대체됩니다.",
+    "timeout": "요청 시간 제한(초)",
+    "errors": {
+      "connection": "전화기 웹 관리에 접근할 수 없습니다.",
+      "auth": "전화기가 웹 관리 자격 증명을 거부했습니다.",
+      "unsupported": "이 전화기 모델 또는 펌웨어는 지원되지 않습니다.",
+      "parse": "전화기 상태 페이지를 분석할 수 없습니다.",
+      "notConnected": "전화기 세션이 연결되어 있지 않습니다.",
+      "forbidden": "전화기가 요청을 거부했습니다. 전화기의 Action URI 허용 목록을 확인하십시오."
     }
   },
   "windowsBackup": {

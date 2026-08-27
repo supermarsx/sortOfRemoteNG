@@ -445,6 +445,10 @@
         "label": "Supermicro BMC",
         "description": "BMC-Verwaltung für Supermicro-Server"
       },
+      "voipPhone": {
+        "label": "VoIP-Telefon (Yealink)",
+        "description": "Web-Admin des Tischtelefons: Status, Web-UI, Neustart"
+      },
       "gcp": {
         "label": "Google Cloud",
         "description": "Google Cloud-Projektsitzung"
@@ -2039,6 +2043,63 @@
       "x11": "X11 (Redfish)",
       "x10": "X10 (CGI + IPMI)",
       "x9": "X9 (nur IPMI)"
+    }
+  },
+  "voipPhone": {
+    "title": "VoIP-Telefon",
+    "status": "Telefonstatus",
+    "connecting": "Verbindung zum Telefon wird hergestellt…",
+    "accounts": "SIP-Konten",
+    "account": "Konto",
+    "noAccounts": "Das Telefon meldet keine SIP-Konten.",
+    "registered": "Registriert",
+    "unregistered": "Nicht registriert",
+    "openWebUi": "Web-UI öffnen",
+    "reboot": "Neu starten",
+    "rebootConfirm": "Dieses Telefon neu starten? Laufende Gespräche werden getrennt und das Telefon ist etwa eine Minute lang nicht erreichbar.",
+    "rebootDone": "Neustart-Anforderung über {{method}} angenommen.",
+    "refresh": "Aktualisieren",
+    "generation": "Firmware-Generation",
+    "generations": {
+      "legacy": "Legacy-CGI",
+      "servlet": "Servlet"
+    },
+    "firmware": "Firmware",
+    "hardware": "Hardware",
+    "model": "Modell",
+    "mac": "MAC-Adresse",
+    "ip": "IP-Adresse",
+    "uptime": "Betriebszeit",
+    "vendor": "Telefonhersteller",
+    "vendorHelp": "Unterstützt: Web-Admin von Yealink SIP-T20P / T21P (inkl. T21P E2). Die Firmware-Generation (Legacy-CGI oder Servlet) wird automatisch erkannt.",
+    "vendors": {
+      "yealink": "Yealink"
+    },
+    "authentication": "Web-Admin-Anmeldung",
+    "authMode": "Anmeldemodus",
+    "authModeHelp": "Die automatische Erkennung fragt das Telefon ab und wählt HTTP Basic (ältere Firmware) oder das Servlet-Anmeldeformular (T21P E2 / v8x+). Erzwingen Sie einen Modus nur, wenn die Erkennung fehlschlägt.",
+    "authModes": {
+      "auto": "Automatisch erkennen",
+      "basic": "HTTP Basic",
+      "form": "Anmeldeformular"
+    },
+    "credentialsStoredOnConnection": "Benutzername und Passwort bleiben unter „Grundlagen“ (Yealink-Standard admin/admin). Die Telefoneinstellungen duplizieren das gespeicherte Passwort nie.",
+    "tlsSecurity": "Transportsicherheit",
+    "useSsl": "HTTPS verwenden",
+    "useSslHelp": "Verbindet sich über HTTPS statt über einfaches HTTP mit dem Web-Admin des Telefons. Ändern Sie den Port auf 443, wenn das Telefon dort TLS anbietet.",
+    "verifyCert": "Serverzertifikat prüfen",
+    "verifyCertHelp": "Telefone werden mit selbstsignierten Zertifikaten ausgeliefert: Die erste HTTPS-Verbindung wird gepinnt (Trust on First Use), spätere Änderungen werden abgelehnt. Nur für ein vertrauenswürdiges Telefon deaktivieren, dessen Zertifikat rotiert.",
+    "advanced": "Fernsteuerung",
+    "actionUri": "Action-URI auf dem Telefon aktiviert",
+    "actionUriHelp": "Der Neustart versucht zuerst die Action-URI (?key=Reboot). Aktivieren Sie auf dem Telefon Features > Remote Control > Action URI und erlauben Sie die IP dieses Computers; andernfalls weicht der Neustart auf das Neustart-Formular des Web-Admins aus.",
+    "timeout": "Anfrage-Timeout (Sekunden)",
+    "errors": {
+      "connection": "Der Web-Admin des Telefons ist nicht erreichbar.",
+      "auth": "Das Telefon hat die Web-Admin-Zugangsdaten abgelehnt.",
+      "unsupported": "Dieses Telefonmodell oder diese Firmware wird nicht unterstützt.",
+      "parse": "Die Statusseite des Telefons konnte nicht ausgewertet werden.",
+      "notConnected": "Die Telefonsitzung ist nicht verbunden.",
+      "forbidden": "Das Telefon hat die Anfrage abgelehnt. Prüfen Sie die Action-URI-Freigabeliste auf dem Telefon."
     }
   },
   "windowsBackup": {

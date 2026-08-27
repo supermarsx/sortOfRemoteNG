@@ -445,6 +445,10 @@
         "label": "Supermicro BMC",
         "description": "Gestión BMC de servidores Supermicro"
       },
+      "voipPhone": {
+        "label": "Teléfono VoIP (Yealink)",
+        "description": "Administración web del teléfono de escritorio: estado, interfaz web, reinicio"
+      },
       "gcp": {
         "label": "Google Cloud",
         "description": "Sesión de proyecto de Google Cloud"
@@ -2039,6 +2043,63 @@
       "x11": "X11 (Redfish)",
       "x10": "X10 (CGI + IPMI)",
       "x9": "X9 (solo IPMI)"
+    }
+  },
+  "voipPhone": {
+    "title": "Teléfono VoIP",
+    "status": "Estado del teléfono",
+    "connecting": "Conectando con el teléfono…",
+    "accounts": "Cuentas SIP",
+    "account": "Cuenta",
+    "noAccounts": "El teléfono no informa de ninguna cuenta SIP.",
+    "registered": "Registrada",
+    "unregistered": "No registrada",
+    "openWebUi": "Abrir interfaz web",
+    "reboot": "Reiniciar",
+    "rebootConfirm": "¿Reiniciar este teléfono? Las llamadas activas se cortarán y el teléfono no estará disponible durante aproximadamente un minuto.",
+    "rebootDone": "Solicitud de reinicio aceptada mediante {{method}}.",
+    "refresh": "Actualizar",
+    "generation": "Generación de firmware",
+    "generations": {
+      "legacy": "CGI heredado",
+      "servlet": "Servlet"
+    },
+    "firmware": "Firmware",
+    "hardware": "Hardware",
+    "model": "Modelo",
+    "mac": "Dirección MAC",
+    "ip": "Dirección IP",
+    "uptime": "Tiempo de actividad",
+    "vendor": "Fabricante del teléfono",
+    "vendorHelp": "Compatible: administración web de Yealink SIP-T20P / T21P (incl. T21P E2). La generación de firmware (CGI heredado o servlet) se detecta automáticamente.",
+    "vendors": {
+      "yealink": "Yealink"
+    },
+    "authentication": "Inicio de sesión de la administración web",
+    "authMode": "Modo de inicio de sesión",
+    "authModeHelp": "La detección automática sondea el teléfono y elige HTTP Basic (firmware heredado) o el formulario de inicio de sesión del servlet (T21P E2 / v8x+). Fuerce un modo solo si la detección falla.",
+    "authModes": {
+      "auto": "Detección automática",
+      "basic": "HTTP Basic",
+      "form": "Formulario de inicio de sesión"
+    },
+    "credentialsStoredOnConnection": "El usuario y la contraseña permanecen en Básicos (valor predeterminado de Yealink admin/admin). La configuración del teléfono nunca duplica la contraseña guardada.",
+    "tlsSecurity": "Seguridad del transporte",
+    "useSsl": "Usar HTTPS",
+    "useSslHelp": "Conecta con la administración web del teléfono mediante HTTPS en lugar de HTTP plano. Cambie el puerto a 443 si el teléfono sirve TLS ahí.",
+    "verifyCert": "Verificar el certificado del servidor",
+    "verifyCertHelp": "Los teléfonos vienen con certificados autofirmados: la primera conexión HTTPS se fija (confianza en el primer uso) y los cambios posteriores se rechazan. Desactívelo solo para un teléfono de confianza cuyo certificado rote.",
+    "advanced": "Control remoto",
+    "actionUri": "Action URI habilitada en el teléfono",
+    "actionUriHelp": "El reinicio intenta primero la Action URI (?key=Reboot). Habilite Features > Remote Control > Action URI en el teléfono y permita la IP de este equipo; de lo contrario, el reinicio recurre al formulario de reinicio de la administración web.",
+    "timeout": "Tiempo de espera de la solicitud (segundos)",
+    "errors": {
+      "connection": "No se pudo acceder a la administración web del teléfono.",
+      "auth": "El teléfono rechazó las credenciales de administración web.",
+      "unsupported": "Este modelo de teléfono o firmware no es compatible.",
+      "parse": "No se pudo analizar la página de estado del teléfono.",
+      "notConnected": "La sesión del teléfono no está conectada.",
+      "forbidden": "El teléfono rechazó la solicitud. Compruebe la lista de IP permitidas de la Action URI en el teléfono."
     }
   },
   "windowsBackup": {

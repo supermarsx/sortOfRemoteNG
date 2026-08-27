@@ -445,6 +445,10 @@
         "label": "Supermicro BMC",
         "description": "Supermicro server BMC management"
       },
+      "voipPhone": {
+        "label": "VoIP Phone (Yealink)",
+        "description": "Desk-phone web admin: status, web UI, reboot"
+      },
       "gcp": {
         "label": "Google Cloud",
         "description": "Google Cloud project session"
@@ -2039,6 +2043,63 @@
       "x11": "X11 (Redfish)",
       "x10": "X10 (CGI + IPMI)",
       "x9": "X9 (IPMI Only)"
+    }
+  },
+  "voipPhone": {
+    "title": "VoIP Phone",
+    "status": "Phone status",
+    "connecting": "Connecting to the phone…",
+    "accounts": "SIP accounts",
+    "account": "Account",
+    "noAccounts": "No SIP accounts reported by the phone.",
+    "registered": "Registered",
+    "unregistered": "Not registered",
+    "openWebUi": "Open web UI",
+    "reboot": "Reboot",
+    "rebootConfirm": "Reboot this phone? Active calls will be dropped and the phone will be unavailable for about a minute.",
+    "rebootDone": "Reboot request accepted via {{method}}.",
+    "refresh": "Refresh",
+    "generation": "Firmware generation",
+    "generations": {
+      "legacy": "Legacy CGI",
+      "servlet": "Servlet"
+    },
+    "firmware": "Firmware",
+    "hardware": "Hardware",
+    "model": "Model",
+    "mac": "MAC address",
+    "ip": "IP address",
+    "uptime": "Uptime",
+    "vendor": "Phone vendor",
+    "vendorHelp": "Supported: Yealink SIP-T20P / T21P (incl. T21P E2) web admin. The firmware generation (legacy CGI or servlet) is detected automatically.",
+    "vendors": {
+      "yealink": "Yealink"
+    },
+    "authentication": "Web admin login",
+    "authMode": "Login mode",
+    "authModeHelp": "Auto-detect probes the phone and picks HTTP Basic (legacy firmware) or the servlet login form (T21P E2 / v8x+). Force a mode only if detection fails.",
+    "authModes": {
+      "auto": "Auto-detect",
+      "basic": "HTTP Basic",
+      "form": "Login form"
+    },
+    "credentialsStoredOnConnection": "Username and password remain in Basics (Yealink default admin/admin). Phone settings never duplicate the saved password.",
+    "tlsSecurity": "Transport security",
+    "useSsl": "Use HTTPS",
+    "useSslHelp": "Connect to the phone's web admin over HTTPS instead of plain HTTP. Change the port to 443 if the phone serves TLS there.",
+    "verifyCert": "Verify server certificate",
+    "verifyCertHelp": "Phones ship self-signed certificates: the first HTTPS connection is pinned (trust on first use) and later changes are rejected. Disable only for a trusted phone whose certificate rotates.",
+    "advanced": "Remote control",
+    "actionUri": "Action URI enabled on the phone",
+    "actionUriHelp": "Reboot tries the Action URI (?key=Reboot) first. Enable Features > Remote Control > Action URI on the phone and allow this computer's IP; otherwise reboot falls back to the web admin reboot form.",
+    "timeout": "Request timeout (seconds)",
+    "errors": {
+      "connection": "Could not reach the phone's web admin.",
+      "auth": "The phone rejected the web admin credentials.",
+      "unsupported": "This phone model or firmware is not supported.",
+      "parse": "The phone's status page could not be parsed.",
+      "notConnected": "The phone session is not connected.",
+      "forbidden": "The phone refused the request. Check the Action URI allow-list on the phone."
     }
   },
   "windowsBackup": {

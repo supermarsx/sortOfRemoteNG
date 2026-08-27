@@ -445,6 +445,10 @@
         "label": "Supermicro BMC",
         "description": "Supermicro 53rv3r BMC m4n463m3n7"
       },
+      "voipPhone": {
+        "label": "VoIP Ph0n3 (Y3411nk)",
+        "description": "Desk-phone w38 4dm1n: 5747u5, w38 UI, r38007"
+      },
       "gcp": {
         "label": "Google C10ud",
         "description": "Google C10ud pr0j3c7 535510n"
@@ -2039,6 +2043,63 @@
       "x11": "X11 (Redfish)",
       "x10": "X10 (C61 + IPMI)",
       "x9": "X9 (IPMI 0n1y)"
+    }
+  },
+  "voipPhone": {
+    "title": "VoIP Ph0n3",
+    "status": "Ph0n3 5747u5",
+    "connecting": "C0nn3c71n6 70 7h3 ph0n3…",
+    "accounts": "51P 4cc0un75",
+    "account": "4cc0un7",
+    "noAccounts": "N0 51P 4cc0un75 r3p0r73d 8y 7h3 ph0n3.",
+    "registered": "R361573r3d",
+    "unregistered": "N07 r361573r3d",
+    "openWebUi": "0p3n w38 UI",
+    "reboot": "R38007",
+    "rebootConfirm": "R38007 7h15 ph0n3? 4c71v3 c4115 w111 83 dr0pp3d 4nd 7h3 ph0n3 w111 83 un4v4114813 f0r 480u7 4 m1nu73.",
+    "rebootDone": "R38007 r3qu357 4cc3p73d v14 {{method}}.",
+    "refresh": "R3fr35h",
+    "generation": "F1rmw4r3 63n3r4710n",
+    "generations": {
+      "legacy": "1364cy C61",
+      "servlet": "53rv137"
+    },
+    "firmware": "F1rmw4r3",
+    "hardware": "H4rdw4r3",
+    "model": "M0d31",
+    "mac": "MAC 4ddr355",
+    "ip": "IP 4ddr355",
+    "uptime": "Up71m3",
+    "vendor": "Ph0n3 v3nd0r",
+    "vendorHelp": "5upp0r73d: Y3411nk SIP-T20P / T21P (1nc1. T21P 32) w38 4dm1n. 7h3 f1rmw4r3 63n3r4710n (1364cy C61 0r 53rv137) 15 d373c73d 4u70m471c411y.",
+    "vendors": {
+      "yealink": "Y3411nk"
+    },
+    "authentication": "W38 4dm1n 1061n",
+    "authMode": "1061n m0d3",
+    "authModeHelp": "Auto-detect pr0835 7h3 ph0n3 4nd p1ck5 HTTP Basic (1364cy f1rmw4r3) 0r 7h3 53rv137 1061n f0rm (T21P 32 / v8x+). F0rc3 4 m0d3 0n1y 1f d373c710n f4115.",
+    "authModes": {
+      "auto": "Auto-detect",
+      "basic": "HTTP Basic",
+      "form": "1061n f0rm"
+    },
+    "credentialsStoredOnConnection": "U53rn4m3 4nd p455w0rd r3m41n 1n 8451c5 (Y3411nk d3f4u17 4dm1n/4dm1n). Ph0n3 53771n65 n3v3r dup11c473 7h3 54v3d p455w0rd.",
+    "tlsSecurity": "7r4n5p0r7 53cur17y",
+    "useSsl": "U53 HTTPS",
+    "useSslHelp": "C0nn3c7 70 7h3 ph0n3'5 w38 4dm1n 0v3r HTTPS 1n5734d 0f p141n HTTP. Ch4n63 7h3 p0r7 70 443 1f 7h3 ph0n3 53rv35 TLS 7h3r3.",
+    "verifyCert": "V3r1fy 53rv3r c3r71f1c473",
+    "verifyCertHelp": "Ph0n35 5h1p self-signed c3r71f1c4735: 7h3 f1r57 HTTPS c0nn3c710n 15 p1nn3d (7ru57 0n f1r57 u53) 4nd 1473r ch4n635 4r3 r3j3c73d. D154813 0n1y f0r 4 7ru573d ph0n3 wh053 c3r71f1c473 r074735.",
+    "advanced": "R3m073 c0n7r01",
+    "actionUri": "4c710n URI 3n4813d 0n 7h3 ph0n3",
+    "actionUriHelp": "R38007 7r135 7h3 4c710n URI (?key=Reboot) f1r57. 3n4813 F347ur35 > R3m073 C0n7r01 > 4c710n URI 0n 7h3 ph0n3 4nd 4110w 7h15 c0mpu73r'5 IP; 07h3rw153 r38007 f4115 84ck 70 7h3 w38 4dm1n r38007 f0rm.",
+    "timeout": "R3qu357 71m30u7 (53c0nd5)",
+    "errors": {
+      "connection": "C0u1d n07 r34ch 7h3 ph0n3'5 w38 4dm1n.",
+      "auth": "7h3 ph0n3 r3j3c73d 7h3 w38 4dm1n cr3d3n71415.",
+      "unsupported": "7h15 ph0n3 m0d31 0r f1rmw4r3 15 n07 5upp0r73d.",
+      "parse": "7h3 ph0n3'5 5747u5 p463 c0u1d n07 83 p4r53d.",
+      "notConnected": "7h3 ph0n3 535510n 15 n07 c0nn3c73d.",
+      "forbidden": "7h3 ph0n3 r3fu53d 7h3 r3qu357. Ch3ck 7h3 4c710n URI allow-list 0n 7h3 ph0n3."
     }
   },
   "windowsBackup": {
