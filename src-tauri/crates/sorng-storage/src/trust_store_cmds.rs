@@ -240,3 +240,71 @@ pub async fn trust_get_summary(
     svc.reload_from_disk()?;
     Ok(svc.get_trust_summary().await)
 }
+
+// ---------------------------------------------------------------------------
+// t62 — per-database trust runtime commands
+// ---------------------------------------------------------------------------
+
+/// Make `database_id` the active trust database (or `None` to deactivate on
+/// lock/close). Derives the `TrustStore` sub-key when the master DEK is
+/// unlocked and seeds `<id>.trust.json` from the legacy sidecars on first
+/// activation. `connection_ids` scopes which per-connection legacy records
+/// migrate into this database.
+#[tauri::command]
+pub async fn trust_set_active_database(
+    database_id: Option<String>,
+    connection_ids: Option<Vec<String>>,
+) -> Result<ActiveTrustDatabase, String> {
+    let rt = runtime()?;
+    rt.activate_database(database_id, &connection_ids.unwrap_or_default())
+        .await
+}
+
+/// Snapshot of the active trust database (`databaseId: null` when none).
+#[tauri::command]
+pub async fn trust_get_active_database() -> Result<ActiveTrustDatabase, String> {
+    runtime()?.active_info()
+}
+
+/// Export a database's trust store (`database_id` omitted = active).
+#[tauri::command]
+pub async fn trust_export_database(
+    database_id: Option<String>,
+) -> Result<TrustExportDocument, String> {
+    runtime()?.export(database_id.as_deref())
+}
+
+/// Import a trust export document into a database (`database_id` omitted =
+/// active). `mode` is `"merge"` (default) or `"replace"`.
+#[tauri::command]
+pub async fn trust_import_database(
+    database_id: Option<String>,
+    document: TrustExportDocument,
+    mode: Option<TrustImportMode>,
+) -> Result<TrustImportOutcome, String> {
+    runtime()?.import(
+        database_id.as_deref(),
+        document,
+        mode.unwrap_or(TrustImportMode::Merge),
+    )
+}
+
+/// Remove `databases/<id>.trust.json` (+ `.bak`/`.tmp`). Also invoked by
+/// `delete_database_data`.
+#[tauri::command]
+pub async fn trust_delete_database_store(database_id: String) -> Result<(), String> {
+    runtime()?.delete_store(&database_id)
+}
+
+/// Report the legacy `trust_store.json` / `rdp-cert-trust.json` sidecars.
+#[tauri::command]
+pub async fn trust_legacy_status() -> Result<TrustLegacyStatus, String> {
+    runtime()?.legacy_status()
+}
+
+/// Delete the legacy sidecars. Returns the number of files removed. The UI
+/// gates this on `TrustLegacyStatus::all_databases_opened`.
+#[tauri::command]
+pub async fn trust_delete_legacy_stores() -> Result<u32, String> {
+    runtime()?.delete_legacy_stores()
+}

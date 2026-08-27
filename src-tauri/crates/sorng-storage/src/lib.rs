@@ -6,6 +6,7 @@
 
 pub mod backup;
 pub mod durable;
+pub mod envelope_io;
 pub mod payload_hash;
 pub mod sdbf;
 pub mod storage;

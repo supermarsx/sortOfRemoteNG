@@ -367,3 +367,39 @@ fn sync_facade_round_trips_through_disk() {
         "got {r3:?}"
     );
 }
+
+// ── Shared per-database runtime (t62) ───────────────────────────────────────
+
+#[test]
+fn shared_context_pins_into_active_database_file_and_fails_closed_without_one() {
+    use sorng_storage::trust_store::test_support::install_runtime_for_tests;
+    let dir = tempfile::tempdir().unwrap();
+    let guard = install_runtime_for_tests(dir.path().join("databases"), None);
+
+    // No active database: verify fails and the policy reads as Strict.
+    let ctx = TofuTlsContext::shared("h", 443, None);
+    assert!(ctx
+        .store
+        .verify("h:443", TLS_RECORD_TYPE, tls_identity("aa"))
+        .is_err());
+    assert_eq!(ctx.store.global_policy(), TrustPolicy::Strict);
+
+    guard.runtime.set_active(Some("db1".into()), None).unwrap();
+    let ctx = TofuTlsContext::shared("h", 443, Some(TrustPolicy::AlwaysTrust));
+    assert_eq!(ctx.policy_override, Some(TrustPolicy::AlwaysTrust));
+    assert_eq!(ctx.store.global_policy(), TrustPolicy::Tofu);
+    ctx.store
+        .trust(
+            "h:443".into(),
+            TLS_RECORD_TYPE.into(),
+            tls_identity("aa"),
+            false,
+        )
+        .unwrap();
+    assert!(dir.path().join("databases").join("db1.trust.json").exists());
+    assert!(matches!(
+        ctx.store
+            .verify("h:443", TLS_RECORD_TYPE, tls_identity("aa")),
+        Ok(TrustVerifyResult::Trusted)
+    ));
+}

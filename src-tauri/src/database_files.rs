@@ -628,6 +628,10 @@ pub async fn delete_database_data(app: AppHandle, database_id: String) -> Result
         };
         let _ = std::fs::remove_file(&path);
     }
+    // t62: the per-database trust store lives beside the payload.
+    if let Ok(rt) = sorng_storage::trust_store::runtime() {
+        rt.delete_store(&database_id)?;
+    }
     Ok(())
 }
 

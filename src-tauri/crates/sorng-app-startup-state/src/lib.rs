@@ -330,17 +330,14 @@ pub fn register_infrastructure_prefix(
     }
     app.manage(secure_storage);
 
-    let trust_store_path = app_dir.join("trust_store.json");
-    app.manage(TrustStoreService::new(
-        trust_store_path.to_string_lossy().to_string(),
-    ));
-    if let Some(path) = trust_store_path.to_str() {
-        std::env::set_var("SORNG_TRUST_STORE_PATH", path);
-    }
-    #[cfg(feature = "platform")]
-    supermicro::trust::set_trust_store_path(trust_store_path);
-    #[cfg(feature = "cloud")]
-    hetzner::client::init_trust_store_path(app_dir.clone());
+    // t62: trust decisions live per database in `databases/<id>.trust.json`,
+    // encrypted like the database. The frontend activates a database via
+    // `trust_set_active_database`; until then every verifier fails closed.
+    let trust_enc_state = app
+        .try_state::<sorng_encryption::EncryptionState>()
+        .map(|handle| Arc::new(handle.inner().clone()));
+    trust_store::install_runtime(app_dir.join("databases"), trust_enc_state);
+    app.manage(TrustStoreService::shared());
 
     let emitter = event_emitter_factory(app.handle());
     let ssh_service = ssh::SshService::new_with_emitter(emitter.clone());

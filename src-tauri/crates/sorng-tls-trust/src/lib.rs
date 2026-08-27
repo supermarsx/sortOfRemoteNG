@@ -322,6 +322,23 @@ pub struct TofuTlsContext {
 }
 
 impl TofuTlsContext {
+    /// Context over the process-global per-database Trust Center
+    /// ([`SyncTrustStore::shared`]). This is what management clients use
+    /// since t62 — no store path plumbing; when no database is active the
+    /// handshake fails closed.
+    pub fn shared(
+        host: impl Into<String>,
+        port: u16,
+        policy_override: Option<TrustPolicy>,
+    ) -> Self {
+        Self {
+            store: Arc::new(SyncTrustStore::shared()),
+            host: host.into(),
+            port,
+            policy_override,
+        }
+    }
+
     /// The `host:port` string used as the store host key.
     fn host_key(&self) -> String {
         format!("{}:{}", self.host, self.port)

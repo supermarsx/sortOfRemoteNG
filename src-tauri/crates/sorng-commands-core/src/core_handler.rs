@@ -114,6 +114,13 @@ pub fn is_command(command: &str) -> bool {
             | "trust_get_identity_history"
             | "trust_get_verification_stats"
             | "trust_get_summary"
+            | "trust_set_active_database"
+            | "trust_get_active_database"
+            | "trust_export_database"
+            | "trust_import_database"
+            | "trust_delete_database_store"
+            | "trust_legacy_status"
+            | "trust_delete_legacy_stores"
             | "updater_get_settings"
             | "updater_save_settings"
             | "updater_get_status"
@@ -1435,6 +1442,13 @@ define_command_group!(
         trust_store_commands::trust_get_identity_history,
         trust_store_commands::trust_get_verification_stats,
         trust_store_commands::trust_get_summary,
+        trust_store_commands::trust_set_active_database,
+        trust_store_commands::trust_get_active_database,
+        trust_store_commands::trust_export_database,
+        trust_store_commands::trust_import_database,
+        trust_store_commands::trust_delete_database_store,
+        trust_store_commands::trust_legacy_status,
+        trust_store_commands::trust_delete_legacy_stores,
         updater_commands::updater_get_settings,
         updater_commands::updater_save_settings,
         updater_commands::updater_get_status,
