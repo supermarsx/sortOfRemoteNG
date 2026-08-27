@@ -16,7 +16,7 @@ arc-swap = "1.7"
 dashmap = "6"
 sys-locale = "0.3"
 chrono = { workspace = true }
-thiserror = "2"
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
