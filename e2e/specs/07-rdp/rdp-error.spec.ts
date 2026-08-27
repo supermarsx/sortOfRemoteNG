@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
 import { startContainers, stopContainers, RDP_PORT, waitForContainer } from '../../helpers/docker';
 
@@ -28,8 +29,7 @@ async function createRDPConnection(
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue(host);
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('RDP');
+  await selectCustomOption(S.editorProtocol, 'RDP');
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();

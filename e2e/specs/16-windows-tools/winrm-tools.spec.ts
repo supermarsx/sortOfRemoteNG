@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 describe('WinRM Tools', () => {
@@ -16,8 +17,8 @@ describe('WinRM Tools', () => {
     await nameInput.setValue('Windows Server');
     const hostInput = await $(S.editorHostname);
     await hostInput.setValue('localhost');
-    const protoSelect = await $(S.editorProtocol);
-    await protoSelect.selectByVisibleText('WinRM');
+    // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
+    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -41,8 +42,8 @@ describe('WinRM Tools', () => {
     await nameInput.setValue('EventViewer Host');
     const hostInput = await $(S.editorHostname);
     await hostInput.setValue('localhost');
-    const protoSelect = await $(S.editorProtocol);
-    await protoSelect.selectByVisibleText('WinRM');
+    // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
+    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -72,8 +73,8 @@ describe('WinRM Tools', () => {
     await nameInput.setValue('Services Host');
     const hostInput = await $(S.editorHostname);
     await hostInput.setValue('localhost');
-    const protoSelect = await $(S.editorProtocol);
-    await protoSelect.selectByVisibleText('WinRM');
+    // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
+    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -103,8 +104,8 @@ describe('WinRM Tools', () => {
     await nameInput.setValue('Bad WinRM');
     const hostInput = await $(S.editorHostname);
     await hostInput.setValue('192.0.2.1');
-    const protoSelect = await $(S.editorProtocol);
-    await protoSelect.selectByVisibleText('WinRM');
+    // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
+    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);

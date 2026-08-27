@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
 import { startContainers, stopContainers, SSH_PORT, waitForContainer } from '../../helpers/docker';
 
@@ -30,8 +31,7 @@ async function createAndConnectSSH(): Promise<void> {
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue('localhost');
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('SSH');
+  await selectCustomOption(S.editorProtocol, 'SSH');
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();

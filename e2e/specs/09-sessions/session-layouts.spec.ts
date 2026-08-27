@@ -1,4 +1,5 @@
 import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
 import {
   resetAppState,
   createCollection,
@@ -46,8 +47,7 @@ async function addAndOpenConnection(name: string): Promise<void> {
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue("localhost");
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText("SSH");
+  await selectCustomOption(S.editorProtocol, "SSH");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();

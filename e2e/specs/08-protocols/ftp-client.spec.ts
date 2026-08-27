@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
 import { startContainers, stopContainers, FTP_PORT, waitForContainer } from '../../helpers/docker';
 
@@ -30,8 +31,8 @@ async function createFTPConnection(name: string): Promise<void> {
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue('localhost');
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('FTP');
+  // The option's label is 'FTP / FTPS'; 'FTP' is kept as a fallback.
+  await selectCustomOption(S.editorProtocol, ['FTP / FTPS', 'FTP']);
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();

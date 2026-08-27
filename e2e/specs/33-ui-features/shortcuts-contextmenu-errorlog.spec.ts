@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection, openSettings, closeSettings } from '../../helpers/app';
 
 describe('Shortcut Manager', () => {
@@ -91,8 +92,7 @@ describe('Context Menu — Connection', () => {
     const hostnameInput = await $(S.editorHostname);
     await hostnameInput.setValue('10.0.0.1');
 
-    const protocolSelect = await $(S.editorProtocol);
-    await protocolSelect.selectByVisibleText('SSH');
+    await selectCustomOption(S.editorProtocol, 'SSH');
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();

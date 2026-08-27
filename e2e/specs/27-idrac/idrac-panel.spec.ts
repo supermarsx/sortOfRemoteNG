@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 async function createIdracConnection(): Promise<void> {
@@ -14,8 +15,8 @@ async function createIdracConnection(): Promise<void> {
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue('10.0.0.50');
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('iDRAC');
+  // The option's label is 'Dell iDRAC'; 'iDRAC' is kept as a fallback.
+  await selectCustomOption(S.editorProtocol, ['Dell iDRAC', 'iDRAC']);
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();

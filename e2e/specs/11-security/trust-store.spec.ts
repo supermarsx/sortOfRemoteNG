@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
 import { startContainers, stopContainers, waitForContainer, SSH_PORT } from '../../helpers/docker';
 
@@ -31,8 +32,7 @@ describe('Trust Store', () => {
     await nameInput.setValue('Unknown Host');
     const hostnameInput = await $(S.editorHostname);
     await hostnameInput.setValue('localhost');
-    const protocolSelect = await $(S.editorProtocol);
-    await protocolSelect.selectByVisibleText('SSH');
+    await selectCustomOption(S.editorProtocol, 'SSH');
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -62,8 +62,7 @@ describe('Trust Store', () => {
     await nameInput.setValue('Trust Host');
     const hostnameInput = await $(S.editorHostname);
     await hostnameInput.setValue('localhost');
-    const protocolSelect = await $(S.editorProtocol);
-    await protocolSelect.selectByVisibleText('SSH');
+    await selectCustomOption(S.editorProtocol, 'SSH');
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);

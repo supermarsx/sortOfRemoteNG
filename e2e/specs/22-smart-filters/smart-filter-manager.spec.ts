@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 async function addConnection(
@@ -19,8 +20,7 @@ async function addConnection(
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue(hostname);
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText(protocol);
+  await selectCustomOption(S.editorProtocol, protocol);
 
   if (port) {
     const portInput = await $(S.editorPort);
@@ -66,11 +66,9 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('protocol');
+    await selectCustomOption(S.smartFilterField, 'protocol');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('equals');
+    await selectCustomOption(S.smartFilterOperator, 'equals');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('SSH');
@@ -97,11 +95,9 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('hostname');
+    await selectCustomOption(S.smartFilterField, 'hostname');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('contains');
+    await selectCustomOption(S.smartFilterOperator, 'contains');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('10.0.0');
@@ -125,11 +121,9 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('protocol');
+    await selectCustomOption(S.smartFilterField, 'protocol');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('equals');
+    await selectCustomOption(S.smartFilterOperator, 'equals');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('SSH');
@@ -138,11 +132,17 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fields = await $$(`${S.smartFilterField}`);
-    await fields[1].selectByVisibleText('name');
-
-    const operators = await $$(`${S.smartFilterOperator}`);
-    await operators[1].selectByVisibleText('contains');
+    // Second row: one field and one operator Select per condition row, rendered
+    // in `conditions` order, so the 2nd in document order is this condition.
+    // XPath indices are 1-based, hence [2] where the old code used [1].
+    await selectCustomOption(
+      `(//*[@data-testid="smart-filter-field"])[2]`,
+      'name',
+    );
+    await selectCustomOption(
+      `(//*[@data-testid="smart-filter-operator"])[2]`,
+      'contains',
+    );
 
     const values = await $$(`${S.smartFilterValue}`);
     await values[1].setValue('Prod');
@@ -180,11 +180,9 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('protocol');
+    await selectCustomOption(S.smartFilterField, 'protocol');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('equals');
+    await selectCustomOption(S.smartFilterOperator, 'equals');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('SSH');
@@ -212,11 +210,9 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('protocol');
+    await selectCustomOption(S.smartFilterField, 'protocol');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('equals');
+    await selectCustomOption(S.smartFilterOperator, 'equals');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('SSH');
@@ -236,11 +232,9 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('name');
+    await selectCustomOption(S.smartFilterField, 'name');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('regex_match');
+    await selectCustomOption(S.smartFilterOperator, 'regex_match');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('SSH.*');

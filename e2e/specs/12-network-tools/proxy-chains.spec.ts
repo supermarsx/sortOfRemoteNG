@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 describe('Proxy Chains', () => {
@@ -92,8 +93,7 @@ describe('Proxy Chains', () => {
     await connName.setValue('Proxied Server');
     const hostname = await $(S.editorHostname);
     await hostname.setValue('10.0.0.1');
-    const protocol = await $(S.editorProtocol);
-    await protocol.selectByVisibleText('SSH');
+    await selectCustomOption(S.editorProtocol, 'SSH');
 
     const proxySelect = await $('[data-testid="editor-proxy-select"]');
     await proxySelect.click();

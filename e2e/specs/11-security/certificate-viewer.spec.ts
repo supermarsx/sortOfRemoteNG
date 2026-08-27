@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 describe('Certificate Viewer', () => {
@@ -17,8 +18,7 @@ describe('Certificate Viewer', () => {
     await nameInput.setValue('HTTPS Site');
     const hostnameInput = await $(S.editorHostname);
     await hostnameInput.setValue('example.com');
-    const protocolSelect = await $(S.editorProtocol);
-    await protocolSelect.selectByVisibleText('HTTPS');
+    await selectCustomOption(S.editorProtocol, 'HTTPS');
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -44,8 +44,7 @@ describe('Certificate Viewer', () => {
     await nameInput.setValue('Cert Detail Host');
     const hostnameInput = await $(S.editorHostname);
     await hostnameInput.setValue('example.com');
-    const protocolSelect = await $(S.editorProtocol);
-    await protocolSelect.selectByVisibleText('HTTPS');
+    await selectCustomOption(S.editorProtocol, 'HTTPS');
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);

@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 async function createSynologyConnection(): Promise<void> {
@@ -14,8 +15,7 @@ async function createSynologyConnection(): Promise<void> {
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue('192.168.1.100');
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('Synology');
+  await selectCustomOption(S.editorProtocol, 'Synology');
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();

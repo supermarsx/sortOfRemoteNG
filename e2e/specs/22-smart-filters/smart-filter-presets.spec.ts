@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 describe('Smart Filter Presets', () => {
@@ -18,11 +19,9 @@ describe('Smart Filter Presets', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('protocol');
+    await selectCustomOption(S.smartFilterField, 'protocol');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('equals');
+    await selectCustomOption(S.smartFilterOperator, 'equals');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('SSH');
@@ -59,11 +58,9 @@ describe('Smart Filter Presets', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    const fieldSelect = await $(S.smartFilterField);
-    await fieldSelect.selectByVisibleText('protocol');
+    await selectCustomOption(S.smartFilterField, 'protocol');
 
-    const operatorSelect = await $(S.smartFilterOperator);
-    await operatorSelect.selectByVisibleText('equals');
+    await selectCustomOption(S.smartFilterOperator, 'equals');
 
     const valueInput = await $(S.smartFilterValue);
     await valueInput.setValue('RDP');

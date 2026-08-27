@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
 import { startContainers, stopContainers, VNC_PORT, waitForContainer } from '../../helpers/docker';
 
@@ -26,8 +27,7 @@ async function createVNCConnection(name: string): Promise<void> {
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue('localhost');
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('VNC');
+  await selectCustomOption(S.editorProtocol, 'VNC');
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();

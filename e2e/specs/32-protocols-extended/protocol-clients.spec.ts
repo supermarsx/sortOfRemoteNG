@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 async function addConnection(
@@ -18,8 +19,7 @@ async function addConnection(
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue(hostname);
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText(protocol);
+  await selectCustomOption(S.editorProtocol, protocol);
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();

@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
 import { startContainers, stopContainers, HTTP_PORT, waitForContainer } from '../../helpers/docker';
 
@@ -26,8 +27,7 @@ async function createHTTPConnection(name: string, useAuth: boolean = false): Pro
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue('localhost');
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('HTTP');
+  await selectCustomOption(S.editorProtocol, 'HTTP');
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();

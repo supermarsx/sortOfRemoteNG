@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 const TEST_PASSWORD = 'Str0ng!P@ssw0rd#2026';
@@ -28,7 +29,7 @@ describe('Collection Encryption', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
     await (await $(S.editorName)).setValue('Secret Server');
     await (await $(S.editorHostname)).setValue('192.168.99.99');
-    await (await $(S.editorProtocol)).selectByVisibleText('SSH');
+    await selectCustomOption(S.editorProtocol, 'SSH');
     await (await $(S.editorSave)).click();
     await browser.pause(1000);
 
@@ -114,7 +115,7 @@ describe('Collection Encryption', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
     await (await $(S.editorName)).setValue('Verified Host');
     await (await $(S.editorHostname)).setValue('10.10.10.10');
-    await (await $(S.editorProtocol)).selectByVisibleText('SSH');
+    await selectCustomOption(S.editorProtocol, 'SSH');
     await (await $(S.editorSave)).click();
     await browser.pause(1000);
 
@@ -155,7 +156,7 @@ describe('Collection Encryption', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
     await (await $(S.editorName)).setValue('Rekey Test');
     await (await $(S.editorHostname)).setValue('172.16.0.1');
-    await (await $(S.editorProtocol)).selectByVisibleText('SSH');
+    await selectCustomOption(S.editorProtocol, 'SSH');
     await (await $(S.editorSave)).click();
     await browser.pause(1000);
 
