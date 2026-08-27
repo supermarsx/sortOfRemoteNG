@@ -142,6 +142,7 @@ members = [
   "crates/sorng-caddy",
   "crates/sorng-consul",
   "crates/sorng-nginx-proxy-mgr",
+  "crates/sorng-portainer",
   "crates/sorng-postfix",
   "crates/sorng-gpg-agent",
   "crates/sorng-yubikey",
