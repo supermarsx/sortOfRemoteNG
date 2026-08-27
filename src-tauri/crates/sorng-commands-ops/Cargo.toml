@@ -28,6 +28,7 @@ sorng-mysql-admin = { path = "../sorng-mysql-admin" }
 sorng-netbox = { path = "../sorng-netbox" }
 sorng-os-detect = { path = "../sorng-os-detect" }
 sorng-pam = { path = "../sorng-pam" }
+sorng-draytek = { path = "../sorng-draytek" }
 sorng-pfsense = { path = "../sorng-pfsense" }
 sorng-postgres-admin = { path = "../sorng-postgres-admin" }
 sorng-php = { path = "../sorng-php" }

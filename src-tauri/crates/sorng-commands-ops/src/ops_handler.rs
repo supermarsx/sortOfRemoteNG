@@ -539,6 +539,12 @@ fn is_command_a(command: &str) -> bool {
             | "pfsense_list_backups"
             | "pfsense_create_backup"
             | "pfsense_delete_backup"
+            | "draytek_connect"
+            | "draytek_disconnect"
+            | "draytek_list_connections"
+            | "draytek_ping"
+            | "draytek_get_status"
+            | "draytek_reboot"
     )
 }
 
@@ -1774,6 +1780,13 @@ fn build_a() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         pfsense_commands::pfsense_list_backups,
         pfsense_commands::pfsense_create_backup,
         pfsense_commands::pfsense_delete_backup,
+        // DrayTek commands (t68)
+        draytek_commands::draytek_connect,
+        draytek_commands::draytek_disconnect,
+        draytek_commands::draytek_list_connections,
+        draytek_commands::draytek_ping,
+        draytek_commands::draytek_get_status,
+        draytek_commands::draytek_reboot,
     ]
 }
 

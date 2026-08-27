@@ -54,6 +54,7 @@ pub use sorng_os_detect as os_detect;
 pub use sorng_osticket as osticket;
 pub use sorng_p2p as p2p;
 pub use sorng_pam as pam;
+pub use sorng_draytek as draytek;
 pub use sorng_pfsense as pfsense;
 pub use sorng_php as php_mgmt;
 pub use sorng_port_knock as port_knock;

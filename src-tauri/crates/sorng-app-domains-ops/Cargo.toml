@@ -60,6 +60,7 @@ sorng-os-detect = { path = "../sorng-os-detect" }
 sorng-osticket = { path = "../sorng-osticket" }
 sorng-p2p = { path = "../sorng-p2p" }
 sorng-pam = { path = "../sorng-pam" }
+sorng-draytek = { path = "../sorng-draytek" }
 sorng-pfsense = { path = "../sorng-pfsense" }
 sorng-php = { path = "../sorng-php" }
 sorng-port-knock = { path = "../sorng-port-knock" }

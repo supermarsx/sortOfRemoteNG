@@ -47,6 +47,7 @@ use opkssh::service::OpksshServiceState;
 use os_detect::service::OsDetectServiceState;
 use osticket::service::OsticketServiceState;
 use pam::service::PamServiceState;
+use draytek::service::DraytekServiceState;
 use pfsense::service::PfsenseServiceState;
 use pg_admin::service::PgServiceState;
 use php_mgmt::service::PhpServiceState;
@@ -315,6 +316,10 @@ pub fn register(
     let pfsense_state: PfsenseServiceState =
         Arc::new(Mutex::new(pfsense::service::PfsenseServiceWrapper::new()));
     app.manage(pfsense_state);
+
+    let draytek_state: DraytekServiceState =
+        Arc::new(Mutex::new(draytek::service::DraytekServiceWrapper::new()));
+    app.manage(draytek_state);
 
     let mysql_admin_state: MysqlAdminServiceState =
         Arc::new(Mutex::new(mysql_admin::service::MysqlService::new()));
