@@ -22,5 +22,4 @@ pub mod vendor;
 
 pub use error::{VoipPhoneError, VoipPhoneErrorKind, VoipPhoneResult};
 pub use service::{VoipPhoneService, VoipPhoneServiceState};
-pub use trust::set_trust_store_path;
 pub use types::*;

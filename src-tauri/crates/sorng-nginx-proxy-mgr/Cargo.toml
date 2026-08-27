@@ -19,9 +19,9 @@ chrono = { workspace = true }
 reqwest = { workspace = true, features = ["multipart"] }
 sorng-tls-trust = { path = "../sorng-tls-trust" }
 sorng-storage = { path = "../sorng-storage" }
-dirs = { workspace = true }
 
 [dev-dependencies]
 # Tests that build an https:// client need a process-level rustls
 # CryptoProvider (the app installs one at startup; per-crate tests do not).
 rustls = { workspace = true, features = ["ring"] }
+tempfile = { workspace = true }

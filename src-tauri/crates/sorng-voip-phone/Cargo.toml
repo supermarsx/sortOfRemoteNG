@@ -20,9 +20,9 @@ rsa = "0.9"
 rand = { workspace = true }
 sorng-tls-trust = { path = "../sorng-tls-trust" }
 sorng-storage = { path = "../sorng-storage" }
-dirs = { workspace = true }
 
 [dev-dependencies]
 # Installs the process-global ring crypto provider so `build_tofu_client` can
 # construct a rustls ClientConfig under `cargo test`.
 rustls = { workspace = true, features = ["ring"] }
+tempfile = { workspace = true }

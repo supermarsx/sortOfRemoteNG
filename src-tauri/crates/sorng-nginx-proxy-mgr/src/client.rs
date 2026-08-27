@@ -23,39 +23,12 @@ use reqwest::header::AUTHORIZATION;
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// Refresh the token when it has less than this many seconds left.
 pub const TOKEN_REFRESH_MARGIN_SECS: i64 = 60;
-
-/// Tauri bundle identifier — the `app_data_dir()` segment under which the
-/// shared Trust Center store lives. Must match `src-tauri/tauri.conf.json`.
-const APP_IDENTIFIER: &str = "com.sortofremote.ng";
-
-/// Process-global slot holding the Trust Center store path (see the Hetzner
-/// client for the rationale). When unset, [`resolve_trust_store_path`] falls
-/// back to the canonical `app_data_dir()` layout — identical path — so the
-/// client stays coherent even if startup wiring has not run yet.
-static TRUST_STORE_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
-
-/// Initialize the Trust Center store path used by the TOFU TLS verifier.
-/// Call once at app startup with `app.path().app_data_dir()`. Idempotent —
-/// only the first call wins.
-pub fn init_trust_store_path(app_data_dir: std::path::PathBuf) {
-    let _ = TRUST_STORE_PATH.set(app_data_dir.join("trust_store.json"));
-}
-
-fn resolve_trust_store_path() -> std::path::PathBuf {
-    if let Some(path) = TRUST_STORE_PATH.get() {
-        return path.clone();
-    }
-    dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join(APP_IDENTIFIER)
-        .join("trust_store.json")
-}
 
 /// Normalise the configured API URL: trims whitespace, strips trailing
 /// slashes, and requires an explicit `http://` / `https://` scheme.
@@ -237,9 +210,12 @@ impl NpmClient {
                 log::warn!("sorng-nginx-proxy-mgr: TLS trust override (AlwaysTrust) enabled for {base_url}");
             }
             let (host, port) = canonical_host_port(&base_url)?;
-            let store: Arc<sorng_storage::trust_store::SyncTrustStore> = Arc::new(
-                sorng_storage::trust_store::SyncTrustStore::new(resolve_trust_store_path()),
-            );
+            // Since t62 the Trust Center is per user database: the shared
+            // handle resolves the active database's `databases/<id>.trust.json`
+            // through the process-global trust runtime, so no path is derived
+            // here. With no database open the verifier fails closed.
+            let store: Arc<sorng_storage::trust_store::SyncTrustStore> =
+                Arc::new(sorng_storage::trust_store::SyncTrustStore::shared());
             let ctx = sorng_tls_trust::TofuTlsContext {
                 store,
                 host,
