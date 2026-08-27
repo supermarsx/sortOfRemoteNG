@@ -317,6 +317,37 @@ export const S = {
   mongodbAggregateRun: '[data-testid="mongodb-aggregate-run"]',
   mongodbIndexes: '[data-testid="mongodb-indexes"]',
 
+  // VoIP Phone (Yealink) session panel + editor (t66; testids per
+  // .orchestration/logs/t66-e3.md and t66-e4.md)
+  voipPhonePanel: '[data-testid="voip-phone-panel"]',
+  voipPhonePhase: '[data-testid="voip-phone-phase"]',
+  voipPhoneError: '[data-testid="voip-phone-error"]',
+  voipPhoneRefresh: '[data-testid="voip-phone-refresh"]',
+  voipPhoneOpenWeb: '[data-testid="voip-phone-open-web"]',
+  voipPhoneReboot: '[data-testid="voip-phone-reboot"]',
+  voipPhoneClose: '[data-testid="voip-phone-close"]',
+  voipPhoneRebootDialog: '[data-testid="voip-phone-reboot-dialog"]',
+  voipPhoneRebootConfirm: '[data-testid="voip-phone-reboot-confirm"]',
+  voipPhoneRebootCancel: '[data-testid="voip-phone-reboot-cancel"]',
+  voipPhoneStatus: '[data-testid="voip-phone-status"]',
+  voipPhoneGeneration: '[data-testid="voip-phone-generation"]',
+  voipPhoneFieldModel: '[data-testid="voip-phone-field-model"]',
+  voipPhoneFieldFirmware: '[data-testid="voip-phone-field-firmware"]',
+  voipPhoneFieldMac: '[data-testid="voip-phone-field-mac"]',
+  voipPhoneFieldIp: '[data-testid="voip-phone-field-ip"]',
+  voipPhoneFieldUptime: '[data-testid="voip-phone-field-uptime"]',
+  voipPhoneAccounts: '[data-testid="voip-phone-accounts"]',
+  voipPhoneAccountRow: '[data-testid^="voip-phone-account-"]',
+  voipPhoneOptions: '[data-testid="voip-phone-options"]',
+  voipPhoneAuthMode: '[data-testid="voip-phone-auth-mode"]',
+  voipPhoneActionUriToggle:
+    'input[aria-label="Action URI enabled on the phone"]',
+  voipPhoneUseSslToggle: 'input[aria-label="Use HTTPS"]',
+  editorProtocolSubtabAdvanced:
+    '[data-testid="connection-editor-protocol-subtab-advanced"]',
+  // Global toast stack (src/components/ui/dialogs/Toast.tsx ToastContainer)
+  toastContainer: 'div[role="status"][aria-live="polite"]',
+
   // Debug Panel
   debugPanel: '[data-testid="debug-panel"]',
   debugActionList: '[data-testid="debug-action-list"]',
