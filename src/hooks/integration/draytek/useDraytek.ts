@@ -12,7 +12,6 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   DraytekActionResult,
-  DraytekCliVerb,
   DraytekConnectionConfig,
   DraytekConnectionSummary,
   DraytekStatus,
@@ -34,8 +33,13 @@ export const draytekApi = {
 
   // ── actions (state-changing: the UI confirms before calling) ───────────
   reboot: (id: string) => invoke<DraytekActionResult>("draytek_reboot", { id }),
-  runCli: (id: string, verb: DraytekCliVerb) =>
-    invoke<DraytekActionResult>("draytek_run_cli", { id, verb }),
+  // NOTE: `draytek_run_cli` is deliberately NOT wrapped here. t68-e2 deferred
+  // it to v2 (running the whitelisted CLI verbs needs an SSH session, and no
+  // `sorng-commands-*` crate depends on `sorng-ssh` today), so the command is
+  // not registered in the aggregate handlers — see the ops crate's
+  // `draytek_run_cli` negative assertion. Wrapping it would ship a call that
+  // always fails at runtime and break `tests/ipc/invokeRegistration.test.ts`.
+  // Re-add alongside the backend registration when the SSH path lands.
 } as const;
 
 export type DraytekApi = typeof draytekApi;
