@@ -44,6 +44,38 @@ The executable contract is `src/utils/session/protocolAvailability.ts`. The sess
 | PowerShell Remoting (`winrm`) | Interactive client                        | Persistent PSRP session over WSMan/WinRM or SSH, with a dedicated terminal-like viewer, truthful capability checks, reconnect/reattach, and native close. This is separate from the Windows management tool panels.                                                                                                                                                                                                                                                                                                      | `src/components/protocol/PowerShellSessionViewer.tsx`, `src/hooks/protocol/usePowerShellSession.ts`, `src-tauri/crates/sorng-powershell`       |
 | RustDesk                      | External handoff                          | Uses the saved RustDesk ID and credential, launches the installed RustDesk process, and verifies the backend session before reporting success. It does not embed RustDesk’s framebuffer.                                                                                                                                                                                                                                                                                                                                 | `src/components/protocol/RustDeskClient.tsx`, `src/hooks/protocol/useRustDeskClient.ts`, `src-tauri/crates/sorng-rustdesk`                     |
 | SMB                           | Interactive client                        | Connects with the saved host, port, domain/workgroup, share, and credentials, then exposes share and directory browsing plus file operations.                                                                                                                                                                                                                                                                                                                                                                            | `src/components/protocol/SMBClient.tsx`, `src/hooks/protocol/useSMBClient.ts`, `src-tauri/crates/sorng-smb`                                    |
+| VoIP Phone (Yealink T2x)      | Interactive management panel              | Logs in to the phone's web admin (SIP-T20P / T21P / T21P E2), auto-detects the legacy-CGI or servlet firmware generation, shows model/firmware/MAC/IP/uptime and SIP account registration, opens the web UI in an embedded browser tab with same-origin auto-login, and reboots via Action URI with a web-form fallback. Credentials stay on the saved connection and never on the session object. See [VoIP Phone (Yealink T2x)](#voip-phone-yealink-t2x).                                                              | `src/components/voipPhone/VoipPhoneSessionPanel.tsx`, `src/hooks/voipPhone/useVoipPhone.ts`, `src-tauri/crates/sorng-voip-phone`               |
+
+## VoIP Phone (Yealink T2x)
+
+The `voip-phone` protocol manages Yealink desk phones through their web-admin interface. It is modelled with a `vendor` field (`yealink` today) so other vendors can be added as drivers later without touching the protocol registry. Verified targets are the **SIP-T20P** and **SIP-T21P**, including the **T21P E2**. Other Yealink models that share the T2x web admin may work but are not verified.
+
+### Firmware generations
+
+Yealink changed the web admin between firmware lines. The driver probes the phone on connect and picks the matching path; the detected generation is shown as a badge in the session panel and can be forced through **Login mode** in the editor if detection fails.
+
+| Generation | Typical models / firmware                  | Login                                                                      | Status source                          | Reboot path                                              |
+| ---------- | ------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------- |
+| Legacy CGI | SIP-T20P, SIP-T21P on v7x firmware         | HTTP Basic (`admin/admin` by default)                                      | `cgi-bin/ConfigManApp.com` status page | Action URI (`?key=Reboot`), then the CGI reboot form     |
+| Servlet    | SIP-T21P E2 and later T2x on v8x+ firmware | `servlet?m=mod_login` form; plain or RSA-encrypted password + `JSESSIONID` | `servlet?m=mod_data&p=status`          | Action URI (`?key=Reboot`), then the servlet reboot form |
+
+Both generations report the same normalised status shape (model, firmware, hardware, MAC, IP, uptime, per-account registration); unknown fields are kept in `rawFields` for diagnostics.
+
+### Enable Action URI for reboot
+
+Reboot tries the phone's Action URI first (`http://<phone>/servlet?key=Reboot` or the legacy `cgi-bin/ConfigManApp.com?key=Reboot`). Yealink phones reject Action URI calls (HTTP 403) unless remote control is enabled and the caller's IP is allowed. On the phone's web admin:
+
+1. Open **Features → Remote Control**.
+2. Set **Action URI Allow IP List** to this computer's IP address (or `any` on a trusted network).
+3. Save and, on older firmware, reboot once for the setting to take effect.
+4. Tick **Action URI enabled on the phone** in the connection's **Advanced** tab so the panel reports the expected method.
+
+If the Action URI is refused or disabled, the reboot falls back to the authenticated web-admin reboot form, so the button still works; the completion toast names the method that was accepted (`action-uri` or `web-form`).
+
+### Transport and credentials
+
+- Default port is 80 over plain HTTP. Enable **Use HTTPS** (and usually change the port to 443) for phones with TLS turned on. Phones ship self-signed certificates, so the first HTTPS connection is pinned (trust on first use) and later certificate changes are rejected unless **Verify server certificate** is disabled for that connection.
+- Username and password live on the saved connection (**Basics**). Opening the web UI creates an `http`/`https` session through a runtime-registered connection with auto-login selectors; the password is never copied onto the session object, logs, or serialized status types.
 
 ## ARD and Apple Account authentication
 
