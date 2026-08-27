@@ -2,12 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import TauriDriverService from "./helpers/tauri-service";
+import { resolveDriverPorts } from "./helpers/driver-ports";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const tauriDriverPort = Number.parseInt(
-  process.env.TAURI_DRIVER_PORT ?? "4444",
-  10,
-);
+// `scripts/readme-screenshot.mjs` pins these so it can wait for the driver port
+// to close between its seed and capture phases; standalone runs get a free pair.
+const { driverPort: tauriDriverPort } = resolveDriverPorts();
 const phase = process.env.README_CAPTURE_PHASE;
 const application = process.env.README_CAPTURE_BINARY?.trim();
 

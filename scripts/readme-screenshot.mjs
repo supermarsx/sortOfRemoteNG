@@ -171,6 +171,48 @@ async function waitForPortToClose(host, port, timeoutMs) {
   });
 }
 
+/**
+ * Pins the tauri-driver ports for both capture phases.
+ *
+ * `e2e/helpers/driver-ports.ts` otherwise allocates a fresh pair per WDIO run,
+ * which would make the seed and capture phases use different ports and leave
+ * the `waitForPortToClose` handshake between them watching the wrong port.
+ * Allocating a free pair here keeps that handshake honest while still letting
+ * this script run alongside a normal E2E run.
+ */
+async function pinDriverPorts() {
+  const servers = await Promise.all(
+    [0, 0].map(
+      (port) =>
+        new Promise((resolve, reject) => {
+          const server = net.createServer();
+          server.once("error", reject);
+          server.listen(port, "127.0.0.1", () => {
+            resolve(server);
+          });
+        }),
+    ),
+  );
+
+  const [driverPort, nativePort] = servers.map(
+    (server) => server.address().port,
+  );
+
+  await Promise.all(
+    servers.map(
+      (server) =>
+        new Promise((resolve) => {
+          server.close(resolve);
+        }),
+    ),
+  );
+
+  process.env.TAURI_DRIVER_PORT ??= String(driverPort);
+  process.env.TAURI_NATIVE_DRIVER_PORT ??= String(nativePort);
+
+  return Number.parseInt(process.env.TAURI_DRIVER_PORT, 10);
+}
+
 function dockerComposeArgs(args) {
   return [
     "compose",
@@ -497,6 +539,8 @@ async function main() {
 
     console.log("[readme-screenshot] checking native capture prerequisites");
     const nativeDriverPath = await verifyCapturePrerequisites();
+    const driverPort = await pinDriverPorts();
+    console.log(`[readme-screenshot] using tauri-driver port ${driverPort}`);
 
     console.log(
       "[readme-screenshot] building isolated native Tauri application",
@@ -511,11 +555,7 @@ async function main() {
     console.log("[readme-screenshot] seeding README Demo through the real app");
     await runCapturePhase("seed", applicationPath, nativeDriverPath);
     await terminateCaptureApp(applicationPath);
-    await waitForPortToClose(
-      "127.0.0.1",
-      Number.parseInt(process.env.TAURI_DRIVER_PORT ?? "4444", 10),
-      10_000,
-    );
+    await waitForPortToClose("127.0.0.1", driverPort, 10_000);
     const seed = await readSeed();
 
     console.log("[readme-screenshot] relaunching directly into Prototype SSH");

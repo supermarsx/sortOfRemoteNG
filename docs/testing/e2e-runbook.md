@@ -162,6 +162,46 @@ The overlay that adds SMB and SoftEther is `docker/compose.e2e.yml`.
 Note: the full WDIO suite is **not** currently part of the required PR smoke
 gate.
 
+## Concurrent WDIO Runs
+
+More than one WDIO run can share a machine. Each run allocates its own driver
+ports at config load time in `e2e/helpers/driver-ports.ts`:
+
+- `--port` — the `tauri-driver` intermediary port (default would be 4444)
+- `--native-port` — the native WebDriver underneath it, msedgedriver on
+  Windows (default would be 4445)
+
+Both are taken from the ephemeral range by binding `:0`, reading the assigned
+port and releasing it; the pair is bound simultaneously so the two ports always
+differ, and re-checked immediately before `tauri-driver` is spawned in case
+something claimed one in between. Without the per-run `--native-port`, a second
+run silently attaches to the first run's msedgedriver and both produce bogus
+results.
+
+The resolved ports are published back into `TAURI_DRIVER_PORT` and
+`TAURI_NATIVE_DRIVER_PORT` because WDIO workers re-parse the config file in
+their own processes and must reuse the launcher's values.
+
+Set either variable to pin that port — useful for a fixed CI mapping, or when a
+wrapper needs to know the port up front. `scripts/readme-screenshot.mjs` does
+exactly that: it pins a free pair so its seed and capture phases share one port
+and it can wait for that port to close between them. A pinned port that is
+already busy fails the run instead of being silently replaced.
+
+### Cleanup
+
+`e2e/helpers/tauri-service.ts` tears down its whole driver process tree —
+`tauri-driver`, the native WebDriver and the application under test — on
+`onComplete` and on `exit`/`SIGINT`/`SIGTERM`/`SIGHUP`/`SIGBREAK`, so a crashed
+or interrupted run does not leave an orphan holding a port. Teardown is scoped
+to that run's own PID tree (`taskkill /T` on Windows, a process-group signal
+elsewhere) and never kills drivers by image name, which would take out a
+concurrent run.
+
+If a driver does survive (for example after a forced kill of the whole console),
+the next run's port re-check simply allocates around it, but the stray process
+and its app window are worth killing by PID.
+
 ## CI Workflows
 
 ### `.github/workflows/e2e-smoke.yml`

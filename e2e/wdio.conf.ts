@@ -3,12 +3,13 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import type { Options } from "@wdio/types";
 import TauriDriverService from "./helpers/tauri-service";
+import { resolveDriverPorts } from "./helpers/driver-ports";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const tauriDriverPort = Number.parseInt(
-  process.env.TAURI_DRIVER_PORT ?? "4444",
-  10,
-);
+// Allocated once per run and published to the environment, so the WDIO workers
+// (which re-parse this file in their own processes) reuse the launcher's port
+// instead of allocating a different one.
+const { driverPort: tauriDriverPort } = resolveDriverPorts();
 const connectionRetryTimeout = Number.parseInt(
   process.env.WDIO_CONNECTION_RETRY_TIMEOUT ?? "120000",
   10,

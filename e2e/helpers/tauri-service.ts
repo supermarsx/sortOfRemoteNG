@@ -4,11 +4,11 @@ import fs from "fs";
 import net from "net";
 import path from "path";
 
-const DRIVER_PORT = Number.parseInt(
-  process.env.TAURI_DRIVER_PORT ?? "4444",
-  10,
-);
+import type { DriverPorts } from "./driver-ports";
+import { ensureDriverPortsAvailable } from "./driver-ports";
+
 const DRIVER_START_TIMEOUT_MS = 30_000;
+const DRIVER_SHUTDOWN_GRACE_MS = 3_000;
 const DRIVER_INSTALL_HINT =
   "cargo install tauri-driver --version 2.0.5 --locked";
 const NATIVE_DRIVER_ENV_VARS = [
@@ -22,16 +22,25 @@ const NATIVE_DRIVER_ENV_VARS = [
  *
  * `tauri-driver` exposes a WebDriver-compatible server
  * so that WebdriverIO can drive the Tauri WRY webview.
+ *
+ * Both the intermediary port and the native WebDriver port are allocated per
+ * run (see `./driver-ports`) so that concurrent runs on one machine cannot
+ * attach to each other's sessions. The whole driver process tree is torn down
+ * on completion and on abnormal exit, so a crashed run cannot leave an
+ * orphaned driver holding a port or an app window open.
  */
 export default class TauriDriverService {
   private process: ChildProcess | null = null;
+  private cleanupHandlers: Array<[NodeJS.Signals | "exit", () => void]> = [];
 
   async onPrepare(): Promise<void> {
     let driverCommand: string;
     let driverArgs: string[];
+    let ports: DriverPorts;
 
     try {
-      ({ driverCommand, driverArgs } = this.resolveDriverLaunchConfig());
+      ports = await ensureDriverPortsAvailable();
+      ({ driverCommand, driverArgs } = this.resolveDriverLaunchConfig(ports));
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -43,7 +52,12 @@ export default class TauriDriverService {
     this.process = spawn(driverCommand, driverArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       shell: false,
+      // A process group on POSIX lets us signal the native driver and the
+      // application together. Windows uses `taskkill /T` instead.
+      detached: process.platform !== "win32",
     });
+
+    this.registerCleanupHandlers();
 
     this.process.stdout?.on("data", (data: Buffer) => {
       this.captureOutput(startupOutput, data);
@@ -65,7 +79,7 @@ export default class TauriDriverService {
     try {
       await Promise.race([
         this.waitForPort(
-          DRIVER_PORT,
+          ports.driverPort,
           DRIVER_START_TIMEOUT_MS,
           startupOutput,
         ).then(() => {
@@ -73,6 +87,9 @@ export default class TauriDriverService {
         }),
         startupFailure.failed,
       ]);
+      console.log(
+        `[tauri-driver] ready on 127.0.0.1:${ports.driverPort} (native driver port ${ports.nativePort}, pid ${this.process?.pid ?? "unknown"})`,
+      );
     } catch (error) {
       await this.onComplete();
       console.error(error instanceof Error ? error.message : String(error));
@@ -81,11 +98,123 @@ export default class TauriDriverService {
   }
 
   async onComplete(): Promise<void> {
-    if (this.process) {
-      if (!this.process.killed) {
-        this.process.kill();
+    const child = this.takeProcess();
+    if (!child?.pid) {
+      return;
+    }
+
+    this.terminateTree(child.pid, { force: process.platform === "win32" });
+
+    const exited = await this.waitForExit(child, DRIVER_SHUTDOWN_GRACE_MS);
+    if (!exited) {
+      this.terminateTree(child.pid, { force: true });
+    }
+  }
+
+  /**
+   * Claims the driver handle so that a concurrent shutdown path (an exit
+   * handler racing `onComplete`) cannot terminate it twice.
+   */
+  private takeProcess(): ChildProcess | null {
+    const child = this.process;
+    this.process = null;
+    this.removeCleanupHandlers();
+    return child;
+  }
+
+  /**
+   * WDIO does not always reach `onComplete` — a crash, `process.exit(1)` on a
+   * failed startup, or Ctrl+C all skip it. These handlers make the run tear
+   * down its own driver tree in those cases instead of leaving an orphan that
+   * poisons the next run.
+   */
+  private registerCleanupHandlers(): void {
+    if (this.cleanupHandlers.length > 0) {
+      return;
+    }
+
+    const events: Array<NodeJS.Signals | "exit"> = [
+      "exit",
+      "SIGINT",
+      "SIGTERM",
+      "SIGHUP",
+      "SIGBREAK",
+    ];
+
+    for (const event of events) {
+      // Must stay synchronous: nothing async survives the `exit` event.
+      const handler = () => {
+        const child = this.takeProcess();
+        if (child?.pid) {
+          this.terminateTree(child.pid, { force: true });
+        }
+      };
+
+      this.cleanupHandlers.push([event, handler]);
+      process.on(event, handler);
+    }
+  }
+
+  private removeCleanupHandlers(): void {
+    for (const [event, handler] of this.cleanupHandlers) {
+      process.off(event, handler);
+    }
+    this.cleanupHandlers = [];
+  }
+
+  /**
+   * Kills the driver and everything it started (the native WebDriver and the
+   * application under test). Always scoped to this run's own process tree, so
+   * it never disturbs a concurrent run's driver.
+   */
+  private terminateTree(pid: number, { force }: { force: boolean }): void {
+    if (process.platform === "win32") {
+      this.runQuietly("taskkill", ["/PID", String(pid), "/T", "/F"]);
+      return;
+    }
+
+    const signal: NodeJS.Signals = force ? "SIGKILL" : "SIGTERM";
+    try {
+      // Negative pid targets the process group created by `detached: true`.
+      process.kill(-pid, signal);
+    } catch {
+      try {
+        process.kill(pid, signal);
+      } catch {
+        // Already gone.
       }
-      this.process = null;
+    }
+  }
+
+  private waitForExit(child: ChildProcess, timeout: number): Promise<boolean> {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return Promise.resolve(true);
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        child.off("exit", onExit);
+        resolve(false);
+      }, timeout);
+
+      const onExit = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+
+      child.once("exit", onExit);
+    });
+  }
+
+  private runQuietly(command: string, args: string[]): void {
+    try {
+      execFileSync(command, args, {
+        stdio: "ignore",
+        timeout: 10_000,
+        windowsHide: true,
+      });
+    } catch {
+      // The tree is already gone, or taskkill is unavailable; nothing to do.
     }
   }
 
@@ -94,12 +223,19 @@ export default class TauriDriverService {
     return override && override.length > 0 ? override : "tauri-driver";
   }
 
-  private resolveDriverLaunchConfig(): {
+  private resolveDriverLaunchConfig(ports: DriverPorts): {
     driverCommand: string;
     driverArgs: string[];
   } {
     const driverCommand = this.resolveDriverCommand();
-    const driverArgs: string[] = ["--port", String(DRIVER_PORT)];
+    const driverArgs: string[] = [
+      "--port",
+      String(ports.driverPort),
+      // Without this the native driver always takes its default port (4445)
+      // and a second concurrent run steals the first run's sessions.
+      "--native-port",
+      String(ports.nativePort),
+    ];
 
     const nativeDriverPath = this.resolveNativeDriverPath();
     if (nativeDriverPath) {
