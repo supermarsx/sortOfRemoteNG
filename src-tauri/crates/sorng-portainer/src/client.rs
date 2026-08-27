@@ -9,7 +9,8 @@
 //!
 //! TLS goes through the Trust Center TOFU verifier
 //! ([`sorng_tls_trust::build_tofu_client`]) whenever a trust store is
-//! injected; `None` yields a plain `reqwest` client (unit tests / plain http).
+//! injected; `None` yields a plain `reqwest` client (unit tests / plain http)
+//! which still honours an acknowledged `skip_tls_verify`.
 
 use crate::error::{PortainerError, PortainerErrorKind, PortainerResult};
 use crate::types::*;
@@ -133,9 +134,11 @@ impl std::fmt::Debug for PortainerClient {
 }
 
 impl PortainerClient {
-    /// Build a client. `trust_store` = `None` gives a plain `reqwest` client;
-    /// `Some` routes TLS through the Trust Center TOFU verifier with the
-    /// `skip_tls_verify` flag mapped to a revocable `AlwaysTrust` override.
+    /// Build a client. `Some` store routes TLS through the Trust Center TOFU
+    /// verifier with the `skip_tls_verify` flag mapped to a revocable
+    /// `AlwaysTrust` override. `None` gives a plain `reqwest` client that still
+    /// honours an **acknowledged** `skip_tls_verify` by disabling certificate
+    /// verification, so the escape hatch behaves identically on both paths.
     pub fn new(
         config: PortainerConnectionConfig,
         trust_store: Option<Arc<dyn BlockingTrustStore>>,
@@ -204,9 +207,28 @@ impl PortainerClient {
                 build_tofu_client(builder, ctx)
                     .map_err(|e| PortainerError::connection(format!("http client build: {e}")))?
             }
-            _ => builder
-                .build()
-                .map_err(|e| PortainerError::connection(format!("http client build: {e}")))?,
+            // No Trust-Center store injected (unit tests, the docker-e2e
+            // harness, plain http). The acknowledged skip flag still has to
+            // mean what the panel toggle and docs/integrations.md say it means
+            // — otherwise "Accept self-signed certificate" silently does
+            // nothing on this path and the connection fails with
+            // `TlsUntrusted` while the UI shows the override as enabled.
+            // `effective_skip` implies https *and* a matching runtime
+            // acknowledgement; the guard above returns `ConfigError` otherwise,
+            // so this can never disable verification unasked. Same shape as
+            // sorng-draytek's `client.rs:106-115`.
+            _ => {
+                if effective_skip {
+                    log::warn!(
+                        "sorng-portainer: certificate verification disabled for {base_url} \
+                         (explicitly acknowledged; no Trust-Center store injected)"
+                    );
+                    builder = builder.danger_accept_invalid_certs(true);
+                }
+                builder
+                    .build()
+                    .map_err(|e| PortainerError::connection(format!("http client build: {e}")))?
+            }
         };
 
         Ok(Self {
