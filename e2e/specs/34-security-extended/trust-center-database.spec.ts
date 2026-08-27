@@ -44,9 +44,12 @@ const SSH_PASSWORD = process.env.SSH_PASSWORD ?? "testpass";
 const SSH_HOST = "127.0.0.1";
 const TRUST_HOST = `${SSH_HOST}:${SSH_PORT}`;
 
-const DB_A = "Trust DB A";
-const DB_B = "Trust DB B";
-const DB_C = "Trust DB C";
+// Databases outlive `resetAppState()` (it clears web storage, not the app-data
+// directory), so names are unique per run — otherwise a second `createCollection`
+// with the same name would leave two rows the open-by-aria-label selector cannot
+// tell apart.
+const RUN = Date.now().toString(36).slice(-5);
+const dbName = (suffix: string) => `Trust DB ${suffix}-${RUN}`;
 
 const T = {
   settingsTabTrust: '[data-testid="settings-tab-trust"]',
@@ -152,6 +155,42 @@ function readSdbfMagic(file: string): string {
   }
 }
 
+// ── the developer's own known_hosts, borrowed and put back ──────────────────
+//
+// The `test-ssh` fixture keeps no volume for `/config`, so it regenerates its
+// host keys every time the container is recreated. A `[127.0.0.1]:2222` line
+// left by an earlier run therefore names a key the new container no longer has,
+// and the connection would take the mismatch path instead of the first-use path
+// this suite is about. So: strip **only** the fixture's endpoint before the run
+// and restore the file exactly as it was afterwards, including deleting it again
+// if it did not exist.
+
+const knownHostsPath = path.join(os.homedir(), ".ssh", "known_hosts");
+let knownHostsBefore: Buffer | null = null;
+let knownHostsExisted = false;
+
+function isolateFixtureFromKnownHosts(): void {
+  knownHostsExisted = fs.existsSync(knownHostsPath);
+  if (!knownHostsExisted) return;
+  knownHostsBefore = fs.readFileSync(knownHostsPath);
+  const endpoints = [`[${SSH_HOST}]:${SSH_PORT}`, `[localhost]:${SSH_PORT}`];
+  const kept = knownHostsBefore
+    .toString("utf8")
+    .split(/\r?\n/)
+    .filter((line) => !endpoints.some((endpoint) => line.includes(endpoint)));
+  fs.writeFileSync(knownHostsPath, kept.join("\n"));
+}
+
+function restoreKnownHosts(): void {
+  if (knownHostsExisted && knownHostsBefore) {
+    fs.writeFileSync(knownHostsPath, knownHostsBefore);
+    return;
+  }
+  if (!knownHostsExisted && fs.existsSync(knownHostsPath)) {
+    fs.rmSync(knownHostsPath);
+  }
+}
+
 // ── UI helpers ──────────────────────────────────────────────────────────────
 
 async function createSshConnection(name: string): Promise<void> {
@@ -177,22 +216,36 @@ async function createSshConnection(name: string): Promise<void> {
 }
 
 /**
- * Connect and answer the first-use host-key prompt with "accept and save".
- * The prompt is a confirm dialog; when the policy is TOFU the backend may
- * accept without one, so its absence is not a failure.
+ * Connect and answer the first-use host-key prompt with **accept and
+ * remember** — the "Remember and trust for future connections" checkbox must be
+ * ticked, because leaving it clear resolves to `accept_once`, which memorizes
+ * nothing on either side of the bridge and would leave this suite asserting an
+ * empty store.
+ *
+ * The prompt legitimately does not appear when the key is already known to the
+ * Trust Center for this database, or when it is adopted from `known_hosts`, so
+ * its absence is not a failure — the assertions are on the resulting record.
  */
 async function connectAndTrustHostKey(): Promise<void> {
   const tree = await $(S.connectionTree);
   const item = await tree.$(S.connectionItem);
   await item.doubleClick();
 
-  const confirm = await $(S.confirmDialog);
-  const prompted = await confirm
-    .waitForDisplayed({ timeout: 20_000 })
+  const acceptButton = await $('//button[contains(., "Accept & Continue")]');
+  const prompted = await acceptButton
+    .waitForDisplayed({ timeout: 25_000 })
     .then(() => true)
     .catch(() => false);
   if (prompted) {
-    await (await $(S.confirmYes)).click();
+    const remember = await $(
+      '//label[contains(., "Remember and trust")]//input[@type="checkbox"]',
+    );
+    if (await remember.isExisting().catch(() => false)) {
+      if (!(await remember.isSelected().catch(() => false))) {
+        await remember.click();
+      }
+    }
+    await acceptButton.click();
   }
 
   const terminal = await $(S.sshTerminal);
@@ -206,6 +259,15 @@ async function openTrustCenter(): Promise<void> {
   await tab.click();
   const banner = await $(T.banner);
   await banner.waitForDisplayed({ timeout: 10_000 });
+  // The banner has three shapes; only `active` renders the name/encryption/
+  // count children, so wait for the scope to resolve before reading them.
+  await browser.waitUntil(
+    async () => (await banner.getAttribute("data-scope-state")) === "active",
+    {
+      timeout: 15_000,
+      timeoutMsg: "The Trust Center banner never resolved to an open database",
+    },
+  );
 }
 
 async function trustCenterText(): Promise<string> {
@@ -213,27 +275,23 @@ async function trustCenterText(): Promise<string> {
   return (await dialog.getText()).replace(/\s+/g, " ");
 }
 
-/** Switch the open database from the Database Center list. */
-async function switchToDatabase(name: string): Promise<void> {
+/**
+ * Switch the open database from the Database Center list. The row body is
+ * itself the open control, labelled `Open database <name>`
+ * (`databaseCenter.collections.openCollectionLabel`), which is a far steadier
+ * hook than walking the row's icon buttons.
+ */
+async function switchToDatabase(
+  name: string,
+  expectedId: string,
+): Promise<void> {
   const toolbarButton = await $(S.toolbarCollection);
   await toolbarButton.waitForClickable({ timeout: 10_000 });
   await toolbarButton.click();
 
-  const openLabels = ["Open", "Unlock"];
-  let clicked = false;
-  for (const label of openLabels) {
-    const button = await $(
-      `//*[contains(normalize-space(.), "${name}")]/ancestor::div[1]//button[@aria-label="${label}"]`,
-    );
-    if (await button.isExisting().catch(() => false)) {
-      await button.click();
-      clicked = true;
-      break;
-    }
-  }
-  if (!clicked) {
-    throw new Error(`No open/unlock control found for database "${name}"`);
-  }
+  const row = await $(`button[aria-label="Open database ${name}"]`);
+  await row.waitForClickable({ timeout: 10_000 });
+  await row.click();
 
   await browser.waitUntil(
     async () => {
@@ -242,10 +300,14 @@ async function switchToDatabase(name: string): Promise<void> {
     },
     { timeout: 15_000, timeoutMsg: `Database "${name}" did not become active` },
   );
-  // `trust_set_active_database` is awaited by the store, not by the click.
+  // The click fires listeners synchronously; `trust_set_active_database` is
+  // awaited separately (e6's `trustActivation`), so poll the native scope.
   await browser.waitUntil(
-    async () => (await activeTrustDatabase()).databaseId !== null,
-    { timeout: 15_000, timeoutMsg: "Trust scope never followed the database" },
+    async () => (await activeTrustDatabase()).databaseId === expectedId,
+    {
+      timeout: 15_000,
+      timeoutMsg: `Trust scope never followed the switch to "${name}"`,
+    },
   );
 }
 
@@ -253,8 +315,12 @@ async function switchToDatabase(name: string): Promise<void> {
 
 describe("Trust Center — per-database storage (docker sshd fixture)", () => {
   let dockerAvailable = false;
+  /** Snapshot of the legacy sidecar, when this profile still has one. */
+  let legacyBefore: Buffer | null = null;
 
   before(function () {
+    const legacy = path.join(appDataDir(), "trust_store.json");
+    legacyBefore = fs.existsSync(legacy) ? fs.readFileSync(legacy) : null;
     dockerAvailable = isDockerAvailable();
     if (!dockerAvailable) {
       console.warn(
@@ -263,6 +329,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
       this.skip();
       return;
     }
+    isolateFixtureFromKnownHosts();
     startContainers(["test-ssh"]);
   });
 
@@ -272,6 +339,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
   });
 
   after(() => {
+    restoreKnownHosts();
     if (dockerAvailable) {
       stopContainers(["test-ssh"]);
     }
@@ -282,8 +350,9 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
   });
 
   it("stores an accepted SSH host key in the active database and shows it in the Trust Center", async () => {
+    const dbOne = dbName("solo");
     await resetAppState();
-    await createCollection(DB_A);
+    await createCollection(dbOne);
 
     const scope = await activeTrustDatabase();
     expect(scope.databaseId).not.toBe(null);
@@ -294,11 +363,15 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
 
     await openTrustCenter();
     const banner = await $(T.bannerName);
-    expect(await banner.getText()).toContain(DB_A);
+    expect(await banner.getText()).toContain(dbOne);
 
+    // Whether this host has master encryption configured is a property of the
+    // machine, not of the test, so assert the banner AGREES with the native
+    // scope rather than guessing a value.
     const encryption = await $(T.bannerEncryption);
-    // A collection created without a password is stored in plaintext SDBF.
-    expect(await encryption.getAttribute("data-encrypted")).toBe("false");
+    expect(await encryption.getAttribute("data-encrypted")).toBe(
+      scope.encrypted ? "true" : "false",
+    );
 
     const count = await $(T.bannerCount);
     expect(
@@ -308,15 +381,19 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
     expect(await trustCenterText()).toContain(SSH_HOST);
     await closeSettings();
 
-    // The record is durable beside the database payload, not in the retired
-    // global sidecar.
+    // The record is durable beside the database payload...
     const active = await activeTrustDatabase();
     const trustFile = trustFilePath(active.databaseId!);
     expect(fs.existsSync(trustFile)).toBe(true);
     expect(readSdbfMagic(trustFile)).toBe("SDBF");
-    expect(fs.existsSync(path.join(appDataDir(), "trust_store.json"))).toBe(
-      false,
-    );
+
+    // ...and the retired global sidecar, if this profile still has one, is a
+    // read-only migration input: it must survive the run byte-for-byte.
+    const legacy = path.join(appDataDir(), "trust_store.json");
+    if (legacyBefore !== null) {
+      expect(fs.existsSync(legacy)).toBe(true);
+      expect(fs.readFileSync(legacy).equals(legacyBefore)).toBe(true);
+    }
 
     const document = await invokeNative<TrustExportDocument>(
       "trust_export_database",
@@ -331,10 +408,14 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
   });
 
   it("carries trust into another database on export/import and keeps a fresh database clean", async () => {
-    // Database A already holds the accepted host key from the previous test;
-    // rebuild it here so the case stands on its own.
+    // Fresh databases, so this case stands on its own rather than inheriting
+    // whatever the previous one left in the app-data directory.
+    const dbA = dbName("A");
+    const dbB = dbName("B");
+    const dbC = dbName("C");
+
     await resetAppState();
-    await createCollection(DB_A);
+    await createCollection(dbA);
     await createSshConnection("Trust SSH A");
     await connectAndTrustHostKey();
     await closeAllSessions();
@@ -349,14 +430,24 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
     );
     expect(sshRecords.length).toBeGreaterThan(0);
 
-    // A brand-new database starts empty — trust is per database (D1 / R3).
-    await createCollection(DB_B);
+    // A brand-new database does not inherit the host — trust is per database
+    // (D1 / R3). Asserted on the host, not on a zero record count: a profile
+    // that still has a legacy sidecar may legitimately seed a new database.
+    await createCollection(dbB);
     const target = await activeTrustDatabase();
     expect(target.databaseId).not.toBe(source.databaseId);
-    expect(target.recordCount).toBe(0);
+    const before = await invokeNative<TrustExportDocument>(
+      "trust_export_database",
+      { databaseId: target.databaseId },
+    );
+    expect(
+      before.records.some((record) =>
+        String(record.host ?? "").includes(SSH_HOST),
+      ),
+    ).toBe(false);
 
     await openTrustCenter();
-    expect(await (await $(T.bannerName)).getText()).toContain(DB_B);
+    expect(await (await $(T.bannerName)).getText()).toContain(dbB);
     expect(await trustCenterText()).not.toContain(TRUST_HOST);
     await closeSettings();
 
@@ -379,20 +470,26 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
     expect(fs.existsSync(trustFilePath(target.databaseId!))).toBe(true);
 
     // Switching back and forth keeps each database on its own records.
-    await switchToDatabase(DB_A);
-    expect((await activeTrustDatabase()).databaseId).toBe(source.databaseId);
-    await switchToDatabase(DB_B);
-    expect((await activeTrustDatabase()).databaseId).toBe(target.databaseId);
+    await switchToDatabase(dbA, source.databaseId!);
+    await switchToDatabase(dbB, target.databaseId!);
 
-    // A third, never-imported database still sees nothing.
-    await createCollection(DB_C);
+    // A third, never-imported database still sees nothing of that host.
+    await createCollection(dbC);
     const fresh = await activeTrustDatabase();
     expect(fresh.databaseId).not.toBe(source.databaseId);
     expect(fresh.databaseId).not.toBe(target.databaseId);
-    expect(fresh.recordCount).toBe(0);
+    const freshDocument = await invokeNative<TrustExportDocument>(
+      "trust_export_database",
+      { databaseId: fresh.databaseId },
+    );
+    expect(
+      freshDocument.records.some((record) =>
+        String(record.host ?? "").includes(SSH_HOST),
+      ),
+    ).toBe(false);
 
     await openTrustCenter();
-    expect(await (await $(T.bannerName)).getText()).toContain(DB_C);
+    expect(await (await $(T.bannerName)).getText()).toContain(dbC);
     expect(await trustCenterText()).not.toContain(TRUST_HOST);
     await closeSettings();
   });
