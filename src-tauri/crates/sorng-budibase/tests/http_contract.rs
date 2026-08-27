@@ -72,8 +72,17 @@ impl MockHttpServer {
     }
 }
 
+/// The TOFU TLS verifier builds a `rustls::ClientConfig`, which needs a
+/// process-level crypto provider. `sorng-app` installs ring at startup; a
+/// standalone test binary has to do it itself (repo pattern, e.g.
+/// `sorng-nginx-proxy-mgr/tests/http_contract.rs`).
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 #[test]
 fn insecure_tls_requires_a_matching_runtime_acknowledgement() {
+    install_crypto_provider();
     let mut cfg = BudibaseConnectionConfig {
         name: "TLS acknowledgement contract".into(),
         host: "https://budibase.example.test".into(),
@@ -104,6 +113,7 @@ fn config(host: String) -> BudibaseConnectionConfig {
 
 #[tokio::test]
 async fn connect_and_ping_use_applications_endpoint_and_budibase_headers() {
+    install_crypto_provider();
     let server = MockHttpServer::start(vec![
         ExpectedResponse {
             status: 200,
@@ -136,6 +146,7 @@ async fn connect_and_ping_use_applications_endpoint_and_budibase_headers() {
 
 #[tokio::test]
 async fn connect_refuses_non_success_response() {
+    install_crypto_provider();
     let server = MockHttpServer::start(vec![ExpectedResponse {
         status: 401,
         body: r#"{"message":"invalid API key"}"#,

@@ -6,8 +6,75 @@ use crate::error::{K8sError, K8sResult};
 use crate::types::*;
 use log::{debug, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use sorng_tls_trust::{skip_flag_to_override, TofuTlsContext, TofuVerifier};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Split an API-server URL into the `(host, port)` pair that keys its Trust
+/// Center record (`tls:host:port`). Falls back to the HTTPS port for a bare
+/// host, and tolerates IPv6 literals.
+///
+/// IPv6 brackets are stripped so both the URL and the bare-authority branch
+/// produce the same record key — `sorng_tls_trust` canonicalises brackets away
+/// when it compares the handshake name, but the key itself is the raw host.
+fn canonical_host_port(raw: &str) -> (String, u16) {
+    let trimmed = raw.trim().trim_end_matches('/');
+
+    if let Ok(url) = url::Url::parse(trimmed) {
+        if let Some(host) = url.host_str() {
+            let default_port = if url.scheme() == "http" { 80 } else { 443 };
+            return (unbracket(host), url.port().unwrap_or(default_port));
+        }
+    }
+
+    let without_scheme = trimmed
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(trimmed);
+    let authority = without_scheme.split('/').next().unwrap_or(without_scheme);
+
+    if let Some((host, port_str)) = authority.rsplit_once(':') {
+        // Only a cleanly-parsing suffix is a port — `[::1]` must not be split.
+        if let Ok(port) = port_str.parse::<u16>() {
+            if !host.is_empty() {
+                return (unbracket(host), port);
+            }
+        }
+    }
+
+    (unbracket(authority), 443)
+}
+
+/// Strip the `[...]` wrapper from an IPv6 literal host.
+fn unbracket(host: &str) -> String {
+    host.strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(host)
+        .to_string()
+}
+
+/// Parse a concatenated `cert\nkey` PEM into the rustls client-auth pair.
+fn parse_client_identity(
+    pem: &[u8],
+) -> K8sResult<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
+    let certs = rustls_pemfile::certs(&mut std::io::BufReader::new(pem))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            K8sError::connection(format!("Invalid Kubernetes client certificate PEM: {e}"))
+        })?;
+    if certs.is_empty() {
+        return Err(K8sError::connection(
+            "Kubernetes client certificate PEM contains no certificate",
+        ));
+    }
+
+    let key = rustls_pemfile::private_key(&mut std::io::BufReader::new(pem))
+        .map_err(|e| K8sError::connection(format!("Invalid Kubernetes client key PEM: {e}")))?
+        .ok_or_else(|| K8sError::connection("Kubernetes client key PEM contains no private key"))?;
+
+    Ok((certs, key))
+}
 
 /// Kubernetes API HTTP client.
 #[derive(Clone)]
@@ -44,6 +111,7 @@ impl K8sClient {
         };
 
         let http = Self::build_http_client(
+            &base_url,
             &tls_config,
             config.request_timeout_secs,
             config.proxy_url.as_deref(),
@@ -156,6 +224,7 @@ impl K8sClient {
     }
 
     fn build_http_client(
+        base_url: &str,
         tls_config: &Option<K8sTlsConfig>,
         timeout_secs: Option<u64>,
         proxy_url: Option<&str>,
@@ -172,10 +241,37 @@ impl K8sClient {
             builder = builder.proxy(p);
         }
 
+        // The mTLS client identity is orthogonal to *server* verification: it
+        // must survive on both branches below, including the TOFU one where the
+        // rustls config is preconfigured (reqwest ignores `identity()` then).
+        let identity_pem = tls_config.as_ref().and_then(K8sClient::client_identity_pem);
+
         if let Some(ref tls) = tls_config {
             if tls.insecure_skip_verify {
-                builder = builder.danger_accept_invalid_certs(true);
+                // Replaces `danger_accept_invalid_certs(true)`: the server
+                // certificate is now decided by the Trust Center under an
+                // explicit, revocable AlwaysTrust override rather than being
+                // accepted blind and never recorded (t62). A configured CA is
+                // irrelevant on this branch — the override already governs.
+                let (host, port) = canonical_host_port(base_url);
+                log::warn!(
+                    "Kubernetes API server {host}:{port} is configured with insecureSkipVerify; \
+                     its certificate is accepted under an explicit Trust Center AlwaysTrust \
+                     override, revocable from the Trust Center"
+                );
+                let tls_config = Self::tofu_tls_config(host, port, identity_pem.as_deref())?;
+                return builder
+                    .use_preconfigured_tls(tls_config)
+                    .build()
+                    .map_err(|e| {
+                        K8sError::connection(format!("Failed to build HTTP client: {}", e))
+                    });
             }
+
+            // Full verification path: the cluster CA and the client identity are
+            // applied through reqwest's own rustls construction, which validates
+            // the chain and the hostname. This is strictly stronger than TOFU,
+            // so it is left exactly as it was.
 
             // Load CA certificate
             if let Some(ref ca_data) = tls.ca_cert_data {
@@ -197,24 +293,9 @@ impl K8sClient {
             }
 
             // Load client certificate + key for mTLS
-            if let (Some(ref cert_data), Some(ref key_data)) =
-                (&tls.client_cert_data, &tls.client_key_data)
-            {
-                if let (Ok(cert_bytes), Ok(key_bytes)) = (
-                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, cert_data),
-                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, key_data),
-                ) {
-                    let mut identity_pem =
-                        Vec::with_capacity(cert_bytes.len() + key_bytes.len() + 2);
-                    identity_pem.extend_from_slice(&cert_bytes);
-                    if !identity_pem.ends_with(b"\n") {
-                        identity_pem.push(b'\n');
-                    }
-                    identity_pem.extend_from_slice(&key_bytes);
-
-                    if let Ok(identity) = reqwest::Identity::from_pem(&identity_pem) {
-                        builder = builder.identity(identity);
-                    }
+            if let Some(ref pem) = identity_pem {
+                if let Ok(identity) = reqwest::Identity::from_pem(pem) {
+                    builder = builder.identity(identity);
                 }
             }
         }
@@ -222,6 +303,56 @@ impl K8sClient {
         builder
             .build()
             .map_err(|e| K8sError::connection(format!("Failed to build HTTP client: {}", e)))
+    }
+
+    /// Concatenated `cert\nkey` PEM for the configured mTLS client identity, if
+    /// any. Malformed base64 yields `None` — the same silent skip the pre-t62
+    /// code performed.
+    ///
+    /// Only the inline `client_cert_data` / `client_key_data` pair is honoured;
+    /// the `*_path` variants were unimplemented before t62 and stay that way.
+    fn client_identity_pem(tls: &K8sTlsConfig) -> Option<Vec<u8>> {
+        let (cert_data, key_data) = (
+            tls.client_cert_data.as_ref()?,
+            tls.client_key_data.as_ref()?,
+        );
+        let engine = &base64::engine::general_purpose::STANDARD;
+        let cert_bytes = base64::Engine::decode(engine, cert_data).ok()?;
+        let key_bytes = base64::Engine::decode(engine, key_data).ok()?;
+
+        let mut pem = Vec::with_capacity(cert_bytes.len() + key_bytes.len() + 1);
+        pem.extend_from_slice(&cert_bytes);
+        if !pem.ends_with(b"\n") {
+            pem.push(b'\n');
+        }
+        pem.extend_from_slice(&key_bytes);
+        Some(pem)
+    }
+
+    /// A rustls client config whose server verification routes through the
+    /// Trust Center with an explicit `AlwaysTrust` override, preserving the
+    /// mTLS client identity.
+    fn tofu_tls_config(
+        host: String,
+        port: u16,
+        identity_pem: Option<&[u8]>,
+    ) -> K8sResult<rustls::ClientConfig> {
+        let ctx = TofuTlsContext::shared(host, port, skip_flag_to_override(true));
+        let verifier = TofuVerifier::new(ctx)
+            .map_err(|e| K8sError::connection(format!("Trust Center TLS verifier: {e}")))?;
+        let builder = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(verifier));
+
+        match identity_pem {
+            Some(pem) => {
+                let (chain, key) = parse_client_identity(pem)?;
+                builder.with_client_auth_cert(chain, key).map_err(|e| {
+                    K8sError::connection(format!("Invalid Kubernetes client certificate: {e}"))
+                })
+            }
+            None => Ok(builder.with_no_client_auth()),
+        }
     }
 
     /// Build authorization headers for the current auth state.
@@ -587,5 +718,138 @@ impl K8sClient {
             })
             .unwrap_or_default();
         Ok(resources)
+    }
+}
+
+#[cfg(test)]
+mod tls_trust_tests {
+    use super::*;
+
+    fn tls(insecure: bool) -> K8sTlsConfig {
+        K8sTlsConfig {
+            ca_cert_data: None,
+            ca_cert_path: None,
+            client_cert_data: None,
+            client_cert_path: None,
+            client_key_data: None,
+            client_key_path: None,
+            insecure_skip_verify: insecure,
+            server_name: None,
+        }
+    }
+
+    // ── decision mapping ────────────────────────────────────────────────
+    //
+    // `insecureSkipVerify` no longer disables verification: it selects the
+    // explicit `AlwaysTrust` Trust Center override. Unset defers to the
+    // store's effective policy (`None` => TOFU by default).
+
+    #[test]
+    fn insecure_skip_verify_maps_to_an_always_trust_override() {
+        assert!(skip_flag_to_override(tls(true).insecure_skip_verify).is_some());
+    }
+
+    #[test]
+    fn secure_config_defers_to_the_store_policy() {
+        assert!(skip_flag_to_override(tls(false).insecure_skip_verify).is_none());
+    }
+
+    // ── record key derivation ───────────────────────────────────────────
+
+    #[test]
+    fn api_server_url_yields_the_host_and_explicit_port() {
+        assert_eq!(
+            canonical_host_port("https://10.0.0.5:6443"),
+            ("10.0.0.5".to_string(), 6443)
+        );
+    }
+
+    #[test]
+    fn a_trailing_path_and_slash_are_not_part_of_the_record_key() {
+        assert_eq!(
+            canonical_host_port("https://k8s.example.test:6443/api/"),
+            ("k8s.example.test".to_string(), 6443)
+        );
+    }
+
+    #[test]
+    fn a_url_without_a_port_falls_back_to_the_scheme_default() {
+        assert_eq!(
+            canonical_host_port("https://k8s.example.test"),
+            ("k8s.example.test".to_string(), 443)
+        );
+        assert_eq!(
+            canonical_host_port("http://k8s.example.test"),
+            ("k8s.example.test".to_string(), 80)
+        );
+    }
+
+    #[test]
+    fn a_bare_host_defaults_to_the_https_port() {
+        assert_eq!(
+            canonical_host_port("k8s.example.test"),
+            ("k8s.example.test".to_string(), 443)
+        );
+    }
+
+    #[test]
+    fn an_ipv6_literal_is_not_split_on_its_own_colons() {
+        assert_eq!(
+            canonical_host_port("https://[::1]:6443"),
+            ("::1".to_string(), 6443)
+        );
+        assert_eq!(
+            canonical_host_port("[fe80::1]"),
+            ("fe80::1".to_string(), 443)
+        );
+    }
+
+    // ── mTLS identity survives the TOFU branch ──────────────────────────
+
+    #[test]
+    fn a_client_identity_is_assembled_from_the_inline_pair() {
+        let engine = &base64::engine::general_purpose::STANDARD;
+        let mut cfg = tls(true);
+        cfg.client_cert_data = Some(base64::Engine::encode(engine, b"-----CERT-----"));
+        cfg.client_key_data = Some(base64::Engine::encode(engine, b"-----KEY-----"));
+
+        let pem = K8sClient::client_identity_pem(&cfg).expect("identity PEM");
+        assert_eq!(pem, b"-----CERT-----\n-----KEY-----".to_vec());
+    }
+
+    #[test]
+    fn a_half_configured_identity_is_skipped() {
+        let engine = &base64::engine::general_purpose::STANDARD;
+        let mut cfg = tls(true);
+        cfg.client_cert_data = Some(base64::Engine::encode(engine, b"-----CERT-----"));
+        assert!(K8sClient::client_identity_pem(&cfg).is_none());
+    }
+
+    #[test]
+    fn malformed_identity_base64_is_skipped_rather_than_failing_the_connection() {
+        let mut cfg = tls(true);
+        cfg.client_cert_data = Some("not base64!!".to_string());
+        cfg.client_key_data = Some("also not base64!!".to_string());
+        assert!(K8sClient::client_identity_pem(&cfg).is_none());
+    }
+
+    #[test]
+    fn an_identity_pem_without_a_certificate_is_rejected() {
+        // Unlike the pre-t62 `reqwest::Identity::from_pem` path, which silently
+        // dropped an unusable identity, the TOFU branch surfaces it.
+        let err = parse_client_identity(b"").unwrap_err();
+        assert!(
+            err.to_string().contains("no certificate"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_identity_pem_is_rejected() {
+        let err = parse_client_identity(b"-----BEGIN NOPE-----\n").unwrap_err();
+        assert!(
+            err.to_string().to_ascii_lowercase().contains("certificate"),
+            "unexpected error: {err}"
+        );
     }
 }

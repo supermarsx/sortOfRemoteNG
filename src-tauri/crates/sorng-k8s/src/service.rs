@@ -104,8 +104,7 @@ impl K8sService {
             auth_method: K8sAuthMethod::Kubeconfig,
             namespace: Some("default".to_string()),
             tls_config: Some({
-                let insecure_skip_verify =
-                    endpoint.insecure_skip_tls_verify.unwrap_or(false);
+                let insecure_skip_verify = endpoint.insecure_skip_tls_verify.unwrap_or(false);
                 if insecure_skip_verify {
                     tracing::warn!(
                         security_event = "insecure_tls",

@@ -11,7 +11,11 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 rustls = { workspace = true }
-rustls-native-certs = { workspace = true }
+# FTPS server certificates are decided by the shared Trust Center TOFU verifier
+# instead of a blind accept-anything verifier (t62). The native root store now
+# lives inside sorng-tls-trust's webpki delegate, so this crate no longer loads
+# it directly.
+sorng-tls-trust = { path = "../sorng-tls-trust" }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

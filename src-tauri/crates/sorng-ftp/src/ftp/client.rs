@@ -65,9 +65,12 @@ impl FtpClient {
             }
             codec = tls::upgrade_to_tls(
                 codec,
-                &config.host,
-                config.accept_invalid_certs,
-                config.acknowledge_invalid_cert_risk,
+                tls::FtpsTlsParams {
+                    host: &config.host,
+                    port: config.port,
+                    accept_invalid_certs: config.accept_invalid_certs,
+                    acknowledge_invalid_cert_risk: config.acknowledge_invalid_cert_risk,
+                },
                 Duration::from_secs(config.connect_timeout_sec),
             )
             .await?;
@@ -286,6 +289,7 @@ impl FtpClient {
                 mode: self.config.data_channel_mode,
                 security: &self.config.security,
                 host: &self.config.host,
+                control_port: self.config.port,
                 accept_invalid_certs: self.config.accept_invalid_certs,
                 acknowledge_invalid_cert_risk: self.config.acknowledge_invalid_cert_risk,
                 data_timeout: Duration::from_secs(self.config.data_timeout_sec),

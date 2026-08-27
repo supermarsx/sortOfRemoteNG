@@ -4,7 +4,51 @@
 use crate::error::{BudibaseError, BudibaseResult};
 use crate::types::*;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use sorng_tls_trust::{build_tofu_client, skip_flag_to_override, TofuTlsContext};
 use std::time::Duration;
+
+/// Split the configured host into the `(host, port)` pair that keys its Trust
+/// Center record (`tls:host:port`). Falls back to the HTTPS port for a bare
+/// host, and tolerates IPv6 literals.
+///
+/// IPv6 brackets are stripped so both the URL and the bare-authority branch
+/// produce the same record key — `sorng_tls_trust` canonicalises brackets away
+/// when it compares the handshake name, but the key itself is the raw host.
+fn canonical_host_port(raw: &str) -> (String, u16) {
+    let trimmed = raw.trim().trim_end_matches('/');
+
+    if let Ok(url) = url::Url::parse(trimmed) {
+        if let Some(host) = url.host_str() {
+            let default_port = if url.scheme() == "http" { 80 } else { 443 };
+            return (unbracket(host), url.port().unwrap_or(default_port));
+        }
+    }
+
+    let without_scheme = trimmed
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(trimmed);
+    let authority = without_scheme.split('/').next().unwrap_or(without_scheme);
+
+    if let Some((host, port_str)) = authority.rsplit_once(':') {
+        // Only a cleanly-parsing suffix is a port — `[::1]` must not be split.
+        if let Ok(port) = port_str.parse::<u16>() {
+            if !host.is_empty() {
+                return (unbracket(host), port);
+            }
+        }
+    }
+
+    (unbracket(authority), 443)
+}
+
+/// Strip the `[...]` wrapper from an IPv6 literal host.
+fn unbracket(host: &str) -> String {
+    host.strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(host)
+        .to_string()
+}
 
 /// Budibase API client wrapping reqwest.
 pub struct BudibaseClient {
@@ -34,10 +78,11 @@ impl BudibaseClient {
 
         if effective_tls_skip {
             log::warn!(
-                "TLS certificate verification disabled for Budibase connection to {}",
+                "TLS certificate verification for Budibase connection to {} is running under an \
+                 explicit Trust Center AlwaysTrust override; revoke the record in the Trust \
+                 Center to undo it",
                 config.host
             );
-            builder = builder.danger_accept_invalid_certs(true);
         }
 
         if let Some(proxy_url) = config
@@ -51,9 +96,14 @@ impl BudibaseClient {
             builder = builder.proxy(proxy);
         }
 
-        let http = builder
-            .build()
-            .map_err(|e| BudibaseError::connection(&e.to_string()))?;
+        // Route the server-certificate decision through the Trust Center
+        // (t62). Default is Trust-On-First-Use: the leaf is pinned on first
+        // connect and a later mismatch is rejected as a possible MITM. The
+        // legacy skip flag no longer disables verification — it maps to an
+        // explicit, revocable `AlwaysTrust` policy override.
+        let (host, port) = canonical_host_port(&config.host);
+        let ctx = TofuTlsContext::shared(host, port, skip_flag_to_override(effective_tls_skip));
+        let http = build_tofu_client(builder, ctx).map_err(|e| BudibaseError::connection(&e))?;
 
         // Normalise base URL (strip trailing slash)
         let base_url = config.host.trim_end_matches('/').to_string();
@@ -226,5 +276,81 @@ impl BudibaseClient {
             }),
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tls_trust_tests {
+    use super::*;
+
+    // ── decision mapping ────────────────────────────────────────────────
+    //
+    // `skipTlsVerify` no longer disables verification: it selects the explicit
+    // `AlwaysTrust` Trust Center override, and only for an https:// host.
+    // Unset defers to the store's effective policy (`None` => TOFU by default).
+
+    fn effective_skip(host: &str, skip: bool) -> bool {
+        skip && host
+            .trim()
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
+    }
+
+    #[test]
+    fn skip_tls_verify_on_an_https_host_maps_to_an_always_trust_override() {
+        assert!(skip_flag_to_override(effective_skip("https://bb.example.test", true)).is_some());
+    }
+
+    #[test]
+    fn skip_tls_verify_on_a_plain_http_host_is_inert() {
+        assert!(!effective_skip("http://bb.example.test", true));
+        assert!(skip_flag_to_override(effective_skip("http://bb.example.test", true)).is_none());
+    }
+
+    #[test]
+    fn an_unset_flag_defers_to_the_store_policy() {
+        assert!(skip_flag_to_override(effective_skip("https://bb.example.test", false)).is_none());
+    }
+
+    // ── record key derivation ───────────────────────────────────────────
+
+    #[test]
+    fn an_explicit_port_is_part_of_the_record_key() {
+        assert_eq!(
+            canonical_host_port("https://bb.example.test:10000"),
+            ("bb.example.test".to_string(), 10000)
+        );
+    }
+
+    #[test]
+    fn a_trailing_slash_and_path_are_stripped() {
+        assert_eq!(
+            canonical_host_port("https://bb.example.test/builder/"),
+            ("bb.example.test".to_string(), 443)
+        );
+    }
+
+    #[test]
+    fn a_scheme_default_port_is_used_when_none_is_given() {
+        assert_eq!(
+            canonical_host_port("http://bb.example.test"),
+            ("bb.example.test".to_string(), 80)
+        );
+    }
+
+    #[test]
+    fn a_bare_host_defaults_to_the_https_port() {
+        assert_eq!(
+            canonical_host_port("bb.example.test"),
+            ("bb.example.test".to_string(), 443)
+        );
+    }
+
+    #[test]
+    fn an_ipv6_literal_is_not_split_on_its_own_colons() {
+        assert_eq!(
+            canonical_host_port("https://[::1]:10000"),
+            ("::1".to_string(), 10000)
+        );
     }
 }

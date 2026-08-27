@@ -37,6 +37,10 @@ pub(crate) struct DataChannelOptions<'a> {
     pub(crate) mode: DataChannelMode,
     pub(crate) security: &'a FtpSecurityMode,
     pub(crate) host: &'a str,
+    /// Control-connection port. The data channel is verified against the same
+    /// `tls:host:port` Trust Center record as the control connection, so the
+    /// ephemeral PASV/EPSV port is deliberately *not* used here.
+    pub(crate) control_port: u16,
     pub(crate) accept_invalid_certs: bool,
     pub(crate) acknowledge_invalid_cert_risk: bool,
     pub(crate) data_timeout: Duration,
@@ -54,6 +58,7 @@ pub(crate) async fn open_data_channel(
         mode,
         security,
         host,
+        control_port,
         accept_invalid_certs,
         acknowledge_invalid_cert_risk,
         data_timeout,
@@ -78,9 +83,12 @@ pub(crate) async fn open_data_channel(
     if *security != FtpSecurityMode::None {
         let tls = tls::wrap_data_stream(
             tcp,
-            host,
-            accept_invalid_certs,
-            acknowledge_invalid_cert_risk,
+            tls::FtpsTlsParams {
+                host,
+                port: control_port,
+                accept_invalid_certs,
+                acknowledge_invalid_cert_risk,
+            },
             data_timeout,
         )
         .await?;

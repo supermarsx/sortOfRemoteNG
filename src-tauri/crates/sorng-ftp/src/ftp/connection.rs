@@ -5,7 +5,7 @@
 
 use crate::ftp::error::{FtpError, FtpResult};
 use crate::ftp::protocol::FtpCodec;
-use crate::ftp::tls::upgrade_to_tls;
+use crate::ftp::tls::{upgrade_to_tls, FtpsTlsParams};
 use crate::ftp::types::{FtpConnectionConfig, FtpResponse, FtpSecurityMode};
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -33,9 +33,12 @@ pub async fn connect(config: &FtpConnectionConfig) -> FtpResult<(FtpCodec, FtpRe
             plain.set_io_timeout(dur);
             let mut codec = upgrade_to_tls(
                 plain,
-                &config.host,
-                config.accept_invalid_certs,
-                config.acknowledge_invalid_cert_risk,
+                FtpsTlsParams {
+                    host: &config.host,
+                    port: config.port,
+                    accept_invalid_certs: config.accept_invalid_certs,
+                    acknowledge_invalid_cert_risk: config.acknowledge_invalid_cert_risk,
+                },
                 dur,
             )
             .await

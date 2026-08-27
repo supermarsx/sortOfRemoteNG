@@ -15,3 +15,11 @@ chrono = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
 url = { workspace = true }
+# Server certificates are decided by the shared Trust Center TOFU verifier
+# instead of a config-gated `danger_accept_invalid_certs(true)` (t62).
+sorng-tls-trust = { path = "../sorng-tls-trust" }
+
+[dev-dependencies]
+# The test binary must install the ring crypto provider itself; in the app
+# `sorng-app` does it at startup.
+rustls = { workspace = true, features = ["ring"] }

@@ -21,3 +21,11 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 regex = { workspace = true }
 dirs = { workspace = true }
+# Server-certificate decisions for `insecureSkipVerify` clusters route through
+# the Trust Center (TOFU / explicit AlwaysTrust override) instead of a blind
+# `danger_accept_invalid_certs(true)` (t62). rustls + rustls-pemfile are needed
+# directly so the preconfigured config keeps the mTLS client identity, which
+# reqwest drops for preconfigured TLS backends.
+sorng-tls-trust = { path = "../sorng-tls-trust" }
+rustls = { workspace = true }
+rustls-pemfile = "2"
