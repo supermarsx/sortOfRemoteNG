@@ -34,7 +34,7 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@tailwindcss/postcss", "4.3.3", "MIT", "CSS & Styling"),
     ("@tauri-apps/cli", "2.11.4", "Apache-2.0 OR MIT", "Tauri Integration"),
     ("@testing-library/dom", "10.4.1", "MIT", "Testing"),
-    ("@testing-library/jest-dom", "6.9.1", "MIT", "Testing"),
+    ("@testing-library/jest-dom", "7.0.1", "MIT", "Testing"),
     ("@testing-library/react", "16.3.3", "MIT", "Testing"),
     ("@types/node", "24.13.3", "MIT", "Type Definitions"),
     ("@types/qrcode", "1.5.6", "MIT", "Type Definitions"),
