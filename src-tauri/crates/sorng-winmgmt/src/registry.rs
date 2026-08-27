@@ -1688,10 +1688,9 @@ impl RegistryManager {
 
     /// Decode UTF-16LE bytes to a String, stripping trailing null.
     fn decode_utf16_bytes(bytes: &[u8]) -> String {
-        let u16s: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        // Trailing odd byte is ignored, exactly as `chunks_exact(2)` did.
+        let (pairs, _) = bytes.as_chunks::<2>();
+        let u16s: Vec<u16> = pairs.iter().copied().map(u16::from_le_bytes).collect();
 
         // Strip trailing null
         let end = u16s.iter().position(|&c| c == 0).unwrap_or(u16s.len());
@@ -1700,10 +1699,9 @@ impl RegistryManager {
 
     /// Decode a multi-string (double-null-terminated UTF-16LE) to Vec<String>.
     fn decode_multi_string_bytes(bytes: &[u8]) -> Vec<String> {
-        let u16s: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        // Trailing odd byte is ignored, exactly as `chunks_exact(2)` did.
+        let (pairs, _) = bytes.as_chunks::<2>();
+        let u16s: Vec<u16> = pairs.iter().copied().map(u16::from_le_bytes).collect();
 
         let mut strings = Vec::new();
         let mut start = 0;

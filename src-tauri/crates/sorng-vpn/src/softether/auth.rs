@@ -115,10 +115,13 @@ pub fn sha0(data: &[u8]) -> [u8; SHA0_SIZE] {
     }
     msg.extend_from_slice(&bit_len.to_be_bytes());
 
-    for chunk in msg.chunks_exact(64) {
+    // `msg` is padded to a multiple of 64, so the remainder is always empty.
+    let (blocks, _) = msg.as_chunks::<64>();
+    for chunk in blocks {
         let mut w = [0u32; 80];
-        for (i, word) in chunk.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        let (words, _) = chunk.as_chunks::<4>();
+        for (i, word) in words.iter().enumerate() {
+            w[i] = u32::from_be_bytes(*word);
         }
         // SHA-0 message schedule: NO rol(1) — this is the single bit
         // that makes this SHA-0 rather than SHA-1.

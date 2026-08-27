@@ -165,9 +165,12 @@ pub fn encode_utf16le(s: &str) -> Vec<u8> {
 
 /// Decode a null-terminated UTF-16LE string from a byte slice.
 pub fn decode_utf16le(data: &[u8]) -> String {
-    let u16s: Vec<u16> = data
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+    // Trailing odd byte is ignored, exactly as `chunks_exact(2)` did.
+    let (pairs, _) = data.as_chunks::<2>();
+    let u16s: Vec<u16> = pairs
+        .iter()
+        .copied()
+        .map(u16::from_le_bytes)
         .take_while(|&ch| ch != 0)
         .collect();
     String::from_utf16_lossy(&u16s)

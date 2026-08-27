@@ -39,7 +39,14 @@ const HTTP_BANNER = /^\s*HTTP\/\d|<!doctype html|<html|^\s*server:\s*\S/i;
 const HTTP_SERVER_BANNER =
   /\b(apache|nginx|iis|lighttpd|caddy|tomcat|jetty|gunicorn|express|kestrel|openresty|cloudflare)\b/i;
 // TLS record header: content type 0x16 (handshake), version 0x03 0x0[0-4].
-const TLS_HANDSHAKE_PREFIX = /^\x16\x03[\x00-\x04]/;
+// Compared byte-wise rather than by regex: the bytes are control characters,
+// which a character-class regex cannot express without tripping
+// `no-control-regex`. `charCodeAt` past the end yields NaN, so a banner
+// shorter than three bytes fails every comparison.
+const isTlsHandshakeBanner = (banner: string): boolean =>
+  banner.charCodeAt(0) === 0x16 &&
+  banner.charCodeAt(1) === 0x03 &&
+  banner.charCodeAt(2) <= 0x04;
 
 /**
  * Pure banner sniff: returns `http`/`https` when the banner carries web
@@ -50,7 +57,7 @@ export const sniffBannerProtocol = (
   port?: number,
 ): "http" | "https" | undefined => {
   if (typeof banner !== "string" || banner.length === 0) return undefined;
-  if (TLS_HANDSHAKE_PREFIX.test(banner)) return "https";
+  if (isTlsHandshakeBanner(banner)) return "https";
   if (HTTP_BANNER.test(banner) || HTTP_SERVER_BANNER.test(banner)) {
     const byPort =
       typeof port === "number" ? protocolFromPort(port) : undefined;

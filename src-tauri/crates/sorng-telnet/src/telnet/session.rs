@@ -641,8 +641,10 @@ pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
     };
-    bytes
-        .chunks_exact(2)
+    // Trailing odd byte is ignored, exactly as `chunks_exact(2)` did.
+    let (pairs, _) = bytes.as_chunks::<2>();
+    pairs
+        .iter()
         .map(|pair| Some((nibble(pair[0])? << 4) | nibble(pair[1])?))
         .collect()
 }

@@ -284,8 +284,10 @@ jobs:
         with:
           workspaces: src-tauri
           shared-key: integration-contracts-${{ matrix.cohort }}
+      # Every cohort needs these: `libdbus-sys` is a transitive dependency of
+      # the shared crates each cohort links, and its build script hard-fails
+      # without `dbus-1` on the pkg-config path.
       - name: Install Tauri Linux build prerequisites
-        if: matrix.cohort == 'native-and-cloud' || matrix.cohort == 'config-backend'
         shell: bash
         run: |
           sudo apt-get update

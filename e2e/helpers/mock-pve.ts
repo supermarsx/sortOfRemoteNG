@@ -148,12 +148,12 @@ export async function startMockPve(
  */
 export async function readMockPveFingerprint(): Promise<string> {
   // `pathToFileURL` — a bare Windows path (`F:\…`) is not a valid ESM specifier.
-  const module = (await import(
+  const serverModule = (await import(
     /* @vite-ignore */ pathToFileURL(MOCK_PVE_SERVER_PATH).href
   )) as {
     ensureMockPveCertificate: (options?: { certDir?: string }) => {
       fingerprint: string;
     };
   };
-  return module.ensureMockPveCertificate().fingerprint;
+  return serverModule.ensureMockPveCertificate().fingerprint;
 }

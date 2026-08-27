@@ -307,7 +307,9 @@ fn aes128_ecb_encrypt(key: &[u8; 16], data: &[u8; 128]) -> Result<Vec<u8>, VncEr
 
     let mut output = data.to_vec();
     // AES-128-ECB: encrypt each 16-byte block independently.
-    for chunk in output.chunks_exact_mut(16) {
+    // `data` is 128 bytes, a whole number of blocks: the remainder is empty.
+    let (blocks, _) = output.as_chunks_mut::<16>();
+    for chunk in blocks {
         let block = cipher::generic_array::GenericArray::from_mut_slice(chunk);
         cipher.encrypt_block(block);
     }

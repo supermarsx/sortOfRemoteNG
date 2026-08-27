@@ -1049,7 +1049,9 @@ fn md4_hash(data: &[u8]) -> Vec<u8> {
     let mut c = 0x98ba_dcfeu32;
     let mut d = 0x1032_5476u32;
 
-    for chunk in msg.chunks_exact(64) {
+    // `msg` is padded to a multiple of 64, so the remainder is always empty.
+    let (blocks, _) = msg.as_chunks::<64>();
+    for chunk in blocks {
         let mut x = [0u32; 16];
         for (i, word) in x.iter_mut().enumerate() {
             let j = i * 4;

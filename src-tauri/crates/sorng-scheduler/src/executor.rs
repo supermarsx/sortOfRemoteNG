@@ -498,8 +498,10 @@ fn send_wake_on_lan(mac_address: &str, port: u16) -> Result<(), SchedulerError> 
     }
     let mut packet = [0_u8; 102];
     packet[..6].fill(0xff);
-    for chunk in packet[6..].chunks_exact_mut(6) {
-        chunk.copy_from_slice(&mac);
+    // 96 payload bytes hold exactly 16 MAC repeats: the remainder is empty.
+    let (repeats, _) = packet[6..].as_chunks_mut::<6>();
+    for chunk in repeats {
+        *chunk = mac;
     }
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
         .map_err(|_| SchedulerError::ExecutionError("wake-on-LAN socket failed".to_string()))?;

@@ -403,9 +403,11 @@ impl BigUint {
         let mut padded = Zeroizing::new(vec![0u8; padded_len]);
         padded[padded_len - bytes.len()..].copy_from_slice(bytes);
 
-        let mut limbs = Vec::with_capacity(padded.len() / 4);
-        for chunk in padded.chunks_exact(4) {
-            limbs.push(u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        // `padded_len` is a multiple of 4, so the remainder is always empty.
+        let (words, _) = padded.as_chunks::<4>();
+        let mut limbs = Vec::with_capacity(words.len());
+        for chunk in words {
+            limbs.push(u32::from_be_bytes(*chunk));
         }
 
         // Remove leading zeros but keep at least one limb.
