@@ -1,259 +1,351 @@
-import { invoke } from '@tauri-apps/api/core';
-import { ProxyConfig } from '../../types/settings/settings';
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
+import type {
+  MysqlColumnDef,
+  MysqlConnectionConfig,
+  MysqlDatabaseInfo,
+  MysqlDialect,
+  MysqlExplainRow,
+  MysqlExportOptions,
+  MysqlForeignKeyInfo,
+  MysqlIndexInfo,
+  MysqlProcessInfo,
+  MysqlQueryResult,
+  MysqlRoutineInfo,
+  MysqlSavedConnectionOptions,
+  MysqlServerInfo,
+  MysqlServerVariable,
+  MysqlSessionInfo,
+  MysqlTableInfo,
+  MysqlTlsConfig,
+  MysqlTlsMode,
+  MysqlTriggerInfo,
+  MysqlViewInfo,
+} from "../../types/mysql";
+import { formatErrorForDisplay } from "../errors/formatError";
 
-export interface SshTunnelConfig {
-  enabled: boolean;
-  sshHost: string;
-  sshPort: number;
-  sshUsername: string;
-  sshPassword?: string;
-  sshPrivateKey?: string;
-  sshPassphrase?: string;
-}
+type SavedMysqlConnection = Connection & MysqlSavedConnectionOptions;
 
-export interface MySQLConfig {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database?: string;
-  proxy?: ProxyConfig;
-  openvpn?: {
-    enabled: boolean;
-    configId?: string;
-    chainPosition?: number;
-  };
-  sshTunnel?: SshTunnelConfig;
-}
+const positiveInteger = (
+  value: number | undefined,
+  fallback: number,
+  maximum: number,
+): number =>
+  Number.isFinite(value) && (value ?? 0) > 0
+    ? Math.min(Math.floor(value as number), maximum)
+    : fallback;
 
-export type MySQLValue =
-  | string
-  | number
-  | boolean
-  | null
-  | Date
-  | Record<string, unknown>;
+/** RFC 3986 form used to redact URL-encoded variants in backend errors. */
+export const encodeMysqlUrlValue = (value: string): string =>
+  encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 
-export interface QueryResult {
-  columns: string[];
-  rows: MySQLValue[][];
-  row_count: number;
-}
+const normalizedHost = (hostname: string): string => {
+  const host = hostname.trim();
+  if (!host) throw new Error("A MySQL or MariaDB hostname is required.");
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(host) || host.includes("@")) {
+    throw new Error(
+      "Enter a MySQL or MariaDB hostname, not a connection URI or credential-bearing address.",
+    );
+  }
+  return host;
+};
 
-interface ConnectionInfo {
-  config: MySQLConfig;
-  connected: boolean;
-  lastActivity: Date;
-}
+const blankToNull = (value: string | undefined): string | null => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
 
-export class MySQLService {
-  private connections = new Map<string, ConnectionInfo>();
+/**
+ * Map the editor TLS posture onto the Rust `TlsConfig`. `preferred` sends no
+ * TLS block so the backend keeps the driver default (opportunistic TLS).
+ */
+export const buildMysqlTlsConfig = (
+  connection: Readonly<SavedMysqlConnection>,
+): MysqlTlsConfig | null => {
+  const tls = connection.mysqlTls;
+  const mode: MysqlTlsMode = tls?.mode ?? "preferred";
+  const caPath = blankToNull(tls?.caPath);
+  const certPath = blankToNull(tls?.clientCertPath);
+  const keyPath = blankToNull(tls?.clientKeyPath);
 
-  async connect(connectionId: string, config: MySQLConfig): Promise<ConnectionInfo> {
-    try {
-      // Transform SSH tunnel config to match Rust backend expectations
-      const sshTunnel = config.sshTunnel ? {
-        enabled: config.sshTunnel.enabled,
-        ssh_host: config.sshTunnel.sshHost,
-        ssh_port: config.sshTunnel.sshPort,
-        ssh_username: config.sshTunnel.sshUsername,
-        ssh_password: config.sshTunnel.sshPassword,
-        ssh_private_key: config.sshTunnel.sshPrivateKey,
-        ssh_passphrase: config.sshTunnel.sshPassphrase,
-      } : undefined;
+  if (Boolean(certPath) !== Boolean(keyPath)) {
+    throw new Error(
+      "MySQL mutual TLS requires both a client certificate path and a client key path.",
+    );
+  }
+  if ((certPath || caPath) && (mode === "disabled" || mode === "preferred")) {
+    throw new Error(
+      "MySQL certificate paths require TLS mode Required, Verify CA, or Verify Identity.",
+    );
+  }
+  if ((mode === "verify-ca" || mode === "verify-identity") && !caPath) {
+    throw new Error(
+      "MySQL TLS modes Verify CA and Verify Identity require a CA certificate path.",
+    );
+  }
 
-      // Use Tauri IPC to connect to MySQL database
-      const result = await invoke<string>('connect_mysql', {
-        host: config.host,
-        port: config.port,
-        username: config.user,
-        password: config.password,
-        database: config.database || '',
-        proxy: config.proxy,
-        openvpn: config.openvpn,
-        sshTunnel,
-      });
-
-      const connection: ConnectionInfo = {
-        config,
-        connected: true,
-        lastActivity: new Date(),
+  switch (mode) {
+    case "preferred":
+      return null;
+    case "disabled":
+      return {
+        enabled: false,
+        ca_cert: null,
+        client_cert: null,
+        client_key: null,
+        skip_verify: false,
+        verify_hostname: false,
       };
-
-      // Store connection
-      this.connections.set(connectionId, connection);
-
-      return connection;
-    } catch (error) {
-      throw new Error(`Failed to connect to MySQL: ${error}`);
-    }
+    case "required":
+      return {
+        enabled: true,
+        ca_cert: null,
+        client_cert: certPath,
+        client_key: keyPath,
+        skip_verify: true,
+        verify_hostname: false,
+      };
+    case "verify-ca":
+    case "verify-identity":
+      return {
+        enabled: true,
+        ca_cert: caPath,
+        client_cert: certPath,
+        client_key: keyPath,
+        skip_verify: false,
+        verify_hostname: mode === "verify-identity",
+      };
   }
+};
 
-  async executeQuery(connectionId: string, query: string): Promise<QueryResult> {
-    const connection = this.connections.get(connectionId);
-    if (!connection) {
-      throw new Error('Not connected to MySQL server');
-    }
+/**
+ * Build the exact snake_case DTO consumed by `MysqlConnectionConfig`.
+ * Raw values stay in the DTO; the Rust options builder never places them in
+ * a URL string.
+ */
+export const buildMysqlConnectionConfig = (
+  connection: Connection,
+  session: ConnectionSession,
+): MysqlConnectionConfig => {
+  const saved = connection as SavedMysqlConnection;
+  return {
+    host: normalizedHost(saved.hostname || session.hostname),
+    port: positiveInteger(saved.port, 3306, 65_535),
+    username: saved.username?.trim() || "root",
+    password: saved.password ?? "",
+    database: blankToNull(saved.database),
+    ssh_tunnel: null,
+    tls: buildMysqlTlsConfig(saved),
+    max_connections: 5,
+    connect_timeout_secs: positiveInteger(
+      saved.mysqlConnectionTimeoutSecs ?? saved.timeout,
+      10,
+      600,
+    ),
+    idle_timeout_secs: 300,
+    charset: "utf8mb4",
+    timezone: null,
+  };
+};
 
-    try {
-      // Use Tauri IPC to execute query
-      const result = await invoke<QueryResult>('execute_query', {
-        query,
-      });
-
-      // Update last activity
-      connection.lastActivity = new Date();
-
-      return result;
-    } catch (error) {
-      throw new Error(`Query execution failed: ${error}`);
-    }
+/** The native MySQL service owns a direct socket only; routes fail closed. */
+export const getUnsupportedMysqlRouteReason = (
+  connection: Readonly<Connection>,
+): string | null => {
+  const hasInlineRoute =
+    connection.security?.proxy?.enabled === true ||
+    connection.security?.openvpn?.enabled === true ||
+    connection.security?.sshTunnel?.enabled === true ||
+    connection.security?.tunnelChain?.some((layer) => layer.enabled !== false);
+  if (
+    connection.proxyChainId ||
+    connection.connectionChainId ||
+    connection.tunnelChainId ||
+    hasInlineRoute
+  ) {
+    return "The native MySQL/MariaDB client currently supports direct connections only; remove the configured proxy, VPN, or tunnel chain for this session.";
   }
+  return null;
+};
 
-  async disconnect(connectionId: string): Promise<void> {
-    if (!this.connections.has(connectionId)) return;
-    try {
-      await invoke('disconnect_db');
-    } finally {
-      this.connections.delete(connectionId);
-    }
-  }
+const connectionSecrets = (
+  connection: Readonly<Connection> | undefined,
+): string[] => {
+  if (!connection) return [];
+  const inlineSecrets = (connection.security?.tunnelChain ?? []).flatMap(
+    (layer) => [
+      layer.proxy?.password,
+      layer.sshTunnel?.password,
+      layer.sshTunnel?.passphrase,
+      layer.sshTunnel?.privateKey,
+      layer.sshTunnel?.proxyCommand?.proxyPassword,
+      layer.vpn?.privateKey,
+      layer.vpn?.presharedKey,
+      layer.tunnel?.authToken,
+      layer.mesh?.authKey,
+    ],
+  );
+  const raw = [
+    connection.password,
+    connection.passphrase,
+    connection.privateKey,
+    connection.security?.proxy?.password,
+    ...inlineSecrets,
+  ].filter((value): value is string => Boolean(value));
+  return [...raw, ...raw.map(encodeMysqlUrlValue)];
+};
 
-  async getDatabases(): Promise<string[]> {
-    const result = await invoke<QueryResult>('get_databases');
-    return result.rows.map(row => row[0] as string);
-  }
+const redactMysqlUri = (message: string): string =>
+  message
+    .replace(/\b((?:mysql|mariadb):\/\/)[^\s/@]+@/gi, "$1[redacted]@")
+    .replace(/([?&](?:password|pwd)=)[^&#\s]*/gi, "$1[redacted]");
 
-  async getTables(database: string): Promise<string[]> {
-    const result = await invoke<QueryResult>('get_tables', { database });
-    return result.rows.map(row => row[0] as string);
-  }
+export const mysqlErrorMessage = (
+  cause: unknown,
+  connection?: Readonly<Connection>,
+): string =>
+  redactMysqlUri(formatErrorForDisplay(cause, connectionSecrets(connection)));
 
-  async getTableStructure(database: string, table: string): Promise<QueryResult> {
-    return await invoke<QueryResult>('get_table_structure', { database, table });
-  }
+/** True when the backend no longer holds the session (restart, eviction). */
+export const isMissingMysqlSessionError = (cause: unknown): boolean =>
+  /session\b[^\n]*\b(?:not found|does not exist)|no active mysql connection|not_connected/i.test(
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "string"
+        ? cause
+        : "",
+  );
 
-  async createDatabase(database: string): Promise<void> {
-    await invoke('create_database', { database });
-  }
+/** Normalise the backend dialect tag or sniff it from a version string. */
+export const detectMysqlDialect = (
+  dialect: string | null | undefined,
+  serverVersion?: string | null,
+): MysqlDialect => {
+  if (dialect && /maria/i.test(dialect)) return "mariadb";
+  if (dialect && /mysql/i.test(dialect)) return "mysql";
+  return serverVersion && /mariadb/i.test(serverVersion) ? "mariadb" : "mysql";
+};
 
-  async dropDatabase(database: string): Promise<void> {
-    await invoke('drop_database', { database });
-  }
+export const mysqlDialectLabel = (dialect: MysqlDialect): string =>
+  dialect === "mariadb" ? "MariaDB" : "MySQL";
 
-  async createTable(database: string, table: string, columns: string[]): Promise<void> {
-    await invoke('create_table', { database, table, columns });
-  }
+/** Backtick-quote an identifier for generated SQL. */
+export const quoteMysqlIdentifier = (identifier: string): string =>
+  `\`${identifier.replace(/`/g, "``")}\``;
 
-  async dropTable(database: string, table: string): Promise<void> {
-    await invoke('drop_table', { database, table });
-  }
+/**
+ * Typed wrappers over the per-session `mysql_*` commands. Every call after
+ * `connect` is keyed by the backend session id it returned.
+ */
+export const mysqlApi = {
+  connect: (config: MysqlConnectionConfig) =>
+    invoke<string>("mysql_connect", { config }),
+  disconnect: (sessionId: string) =>
+    invoke<void>("mysql_disconnect", { sessionId }),
+  disconnectAll: () => invoke<void>("mysql_disconnect_all"),
+  listSessions: () => invoke<MysqlSessionInfo[]>("mysql_list_sessions"),
+  getSession: (sessionId: string) =>
+    invoke<MysqlSessionInfo>("mysql_get_session", { sessionId }),
+  serverInfo: (sessionId: string) =>
+    invoke<MysqlServerInfo>("mysql_server_info", { sessionId }),
+  ping: (sessionId: string) => invoke<boolean>("mysql_ping", { sessionId }),
+  executeQuery: (sessionId: string, sql: string) =>
+    invoke<MysqlQueryResult>("mysql_execute_query", { sessionId, sql }),
+  executeStatement: (sessionId: string, sql: string) =>
+    invoke<MysqlQueryResult>("mysql_execute_statement", { sessionId, sql }),
+  explainQuery: (sessionId: string, sql: string) =>
+    invoke<MysqlExplainRow[]>("mysql_explain_query", { sessionId, sql }),
+  listDatabases: (sessionId: string) =>
+    invoke<MysqlDatabaseInfo[]>("mysql_list_databases", { sessionId }),
+  listTables: (sessionId: string, database: string) =>
+    invoke<MysqlTableInfo[]>("mysql_list_tables", { sessionId, database }),
+  describeTable: (sessionId: string, database: string, table: string) =>
+    invoke<MysqlColumnDef[]>("mysql_describe_table", {
+      sessionId,
+      database,
+      table,
+    }),
+  listIndexes: (sessionId: string, database: string, table: string) =>
+    invoke<MysqlIndexInfo[]>("mysql_list_indexes", {
+      sessionId,
+      database,
+      table,
+    }),
+  listForeignKeys: (sessionId: string, database: string, table: string) =>
+    invoke<MysqlForeignKeyInfo[]>("mysql_list_foreign_keys", {
+      sessionId,
+      database,
+      table,
+    }),
+  listViews: (sessionId: string, database: string) =>
+    invoke<MysqlViewInfo[]>("mysql_list_views", { sessionId, database }),
+  listRoutines: (sessionId: string, database: string) =>
+    invoke<MysqlRoutineInfo[]>("mysql_list_routines", { sessionId, database }),
+  listTriggers: (sessionId: string, database: string) =>
+    invoke<MysqlTriggerInfo[]>("mysql_list_triggers", { sessionId, database }),
+  getTableData: (
+    sessionId: string,
+    database: string,
+    table: string,
+    limit?: number,
+    offset?: number,
+  ) =>
+    invoke<MysqlQueryResult>("mysql_get_table_data", {
+      sessionId,
+      database,
+      table,
+      limit: limit ?? null,
+      offset: offset ?? null,
+    }),
+  exportTable: (
+    sessionId: string,
+    database: string,
+    table: string,
+    options: MysqlExportOptions,
+  ) =>
+    invoke<string>("mysql_export_table", {
+      sessionId,
+      database,
+      table,
+      options,
+    }),
+  exportDatabase: (
+    sessionId: string,
+    database: string,
+    options: MysqlExportOptions,
+  ) =>
+    invoke<string>("mysql_export_database", { sessionId, database, options }),
+  importSql: (sessionId: string, sqlContent: string) =>
+    invoke<number>("mysql_import_sql", { sessionId, sqlContent }),
+  importCsv: (
+    sessionId: string,
+    database: string,
+    table: string,
+    csvContent: string,
+    hasHeader: boolean,
+  ) =>
+    invoke<number>("mysql_import_csv", {
+      sessionId,
+      database,
+      table,
+      csvContent,
+      hasHeader,
+    }),
+  showVariables: (sessionId: string, filter?: string) =>
+    invoke<MysqlServerVariable[]>("mysql_show_variables", {
+      sessionId,
+      filter: filter ?? null,
+    }),
+  showProcesslist: (sessionId: string) =>
+    invoke<MysqlProcessInfo[]>("mysql_show_processlist", { sessionId }),
+  killProcess: (sessionId: string, processId: number) =>
+    invoke<void>("mysql_kill_process", { sessionId, processId }),
+};
 
-  async getTableData(database: string, table: string, limit?: number, offset?: number): Promise<QueryResult> {
-    return await invoke<QueryResult>('get_table_data', { database, table, limit, offset });
-  }
-
-  async insertRow(database: string, table: string, columns: string[], values: string[]): Promise<number> {
-    return await invoke<number>('insert_row', { database, table, columns, values });
-  }
-
-  async updateRow(database: string, table: string, columns: string[], values: string[], whereClause: string): Promise<number> {
-    return await invoke<number>('update_row', { database, table, columns, values, whereClause });
-  }
-
-  async deleteRow(database: string, table: string, whereClause: string): Promise<number> {
-    return await invoke<number>('delete_row', { database, table, whereClause });
-  }
-
-  async exportTable(database: string, table: string, format: 'csv' | 'sql'): Promise<string> {
-    return await invoke<string>('export_table', { database, table, format });
-  }
-
-  async importSql(sqlContent: string): Promise<number> {
-    return await invoke<number>('import_sql', { sqlContent });
-  }
-
-  async importCsv(database: string, table: string, csvContent: string, hasHeader: boolean): Promise<number> {
-    return await invoke<number>('import_csv', { database, table, csvContent, hasHeader });
-  }
-
-  async exportDatabase(database: string, format: 'sql', includeData: boolean): Promise<string> {
-    return await invoke<string>('export_database', { database, format, includeData });
-  }
-}
-
-// Singleton instance for simpler API
-class MySqlServiceSimple {
-  async connect(config: MySQLConfig): Promise<string> {
-    const sshTunnel = config.sshTunnel ? {
-      enabled: config.sshTunnel.enabled,
-      ssh_host: config.sshTunnel.sshHost,
-      ssh_port: config.sshTunnel.sshPort,
-      ssh_username: config.sshTunnel.sshUsername,
-      ssh_password: config.sshTunnel.sshPassword,
-      ssh_private_key: config.sshTunnel.sshPrivateKey,
-      ssh_passphrase: config.sshTunnel.sshPassphrase,
-    } : undefined;
-
-    return await invoke<string>('connect_mysql', {
-      host: config.host,
-      port: config.port,
-      username: config.user,
-      password: config.password,
-      database: config.database || '',
-      proxy: config.proxy,
-      openvpn: config.openvpn,
-      sshTunnel,
-    });
-  }
-
-  async executeQuery(query: string): Promise<QueryResult> {
-    return await invoke<QueryResult>('execute_query', { query });
-  }
-
-  async getDatabases(): Promise<string[]> {
-    return await invoke<string[]>('get_databases');
-  }
-
-  async getTables(database: string): Promise<string[]> {
-    return await invoke<string[]>('get_tables', { database });
-  }
-
-  async getTableStructure(database: string, table: string): Promise<QueryResult> {
-    return await invoke<QueryResult>('get_table_structure', { database, table });
-  }
-
-  async getTableData(database: string, table: string, limit?: number, offset?: number): Promise<QueryResult> {
-    return await invoke<QueryResult>('get_table_data', { database, table, limit, offset });
-  }
-
-  async insertRow(database: string, table: string, columns: string[], values: string[]): Promise<number> {
-    return await invoke<number>('insert_row', { database, table, columns, values });
-  }
-
-  async updateRow(database: string, table: string, columns: string[], values: string[], whereClause: string): Promise<number> {
-    return await invoke<number>('update_row', { database, table, columns, values, whereClause });
-  }
-
-  async deleteRow(database: string, table: string, whereClause: string): Promise<number> {
-    return await invoke<number>('delete_row', { database, table, whereClause });
-  }
-
-  async exportTable(database: string, table: string, format: 'csv' | 'sql'): Promise<string> {
-    return await invoke<string>('export_table', { database, table, format });
-  }
-
-  async importSql(sqlContent: string): Promise<number> {
-    return await invoke<number>('import_sql', { sqlContent });
-  }
-
-  async importCsv(database: string, table: string, csvContent: string, hasHeader: boolean): Promise<number> {
-    return await invoke<number>('import_csv', { database, table, csvContent, hasHeader });
-  }
-
-  async disconnect(): Promise<void> {
-    await invoke('disconnect_db');
-  }
-}
-
-export const mysqlService = new MySqlServiceSimple();
+export type MysqlApi = typeof mysqlApi;

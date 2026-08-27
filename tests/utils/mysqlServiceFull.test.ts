@@ -1,229 +1,295 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from "vitest";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
 
-// Mock Tauri invoke
-const mockInvoke = vi.fn();
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: (...args: unknown[]) => mockInvoke(...args),
-}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-import { mysqlService } from '../../src/utils/services/mysqlService';
+import {
+  buildMysqlConnectionConfig,
+  buildMysqlTlsConfig,
+  detectMysqlDialect,
+  encodeMysqlUrlValue,
+  getUnsupportedMysqlRouteReason,
+  isMissingMysqlSessionError,
+  mysqlDialectLabel,
+  mysqlErrorMessage,
+  quoteMysqlIdentifier,
+} from "../../src/utils/services/mysqlService";
 
-describe('mysqlService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+const password = "p@ss:w/ord%23#42";
+const connection: Connection = {
+  id: "connection-mysql-1",
+  name: "Shop database",
+  protocol: "mysql",
+  hostname: "db.example.test",
+  port: 3307,
+  username: "shop@app",
+  password,
+  database: "shop",
+  timeout: 25,
+  isGroup: false,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+const session: ConnectionSession = {
+  id: "frontend-mysql-1",
+  connectionId: connection.id,
+  name: connection.name,
+  status: "connecting",
+  startTime: new Date("2026-01-01T00:00:00.000Z"),
+  protocol: "mysql",
+  hostname: connection.hostname,
+};
+
+const withTls = (mysqlTls: Record<string, unknown>): Connection =>
+  ({ ...connection, mysqlTls }) as Connection;
+
+describe("buildMysqlConnectionConfig", () => {
+  it("builds the exact snake_case DTO with raw credentials and no tunnel", () => {
+    const config = buildMysqlConnectionConfig(connection, session);
+    expect(config).toEqual({
+      host: "db.example.test",
+      port: 3307,
+      username: "shop@app",
+      password,
+      database: "shop",
+      ssh_tunnel: null,
+      tls: null,
+      max_connections: 5,
+      connect_timeout_secs: 25,
+      idle_timeout_secs: 300,
+      charset: "utf8mb4",
+      timezone: null,
+    });
+    expect(config).not.toHaveProperty("connectTimeoutSecs");
   });
 
-  describe('connect', () => {
-    it('calls connect_mysql with correct parameters', async () => {
-      mockInvoke.mockResolvedValueOnce('Connected');
-      
-      const config = {
-        host: 'localhost',
-        port: 3306,
-        user: 'root',
-        password: 'password',
-        database: 'testdb',
-      };
-      
-      const result = await mysqlService.connect(config);
-      
-      expect(mockInvoke).toHaveBeenCalledWith('connect_mysql', expect.objectContaining({
-        host: 'localhost',
-        port: 3306,
-        username: 'root',
-        password: 'password',
-        database: 'testdb',
-      }));
-      expect(result).toBe('Connected');
-    });
+  it("applies defaults for port, username, database, and timeout", () => {
+    const config = buildMysqlConnectionConfig(
+      { ...connection, port: 0, username: "  ", database: "", timeout: 0 },
+      session,
+    );
+    expect(config.port).toBe(3306);
+    expect(config.username).toBe("root");
+    expect(config.database).toBeNull();
+    expect(config.connect_timeout_secs).toBe(10);
+  });
 
-    it('supports SSH tunnel configuration', async () => {
-      mockInvoke.mockResolvedValueOnce('Connected via SSH tunnel');
-      
-      const config = {
-        host: 'remote-db.example.com',
-        port: 3306,
-        user: 'root',
-        password: 'password',
-        database: 'testdb',
-        sshTunnel: {
-          enabled: true,
-          sshHost: 'bastion.example.com',
-          sshPort: 22,
-          sshUsername: 'admin',
-          sshPassword: 'sshpass',
-        },
-      };
-      
-      const result = await mysqlService.connect(config);
-      
-      expect(mockInvoke).toHaveBeenCalledWith('connect_mysql', expect.objectContaining({
-        sshTunnel: expect.objectContaining({
-          enabled: true,
-          ssh_host: 'bastion.example.com',
+  it("prefers the dedicated connection timeout and caps it", () => {
+    const config = buildMysqlConnectionConfig(
+      { ...connection, mysqlConnectionTimeoutSecs: 9_999 } as Connection,
+      session,
+    );
+    expect(config.connect_timeout_secs).toBe(600);
+  });
+
+  it("falls back to the session hostname and rejects URI-shaped hosts", () => {
+    expect(
+      buildMysqlConnectionConfig({ ...connection, hostname: "" }, session).host,
+    ).toBe("db.example.test");
+    expect(() =>
+      buildMysqlConnectionConfig(
+        { ...connection, hostname: "mysql://root:x@evil" },
+        session,
+      ),
+    ).toThrow(/not a connection URI/i);
+    expect(() =>
+      buildMysqlConnectionConfig(
+        { ...connection, hostname: "  " },
+        { ...session, hostname: "" },
+      ),
+    ).toThrow(/hostname is required/i);
+  });
+});
+
+describe("buildMysqlTlsConfig", () => {
+  it("sends no TLS block for preferred (driver default)", () => {
+    expect(buildMysqlTlsConfig(connection)).toBeNull();
+    expect(buildMysqlTlsConfig(withTls({ mode: "preferred" }))).toBeNull();
+  });
+
+  it("maps disabled to enabled:false", () => {
+    expect(buildMysqlTlsConfig(withTls({ mode: "disabled" }))).toEqual({
+      enabled: false,
+      ca_cert: null,
+      client_cert: null,
+      client_key: null,
+      skip_verify: false,
+      verify_hostname: false,
+    });
+  });
+
+  it("maps required to enabled + skip_verify", () => {
+    expect(buildMysqlTlsConfig(withTls({ mode: "required" }))).toMatchObject({
+      enabled: true,
+      skip_verify: true,
+      verify_hostname: false,
+      ca_cert: null,
+    });
+  });
+
+  it("maps verify-ca and verify-identity with the CA path", () => {
+    expect(
+      buildMysqlTlsConfig(withTls({ mode: "verify-ca", caPath: "C:\\ca.pem" })),
+    ).toEqual({
+      enabled: true,
+      ca_cert: "C:\\ca.pem",
+      client_cert: null,
+      client_key: null,
+      skip_verify: false,
+      verify_hostname: false,
+    });
+    expect(
+      buildMysqlTlsConfig(
+        withTls({
+          mode: "verify-identity",
+          caPath: "/ca.pem",
+          clientCertPath: "/c.pem",
+          clientKeyPath: "/k.pem",
         }),
-      }));
+      ),
+    ).toEqual({
+      enabled: true,
+      ca_cert: "/ca.pem",
+      client_cert: "/c.pem",
+      client_key: "/k.pem",
+      skip_verify: false,
+      verify_hostname: true,
     });
   });
 
-  describe('executeQuery', () => {
-    it('calls execute_query and returns results', async () => {
-      const mockResult = {
-        columns: ['id', 'name'],
-        rows: [['1', 'Test'], ['2', 'Test2']],
-        row_count: 2,
-      };
-      mockInvoke.mockResolvedValueOnce(mockResult);
-      
-      const result = await mysqlService.executeQuery('SELECT * FROM users');
-      
-      expect(mockInvoke).toHaveBeenCalledWith('execute_query', { query: 'SELECT * FROM users' });
-      expect(result).toEqual(mockResult);
-    });
+  it("rejects unsafe or incomplete certificate combinations", () => {
+    expect(() => buildMysqlTlsConfig(withTls({ mode: "verify-ca" }))).toThrow(
+      /require a CA certificate path/i,
+    );
+    expect(() =>
+      buildMysqlTlsConfig(
+        withTls({ mode: "required", clientCertPath: "/c.pem" }),
+      ),
+    ).toThrow(/both a client certificate path and a client key path/i);
+    expect(() =>
+      buildMysqlTlsConfig(withTls({ mode: "preferred", caPath: "/ca.pem" })),
+    ).toThrow(/Required, Verify CA, or Verify Identity/i);
+  });
+});
+
+describe("getUnsupportedMysqlRouteReason", () => {
+  it("fails closed for chain ids and inline routes", () => {
+    const routed: Connection[] = [
+      { ...connection, proxyChainId: "proxy-chain" },
+      { ...connection, connectionChainId: "connection-chain" },
+      { ...connection, tunnelChainId: "tunnel-chain" },
+      {
+        ...connection,
+        security: {
+          proxy: {
+            type: "socks5",
+            host: "proxy.test",
+            port: 1080,
+            enabled: true,
+          },
+        },
+      },
+      {
+        ...connection,
+        security: { openvpn: { enabled: true, configId: "vpn" } },
+      },
+      {
+        ...connection,
+        security: {
+          sshTunnel: {
+            enabled: true,
+            connectionId: "jump",
+            localPort: 0,
+            remoteHost: connection.hostname,
+            remotePort: connection.port,
+          },
+        },
+      },
+      {
+        ...connection,
+        security: {
+          tunnelChain: [{ id: "inline", type: "wireguard", enabled: true }],
+        },
+      },
+    ];
+    for (const candidate of routed) {
+      expect(getUnsupportedMysqlRouteReason(candidate)).toMatch(
+        /direct connections only/i,
+      );
+    }
   });
 
-  describe('getDatabases', () => {
-    it('returns list of databases', async () => {
-      mockInvoke.mockResolvedValueOnce(['mysql', 'information_schema', 'testdb']);
-      
-      const result = await mysqlService.getDatabases();
-      
-      expect(mockInvoke).toHaveBeenCalledWith('get_databases');
-      expect(result).toEqual(['mysql', 'information_schema', 'testdb']);
-    });
+  it("allows direct connections and disabled routes", () => {
+    expect(getUnsupportedMysqlRouteReason(connection)).toBeNull();
+    expect(
+      getUnsupportedMysqlRouteReason({
+        ...connection,
+        security: {
+          proxy: { type: "socks5", host: "p", port: 1, enabled: false },
+          tunnelChain: [{ id: "off", type: "wireguard", enabled: false }],
+        },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("mysqlErrorMessage", () => {
+  it("redacts raw, URL-encoded, and URI-embedded credentials", () => {
+    const encoded = encodeMysqlUrlValue(password);
+    const message = mysqlErrorMessage(
+      `connect failed: mysql://shop:${encoded}@db.example.test/shop?password=${encoded} raw=${password}`,
+      connection,
+    );
+    expect(message).toContain("[redacted]");
+    expect(message).not.toContain(password);
+    expect(message).not.toContain(encoded);
+    expect(message).not.toContain("shop:");
   });
 
-  describe('getTables', () => {
-    it('returns tables for a database', async () => {
-      mockInvoke.mockResolvedValueOnce(['users', 'posts', 'comments']);
-      
-      const result = await mysqlService.getTables('testdb');
-      
-      expect(mockInvoke).toHaveBeenCalledWith('get_tables', { database: 'testdb' });
-      expect(result).toEqual(['users', 'posts', 'comments']);
-    });
+  it("redacts URI userinfo and mariadb schemes even without a connection", () => {
+    expect(mysqlErrorMessage("mariadb://someone:secret@host/db")).toBe(
+      "mariadb://[redacted]@host/db",
+    );
+    expect(mysqlErrorMessage(new Error("boom?pwd=hunter2&x=1"))).toContain(
+      "pwd=[redacted]",
+    );
+  });
+});
+
+describe("helpers", () => {
+  it("detects missing-session errors from the backend wording", () => {
+    expect(isMissingMysqlSessionError("No active MySQL connection")).toBe(true);
+    expect(isMissingMysqlSessionError(new Error("Session abc not found"))).toBe(
+      true,
+    );
+    expect(isMissingMysqlSessionError("[mysql:not_connected] gone")).toBe(true);
+    expect(isMissingMysqlSessionError("syntax error near SELECT")).toBe(false);
+    expect(isMissingMysqlSessionError(42)).toBe(false);
   });
 
-  describe('getTableStructure', () => {
-    it('returns table structure', async () => {
-      const mockStructure = {
-        columns: ['Field', 'Type', 'Null', 'Key', 'Default', 'Extra'],
-        rows: [
-          ['id', 'int', 'NO', 'PRI', 'NULL', 'auto_increment'],
-          ['name', 'varchar(255)', 'YES', '', 'NULL', ''],
-        ],
-        row_count: 2,
-      };
-      mockInvoke.mockResolvedValueOnce(mockStructure);
-      
-      const result = await mysqlService.getTableStructure('testdb', 'users');
-      
-      expect(mockInvoke).toHaveBeenCalledWith('get_table_structure', { database: 'testdb', table: 'users' });
-      expect(result).toEqual(mockStructure);
-    });
+  it("detects the dialect from backend tags or version strings", () => {
+    expect(detectMysqlDialect("MariaDb")).toBe("mariadb");
+    expect(detectMysqlDialect("mariadb")).toBe("mariadb");
+    expect(detectMysqlDialect("MySql")).toBe("mysql");
+    expect(detectMysqlDialect(null, "11.4.2-MariaDB-ubu2404")).toBe("mariadb");
+    expect(detectMysqlDialect(undefined, "8.0.36")).toBe("mysql");
+    expect(detectMysqlDialect(undefined, undefined)).toBe("mysql");
+    expect(mysqlDialectLabel("mariadb")).toBe("MariaDB");
+    expect(mysqlDialectLabel("mysql")).toBe("MySQL");
   });
 
-  describe('insertRow', () => {
-    it('inserts a row and returns last insert id', async () => {
-      mockInvoke.mockResolvedValueOnce(42);
-      
-      const result = await mysqlService.insertRow('testdb', 'users', ['name', 'email'], ['John', 'john@example.com']);
-      
-      expect(mockInvoke).toHaveBeenCalledWith('insert_row', {
-        database: 'testdb',
-        table: 'users',
-        columns: ['name', 'email'],
-        values: ['John', 'john@example.com'],
-      });
-      expect(result).toBe(42);
-    });
+  it("quotes identifiers with backticks and escapes embedded backticks", () => {
+    expect(quoteMysqlIdentifier("people")).toBe("`people`");
+    expect(quoteMysqlIdentifier("we`ird")).toBe("`we``ird`");
   });
 
-  describe('updateRow', () => {
-    it('updates rows and returns affected count', async () => {
-      mockInvoke.mockResolvedValueOnce(1);
-      
-      const result = await mysqlService.updateRow('testdb', 'users', ['name'], ['Jane'], 'id = 1');
-      
-      expect(mockInvoke).toHaveBeenCalledWith('update_row', {
-        database: 'testdb',
-        table: 'users',
-        columns: ['name'],
-        values: ['Jane'],
-        whereClause: 'id = 1',
-      });
-      expect(result).toBe(1);
-    });
-  });
-
-  describe('deleteRow', () => {
-    it('deletes rows and returns affected count', async () => {
-      mockInvoke.mockResolvedValueOnce(1);
-      
-      const result = await mysqlService.deleteRow('testdb', 'users', 'id = 1');
-      
-      expect(mockInvoke).toHaveBeenCalledWith('delete_row', {
-        database: 'testdb',
-        table: 'users',
-        whereClause: 'id = 1',
-      });
-      expect(result).toBe(1);
-    });
-  });
-
-  describe('exportTable', () => {
-    it('exports table to CSV', async () => {
-      mockInvoke.mockResolvedValueOnce('id,name\n1,Test');
-      
-      const result = await mysqlService.exportTable('testdb', 'users', 'csv');
-      
-      expect(mockInvoke).toHaveBeenCalledWith('export_table', {
-        database: 'testdb',
-        table: 'users',
-        format: 'csv',
-      });
-      expect(result).toBe('id,name\n1,Test');
-    });
-
-    it('exports table to SQL', async () => {
-      mockInvoke.mockResolvedValueOnce('INSERT INTO users (id, name) VALUES (1, \'Test\');');
-      
-      const result = await mysqlService.exportTable('testdb', 'users', 'sql');
-      
-      expect(mockInvoke).toHaveBeenCalledWith('export_table', {
-        database: 'testdb',
-        table: 'users',
-        format: 'sql',
-      });
-    });
-  });
-
-  describe('importSql', () => {
-    it('imports SQL and returns affected rows', async () => {
-      mockInvoke.mockResolvedValueOnce(5);
-      
-      const sql = 'INSERT INTO users (name) VALUES (\'Test1\'), (\'Test2\');';
-      const result = await mysqlService.importSql(sql);
-      
-      expect(mockInvoke).toHaveBeenCalledWith('import_sql', { sqlContent: sql });
-      expect(result).toBe(5);
-    });
-  });
-
-  describe('importCsv', () => {
-    it('imports CSV and returns inserted count', async () => {
-      mockInvoke.mockResolvedValueOnce(3);
-      
-      const csv = 'name,email\nJohn,john@test.com\nJane,jane@test.com';
-      const result = await mysqlService.importCsv('testdb', 'users', csv, true);
-      
-      expect(mockInvoke).toHaveBeenCalledWith('import_csv', {
-        database: 'testdb',
-        table: 'users',
-        csvContent: csv,
-        hasHeader: true,
-      });
-      expect(result).toBe(3);
-    });
+  it("encodes RFC 3986 reserved characters", () => {
+    expect(encodeMysqlUrlValue("a/b?c#d!'()*")).toBe(
+      "a%2Fb%3Fc%23d%21%27%28%29%2A",
+    );
   });
 });
