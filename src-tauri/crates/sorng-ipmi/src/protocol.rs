@@ -637,9 +637,7 @@ impl SequenceTracker {
 
     /// Clear all outstanding requests.
     pub fn clear(&mut self) {
-        for slot in &mut self.outstanding {
-            *slot = None;
-        }
+        self.outstanding.fill(None);
     }
 
     /// Get the current rqSeq value without incrementing.

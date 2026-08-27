@@ -115,7 +115,7 @@ pub fn resolve_command(hostname: &str) -> Vec<String> {
     } else {
         vec![
             "dig".to_string(),
-            format!("@100.100.100.100"),
+            "@100.100.100.100".to_string(),
             hostname.to_string(),
             "+short".to_string(),
         ]

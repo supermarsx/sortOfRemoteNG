@@ -36,6 +36,14 @@
 //! | REST + JSON | Lambda, ECS, SSM, Secrets Manager, CloudWatch Logs |
 //! | REST + XML  | S3, Route 53                                |
 
+// `AwsError` is a flat struct of required fields — four `String`s (two of them
+// optional), an HTTP status code and a retry flag — which lands on exactly the
+// 128-byte default threshold of `clippy::result_large_err`. There is no large
+// element to box, so satisfying the lint would mean returning `Box<AwsError>`
+// from every public method in the crate: an API change rather than a lint fix.
+// Revisit if the struct grows further.
+#![allow(clippy::result_large_err)]
+
 // ── Vendor dylib re-exports ──────────────────────────────────────────────
 pub(crate) use sorng_aws_vendor::hmac;
 pub(crate) use sorng_aws_vendor::hex;

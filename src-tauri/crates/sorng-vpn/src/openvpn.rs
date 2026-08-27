@@ -2063,6 +2063,11 @@ async fn cleanup_failed_startup(
     }
 }
 
+// `OpenVPNStartupFailure` deliberately carries the spawned `Child` so the
+// caller can terminate a process that started but never became ready. That
+// handle is the bulk of its 296 bytes; boxing the error would only move the
+// cleanup handle behind an allocation on a path that already spawns a process.
+#[allow(clippy::result_large_err)]
 async fn spawn_ready_openvpn(
     config: &OpenVPNConfig,
     timeout: Duration,
