@@ -471,7 +471,9 @@ describe("advanced protocol portability", () => {
       "RAW/UDP",
       "RLogin",
       "PowerShell Remoting",
-      "RDP",
+      // Unknown vendor strings are never guessed to be RDP (t71): with no
+      // port/scheme evidence they land on generic RAW/TCP.
+      "RAW/TCP",
     ]);
     expect(mRemote[2].rloginSettings?.remoteUsername).toBe("operator");
 

@@ -5,6 +5,7 @@ import {
   type RawSocketTransport,
 } from "../../types/protocols/rawSocket";
 import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
+import { normalizeImportedProtocol } from "../../utils/connection/normalizeImportedProtocol";
 import { normalizePowerShellRemotingSettings } from "../../utils/powershell/normalizePowerShellRemoting";
 import { migrateRloginSettings } from "../../utils/rlogin/rloginSettings";
 
@@ -138,7 +139,10 @@ export function mapPortableProtocol(source: unknown): ImportedProtocolMapping {
   };
   if (aliases[value]) return { protocol: aliases[value]! };
 
-  return { protocol: (value || "rdp") as Connection["protocol"] };
+  // Unknown strings go through the evidence-based normaliser (t71 D1): its
+  // alias table knows the web/vendor variants (`Web`, `HTTP/S`, `ICA`, …) and
+  // never answers RDP without evidence.
+  return { protocol: normalizeImportedProtocol({ raw: value }).protocol };
 }
 
 /** Normalize an imported/synchronized connection and clear local consent. */

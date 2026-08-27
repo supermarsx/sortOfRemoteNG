@@ -265,14 +265,15 @@ describe("importFromMRemoteNG", () => {
     const conns = await importFromMRemoteNG(directXml);
     expect(conns).toHaveLength(1);
     expect(conns[0].name).toBe("Edge Router");
-    expect(conns[0].protocol).toBe("rdp");
+    // MikroTik Winbox is a web-style admin UI, not RDP (t71).
+    expect(conns[0].protocol).toBe("http");
     expect((conns[0] as any).resolution).toBe("1920x1080");
     expect((conns[0] as any).colorDepth).toBe("32");
     expect((conns[0] as any).useCredSsp).toBe(true);
     expect((conns[0] as any).renderingEngine).toBe("DirectX");
   });
 
-  it("defaults missing node attributes to a basic RDP connection", async () => {
+  it("defaults missing node attributes to a generic raw connection, never RDP", async () => {
     const minimalXml = `<?xml version="1.0" encoding="utf-8"?>
 <Connections ConfVersion="2.6">
   <Node Name="Bare Node" />
@@ -281,12 +282,12 @@ describe("importFromMRemoteNG", () => {
     const conns = await importFromMRemoteNG(minimalXml);
     expect(conns).toHaveLength(1);
     expect(conns[0].name).toBe("Bare Node");
-    expect(conns[0].protocol).toBe("rdp");
+    expect(conns[0].protocol).toBe("raw");
     expect(conns[0].hostname).toBe("");
-    expect(conns[0].port).toBe(3389);
+    expect(conns[0].port).toBe(23);
   });
 
-  it("defaults unknown mRemoteNG protocols and unnamed nodes to safe RDP fallbacks", async () => {
+  it("defaults unknown mRemoteNG protocols and unnamed nodes to raw, not RDP", async () => {
     const oddXml = `<?xml version="1.0" encoding="utf-8"?>
 <Connections ConfVersion="2.6">
   <Node Protocol="CustomProto" Hostname="odd.example.com" />
@@ -295,7 +296,7 @@ describe("importFromMRemoteNG", () => {
     const conns = await importFromMRemoteNG(oddXml);
     expect(conns).toHaveLength(1);
     expect(conns[0].name).toBe("Unnamed");
-    expect(conns[0].protocol).toBe("rdp");
+    expect(conns[0].protocol).toBe("raw");
     expect(conns[0].hostname).toBe("odd.example.com");
   });
 
@@ -930,7 +931,7 @@ describe("importFromRoyalTS", () => {
     expect(conns[0].description).toBe("Portal access");
   });
 
-  it("defaults missing Royal TS types to RDP and falls back to URI for the name", async () => {
+  it("defaults missing Royal TS types to raw (never RDP) and falls back to URI for the name", async () => {
     const minimalRoyalJson = JSON.stringify([
       {
         URI: "fallback.example.com",
@@ -940,8 +941,8 @@ describe("importFromRoyalTS", () => {
     const conns = await importFromRoyalTS(minimalRoyalJson);
     expect(conns).toHaveLength(1);
     expect(conns[0].name).toBe("fallback.example.com");
-    expect(conns[0].protocol).toBe("rdp");
-    expect(conns[0].port).toBe(3389);
+    expect(conns[0].protocol).toBe("raw");
+    expect(conns[0].port).toBe(23);
   });
 
   it("falls back to Username and the default SSH port when Royal TS provides port 0", async () => {

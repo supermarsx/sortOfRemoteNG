@@ -4,7 +4,16 @@ import {
   type TunnelType,
 } from "../../types/connection/connection";
 import { generateId } from "../../utils/core/id";
-import { createDefaultRawSocketSettings } from "../../types/protocols/rawSocket";
+import {
+  createDefaultRawSocketSettings,
+  type RawSocketTransport,
+} from "../../types/protocols/rawSocket";
+import { DEFAULT_PORTS } from "../../utils/discovery/defaultPorts";
+import {
+  normalizeImportedProtocol,
+  protocolFromUrlScheme,
+} from "../../utils/connection/normalizeImportedProtocol";
+import { sanitizeHostname } from "../../utils/connection/sanitizeHostname";
 import {
   mapPortableProtocol,
   normalizeImportedAdvancedProtocolConnection,
@@ -126,45 +135,99 @@ export const parseCSVLine = (line: string): string[] => {
   return values;
 };
 
-const getDefaultPort = (protocol: string): number => {
-  const defaults: Record<string, number> = {
-    RDP: 3389,
-    SSH1: 22,
-    SSH2: 22,
-    SSH: 22,
-    TELNET: 23,
-    RAW: 23,
-    "RAW/TCP": 23,
-    "RAW/UDP": 23,
-    RLOGIN: 513,
-    POWERSHELL: 5985,
-    "POWERSHELL-REMOTING": 5985,
-    WINRM: 5985,
-    VNC: 5900,
-    HTTP: 80,
-    HTTPS: 443,
-    FTP: 21,
-    SFTP: 22,
-  };
+/** Default port for a (possibly vendor-spelled) protocol string — via the
+ *  evidence-based normaliser, so an unknown string never yields 3389. */
+const getDefaultPort = (protocol: string): number =>
+  normalizeImportedProtocol({ raw: protocol }).defaultPort;
 
-  return defaults[String(protocol).trim().toUpperCase()] || 3389;
-};
-
-const parsePortOrDefault = (portValue: unknown, protocol: string): number => {
+/** Parse a source port value; `undefined` when absent or not a positive int. */
+const parseImportedPort = (portValue: unknown): number | undefined => {
   if (typeof portValue === "number") {
     return Number.isFinite(portValue) && portValue > 0
-      ? portValue
-      : getDefaultPort(protocol);
+      ? Math.trunc(portValue)
+      : undefined;
+  }
+  const normalizedPort = String(portValue ?? "").trim();
+  if (!normalizedPort) return undefined;
+  const parsedPort = Number.parseInt(normalizedPort, 10);
+  return Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : undefined;
+};
+
+const parsePortOrDefault = (portValue: unknown, protocol: string): number =>
+  parseImportedPort(portValue) ?? getDefaultPort(protocol);
+
+const isWebProtocol = (protocol: unknown): protocol is "http" | "https" =>
+  protocol === "http" || protocol === "https";
+
+interface ResolvedImportedEndpoint {
+  protocol: Connection["protocol"];
+  hostname: string;
+  port: number;
+  rawTransport?: RawSocketTransport;
+}
+
+/**
+ * Resolve protocol + hostname + port for an imported record from all the
+ * evidence a source carries (t71 D2): the protocol string, the port, and a
+ * `scheme://` prefix on the hostname/URL field. A scheme prefix is stripped
+ * from the hostname (as the editor does) and its embedded port is used when
+ * the source gave none. RDP is never chosen without evidence.
+ *
+ * When the protocol string and the URL scheme are *both* web protocols the
+ * scheme wins (`Protocol="Web" Hostname="http://router/"` → http).
+ */
+const resolveImportedEndpoint = (
+  rawProtocol: unknown,
+  hostnameValue: unknown,
+  portValue: unknown,
+  urlValue?: unknown,
+): ResolvedImportedEndpoint => {
+  const hostnameText = String(hostnameValue ?? "").trim();
+  const urlText = String(urlValue ?? "").trim() || hostnameText;
+  const sanitized = sanitizeHostname(urlText);
+  const sourcePort = parseImportedPort(portValue);
+  const port = sourcePort ?? sanitized.port;
+
+  const normalized = normalizeImportedProtocol({
+    raw: rawProtocol,
+    port,
+    url: urlText,
+  });
+  let protocol = normalized.protocol;
+  const fromScheme = protocolFromUrlScheme(urlText);
+  if (
+    fromScheme &&
+    isWebProtocol(fromScheme) &&
+    isWebProtocol(protocol) &&
+    fromScheme !== protocol
+  ) {
+    protocol = fromScheme;
   }
 
-  const normalizedPort = String(portValue ?? "").trim();
-  if (!normalizedPort) return getDefaultPort(protocol);
+  const hostname = hostnameText
+    ? urlText === hostnameText && sanitized.stripped
+      ? sanitized.hostname
+      : hostnameText
+    : sanitized.hostname;
 
-  const parsedPort = Number.parseInt(normalizedPort, 10);
-  return Number.isFinite(parsedPort) && parsedPort > 0
-    ? parsedPort
-    : getDefaultPort(protocol);
+  const rawTransport = mapPortableProtocol(rawProtocol).rawTransport;
+
+  return {
+    protocol,
+    hostname,
+    port: port ?? DEFAULT_PORTS[protocol] ?? normalized.defaultPort,
+    ...(protocol === "raw" && rawTransport ? { rawTransport } : {}),
+  };
 };
+
+const rawSocketSettingsFor = (endpoint: ResolvedImportedEndpoint) =>
+  endpoint.rawTransport
+    ? {
+        rawSocketSettings: createDefaultRawSocketSettings(
+          endpoint.rawTransport,
+        ),
+      }
+    : {};
 
 export const importFromCSV = async (content: string): Promise<Connection[]> => {
   assertImportTextWithinLimit(content);
@@ -182,41 +245,122 @@ export const importFromCSV = async (content: string): Promise<Connection[]> => {
     const values = parseCSVLine(lines[i]);
     if (values.length !== headers.length) continue;
 
-    const conn: any = {};
+    const conn: Record<string, string> = {};
     headers.forEach((header, index) => {
       conn[header] = values[index];
     });
 
-    const protocolMapping = mapPortableProtocol(conn.Protocol || "rdp");
-    const protocol = protocolMapping.protocol;
-
-    connections.push(
-      normalizeImportedAdvancedProtocolConnection({
-        id: conn.ID || generateId(),
-        name: conn.Name || "Imported Connection",
-        protocol: (conn.Protocol || protocol) as Connection["protocol"],
-        hostname: conn.Hostname || "",
-        port: parsePortOrDefault(conn.Port, protocol),
-        username: conn.Username || undefined,
-        domain: conn.Domain || undefined,
-        description: conn.Description || undefined,
-        parentId: conn.ParentId || undefined,
-        isGroup: conn.IsGroup === "true",
-        tags: conn.Tags?.split(";").filter((t: string) => t.trim()) || [],
-        createdAt: new Date(conn.CreatedAt || Date.now()).toISOString(),
-        updatedAt: new Date(conn.UpdatedAt || Date.now()).toISOString(),
-        ...parseNativeAdvancedProtocolSettings(conn),
-      }),
-    );
+    connections.push(buildNativeRecordConnection(conn));
   }
 
   return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
-const parseBooleanAttribute = (value: string | null): boolean =>
-  String(value ?? "")
-    .trim()
-    .toLowerCase() === "true";
+const getRecordValue = (
+  record: Record<string, unknown>,
+  ...names: string[]
+): string | undefined => {
+  for (const name of names) {
+    const direct = record[name];
+    if (direct !== undefined && direct !== null && String(direct) !== "") {
+      return String(direct);
+    }
+  }
+  const lowered = new Map(
+    Object.entries(record).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+  for (const name of names) {
+    const value = lowered.get(name.toLowerCase());
+    if (value !== undefined && value !== null && String(value) !== "") {
+      return String(value);
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Build a connection from a native flat record (CSV row, INI section, XML
+ * attribute bag) using the CSV header vocabulary. Protocol is resolved from
+ * evidence (string + port + hostname scheme); groups without a protocol keep
+ * an RDP placeholder because they are never opened.
+ */
+const buildNativeRecordConnection = (
+  record: Record<string, string>,
+): Connection => {
+  // Strict lower-case "true", matching the CSV exporter (a stray "True" is
+  // treated as a regular connection, as before).
+  const isGroup = (getRecordValue(record, "IsGroup") ?? "").trim() === "true";
+  const rawProtocol = getRecordValue(record, "Protocol", "Type");
+  const endpoint = resolveImportedEndpoint(
+    rawProtocol,
+    getRecordValue(record, "Hostname", "Server", "Host"),
+    getRecordValue(record, "Port"),
+  );
+  const protocol: Connection["protocol"] =
+    isGroup && !rawProtocol ? "rdp" /* group placeholder */ : endpoint.protocol;
+
+  return normalizeImportedAdvancedProtocolConnection({
+    ...rawSocketSettingsFor(endpoint),
+    id: getRecordValue(record, "ID", "Id") || generateId(),
+    name: getRecordValue(record, "Name") || "Imported Connection",
+    protocol,
+    hostname: endpoint.hostname,
+    port: isGroup && !rawProtocol ? 0 : endpoint.port,
+    username: getRecordValue(record, "Username") || undefined,
+    domain: getRecordValue(record, "Domain") || undefined,
+    description: getRecordValue(record, "Description") || undefined,
+    parentId: getRecordValue(record, "ParentId") || undefined,
+    isGroup,
+    tags:
+      getRecordValue(record, "Tags")
+        ?.split(/[;,]/)
+        .map((t) => t.trim())
+        .filter(Boolean) || [],
+    createdAt: new Date(
+      getRecordValue(record, "CreatedAt") || Date.now(),
+    ).toISOString(),
+    updatedAt: new Date(
+      getRecordValue(record, "UpdatedAt") || Date.now(),
+    ).toISOString(),
+    ...parseNativeAdvancedProtocolSettings(record),
+  });
+};
+
+/**
+ * Parse the native INI import template: one `[Section]` per connection
+ * (section title = name), `Key=Value` lines using the CSV header vocabulary.
+ * Lines starting with `;` or `#` are comments.
+ */
+export const importFromINI = async (content: string): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
+  const sections: Array<Record<string, string>> = [];
+  let current: Record<string, string> | undefined;
+
+  for (const line of content.replace(/^\uFEFF/, "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(";") || trimmed.startsWith("#"))
+      continue;
+    const section = trimmed.match(/^\[(.+)\]$/);
+    if (section) {
+      assertCanAppendConnection(sections.length);
+      current = { Name: section[1].trim() };
+      sections.push(current);
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0 || !current) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (key.toLowerCase() === "name" && !value) continue;
+    current[key] = value;
+  }
+
+  if (sections.length === 0) {
+    throw new Error("INI file must contain at least one [Connection] section");
+  }
+
+  return sections.map(buildNativeRecordConnection);
+};
 
 const parseIsoOrNow = (value: string | null): string => {
   const parsed = new Date(value || Date.now());
@@ -244,48 +388,80 @@ export const importFromXML = async (content: string): Promise<Connection[]> => {
     );
   }
 
-  const nodes = getBoundedXmlElements(root, "Connection");
+  // Two shapes are accepted (t71 RC1):
+  //  - exporter shape: flat `<Connection Id Name Type Server Port … ParentId IsGroup/>`
+  //  - template shape: `<connections><connection name protocol hostname port …/>`
+  //    with nested `<group name>` folders (the downloadable import template).
+  // Tag and attribute names are matched case-insensitively.
+  const nodes = getBoundedXmlElements(root, "Connection, connection");
   if (nodes.length === 0) {
     throw new Error("Invalid sortOfRemoteNG XML: no Connection nodes found");
   }
 
-  return nodes.map((node) => {
-    const protocolMapping = mapPortableProtocol(
-      node.getAttribute("Type") || "rdp",
-    );
-    const protocol = protocolMapping.protocol;
-    const isGroup = parseBooleanAttribute(node.getAttribute("IsGroup"));
-    const tags = (node.getAttribute("Tags") || "")
-      .split(/[;,]/)
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+  const connections: Connection[] = [];
+  const groupIds = new Map<Element, string>();
 
-    const attributes = Object.fromEntries(
+  const attributesOf = (node: Element): Record<string, string> =>
+    Object.fromEntries(
       Array.from(node.attributes).map((attribute) => [
         attribute.name,
         attribute.value,
       ]),
     );
 
-    return normalizeImportedAdvancedProtocolConnection({
-      id: node.getAttribute("Id") || generateId(),
-      name: node.getAttribute("Name") || "Imported Connection",
-      protocol: (node.getAttribute("Type") ||
-        protocol) as Connection["protocol"],
-      hostname:
-        node.getAttribute("Server") || node.getAttribute("Hostname") || "",
-      port: parsePortOrDefault(node.getAttribute("Port"), protocol),
-      username: node.getAttribute("Username") || undefined,
-      domain: node.getAttribute("Domain") || undefined,
-      description: node.getAttribute("Description") || undefined,
-      parentId: node.getAttribute("ParentId") || undefined,
-      isGroup,
-      tags,
-      createdAt: parseIsoOrNow(node.getAttribute("CreatedAt")),
-      updatedAt: parseIsoOrNow(node.getAttribute("UpdatedAt")),
-      ...parseNativeAdvancedProtocolSettings(attributes),
-    });
-  });
+  const walk = (parent: Element, parentGroupId?: string): void => {
+    for (const node of Array.from(parent.children)) {
+      const tag = node.localName.toLowerCase();
+      if (tag === "group" || tag === "folder") {
+        assertCanAppendConnection(connections.length);
+        const attributes = attributesOf(node);
+        const groupId = getRecordValue(attributes, "Id") || generateId();
+        groupIds.set(node, groupId);
+        connections.push({
+          id: groupId,
+          name: getRecordValue(attributes, "Name") || "Imported Folder",
+          protocol: "rdp", // group placeholder
+          hostname: "",
+          port: 0,
+          isGroup: true,
+          parentId: getRecordValue(attributes, "ParentId") || parentGroupId,
+          description: getRecordValue(attributes, "Description") || undefined,
+          tags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        walk(node, groupId);
+        continue;
+      }
+      if (tag === "connection") {
+        assertCanAppendConnection(connections.length);
+        const attributes = attributesOf(node);
+        for (const key of Object.keys(attributes)) {
+          if (key.toLowerCase() === "isgroup") {
+            attributes[key] = attributes[key].trim().toLowerCase();
+          }
+        }
+        const built = buildNativeRecordConnection(attributes);
+        connections.push({
+          ...built,
+          parentId: built.parentId ?? parentGroupId,
+          createdAt: parseIsoOrNow(
+            getRecordValue(attributes, "CreatedAt") ?? null,
+          ),
+          updatedAt: parseIsoOrNow(
+            getRecordValue(attributes, "UpdatedAt") ?? null,
+          ),
+        });
+        walk(node, parentGroupId);
+        continue;
+      }
+      // Wrapper elements (<connections>, <Connections>, …): descend.
+      walk(node, parentGroupId);
+    }
+  };
+
+  walk(root);
+  return connections;
 };
 
 /**
@@ -295,6 +471,7 @@ export type ImportFormat =
   | "json" // Native sortOfRemoteNG JSON
   | "xml" // Native sortOfRemoteNG XML
   | "csv" // Native sortOfRemoteNG CSV
+  | "ini" // Native sortOfRemoteNG INI template
   | "mremoteng" // mRemoteNG XML format
   | "rdcman" // Remote Desktop Connection Manager
   | "royalts" // Royal TS/TSX JSON format
@@ -321,6 +498,7 @@ export const IMPORT_FORMAT_ORDER: ImportFormat[] = [
   "json",
   "xml",
   "csv",
+  "ini",
   "mremoteng",
   "rdcman",
   "termius",
@@ -375,6 +553,17 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     credentialSupport: "partial",
     description:
       "Native sortOfRemoteNG CSV exports with scalar JSON fields for versioned protocol settings.",
+  },
+  ini: {
+    value: "ini",
+    label: "INI",
+    group: "native",
+    extensions: [".ini"],
+    signatures: ["[Connection Name]", "Protocol=", "Hostname="],
+    dataClasses: ["connections", "folders"],
+    credentialSupport: "partial",
+    description:
+      "Native sortOfRemoteNG INI template: one [section] per connection with the CSV field names as keys.",
   },
   mremoteng: {
     value: "mremoteng",
@@ -466,6 +655,13 @@ export const getImportFormatCompatibility = (
   format: ImportFormat,
 ): ImportFormatCompatibility => IMPORT_FORMAT_COMPATIBILITY[format];
 
+const looksLikeMobaXterm = (content: string): boolean =>
+  content.includes("[Bookmarks") || content.includes("SubRep=");
+
+const looksLikeNativeIni = (content: string): boolean =>
+  /^\s*\[[^\]\r\n]+\]\s*$/m.test(content) &&
+  /^\s*(Protocol|Hostname)\s*=/im.test(content);
+
 /**
  * Detect import format from file content
  */
@@ -488,6 +684,7 @@ export const detectImportFormat = (
     if (ext === "rdg") return "rdcman";
     if (ext === "reg") return "putty";
     if (ext === "ini" && lower.includes("moba")) return "mobaxterm";
+    if (ext === "ini" && !looksLikeMobaXterm(trimmed)) return "ini";
     if (ext === "xml") extIsXml = true;
   }
 
@@ -525,7 +722,7 @@ export const detectImportFormat = (
   }
 
   // MobaXterm INI format
-  if (trimmed.includes("[Bookmarks") || trimmed.includes("SubRep=")) {
+  if (looksLikeMobaXterm(trimmed)) {
     return "mobaxterm";
   }
 
@@ -540,6 +737,11 @@ export const detectImportFormat = (
   // SecureCRT XML sessions
   if (trimmed.includes("<VanDyke") || trimmed.includes('S:"Protocol Name"')) {
     return "securecrt";
+  }
+
+  // Native INI template: [Section] headers plus Protocol=/Hostname= keys.
+  if (looksLikeNativeIni(trimmed)) {
+    return "ini";
   }
 
   // Termius JSON
@@ -574,32 +776,6 @@ export const detectImportFormat = (
 
   // Default to CSV
   return "csv";
-};
-
-/**
- * Map mRemoteNG protocol names to our format
- */
-const mapMRemoteNGProtocol = (protocol: string): Connection["protocol"] => {
-  const protocolMap: Record<string, Connection["protocol"]> = {
-    rdp: "rdp",
-    ssh1: "ssh",
-    ssh2: "ssh",
-    ssh: "ssh",
-    telnet: "telnet",
-    rlogin: "rlogin",
-    vnc: "vnc",
-    http: "http",
-    https: "https",
-    ica: "rdp", // Citrix ICA mapped to RDP
-    raw: "raw",
-    "raw/tcp": "raw",
-    "raw/udp": "raw",
-    intapp: "rdp",
-    powershell: "winrm",
-    winrm: "winrm",
-    winbox: "rdp", // MikroTik Winbox → rdp
-  };
-  return protocolMap[protocol.trim().toLowerCase()] || "rdp";
 };
 
 const getMRemoteNGAttribute = (
@@ -657,7 +833,26 @@ interface MRemoteNGInheritableProps {
   domain?: string;
   hostname?: string;
   port?: string;
+  protocol?: string;
 }
+
+/**
+ * Resolve a node's protocol string honouring `InheritProtocol` (t71 RC3).
+ * Unlike the other inheritable props, the inherit flag wins over the direct
+ * attribute: mRemoteNG keeps a stale default (`Protocol="RDP"`) on children
+ * that inherit, so the direct value is not evidence when the flag is set.
+ */
+const resolveMRemoteNGProtocol = (
+  node: Element,
+  inheritedProtocol: string | undefined,
+): string | undefined => {
+  const inherit = parseMRemoteNGBool(
+    getMRemoteNGAttribute(node, "InheritProtocol"),
+  );
+  if (inherit === true && inheritedProtocol) return inheritedProtocol;
+  const direct = node.getAttribute("Protocol")?.trim();
+  return direct || undefined;
+};
 
 /**
  * Resolve a single connection property, honouring the node's `Inherit<Prop>`
@@ -1367,7 +1562,7 @@ export const importFromMRemoteNG = async (
       connections.push({
         id: folderId,
         name: name,
-        protocol: "rdp",
+        protocol: "rdp", // group placeholder
         hostname: "",
         port: 0,
         isGroup: true,
@@ -1414,6 +1609,7 @@ export const importFromMRemoteNG = async (
           "InheritPort",
           inheritedProps?.port,
         ),
+        protocol: resolveMRemoteNGProtocol(node, inheritedProps?.protocol),
       };
 
       // Parse child nodes
@@ -1423,25 +1619,25 @@ export const importFromMRemoteNG = async (
       );
     } else {
       // This is a connection
-      const protocol = node.getAttribute("Protocol") || "RDP";
-      const portableProtocol = mapPortableProtocol(protocol);
-      // Resolve credential/host/port honouring container inheritance (R7).
-      const hostname =
+      // Resolve protocol/host/port/credentials honouring container
+      // inheritance (R7, RC3), then classify by evidence: protocol string,
+      // port, and any scheme prefix on Hostname (t71 RC2/RC4).
+      const endpoint = resolveImportedEndpoint(
+        resolveMRemoteNGProtocol(node, inheritedProps?.protocol),
         resolveMRemoteNGInheritedProp(
           node,
           "Hostname",
           "InheritHostname",
           inheritedProps?.hostname,
-        ) || "";
-      const port = parsePortOrDefault(
+        ),
         resolveMRemoteNGInheritedProp(
           node,
           "Port",
           "InheritPort",
           inheritedProps?.port,
         ),
-        protocol,
       );
+      const { hostname, port } = endpoint;
       const username =
         resolveMRemoteNGInheritedProp(
           node,
@@ -1478,7 +1674,7 @@ export const importFromMRemoteNG = async (
       connections.push({
         id: connectionId,
         name: name,
-        protocol: mapMRemoteNGProtocol(protocol),
+        protocol: endpoint.protocol,
         hostname: hostname,
         port: port,
         username: username,
@@ -1495,13 +1691,7 @@ export const importFromMRemoteNG = async (
         ...(colors && { colorDepth: colors }),
         ...(useCredSsp !== undefined && { useCredSsp }),
         ...(renderingEngine && { renderingEngine }),
-        ...(portableProtocol.rawTransport
-          ? {
-              rawSocketSettings: createDefaultRawSocketSettings(
-                portableProtocol.rawTransport,
-              ),
-            }
-          : {}),
+        ...rawSocketSettingsFor(endpoint),
       });
 
       if (sshTunnelConnectionName) {
@@ -1679,8 +1869,8 @@ const parseRDCManServer = (
   // Port lives in <connectionSettings>
   const connSettings = serverEl.querySelector("connectionSettings");
   const port =
-    parseInt(connSettings?.querySelector("port")?.textContent || "3389") ||
-    3389;
+    parseImportedPort(connSettings?.querySelector("port")?.textContent) ??
+    DEFAULT_PORTS.rdp;
 
   // Comment/description
   const comment = props?.querySelector("comment")?.textContent || undefined;
@@ -1764,14 +1954,25 @@ export const importFromMobaXterm = async (
           "2": "rlogin", // Rlogin
           "4": "rdp", // RDP
           "5": "vnc", // VNC
-          "3": "rdp", // XDMCP (remote display → rdp)
+          "3": "xdmcp", // XDMCP
           "6": "ftp", // FTP
           "7": "sftp", // SFTP (map to SSH)
           "8": "ssh", // Mosh (→ ssh)
           "9": "telnet", // Serial (→ telnet)
           "10": "ssh", // WSL
         };
-        const protocol = protocolMap[typeNum] || "ssh";
+        // Unknown session types are classified by evidence (port / scheme)
+        // and only default to SSH — MobaXterm's own default — when there is
+        // no evidence at all.
+        const mapped = protocolMap[typeNum];
+        const inferred = mapped
+          ? undefined
+          : normalizeImportedProtocol({ port: parts[1], url: hostname });
+        const protocol: Connection["protocol"] =
+          mapped ??
+          (inferred && inferred.source !== "fallback"
+            ? inferred.protocol
+            : "ssh");
         const port = parsePortOrDefault(parts[1], protocol);
         const username = parts[2] || undefined;
 
@@ -1865,10 +2066,16 @@ const createPuTTYConnection = (
 
   const sourceProtocol = props.Protocol?.toLowerCase() || "ssh";
   const portableProtocol = mapPortableProtocol(sourceProtocol);
-  const protocol =
+  const inferred = normalizeImportedProtocol({
+    raw: protocolMap[sourceProtocol] ? undefined : sourceProtocol,
+    port: props.PortNumber,
+    url: props.HostName,
+  });
+  const protocol: Connection["protocol"] =
     portableProtocol.rawTransport || portableProtocol.protocol === "winrm"
       ? portableProtocol.protocol
-      : protocolMap[sourceProtocol] || "ssh";
+      : (protocolMap[sourceProtocol] ??
+        (inferred.source !== "fallback" ? inferred.protocol : "ssh"));
 
   return {
     id: generateId(),
@@ -1971,7 +2178,7 @@ export const importFromRoyalTS = async (
   }
   const connections: Connection[] = [];
 
-  const mapRoyalType = (type: string): Connection["protocol"] => {
+  const mapRoyalType = (type: string): Connection["protocol"] | undefined => {
     const map: Record<string, Connection["protocol"]> = {
       RoyalRDSConnection: "rdp",
       RoyalSSHConnection: "ssh",
@@ -1984,7 +2191,7 @@ export const importFromRoyalTS = async (
       RoyalPowerShellConnection: "winrm",
       RoyalWebConnection: "https",
     };
-    return map[type] || "rdp";
+    return map[type];
   };
 
   const parseObjects = (objects: any[], parentId?: string, depth = 0): void => {
@@ -2007,7 +2214,7 @@ export const importFromRoyalTS = async (
         connections.push({
           id: folderId,
           name: obj.Name || "Unnamed Folder",
-          protocol: "rdp",
+          protocol: "rdp", // group placeholder
           hostname: "",
           port: 0,
           isGroup: true,
@@ -2022,13 +2229,19 @@ export const importFromRoyalTS = async (
         }
       } else {
         assertCanAppendConnection(connections.length);
-        const protocol = mapRoyalType(obj.Type || "");
+        // Known Royal types map directly; anything else (and web objects,
+        // whose URI carries the scheme) is classified by evidence.
+        const endpoint = resolveImportedEndpoint(
+          mapRoyalType(obj.Type || "") ?? obj.Type,
+          obj.URI || obj.ComputerName || "",
+          obj.Port,
+        );
         connections.push({
           id: generateId(),
           name: obj.Name || obj.URI || "Unnamed",
-          protocol,
-          hostname: obj.URI || obj.ComputerName || "",
-          port: parsePortOrDefault(obj.Port, protocol),
+          protocol: endpoint.protocol,
+          hostname: endpoint.hostname,
+          port: endpoint.port,
           username: obj.CredentialUsername || obj.Username || undefined,
           domain: obj.CredentialDomain || undefined,
           description: obj.Description || undefined,
@@ -2073,6 +2286,7 @@ export const importFromSecureCRT = async (
     let rawPort: string | undefined;
     let username = "";
     let protocol: Connection["protocol"] = "ssh";
+    let unmappedProtocolName: string | undefined;
 
     // Extract string values: <S:"Key">value</S:"Key">
     const strRegex = /<S:"([^"]+)">([^<]*)<\/S:"[^"]+">/g;
@@ -2092,6 +2306,7 @@ export const importFromSecureCRT = async (
         else if (["raw/udp", "raw udp"].includes(lower)) protocol = "raw";
         else if (lower.includes("powershell") || lower === "winrm")
           protocol = "winrm";
+        else unmappedProtocolName = value.trim();
       }
     }
 
@@ -2106,6 +2321,16 @@ export const importFromSecureCRT = async (
       }
     }
 
+    if (unmappedProtocolName) {
+      // Not one of SecureCRT's shell protocols: classify by evidence and keep
+      // the SSH default only when there is none.
+      const inferred = normalizeImportedProtocol({
+        raw: unmappedProtocolName,
+        port: rawPort,
+        url: hostname,
+      });
+      if (inferred.source !== "fallback") protocol = inferred.protocol;
+    }
     const port = parsePortOrDefault(rawPort, protocol);
 
     if (hostname || name) {
@@ -2157,24 +2382,36 @@ const dropImportedProxyCommandConfirmation = (
  * Parse generic JSON format
  */
 const normalizeJsonConnection = (conn: any): Connection => {
-  const protocolMapping = mapPortableProtocol(conn.protocol || "rdp");
+  const isGroup = Boolean(conn.isGroup || conn.isFolder);
+  const rawProtocol = conn.protocol ?? conn.type;
+  // Accept `type`/`url`/`address` aliases; a `url` field is protocol
+  // evidence even when `hostname` is given separately.
+  const endpoint = resolveImportedEndpoint(
+    rawProtocol,
+    conn.hostname || conn.host || conn.address || conn.url || "",
+    conn.port,
+    conn.url,
+  );
+  const protocol: Connection["protocol"] =
+    isGroup && !rawProtocol ? "rdp" /* group placeholder */ : endpoint.protocol;
   return normalizeImportedAdvancedProtocolConnection({
     ...conn,
-    protocol: (conn.protocol ||
-      protocolMapping.protocol) as Connection["protocol"],
+    ...(conn.rawSocketSettings ? {} : rawSocketSettingsFor(endpoint)),
+    // Keep the source alias for RAW so a legacy `rawSocketSettings` block is
+    // migrated to the transport the alias names (`raw_udp` → udp).
+    protocol: (endpoint.rawTransport && rawProtocol
+      ? rawProtocol
+      : protocol) as Connection["protocol"],
     id: conn.id || generateId(),
     name: conn.name || "Imported Connection",
-    hostname: conn.hostname || conn.host || "",
-    port: parsePortOrDefault(
-      conn.port,
-      conn.protocol || protocolMapping.protocol,
-    ),
+    hostname: endpoint.hostname,
+    port: endpoint.port,
     username: conn.username || undefined,
     password: conn.password || undefined,
     domain: conn.domain || undefined,
     description: conn.description || undefined,
     parentId: conn.parentId || undefined,
-    isGroup: conn.isGroup || conn.isFolder || false,
+    isGroup,
     tags: conn.tags || [],
     createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
     updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
@@ -2283,6 +2520,9 @@ export const importConnections = async (
     case "json":
       imported = await importFromJSON(content);
       break;
+    case "ini":
+      imported = await importFromINI(content);
+      break;
     case "csv":
     default:
       imported = await importFromCSV(content);
@@ -2304,6 +2544,7 @@ export const getFormatName = (format: ImportFormat): string => {
     json: "JSON",
     xml: "XML",
     csv: "CSV",
+    ini: "INI",
     mremoteng: "mRemoteNG",
     rdcman: "Remote Desktop Connection Manager",
     royalts: "Royal TS/TSX",
