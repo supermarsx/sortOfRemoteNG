@@ -322,7 +322,7 @@ async function checkProtocolSupportDocumentation() {
     ["Telnet", "Interactive client"],
     ["Raw Socket", "Interactive client"],
     ["RLogin", "Interactive client"],
-    ["MySQL / MariaDB", "Interactive client"],
+    ["MySQL / MariaDB", "Interactive client, direct-route only"],
     ["SFTP", "Interactive client"],
     ["PowerShell Remoting (`winrm`)", "Interactive client"],
     ["SMB", "Interactive client"],
