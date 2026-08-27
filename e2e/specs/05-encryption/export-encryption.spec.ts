@@ -104,7 +104,10 @@ async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> 
   await matchingItem.scrollIntoView();
   await matchingItem.moveTo();
 
-  const rowButtons = await matchingItem.$$('button');
+  // `$$` yields a ChainablePromiseArray, which is not a Promise in the type
+  // system, so awaiting it does not unwrap to an array and `.at()` does not
+  // type-check. Spreading the (iterable) result gives a real Element[].
+  const rowButtons = [...(await matchingItem.$$('button'))];
   const menuButton = rowButtons.at(-1);
   if (!menuButton) {
     throw new Error(`Connection actions button not found for "${name}"`);
