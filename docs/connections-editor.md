@@ -43,6 +43,35 @@ inside that protected credential. See
 [Cloud & Lights-Out Connections]({{ '/cloud-and-lights-out/' | relative_url }})
 for required fields, legacy-record migration, and reopen behavior.
 
+### Serial device selection
+
+Serial connections do not use a hostname, TCP port, proxy, or Network Path; the
+**Connection** subtab's "Local serial device" card owns the port instead. Its
+**Device selection** control chooses how the port is picked:
+
+| Mode                                         | Saved as (`serialSettings.portSelection.mode`) | What you fill in                                                                                                         |
+| -------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Specific device path                         | `fixed`                                        | The exact device (`COM3`, `/dev/ttyUSB0`), typed or picked after **Scan devices**.                                       |
+| First detected serial device (USB preferred) | `firstAny`                                     | Nothing; the port is resolved when you connect.                                                                          |
+| First USB serial device                      | `firstUsb`                                     | Nothing; only USB adapters qualify.                                                                                      |
+| First device matching a filter               | `match`                                        | At least one of **Vendor ID (hex)**, **Product ID (hex)**, or **Name contains**. Picking a scanned device fills the IDs. |
+
+The three automatic modes are meant for USB adapters that get a different COM
+number on every machine or USB socket: the saved connection no longer carries a
+device name, so it keeps working after the adapter moves. The port is resolved
+fresh on every connect and reconnect, ports already held by another session in
+this app are skipped, and the chosen port is shown in the session header and in
+the session status line. **Preview** runs the same resolution without opening
+the port, so you can check which device would be used before saving. Vendor and
+product IDs accept `0x0403`, `0403`, or plain decimal and are stored as
+numbers; an unparseable value shows an inline hint and is not saved.
+
+The device path typed for **Specific device path** is kept while you try an
+automatic mode, so switching back restores it. Connections saved before this
+control existed reopen as **Specific device path** with their original device.
+See [Protocols]({{ '/protocols/' | relative_url }}) for the ordering rules the
+resolver applies.
+
 ## Save and reopen contract
 
 Stable references—not display names—should be persisted for reusable collections such as chains, profiles, VPN connections, and parent folders. The editor keeps an unavailable current ID visible as an orphan so a deleted dependency can be cleared or replaced instead of silently disappearing.
