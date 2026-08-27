@@ -1,7 +1,10 @@
 //! Types for the MySQL / MariaDB integration crate.
 
 use serde::{Deserialize, Serialize};
+use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
 use std::collections::HashMap;
+use std::fmt;
+use zeroize::Zeroize;
 
 // ── Errors ──────────────────────────────────────────────────────────
 
@@ -20,6 +23,7 @@ pub enum MysqlErrorKind {
     NotConnected,
     AlreadyConnected,
     InvalidInput,
+    Unsupported,
     Internal,
 }
 
@@ -38,6 +42,7 @@ impl std::fmt::Display for MysqlErrorKind {
             Self::NotConnected => "not_connected",
             Self::AlreadyConnected => "already_connected",
             Self::InvalidInput => "invalid_input",
+            Self::Unsupported => "unsupported",
             Self::Internal => "internal",
         };
         write!(f, "{}", s)
@@ -84,6 +89,9 @@ impl MysqlError {
     pub fn invalid(msg: impl Into<String>) -> Self {
         Self::new(MysqlErrorKind::InvalidInput, msg)
     }
+    pub fn unsupported(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Unsupported, msg)
+    }
 }
 
 impl std::fmt::Display for MysqlError {
@@ -95,7 +103,12 @@ impl std::fmt::Display for MysqlError {
 // ── Connection config ───────────────────────────────────────────────
 
 /// SSH tunnel configuration for connecting through a bastion host.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// The DTO is kept for wire compatibility, but `MysqlService::connect`
+/// rejects any config that carries an enabled tunnel: no real forwarder
+/// exists yet, and the previous implementation dialled an unbound local port
+/// after authenticating (see `docs/` follow-up). Mirrors `sorng-postgres`.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SshTunnelConfig {
     pub enabled: bool,
     pub ssh_host: String,
@@ -106,18 +119,134 @@ pub struct SshTunnelConfig {
     pub ssh_passphrase: Option<String>,
 }
 
+impl fmt::Debug for SshTunnelConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SshTunnelConfig")
+            .field("enabled", &self.enabled)
+            .field("ssh_host", &self.ssh_host)
+            .field("ssh_port", &self.ssh_port)
+            .field("ssh_username", &self.ssh_username)
+            .field(
+                "ssh_password",
+                &self.ssh_password.as_ref().map(|_| REDACTED),
+            )
+            .field(
+                "ssh_private_key",
+                &self.ssh_private_key.as_ref().map(|_| REDACTED),
+            )
+            .field(
+                "ssh_passphrase",
+                &self.ssh_passphrase.as_ref().map(|_| REDACTED),
+            )
+            .finish()
+    }
+}
+
+impl Drop for SshTunnelConfig {
+    fn drop(&mut self) {
+        self.ssh_password.zeroize();
+        self.ssh_private_key.zeroize();
+        self.ssh_passphrase.zeroize();
+    }
+}
+
+const REDACTED: &str = "[redacted]";
+
 /// TLS/SSL configuration for the MySQL connection.
+///
+/// `ca_cert`, `client_cert` and `client_key` accept either a filesystem path
+/// or inline PEM text (detected by a `-----BEGIN` marker).
+///
+/// Mapping to the driver's SSL mode (see [`MysqlConnectionConfig::tls_plan`]):
+///
+/// | config                               | sqlx `MySqlSslMode` |
+/// |--------------------------------------|---------------------|
+/// | `tls: None`                          | `Preferred`         |
+/// | `enabled: false`                     | `Disabled`          |
+/// | `enabled, skip_verify`               | `Required`          |
+/// | `enabled, !skip_verify`              | `VerifyCa`          |
+/// | `enabled, !skip_verify, verify_hostname` | `VerifyIdentity` |
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct TlsConfig {
     pub enabled: bool,
     pub ca_cert: Option<String>,
     pub client_cert: Option<String>,
     pub client_key: Option<String>,
     pub skip_verify: bool,
+    /// Additionally verify that the server certificate matches `host`
+    /// (`VerifyIdentity`). Only meaningful when `skip_verify` is false.
+    pub verify_hostname: bool,
+}
+
+/// Certificate material: a path on disk or inline PEM text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TlsMaterial {
+    Path(String),
+    Pem(String),
+}
+
+impl TlsMaterial {
+    pub fn from_input(value: &str) -> Option<Self> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else if trimmed.starts_with("-----BEGIN") {
+            Some(Self::Pem(trimmed.to_string()))
+        } else {
+            Some(Self::Path(trimmed.to_string()))
+        }
+    }
+}
+
+/// Driver SSL mode, mirrored locally so it can be compared/serialised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TlsMode {
+    Disabled,
+    Preferred,
+    Required,
+    VerifyCa,
+    VerifyIdentity,
+}
+
+impl From<TlsMode> for MySqlSslMode {
+    fn from(mode: TlsMode) -> Self {
+        match mode {
+            TlsMode::Disabled => MySqlSslMode::Disabled,
+            TlsMode::Preferred => MySqlSslMode::Preferred,
+            TlsMode::Required => MySqlSslMode::Required,
+            TlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+            TlsMode::VerifyIdentity => MySqlSslMode::VerifyIdentity,
+        }
+    }
+}
+
+impl From<MySqlSslMode> for TlsMode {
+    fn from(mode: MySqlSslMode) -> Self {
+        match mode {
+            MySqlSslMode::Disabled => TlsMode::Disabled,
+            MySqlSslMode::Preferred => TlsMode::Preferred,
+            MySqlSslMode::Required => TlsMode::Required,
+            MySqlSslMode::VerifyCa => TlsMode::VerifyCa,
+            MySqlSslMode::VerifyIdentity => TlsMode::VerifyIdentity,
+        }
+    }
+}
+
+/// Resolved TLS settings that will be applied to the driver options.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TlsPlan {
+    pub mode: TlsMode,
+    pub ca: Option<TlsMaterial>,
+    pub client_cert: Option<TlsMaterial>,
+    pub client_key: Option<TlsMaterial>,
 }
 
 /// Full connection configuration for a MySQL/MariaDB server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` redacts the password and the password is zeroised on drop.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MysqlConnectionConfig {
     pub host: String,
     pub port: u16,
@@ -161,29 +290,172 @@ impl MysqlConnectionConfig {
         self
     }
 
-    /// Build the connection URL.
-    pub fn to_url(&self, override_host: Option<&str>, override_port: Option<u16>) -> String {
-        let h = override_host.unwrap_or(&self.host);
-        let p = override_port.unwrap_or(self.port);
-        let db = self.database.as_deref().unwrap_or("");
-        let mut url = format!(
-            "mysql://{}:{}@{}:{}/{}",
-            self.username, self.password, h, p, db
-        );
-
-        let mut params = Vec::new();
-        if let Some(ref cs) = self.charset {
-            params.push(format!("charset={}", cs));
-        }
-        if let Some(ref tz) = self.timezone {
-            params.push(format!("timezone={}", tz));
-        }
-        if !params.is_empty() {
-            url.push('?');
-            url.push_str(&params.join("&"));
-        }
-        url
+    pub fn with_tls(mut self, tls: TlsConfig) -> Self {
+        self.tls = Some(tls);
+        self
     }
+
+    /// True when the DTO asks for an SSH tunnel. The service refuses such
+    /// configs before opening any socket.
+    pub fn requests_ssh_tunnel(&self) -> bool {
+        self.ssh_tunnel.as_ref().is_some_and(|t| t.enabled)
+    }
+
+    /// Resolve the TLS configuration into a driver SSL mode plus material.
+    pub fn tls_plan(&self) -> TlsPlan {
+        let Some(tls) = self.tls.as_ref() else {
+            return TlsPlan {
+                mode: TlsMode::Preferred,
+                ca: None,
+                client_cert: None,
+                client_key: None,
+            };
+        };
+        if !tls.enabled {
+            return TlsPlan {
+                mode: TlsMode::Disabled,
+                ca: None,
+                client_cert: None,
+                client_key: None,
+            };
+        }
+        let mode = if tls.skip_verify {
+            TlsMode::Required
+        } else if tls.verify_hostname {
+            TlsMode::VerifyIdentity
+        } else {
+            TlsMode::VerifyCa
+        };
+        TlsPlan {
+            mode,
+            ca: tls.ca_cert.as_deref().and_then(TlsMaterial::from_input),
+            client_cert: tls.client_cert.as_deref().and_then(TlsMaterial::from_input),
+            client_key: tls.client_key.as_deref().and_then(TlsMaterial::from_input),
+        }
+    }
+
+    /// Build the driver connect options. No URL string is ever produced, so
+    /// credentials containing `@ : / % #` need no escaping and never end up
+    /// in a formatted string.
+    pub fn connect_options(&self) -> MySqlConnectOptions {
+        let plan = self.tls_plan();
+        let mut opts = MySqlConnectOptions::new()
+            .host(&self.host)
+            .port(self.port)
+            .username(&self.username)
+            .password(&self.password)
+            .ssl_mode(plan.mode.into());
+        if let Some(db) = self.database.as_deref().filter(|d| !d.is_empty()) {
+            opts = opts.database(db);
+        }
+        if let Some(cs) = self.charset.as_deref().filter(|c| !c.is_empty()) {
+            opts = opts.charset(cs);
+        }
+        if let Some(tz) = self.timezone.as_deref().filter(|t| !t.is_empty()) {
+            opts = opts.timezone(Some(tz.to_string()));
+        }
+        opts = match plan.ca {
+            Some(TlsMaterial::Path(p)) => opts.ssl_ca(p),
+            Some(TlsMaterial::Pem(pem)) => opts.ssl_ca_from_pem(pem.into_bytes()),
+            None => opts,
+        };
+        opts = match plan.client_cert {
+            Some(TlsMaterial::Path(p)) => opts.ssl_client_cert(p),
+            Some(TlsMaterial::Pem(pem)) => opts.ssl_client_cert_from_pem(pem),
+            None => opts,
+        };
+        opts = match plan.client_key {
+            Some(TlsMaterial::Path(p)) => opts.ssl_client_key(p),
+            Some(TlsMaterial::Pem(pem)) => opts.ssl_client_key_from_pem(pem),
+            None => opts,
+        };
+        opts
+    }
+
+    /// Redacted, display-only URL (`mysql://user@host:port/db`). Never
+    /// includes the password.
+    pub fn display_url(&self) -> String {
+        let db = self.database.as_deref().unwrap_or("");
+        format!(
+            "mysql://{}@{}:{}/{}",
+            self.username.replace(['@', ':', '/'], "_"),
+            self.host,
+            self.port,
+            db
+        )
+    }
+}
+
+impl fmt::Debug for MysqlConnectionConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MysqlConnectionConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &REDACTED)
+            .field("database", &self.database)
+            .field("ssh_tunnel", &self.ssh_tunnel)
+            .field("tls", &self.tls)
+            .field("max_connections", &self.max_connections)
+            .field("connect_timeout_secs", &self.connect_timeout_secs)
+            .field("idle_timeout_secs", &self.idle_timeout_secs)
+            .field("charset", &self.charset)
+            .field("timezone", &self.timezone)
+            .finish()
+    }
+}
+
+impl Drop for MysqlConnectionConfig {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
+// ── Server dialect ──────────────────────────────────────────────────
+
+/// Which server flavour a session is talking to. Detected from
+/// `SELECT VERSION()` after connect.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ServerDialect {
+    #[default]
+    MySql,
+    MariaDb,
+}
+
+impl ServerDialect {
+    /// Parse a `VERSION()` string. Anything mentioning MariaDB (any case) is
+    /// MariaDB; everything else — including unparseable input — is MySQL.
+    pub fn detect(version: &str) -> Self {
+        if version.to_ascii_lowercase().contains("mariadb") {
+            Self::MariaDb
+        } else {
+            Self::MySql
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::MySql => "MySQL",
+            Self::MariaDb => "MariaDB",
+        }
+    }
+}
+
+impl fmt::Display for ServerDialect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// Result of `mysql_server_info`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerInfo {
+    pub dialect: ServerDialect,
+    pub server_version: Option<String>,
+    /// Whether the live connection actually negotiated TLS
+    /// (`Ssl_cipher` non-empty), not merely whether it was requested.
+    pub tls_enabled: bool,
 }
 
 // ── Query results ───────────────────────────────────────────────────
@@ -368,6 +640,8 @@ pub struct SessionInfo {
     pub username: String,
     pub database: Option<String>,
     pub status: ConnectionStatus,
+    #[serde(default)]
+    pub dialect: ServerDialect,
     pub server_version: Option<String>,
     pub server_charset: Option<String>,
     pub connected_at: Option<String>,
@@ -491,19 +765,255 @@ mod tests {
     }
 
     #[test]
-    fn config_to_url_basic() {
+    fn config_display_url_is_redacted() {
         let cfg =
             MysqlConnectionConfig::new("db.example.com", 3306, "user", "pw").with_database("mydb");
-        let url = cfg.to_url(None, None);
-        assert!(url.starts_with("mysql://user:pw@db.example.com:3306/mydb"));
-        assert!(url.contains("charset=utf8mb4"));
+        assert_eq!(cfg.display_url(), "mysql://user@db.example.com:3306/mydb");
+    }
+
+    const HOSTILE_PASSWORD: &str = "p@ss:w/ord%23#x";
+    const HOSTILE_USER: &str = "us@er:name";
+
+    fn hostile_config() -> MysqlConnectionConfig {
+        MysqlConnectionConfig::new("db.host", 3306, HOSTILE_USER, HOSTILE_PASSWORD)
+            .with_database("mydb")
+            .with_ssh_tunnel(SshTunnelConfig {
+                enabled: false,
+                ssh_host: "bastion".into(),
+                ssh_port: 22,
+                ssh_username: "ops".into(),
+                ssh_password: Some("ssh-secret".into()),
+                ssh_private_key: Some("-----BEGIN KEY-----\nkey-secret".into()),
+                ssh_passphrase: Some("phrase-secret".into()),
+            })
     }
 
     #[test]
-    fn config_to_url_override() {
-        let cfg = MysqlConnectionConfig::new("remote", 3306, "u", "p");
-        let url = cfg.to_url(Some("127.0.0.1"), Some(33060));
-        assert!(url.contains("127.0.0.1:33060"));
+    fn connect_options_carry_raw_credentials_without_encoding() {
+        let cfg = hostile_config();
+        let opts = cfg.connect_options();
+        // sqlx keeps the raw values; nothing was URL-encoded or truncated.
+        assert_eq!(opts.get_username(), HOSTILE_USER);
+        assert_eq!(opts.get_host(), "db.host");
+        assert_eq!(opts.get_port(), 3306);
+        assert_eq!(opts.get_database(), Some("mydb"));
+        assert_eq!(opts.get_charset(), "utf8mb4");
+    }
+
+    #[test]
+    fn secrets_never_appear_in_debug_or_display_strings() {
+        let cfg = hostile_config();
+        let rendered = format!("{:?} {}", cfg, cfg.display_url());
+        for secret in [
+            HOSTILE_PASSWORD,
+            "ssh-secret",
+            "key-secret",
+            "phrase-secret",
+        ] {
+            assert!(
+                !rendered.contains(secret),
+                "secret {secret:?} leaked into: {rendered}"
+            );
+        }
+        assert!(rendered.contains("[redacted]"));
+        // The display URL is structurally safe even with `@ : /` in the user.
+        let url = cfg.display_url();
+        assert_eq!(url.matches('@').count(), 1);
+        assert!(url.ends_with("@db.host:3306/mydb"));
+    }
+
+    #[test]
+    fn tls_plan_none_is_preferred() {
+        let cfg = MysqlConnectionConfig::new("h", 3306, "u", "p");
+        let plan = cfg.tls_plan();
+        assert_eq!(plan.mode, TlsMode::Preferred);
+        assert!(plan.ca.is_none());
+        assert_eq!(
+            TlsMode::from(cfg.connect_options().get_ssl_mode()),
+            TlsMode::Preferred
+        );
+    }
+
+    #[test]
+    fn tls_plan_disabled() {
+        let cfg = MysqlConnectionConfig::new("h", 3306, "u", "p").with_tls(TlsConfig {
+            enabled: false,
+            ca_cert: Some("/ignored/ca.pem".into()),
+            ..TlsConfig::default()
+        });
+        let plan = cfg.tls_plan();
+        assert_eq!(plan.mode, TlsMode::Disabled);
+        assert!(plan.ca.is_none(), "material is dropped when TLS is off");
+        assert_eq!(
+            TlsMode::from(cfg.connect_options().get_ssl_mode()),
+            TlsMode::Disabled
+        );
+    }
+
+    #[test]
+    fn tls_plan_required_when_skip_verify() {
+        let cfg = MysqlConnectionConfig::new("h", 3306, "u", "p").with_tls(TlsConfig {
+            enabled: true,
+            skip_verify: true,
+            verify_hostname: true, // ignored: skip_verify wins
+            ..TlsConfig::default()
+        });
+        assert_eq!(cfg.tls_plan().mode, TlsMode::Required);
+        assert_eq!(
+            TlsMode::from(cfg.connect_options().get_ssl_mode()),
+            TlsMode::Required
+        );
+    }
+
+    #[test]
+    fn tls_plan_verify_ca_with_path_material() {
+        let cfg = MysqlConnectionConfig::new("h", 3306, "u", "p").with_tls(TlsConfig {
+            enabled: true,
+            ca_cert: Some("/etc/ssl/ca.pem".into()),
+            client_cert: Some("/etc/ssl/client.crt".into()),
+            client_key: Some(" /etc/ssl/client.key ".into()),
+            ..TlsConfig::default()
+        });
+        let plan = cfg.tls_plan();
+        assert_eq!(plan.mode, TlsMode::VerifyCa);
+        assert_eq!(plan.ca, Some(TlsMaterial::Path("/etc/ssl/ca.pem".into())));
+        assert_eq!(
+            plan.client_cert,
+            Some(TlsMaterial::Path("/etc/ssl/client.crt".into()))
+        );
+        assert_eq!(
+            plan.client_key,
+            Some(TlsMaterial::Path("/etc/ssl/client.key".into()))
+        );
+        assert_eq!(
+            TlsMode::from(cfg.connect_options().get_ssl_mode()),
+            TlsMode::VerifyCa
+        );
+    }
+
+    #[test]
+    fn tls_plan_verify_identity_with_inline_pem() {
+        let pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----";
+        let cfg = MysqlConnectionConfig::new("h", 3306, "u", "p").with_tls(TlsConfig {
+            enabled: true,
+            verify_hostname: true,
+            ca_cert: Some(pem.into()),
+            client_cert: Some("".into()), // empty → no material
+            ..TlsConfig::default()
+        });
+        let plan = cfg.tls_plan();
+        assert_eq!(plan.mode, TlsMode::VerifyIdentity);
+        assert_eq!(plan.ca, Some(TlsMaterial::Pem(pem.into())));
+        assert!(plan.client_cert.is_none());
+        assert_eq!(
+            TlsMode::from(cfg.connect_options().get_ssl_mode()),
+            TlsMode::VerifyIdentity
+        );
+    }
+
+    #[test]
+    fn tls_plan_verify_ca_without_material_still_verifies() {
+        // Corresponds to the UI's "verify-ca" mode without a CA file: the
+        // driver falls back to its bundled roots and will reject a self-signed
+        // server certificate instead of silently downgrading.
+        let cfg = MysqlConnectionConfig::new("h", 3306, "u", "p").with_tls(TlsConfig {
+            enabled: true,
+            ..TlsConfig::default()
+        });
+        let plan = cfg.tls_plan();
+        assert_eq!(plan.mode, TlsMode::VerifyCa);
+        assert!(plan.ca.is_none());
+    }
+
+    #[test]
+    fn caching_sha2_password_needs_no_tls_knob() {
+        // MySQL 8 defaults to caching_sha2_password; sqlx negotiates it over
+        // a plaintext channel via RSA public-key exchange, so `Disabled` must
+        // remain a legal, unmodified configuration (proved live by
+        // tests/mysql_live.rs).
+        let cfg = MysqlConnectionConfig::new("h", 3306, "u", "p").with_tls(TlsConfig {
+            enabled: false,
+            ..TlsConfig::default()
+        });
+        assert_eq!(
+            TlsMode::from(cfg.connect_options().get_ssl_mode()),
+            TlsMode::Disabled
+        );
+    }
+
+    #[test]
+    fn tls_config_deserialises_with_missing_fields() {
+        let tls: TlsConfig = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
+        assert!(tls.enabled);
+        assert!(!tls.skip_verify);
+        assert!(!tls.verify_hostname);
+        assert!(tls.ca_cert.is_none());
+    }
+
+    #[test]
+    fn requests_ssh_tunnel_only_when_enabled() {
+        let mut cfg = hostile_config();
+        assert!(!cfg.requests_ssh_tunnel());
+        if let Some(t) = cfg.ssh_tunnel.as_mut() {
+            t.enabled = true;
+        }
+        assert!(cfg.requests_ssh_tunnel());
+        cfg.ssh_tunnel = None;
+        assert!(!cfg.requests_ssh_tunnel());
+    }
+
+    #[test]
+    fn dialect_detection() {
+        assert_eq!(ServerDialect::detect("8.0.36"), ServerDialect::MySql);
+        assert_eq!(ServerDialect::detect("5.7.44"), ServerDialect::MySql);
+        assert_eq!(ServerDialect::detect("8.4.0-log"), ServerDialect::MySql);
+        assert_eq!(
+            ServerDialect::detect("11.4.2-MariaDB-ubu2404"),
+            ServerDialect::MariaDb
+        );
+        assert_eq!(
+            ServerDialect::detect("10.6.18-MariaDB-log"),
+            ServerDialect::MariaDb
+        );
+        assert_eq!(
+            ServerDialect::detect("5.5.5-10.11.6-mariadb-1:10.11.6+maria~ubu2204"),
+            ServerDialect::MariaDb
+        );
+        assert_eq!(ServerDialect::detect(""), ServerDialect::MySql);
+        assert_eq!(ServerDialect::MariaDb.to_string(), "MariaDB");
+    }
+
+    #[test]
+    fn dialect_and_server_info_serde() {
+        assert_eq!(
+            serde_json::to_string(&ServerDialect::MariaDb).unwrap(),
+            "\"mariadb\""
+        );
+        assert_eq!(
+            serde_json::from_str::<ServerDialect>("\"mysql\"").unwrap(),
+            ServerDialect::MySql
+        );
+        let info = ServerInfo {
+            dialect: ServerDialect::MariaDb,
+            server_version: Some("11.4.2-MariaDB".into()),
+            tls_enabled: true,
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["dialect"], "mariadb");
+        assert_eq!(json["server_version"], "11.4.2-MariaDB");
+        assert_eq!(json["tls_enabled"], true);
+        let back: ServerInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(back, info);
+    }
+
+    #[test]
+    fn session_info_dialect_defaults_when_absent() {
+        let json = r#"{"id":"a","host":"h","port":3306,"username":"u","database":null,
+            "status":"Connected","server_version":null,"server_charset":null,
+            "connected_at":null,"via_ssh_tunnel":false,"tls_enabled":false,
+            "queries_executed":0,"total_rows_fetched":0}"#;
+        let info: SessionInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.dialect, ServerDialect::MySql);
     }
 
     #[test]
@@ -561,6 +1071,7 @@ mod tests {
             username: "u".into(),
             database: Some("db".into()),
             status: ConnectionStatus::Connected,
+            dialect: ServerDialect::MariaDb,
             server_version: Some("8.0".into()),
             server_charset: None,
             connected_at: None,
@@ -570,9 +1081,11 @@ mod tests {
             total_rows_fetched: 500,
         };
         let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"dialect\":\"mariadb\""));
         let back: SessionInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, "abc");
         assert_eq!(back.queries_executed, 10);
+        assert_eq!(back.dialect, ServerDialect::MariaDb);
     }
 
     #[test]

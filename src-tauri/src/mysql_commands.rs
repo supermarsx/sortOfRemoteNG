@@ -59,7 +59,8 @@ mod disabled {
         mysql_kill_process,
         mysql_list_users,
         mysql_show_grants,
-        mysql_server_uptime
+        mysql_server_uptime,
+        mysql_server_info
     );
 }
 

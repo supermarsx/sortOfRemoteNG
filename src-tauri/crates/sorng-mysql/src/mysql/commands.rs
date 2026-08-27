@@ -439,3 +439,12 @@ pub async fn mysql_server_uptime(
     let mut svc = state.lock().await;
     svc.server_uptime(&session_id).await.map_err(|e| e.message)
 }
+
+#[tauri::command]
+pub async fn mysql_server_info(
+    state: tauri::State<'_, MysqlServiceState>,
+    session_id: String,
+) -> Result<ServerInfo, String> {
+    let svc = state.lock().await;
+    svc.server_info(&session_id).map_err(|e| e.message)
+}

@@ -3,14 +3,111 @@
 
 use crate::mysql::types::*;
 use log::{debug, info, warn};
-use sqlx::mysql::MySqlPoolOptions;
-use sqlx::{Column, MySqlPool, Row};
-use std::io::Write;
+use sqlx::mysql::{MySqlPoolOptions, MySqlRow};
+use sqlx::{Column, MySqlPool, Row, TypeInfo};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
 pub type MysqlServiceState = Arc<Mutex<MysqlService>>;
+
+/// Decode a text column that the server may flag as `BINARY`.
+///
+/// MySQL 8 serves `information_schema` from the data dictionary and returns
+/// its name columns (`SCHEMA_NAME`, `TABLE_NAME`, `COLUMN_NAME`, …) as
+/// `VAR_STRING` with the `BINARY` flag set, which sqlx decodes as bytes and
+/// refuses to hand back as `String`. MariaDB returns the same columns as
+/// plain text. Try text first, then fall back to bytes; `None` means SQL
+/// NULL or a genuinely undecodable value.
+fn text_col<I>(row: &MySqlRow, index: I) -> Option<String>
+where
+    I: sqlx::ColumnIndex<MySqlRow> + Copy,
+{
+    if let Ok(value) = row.try_get::<Option<String>, _>(index) {
+        return value;
+    }
+    row.try_get::<Option<Vec<u8>>, _>(index)
+        .ok()
+        .flatten()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// [`text_col`] with an empty string for NULL / undecodable values.
+fn text_or_default<I>(row: &MySqlRow, index: I) -> String
+where
+    I: sqlx::ColumnIndex<MySqlRow> + Copy,
+{
+    text_col(row, index).unwrap_or_default()
+}
+
+/// Convert one result-set cell to JSON.
+///
+/// sqlx type-checks its decoders, so a single `try_get::<String>` does not
+/// merely lose formatting on non-text columns — it *fails*, and the previous
+/// `unwrap_or("NULL")` turned every integer, float, date and blob into the
+/// literal string `"NULL"`. Walk the plausible decoders in order and fall
+/// back to raw bytes, so a real SQL NULL is the only thing that yields
+/// `Value::Null`.
+fn cell_to_json(row: &MySqlRow, index: usize) -> serde_json::Value {
+    use serde_json::Value;
+
+    macro_rules! try_decode {
+        ($ty:ty, $wrap:expr) => {
+            if let Ok(decoded) = row.try_get::<Option<$ty>, _>(index) {
+                #[allow(clippy::redundant_closure_call)]
+                return decoded.map_or(Value::Null, $wrap);
+            }
+        };
+    }
+
+    // DECIMAL/NUMERIC must not round-trip through f64 — a money column would
+    // silently lose precision. MySQL sends DECIMAL as a length-encoded
+    // *string* in both the text and binary protocols, but sqlx's type-
+    // compatibility check rejects `String` and `Vec<u8>` for it, so read the
+    // exact wire text with the unchecked decoder.
+    let is_decimal = row
+        .try_column(index)
+        .ok()
+        .map(|c| c.type_info().name())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("DECIMAL") || name.eq_ignore_ascii_case("NEWDECIMAL")
+        });
+    if is_decimal {
+        if let Ok(decoded) = row.try_get_unchecked::<Option<String>, _>(index) {
+            return decoded.map_or(Value::Null, Value::String);
+        }
+    }
+
+    // No `bool` arm: MySQL has no boolean type — `BOOLEAN` is `TINYINT(1)`,
+    // and sqlx's bool decoder accepts every integer width, so it would turn
+    // `42` into `true`. Integers stay integers.
+    try_decode!(String, Value::String);
+    try_decode!(i64, |v: i64| Value::Number(v.into()));
+    try_decode!(u64, |v: u64| Value::Number(v.into()));
+    try_decode!(f64, |v: f64| serde_json::Number::from_f64(v)
+        .map_or(Value::Null, Value::Number));
+    try_decode!(chrono::NaiveDateTime, |v: chrono::NaiveDateTime| {
+        Value::String(v.format("%Y-%m-%d %H:%M:%S%.f").to_string())
+    });
+    try_decode!(chrono::NaiveDate, |v: chrono::NaiveDate| Value::String(
+        v.to_string()
+    ));
+    try_decode!(chrono::NaiveTime, |v: chrono::NaiveTime| Value::String(
+        v.to_string()
+    ));
+    try_decode!(chrono::DateTime<chrono::Utc>, |v: chrono::DateTime<
+        chrono::Utc,
+    >| Value::String(
+        v.to_rfc3339()
+    ));
+    // Binary last: covers BLOB/BINARY and the BINARY-flagged VAR_STRING that
+    // MySQL 8 uses for information_schema name columns.
+    try_decode!(Vec<u8>, |v: Vec<u8>| Value::String(
+        String::from_utf8_lossy(&v).into_owned()
+    ));
+
+    Value::Null
+}
 
 /// Central MySQL service that manages multiple named sessions.
 pub struct MysqlService {
@@ -22,8 +119,6 @@ struct MysqlSession {
     #[allow(dead_code)]
     config: MysqlConnectionConfig,
     info: SessionInfo,
-    ssh_session: Option<ssh2::Session>,
-    _local_port: Option<u16>,
 }
 
 pub fn new_state() -> MysqlServiceState {
@@ -49,15 +144,6 @@ impl MysqlService {
 
     fn generate_id() -> String {
         uuid::Uuid::new_v4().to_string()
-    }
-
-    fn find_available_port() -> Result<u16, MysqlError> {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0")
-            .map_err(|e| MysqlError::tunnel(format!("Cannot bind ephemeral port: {}", e)))?;
-        listener
-            .local_addr()
-            .map(|a| a.port())
-            .map_err(|e| MysqlError::tunnel(format!("Cannot read port: {}", e)))
     }
 
     fn pool_for(&self, session_id: &str) -> Result<&MySqlPool, MysqlError> {
@@ -127,49 +213,36 @@ impl MysqlService {
 
     // ── Connect / disconnect ────────────────────────────────────────
 
-    /// Open a new connection (optionally through an SSH tunnel) and
-    /// return a session ID.
+    /// Open a new connection and return a session ID.
+    ///
+    /// SSH tunnels are refused up front: the previous implementation
+    /// authenticated against the bastion and then dialled an *unbound* local
+    /// port, which would have sent the database credentials to whatever
+    /// happened to listen there. Until a real forwarder is composed from
+    /// `sorng-ssh`, this fails closed exactly like `sorng-postgres`.
     pub async fn connect(&mut self, config: MysqlConnectionConfig) -> Result<String, MysqlError> {
+        if config.requests_ssh_tunnel() {
+            return Err(MysqlError::unsupported(
+                "SSH tunnelling is not available for MySQL sessions; use a direct target",
+            ));
+        }
+
         let id = Self::generate_id();
-
-        // SSH tunnel setup
-        let (effective_host, effective_port, ssh_sess, local_port) =
-            if let Some(ref tun) = config.ssh_tunnel {
-                if tun.enabled {
-                    let (sess, lp) = self.setup_ssh_tunnel(tun, &config.host, config.port)?;
-                    ("127.0.0.1".to_string(), lp, Some(sess), Some(lp))
-                } else {
-                    (config.host.clone(), config.port, None, None)
-                }
-            } else {
-                (config.host.clone(), config.port, None, None)
-            };
-
-        let url = config.to_url(Some(&effective_host), Some(effective_port));
-        debug!(
-            "mysql connect url (host masked): mysql://…@{}:{}/…",
-            effective_host, effective_port
-        );
+        debug!("mysql connect target: {}", config.display_url());
 
         let pool = MySqlPoolOptions::new()
-            .max_connections(config.max_connections.unwrap_or(5))
+            .max_connections(config.max_connections.unwrap_or(5).max(1))
             .acquire_timeout(std::time::Duration::from_secs(
                 config.connect_timeout_secs.unwrap_or(30),
             ))
             .idle_timeout(Some(std::time::Duration::from_secs(
                 config.idle_timeout_secs.unwrap_or(300),
             )))
-            .connect(&url)
+            .connect_with(config.connect_options())
             .await
             .map_err(|e| MysqlError::connection(format!("MySQL connect failed: {}", e)))?;
 
-        // Fetch server version
-        let version = sqlx::query("SELECT VERSION()")
-            .fetch_optional(&pool)
-            .await
-            .ok()
-            .flatten()
-            .and_then(|r| r.try_get::<String, _>(0).ok());
+        let (version, dialect, tls_enabled) = Self::probe_server(&pool).await;
 
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -180,18 +253,24 @@ impl MysqlService {
             username: config.username.clone(),
             database: config.database.clone(),
             status: ConnectionStatus::Connected,
+            dialect,
             server_version: version,
             server_charset: None,
             connected_at: Some(now),
-            via_ssh_tunnel: ssh_sess.is_some(),
-            tls_enabled: config.tls.as_ref().is_some_and(|t| t.enabled),
+            via_ssh_tunnel: false,
+            tls_enabled,
             queries_executed: 0,
             total_rows_fetched: 0,
         };
 
         info!(
-            "MySQL session {} connected to {}:{}",
-            id, config.host, config.port
+            "MySQL session {} connected to {}:{} ({} {}, tls={})",
+            id,
+            config.host,
+            config.port,
+            dialect,
+            session_info.server_version.as_deref().unwrap_or("?"),
+            tls_enabled
         );
 
         self.sessions.insert(
@@ -200,21 +279,40 @@ impl MysqlService {
                 pool,
                 config,
                 info: session_info,
-                ssh_session: ssh_sess,
-                _local_port: local_port,
             },
         );
 
         Ok(id)
     }
 
+    /// Read `VERSION()` and the negotiated cipher from a fresh pool.
+    /// Failures degrade to `None` / MySQL / `false` rather than failing the
+    /// connect, since the pool itself is already proven alive.
+    async fn probe_server(pool: &MySqlPool) -> (Option<String>, ServerDialect, bool) {
+        let version = sqlx::query("SELECT VERSION()")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|r| text_col(&r, 0));
+        let dialect = version
+            .as_deref()
+            .map(ServerDialect::detect)
+            .unwrap_or_default();
+        let tls_enabled = sqlx::query("SHOW SESSION STATUS LIKE 'Ssl_cipher'")
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|r| text_col(&r, 1))
+            .is_some_and(|cipher| !cipher.trim().is_empty());
+        (version, dialect, tls_enabled)
+    }
+
     /// Disconnect a session.
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), MysqlError> {
-        if let Some(mut sess) = self.sessions.remove(session_id) {
+        if let Some(sess) = self.sessions.remove(session_id) {
             sess.pool.close().await;
-            if let Some(ssh) = sess.ssh_session.take() {
-                let _ = ssh.disconnect(None, "done", None);
-            }
             info!("MySQL session {} disconnected", session_id);
             Ok(())
         } else {
@@ -230,67 +328,6 @@ impl MysqlService {
         }
     }
 
-    // ── SSH tunnel helper ───────────────────────────────────────────
-
-    fn setup_ssh_tunnel(
-        &self,
-        tun: &SshTunnelConfig,
-        db_host: &str,
-        db_port: u16,
-    ) -> Result<(ssh2::Session, u16), MysqlError> {
-        let local_port = Self::find_available_port()?;
-        let tcp = std::net::TcpStream::connect(format!("{}:{}", tun.ssh_host, tun.ssh_port))
-            .map_err(|e| MysqlError::tunnel(format!("SSH connect failed: {}", e)))?;
-
-        let mut sess =
-            ssh2::Session::new().map_err(|e| MysqlError::tunnel(format!("SSH session: {}", e)))?;
-        sess.set_tcp_stream(tcp);
-        sess.handshake()
-            .map_err(|e| MysqlError::tunnel(format!("SSH handshake: {}", e)))?;
-
-        // Authenticate
-        if let Some(ref key) = tun.ssh_private_key {
-            const MAX_PRIVATE_KEY_BYTES: usize = 1024 * 1024;
-            if key.is_empty() || key.len() > MAX_PRIVATE_KEY_BYTES {
-                return Err(MysqlError::tunnel("SSH private key is invalid"));
-            }
-
-            let mut key_file = tempfile::NamedTempFile::new()
-                .map_err(|_| MysqlError::tunnel("SSH private key could not be prepared"))?;
-            key_file
-                .write_all(key.as_bytes())
-                .and_then(|_| key_file.flush())
-                .map_err(|_| MysqlError::tunnel("SSH private key could not be prepared"))?;
-            sess.userauth_pubkey_file(
-                &tun.ssh_username,
-                None,
-                key_file.path(),
-                tun.ssh_passphrase.as_deref(),
-            )
-            .map_err(|_| MysqlError::tunnel("SSH private key authentication failed"))?;
-        } else if let Some(ref pw) = tun.ssh_password {
-            sess.userauth_password(&tun.ssh_username, pw)
-                .map_err(|e| MysqlError::tunnel(format!("SSH password auth: {}", e)))?;
-        } else {
-            return Err(MysqlError::tunnel("No SSH auth method supplied"));
-        }
-
-        if !sess.authenticated() {
-            return Err(MysqlError::tunnel("SSH authentication failed"));
-        }
-
-        debug!(
-            "SSH tunnel: local :{} → {}:{}",
-            local_port, db_host, db_port
-        );
-
-        // NOTE: Real port-forwarding via a background socket-relay is omitted
-        // for brevity; the channel_direct_tcpip approach would be used at
-        // query-time in a production implementation.
-
-        Ok((sess, local_port))
-    }
-
     // ── Session listing ─────────────────────────────────────────────
 
     pub fn list_sessions(&self) -> Vec<SessionInfo> {
@@ -301,6 +338,19 @@ impl MysqlService {
         self.sessions
             .get(id)
             .map(|s| s.info.clone())
+            .ok_or_else(MysqlError::not_connected)
+    }
+
+    /// Dialect / version / negotiated-TLS summary for a session, as captured
+    /// at connect time.
+    pub fn server_info(&self, id: &str) -> Result<ServerInfo, MysqlError> {
+        self.sessions
+            .get(id)
+            .map(|s| ServerInfo {
+                dialect: s.info.dialect,
+                server_version: s.info.server_version.clone(),
+                tls_enabled: s.info.tls_enabled,
+            })
             .ok_or_else(MysqlError::not_connected)
     }
 
@@ -347,8 +397,7 @@ impl MysqlService {
         for row in &rows {
             let mut vals: Vec<serde_json::Value> = Vec::with_capacity(columns.len());
             for (i, _) in columns.iter().enumerate() {
-                let v: String = row.try_get(i).unwrap_or_else(|_| "NULL".to_string());
-                vals.push(serde_json::Value::String(v));
+                vals.push(cell_to_json(row, i));
             }
             result_rows.push(vals);
         }
@@ -423,17 +472,17 @@ impl MysqlService {
         for row in &rows {
             result.push(ExplainRow {
                 id: row.try_get::<i64, _>("id").ok().map(|v| v as u64),
-                select_type: row.try_get("select_type").ok(),
-                table: row.try_get("table").ok(),
-                partitions: row.try_get("partitions").ok(),
-                access_type: row.try_get("type").ok(),
-                possible_keys: row.try_get("possible_keys").ok(),
-                key: row.try_get("key").ok(),
-                key_len: row.try_get("key_len").ok(),
-                ref_col: row.try_get("ref").ok(),
+                select_type: text_col(row, "select_type"),
+                table: text_col(row, "table"),
+                partitions: text_col(row, "partitions"),
+                access_type: text_col(row, "type"),
+                possible_keys: text_col(row, "possible_keys"),
+                key: text_col(row, "key"),
+                key_len: text_col(row, "key_len"),
+                ref_col: text_col(row, "ref"),
                 rows: row.try_get::<i64, _>("rows").ok().map(|v| v as u64),
                 filtered: row.try_get::<f64, _>("filtered").ok(),
-                extra: row.try_get("Extra").ok(),
+                extra: text_col(row, "Extra"),
             });
         }
         Ok(result)
@@ -460,9 +509,9 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| DatabaseInfo {
-                name: r.try_get(0).unwrap_or_default(),
-                character_set: r.try_get(1).ok(),
-                collation: r.try_get(2).ok(),
+                name: text_or_default(r, 0),
+                character_set: text_col(r, 1),
+                collation: text_col(r, 2),
                 table_count: None,
             })
             .collect())
@@ -492,16 +541,16 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| TableInfo {
-                name: r.try_get(0).unwrap_or_default(),
-                engine: r.try_get(1).ok(),
+                name: text_or_default(r, 0),
+                engine: text_col(r, 1),
                 row_count: r.try_get::<i64, _>(2).ok().map(|v| v as u64),
                 data_length: r.try_get::<i64, _>(3).ok().map(|v| v as u64),
                 index_length: r.try_get::<i64, _>(4).ok().map(|v| v as u64),
                 auto_increment: r.try_get::<i64, _>(5).ok().map(|v| v as u64),
-                create_time: r.try_get::<String, _>(6).ok(),
-                update_time: r.try_get::<String, _>(7).ok(),
-                collation: r.try_get(8).ok(),
-                comment: r.try_get(9).ok(),
+                create_time: text_col(r, 6),
+                update_time: text_col(r, 7),
+                collation: text_col(r, 8),
+                comment: text_col(r, 9),
             })
             .collect())
     }
@@ -535,21 +584,21 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| {
-                let key: String = r.try_get(4).unwrap_or_default();
-                let extra: String = r.try_get(5).unwrap_or_default();
+                let key = text_or_default(r, 4);
+                let extra = text_or_default(r, 5);
                 ColumnDef {
-                    name: r.try_get(0).unwrap_or_default(),
-                    data_type: r.try_get(1).unwrap_or_default(),
-                    is_nullable: r.try_get::<String, _>(2).unwrap_or_default() == "YES",
-                    column_default: r.try_get(3).ok(),
+                    name: text_or_default(r, 0),
+                    data_type: text_or_default(r, 1),
+                    is_nullable: text_or_default(r, 2) == "YES",
+                    column_default: text_col(r, 3),
                     is_primary_key: key == "PRI",
                     is_unique: key == "UNI" || key == "PRI",
                     is_auto_increment: extra.contains("auto_increment"),
-                    character_set: r.try_get(6).ok(),
-                    collation: r.try_get(7).ok(),
+                    character_set: text_col(r, 6),
+                    collation: text_col(r, 7),
                     ordinal_position: r.try_get::<i32, _>(8).unwrap_or(0) as u32,
                     extra: extra.clone(),
-                    comment: r.try_get(9).ok(),
+                    comment: text_col(r, 9),
                 }
             })
             .collect())
@@ -584,10 +633,10 @@ impl MysqlService {
         let mut map: std::collections::HashMap<String, IndexInfo> =
             std::collections::HashMap::new();
         for r in &rows {
-            let idx_name: String = r.try_get(0).unwrap_or_default();
-            let col_name: String = r.try_get(1).unwrap_or_default();
+            let idx_name = text_or_default(r, 0);
+            let col_name = text_or_default(r, 1);
             let non_unique: i32 = r.try_get::<i32, _>(2).unwrap_or(1);
-            let idx_type: String = r.try_get(3).unwrap_or_default();
+            let idx_type = text_or_default(r, 3);
 
             map.entry(idx_name.clone())
                 .and_modify(|idx| idx.columns.push(col_name.clone()))
@@ -633,12 +682,12 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| ForeignKeyInfo {
-                name: r.try_get(0).unwrap_or_default(),
-                column: r.try_get(1).unwrap_or_default(),
-                referenced_table: r.try_get(2).unwrap_or_default(),
-                referenced_column: r.try_get(3).unwrap_or_default(),
-                on_update: r.try_get(4).unwrap_or_default(),
-                on_delete: r.try_get(5).unwrap_or_default(),
+                name: text_or_default(r, 0),
+                column: text_or_default(r, 1),
+                referenced_table: text_or_default(r, 2),
+                referenced_column: text_or_default(r, 3),
+                on_update: text_or_default(r, 4),
+                on_delete: text_or_default(r, 5),
             })
             .collect())
     }
@@ -666,10 +715,10 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| ViewInfo {
-                name: r.try_get(0).unwrap_or_default(),
-                definition: r.try_get(1).ok(),
-                definer: r.try_get(2).unwrap_or_default(),
-                is_updatable: r.try_get::<String, _>(3).unwrap_or_default() == "YES",
+                name: text_or_default(r, 0),
+                definition: text_col(r, 1),
+                definer: text_or_default(r, 2),
+                is_updatable: text_or_default(r, 3) == "YES",
             })
             .collect())
     }
@@ -697,12 +746,12 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| RoutineInfo {
-                name: r.try_get(0).unwrap_or_default(),
-                routine_type: r.try_get(1).unwrap_or_default(),
-                definer: r.try_get(2).unwrap_or_default(),
-                created: r.try_get::<String, _>(3).ok(),
-                modified: r.try_get::<String, _>(4).ok(),
-                body: r.try_get(5).ok(),
+                name: text_or_default(r, 0),
+                routine_type: text_or_default(r, 1),
+                definer: text_or_default(r, 2),
+                created: text_col(r, 3),
+                modified: text_col(r, 4),
+                body: text_col(r, 5),
             })
             .collect())
     }
@@ -730,11 +779,11 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| TriggerInfo {
-                name: r.try_get(0).unwrap_or_default(),
-                event: r.try_get(1).unwrap_or_default(),
-                table: r.try_get(2).unwrap_or_default(),
-                timing: r.try_get(3).unwrap_or_default(),
-                statement: r.try_get(4).unwrap_or_default(),
+                name: text_or_default(r, 0),
+                event: text_or_default(r, 1),
+                table: text_or_default(r, 2),
+                timing: text_or_default(r, 3),
+                statement: text_or_default(r, 4),
             })
             .collect())
     }
@@ -942,8 +991,8 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| ServerVariable {
-                name: r.try_get(0).unwrap_or_default(),
-                value: r.try_get(1).unwrap_or_default(),
+                name: text_or_default(r, 0),
+                value: text_or_default(r, 1),
             })
             .collect())
     }
@@ -962,13 +1011,13 @@ impl MysqlService {
             .iter()
             .map(|r| ProcessInfo {
                 id: r.try_get::<i64, _>(0).unwrap_or(0) as u64,
-                user: r.try_get(1).unwrap_or_default(),
-                host: r.try_get(2).unwrap_or_default(),
-                db: r.try_get(3).ok(),
-                command: r.try_get(4).unwrap_or_default(),
+                user: text_or_default(r, 1),
+                host: text_or_default(r, 2),
+                db: text_col(r, 3),
+                command: text_or_default(r, 4),
                 time: r.try_get::<i64, _>(5).unwrap_or(0) as u64,
-                state: r.try_get(6).ok(),
-                info: r.try_get(7).ok(),
+                state: text_col(r, 6),
+                info: text_col(r, 7),
             })
             .collect())
     }
@@ -1007,10 +1056,7 @@ impl MysqlService {
             .await
             .map_err(|e| MysqlError::query(format!("{}", e)))?;
         self.count_queries(session_id);
-        Ok(rows
-            .iter()
-            .map(|r| r.try_get::<String, _>(0).unwrap_or_default())
-            .collect())
+        Ok(rows.iter().map(|r| text_or_default(r, 0)).collect())
     }
 
     pub async fn list_users(&mut self, session_id: &str) -> Result<Vec<UserInfo>, MysqlError> {
@@ -1023,8 +1069,8 @@ impl MysqlService {
         Ok(rows
             .iter()
             .map(|r| UserInfo {
-                user: r.try_get(0).unwrap_or_default(),
-                host: r.try_get(1).unwrap_or_default(),
+                user: text_or_default(r, 0),
+                host: text_or_default(r, 1),
                 grants: vec![],
             })
             .collect())
@@ -1153,7 +1199,7 @@ impl MysqlService {
                 .map_err(|e| MysqlError::export(format!("{}", e)))?;
             self.count_queries(session_id);
             if let Some(r) = row {
-                let ddl: String = r.try_get(1).unwrap_or_default();
+                let ddl = text_or_default(&r, 1);
                 out.push_str(&ddl);
                 out.push_str(";\n\n");
             }
@@ -1189,13 +1235,11 @@ impl MysqlService {
                     let vals = row
                         .iter()
                         .map(|v| match v {
+                            // A real SQL NULL is now `Value::Null`; a text
+                            // value that happens to read "NULL" stays quoted.
                             serde_json::Value::Null => "NULL".into(),
                             serde_json::Value::String(s) => {
-                                if s == "NULL" {
-                                    "NULL".into()
-                                } else {
-                                    format!("'{}'", s.replace('\'', "''").replace('\\', "\\\\"))
-                                }
+                                format!("'{}'", s.replace('\\', "\\\\").replace('\'', "''"))
                             }
                             other => other.to_string(),
                         })
@@ -1475,9 +1519,56 @@ mod tests {
     }
 
     #[test]
-    fn find_available_port_works() {
-        let port = MysqlService::find_available_port().unwrap();
-        assert!(port > 0);
+    fn server_info_not_found() {
+        let svc = MysqlService::new();
+        let err = svc.server_info("missing").unwrap_err();
+        assert_eq!(err.kind, MysqlErrorKind::NotConnected);
+    }
+
+    fn closed_local_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        port
+    }
+
+    #[tokio::test]
+    async fn connect_rejects_ssh_tunnel_before_dialling() {
+        // Point the config at a port that is guaranteed closed: if the
+        // tunnel guard did not fire first we would get a Connection error
+        // (or wait on the acquire timeout) instead of Unsupported.
+        let port = closed_local_port();
+        let mut cfg = MysqlConnectionConfig::new("127.0.0.1", port, "u", "p");
+        cfg.connect_timeout_secs = Some(1);
+        let cfg = cfg.with_ssh_tunnel(SshTunnelConfig {
+            enabled: true,
+            ssh_host: "127.0.0.1".into(),
+            ssh_port: port,
+            ssh_username: "ops".into(),
+            ssh_password: Some("x".into()),
+            ssh_private_key: None,
+            ssh_passphrase: None,
+        });
+
+        let mut svc = MysqlService::new();
+        let started = Instant::now();
+        let err = svc.connect(cfg).await.unwrap_err();
+        assert_eq!(err.kind, MysqlErrorKind::Unsupported);
+        assert!(err.message.contains("SSH tunnelling is not available"));
+        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+        assert!(svc.list_sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn connect_error_does_not_echo_password() {
+        let port = closed_local_port();
+        let mut cfg = MysqlConnectionConfig::new("127.0.0.1", port, "us@er", "p@ss:w/ord%#");
+        cfg.connect_timeout_secs = Some(2);
+        let mut svc = MysqlService::new();
+        let err = svc.connect(cfg).await.unwrap_err();
+        assert_eq!(err.kind, MysqlErrorKind::Connection);
+        assert!(!err.message.contains("p@ss:w/ord%#"), "{}", err.message);
+        assert!(!err.message.contains("mysql://"), "{}", err.message);
     }
 
     #[test]
