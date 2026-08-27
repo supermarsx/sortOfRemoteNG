@@ -516,6 +516,152 @@ describe("SavedProtocolOptions", () => {
     ).toBeInTheDocument();
   });
 
+  it("persists the MySQL/MariaDB dialect hint and TLS settings in protocol-owned fields", () => {
+    const { rerender } = render(
+      <SavedHarness
+        initial={{ protocol: "mysql", isGroup: false }}
+        section="connection"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Default database"), {
+      target: { value: "inventory" },
+    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Server dialect" }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "MariaDB" }));
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"database":"inventory"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mysqlDialectHint":"mariadb"',
+    );
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "mysql", isGroup: false }}
+        section="security"
+      />,
+    );
+    expect(
+      screen.getByText(/can use an unencrypted connection/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("combobox", { name: "TLS mode" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Verify CA and hostname" }),
+    );
+    fireEvent.change(screen.getByLabelText("CA certificate path"), {
+      target: { value: "C:\\certs\\mysql-root.pem" },
+    });
+    fireEvent.change(screen.getByLabelText("Client certificate path"), {
+      target: { value: "C:\\certs\\client.pem" },
+    });
+    fireEvent.change(screen.getByLabelText("Client key path"), {
+      target: { value: "C:\\certs\\client-key.pem" },
+    });
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mysqlTls":{"mode":"verify-identity","caPath":"C:\\\\certs\\\\mysql-root.pem","clientCertPath":"C:\\\\certs\\\\client.pem","clientKeyPath":"C:\\\\certs\\\\client-key.pem"}',
+    );
+    expect(
+      screen.queryByText(/can use an unencrypted connection/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/rejected before credentials are sent/i),
+    ).toBeInTheDocument();
+  });
+
+  it("persists MongoDB cluster, authentication, TLS and read settings in protocol-owned fields", () => {
+    const { rerender } = render(
+      <SavedHarness
+        initial={{ protocol: "mongodb", isGroup: false }}
+        section="connection"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Replica set name"), {
+      target: { value: "rs0" },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Connection string (overrides host and port)"),
+      { target: { value: "mongodb://app:s3cret@db.example.net/?tls=true" } },
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mongoReplicaSet":"rs0"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mongoConnectionString":"mongodb://app:s3cret@db.example.net/?tls=true"',
+    );
+    expect(
+      document.querySelector("#mongodb-connection-string"),
+    ).toHaveAttribute("type", "password");
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "mongodb", isGroup: false }}
+        section="authentication"
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "reporter" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "mongo-secret" },
+    });
+    fireEvent.change(screen.getByLabelText("Authentication database"), {
+      target: { value: "reporting" },
+    });
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"username":"reporter"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"password":"mongo-secret"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mongoAuthDatabase":"reporting"',
+    );
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "mongodb", isGroup: false }}
+        section="security"
+      />,
+    );
+    expect(screen.getByText(/TLS is disabled/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /^Use TLS/ }));
+    fireEvent.change(screen.getByLabelText("CA certificate path"), {
+      target: { value: "C:\\certs\\mongo-root.pem" },
+    });
+    expect(screen.queryByText(/TLS is disabled/i)).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /^Allow invalid certificates/ }),
+    );
+    expect(
+      screen.getByText(/Certificate verification is disabled/i),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mongoTls":{"enabled":true,"caPath":"C:\\\\certs\\\\mongo-root.pem","allowInvalid":true}',
+    );
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "mongodb", isGroup: false }}
+        section="advanced"
+      />,
+    );
+    fireEvent.click(screen.getByRole("combobox", { name: "Read preference" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Secondary preferred" }),
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /^Direct connection/ }),
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mongoReadPreference":"secondaryPreferred"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"mongoDirectConnection":true',
+    );
+  });
+
   it("keeps SPICE TLS settings coherent and exposes only enforceable trust controls", () => {
     render(
       <SavedHarness

@@ -53,6 +53,7 @@ const SECRET_FIELDS = new Set<keyof Connection | string>([
   "smbPassword",
   "ftpPassword",
   "mysqlPassword",
+  "mongoConnectionString",
   "vncPassword",
   "rdpPassword",
   "anydeskPassword",

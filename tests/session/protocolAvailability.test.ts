@@ -31,6 +31,7 @@ const BUILT_IN_PROTOCOLS = [
   "rlogin",
   "mysql",
   "postgresql",
+  "mongodb",
   "spice",
   "xdmcp",
   "x2go",
@@ -238,6 +239,31 @@ describe("protocol availability contract", () => {
     expect(availability?.testPath).toMatch(/usePostgreSQLClient\.test\.tsx$/);
     expect(getProtocolAvailability("postgres")).toBe(availability);
     expect(getDirectSessionUnavailableMessage("postgresql")).toBeNull();
+  });
+
+  it("records the per-session MySQL/MariaDB workbench behind one protocol id", () => {
+    const availability = getProtocolAvailability("mysql");
+    expect(availability?.classification).toBe("fully-interactive");
+    expect(availability?.sessionEntry).toBe("client-owned");
+    expect(availability?.backendPath).toBe("src-tauri/crates/sorng-mysql");
+    expect(availability?.detail).toMatch(/MariaDB/);
+    expect(availability?.detail).toMatch(/fail closed/i);
+    expect(getProtocolAvailability("mariadb")).toBe(availability);
+    expect(getProtocolAvailability("MariaDB")).toBe(availability);
+    expect(getDirectSessionUnavailableMessage("mysql")).toBeNull();
+  });
+
+  it("records the isolated direct MongoDB document runtime", () => {
+    const availability = getProtocolAvailability("mongodb");
+    expect(availability?.classification).toBe("fully-interactive");
+    expect(availability?.sessionEntry).toBe("client-owned");
+    expect(availability?.frontendPath).toBe(
+      "src/components/protocol/MongoDBClient.tsx",
+    );
+    expect(availability?.backendPath).toBe("src-tauri/crates/sorng-mongodb");
+    expect(availability?.testPath).toMatch(/useMongoDBClient\.test\.tsx$/);
+    expect(getProtocolAvailability("mongo")).toBe(availability);
+    expect(getDirectSessionUnavailableMessage("mongodb")).toBeNull();
   });
 
   it("keeps the non-persisted client audit list represented", () => {

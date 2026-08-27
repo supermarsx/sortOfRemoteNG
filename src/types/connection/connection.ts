@@ -23,6 +23,45 @@ import type { NxNativeSavedOptions } from "../protocols/nxNative";
 import type { ConnectionTypeCategory } from "../integrations/registry";
 import type { VoipPhoneSettings } from "../voipPhone";
 
+/**
+ * MySQL/MariaDB dialect hint chosen in the editor. The live dialect is always
+ * detected from `SELECT VERSION()` after connect; the hint only changes the
+ * label/icon shown before the first connection.
+ */
+export type MysqlDialectHint = "auto" | "mysql" | "mariadb";
+
+/** MySQL/MariaDB TLS mode mapped onto the SQLx `MySqlSslMode` ladder. */
+export type MysqlTlsMode =
+  | "disabled"
+  | "preferred"
+  | "required"
+  | "verify-ca"
+  | "verify-identity";
+
+/** Non-secret MySQL/MariaDB TLS settings persisted on the saved connection. */
+export interface MysqlTlsSavedOptions {
+  mode?: MysqlTlsMode;
+  caPath?: string;
+  clientCertPath?: string;
+  clientKeyPath?: string;
+}
+
+/** MongoDB read preference forwarded to the driver `ClientOptions`. */
+export type MongoReadPreference =
+  | "primary"
+  | "primaryPreferred"
+  | "secondary"
+  | "secondaryPreferred"
+  | "nearest";
+
+/** Non-secret MongoDB TLS settings persisted on the saved connection. */
+export interface MongoTlsSavedOptions {
+  enabled?: boolean;
+  caPath?: string;
+  certKeyPath?: string;
+  allowInvalid?: boolean;
+}
+
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
   | { name: string; path: string; isFolder?: false }
@@ -61,6 +100,7 @@ export type BuiltInConnectionProtocol =
   | "rlogin"
   | "mysql"
   | "postgresql"
+  | "mongodb"
   | "spice"
   | "xdmcp"
   | "x2go"
@@ -445,6 +485,28 @@ export interface Connection
    * Credentials remain on the parent connection; nothing secret lives here.
    */
   voipPhoneSettings?: VoipPhoneSettings;
+
+  /** MySQL/MariaDB dialect hint (`auto` = detect from the server version). */
+  mysqlDialectHint?: MysqlDialectHint;
+  /** MySQL/MariaDB TLS mode and certificate paths (non-secret). */
+  mysqlTls?: MysqlTlsSavedOptions;
+
+  /** MongoDB authentication database (`authSource`); defaults to `admin`. */
+  mongoAuthDatabase?: string;
+  /** MongoDB replica-set name (`replicaSet`). */
+  mongoReplicaSet?: string;
+  /**
+   * Full MongoDB connection URI overriding host/port when set. It may embed
+   * credentials, so it is a SECRET: never indexed, diffed, logged, or exported
+   * in clear text.
+   */
+  mongoConnectionString?: string;
+  /** MongoDB TLS settings (non-secret). */
+  mongoTls?: MongoTlsSavedOptions;
+  /** Connect to the named host only, skipping replica-set discovery. */
+  mongoDirectConnection?: boolean;
+  /** MongoDB read preference. */
+  mongoReadPreference?: MongoReadPreference;
 
   /** Non-secret GCP settings. The service-account JSON uses `password`. */
   gcpSettings?: {

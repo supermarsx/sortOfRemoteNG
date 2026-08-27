@@ -19,6 +19,7 @@ const leanCapabilities: RuntimeCapabilities = {
   serial: true,
   mysql: false,
   postgresql: false,
+  mongodb: false,
   source: "native",
 };
 

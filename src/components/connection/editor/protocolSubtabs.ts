@@ -250,7 +250,21 @@ export function getProtocolSubtabs(
     ]);
   }
 
-  if (["telnet", "mysql", "smb", "rustdesk"].includes(protocol)) {
+  if (protocol === "mysql") {
+    return selectSubtabs(["connection", "security", "recovery"]);
+  }
+
+  if (protocol === "mongodb") {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "security",
+      "advanced",
+      "recovery",
+    ]);
+  }
+
+  if (["telnet", "smb", "rustdesk"].includes(protocol)) {
     return selectSubtabs(["connection", "recovery"]);
   }
 

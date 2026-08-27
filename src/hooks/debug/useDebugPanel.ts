@@ -14,6 +14,7 @@ const PROTOCOLS = [
   "telnet",
   "rlogin",
   "mysql",
+  "mongodb",
   "ftp",
   "sftp",
   "scp",

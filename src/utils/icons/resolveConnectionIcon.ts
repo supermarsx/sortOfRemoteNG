@@ -27,6 +27,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   raw: "cable",
   rlogin: "phone",
   mysql: "database",
+  mongodb: "database",
   postgresql: "database",
   spice: "monitor",
   xdmcp: "monitor",

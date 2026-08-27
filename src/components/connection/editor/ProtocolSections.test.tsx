@@ -372,9 +372,21 @@ describe("ProtocolSections", () => {
         "advanced",
       ]);
     }
-    for (const protocol of ["telnet", "mysql", "smb", "rustdesk"] as const) {
+    for (const protocol of ["telnet", "smb", "rustdesk"] as const) {
       expect(idsFor({ protocol })).toEqual(["connection", "recovery"]);
     }
+    expect(idsFor({ protocol: "mysql" })).toEqual([
+      "connection",
+      "security",
+      "recovery",
+    ]);
+    expect(idsFor({ protocol: "mongodb" })).toEqual([
+      "connection",
+      "authentication",
+      "security",
+      "advanced",
+      "recovery",
+    ]);
     expect(idsFor({ protocol: "gcp" })).toEqual([
       "provider",
       "authentication",

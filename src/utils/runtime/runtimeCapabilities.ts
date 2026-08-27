@@ -7,6 +7,7 @@ export interface NativeRuntimeCapabilities {
   serial: boolean;
   mysql: boolean;
   postgresql: boolean;
+  mongodb: boolean;
 }
 
 export interface RuntimeCapabilities extends NativeRuntimeCapabilities {
@@ -28,6 +29,7 @@ const OPTIONAL_CAPABILITY_KEYS: OptionalRuntimeFeature[] = [
   "serial",
   "mysql",
   "postgresql",
+  "mongodb",
 ];
 
 export const UNAVAILABLE_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
@@ -37,6 +39,7 @@ export const UNAVAILABLE_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
   serial: false,
   mysql: false,
   postgresql: false,
+  mongodb: false,
   source: "unavailable",
 };
 
@@ -63,8 +66,13 @@ const PROTOCOL_REQUIREMENTS: Record<
   },
   mysql: {
     capability: "mysql",
-    label: "MySQL",
+    label: "MySQL / MariaDB",
     cargoFeature: "db-mysql",
+  },
+  mongodb: {
+    capability: "mongodb",
+    label: "MongoDB",
+    cargoFeature: "db-mongo",
   },
   postgresql: {
     capability: "postgresql",

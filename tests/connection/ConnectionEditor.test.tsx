@@ -183,6 +183,7 @@ vi.mock("../../src/utils/discovery/defaultPorts", () => ({
       sftp: 22,
       mysql: 3306,
       postgresql: 5432,
+      mongodb: 27017,
       spice: 5900,
       xdmcp: 177,
       x2go: 22,
@@ -293,6 +294,7 @@ describe("ConnectionEditor", () => {
           serial: true,
           mysql: true,
           postgresql: true,
+          mongodb: true,
         };
       }
       if (command === "read_app_data") return integrationConfigRaw;
@@ -1531,7 +1533,8 @@ describe("ConnectionEditor", () => {
       const cases = [
         { query: "plaintext terminal", label: "Telnet", port: 23 },
         { query: "file transfer", label: "SFTP", port: 22 },
-        { query: "mariadb", label: "MySQL", port: 3306 },
+        { query: "mariadb", label: "MySQL / MariaDB", port: 3306 },
+        { query: "document workbench", label: "MongoDB", port: 27017 },
         { query: "samba", label: "SMB", port: 445 },
         { query: "device id", label: "RustDesk", port: undefined },
       ] as const;

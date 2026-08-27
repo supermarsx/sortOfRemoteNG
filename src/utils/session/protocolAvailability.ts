@@ -178,14 +178,14 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     detail: "The RFC 1282 client owns handshake, terminal, replay, and resize.",
   }),
   mysql: capability({
-    label: "MySQL",
+    label: "MySQL / MariaDB",
     classification: "fully-interactive",
     sessionEntry: "client-owned",
     frontendPath: "src/components/protocol/MySQLClient.tsx",
-    backendPath: "src-tauri/crates/sorng-protocols/src/db.rs",
+    backendPath: "src-tauri/crates/sorng-mysql",
     testPath: "tests/protocol/useMySQLClient.test.ts",
     detail:
-      "The query workbench connects from the saved connection before loading schemas; the backend currently exposes one process-wide database connection.",
+      "The query workbench owns an isolated per-session MySQL/MariaDB connection with explicit TLS modes and certificate paths; the server dialect is detected after connect. Proxy, VPN, SSH-hop, and tunnel-chain routes fail closed.",
   }),
   postgresql: capability({
     label: "PostgreSQL",
@@ -196,6 +196,16 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     testPath: "src/hooks/protocol/usePostgreSQLClient.test.tsx",
     detail:
       "The native query workbench owns an isolated direct database session with explicit SQLx SSL modes and certificate paths. Proxy, VPN, SSH-hop, and tunnel-chain routes fail closed.",
+  }),
+  mongodb: capability({
+    label: "MongoDB",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/MongoDBClient.tsx",
+    backendPath: "src-tauri/crates/sorng-mongodb",
+    testPath: "tests/protocol/useMongoDBClient.test.tsx",
+    detail:
+      "The document workbench owns an isolated per-session MongoDB driver connection (databases, collections, find/aggregate/indexes) with explicit TLS options. Proxy, VPN, SSH-hop, and tunnel-chain routes fail closed.",
   }),
   spice: capability({
     label: "SPICE",
@@ -486,6 +496,8 @@ const NORMALIZED_PROTOCOL_ALIASES: Readonly<Record<string, AuditedProtocol>> = {
   powershell: "winrm",
   pwsh: "winrm",
   postgres: "postgresql",
+  mariadb: "mysql",
+  mongo: "mongodb",
   kubernetes: "k8s",
 };
 

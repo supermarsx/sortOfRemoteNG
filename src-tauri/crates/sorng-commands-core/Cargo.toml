@@ -57,6 +57,7 @@ default = ["protocol-serial-dynamic"]
 cloud = []
 db-mysql = []
 db-postgres = []
+db-mongo = []
 rdp = ["sorng-app-domains/rdp"]
 # `ops` forwards to `sorng-app-domains/ops` so that ops-gated crates
 # (e.g., `sorng_powershell`, `sorng_ipmi`) are re-exported via

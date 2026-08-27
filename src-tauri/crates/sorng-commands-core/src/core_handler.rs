@@ -15,6 +15,7 @@ mod runtime_capability_commands {
         pub serial: bool,
         pub mysql: bool,
         pub postgresql: bool,
+        pub mongodb: bool,
     }
 
     #[tauri::command]
@@ -29,6 +30,7 @@ mod runtime_capability_commands {
             )),
             mysql: cfg!(feature = "db-mysql"),
             postgresql: cfg!(feature = "db-postgres"),
+            mongodb: cfg!(feature = "db-mongo"),
         }
     }
 }

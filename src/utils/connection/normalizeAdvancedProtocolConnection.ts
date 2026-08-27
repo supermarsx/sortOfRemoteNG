@@ -47,7 +47,11 @@ export function normalizeAdvancedProtocolConnection(
     rawMigration?.protocol ??
     (sourceProtocol === "postgres"
       ? "postgresql"
-      : sourceProtocol || input.protocol);
+      : sourceProtocol === "mariadb"
+        ? "mysql"
+        : sourceProtocol === "mongo"
+          ? "mongodb"
+          : sourceProtocol || input.protocol);
   const next: AdvancedProtocolConnectionInput = { ...input, protocol };
   const canInitialize = input.isGroup !== true;
 
@@ -126,6 +130,20 @@ export function normalizeAdvancedProtocolConnection(
     next.postgresConnectionTimeoutSecs =
       input.postgresConnectionTimeoutSecs ??
       (input.timeout && input.timeout > 0 ? input.timeout : 10);
+  }
+
+  if (canInitialize && protocol === "mysql") {
+    next.port = input.port && input.port > 0 ? input.port : 3306;
+    next.mysqlDialectHint = input.mysqlDialectHint ?? "auto";
+    next.mysqlTls = { mode: "preferred", ...input.mysqlTls };
+  }
+
+  if (canInitialize && protocol === "mongodb") {
+    next.port = input.port && input.port > 0 ? input.port : 27017;
+    next.mongoAuthDatabase = input.mongoAuthDatabase?.trim() || "admin";
+    next.mongoReadPreference = input.mongoReadPreference ?? "primary";
+    next.mongoDirectConnection = input.mongoDirectConnection ?? false;
+    next.mongoTls = { enabled: false, allowInvalid: false, ...input.mongoTls };
   }
 
   if (canInitialize && protocol === "spice") {

@@ -295,7 +295,10 @@ export const CONNECTION_ICON_CATALOG = [
   defineIcon("database", "Database", "databases", Database, [
     "sql",
     "mysql",
+    "mariadb",
     "mssql",
+    "mongodb",
+    "nosql",
   ]),
   defineIcon(
     "database-backup",

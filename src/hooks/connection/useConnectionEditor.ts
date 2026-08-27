@@ -236,8 +236,8 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
   },
   {
     value: "mysql",
-    label: "MySQL",
-    desc: "MySQL / MariaDB database",
+    label: "MySQL / MariaDB",
+    desc: "MySQL or MariaDB query workbench",
     icon: Database,
     color: "blue",
     category: "database",
@@ -248,6 +248,14 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Native PostgreSQL query client",
     icon: Database,
     color: "blue",
+    category: "database",
+  },
+  {
+    value: "mongodb",
+    label: "MongoDB",
+    desc: "Native MongoDB document workbench",
+    icon: Database,
+    color: "green",
     category: "database",
   },
   {

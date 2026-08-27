@@ -139,6 +139,7 @@ const ProtocolSubtabContent: React.FC<{
       "scp",
       "mysql",
       "postgresql",
+      "mongodb",
       "spice",
       "xdmcp",
       "x2go",

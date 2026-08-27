@@ -174,6 +174,21 @@ describe("ConnectionTemplates", () => {
     expect(screen.queryByText("SSH Linux Server")).not.toBeInTheDocument();
   });
 
+  it("ships MariaDB and MongoDB database templates next to MySQL", () => {
+    render(<ConnectionTemplates />);
+    const searchInput = screen.getByPlaceholderText(
+      "Search templates by name or tag\u2026",
+    );
+    fireEvent.change(searchInput, { target: { value: "mariadb" } });
+    expect(screen.getByText("Database MariaDB")).toBeInTheDocument();
+    expect(screen.getByText("Database MySQL")).toBeInTheDocument();
+    expect(screen.queryByText("Database MongoDB")).not.toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: "nosql" } });
+    expect(screen.getByText("Database MongoDB")).toBeInTheDocument();
+    expect(screen.queryByText("Database MySQL")).not.toBeInTheDocument();
+  });
+
   it("filters templates by category pill", () => {
     render(<ConnectionTemplates />);
     // Click the RDP pill specifically (not the badge)

@@ -23,6 +23,7 @@ const leanCapabilities: RuntimeCapabilities = {
   serial: true,
   mysql: false,
   postgresql: false,
+  mongodb: false,
   source: "native",
 };
 
@@ -40,6 +41,7 @@ describe("runtime capabilities", () => {
       serial: true,
       mysql: true,
       postgresql: true,
+      mongodb: true,
     });
 
     const first = await loadRuntimeCapabilities();
@@ -58,6 +60,7 @@ describe("runtime capabilities", () => {
       { value: "rdp" },
       { value: "mysql" },
       { value: "postgresql" },
+      { value: "mongodb" },
       { value: "winrm" },
       { value: "gcp" },
       { value: "idrac" },
@@ -71,6 +74,9 @@ describe("runtime capabilities", () => {
     expect(
       getRuntimeProtocolUnavailableMessage("rdp", leanCapabilities),
     ).toContain('"rdp" feature');
+    expect(
+      getRuntimeProtocolUnavailableMessage("mongodb", leanCapabilities),
+    ).toContain('"db-mongo" feature');
   });
 
   it("fails closed with an actionable message when capability IPC is absent", async () => {

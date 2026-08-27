@@ -251,6 +251,91 @@ describe("connection editor search index", () => {
       fieldId: "postgresql-direct-route",
       protocolSubtabId: "advanced",
     });
+    const mysqlIndex = buildIndex({
+      isGroup: false,
+      protocol: "mysql",
+      database: "inventory",
+      mysqlDialectHint: "mariadb",
+      mysqlTls: {
+        mode: "verify-identity",
+        caPath: "C:\\certs\\mysql-root.pem",
+      },
+    });
+    expect(searchConnectionEditorIndex(mysqlIndex, "mariadb")[0]).toMatchObject(
+      { protocolSubtabId: "connection" },
+    );
+    expect(
+      searchConnectionEditorIndex(mysqlIndex, "verify-identity")[0],
+    ).toMatchObject({
+      fieldId: "mysql-tls-mode",
+      protocolSubtabId: "security",
+    });
+    expect(
+      searchConnectionEditorIndex(mysqlIndex, "mysql-root.pem")[0],
+    ).toMatchObject({
+      fieldId: "mysql-ca-certificate",
+      protocolSubtabId: "security",
+    });
+    expect(
+      searchConnectionEditorIndex(mysqlIndex, "tunnel chain")[0],
+    ).toMatchObject({
+      fieldId: "mysql-direct-route",
+      protocolSubtabId: "security",
+    });
+
+    const mongoConnectionString =
+      "mongodb://app:connection-string-secret-never-searchable@db.example.net/?authSource=admin";
+    const mongodbIndex = buildIndex({
+      isGroup: false,
+      protocol: "mongodb",
+      username: "reporter",
+      password: "mongo-password-never-searchable",
+      mongoReplicaSet: "rs-analytics",
+      mongoAuthDatabase: "reporting",
+      mongoConnectionString,
+      mongoTls: { enabled: true, caPath: "C:\\certs\\mongo-root.pem" },
+      mongoReadPreference: "secondaryPreferred",
+    });
+    expect(
+      searchConnectionEditorIndex(mongodbIndex, "replica set")[0],
+    ).toMatchObject({
+      fieldId: "mongodb-replica-set",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(mongodbIndex, "rs-analytics")[0],
+    ).toMatchObject({ fieldId: "mongodb-replica-set" });
+    expect(
+      searchConnectionEditorIndex(mongodbIndex, "reporting")[0],
+    ).toMatchObject({
+      fieldId: "mongodb-auth-database",
+      protocolSubtabId: "authentication",
+    });
+    expect(
+      searchConnectionEditorIndex(mongodbIndex, "secondaryPreferred")[0],
+    ).toMatchObject({
+      fieldId: "mongodb-read-preference",
+      protocolSubtabId: "advanced",
+    });
+    expect(
+      searchConnectionEditorIndex(mongodbIndex, "connection string")[0],
+    ).toMatchObject({
+      fieldId: "mongodb-connection-string",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(mongodbIndex, "connection-string-secret"),
+    ).toHaveLength(0);
+    expect(
+      searchConnectionEditorIndex(mongodbIndex, "db.example.net"),
+    ).toHaveLength(0);
+    expect(JSON.stringify(mongodbIndex)).not.toContain(mongoConnectionString);
+    expect(JSON.stringify(mongodbIndex)).not.toContain(
+      "mongo-password-never-searchable",
+    );
+    expect(mongodbIndex.map((entry) => entry.fieldId)).not.toContain(
+      "password",
+    );
     expect(
       postgresqlIndex.filter(
         (entry) => entry.fieldId === "postgresql-username",

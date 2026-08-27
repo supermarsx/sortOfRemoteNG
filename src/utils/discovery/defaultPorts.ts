@@ -24,6 +24,7 @@ export const DEFAULT_PORTS: Record<string, number> = {
   scp: 22,
   mysql: 3306,
   postgresql: 5432,
+  mongodb: 27017,
   spice: 5900,
   xdmcp: 177,
   x2go: 22,

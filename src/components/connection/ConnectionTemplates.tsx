@@ -175,6 +175,26 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
     usageCount: 0,
   },
   {
+    id: "builtin-mariadb",
+    name: "Database MariaDB",
+    description:
+      "MariaDB database connection using the MySQL workbench with TLS support.",
+    protocol: "MariaDB",
+    port: 3306,
+    category: "database",
+    icon: "🦭",
+    settings: {
+      mysqlDialectHint: "mariadb",
+      tlsMode: "preferred",
+      charset: "utf8mb4",
+      connectTimeout: 10,
+    },
+    tags: ["mariadb", "mysql", "database", "sql"],
+    createdAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2025-01-01T00:00:00Z",
+    usageCount: 0,
+  },
+  {
     id: "builtin-postgres",
     name: "Database PostgreSQL",
     description:
@@ -185,6 +205,21 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
     icon: "🐘",
     settings: { ssl: "prefer", poolSize: 5, statementTimeout: 30000 },
     tags: ["postgres", "postgresql", "database", "sql"],
+    createdAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2025-01-01T00:00:00Z",
+    usageCount: 0,
+  },
+  {
+    id: "builtin-mongodb",
+    name: "Database MongoDB",
+    description:
+      "MongoDB document database connection with authentication database and TLS.",
+    protocol: "MongoDB",
+    port: 27017,
+    category: "database",
+    icon: "🍃",
+    settings: { authDatabase: "admin", tls: false, readPreference: "primary" },
+    tags: ["mongodb", "mongo", "database", "nosql", "document"],
     createdAt: "2025-01-01T00:00:00Z",
     updatedAt: "2025-01-01T00:00:00Z",
     usageCount: 0,
@@ -223,7 +258,9 @@ const PROTOCOL_OPTIONS = [
   "SFTP",
   "HTTP",
   "MySQL",
+  "MariaDB",
   "PostgreSQL",
+  "MongoDB",
   "K8s",
   "Other",
 ];

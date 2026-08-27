@@ -7,7 +7,12 @@ import {
   Monitor,
   ShieldCheck,
 } from "lucide-react";
-import type { Connection } from "../../types/connection/connection";
+import type {
+  Connection,
+  MongoReadPreference,
+  MysqlDialectHint,
+  MysqlTlsMode,
+} from "../../types/connection/connection";
 import {
   CheckboxField,
   NumberInput,
@@ -722,28 +727,445 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
 
   if (protocol === "mysql" && section === "connection") {
     return (
+      <section data-editor-search-section="mysql-options" className={cardClass}>
+        <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text)]">
+          <Database size={15} className="text-primary" />
+          Database target
+        </div>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mysql-database"
+        >
+          <span className="sor-form-label">Default database</span>
+          <input
+            id="mysql-database"
+            type="text"
+            value={formData.database ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                database: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0"
+            placeholder="Optional database or schema"
+          />
+        </label>
+        <div data-editor-search-field="mysql-dialect">
+          <Select
+            id="mysql-dialect"
+            label="Server dialect"
+            value={formData.mysqlDialectHint ?? "auto"}
+            onChange={(mysqlDialectHint) =>
+              setFormData((previous) => ({
+                ...previous,
+                mysqlDialectHint: mysqlDialectHint as MysqlDialectHint,
+              }))
+            }
+            options={[
+              { value: "auto", label: "Detect from server (default)" },
+              { value: "mysql", label: "MySQL" },
+              { value: "mariadb", label: "MariaDB" },
+            ]}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </div>
+        <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+          MySQL and MariaDB share one wire protocol and workbench. The live
+          dialect and version are always detected after connect; this hint only
+          changes the label shown before the first connection.
+        </p>
+      </section>
+    );
+  }
+
+  if (protocol === "mysql" && section === "security") {
+    const tlsMode = formData.mysqlTls?.mode ?? "preferred";
+    return (
+      <section data-editor-search-section="mysql-options" className={cardClass}>
+        <div data-editor-search-field="mysql-tls-mode">
+          <Select
+            id="mysql-tls-mode"
+            label="TLS mode"
+            value={tlsMode}
+            onChange={(mode) =>
+              setFormData((previous) => ({
+                ...previous,
+                mysqlTls: {
+                  ...previous.mysqlTls,
+                  mode: mode as MysqlTlsMode,
+                },
+              }))
+            }
+            options={[
+              { value: "disabled", label: "Disabled" },
+              { value: "preferred", label: "Preferred (default)" },
+              { value: "required", label: "Require encryption" },
+              { value: "verify-ca", label: "Verify CA" },
+              { value: "verify-identity", label: "Verify CA and hostname" },
+            ]}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </div>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mysql-ca-certificate"
+        >
+          <span className="sor-form-label">CA certificate path</span>
+          <input
+            id="mysql-ca-certificate"
+            type="text"
+            value={formData.mysqlTls?.caPath ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                mysqlTls: {
+                  ...previous.mysqlTls,
+                  caPath: event.target.value || undefined,
+                },
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="Required only for Verify CA / Verify identity"
+          />
+        </label>
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+          <label
+            className="min-w-0"
+            data-editor-search-field="mysql-client-certificate"
+          >
+            <span className="sor-form-label">Client certificate path</span>
+            <input
+              id="mysql-client-certificate"
+              type="text"
+              value={formData.mysqlTls?.clientCertPath ?? ""}
+              onChange={(event) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  mysqlTls: {
+                    ...previous.mysqlTls,
+                    clientCertPath: event.target.value || undefined,
+                  },
+                }))
+              }
+              className="sor-form-input-sm w-full min-w-0 font-mono"
+              placeholder="Optional mTLS certificate"
+            />
+          </label>
+          <label
+            className="min-w-0"
+            data-editor-search-field="mysql-client-key"
+          >
+            <span className="sor-form-label">Client key path</span>
+            <input
+              id="mysql-client-key"
+              type="text"
+              value={formData.mysqlTls?.clientKeyPath ?? ""}
+              onChange={(event) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  mysqlTls: {
+                    ...previous.mysqlTls,
+                    clientKeyPath: event.target.value || undefined,
+                  },
+                }))
+              }
+              className="sor-form-input-sm w-full min-w-0 font-mono"
+              placeholder="Required with a client certificate"
+            />
+          </label>
+        </div>
+        {["disabled", "preferred"].includes(tlsMode) && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/35 bg-warning/5 p-2.5 text-[11px] leading-4 text-[var(--color-textMuted)]">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" />
+            This TLS mode can use an unencrypted connection. Choose Require or a
+            verification mode when transport confidentiality is mandatory.
+          </div>
+        )}
+        <p
+          className="text-[11px] leading-4 text-[var(--color-textMuted)]"
+          data-editor-search-field="mysql-direct-route"
+        >
+          Configured proxy, VPN, SSH hop, or tunnel chain is rejected before
+          credentials are sent.
+        </p>
+      </section>
+    );
+  }
+
+  if (protocol === "mongodb" && section === "connection") {
+    return (
       <section
-        data-editor-search-section="mysql-options"
-        data-editor-search-field="mysql-database"
+        data-editor-search-section="mongodb-options"
         className={cardClass}
       >
         <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text)]">
           <Database size={15} className="text-primary" />
-          Default database
+          Cluster target
         </div>
-        <input
-          id="mysql-database"
-          type="text"
-          value={formData.database ?? ""}
-          onChange={(event) =>
-            setFormData((previous) => ({
-              ...previous,
-              database: event.target.value,
-            }))
-          }
-          className="sor-form-input-sm w-full min-w-0"
-          placeholder="Optional database or schema"
-        />
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mongodb-replica-set"
+        >
+          <span className="sor-form-label">Replica set name</span>
+          <input
+            id="mongodb-replica-set"
+            type="text"
+            value={formData.mongoReplicaSet ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoReplicaSet: event.target.value || undefined,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="Optional, e.g. rs0"
+          />
+        </label>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mongodb-connection-string"
+        >
+          <span className="sor-form-label">
+            Connection string (overrides host and port)
+          </span>
+          <PasswordInput
+            id="mongodb-connection-string"
+            value={formData.mongoConnectionString ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoConnectionString: event.target.value || undefined,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            autoComplete="off"
+            placeholder="mongodb+srv://cluster.example.net/?authSource=admin"
+          />
+        </label>
+        <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+          A connection string may embed credentials, so it is stored and
+          redacted like a password. Leave it empty to use the host, port and
+          credentials configured on this connection.
+        </p>
+      </section>
+    );
+  }
+
+  if (protocol === "mongodb" && section === "authentication") {
+    return (
+      <section
+        data-editor-search-section="mongodb-options"
+        className={cardClass}
+      >
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mongodb-username"
+        >
+          <span className="sor-form-label">Username</span>
+          <input
+            id="mongodb-username"
+            type="text"
+            value={formData.username ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                username: event.target.value,
+              }))
+            }
+            autoComplete="username"
+            className="sor-form-input-sm w-full min-w-0"
+            placeholder="Optional for unauthenticated servers"
+          />
+        </label>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mongodb-password"
+        >
+          <span className="sor-form-label">Password</span>
+          <PasswordInput
+            id="mongodb-password"
+            value={formData.password ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                password: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0"
+            autoComplete="current-password"
+          />
+        </label>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mongodb-auth-database"
+        >
+          <span className="sor-form-label">Authentication database</span>
+          <input
+            id="mongodb-auth-database"
+            type="text"
+            value={formData.mongoAuthDatabase ?? "admin"}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoAuthDatabase: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="admin"
+          />
+        </label>
+      </section>
+    );
+  }
+
+  if (protocol === "mongodb" && section === "security") {
+    const tlsEnabled = formData.mongoTls?.enabled ?? false;
+    return (
+      <section
+        data-editor-search-section="mongodb-options"
+        className={cardClass}
+      >
+        <div data-editor-search-field="mongodb-tls">
+          <CheckboxField
+            id="mongodb-tls"
+            label="Use TLS"
+            description="Encrypt the driver connection to the server."
+            checked={tlsEnabled}
+            onChange={(enabled) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoTls: { ...previous.mongoTls, enabled },
+              }))
+            }
+            variant="form"
+          />
+        </div>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mongodb-ca-certificate"
+        >
+          <span className="sor-form-label">CA certificate path</span>
+          <input
+            id="mongodb-ca-certificate"
+            type="text"
+            value={formData.mongoTls?.caPath ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoTls: {
+                  ...previous.mongoTls,
+                  caPath: event.target.value || undefined,
+                },
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="Optional custom root certificate"
+          />
+        </label>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="mongodb-client-certificate"
+        >
+          <span className="sor-form-label">
+            Client certificate and key path
+          </span>
+          <input
+            id="mongodb-client-certificate"
+            type="text"
+            value={formData.mongoTls?.certKeyPath ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoTls: {
+                  ...previous.mongoTls,
+                  certKeyPath: event.target.value || undefined,
+                },
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="Optional PEM bundle for x.509 / mTLS"
+          />
+        </label>
+        <div data-editor-search-field="mongodb-tls-allow-invalid">
+          <CheckboxField
+            id="mongodb-tls-allow-invalid"
+            label="Allow invalid certificates"
+            description="Skips certificate verification. Only for isolated lab servers."
+            checked={formData.mongoTls?.allowInvalid ?? false}
+            onChange={(allowInvalid) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoTls: { ...previous.mongoTls, allowInvalid },
+              }))
+            }
+            variant="form"
+          />
+        </div>
+        {(!tlsEnabled || formData.mongoTls?.allowInvalid) && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/35 bg-warning/5 p-2.5 text-[11px] leading-4 text-[var(--color-textMuted)]">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" />
+            {tlsEnabled
+              ? "Certificate verification is disabled; the server identity is not checked."
+              : "TLS is disabled; credentials and documents travel in clear text."}
+          </div>
+        )}
+        <p
+          className="text-[11px] leading-4 text-[var(--color-textMuted)]"
+          data-editor-search-field="mongodb-direct-route"
+        >
+          Configured proxy, VPN, SSH hop, or tunnel chain is rejected before
+          credentials are sent.
+        </p>
+      </section>
+    );
+  }
+
+  if (protocol === "mongodb" && section === "advanced") {
+    return (
+      <section
+        data-editor-search-section="mongodb-options"
+        className={cardClass}
+      >
+        <div data-editor-search-field="mongodb-read-preference">
+          <Select
+            id="mongodb-read-preference"
+            label="Read preference"
+            value={formData.mongoReadPreference ?? "primary"}
+            onChange={(mongoReadPreference) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoReadPreference: mongoReadPreference as MongoReadPreference,
+              }))
+            }
+            options={[
+              { value: "primary", label: "Primary (default)" },
+              { value: "primaryPreferred", label: "Primary preferred" },
+              { value: "secondary", label: "Secondary" },
+              { value: "secondaryPreferred", label: "Secondary preferred" },
+              { value: "nearest", label: "Nearest" },
+            ]}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </div>
+        <div data-editor-search-field="mongodb-direct-connection">
+          <CheckboxField
+            id="mongodb-direct-connection"
+            label="Direct connection"
+            description="Connect to the named host only and skip replica-set discovery."
+            checked={formData.mongoDirectConnection ?? false}
+            onChange={(mongoDirectConnection) =>
+              setFormData((previous) => ({
+                ...previous,
+                mongoDirectConnection,
+              }))
+            }
+            variant="form"
+          />
+        </div>
       </section>
     );
   }
