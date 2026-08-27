@@ -206,6 +206,150 @@ fn decide_host_key_action(
     }
 }
 
+// ── Trust Center integration for SFTP host keys (t62) ───────────────────────
+//
+// SFTP shares the SSH host-key namespace: records are `ssh` records keyed by
+// `host:port`, so a key accepted in a terminal session is already trusted for
+// file transfer and vice versa. SFTP has no interactive prompt channel, so the
+// Trust Center answer is resolved against `known_hosts_policy` rather than a
+// user dialog, and anything short of an exact live match fails closed.
+pub(crate) mod host_key_trust {
+    use chrono::Utc;
+    use sorng_storage::trust_store::{
+        Identity, SshHostKeyIdentity, SyncTrustStore, TrustVerifyResult,
+    };
+
+    /// Trust Center record type, shared with core SSH and SCP.
+    pub(crate) const RECORD_TYPE: &str = "ssh";
+
+    /// What the Trust Center says about a presented host key.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum TrustState {
+        Trusted,
+        Unknown,
+        NeedsConfirmation,
+        Changed,
+        Revoked,
+    }
+
+    pub(crate) fn trust_host(host: &str, port: u16) -> String {
+        format!("{host}:{port}")
+    }
+
+    /// SHA-256 of the raw key in hex — the same fingerprint core SSH stores,
+    /// so both protocols recognise each other's records.
+    pub(crate) fn fingerprint(host_key: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(host_key);
+        hex::encode(hasher.finalize())
+    }
+
+    pub(crate) fn identity(host_key: &[u8], key_type: Option<&str>) -> Identity {
+        use base64::Engine;
+        let now = Utc::now().to_rfc3339();
+        Identity::Ssh(SshHostKeyIdentity {
+            fingerprint: fingerprint(host_key),
+            key_type: key_type.map(str::to_string),
+            key_bits: None,
+            first_seen: now.clone(),
+            last_seen: now,
+            public_key: Some(base64::engine::general_purpose::STANDARD.encode(host_key)),
+            algorithms_offered: Vec::new(),
+        })
+    }
+
+    pub(crate) fn classify(result: &TrustVerifyResult) -> TrustState {
+        match result {
+            TrustVerifyResult::Trusted => TrustState::Trusted,
+            TrustVerifyResult::FirstUse { .. } => TrustState::Unknown,
+            TrustVerifyResult::Revoked { .. } => TrustState::Revoked,
+            TrustVerifyResult::Mismatch { .. }
+            | TrustVerifyResult::ChainMismatch { .. }
+            | TrustVerifyResult::RotationGrace { .. } => TrustState::Changed,
+            TrustVerifyResult::Expired { .. }
+            | TrustVerifyResult::PendingThreshold { .. }
+            | TrustVerifyResult::PendingVerification { .. } => TrustState::NeedsConfirmation,
+        }
+    }
+
+    pub(crate) fn verify(
+        host: &str,
+        port: u16,
+        host_key: &[u8],
+        key_type: Option<&str>,
+    ) -> Result<TrustState, String> {
+        SyncTrustStore::shared()
+            .verify_identity_blocking(
+                &trust_host(host, port),
+                RECORD_TYPE,
+                identity(host_key, key_type),
+            )
+            .map(|result| classify(&result))
+            .map_err(|error| unavailable_error(host, port, &error))
+    }
+
+    pub(crate) fn record(
+        host: &str,
+        port: u16,
+        host_key: &[u8],
+        key_type: Option<&str>,
+        user_approved: bool,
+    ) -> Result<(), String> {
+        SyncTrustStore::shared()
+            .trust_identity_blocking(
+                trust_host(host, port),
+                RECORD_TYPE.to_string(),
+                identity(host_key, key_type),
+                user_approved,
+            )
+            .map_err(|error| unavailable_error(host, port, &error))
+    }
+
+    pub(crate) fn unavailable_error(host: &str, port: u16, error: &str) -> String {
+        format!(
+            "Host-key verification FAILED for {host}:{port}: the Trust Center is unavailable \
+             ({error}). Open a database so host-key decisions can be recorded. Connection \
+             aborted; no credentials were sent."
+        )
+    }
+}
+
+/// Resolve the Trust Center's answer without touching the network.
+///
+/// `Ok(None)` means the store has nothing on this endpoint and `known_hosts`
+/// decides. Every other state is terminal: SFTP cannot ask the user, so a
+/// changed, revoked or re-confirmation-pending key is a rejection rather than
+/// something `known_hosts` could talk it out of.
+fn decide_trusted_host_key_action(
+    state: host_key_trust::TrustState,
+    policy: KnownHostsPolicy,
+) -> Result<Option<HostKeyAction>, String> {
+    if matches!(policy, KnownHostsPolicy::Ignore) {
+        return Ok(Some(HostKeyAction::Accept));
+    }
+    match state {
+        host_key_trust::TrustState::Trusted => Ok(Some(HostKeyAction::Accept)),
+        host_key_trust::TrustState::Unknown => Ok(None),
+        host_key_trust::TrustState::Changed => Err(
+            "the server key does not match the key recorded in the Trust Center. \
+             This may indicate a man-in-the-middle attack."
+                .to_string(),
+        ),
+        host_key_trust::TrustState::Revoked => Err(
+            "this host key is revoked in the Trust Center. Reinstate it in \
+             Settings → Security if the revocation no longer applies."
+                .to_string(),
+        ),
+        host_key_trust::TrustState::NeedsConfirmation => Err(
+            "the trust policy requires this host key to be confirmed again, but SFTP has no \
+             host-key confirmation channel. Confirm it in Settings → Security, or open a \
+             terminal session to this host."
+                .to_string(),
+        ),
+    }
+}
+
 /// Human-readable label for a host-key type (for logging only).
 fn host_key_type_label(host_key_type: ssh2::HostKeyType) -> &'static str {
     match host_key_type {
@@ -423,6 +567,32 @@ impl SftpService {
             "Host-key verification failed: server presented no host key".to_string()
         })?;
         let host_key = host_key.to_vec();
+        let key_type_label = host_key_type_label(key_type);
+
+        // The Trust Center is consulted first and outranks known_hosts: it is
+        // the app's own per-database decision, and a mismatch there is not
+        // cleared by the shared system file happening to agree.
+        let trust_state =
+            host_key_trust::verify(&config.host, config.port, &host_key, Some(key_type_label))?;
+        if let Some(action) = decide_trusted_host_key_action(trust_state, config.known_hosts_policy)
+            .map_err(|reason| {
+                format!(
+                    "Host-key verification FAILED for {}:{}: {} Connection aborted; no credentials \
+                     were sent. Server key fingerprint SHA256:{}.",
+                    config.host,
+                    config.port,
+                    reason,
+                    host_key_trust::fingerprint(&host_key)
+                )
+            })?
+        {
+            debug_assert_eq!(action, HostKeyAction::Accept);
+            info!(
+                "SFTP host key verified for {}:{} against the Trust Center",
+                config.host, config.port
+            );
+            return Ok(());
+        }
 
         let check_result = {
             let mut known_hosts = session
@@ -459,23 +629,53 @@ impl SftpService {
                 }
             ))? {
             HostKeyAction::Accept => {
-                info!("SFTP host key verified for {}:{}", config.host, config.port);
-                Ok(())
-            }
-            HostKeyAction::AcceptAndPersist => {
-                Self::persist_host_key(
-                    session,
-                    &known_hosts_path,
+                // Reached only via a known_hosts match (the Trust Center said
+                // Unknown). Adopt the entry the user already trusts in OpenSSH
+                // so the decision lives in the database from now on.
+                host_key_trust::record(
                     &config.host,
                     config.port,
                     &host_key,
-                    key_type,
+                    Some(key_type_label),
+                    false,
                 )?;
                 info!(
-                    "SFTP host key for {}:{} accepted on first use and saved to known_hosts ({})",
+                    "SFTP host key verified for {}:{} from known_hosts and imported into the Trust Center",
+                    config.host, config.port
+                );
+                Ok(())
+            }
+            HostKeyAction::AcceptAndPersist => {
+                // known_hosts first, then the Trust Center: if the shared
+                // system file cannot be written the connection still aborts
+                // with nothing memorized, exactly as it did before t62.
+                if config.also_write_known_hosts {
+                    Self::persist_host_key(
+                        session,
+                        &known_hosts_path,
+                        &config.host,
+                        config.port,
+                        &host_key,
+                        key_type,
+                    )?;
+                }
+                host_key_trust::record(
+                    &config.host,
+                    config.port,
+                    &host_key,
+                    Some(key_type_label),
+                    false,
+                )?;
+                info!(
+                    "SFTP host key for {}:{} accepted on first use and saved to the Trust Center{} ({})",
                     config.host,
                     config.port,
-                    host_key_type_label(key_type)
+                    if config.also_write_known_hosts {
+                        " and known_hosts"
+                    } else {
+                        ""
+                    },
+                    key_type_label
                 );
                 Ok(())
             }
@@ -910,5 +1110,179 @@ mod host_key_tests {
                 policy
             );
         }
+    }
+}
+
+// ── Trust Center host keys (t62) ────────────────────────────────────────────
+
+#[cfg(test)]
+mod trust_center_tests {
+    use super::{decide_trusted_host_key_action, host_key_trust, HostKeyAction};
+    use crate::sftp::types::{KnownHostsPolicy, SftpConnectionConfig};
+    use sorng_storage::trust_store::test_support::{
+        install_active_runtime_for_tests, install_runtime_for_tests,
+    };
+    use sorng_storage::trust_store::{SyncTrustStore, TrustVerifyResult};
+
+    const POLICIES: [KnownHostsPolicy; 3] = [
+        KnownHostsPolicy::Strict,
+        KnownHostsPolicy::AcceptNew,
+        KnownHostsPolicy::Ask,
+    ];
+
+    #[test]
+    fn a_trusted_record_is_accepted_under_every_policy() {
+        for policy in POLICIES {
+            assert_eq!(
+                decide_trusted_host_key_action(host_key_trust::TrustState::Trusted, policy)
+                    .unwrap(),
+                Some(HostKeyAction::Accept),
+                "a memorized key must connect under {policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_record_defers_to_known_hosts() {
+        for policy in POLICIES {
+            assert_eq!(
+                decide_trusted_host_key_action(host_key_trust::TrustState::Unknown, policy)
+                    .unwrap(),
+                None,
+                "an endpoint the Trust Center has never seen must fall through under {policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn changed_revoked_and_unconfirmed_records_are_rejected_without_consulting_known_hosts() {
+        for policy in POLICIES {
+            let changed =
+                decide_trusted_host_key_action(host_key_trust::TrustState::Changed, policy)
+                    .expect_err("a changed key must never connect");
+            assert!(changed.contains("man-in-the-middle"), "{changed}");
+
+            let revoked =
+                decide_trusted_host_key_action(host_key_trust::TrustState::Revoked, policy)
+                    .expect_err("a revoked key must never connect");
+            assert!(revoked.contains("revoked"), "{revoked}");
+
+            let pending = decide_trusted_host_key_action(
+                host_key_trust::TrustState::NeedsConfirmation,
+                policy,
+            )
+            .expect_err("SFTP cannot confirm a key interactively");
+            assert!(pending.contains("confirmation channel"), "{pending}");
+        }
+    }
+
+    #[test]
+    fn ignore_still_bypasses_every_trust_state() {
+        // `Ignore` is the documented dangerous opt-out and is short-circuited
+        // before verification even runs; the mapping agrees so no future caller
+        // can reintroduce a rejection the policy says to skip.
+        for state in [
+            host_key_trust::TrustState::Trusted,
+            host_key_trust::TrustState::Unknown,
+            host_key_trust::TrustState::Changed,
+            host_key_trust::TrustState::Revoked,
+            host_key_trust::TrustState::NeedsConfirmation,
+        ] {
+            assert_eq!(
+                decide_trusted_host_key_action(state, KnownHostsPolicy::Ignore).unwrap(),
+                Some(HostKeyAction::Accept)
+            );
+        }
+    }
+
+    #[test]
+    fn a_recorded_host_key_verifies_and_a_changed_one_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-sftp");
+
+        assert_eq!(
+            host_key_trust::verify("files.example.test", 2222, b"sftp-host-key", None).unwrap(),
+            host_key_trust::TrustState::Unknown
+        );
+
+        host_key_trust::record(
+            "files.example.test",
+            2222,
+            b"sftp-host-key",
+            Some("ssh-ed25519"),
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            host_key_trust::verify("files.example.test", 2222, b"sftp-host-key", None).unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+        assert_eq!(
+            host_key_trust::verify("files.example.test", 2222, b"rotated-host-key", None).unwrap(),
+            host_key_trust::TrustState::Changed
+        );
+        // Port is part of the identity of an endpoint.
+        assert_eq!(
+            host_key_trust::verify("files.example.test", 22, b"sftp-host-key", None).unwrap(),
+            host_key_trust::TrustState::Unknown
+        );
+    }
+
+    #[test]
+    fn sftp_and_core_ssh_share_one_record_per_endpoint() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-shared");
+        let host_key = b"shared-with-core-ssh";
+
+        host_key_trust::record(
+            "shell.example.test",
+            22,
+            host_key,
+            Some("ssh-ed25519"),
+            true,
+        )
+        .unwrap();
+
+        // Core SSH keys its records the same way: type `ssh`, host `host:port`,
+        // SHA-256 hex fingerprint. Reading through the shared façade proves the
+        // two protocols cannot end up with divergent decisions.
+        let result = SyncTrustStore::shared()
+            .verify_identity_blocking(
+                "shell.example.test:22",
+                host_key_trust::RECORD_TYPE,
+                host_key_trust::identity(host_key, Some("ssh-ed25519")),
+            )
+            .unwrap();
+        assert!(matches!(result, TrustVerifyResult::Trusted));
+        assert_eq!(host_key_trust::fingerprint(host_key).len(), 64);
+    }
+
+    #[test]
+    fn host_key_verification_fails_closed_with_no_active_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let guard = install_runtime_for_tests(temp.path().join("databases"), None);
+        guard.runtime.set_active(None, None).unwrap();
+
+        let error = host_key_trust::verify("locked.example.test", 22, b"any-key", None)
+            .expect_err("with no database open there is nothing to decide against");
+        assert!(error.contains("Trust Center is unavailable"), "{error}");
+        assert!(error.contains("no credentials were sent"), "{error}");
+    }
+
+    #[test]
+    fn also_write_known_hosts_defaults_to_true_for_connections_saved_before_t62() {
+        let payload = serde_json::json!({
+            "host": "legacy.example.test",
+            "port": 22,
+            "username": "operator",
+        });
+
+        let config: SftpConnectionConfig = serde_json::from_value(payload)
+            .expect("a config saved before t62 must still deserialize");
+        assert!(
+            config.also_write_known_hosts,
+            "existing connections must keep updating ~/.ssh/known_hosts"
+        );
     }
 }

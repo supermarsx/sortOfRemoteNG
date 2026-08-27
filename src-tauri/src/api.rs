@@ -1254,6 +1254,7 @@ async fn connect_ssh(
         strict_host_key_checking: true,
         accept_new_host_keys: false,
         known_hosts_path: None,
+        also_write_known_hosts: true,
         totp_secret: None,
         keyboard_interactive_responses: vec![],
         agent_forwarding: false,

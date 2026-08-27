@@ -122,6 +122,23 @@ pub fn ssh_respond_to_host_key_prompt(
     })
 }
 
+/// Adopt an OpenSSH `known_hosts` file into the active database's Trust Center
+/// (t62). Hosts the user already trusts outside the app then connect without a
+/// prompt, and the decision travels with the database through
+/// export/import/backup like every other trust record.
+///
+/// Lives here rather than in `sorng-storage` so the importer can reuse
+/// libssh2's `known_hosts` parser: `sorng-storage` must not depend on the
+/// protocol crates. `path` defaults to `~/.ssh/known_hosts`. The file is only
+/// read — never rewritten — and endpoints already present in the Trust Center
+/// are left as they are, so importing can never re-trust a revoked key.
+#[tauri::command]
+pub fn trust_import_known_hosts(
+    path: Option<String>,
+) -> Result<crate::ssh::types::KnownHostsImportOutcome, String> {
+    redact_ssh_command_result(crate::ssh::service::import_known_hosts(path))
+}
+
 // ── Include command wrappers ───────────────────────────────────────────
 
 #[allow(dead_code)]

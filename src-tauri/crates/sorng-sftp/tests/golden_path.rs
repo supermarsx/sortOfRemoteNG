@@ -41,6 +41,7 @@ fn test_config() -> SftpConnectionConfig {
         private_key_data: None,
         use_agent: false,
         known_hosts_policy: KnownHostsPolicy::Ignore,
+        also_write_known_hosts: true,
         timeout_secs: 15,
         keepalive_interval_secs: 0,
         proxy: None,

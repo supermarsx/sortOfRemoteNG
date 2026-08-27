@@ -287,6 +287,16 @@ pub struct SshConnectionConfig {
     #[serde(default)]
     pub accept_new_host_keys: bool,
     pub known_hosts_path: Option<String>,
+    /// Also append an accepted host key to OpenSSH's `known_hosts` (t62).
+    ///
+    /// The per-database Trust Center is the authority for host keys, but the
+    /// default stays `true` so anyone sharing `~/.ssh/known_hosts` with the
+    /// system `ssh` client keeps the behaviour they had before: accepting a
+    /// key here still teaches OpenSSH about it. Setting this to `false` keeps
+    /// the decision inside the app's database and leaves `known_hosts`
+    /// untouched.
+    #[serde(default = "default_true")]
+    pub also_write_known_hosts: bool,
     // TOTP/MFA support for keyboard-interactive auth
     #[serde(skip_serializing, default)]
     pub totp_secret: Option<SecretString>,
@@ -1077,6 +1087,22 @@ pub struct SshHostKeyInfo {
     pub public_key: Option<String>,
 }
 
+/// Result of importing OpenSSH `known_hosts` entries into the Trust Center
+/// (t62, `trust_import_known_hosts`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownHostsImportOutcome {
+    /// Entries written into the active database's trust store.
+    pub imported: u32,
+    /// Entries that could not be imported: hashed (`|1|…`) host names, wildcard
+    /// patterns and negations, and unparseable keys. Hashed entries are the
+    /// common case — OpenSSH's `HashKnownHosts` makes the host name
+    /// unrecoverable, so there is nothing to key a trust record on.
+    pub skipped: u32,
+    /// The `known_hosts` file that was read.
+    pub path: String,
+}
+
 /// Why the frontend is being asked to confirm a host key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1468,6 +1494,7 @@ mod tests {
             strict_host_key_checking: true,
             accept_new_host_keys: false,
             known_hosts_path: None,
+            also_write_known_hosts: true,
             totp_secret: None,
             keyboard_interactive_responses: vec![],
             agent_forwarding: false,
@@ -1536,6 +1563,7 @@ mod tests {
             strict_host_key_checking: false,
             accept_new_host_keys: false,
             known_hosts_path: None,
+            also_write_known_hosts: true,
             totp_secret: None,
             keyboard_interactive_responses: vec![],
             agent_forwarding: true,
@@ -1787,6 +1815,7 @@ mod tests {
             strict_host_key_checking: true,
             accept_new_host_keys: false,
             known_hosts_path: None,
+            also_write_known_hosts: true,
             totp_secret: Some(secret("JBSWY3DPEHPK3PXP")),
             keyboard_interactive_responses: vec![secret("654321")],
             agent_forwarding: false,

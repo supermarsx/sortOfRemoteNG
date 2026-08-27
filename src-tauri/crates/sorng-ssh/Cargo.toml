@@ -21,6 +21,10 @@ ssh3-live-e2e = []
 [dependencies]
 sorng-core = { path = "../sorng-core" }
 sorng-dns = { path = "../sorng-dns" }
+# t62: SSH host keys are memorized in the per-database Trust Center rather than
+# only in ~/.ssh/known_hosts. sorng-storage depends on sorng-encryption alone,
+# so there is no cycle back into the protocol crates.
+sorng-storage = { path = "../sorng-storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

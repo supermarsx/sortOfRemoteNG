@@ -359,6 +359,8 @@ struct HostKeyPersistenceContext<'a> {
     config: &'a SshConnectionConfig,
     known_hosts_path: &'a str,
     host_key: &'a [u8],
+    /// The same key, in the shape the Trust Center stores (t62).
+    host_key_info: &'a SshHostKeyInfo,
     key_type: ssh2::HostKeyType,
     replace_existing: bool,
 }
@@ -407,6 +409,303 @@ fn read_known_hosts_if_present(
             path.display()
         )),
     }
+}
+
+// ── Trust Center integration for SSH host keys (t62) ────────────────────────
+//
+// The per-database Trust Center (`databases/<id>.trust.json`, written through
+// the SDBF ladder and encrypted with the database) is the authority for SSH
+// host keys. OpenSSH's `~/.ssh/known_hosts` keeps two jobs:
+//
+//   * it is an **import source** — a host the user already trusts in OpenSSH is
+//     adopted into the Trust Center on first contact instead of prompting; and
+//   * unless the connection sets `also_write_known_hosts = false`, it still
+//     receives every accepted key, so the system `ssh` client keeps working
+//     exactly as it did before this change.
+//
+// Every lookup fails closed: with no database open there is no answer, and the
+// verifier refuses rather than silently falling back to `known_hosts`.
+pub(crate) mod host_key_trust {
+    use super::SshHostKeyInfo;
+    use chrono::Utc;
+    use sorng_storage::trust_store::{
+        Identity, SshHostKeyIdentity, SyncTrustStore, TrustVerifyResult,
+    };
+
+    /// Trust Center record type for SSH host keys. Shared with the frontend
+    /// (`useWebTerminal.ts` writes the same `"ssh"` records) and with SFTP/SCP,
+    /// so one accepted key covers every SSH-family protocol for that endpoint.
+    pub(crate) const RECORD_TYPE: &str = "ssh";
+
+    /// What the Trust Center says about a presented host key.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum TrustState {
+        /// A stored record matches — accept without prompting.
+        Trusted,
+        /// Nothing stored yet — fall through to `known_hosts`, then the prompt.
+        Unknown,
+        /// Stored and matching, but the policy wants the user to re-confirm
+        /// (trust expired, threshold not met, out-of-band verification
+        /// pending). Never auto-accepted, and deliberately *not* satisfiable by
+        /// a `known_hosts` hit — that would defeat the policy.
+        NeedsConfirmation,
+        /// A stored record disagrees with the presented key. This outranks
+        /// `known_hosts`: a match there does not clear an in-database mismatch.
+        Changed,
+        /// The record is revoked — refuse outright, with no prompt offered.
+        Revoked,
+    }
+
+    /// Trust Center record key for an SSH endpoint.
+    pub(crate) fn trust_host(host: &str, port: u16) -> String {
+        format!("{host}:{port}")
+    }
+
+    /// Build the stored identity from the key libssh2 presented. The
+    /// fingerprint is the SHA-256 of the raw key in hex, exactly as
+    /// `build_host_key_info` computes it for the prompt payload, so the record
+    /// the frontend writes and the record written here are the same record.
+    pub(crate) fn identity(info: &SshHostKeyInfo) -> Identity {
+        let now = Utc::now().to_rfc3339();
+        Identity::Ssh(SshHostKeyIdentity {
+            fingerprint: info.fingerprint.clone(),
+            key_type: info.key_type.clone(),
+            key_bits: info.key_bits,
+            first_seen: now.clone(),
+            last_seen: now,
+            public_key: info.public_key.clone(),
+            algorithms_offered: Vec::new(),
+        })
+    }
+
+    /// Map a verify result onto the action the SSH verifier should take.
+    /// Anything that is not an exact, live, unrevoked match is funnelled into a
+    /// path that ends in a user decision or a refusal — never a silent accept.
+    pub(crate) fn classify(result: &TrustVerifyResult) -> TrustState {
+        match result {
+            TrustVerifyResult::Trusted => TrustState::Trusted,
+            TrustVerifyResult::FirstUse { .. } => TrustState::Unknown,
+            TrustVerifyResult::Revoked { .. } => TrustState::Revoked,
+            TrustVerifyResult::Mismatch { .. }
+            | TrustVerifyResult::ChainMismatch { .. }
+            | TrustVerifyResult::RotationGrace { .. } => TrustState::Changed,
+            TrustVerifyResult::Expired { .. }
+            | TrustVerifyResult::PendingThreshold { .. }
+            | TrustVerifyResult::PendingVerification { .. } => TrustState::NeedsConfirmation,
+        }
+    }
+
+    /// Ask the Trust Center about this host key.
+    pub(crate) fn verify(
+        host: &str,
+        port: u16,
+        info: &SshHostKeyInfo,
+    ) -> Result<TrustState, String> {
+        SyncTrustStore::shared()
+            .verify_identity_blocking(&trust_host(host, port), RECORD_TYPE, identity(info))
+            .map(|result| classify(&result))
+            .map_err(|error| unavailable_error(host, &error))
+    }
+
+    /// Memorize an accepted host key.
+    ///
+    /// `user_approved` is `false` for keys adopted from `known_hosts` (the user
+    /// approved them in OpenSSH, not here) and `true` for keys the in-app
+    /// prompt accepted. The distinction is what `TrustPolicy::TrustOnVerify`
+    /// keys off, so an imported key still asks for confirmation under that
+    /// policy while an explicitly accepted one does not.
+    ///
+    /// Note on `IdentityChangeReason`: a *new* record stores no reason at all
+    /// (the field only ever lands in `history`, which starts empty), and both
+    /// call sites here only run after the store reported `FirstUse` — i.e. when
+    /// no record exists. `Imported` and `Initial` are therefore indistinguishable
+    /// on disk, so the blocking API's `Initial` is used unchanged.
+    pub(crate) fn record(
+        host: &str,
+        port: u16,
+        info: &SshHostKeyInfo,
+        user_approved: bool,
+    ) -> Result<(), String> {
+        SyncTrustStore::shared()
+            .trust_identity_blocking(
+                trust_host(host, port),
+                RECORD_TYPE.to_string(),
+                identity(info),
+                user_approved,
+            )
+            .map_err(|error| unavailable_error(host, &error))
+    }
+
+    /// A trust-store failure is a verification failure, phrased so the user
+    /// knows the fix is "open a database", not "retry the connection".
+    pub(crate) fn unavailable_error(host: &str, error: &str) -> String {
+        format!(
+            "Host key verification failed for {host}: the Trust Center is unavailable ({error}). \
+             Open a database so host-key decisions can be recorded."
+        )
+    }
+}
+
+/// Default OpenSSH `known_hosts` location, shared by SSH, SFTP and SCP.
+fn default_known_hosts_path() -> Result<String, String> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| "Unable to determine the home directory for known_hosts".to_string())?
+        .join(".ssh")
+        .join("known_hosts")
+        .to_string_lossy()
+        .to_string())
+}
+
+/// Split a `known_hosts` name field into the endpoints it covers.
+///
+/// OpenSSH allows a comma-separated pattern list (`host,1.2.3.4`) and brackets
+/// the host when the port is not 22 (`[host]:2222`). Patterns (`*`, `?`) and
+/// negations (`!host`) address a *set* of hosts, so there is no single endpoint
+/// to key a trust record on and they are reported as skipped.
+pub(crate) fn parse_known_hosts_name(name: &str) -> Vec<(String, u16)> {
+    name.split(',')
+        .filter_map(|entry| {
+            let entry = entry.trim();
+            if entry.is_empty()
+                || entry.starts_with('!')
+                || entry.contains('*')
+                || entry.contains('?')
+            {
+                return None;
+            }
+            let (host, port) = match entry.strip_prefix('[') {
+                Some(rest) => {
+                    let (host, port) = rest.split_once("]:")?;
+                    (host, port.parse::<u16>().ok()?)
+                }
+                None => (entry, 22_u16),
+            };
+            if host.is_empty() || host.chars().any(char::is_control) {
+                return None;
+            }
+            Some((host.to_string(), port))
+        })
+        .collect()
+}
+
+/// Build the identity of a `known_hosts` entry from its base64 key blob.
+///
+/// The file records only the key itself, so `key_type`/`key_bits` stay unknown:
+/// libssh2 does not surface the algorithm field through `Host`, and guessing it
+/// from the blob would risk labelling a record wrongly. The fingerprint — the
+/// only field trust decisions actually compare — is exact.
+pub(crate) fn known_hosts_entry_info(encoded_key: &str) -> Option<SshHostKeyInfo> {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(encoded_key.trim())
+        .ok()?;
+    if raw.is_empty() {
+        return None;
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(&raw);
+    Some(SshHostKeyInfo {
+        fingerprint: hex::encode(hasher.finalize()),
+        key_type: None,
+        key_bits: None,
+        public_key: Some(encoded_key.trim().to_string()),
+    })
+}
+
+/// Import an OpenSSH `known_hosts` file into the active database's Trust
+/// Center (t62, `trust_import_known_hosts`).
+///
+/// Entries the user already trusts in OpenSSH become Trust Center records so
+/// they connect without a prompt. Existing records win: an endpoint that is
+/// already in the Trust Center is left alone, so importing can never silently
+/// re-trust a key the user revoked or replace one they confirmed in-app.
+///
+/// `known_hosts` itself is only read — never rewritten.
+pub fn import_known_hosts(path: Option<String>) -> Result<KnownHostsImportOutcome, String> {
+    let path = match path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        Some(path) => path.to_string(),
+        None => default_known_hosts_path()?,
+    };
+
+    let entries = {
+        let _known_hosts_guard = lock_known_hosts_file()?;
+        let session =
+            Session::new().map_err(|e| format!("Failed to create an SSH session handle: {e}"))?;
+        let mut known_hosts = session
+            .known_hosts()
+            .map_err(|e| format!("Failed to create known_hosts handle: {e}"))?;
+        read_known_hosts_if_present(&mut known_hosts, Path::new(&path))?;
+        known_hosts
+            .hosts()
+            .map_err(|e| format!("Failed to enumerate known_hosts entries: {e}"))?
+            .iter()
+            .map(|host| (host.name().map(str::to_string), host.key().to_string()))
+            .collect::<Vec<_>>()
+    };
+
+    let store = sorng_storage::trust_store::SyncTrustStore::shared();
+    let mut outcome = KnownHostsImportOutcome {
+        imported: 0,
+        skipped: 0,
+        path,
+    };
+
+    for (name, key) in entries {
+        // A hashed entry (`HashKnownHosts yes`) has no recoverable host name.
+        let Some(name) = name else {
+            outcome.skipped += 1;
+            continue;
+        };
+        let Some(info) = known_hosts_entry_info(&key) else {
+            outcome.skipped += 1;
+            continue;
+        };
+        let endpoints = parse_known_hosts_name(&name);
+        if endpoints.is_empty() {
+            outcome.skipped += 1;
+            continue;
+        }
+        for (host, port) in endpoints {
+            let trust_host = host_key_trust::trust_host(&host, port);
+            let existing = store
+                .verify_identity_blocking(
+                    &trust_host,
+                    host_key_trust::RECORD_TYPE,
+                    host_key_trust::identity(&info),
+                )
+                .map_err(|error| {
+                    format!("Failed to read the Trust Center while importing known_hosts: {error}")
+                })?;
+            if !matches!(
+                host_key_trust::classify(&existing),
+                host_key_trust::TrustState::Unknown
+            ) {
+                outcome.skipped += 1;
+                continue;
+            }
+            store
+                .trust_identity_blocking(
+                    trust_host,
+                    host_key_trust::RECORD_TYPE.to_string(),
+                    host_key_trust::identity(&info),
+                    false,
+                )
+                .map_err(|error| {
+                    format!("Failed to write the Trust Center while importing known_hosts: {error}")
+                })?;
+            outcome.imported += 1;
+        }
+    }
+
+    log::info!(
+        "Imported {} known_hosts entries into the Trust Center from {} ({} skipped)",
+        outcome.imported,
+        outcome.path,
+        outcome.skipped
+    );
+    Ok(outcome)
 }
 
 /// Generate a TOTP code from a secret
@@ -4945,6 +5244,66 @@ impl SshService {
         let host_key = host_key.to_vec();
         let host_key_info = build_host_key_info(&host_key, key_type);
 
+        // The Trust Center is consulted first and outranks known_hosts: a
+        // record there is the app's own decision for this database, while
+        // known_hosts is a shared system file the app does not own.
+        let trust_state = host_key_trust::verify(&config.host, config.port, &host_key_info)?;
+
+        match trust_state {
+            host_key_trust::TrustState::Trusted => {
+                log::info!(
+                    "Host key for {} verified against the Trust Center",
+                    config.host
+                );
+                return Ok(());
+            }
+            host_key_trust::TrustState::Revoked => {
+                return Err(format!(
+                    "Host key verification failed for {}: this host key is revoked in the Trust Center. \
+                     Reinstate it in Settings → Security if the revocation no longer applies.",
+                    config.host
+                ));
+            }
+            host_key_trust::TrustState::Changed => {
+                // A stored key that no longer matches is a mismatch even if
+                // known_hosts happens to agree with the new key.
+                return self
+                    .resolve_changed_host_key(
+                        session_id,
+                        session,
+                        config,
+                        &known_hosts_path,
+                        &host_key,
+                        &host_key_info,
+                        key_type,
+                    )
+                    .await;
+            }
+            host_key_trust::TrustState::NeedsConfirmation => {
+                // Expiry / threshold / out-of-band policies want the user to
+                // look again. Importing from known_hosts here would defeat
+                // exactly the policy that asked for the confirmation.
+                let decision = self
+                    .prompt_for_host_key_decision(
+                        session_id,
+                        config,
+                        &host_key_info,
+                        SshHostKeyPromptStatus::FirstUse,
+                    )
+                    .await?;
+                let persistence = HostKeyPersistenceContext {
+                    config,
+                    known_hosts_path: &known_hosts_path,
+                    host_key: &host_key,
+                    host_key_info: &host_key_info,
+                    key_type,
+                    replace_existing: false,
+                };
+                return self.apply_host_key_decision(session, &persistence, decision);
+            }
+            host_key_trust::TrustState::Unknown => {}
+        }
+
         let check_result = {
             let _known_hosts_guard = lock_known_hosts_file()?;
             let mut known_hosts = session
@@ -4958,7 +5317,13 @@ impl SshService {
 
         match check_result {
             ssh2::CheckResult::Match => {
-                log::info!("Host key verified for {}", config.host);
+                // Already trusted in OpenSSH — adopt it instead of asking the
+                // user to approve a decision they have made once already.
+                host_key_trust::record(&config.host, config.port, &host_key_info, false)?;
+                log::info!(
+                    "Host key verified for {} from known_hosts and imported into the Trust Center",
+                    config.host
+                );
                 Ok(())
             }
             ssh2::CheckResult::NotFound => {
@@ -4978,37 +5343,64 @@ impl SshService {
                     config,
                     known_hosts_path: &known_hosts_path,
                     host_key: &host_key,
+                    host_key_info: &host_key_info,
                     key_type,
                     replace_existing: false,
                 };
                 self.apply_host_key_decision(session, &persistence, decision)
             }
             ssh2::CheckResult::Mismatch => {
-                if config.accept_new_host_keys {
-                    return Err(Self::accept_new_mismatch_error(config));
-                }
-                let decision = self
-                    .prompt_for_host_key_decision(
-                        session_id,
-                        config,
-                        &host_key_info,
-                        SshHostKeyPromptStatus::Mismatch,
-                    )
-                    .await?;
-                let persistence = HostKeyPersistenceContext {
+                self.resolve_changed_host_key(
+                    session_id,
+                    session,
                     config,
-                    known_hosts_path: &known_hosts_path,
-                    host_key: &host_key,
+                    &known_hosts_path,
+                    &host_key,
+                    &host_key_info,
                     key_type,
-                    replace_existing: true,
-                };
-                self.apply_host_key_decision(session, &persistence, decision)
+                )
+                .await
             }
             ssh2::CheckResult::Failure => Err(format!(
                 "Host key verification failed for {}: internal error checking known_hosts",
                 config.host
             )),
         }
+    }
+
+    /// A previously memorized key changed. `accept-new` refuses outright;
+    /// otherwise the user is asked, and accepting replaces both stores.
+    #[allow(clippy::too_many_arguments)]
+    async fn resolve_changed_host_key(
+        &self,
+        session_id: &str,
+        session: &mut Session,
+        config: &SshConnectionConfig,
+        known_hosts_path: &str,
+        host_key: &[u8],
+        host_key_info: &SshHostKeyInfo,
+        key_type: ssh2::HostKeyType,
+    ) -> Result<(), String> {
+        if config.accept_new_host_keys {
+            return Err(Self::accept_new_mismatch_error(config));
+        }
+        let decision = self
+            .prompt_for_host_key_decision(
+                session_id,
+                config,
+                host_key_info,
+                SshHostKeyPromptStatus::Mismatch,
+            )
+            .await?;
+        let persistence = HostKeyPersistenceContext {
+            config,
+            known_hosts_path,
+            host_key,
+            host_key_info,
+            key_type,
+            replace_existing: true,
+        };
+        self.apply_host_key_decision(session, &persistence, decision)
     }
 
     fn should_accept_new_host_key(
@@ -5114,7 +5506,21 @@ impl SshService {
     ) -> Result<(), String> {
         match decision {
             SshHostKeyPromptDecision::AcceptOnce => Ok(()),
-            SshHostKeyPromptDecision::AcceptAndSave => self.persist_host_key(session, persistence),
+            SshHostKeyPromptDecision::AcceptAndSave => {
+                // known_hosts first, then the Trust Center. That ordering keeps
+                // the pre-t62 failure behaviour intact: if the shared system
+                // file cannot be written the connection still aborts and
+                // nothing has been memorized anywhere.
+                if persistence.config.also_write_known_hosts {
+                    self.persist_host_key(session, persistence)?;
+                }
+                host_key_trust::record(
+                    &persistence.config.host,
+                    persistence.config.port,
+                    persistence.host_key_info,
+                    true,
+                )
+            }
             SshHostKeyPromptDecision::Reject => Err(format!(
                 "Host key verification failed for {}: key rejected by user",
                 persistence.config.host
@@ -10678,6 +11084,7 @@ mod tests {
             config: &config,
             known_hosts_path: &known_hosts_path,
             host_key: first_key,
+            host_key_info: &build_host_key_info(first_key, ssh2::HostKeyType::Ed25519),
             key_type: ssh2::HostKeyType::Ed25519,
             replace_existing: false,
         };
@@ -10741,6 +11148,7 @@ mod tests {
                     config: &config,
                     known_hosts_path: &known_hosts_path,
                     host_key: key,
+                    host_key_info: &build_host_key_info(key, ssh2::HostKeyType::Ed25519),
                     key_type: ssh2::HostKeyType::Ed25519,
                     replace_existing: false,
                 };
@@ -10758,6 +11166,465 @@ mod tests {
         let persisted = std::fs::read_to_string(known_hosts_path).unwrap();
         assert!(persisted.contains("alpha.example.test"));
         assert!(persisted.contains("beta.example.test"));
+    }
+
+    // ── Trust Center host keys (t62) ────────────────────────────
+
+    use sorng_storage::trust_store::test_support::{
+        install_active_runtime_for_tests, install_runtime_for_tests,
+    };
+    use sorng_storage::trust_store::{CertIdentity, Identity, SyncTrustStore, TrustVerifyResult};
+
+    fn fixture_host_key_info(key: &[u8]) -> SshHostKeyInfo {
+        build_host_key_info(key, ssh2::HostKeyType::Ed25519)
+    }
+
+    /// Write a real OpenSSH `known_hosts` file through libssh2 so the importer
+    /// is exercised against the same encoder the app writes with.
+    fn write_fixture_known_hosts(path: &Path, entries: &[(&str, &[u8])]) {
+        let session = Session::new().unwrap();
+        let mut known_hosts = session.known_hosts().unwrap();
+        for (name, key) in entries {
+            known_hosts
+                .add(
+                    name,
+                    key,
+                    "fixture",
+                    known_host_key_format(ssh2::HostKeyType::Ed25519),
+                )
+                .unwrap();
+        }
+        known_hosts
+            .write_file(path, ssh2::KnownHostFileKind::OpenSSH)
+            .unwrap();
+    }
+
+    #[test]
+    fn also_write_known_hosts_defaults_to_true_when_absent_from_the_payload() {
+        let mut payload = serde_json::to_value(tcp_test_config()).unwrap();
+        let fields = payload.as_object_mut().unwrap();
+        for spelling in ["also_write_known_hosts", "alsoWriteKnownHosts"] {
+            fields.remove(spelling);
+        }
+
+        let config: SshConnectionConfig = serde_json::from_value(payload)
+            .expect("a config saved before t62 must still deserialize");
+
+        assert!(
+            config.also_write_known_hosts,
+            "existing saved connections must keep writing to ~/.ssh/known_hosts"
+        );
+    }
+
+    #[test]
+    fn trust_states_never_auto_accept_anything_but_an_exact_live_match() {
+        let identity = host_key_trust::identity(&fixture_host_key_info(b"trust-state-key"));
+        let stale = Identity::Tls(Box::new(CertIdentity {
+            fingerprint: "unused".to_string(),
+            subject: None,
+            issuer: None,
+            first_seen: String::new(),
+            last_seen: String::new(),
+            valid_from: None,
+            valid_to: None,
+            pem: None,
+            serial: None,
+            signature_algorithm: None,
+            san: None,
+            chain_fingerprints: Vec::new(),
+            subject_cn: None,
+            subject_org: None,
+            subject_ou: None,
+            subject_country: None,
+            subject_state: None,
+            subject_locality: None,
+            subject_email: None,
+            issuer_cn: None,
+            issuer_org: None,
+            issuer_country: None,
+            key_algorithm: None,
+            key_size: None,
+            version: None,
+            chain: None,
+        }));
+
+        assert_eq!(
+            host_key_trust::classify(&TrustVerifyResult::Trusted),
+            host_key_trust::TrustState::Trusted
+        );
+        assert_eq!(
+            host_key_trust::classify(&TrustVerifyResult::FirstUse {
+                identity: identity.clone()
+            }),
+            host_key_trust::TrustState::Unknown
+        );
+        assert_eq!(
+            host_key_trust::classify(&TrustVerifyResult::Revoked {
+                stored: identity.clone()
+            }),
+            host_key_trust::TrustState::Revoked
+        );
+        for changed in [
+            TrustVerifyResult::Mismatch {
+                stored: stale.clone(),
+                presented: identity.clone(),
+            },
+            TrustVerifyResult::ChainMismatch {
+                stored: stale.clone(),
+                presented: identity.clone(),
+            },
+            TrustVerifyResult::RotationGrace {
+                stored: stale.clone(),
+                presented: identity.clone(),
+            },
+        ] {
+            assert_eq!(
+                host_key_trust::classify(&changed),
+                host_key_trust::TrustState::Changed,
+                "a changed key must never be accepted without a decision"
+            );
+        }
+        for confirm in [
+            TrustVerifyResult::Expired {
+                stored: identity.clone(),
+                presented: identity.clone(),
+            },
+            TrustVerifyResult::PendingThreshold {
+                identity: identity.clone(),
+                current_count: 1,
+                required_count: 3,
+            },
+            TrustVerifyResult::PendingVerification {
+                identity: identity.clone(),
+            },
+        ] {
+            assert_eq!(
+                host_key_trust::classify(&confirm),
+                host_key_trust::TrustState::NeedsConfirmation
+            );
+        }
+    }
+
+    #[test]
+    fn a_recorded_host_key_verifies_and_a_changed_one_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-alpha");
+        let info = fixture_host_key_info(b"recorded-host-key");
+
+        assert_eq!(
+            host_key_trust::verify("alpha.example.test", 2222, &info).unwrap(),
+            host_key_trust::TrustState::Unknown
+        );
+
+        host_key_trust::record("alpha.example.test", 2222, &info, true).unwrap();
+
+        assert_eq!(
+            host_key_trust::verify("alpha.example.test", 2222, &info).unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+        // The port is part of the record key: the same host on another port is
+        // a different endpoint and must not inherit the decision.
+        assert_eq!(
+            host_key_trust::verify("alpha.example.test", 22, &info).unwrap(),
+            host_key_trust::TrustState::Unknown
+        );
+
+        let rotated = fixture_host_key_info(b"a-completely-different-host-key");
+        assert_eq!(
+            host_key_trust::verify("alpha.example.test", 2222, &rotated).unwrap(),
+            host_key_trust::TrustState::Changed
+        );
+    }
+
+    #[test]
+    fn host_keys_are_scoped_to_the_active_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let guard = install_runtime_for_tests(temp.path().join("databases"), None);
+        let info = fixture_host_key_info(b"per-database-host-key");
+
+        guard
+            .runtime
+            .set_active(Some("db-alpha".to_string()), None)
+            .unwrap();
+        host_key_trust::record("shared.example.test", 22, &info, true).unwrap();
+        assert_eq!(
+            host_key_trust::verify("shared.example.test", 22, &info).unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+
+        guard
+            .runtime
+            .set_active(Some("db-beta".to_string()), None)
+            .unwrap();
+        assert_eq!(
+            host_key_trust::verify("shared.example.test", 22, &info).unwrap(),
+            host_key_trust::TrustState::Unknown,
+            "trust is per database; another database must re-decide"
+        );
+    }
+
+    #[test]
+    fn host_key_verification_fails_closed_with_no_active_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let guard = install_runtime_for_tests(temp.path().join("databases"), None);
+        guard.runtime.set_active(None, None).unwrap();
+        let info = fixture_host_key_info(b"no-database-host-key");
+
+        let verify_error = host_key_trust::verify("locked.example.test", 22, &info).unwrap_err();
+        assert!(
+            verify_error.contains("Trust Center is unavailable"),
+            "unexpected error: {verify_error}"
+        );
+        assert!(verify_error.contains("locked.example.test"));
+
+        let record_error =
+            host_key_trust::record("locked.example.test", 22, &info, true).unwrap_err();
+        assert!(record_error.contains("Trust Center is unavailable"));
+    }
+
+    #[test]
+    fn known_hosts_names_resolve_to_endpoints_and_patterns_are_refused() {
+        assert_eq!(
+            parse_known_hosts_name("plain.example.test"),
+            vec![("plain.example.test".to_string(), 22)]
+        );
+        assert_eq!(
+            parse_known_hosts_name("[ported.example.test]:2222"),
+            vec![("ported.example.test".to_string(), 2222)]
+        );
+        assert_eq!(
+            parse_known_hosts_name("alias.example.test,198.51.100.7"),
+            vec![
+                ("alias.example.test".to_string(), 22),
+                ("198.51.100.7".to_string(), 22),
+            ]
+        );
+        // A pattern covers a set of hosts, so it cannot key a trust record.
+        assert!(parse_known_hosts_name("*.example.test").is_empty());
+        assert!(parse_known_hosts_name("!denied.example.test").is_empty());
+        assert!(parse_known_hosts_name("").is_empty());
+    }
+
+    #[test]
+    fn known_hosts_entries_fingerprint_the_decoded_key() {
+        let raw = b"known-hosts-entry-key";
+        let encoded = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(raw)
+        };
+
+        let info = known_hosts_entry_info(&encoded).expect("a valid blob must parse");
+        assert_eq!(info.fingerprint, fixture_host_key_info(raw).fingerprint);
+        assert_eq!(info.public_key.as_deref(), Some(encoded.as_str()));
+        // libssh2 does not expose the algorithm field for a stored entry;
+        // recording a guess would mislabel the record.
+        assert!(info.key_type.is_none());
+
+        assert!(known_hosts_entry_info("not base64!!").is_none());
+        assert!(known_hosts_entry_info("").is_none());
+    }
+
+    #[test]
+    fn importing_known_hosts_adopts_entries_once_and_leaves_the_file_alone() {
+        let temp = tempfile::tempdir().unwrap();
+        let known_hosts_path = temp.path().join("known_hosts");
+        write_fixture_known_hosts(
+            &known_hosts_path,
+            &[
+                ("import-a.example.test", b"import-a-host-key"),
+                ("[import-b.example.test]:2200", b"import-b-host-key"),
+            ],
+        );
+        let before = std::fs::read(&known_hosts_path).unwrap();
+
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-import");
+
+        let outcome =
+            import_known_hosts(Some(known_hosts_path.to_string_lossy().to_string())).unwrap();
+        assert_eq!(outcome.imported, 2);
+        assert_eq!(outcome.skipped, 0);
+
+        // The imported keys now verify without any prompt.
+        assert_eq!(
+            host_key_trust::verify(
+                "import-a.example.test",
+                22,
+                &fixture_host_key_info(b"import-a-host-key")
+            )
+            .unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+        assert_eq!(
+            host_key_trust::verify(
+                "import-b.example.test",
+                2200,
+                &fixture_host_key_info(b"import-b-host-key")
+            )
+            .unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+
+        // Re-importing is a no-op: existing records win.
+        let again =
+            import_known_hosts(Some(known_hosts_path.to_string_lossy().to_string())).unwrap();
+        assert_eq!(again.imported, 0);
+        assert_eq!(again.skipped, 2);
+
+        assert_eq!(
+            std::fs::read(&known_hosts_path).unwrap(),
+            before,
+            "known_hosts is an import source and must never be rewritten"
+        );
+    }
+
+    #[test]
+    fn importing_a_missing_known_hosts_file_imports_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-empty");
+
+        let outcome = import_known_hosts(Some(
+            temp.path().join("absent").to_string_lossy().to_string(),
+        ))
+        .unwrap();
+        assert_eq!(outcome.imported, 0);
+        assert_eq!(outcome.skipped, 0);
+    }
+
+    #[test]
+    fn accepting_a_host_key_writes_the_trust_center_and_honours_the_known_hosts_opt_out() {
+        let temp = tempfile::tempdir().unwrap();
+        let known_hosts_path = temp
+            .path()
+            .join("known_hosts")
+            .to_string_lossy()
+            .to_string();
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-accept");
+
+        let host_key = b"accepted-host-key";
+        let host_key_info = fixture_host_key_info(host_key);
+        let mut config = tcp_test_config();
+        config.host = "accepted.example.test".to_string();
+        config.port = 22;
+        config.known_hosts_path = Some(known_hosts_path.clone());
+        config.also_write_known_hosts = false;
+
+        let service = empty_test_service();
+        let mut session = Session::new().unwrap();
+        let persistence = HostKeyPersistenceContext {
+            config: &config,
+            known_hosts_path: &known_hosts_path,
+            host_key,
+            host_key_info: &host_key_info,
+            key_type: ssh2::HostKeyType::Ed25519,
+            replace_existing: false,
+        };
+
+        service
+            .apply_host_key_decision(
+                &mut session,
+                &persistence,
+                SshHostKeyPromptDecision::AcceptAndSave,
+            )
+            .unwrap();
+
+        assert_eq!(
+            host_key_trust::verify("accepted.example.test", 22, &host_key_info).unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+        assert!(
+            !Path::new(&known_hosts_path).exists(),
+            "also_write_known_hosts=false must leave the OpenSSH file untouched"
+        );
+
+        // The default keeps writing both stores.
+        let mut sharing = config.clone();
+        sharing.host = "shared.example.test".to_string();
+        sharing.also_write_known_hosts = true;
+        let sharing_info = fixture_host_key_info(b"shared-host-key");
+        let sharing_persistence = HostKeyPersistenceContext {
+            config: &sharing,
+            known_hosts_path: &known_hosts_path,
+            host_key: b"shared-host-key",
+            host_key_info: &sharing_info,
+            key_type: ssh2::HostKeyType::Ed25519,
+            replace_existing: false,
+        };
+        service
+            .apply_host_key_decision(
+                &mut session,
+                &sharing_persistence,
+                SshHostKeyPromptDecision::AcceptAndSave,
+            )
+            .unwrap();
+
+        assert_eq!(
+            host_key_trust::verify("shared.example.test", 22, &sharing_info).unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+        assert!(std::fs::read_to_string(&known_hosts_path)
+            .unwrap()
+            .contains("shared.example.test"));
+    }
+
+    #[test]
+    fn accept_once_memorizes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let known_hosts_path = temp
+            .path()
+            .join("known_hosts")
+            .to_string_lossy()
+            .to_string();
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-once");
+
+        let host_key_info = fixture_host_key_info(b"transient-host-key");
+        let mut config = tcp_test_config();
+        config.host = "transient.example.test".to_string();
+        config.port = 22;
+        config.known_hosts_path = Some(known_hosts_path.clone());
+
+        let service = empty_test_service();
+        let mut session = Session::new().unwrap();
+        let persistence = HostKeyPersistenceContext {
+            config: &config,
+            known_hosts_path: &known_hosts_path,
+            host_key: b"transient-host-key",
+            host_key_info: &host_key_info,
+            key_type: ssh2::HostKeyType::Ed25519,
+            replace_existing: false,
+        };
+
+        service
+            .apply_host_key_decision(
+                &mut session,
+                &persistence,
+                SshHostKeyPromptDecision::AcceptOnce,
+            )
+            .unwrap();
+
+        assert_eq!(
+            host_key_trust::verify("transient.example.test", 22, &host_key_info).unwrap(),
+            host_key_trust::TrustState::Unknown
+        );
+        assert!(!Path::new(&known_hosts_path).exists());
+    }
+
+    #[test]
+    fn the_shared_sync_store_sees_keys_recorded_by_the_ssh_verifier() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-shared");
+        let info = fixture_host_key_info(b"cross-facade-host-key");
+
+        host_key_trust::record("cross.example.test", 22, &info, true).unwrap();
+
+        // The same façade the Trust Center UI and the TLS verifiers read.
+        let result = SyncTrustStore::shared()
+            .verify_identity_blocking(
+                "cross.example.test:22",
+                host_key_trust::RECORD_TYPE,
+                host_key_trust::identity(&info),
+            )
+            .unwrap();
+        assert!(matches!(result, TrustVerifyResult::Trusted));
     }
 
     // ── Sentinel parsing ────────────────────────────────────────

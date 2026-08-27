@@ -57,6 +57,14 @@ pub struct SftpConnectionConfig {
     pub use_agent: bool,
     #[serde(default)]
     pub known_hosts_policy: KnownHostsPolicy,
+    /// Also append an accepted host key to OpenSSH's `known_hosts` (t62).
+    ///
+    /// The per-database Trust Center is the authority; this defaults to `true`
+    /// so accepting a key here keeps teaching the system `ssh`/`sftp` clients
+    /// about it, exactly as before. Set it to `false` to keep the decision
+    /// inside the app's database.
+    #[serde(default = "default_true")]
+    pub also_write_known_hosts: bool,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
     #[serde(default = "default_keepalive_secs")]

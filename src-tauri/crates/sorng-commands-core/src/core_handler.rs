@@ -129,6 +129,7 @@ pub fn is_command(command: &str) -> bool {
             | "updater_relaunch"
             | "connect_ssh"
             | "ssh_respond_to_host_key_prompt"
+            | "trust_import_known_hosts"
             | "start_shell"
             | "execute_command"
             | "execute_command_interactive"
@@ -1517,6 +1518,9 @@ define_command_group!(
         // app-shell group remains below the bounded Tauri macro expansion.
         ssh_commands::connect_ssh,
         ssh_commands::ssh_respond_to_host_key_prompt,
+        // t62: the Trust Center's known_hosts importer lives beside the
+        // host-key prompt because it needs libssh2's known_hosts parser.
+        ssh_commands::trust_import_known_hosts,
         ssh_commands::start_shell,
         ssh_commands::execute_command,
         ssh_commands::execute_command_interactive,
