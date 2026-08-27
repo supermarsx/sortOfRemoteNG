@@ -11,6 +11,7 @@ import { execSync } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
 import {
   resetAppState,
   createCollection,
@@ -61,8 +62,10 @@ async function createNpmConnection(): Promise<void> {
   const nameInput = await $(S.editorName);
   await nameInput.setValue("NPM E2E");
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText("Nginx Proxy Manager");
+  // The protocol picker is the app's custom combobox (`role="combobox"` +
+  // a portalled `role="listbox"`), not a native `<select>`, so WebdriverIO's
+  // `selectByVisibleText` cannot drive it — use the repo's helper.
+  await selectCustomOption(S.editorProtocol, "Nginx Proxy Manager");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
