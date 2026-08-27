@@ -102,6 +102,8 @@ sortOfRemoteNG handles credentials and privileged remote operations, so its secu
 - connection storage supports authenticated encryption at rest and refuses a plaintext downgrade after encrypted production state is installed, but application settings can remain in plaintext until encryption is initialized and unlocked;
 - password-based unlock uses Argon2id, while supported systems can use the OS credential vault;
 - TLS certificate and hostname verification are enabled by default, but users can override trust verification globally or per connection, and warning/acceptance UX is not universal;
+- accepted certificates and host keys are stored per database in `databases/<id>.trust.json`, encrypted and recoverable exactly like the connection payload beside it, carried by export/import/clone/backup, and migrated once from the older global `trust_store.json` and `rdp-cert-trust.json` sidecars; with no database open the verifiers fail closed rather than accepting;
+- SSH, SFTP, and SCP host keys are Trust Center records, `~/.ssh/known_hosts` is an import source, and the per-connection `also_write_known_hosts` option (default on) keeps appending accepted keys there for other tools;
 - privileged work crosses a validated Tauri IPC boundary into Rust;
 - the REST API is off by default and binds to loopback unless remote access is deliberately enabled; and
 - application updates require a valid Ed25519/minisign signature from the key pinned in the app.

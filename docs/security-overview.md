@@ -9,15 +9,38 @@ sortOfRemoteNG handles credentials and opens privileged remote sessions. Securit
 
 ## Core expectations
 
-| Area              | Default posture                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| Secrets at rest   | Authenticated encryption with password-derived or OS-vault-backed key handling                           |
-| Live secrets      | Kept out of general renderer state and logs where the backend contract permits                           |
-| TLS               | Certificate chain and hostname verification enabled; insecure exceptions are explicit and per connection |
-| Remote host trust | Host or certificate changes require a visible trust decision rather than silent downgrade                |
-| Tauri IPC         | Commands accept validated, typed inputs and delegate privileged work to Rust                             |
-| REST automation   | Disabled by default and loopback-oriented unless remote access is deliberately configured                |
-| Updates           | Bundles must pass the updater’s pinned Ed25519/minisign verification                                     |
+| Area              | Default posture                                                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Secrets at rest   | Authenticated encryption with password-derived or OS-vault-backed key handling                                                                       |
+| Live secrets      | Kept out of general renderer state and logs where the backend contract permits                                                                       |
+| TLS               | Certificate chain and hostname verification enabled; insecure exceptions are explicit and per connection                                             |
+| Remote host trust | Host or certificate changes require a visible trust decision rather than silent downgrade, and the decision is stored with the database that made it |
+| Tauri IPC         | Commands accept validated, typed inputs and delegate privileged work to Rust                                                                         |
+| REST automation   | Disabled by default and loopback-oriented unless remote access is deliberately configured                                                            |
+| Updates           | Bundles must pass the updater’s pinned Ed25519/minisign verification                                                                                 |
+
+## Trust decisions are database state
+
+Every host key and server certificate you approve is a Trust Center record, and each record belongs to one user database. The store lives beside that database's payload:
+
+```
+<app_data>/databases/<id>.json         connections
+<app_data>/databases/<id>.trust.json   trust records for that database
+```
+
+- **Same durability ladder.** The trust file carries the same `SDBF` preamble, checksum, and `.tmp`/`.bak` write-and-read ladder as the connection payload, so a torn write recovers the previous generation instead of losing every memorized identity.
+- **Same encryption.** With master encryption configured and unlocked, the file is an authenticated envelope under its own artifact sub-key. Without encryption configured it is JSON under the preamble. Configured but locked, trust reads and writes **fail closed**: no plaintext downgrade, and no silent "accept anything" fallback.
+- **Same portability.** Export, import, clone, and backup carry the records while the "Trusted hosts & certificates" inclusion stays on (the default). Records hold fingerprints and public certificates only — never secrets — so they are safe to move with a credential-free export.
+- **Scoped deliberately.** A host trusted in one database is unknown in another, switching databases switches the trust context, and with no database open the verifiers have nothing to consult and refuse rather than accept. Use the Trust Center's Export JSON / Import JSON buttons to copy decisions between databases on purpose.
+- **Deleting a database deletes its trust.** Removing a database removes `<id>.trust.json` and its ladder siblings with the rest of that database's data.
+
+### Migrating from the pre-26.28 sidecars
+
+Earlier builds kept one global `trust_store.json` beside the application data plus a separate `rdp-cert-trust.json` for RDP server certificates — both plaintext, both shared by every database. The first time each database is opened, its trust file is seeded from those files: global records always, connection-scoped records only for connections that database actually owns, and RDP pins as ordinary `rdp` records. **The legacy files are read-only inputs and are never modified.** Settings → Trust Center reports what they still hold and offers a one-click delete, which stays disabled until every database has been opened at least once, so the cleanup cannot strand a database that was never unlocked.
+
+### SSH host keys and `known_hosts`
+
+Accepted SSH, SFTP, and SCP host keys are Trust Center records too, keyed by `host:port`, so one accepted key covers the terminal, the file browser, and SCP for the same endpoint. OpenSSH's `known_hosts` becomes an import source rather than the authority: a key already listed there is adopted into the Trust Center and accepted instead of re-prompting, and Settings → Trust Center can import the whole file on demand (hashed `|1|…` entries are skipped, because their host names are unrecoverable, and an endpoint already recorded is never overwritten). By default an accepted key is still appended to `known_hosts` so other tools sharing that file keep working; the per-connection `also_write_known_hosts` option — present on SSH, SFTP, and SCP connections and on by default — turns that dual write off and keeps the decision inside the database only.
 
 ## At-rest threat model
 

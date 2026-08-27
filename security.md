@@ -91,6 +91,39 @@ the following rules (see epic `t3-e15`):
   auto-downgrades to `skip_tls`; the user must explicitly re-enable the
   toggle.
 
+### 4.1 Trust Center storage (per database)
+
+Every accepted certificate and host key is a Trust Center record that
+belongs to **one** user database, stored beside that database's payload
+as `<app_data>/databases/<id>.trust.json` (epic `t62`).
+
+- **Durability.** The file uses the same `SDBF` preamble, checksum, and
+  `.tmp`/`.bak` ladder as `databases/<id>.json`, so a torn write
+  recovers the previous generation instead of losing every memorized
+  identity.
+- **Encryption.** Configured and unlocked, the payload is an
+  AES-256-GCM envelope under its own `TrustStore` artifact sub-key —
+  distinct from the connections sub-key, so a trust blob swapped into a
+  database slot fails authentication. Not configured, it is JSON under
+  the preamble. Configured but locked, reads and writes **fail closed**;
+  a locked app never rewrites an encrypted store as plaintext.
+- **Fail closed with no database.** The synchronous verifiers
+  (RDP, SSH/SFTP/SCP, FTPS, and the TLS management clients) resolve the
+  active database on every call. With no database open they return an
+  error naming the fix; they never fall back to a stray file and never
+  accept an unverified identity.
+- **Scope.** Trust does not leak between databases. Records travel only
+  through an explicit export, import, clone, or backup, and carry
+  fingerprints and public certificates only — no secret material.
+- **Migration.** The retired global `trust_store.json` and
+  `rdp-cert-trust.json` sidecars are read once per database to seed it,
+  are never modified, and are deleted only when the user asks and every
+  database has been opened at least once.
+- **`known_hosts`.** OpenSSH's file is an import source, not the
+  authority. An accepted key is still appended to it by default so
+  other tools keep working; the per-connection `also_write_known_hosts`
+  option (SSH, SFTP, and SCP; default `true`) disables that dual write.
+
 ## 5. Secret-at-Rest Model
 
 Secrets (connection passwords, private keys, SoftEther credentials,
