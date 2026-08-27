@@ -30,4 +30,22 @@ impl StreamManager {
     pub async fn delete(client: &NpmClient, id: u64) -> NpmResult<()> {
         client.delete(&format!("/nginx/streams/{}", id)).await
     }
+
+    pub async fn enable(client: &NpmClient, id: u64) -> NpmResult<NpmStream> {
+        client
+            .post(
+                &format!("/nginx/streams/{}/enable", id),
+                &serde_json::json!({}),
+            )
+            .await
+    }
+
+    pub async fn disable(client: &NpmClient, id: u64) -> NpmResult<NpmStream> {
+        client
+            .post(
+                &format!("/nginx/streams/{}/disable", id),
+                &serde_json::json!({}),
+            )
+            .await
+    }
 }

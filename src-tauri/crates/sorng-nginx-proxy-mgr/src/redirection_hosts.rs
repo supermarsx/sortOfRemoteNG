@@ -41,4 +41,22 @@ impl RedirectionHostManager {
             .delete(&format!("/nginx/redirection-hosts/{}", id))
             .await
     }
+
+    pub async fn enable(client: &NpmClient, id: u64) -> NpmResult<NpmRedirectionHost> {
+        client
+            .post(
+                &format!("/nginx/redirection-hosts/{}/enable", id),
+                &serde_json::json!({}),
+            )
+            .await
+    }
+
+    pub async fn disable(client: &NpmClient, id: u64) -> NpmResult<NpmRedirectionHost> {
+        client
+            .post(
+                &format!("/nginx/redirection-hosts/{}/disable", id),
+                &serde_json::json!({}),
+            )
+            .await
+    }
 }

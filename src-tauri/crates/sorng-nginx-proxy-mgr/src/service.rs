@@ -47,18 +47,41 @@ impl NpmService {
         id: String,
         config: NpmConnectionConfig,
     ) -> NpmResult<NpmConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(NpmError::new(
+                crate::error::NpmErrorKind::AlreadyConnected,
+                format!("Connection '{id}' already exists"),
+            ));
+        }
         let client = NpmClient::new(config)?;
-        client.login().await?;
+        // Password mode logs in here; token mode validates the supplied token
+        // through `ping` (GET /users/me).
+        client.ensure_token().await?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> NpmResult<()> {
-        self.connections
+    /// Forget the token (NPM has no revocation endpoint) and drop the client.
+    pub async fn disconnect(&mut self, id: &str) -> NpmResult<()> {
+        let client = self
+            .connections
             .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| NpmError::not_connected(format!("No connection '{}'", id)))
+            .ok_or_else(|| NpmError::not_connected(format!("No connection '{}'", id)))?;
+        client.logout().await;
+        Ok(())
+    }
+
+    /// Force a `GET /api/tokens` refresh and return the updated summary.
+    pub async fn refresh_token(&self, id: &str) -> NpmResult<NpmConnectionSummary> {
+        let client = self.client(id)?;
+        client.refresh_token().await?;
+        client.ping().await
+    }
+
+    /// Origin of the NPM web UI (`http://host:81`) for "Open web UI".
+    pub fn web_ui_url(&self, id: &str) -> NpmResult<String> {
+        self.client(id)?.web_ui_url()
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -149,6 +172,22 @@ impl NpmService {
         RedirectionHostManager::delete(self.client(id)?, host_id).await
     }
 
+    pub async fn enable_redirection_host(
+        &self,
+        id: &str,
+        host_id: u64,
+    ) -> NpmResult<NpmRedirectionHost> {
+        RedirectionHostManager::enable(self.client(id)?, host_id).await
+    }
+
+    pub async fn disable_redirection_host(
+        &self,
+        id: &str,
+        host_id: u64,
+    ) -> NpmResult<NpmRedirectionHost> {
+        RedirectionHostManager::disable(self.client(id)?, host_id).await
+    }
+
     // ── Dead Hosts ───────────────────────────────────────────────
 
     pub async fn list_dead_hosts(&self, id: &str) -> NpmResult<Vec<NpmDeadHost>> {
@@ -205,6 +244,14 @@ impl NpmService {
 
     pub async fn delete_stream(&self, id: &str, stream_id: u64) -> NpmResult<()> {
         StreamManager::delete(self.client(id)?, stream_id).await
+    }
+
+    pub async fn enable_stream(&self, id: &str, stream_id: u64) -> NpmResult<NpmStream> {
+        StreamManager::enable(self.client(id)?, stream_id).await
+    }
+
+    pub async fn disable_stream(&self, id: &str, stream_id: u64) -> NpmResult<NpmStream> {
+        StreamManager::disable(self.client(id)?, stream_id).await
     }
 
     // ── Certificates ─────────────────────────────────────────────

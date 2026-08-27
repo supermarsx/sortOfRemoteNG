@@ -1,6 +1,33 @@
 //! Shared types for Nginx Proxy Manager management.
+//!
+//! NPM's own JSON is **snake_case** and several list endpoints return `0`/`1`
+//! integers where the schema says boolean; response structs therefore use the
+//! lenient [`bool_from_int`] deserializer on their `Option<bool>` fields.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Deserialize `true`/`false`, `0`/`1` (or `null`) into `Option<bool>`.
+pub fn bool_from_int<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match value {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Bool(b)) => Ok(Some(b)),
+        Some(serde_json::Value::Number(n)) => Ok(n.as_i64().map(|i| i != 0)),
+        Some(serde_json::Value::String(s)) => match s.as_str() {
+            "1" | "true" => Ok(Some(true)),
+            "0" | "false" => Ok(Some(false)),
+            other => Err(serde::de::Error::custom(format!(
+                "expected boolean-like value, got {other:?}"
+            ))),
+        },
+        Some(other) => Err(serde::de::Error::custom(format!(
+            "expected boolean-like value, got {other}"
+        ))),
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Connection & Auth
@@ -8,33 +35,59 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NpmConnectionConfig {
-    /// NPM API URL (default: http://localhost:81)
+    /// NPM API URL including scheme (default: http://localhost:81)
     pub api_url: String,
     pub email: Option<String>,
     pub password: Option<String>,
-    /// Pre-existing bearer token
+    /// Pre-existing bearer token (used only when email+password are absent)
     pub token: Option<String>,
-    pub tls_skip_verify: Option<bool>,
+    /// Accept self-signed / untrusted certificates (https only). Maps to an
+    /// explicit, revocable `AlwaysTrust` override in the Trust Center.
+    pub skip_tls_verify: Option<bool>,
+    /// Runtime acknowledgement that `skip_tls_verify` is a security risk.
+    /// Must equal the *effective* skip flag or the connection is refused.
+    #[serde(default, skip_serializing)]
+    pub acknowledge_invalid_cert_risk: bool,
     pub timeout_secs: Option<u64>,
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NpmConnectionSummary {
     pub api_url: String,
     pub user: Option<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
     pub version: Option<String>,
+    /// `"password"` or `"token"`
+    pub auth_mode: String,
+    /// ISO-8601 UTC expiry of the current token, when known.
+    pub token_expires_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NpmTokenResponse {
     pub token: String,
-    pub expires: String,
+    pub expires: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NpmTokenPayload {
     pub identity: String,
     pub secret: String,
+}
+
+/// `GET /api/` — unauthenticated liveness + version.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NpmVersionResponse {
+    pub status: Option<String>,
+    pub version: Option<NpmVersion>,
+}
+
+impl NpmVersion {
+    pub fn as_string(&self) -> String {
+        format!("{}.{}.{}", self.major, self.minor, self.revision)
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -53,14 +106,22 @@ pub struct NpmProxyHost {
     pub forward_scheme: String,
     pub access_list_id: Option<u64>,
     pub certificate_id: Option<u64>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub ssl_forced: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub caching_enabled: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub block_exploits: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub allow_websocket_upgrade: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub http2_support: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub hsts_enabled: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub hsts_subdomains: Option<bool>,
     pub advanced_config: Option<String>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub enabled: Option<bool>,
     pub meta: Option<serde_json::Value>,
     pub locations: Option<Vec<NpmLocation>>,
@@ -132,13 +193,19 @@ pub struct NpmRedirectionHost {
     pub forward_http_code: u16,
     pub forward_domain_name: String,
     pub forward_scheme: String,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub preserve_path: Option<bool>,
     pub certificate_id: Option<u64>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub ssl_forced: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub block_exploits: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub hsts_enabled: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub hsts_subdomains: Option<bool>,
     pub advanced_config: Option<String>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub enabled: Option<bool>,
     pub meta: Option<serde_json::Value>,
     pub certificate: Option<serde_json::Value>,
@@ -173,8 +240,10 @@ pub struct NpmDeadHost {
     pub owner_user_id: Option<u64>,
     pub domain_names: Vec<String>,
     pub certificate_id: Option<u64>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub ssl_forced: Option<bool>,
     pub advanced_config: Option<String>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub enabled: Option<bool>,
     pub meta: Option<serde_json::Value>,
     pub certificate: Option<serde_json::Value>,
@@ -203,8 +272,11 @@ pub struct NpmStream {
     pub incoming_port: u16,
     pub forwarding_host: String,
     pub forwarding_port: u16,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub tcp_forwarding: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub udp_forwarding: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub enabled: Option<bool>,
     pub meta: Option<serde_json::Value>,
     pub owner: Option<serde_json::Value>,
@@ -275,6 +347,7 @@ pub struct NpmUser {
     pub nickname: String,
     pub email: String,
     pub avatar: Option<String>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub is_disabled: Option<bool>,
     pub roles: Option<Vec<String>>,
 }
@@ -324,7 +397,9 @@ pub struct NpmAccessList {
     pub modified_on: Option<String>,
     pub owner_user_id: Option<u64>,
     pub name: String,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub satisty_any: Option<bool>,
+    #[serde(default, deserialize_with = "bool_from_int")]
     pub pass_auth: Option<bool>,
     pub items: Option<Vec<AccessListItem>>,
     pub clients: Option<Vec<AccessListClient>>,

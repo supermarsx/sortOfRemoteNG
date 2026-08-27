@@ -29,7 +29,7 @@ pub async fn npm_connect(
 
 #[tauri::command]
 pub async fn npm_disconnect(state: State<'_, NpmServiceState>, id: String) -> CmdResult<()> {
-    state.lock().await.disconnect(&id).map_err(map_err)
+    state.lock().await.disconnect(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -43,6 +43,19 @@ pub async fn npm_ping(
     id: String,
 ) -> CmdResult<NpmConnectionSummary> {
     state.lock().await.ping(&id).await.map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn npm_refresh_token(
+    state: State<'_, NpmServiceState>,
+    id: String,
+) -> CmdResult<NpmConnectionSummary> {
+    state.lock().await.refresh_token(&id).await.map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn npm_web_ui_url(state: State<'_, NpmServiceState>, id: String) -> CmdResult<String> {
+    state.lock().await.web_ui_url(&id).map_err(map_err)
 }
 
 // ── Proxy Hosts ───────────────────────────────────────────────────
@@ -217,6 +230,34 @@ pub async fn npm_delete_redirection_host(
         .map_err(map_err)
 }
 
+#[tauri::command]
+pub async fn npm_enable_redirection_host(
+    state: State<'_, NpmServiceState>,
+    id: String,
+    host_id: u64,
+) -> CmdResult<NpmRedirectionHost> {
+    state
+        .lock()
+        .await
+        .enable_redirection_host(&id, host_id)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn npm_disable_redirection_host(
+    state: State<'_, NpmServiceState>,
+    id: String,
+    host_id: u64,
+) -> CmdResult<NpmRedirectionHost> {
+    state
+        .lock()
+        .await
+        .disable_redirection_host(&id, host_id)
+        .await
+        .map_err(map_err)
+}
+
 // ── Dead Hosts ────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -352,6 +393,34 @@ pub async fn npm_delete_stream(
         .lock()
         .await
         .delete_stream(&id, stream_id)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn npm_enable_stream(
+    state: State<'_, NpmServiceState>,
+    id: String,
+    stream_id: u64,
+) -> CmdResult<NpmStream> {
+    state
+        .lock()
+        .await
+        .enable_stream(&id, stream_id)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn npm_disable_stream(
+    state: State<'_, NpmServiceState>,
+    id: String,
+    stream_id: u64,
+) -> CmdResult<NpmStream> {
+    state
+        .lock()
+        .await
+        .disable_stream(&id, stream_id)
         .await
         .map_err(map_err)
 }

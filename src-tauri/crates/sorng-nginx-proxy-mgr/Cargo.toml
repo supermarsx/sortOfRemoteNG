@@ -4,6 +4,11 @@ name = "sorng-nginx-proxy-mgr"
 version.workspace = true
 edition = "2021"
 
+[features]
+# Opt-in live test against a real Nginx Proxy Manager container
+# (tests/docker_e2e.rs, owned by the e2e executor).
+docker-e2e = []
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -12,3 +17,11 @@ log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true, features = ["multipart"] }
+sorng-tls-trust = { path = "../sorng-tls-trust" }
+sorng-storage = { path = "../sorng-storage" }
+dirs = { workspace = true }
+
+[dev-dependencies]
+# Tests that build an https:// client need a process-level rustls
+# CryptoProvider (the app installs one at startup; per-crate tests do not).
+rustls = { workspace = true, features = ["ring"] }
