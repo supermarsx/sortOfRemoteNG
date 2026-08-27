@@ -285,27 +285,6 @@ export const S = {
   draytekRebootCancel: "button=Cancel",
   draytekOpenWebUi: "button*=Open Web UI",
 
-  // DrayTek Vigor panel (t68). The panel ships no data-testids yet, so these
-  // are text/placeholder selectors scoped by the spec to the panel root
-  // (the `h2` title's grandparent). Swap for testids once the panel adds them.
-  draytekPanelTitle: "h2*=DrayTek Vigor",
-  draytekHost: 'input[placeholder="192.168.1.1"]',
-  draytekName: 'input[placeholder="vigor-office"]',
-  draytekPort: 'input[inputmode="numeric"]',
-  draytekUsername: "label*=Username",
-  draytekPassword: 'input[type="password"]',
-  draytekUseTls: "label*=Use TLS",
-  draytekConnectBtn: "button*=Connect",
-  draytekDisconnectBtn: "button*=Disconnect",
-  draytekTabStatus: "button=Status",
-  draytekTabActions: "button=Actions",
-  draytekStatusTitle: "h3*=Device status",
-  draytekRebootBtn: "button*=Reboot router",
-  draytekRebootConfirm: '[role="alertdialog"]',
-  draytekRebootYes: "button*=Yes, reboot",
-  draytekRebootCancel: "button=Cancel",
-  draytekOpenWebUi: "button*=Open Web UI",
-
   // MySQL / MariaDB workbench (t69; testids per .orchestration/plans/t69.md D1.2)
   mysqlClient: '[data-testid="mysql-client"]',
   mysqlStatus: '[data-testid="mysql-status"]',
