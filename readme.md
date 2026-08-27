@@ -45,6 +45,7 @@ The project is under active development. Features that depend on an external ser
 | Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                                                              |
 | Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                                                                  |
 | Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                                                                  |
+| Virtualization  | Proxmox VE management sessions (password, TFA, or API-token auth, pinned self-signed certificates) alongside the LXD and VMware panels; see the [Proxmox guide](docs/integrations/proxmox.md)                                        |
 | Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                                                                    |
 
 ### Capability boundaries
