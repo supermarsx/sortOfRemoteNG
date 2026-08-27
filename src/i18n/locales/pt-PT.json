@@ -9374,6 +9374,12 @@
         "targetOverlap": "Uma base de dados de destino não pode ser também uma das origens da clonagem.",
         "targetRequired": "Selecione pelo menos uma base de dados de destino antes de continuar."
       }
+    },
+    "trustInclusion": {
+      "label": "Anfitriões e certificados fiáveis",
+      "exportDescription": "Incluir as chaves de anfitrião aceites, os certificados fixados e as respetivas políticas por anfitrião. Apenas material de chave pública, sem segredos.",
+      "importDescription": "Juntar os anfitriões e certificados fiáveis do ficheiro à base de dados de destino. As entradas revogadas nunca voltam a ser consideradas fiáveis.",
+      "cloneDescription": "Copiar os anfitriões e certificados fiáveis para que o clone não volte a perguntar por anfitriões em que a origem já confia."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz (máx. {{maximum}} MHz)",
         "versionWithBuild": "{{version}} (Compilação {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "Base de dados de confiança",
+      "storedIn": "Armazenado na base de dados «{{name}}»",
+      "unnamed": "Armazenado na base de dados aberta",
+      "noDatabase": "Nenhuma base de dados aberta",
+      "noDatabaseHint": "As decisões de confiança são guardadas por base de dados. Abra ou desbloqueie uma base de dados para as consultar ou alterar.",
+      "checking": "A verificar que base de dados contém os registos de confiança…",
+      "encrypted": "Encriptado",
+      "plaintext": "Sem encriptação",
+      "encryptedHint": "O ficheiro de confiança é encriptado com a chave mestra, tal como a base de dados a que pertence.",
+      "plaintextHint": "O ficheiro de confiança é guardado sem encriptação porque não existe encriptação mestra configurada.",
+      "records": "{{total}} identidades guardadas",
+      "seeded": "{{total}} migradas a partir dos ficheiros de confiança antigos",
+      "perDatabaseHint": "Um anfitrião considerado fiável aqui não o é noutra base de dados. Utilize Exportar e Importar para copiar decisões de confiança entre bases de dados."
+    },
+    "actions": {
+      "exportJson": "Exportar JSON",
+      "exportJsonHint": "Guarde os anfitriões e certificados fiáveis desta base de dados num ficheiro JSON. Apenas material de chave pública, sem segredos.",
+      "importJson": "Importar JSON",
+      "importJsonHint": "Junte anfitriões e certificados fiáveis a partir de um ficheiro JSON. As entradas revogadas nunca voltam a ser consideradas fiáveis.",
+      "importKnownHosts": "Importar de known_hosts",
+      "importKnownHostsHint": "Ler o ficheiro ~/.ssh/known_hosts do OpenSSH e adicionar a esta base de dados todas as chaves de anfitrião que contém."
+    },
+    "legacy": {
+      "title": "Ficheiros de confiança antigos",
+      "description": "As decisões de confiança anteriores ao armazenamento por base de dados continuam guardadas em ficheiros comuns a toda a aplicação. São lidas uma única vez para inicializar cada base de dados e nunca são modificadas.",
+      "storeFile": "trust_store.json — {{total}} identidades",
+      "rdpFile": "rdp-cert-trust.json — {{total}} certificados RDP",
+      "delete": "Eliminar os ficheiros de confiança antigos",
+      "blocked": "Abra cada base de dados uma vez para que os respetivos registos de confiança sejam migrados antes de eliminar os ficheiros antigos.",
+      "confirmTitle": "Eliminar os ficheiros de confiança antigos?",
+      "confirmBody": "trust_store.json e rdp-cert-trust.json serão removidos permanentemente. Uma base de dados que nunca tenha sido aberta passaria a começar com um Trust Center vazio.",
+      "confirm": "Eliminar",
+      "cancel": "Cancelar"
+    },
+    "status": {
+      "exported": "Registos de confiança guardados em {{path}}.",
+      "exportEmpty": "Nada para exportar: esta base de dados não tem registos de confiança.",
+      "exportFailed": "Não foi possível exportar os registos de confiança.",
+      "imported": "Importados {{imported}} registos de confiança, {{skipped}} ignorados.",
+      "importInvalid": "Esse ficheiro não é uma exportação do Trust Center.",
+      "importFailed": "Não foi possível importar os registos de confiança.",
+      "knownHostsImported": "Importadas {{total}} chaves de anfitrião a partir de known_hosts.",
+      "knownHostsFailed": "Não foi possível importar known_hosts.",
+      "legacyDeleted": "Removidos {{total}} ficheiros de confiança antigos.",
+      "legacyDeleteFailed": "Não foi possível eliminar os ficheiros de confiança antigos.",
+      "unavailable": "Esta ação só está disponível na aplicação para computador."
     }
   }
 }

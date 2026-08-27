@@ -83,6 +83,24 @@ vi.mock("../../src/utils/auth/trustStore", () => ({
   ensureTrustStoreReady: vi.fn(() => Promise.resolve()),
   retryTrustStoreHydration: vi.fn(() => Promise.resolve()),
   getTrustStoreAvailability: vi.fn(() => ({ state: "ready" })),
+  // t62: the Trust Center now reports which database it is reading. `resolved:
+  // false` is the pre-t62 fall-through the store keeps outside a Tauri shell.
+  getTrustStoreScope: vi.fn(() => ({
+    databaseId: null,
+    encrypted: false,
+    recordCount: 0,
+    seededRecords: 0,
+    resolved: false,
+  })),
+  refreshTrustStoreScope: vi.fn(() =>
+    Promise.resolve({
+      databaseId: null,
+      encrypted: false,
+      recordCount: 0,
+      seededRecords: 0,
+      resolved: false,
+    }),
+  ),
   removeIdentity: vi.fn(),
   clearAllTrustRecords: vi.fn(),
   resolveEffectiveTrustPolicy: vi.fn(
@@ -417,10 +435,11 @@ describe("Extended settings section centralization", () => {
 
     expect(screen.getByText("Default Trust Policy")).toBeInTheDocument();
     expect(screen.getByText("General Certificate Policy")).toBeInTheDocument();
-    // Trust Policies, Policy Guide, Verification Options, Stored Identities.
+    // Trust Database, Trust Policies, Policy Guide, Verification Options,
+    // Stored Identities.
     expect(
       container.querySelectorAll(".sor-settings-card").length,
-    ).toBeGreaterThanOrEqual(4);
+    ).toBeGreaterThanOrEqual(5);
     expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
       "text-primary",
     );
@@ -429,7 +448,7 @@ describe("Extended settings section centralization", () => {
     const sectionHeaders = Array.from(
       container.querySelectorAll(".sor-settings-section-header"),
     );
-    expect(sectionHeaders).toHaveLength(4);
+    expect(sectionHeaders).toHaveLength(5);
     for (const header of sectionHeaders) {
       const icon = header.firstElementChild;
       expect(icon?.tagName.toLowerCase()).toBe("svg");

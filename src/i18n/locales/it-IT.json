@@ -9374,6 +9374,12 @@
         "targetOverlap": "Un database di destinazione non può essere anche una delle origini della clonazione.",
         "targetRequired": "Seleziona almeno un database di destinazione prima di continuare."
       }
+    },
+    "trustInclusion": {
+      "label": "Host e certificati attendibili",
+      "exportDescription": "Includi le chiavi host accettate, i certificati fissati e le rispettive politiche per host. Solo materiale di chiave pubblica, nessun segreto.",
+      "importDescription": "Unisci gli host e i certificati attendibili del file nel database di destinazione. Le voci revocate non vengono mai riabilitate.",
+      "cloneDescription": "Copia gli host e i certificati attendibili in modo che il clone non richieda di nuovo conferma per gli host già attendibili nell'origine."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz (massimo {{maximum}} MHz)",
         "versionWithBuild": "{{version}} (build {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "Database di attendibilità",
+      "storedIn": "Memorizzato nel database «{{name}}»",
+      "unnamed": "Memorizzato nel database aperto",
+      "noDatabase": "Nessun database aperto",
+      "noDatabaseHint": "Le decisioni di attendibilità sono salvate per database. Apri o sblocca un database per consultarle o modificarle.",
+      "checking": "Ricerca del database che contiene i record di attendibilità…",
+      "encrypted": "Crittografato",
+      "plaintext": "In chiaro",
+      "encryptedHint": "Il file di attendibilità è crittografato con la chiave master, esattamente come il database a cui appartiene.",
+      "plaintextHint": "Il file di attendibilità è salvato in chiaro perché non è configurata alcuna crittografia master.",
+      "records": "{{total}} identità memorizzate",
+      "seeded": "{{total}} migrate dai vecchi file di attendibilità",
+      "perDatabaseHint": "Un host considerato attendibile qui non lo è in un altro database. Usa Esporta e Importa per copiare le decisioni di attendibilità tra database."
+    },
+    "actions": {
+      "exportJson": "Esporta JSON",
+      "exportJsonHint": "Salva gli host e i certificati attendibili di questo database in un file JSON. Solo materiale di chiave pubblica, nessun segreto.",
+      "importJson": "Importa JSON",
+      "importJsonHint": "Unisci host e certificati attendibili da un file JSON. Le voci revocate non vengono mai riabilitate.",
+      "importKnownHosts": "Importa da known_hosts",
+      "importKnownHostsHint": "Legge il file ~/.ssh/known_hosts di OpenSSH e aggiunge a questo database ogni chiave host che contiene."
+    },
+    "legacy": {
+      "title": "Vecchi file di attendibilità",
+      "description": "Le decisioni di attendibilità precedenti all'archiviazione per database sono ancora conservate in file comuni all'applicazione. Vengono lette una sola volta per inizializzare ogni database e non vengono mai modificate.",
+      "storeFile": "trust_store.json — {{total}} identità",
+      "rdpFile": "rdp-cert-trust.json — {{total}} certificati RDP",
+      "delete": "Elimina i vecchi file di attendibilità",
+      "blocked": "Apri una volta ogni database affinché i suoi record di attendibilità vengano migrati prima di eliminare i vecchi file.",
+      "confirmTitle": "Eliminare i vecchi file di attendibilità?",
+      "confirmBody": "trust_store.json e rdp-cert-trust.json verranno rimossi definitivamente. Un database mai aperto partirebbe quindi con un Trust Center vuoto.",
+      "confirm": "Elimina",
+      "cancel": "Annulla"
+    },
+    "status": {
+      "exported": "Record di attendibilità salvati in {{path}}.",
+      "exportEmpty": "Niente da esportare: questo database non contiene record di attendibilità.",
+      "exportFailed": "Non è stato possibile esportare i record di attendibilità.",
+      "imported": "Importati {{imported}} record di attendibilità, {{skipped}} ignorati.",
+      "importInvalid": "Questo file non è un'esportazione del Trust Center.",
+      "importFailed": "Non è stato possibile importare i record di attendibilità.",
+      "knownHostsImported": "Importate {{total}} chiavi host da known_hosts.",
+      "knownHostsFailed": "Non è stato possibile importare known_hosts.",
+      "legacyDeleted": "Rimossi {{total}} vecchi file di attendibilità.",
+      "legacyDeleteFailed": "Non è stato possibile eliminare i vecchi file di attendibilità.",
+      "unavailable": "Questa azione è disponibile solo nell'app desktop."
     }
   }
 }

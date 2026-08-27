@@ -9374,6 +9374,12 @@
         "targetOverlap": "Eine Zieldatenbank darf nicht gleichzeitig eine der Klonquellen sein.",
         "targetRequired": "Wählen Sie mindestens eine Zieldatenbank aus, bevor Sie fortfahren."
       }
+    },
+    "trustInclusion": {
+      "label": "Vertraute Hosts und Zertifikate",
+      "exportDescription": "Akzeptierte Hostschlüssel, angeheftete Zertifikate und deren Richtlinien pro Host einbeziehen. Nur öffentliches Schlüsselmaterial – keine Geheimnisse.",
+      "importDescription": "Vertraute Hosts und Zertifikate aus der Datei in die Zieldatenbank zusammenführen. Widerrufene Einträge werden nie erneut als vertrauenswürdig eingestuft.",
+      "cloneDescription": "Vertraute Hosts und Zertifikate mitkopieren, damit der Klon für bereits vertraute Hosts nicht erneut nachfragt."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz (max. {{maximum}} MHz)",
         "versionWithBuild": "{{version}} (Build {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "Vertrauensdatenbank",
+      "storedIn": "Gespeichert in der Datenbank „{{name}}“",
+      "unnamed": "In der geöffneten Datenbank gespeichert",
+      "noDatabase": "Keine Datenbank geöffnet",
+      "noDatabaseHint": "Vertrauensentscheidungen werden pro Datenbank gespeichert. Öffnen oder entsperren Sie eine Datenbank, um sie einzusehen oder zu ändern.",
+      "checking": "Es wird ermittelt, welche Datenbank die Vertrauenseinträge enthält…",
+      "encrypted": "Verschlüsselt",
+      "plaintext": "Klartext",
+      "encryptedHint": "Die Vertrauensdatei wird mit dem Hauptschlüssel verschlüsselt, genau wie die zugehörige Datenbank.",
+      "plaintextHint": "Die Vertrauensdatei wird unverschlüsselt gespeichert, weil keine Hauptverschlüsselung eingerichtet ist.",
+      "records": "{{total}} gespeicherte Identitäten",
+      "seeded": "{{total}} aus den alten Vertrauensdateien übernommen",
+      "perDatabaseHint": "Ein hier vertrauter Host gilt in einer anderen Datenbank nicht als vertrauenswürdig. Verwenden Sie Exportieren und Importieren, um Vertrauensentscheidungen zwischen Datenbanken zu kopieren."
+    },
+    "actions": {
+      "exportJson": "JSON exportieren",
+      "exportJsonHint": "Die vertrauten Hosts und Zertifikate dieser Datenbank in einer JSON-Datei speichern. Nur öffentliches Schlüsselmaterial – keine Geheimnisse.",
+      "importJson": "JSON importieren",
+      "importJsonHint": "Vertraute Hosts und Zertifikate aus einer JSON-Datei zusammenführen. Widerrufene Einträge werden nie erneut als vertrauenswürdig eingestuft.",
+      "importKnownHosts": "Aus known_hosts importieren",
+      "importKnownHostsHint": "Die Datei ~/.ssh/known_hosts von OpenSSH lesen und jeden darin enthaltenen Hostschlüssel in diese Datenbank aufnehmen."
+    },
+    "legacy": {
+      "title": "Alte Vertrauensdateien",
+      "description": "Vertrauensentscheidungen aus der Zeit vor der Speicherung pro Datenbank liegen weiterhin in anwendungsweiten Dateien. Sie werden einmalig gelesen, um jede Datenbank zu befüllen, und nie verändert.",
+      "storeFile": "trust_store.json – {{total}} Identitäten",
+      "rdpFile": "rdp-cert-trust.json – {{total}} RDP-Zertifikate",
+      "delete": "Alte Vertrauensdateien löschen",
+      "blocked": "Öffnen Sie jede Datenbank einmal, damit ihre Vertrauenseinträge übernommen werden, bevor Sie die alten Dateien löschen.",
+      "confirmTitle": "Die alten Vertrauensdateien löschen?",
+      "confirmBody": "trust_store.json und rdp-cert-trust.json werden endgültig entfernt. Eine nie geöffnete Datenbank würde dann mit einem leeren Trust Center starten.",
+      "confirm": "Löschen",
+      "cancel": "Abbrechen"
+    },
+    "status": {
+      "exported": "Vertrauenseinträge gespeichert unter {{path}}.",
+      "exportEmpty": "Nichts zu exportieren – diese Datenbank enthält keine Vertrauenseinträge.",
+      "exportFailed": "Die Vertrauenseinträge konnten nicht exportiert werden.",
+      "imported": "{{imported}} Vertrauenseinträge importiert, {{skipped}} übersprungen.",
+      "importInvalid": "Diese Datei ist kein Export des Trust Centers.",
+      "importFailed": "Die Vertrauenseinträge konnten nicht importiert werden.",
+      "knownHostsImported": "{{total}} Hostschlüssel aus known_hosts importiert.",
+      "knownHostsFailed": "known_hosts konnte nicht importiert werden.",
+      "legacyDeleted": "{{total}} alte Vertrauensdateien entfernt.",
+      "legacyDeleteFailed": "Die alten Vertrauensdateien konnten nicht gelöscht werden.",
+      "unavailable": "Diese Aktion ist nur in der Desktop-App verfügbar."
     }
   }
 }

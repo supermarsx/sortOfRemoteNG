@@ -1098,6 +1098,59 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
     section: "trust",
     sectionLabel: "Trust Center",
   },
+  {
+    key: "trustDatabase",
+    label: "Trust Database",
+    description:
+      "Which database stores the trusted hosts and certificates, and whether that file is encrypted",
+    tags: [
+      "database",
+      "collection",
+      "scope",
+      "encrypted",
+      "plaintext",
+      "per-database",
+      "trust",
+    ],
+    section: "trust",
+    sectionLabel: "Trust Center",
+  },
+  {
+    key: "trustExportJson",
+    label: "Export Trust Records",
+    description:
+      "Save this database's trusted hosts and certificates to a JSON file",
+    tags: ["export", "json", "backup", "trust", "certificate", "host key"],
+    section: "trust",
+    sectionLabel: "Trust Center",
+  },
+  {
+    key: "trustImportJson",
+    label: "Import Trust Records",
+    description:
+      "Merge trusted hosts and certificates from a JSON file into this database",
+    tags: ["import", "json", "restore", "merge", "trust", "certificate"],
+    section: "trust",
+    sectionLabel: "Trust Center",
+  },
+  {
+    key: "trustImportKnownHosts",
+    label: "Import known_hosts",
+    description:
+      "Import SSH host keys from OpenSSH's ~/.ssh/known_hosts into the Trust Center",
+    tags: ["known_hosts", "ssh", "openssh", "host key", "import", "migrate"],
+    section: "trust",
+    sectionLabel: "Trust Center",
+  },
+  {
+    key: "trustLegacyStores",
+    label: "Legacy Trust Files",
+    description:
+      "Review and delete the pre-per-database trust_store.json and rdp-cert-trust.json sidecars",
+    tags: ["legacy", "migration", "cleanup", "delete", "trust", "rdp"],
+    section: "trust",
+    sectionLabel: "Trust Center",
+  },
 
   // ─── Performance ────────────────────────────────────────────────
   {
@@ -1601,6 +1654,24 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
     label: "Export Encryption",
     description: "Encrypt exported data",
     tags: ["export", "encryption", "secure", "password"],
+    section: "advanced",
+    sectionLabel: "Advanced",
+  },
+  {
+    key: "protocolRepair",
+    label: "Connection Maintenance",
+    description:
+      "Review and repair connections that were imported with the wrong protocol, such as HTTPS saved as RDP",
+    tags: [
+      "repair",
+      "fix",
+      "protocol",
+      "rdp",
+      "https",
+      "import",
+      "maintenance",
+      "mremoteng",
+    ],
     section: "advanced",
     sectionLabel: "Advanced",
   },

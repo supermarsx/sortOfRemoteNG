@@ -9374,6 +9374,12 @@
         "targetOverlap": "대상 데이터베이스는 동시에 복제 원본일 수 없습니다.",
         "targetRequired": "계속하기 전에 대상 데이터베이스를 하나 이상 선택하세요."
       }
+    },
+    "trustInclusion": {
+      "label": "신뢰된 호스트 및 인증서",
+      "exportDescription": "수락된 호스트 키, 고정된 인증서 및 호스트별 정책을 포함합니다. 공개 키 자료만 포함되며 비밀 정보는 없습니다.",
+      "importDescription": "파일의 신뢰된 호스트와 인증서를 대상 데이터베이스에 병합합니다. 취소된 항목은 다시 신뢰되지 않습니다.",
+      "cloneDescription": "신뢰된 호스트와 인증서를 복사하여, 원본이 이미 신뢰하는 호스트에 대해 복제본이 다시 묻지 않도록 합니다."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz(최대 {{maximum}} MHz)",
         "versionWithBuild": "{{version}}(빌드 {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "신뢰 데이터베이스",
+      "storedIn": "«{{name}}» 데이터베이스에 저장됨",
+      "unnamed": "열려 있는 데이터베이스에 저장됨",
+      "noDatabase": "열려 있는 데이터베이스가 없습니다",
+      "noDatabaseHint": "신뢰 결정은 데이터베이스별로 저장됩니다. 확인하거나 변경하려면 데이터베이스를 열거나 잠금을 해제하세요.",
+      "checking": "신뢰 레코드를 보관 중인 데이터베이스를 확인하는 중…",
+      "encrypted": "암호화됨",
+      "plaintext": "평문",
+      "encryptedHint": "신뢰 파일은 해당 데이터베이스와 동일하게 마스터 키로 암호화됩니다.",
+      "plaintextHint": "마스터 암호화가 구성되어 있지 않아 신뢰 파일이 암호화되지 않은 상태로 저장됩니다.",
+      "records": "저장된 ID {{total}}개",
+      "seeded": "이전 신뢰 파일에서 {{total}}개를 이전했습니다",
+      "perDatabaseHint": "여기에서 신뢰한 호스트는 다른 데이터베이스에서는 신뢰되지 않습니다. 데이터베이스 간에 신뢰 결정을 복사하려면 내보내기와 가져오기를 사용하세요."
+    },
+    "actions": {
+      "exportJson": "JSON 내보내기",
+      "exportJsonHint": "이 데이터베이스의 신뢰된 호스트와 인증서를 JSON 파일로 저장합니다. 공개 키 자료만 포함되며 비밀 정보는 없습니다.",
+      "importJson": "JSON 가져오기",
+      "importJsonHint": "JSON 파일의 신뢰된 호스트와 인증서를 병합합니다. 취소된 항목은 다시 신뢰되지 않습니다.",
+      "importKnownHosts": "known_hosts에서 가져오기",
+      "importKnownHostsHint": "OpenSSH의 ~/.ssh/known_hosts 파일을 읽어 그 안의 모든 호스트 키를 이 데이터베이스에 추가합니다."
+    },
+    "legacy": {
+      "title": "이전 신뢰 파일",
+      "description": "데이터베이스별 저장 방식 이전의 신뢰 결정은 여전히 앱 전체 파일에 남아 있습니다. 각 데이터베이스를 초기화할 때 한 번만 읽히며 절대 수정되지 않습니다.",
+      "storeFile": "trust_store.json — ID {{total}}개",
+      "rdpFile": "rdp-cert-trust.json — RDP 인증서 {{total}}개",
+      "delete": "이전 신뢰 파일 삭제",
+      "blocked": "이전 파일을 삭제하기 전에 각 데이터베이스를 한 번씩 열어 신뢰 레코드를 이전하세요.",
+      "confirmTitle": "이전 신뢰 파일을 삭제할까요?",
+      "confirmBody": "trust_store.json과 rdp-cert-trust.json이 영구적으로 제거됩니다. 한 번도 열지 않은 데이터베이스는 이후 빈 트러스트 센터로 시작됩니다.",
+      "confirm": "삭제",
+      "cancel": "취소"
+    },
+    "status": {
+      "exported": "신뢰 레코드를 {{path}}에 저장했습니다.",
+      "exportEmpty": "내보낼 항목이 없습니다. 이 데이터베이스에는 신뢰 레코드가 없습니다.",
+      "exportFailed": "신뢰 레코드를 내보내지 못했습니다.",
+      "imported": "신뢰 레코드 {{imported}}개를 가져오고 {{skipped}}개를 건너뛰었습니다.",
+      "importInvalid": "이 파일은 트러스트 센터 내보내기 파일이 아닙니다.",
+      "importFailed": "신뢰 레코드를 가져오지 못했습니다.",
+      "knownHostsImported": "known_hosts에서 호스트 키 {{total}}개를 가져왔습니다.",
+      "knownHostsFailed": "known_hosts를 가져오지 못했습니다.",
+      "legacyDeleted": "이전 신뢰 파일 {{total}}개를 제거했습니다.",
+      "legacyDeleteFailed": "이전 신뢰 파일을 삭제하지 못했습니다.",
+      "unavailable": "이 작업은 데스크톱 앱에서만 사용할 수 있습니다."
     }
   }
 }

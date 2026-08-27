@@ -9374,6 +9374,12 @@
         "targetOverlap": "A target database cannot also be one of the clone sources.",
         "targetRequired": "Choose at least one target database before continuing."
       }
+    },
+    "trustInclusion": {
+      "label": "Trusted hosts & certificates",
+      "exportDescription": "Include accepted host keys, pinned certificates and their per-host policies. Public key material only — nay secrets.",
+      "importDescription": "Merge trusted hosts and certificates from the chart into the target database. Revoked entries are never re-trusted.",
+      "cloneDescription": "Copy trusted hosts and certificates so the clone does not prompt again for hosts the source already trusts."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz (max {{maximum}} MHz)",
         "versionWithBuild": "{{version}} (Build {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "Trust Database",
+      "storedIn": "Stored in database “{{name}}”",
+      "unnamed": "Stored in the unfurl database",
+      "noDatabase": "Nay database is unfurl",
+      "noDatabaseHint": "Trust decisions are stored per database. Unfurl or unlock a database to review or change them.",
+      "checking": "Checking which database holds the trust records…",
+      "encrypted": "Encrypted",
+      "plaintext": "Plaintext",
+      "encryptedHint": "The trust chart is encrypted with the master key, exactly like the database it belongs to.",
+      "plaintextHint": "The trust chart is stored unencrypted because nay master encryption is configured.",
+      "records": "{{total}} stored identities",
+      "seeded": "{{total}} migrated from the legacy trust charts",
+      "perDatabaseHint": "A host trusted here is not trusted in another database. Use Export and Import to copy trust decisions between databases."
+    },
+    "actions": {
+      "exportJson": "Export JSON",
+      "exportJsonHint": "Stow this database's trusted hosts and certificates to a JSON chart. Public key material only — nay secrets.",
+      "importJson": "Import JSON",
+      "importJsonHint": "Merge trusted hosts and certificates from a JSON chart. Revoked entries are never re-trusted.",
+      "importKnownHosts": "Import from known_hosts",
+      "importKnownHostsHint": "Read OpenSSH's ~/.ssh/known_hosts and add every host key it contains to this database."
+    },
+    "legacy": {
+      "title": "Legacy trust charts",
+      "description": "Trust decisions from before per-database storage are still kept in app-wide charts. They are read once to seed each database and are never modified.",
+      "storeFile": "trust_store.json — {{total}} identities",
+      "rdpFile": "rdp-cert-trust.json — {{total}} RDP certificates",
+      "delete": "Scuttle legacy trust charts",
+      "blocked": "Unfurl every database once so its trust records are migrated before deleting the legacy charts.",
+      "confirmTitle": "Scuttle the legacy trust charts?",
+      "confirmBody": "trust_store.json and rdp-cert-trust.json are removed permanently. A database that was never opened would then start with an empty Trust Center.",
+      "confirm": "Scuttle",
+      "cancel": "Belay"
+    },
+    "status": {
+      "exported": "Trust records saved to {{path}}.",
+      "exportEmpty": "Nothing to export — this database has nay trust records.",
+      "exportFailed": "The trust records could not be exported.",
+      "imported": "Imported {{imported}} trust records, skipped {{skipped}}.",
+      "importInvalid": "That chart is not a Trust Center export.",
+      "importFailed": "The trust records could not be imported.",
+      "knownHostsImported": "Imported {{total}} host keys from known_hosts.",
+      "knownHostsFailed": "known_hosts could not be imported.",
+      "legacyDeleted": "Removed {{total}} legacy trust charts.",
+      "legacyDeleteFailed": "The legacy trust charts could not be deleted.",
+      "unavailable": "This action is only available in the desktop app."
     }
   }
 }

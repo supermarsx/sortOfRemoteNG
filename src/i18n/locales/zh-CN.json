@@ -9374,6 +9374,12 @@
         "targetOverlap": "目标数据库不能同时作为克隆源。",
         "targetRequired": "继续之前，请至少选择一个目标数据库。"
       }
+    },
+    "trustInclusion": {
+      "label": "受信任的主机和证书",
+      "exportDescription": "包含已接受的主机密钥、已固定的证书及其各主机策略。仅包含公钥材料，不含任何机密信息。",
+      "importDescription": "将文件中的受信任主机和证书合并到目标数据库。已吊销的条目永远不会重新受信任。",
+      "cloneDescription": "复制受信任的主机和证书，使副本不再对源已信任的主机重复询问。"
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz（最高 {{maximum}} MHz）",
         "versionWithBuild": "{{version}}（内部版本 {{build}}）"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "信任数据库",
+      "storedIn": "存储在数据库“{{name}}”中",
+      "unnamed": "存储在已打开的数据库中",
+      "noDatabase": "没有打开的数据库",
+      "noDatabaseHint": "信任决定按数据库分别保存。请打开或解锁一个数据库以查看或修改。",
+      "checking": "正在确定哪个数据库保存了信任记录…",
+      "encrypted": "已加密",
+      "plaintext": "明文",
+      "encryptedHint": "信任文件使用主密钥加密，与其所属的数据库完全一致。",
+      "plaintextHint": "由于未配置主加密，信任文件以未加密方式保存。",
+      "records": "已存储 {{total}} 个身份",
+      "seeded": "已从旧信任文件迁移 {{total}} 个",
+      "perDatabaseHint": "在此信任的主机在其他数据库中并不受信任。请使用导出和导入在数据库之间复制信任决定。"
+    },
+    "actions": {
+      "exportJson": "导出 JSON",
+      "exportJsonHint": "将此数据库的受信任主机和证书保存为 JSON 文件。仅包含公钥材料，不含任何机密信息。",
+      "importJson": "导入 JSON",
+      "importJsonHint": "合并 JSON 文件中的受信任主机和证书。已吊销的条目永远不会重新受信任。",
+      "importKnownHosts": "从 known_hosts 导入",
+      "importKnownHostsHint": "读取 OpenSSH 的 ~/.ssh/known_hosts 文件，并将其中的每个主机密钥添加到此数据库。"
+    },
+    "legacy": {
+      "title": "旧信任文件",
+      "description": "按数据库存储之前的信任决定仍保存在应用级文件中。它们仅在初始化每个数据库时读取一次，且从不被修改。",
+      "storeFile": "trust_store.json — {{total}} 个身份",
+      "rdpFile": "rdp-cert-trust.json — {{total}} 个 RDP 证书",
+      "delete": "删除旧信任文件",
+      "blocked": "请先打开每个数据库一次以迁移其信任记录，然后再删除旧文件。",
+      "confirmTitle": "删除旧信任文件？",
+      "confirmBody": "trust_store.json 和 rdp-cert-trust.json 将被永久删除。从未打开过的数据库此后将以空的信任中心启动。",
+      "confirm": "删除",
+      "cancel": "取消"
+    },
+    "status": {
+      "exported": "信任记录已保存至 {{path}}。",
+      "exportEmpty": "没有可导出的内容：此数据库没有信任记录。",
+      "exportFailed": "无法导出信任记录。",
+      "imported": "已导入 {{imported}} 条信任记录，跳过 {{skipped}} 条。",
+      "importInvalid": "该文件不是信任中心导出文件。",
+      "importFailed": "无法导入信任记录。",
+      "knownHostsImported": "已从 known_hosts 导入 {{total}} 个主机密钥。",
+      "knownHostsFailed": "无法导入 known_hosts。",
+      "legacyDeleted": "已删除 {{total}} 个旧信任文件。",
+      "legacyDeleteFailed": "无法删除旧信任文件。",
+      "unavailable": "此操作仅在桌面应用中可用。"
     }
   }
 }

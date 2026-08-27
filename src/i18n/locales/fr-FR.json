@@ -9374,6 +9374,12 @@
         "targetOverlap": "Une base de données cible ne peut pas également faire partie des sources du clonage.",
         "targetRequired": "Sélectionnez au moins une base de données cible avant de continuer."
       }
+    },
+    "trustInclusion": {
+      "label": "Hôtes et certificats approuvés",
+      "exportDescription": "Inclure les clés d'hôte acceptées, les certificats épinglés et leurs stratégies par hôte. Uniquement du matériel de clé publique, aucun secret.",
+      "importDescription": "Fusionner les hôtes et certificats approuvés du fichier dans la base de données cible. Les entrées révoquées ne sont jamais réapprouvées.",
+      "cloneDescription": "Copier les hôtes et certificats approuvés afin que le clone ne redemande pas confirmation pour les hôtes déjà approuvés par la source."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz (max. {{maximum}} MHz)",
         "versionWithBuild": "{{version}} (build {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "Base de données de confiance",
+      "storedIn": "Stocké dans la base de données « {{name}} »",
+      "unnamed": "Stocké dans la base de données ouverte",
+      "noDatabase": "Aucune base de données n'est ouverte",
+      "noDatabaseHint": "Les décisions de confiance sont enregistrées par base de données. Ouvrez ou déverrouillez une base de données pour les consulter ou les modifier.",
+      "checking": "Recherche de la base de données contenant les enregistrements de confiance…",
+      "encrypted": "Chiffré",
+      "plaintext": "En clair",
+      "encryptedHint": "Le fichier de confiance est chiffré avec la clé maîtresse, exactement comme la base de données à laquelle il appartient.",
+      "plaintextHint": "Le fichier de confiance est stocké en clair car aucun chiffrement maître n'est configuré.",
+      "records": "{{total}} identités enregistrées",
+      "seeded": "{{total}} migrées depuis les anciens fichiers de confiance",
+      "perDatabaseHint": "Un hôte approuvé ici ne l'est pas dans une autre base de données. Utilisez Exporter et Importer pour copier les décisions de confiance d'une base à l'autre."
+    },
+    "actions": {
+      "exportJson": "Exporter en JSON",
+      "exportJsonHint": "Enregistrez les hôtes et certificats approuvés de cette base de données dans un fichier JSON. Uniquement du matériel de clé publique, aucun secret.",
+      "importJson": "Importer un JSON",
+      "importJsonHint": "Fusionnez les hôtes et certificats approuvés d'un fichier JSON. Les entrées révoquées ne sont jamais réapprouvées.",
+      "importKnownHosts": "Importer depuis known_hosts",
+      "importKnownHostsHint": "Lire le fichier ~/.ssh/known_hosts d'OpenSSH et ajouter à cette base de données chaque clé d'hôte qu'il contient."
+    },
+    "legacy": {
+      "title": "Anciens fichiers de confiance",
+      "description": "Les décisions de confiance antérieures au stockage par base de données restent conservées dans des fichiers communs à l'application. Elles sont lues une seule fois pour initialiser chaque base de données et ne sont jamais modifiées.",
+      "storeFile": "trust_store.json — {{total}} identités",
+      "rdpFile": "rdp-cert-trust.json — {{total}} certificats RDP",
+      "delete": "Supprimer les anciens fichiers de confiance",
+      "blocked": "Ouvrez chaque base de données une fois afin que ses enregistrements de confiance soient migrés avant de supprimer les anciens fichiers.",
+      "confirmTitle": "Supprimer les anciens fichiers de confiance ?",
+      "confirmBody": "trust_store.json et rdp-cert-trust.json seront supprimés définitivement. Une base de données jamais ouverte démarrerait alors avec un Trust Center vide.",
+      "confirm": "Supprimer",
+      "cancel": "Annuler"
+    },
+    "status": {
+      "exported": "Enregistrements de confiance sauvegardés dans {{path}}.",
+      "exportEmpty": "Rien à exporter : cette base de données ne contient aucun enregistrement de confiance.",
+      "exportFailed": "Les enregistrements de confiance n'ont pas pu être exportés.",
+      "imported": "{{imported}} enregistrements de confiance importés, {{skipped}} ignorés.",
+      "importInvalid": "Ce fichier n'est pas un export du Trust Center.",
+      "importFailed": "Les enregistrements de confiance n'ont pas pu être importés.",
+      "knownHostsImported": "{{total}} clés d'hôte importées depuis known_hosts.",
+      "knownHostsFailed": "known_hosts n'a pas pu être importé.",
+      "legacyDeleted": "{{total}} anciens fichiers de confiance supprimés.",
+      "legacyDeleteFailed": "Les anciens fichiers de confiance n'ont pas pu être supprimés.",
+      "unavailable": "Cette action n'est disponible que dans l'application de bureau."
     }
   }
 }

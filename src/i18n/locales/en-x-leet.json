@@ -9374,6 +9374,12 @@
         "targetOverlap": "4 74r637 d4748453 c4nn07 4150 83 0n3 0f 7h3 c10n3 50urc35.",
         "targetRequired": "Ch0053 47 13457 0n3 74r637 d4748453 83f0r3 c0n71nu1n6."
       }
+    },
+    "trustInclusion": {
+      "label": "7ru573d h0575 & c3r71f1c4735",
+      "exportDescription": "1nc1ud3 4cc3p73d h057 k3y5, p1nn3d c3r71f1c4735 4nd 7h31r per-host p011c135. Pu811c k3y m473r141 0n1y — n0 53cr375.",
+      "importDescription": "M3r63 7ru573d h0575 4nd c3r71f1c4735 fr0m 7h3 f113 1n70 7h3 74r637 d4748453. R3v0k3d 3n7r135 4r3 n3v3r re-trusted.",
+      "cloneDescription": "C0py 7ru573d h0575 4nd c3r71f1c4735 50 7h3 c10n3 d035 n07 pr0mp7 4641n f0r h0575 7h3 50urc3 41r34dy 7ru575."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MH2 (m4x {{maximum}} MH2)",
         "versionWithBuild": "{{version}} (8u11d {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "7ru57 D4748453",
+      "storedIn": "570r3d 1n d4748453 “{{name}}”",
+      "unnamed": "570r3d 1n 7h3 0p3n d4748453",
+      "noDatabase": "N0 d4748453 15 0p3n",
+      "noDatabaseHint": "7ru57 d3c1510n5 4r3 570r3d p3r d4748453. 0p3n 0r un10ck 4 d4748453 70 r3v13w 0r ch4n63 7h3m.",
+      "checking": "Ch3ck1n6 wh1ch d4748453 h01d5 7h3 7ru57 r3c0rd5…",
+      "encrypted": "3ncryp73d",
+      "plaintext": "P141n73x7",
+      "encryptedHint": "7h3 7ru57 f113 15 3ncryp73d w17h 7h3 m4573r k3y, 3x4c71y 11k3 7h3 d4748453 17 8310n65 70.",
+      "plaintextHint": "7h3 7ru57 f113 15 570r3d un3ncryp73d 83c4u53 n0 m4573r 3ncryp710n 15 c0nf16ur3d.",
+      "records": "{{total}} 570r3d 1d3n717135",
+      "seeded": "{{total}} m16r473d fr0m 7h3 1364cy 7ru57 f1135",
+      "perDatabaseHint": "4 h057 7ru573d h3r3 15 n07 7ru573d 1n 4n07h3r d4748453. U53 3xp0r7 4nd 1mp0r7 70 c0py 7ru57 d3c1510n5 837w33n d47484535."
+    },
+    "actions": {
+      "exportJson": "3xp0r7 JSON",
+      "exportJsonHint": "54v3 7h15 d4748453'5 7ru573d h0575 4nd c3r71f1c4735 70 4 JSON f113. Pu811c k3y m473r141 0n1y — n0 53cr375.",
+      "importJson": "1mp0r7 JSON",
+      "importJsonHint": "M3r63 7ru573d h0575 4nd c3r71f1c4735 fr0m 4 JSON f113. R3v0k3d 3n7r135 4r3 n3v3r re-trusted.",
+      "importKnownHosts": "1mp0r7 fr0m known_hosts",
+      "importKnownHostsHint": "R34d OpenSSH'5 ~/.ssh/known_hosts 4nd 4dd 3v3ry h057 k3y 17 c0n741n5 70 7h15 d4748453."
+    },
+    "legacy": {
+      "title": "1364cy 7ru57 f1135",
+      "description": "7ru57 d3c1510n5 fr0m 83f0r3 per-database 570r463 4r3 57111 k3p7 1n app-wide f1135. 7h3y 4r3 r34d 0nc3 70 533d 34ch d4748453 4nd 4r3 n3v3r m0d1f13d.",
+      "storeFile": "trust_store.json — {{total}} 1d3n717135",
+      "rdpFile": "rdp-cert-trust.json — {{total}} RDP c3r71f1c4735",
+      "delete": "D31373 1364cy 7ru57 f1135",
+      "blocked": "0p3n 3v3ry d4748453 0nc3 50 175 7ru57 r3c0rd5 4r3 m16r473d 83f0r3 d31371n6 7h3 1364cy f1135.",
+      "confirmTitle": "D31373 7h3 1364cy 7ru57 f1135?",
+      "confirmBody": "trust_store.json 4nd rdp-cert-trust.json 4r3 r3m0v3d p3rm4n3n71y. 4 d4748453 7h47 w45 n3v3r 0p3n3d w0u1d 7h3n 574r7 w17h 4n 3mp7y 7ru57 C3n73r.",
+      "confirm": "D31373",
+      "cancel": "C4nc31"
+    },
+    "status": {
+      "exported": "7ru57 r3c0rd5 54v3d 70 {{path}}.",
+      "exportEmpty": "N07h1n6 70 3xp0r7 — 7h15 d4748453 h45 n0 7ru57 r3c0rd5.",
+      "exportFailed": "7h3 7ru57 r3c0rd5 c0u1d n07 83 3xp0r73d.",
+      "imported": "1mp0r73d {{imported}} 7ru57 r3c0rd5, 5k1pp3d {{skipped}}.",
+      "importInvalid": "7h47 f113 15 n07 4 7ru57 C3n73r 3xp0r7.",
+      "importFailed": "7h3 7ru57 r3c0rd5 c0u1d n07 83 1mp0r73d.",
+      "knownHostsImported": "1mp0r73d {{total}} h057 k3y5 fr0m known_hosts.",
+      "knownHostsFailed": "known_hosts c0u1d n07 83 1mp0r73d.",
+      "legacyDeleted": "R3m0v3d {{total}} 1364cy 7ru57 f1135.",
+      "legacyDeleteFailed": "7h3 1364cy 7ru57 f1135 c0u1d n07 83 d31373d.",
+      "unavailable": "7h15 4c710n 15 0n1y 4v4114813 1n 7h3 d35k70p 4pp."
     }
   }
 }

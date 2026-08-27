@@ -9374,6 +9374,12 @@
         "targetOverlap": "ターゲットデータベースをクローン元として同時に使用することはできません。",
         "targetRequired": "続行する前に、ターゲットデータベースを 1 つ以上選択してください。"
       }
+    },
+    "trustInclusion": {
+      "label": "信頼済みホストと証明書",
+      "exportDescription": "承認済みのホスト鍵、固定した証明書、およびホストごとのポリシーを含めます。公開鍵情報のみで、秘密情報は含まれません。",
+      "importDescription": "ファイル内の信頼済みホストと証明書を対象のデータベースに統合します。失効した項目が再び信頼されることはありません。",
+      "cloneDescription": "信頼済みホストと証明書をコピーし、複製先で既に信頼済みのホストについて再度確認されないようにします。"
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz（最大 {{maximum}} MHz）",
         "versionWithBuild": "{{version}}（ビルド {{build}}）"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "信頼データベース",
+      "storedIn": "データベース「{{name}}」に保存",
+      "unnamed": "開いているデータベースに保存",
+      "noDatabase": "データベースが開かれていません",
+      "noDatabaseHint": "信頼の判断はデータベースごとに保存されます。確認または変更するには、データベースを開くかロックを解除してください。",
+      "checking": "信頼レコードを保持しているデータベースを確認しています…",
+      "encrypted": "暗号化済み",
+      "plaintext": "平文",
+      "encryptedHint": "信頼ファイルは、所属するデータベースと同じようにマスターキーで暗号化されます。",
+      "plaintextHint": "マスター暗号化が設定されていないため、信頼ファイルは暗号化されずに保存されます。",
+      "records": "保存済みID {{total}} 件",
+      "seeded": "旧信頼ファイルから {{total}} 件を移行しました",
+      "perDatabaseHint": "ここで信頼したホストは、別のデータベースでは信頼されません。データベース間で信頼の判断をコピーするには、エクスポートとインポートを使用してください。"
+    },
+    "actions": {
+      "exportJson": "JSONをエクスポート",
+      "exportJsonHint": "このデータベースの信頼済みホストと証明書をJSONファイルに保存します。公開鍵情報のみで、秘密情報は含まれません。",
+      "importJson": "JSONをインポート",
+      "importJsonHint": "JSONファイルから信頼済みホストと証明書を統合します。失効した項目が再び信頼されることはありません。",
+      "importKnownHosts": "known_hostsからインポート",
+      "importKnownHostsHint": "OpenSSHの ~/.ssh/known_hosts を読み取り、含まれるすべてのホスト鍵をこのデータベースに追加します。"
+    },
+    "legacy": {
+      "title": "旧信頼ファイル",
+      "description": "データベースごとの保存が導入される前の信頼の判断は、アプリ全体で共有されるファイルに残っています。各データベースの初期化のために一度だけ読み取られ、変更されることはありません。",
+      "storeFile": "trust_store.json — ID {{total}} 件",
+      "rdpFile": "rdp-cert-trust.json — RDP証明書 {{total}} 件",
+      "delete": "旧信頼ファイルを削除",
+      "blocked": "旧ファイルを削除する前に、各データベースを一度開いて信頼レコードを移行してください。",
+      "confirmTitle": "旧信頼ファイルを削除しますか?",
+      "confirmBody": "trust_store.json と rdp-cert-trust.json は完全に削除されます。一度も開いていないデータベースは、以後トラストセンターが空の状態で開始されます。",
+      "confirm": "削除",
+      "cancel": "キャンセル"
+    },
+    "status": {
+      "exported": "信頼レコードを {{path}} に保存しました。",
+      "exportEmpty": "エクスポートする対象がありません。このデータベースには信頼レコードがありません。",
+      "exportFailed": "信頼レコードをエクスポートできませんでした。",
+      "imported": "信頼レコードを {{imported}} 件インポートし、{{skipped}} 件をスキップしました。",
+      "importInvalid": "このファイルはトラストセンターのエクスポートではありません。",
+      "importFailed": "信頼レコードをインポートできませんでした。",
+      "knownHostsImported": "known_hosts からホスト鍵を {{total}} 件インポートしました。",
+      "knownHostsFailed": "known_hosts をインポートできませんでした。",
+      "legacyDeleted": "旧信頼ファイルを {{total}} 件削除しました。",
+      "legacyDeleteFailed": "旧信頼ファイルを削除できませんでした。",
+      "unavailable": "この操作はデスクトップアプリでのみ利用できます。"
     }
   }
 }

@@ -1,10 +1,12 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { GlobalSettings } from "../../../types/settings/settings";
 import {
   ShieldCheck,
   ShieldAlert,
   Fingerprint,
   Lock,
+  Unlock,
   Eye,
   Trash2,
   AlertTriangle,
@@ -17,6 +19,11 @@ import {
   RefreshCw,
   Ban,
   RotateCcw,
+  Database,
+  Download,
+  Upload,
+  KeyRound,
+  Archive,
 } from "lucide-react";
 import {
   formatFingerprint,
@@ -94,6 +101,344 @@ const TrustCenterHeading: React.FC = () => (
     description="Control how HTTPS certificates, general certificates, RDP certificates, SSH host keys, and legacy TLS identities are verified and memorized. These settings apply globally but can be overridden per connection."
   />
 );
+
+/* ------------------------------------------------------------------ */
+/*  Database scope, portability and legacy cleanup (t62 / D7)          */
+/* ------------------------------------------------------------------ */
+
+const ACTION_BUTTON_CLASS =
+  "flex items-center gap-1.5 rounded px-3 py-1.5 text-xs bg-[var(--color-border)] hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
+
+const TrustDatabaseBanner: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+
+  if (!mgr.scope.resolved) {
+    return (
+      <div
+        className="sor-settings-card flex items-center gap-2"
+        data-testid="trust-database-banner"
+        data-scope-state="unresolved"
+      >
+        <Database size={16} className="text-[var(--color-textMuted)]" />
+        <p className="text-xs text-[var(--color-textMuted)]">
+          {t("trustCenter.database.checking", {
+            defaultValue: "Checking which database holds the trust records…",
+          })}
+        </p>
+      </div>
+    );
+  }
+
+  if (mgr.noActiveDatabase) {
+    return (
+      <div
+        className="sor-settings-card border border-warning/40 bg-warning/10 space-y-1"
+        data-testid="trust-database-banner"
+        data-scope-state="none"
+      >
+        <p className="flex items-center gap-2 text-xs font-medium text-warning">
+          <AlertTriangle size={14} />
+          {t("trustCenter.database.noDatabase", {
+            defaultValue: "No database is open",
+          })}
+        </p>
+        <p className="text-[11px] leading-relaxed text-[var(--color-textMuted)]">
+          {t("trustCenter.database.noDatabaseHint", {
+            defaultValue:
+              "Trust decisions are stored per database. Open or unlock a database to review or change them.",
+          })}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="sor-settings-card space-y-1.5"
+      data-testid="trust-database-banner"
+      data-scope-state="active"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Database size={16} className="text-primary flex-shrink-0" />
+        <span
+          className="text-sm font-medium text-[var(--color-text)]"
+          data-testid="trust-database-name"
+        >
+          {mgr.databaseName
+            ? t("trustCenter.database.storedIn", {
+                defaultValue: "Stored in database “{{name}}”",
+                name: mgr.databaseName,
+              })
+            : t("trustCenter.database.unnamed", {
+                defaultValue: "Stored in the open database",
+              })}
+        </span>
+        <span
+          data-testid="trust-database-encryption"
+          data-encrypted={mgr.scope.encrypted ? "true" : "false"}
+          title={
+            mgr.scope.encrypted
+              ? t("trustCenter.database.encryptedHint", {
+                  defaultValue:
+                    "The trust file is encrypted with the master key, exactly like the database it belongs to.",
+                })
+              : t("trustCenter.database.plaintextHint", {
+                  defaultValue:
+                    "The trust file is stored unencrypted because no master encryption is configured.",
+                })
+          }
+          className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${
+            mgr.scope.encrypted
+              ? "bg-success/20 text-success border-success/40"
+              : "bg-warning/20 text-warning border-warning/40"
+          }`}
+        >
+          {mgr.scope.encrypted ? <Lock size={9} /> : <Unlock size={9} />}
+          {mgr.scope.encrypted
+            ? t("trustCenter.database.encrypted", { defaultValue: "Encrypted" })
+            : t("trustCenter.database.plaintext", {
+                defaultValue: "Plaintext",
+              })}
+        </span>
+        <span
+          className="text-[11px] text-[var(--color-textMuted)]"
+          data-testid="trust-database-count"
+        >
+          {t("trustCenter.database.records", {
+            defaultValue: "{{total}} stored identities",
+            total: mgr.totalCount,
+          })}
+        </span>
+      </div>
+      {mgr.scope.seededRecords > 0 && (
+        <p
+          className="text-[11px] text-[var(--color-textMuted)]"
+          data-testid="trust-database-seeded"
+        >
+          {t("trustCenter.database.seeded", {
+            defaultValue: "{{total}} migrated from the legacy trust files",
+            total: mgr.scope.seededRecords,
+          })}
+        </p>
+      )}
+      <p className="text-[11px] leading-relaxed text-[var(--color-textMuted)]">
+        {t("trustCenter.database.perDatabaseHint", {
+          defaultValue:
+            "A host trusted here is not trusted in another database. Use Export and Import to copy trust decisions between databases.",
+        })}
+      </p>
+    </div>
+  );
+};
+
+const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+  const status = mgr.legacyStatus;
+  if (!status || !mgr.legacyPresent) return null;
+
+  const blocked = !status.allDatabasesOpened;
+
+  return (
+    <div className="sor-settings-card space-y-2" data-testid="trust-legacy">
+      <p className="flex items-center gap-2 text-xs font-medium text-[var(--color-text)]">
+        <Archive size={14} className="text-[var(--color-textMuted)]" />
+        {t("trustCenter.legacy.title", { defaultValue: "Legacy trust files" })}
+      </p>
+      <p className="text-[11px] leading-relaxed text-[var(--color-textMuted)]">
+        {t("trustCenter.legacy.description", {
+          defaultValue:
+            "Trust decisions from before per-database storage are still kept in app-wide files. They are read once to seed each database and are never modified.",
+        })}
+      </p>
+      <ul
+        className="space-y-0.5 text-[11px] font-mono text-[var(--color-textMuted)]"
+        data-testid="trust-legacy-status"
+      >
+        {status.legacyPresent && (
+          <li>
+            {t("trustCenter.legacy.storeFile", {
+              defaultValue: "trust_store.json — {{total}} identities",
+              total: status.legacyRecords,
+            })}
+          </li>
+        )}
+        {status.rdpLegacyPresent && (
+          <li>
+            {t("trustCenter.legacy.rdpFile", {
+              defaultValue: "rdp-cert-trust.json — {{total}} RDP certificates",
+              total: status.rdpLegacyRecords,
+            })}
+          </li>
+        )}
+      </ul>
+      {mgr.showConfirmDeleteLegacy ? (
+        <div
+          className="space-y-2 rounded border border-error/40 bg-error/10 p-2"
+          data-testid="trust-delete-legacy-confirm"
+          role="alertdialog"
+          aria-label={t("trustCenter.legacy.confirmTitle", {
+            defaultValue: "Delete the legacy trust files?",
+          })}
+        >
+          <p className="text-xs font-medium text-error">
+            {t("trustCenter.legacy.confirmTitle", {
+              defaultValue: "Delete the legacy trust files?",
+            })}
+          </p>
+          <p className="text-[11px] leading-relaxed text-[var(--color-textMuted)]">
+            {t("trustCenter.legacy.confirmBody", {
+              defaultValue:
+                "trust_store.json and rdp-cert-trust.json are removed permanently. A database that was never opened would then start with an empty Trust Center.",
+            })}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void mgr.handleDeleteLegacyStores()}
+              disabled={mgr.actionBusy === "delete-legacy"}
+              data-testid="trust-delete-legacy-accept"
+              className="rounded bg-error px-3 py-1 text-xs text-[var(--color-text)] transition-colors hover:bg-error/90 disabled:opacity-40"
+            >
+              {t("trustCenter.legacy.confirm", { defaultValue: "Delete" })}
+            </button>
+            <button
+              onClick={() => mgr.setShowConfirmDeleteLegacy(false)}
+              data-testid="trust-delete-legacy-cancel"
+              className="rounded bg-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-textSecondary)] transition-colors"
+            >
+              {t("trustCenter.legacy.cancel", { defaultValue: "Cancel" })}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <button
+            onClick={() => mgr.setShowConfirmDeleteLegacy(true)}
+            disabled={blocked || mgr.actionBusy !== undefined}
+            data-testid="trust-delete-legacy"
+            title={
+              blocked
+                ? t("trustCenter.legacy.blocked", {
+                    defaultValue:
+                      "Open every database once so its trust records are migrated before deleting the legacy files.",
+                  })
+                : undefined
+            }
+            className={ACTION_BUTTON_CLASS}
+          >
+            <Trash2 size={12} />
+            {t("trustCenter.legacy.delete", {
+              defaultValue: "Delete legacy trust files",
+            })}
+          </button>
+          {blocked && (
+            <p
+              className="text-[11px] leading-relaxed text-warning"
+              data-testid="trust-delete-legacy-blocked"
+            >
+              {t("trustCenter.legacy.blocked", {
+                defaultValue:
+                  "Open every database once so its trust records are migrated before deleting the legacy files.",
+              })}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TrustDatabaseSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+  const busy = mgr.actionBusy !== undefined;
+  const message = mgr.actionMessage;
+
+  return (
+    <div className="space-y-4">
+      <SettingsSectionHeader
+        icon={<Database className="w-4 h-4 text-primary" />}
+        title={t("trustCenter.database.title", {
+          defaultValue: "Trust Database",
+        })}
+      />
+
+      <TrustDatabaseBanner mgr={mgr} />
+
+      <div className="sor-settings-card space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => void mgr.handleExportJson()}
+            disabled={busy || mgr.noActiveDatabase}
+            data-testid="trust-export-json"
+            className={ACTION_BUTTON_CLASS}
+            title={t("trustCenter.actions.exportJsonHint", {
+              defaultValue:
+                "Save this database's trusted hosts and certificates to a JSON file. Public key material only — no secrets.",
+            })}
+          >
+            <Download size={12} />
+            {t("trustCenter.actions.exportJson", {
+              defaultValue: "Export JSON",
+            })}
+          </button>
+          <button
+            onClick={() => void mgr.handleImportJson()}
+            disabled={busy || mgr.noActiveDatabase}
+            data-testid="trust-import-json"
+            className={ACTION_BUTTON_CLASS}
+            title={t("trustCenter.actions.importJsonHint", {
+              defaultValue:
+                "Merge trusted hosts and certificates from a JSON file. Revoked entries are never re-trusted.",
+            })}
+          >
+            <Upload size={12} />
+            {t("trustCenter.actions.importJson", {
+              defaultValue: "Import JSON",
+            })}
+          </button>
+          <button
+            onClick={() => void mgr.handleImportKnownHosts()}
+            disabled={busy || mgr.noActiveDatabase}
+            data-testid="trust-import-known-hosts"
+            className={ACTION_BUTTON_CLASS}
+            title={t("trustCenter.actions.importKnownHostsHint", {
+              defaultValue:
+                "Read OpenSSH's ~/.ssh/known_hosts and add every host key it contains to this database.",
+            })}
+          >
+            <KeyRound size={12} />
+            {t("trustCenter.actions.importKnownHosts", {
+              defaultValue: "Import from known_hosts",
+            })}
+          </button>
+          {busy && (
+            <RefreshCw
+              size={12}
+              className="animate-spin text-[var(--color-textMuted)]"
+              data-testid="trust-action-spinner"
+            />
+          )}
+        </div>
+
+        {message && (
+          <p
+            data-testid="trust-action-message"
+            data-tone={message.tone}
+            className={`text-[11px] leading-relaxed ${
+              message.tone === "error" ? "text-error" : "text-success"
+            }`}
+          >
+            {t(message.key, {
+              defaultValue: message.key,
+              ...(message.values ?? {}),
+            })}
+          </p>
+        )}
+      </div>
+
+      <TrustLegacyCard mgr={mgr} />
+    </div>
+  );
+};
 
 function policyLabel(value: TrustPolicy): string {
   return (
@@ -617,6 +962,7 @@ export const TrustVerificationSettings: React.FC<
   return (
     <div className="space-y-6">
       <TrustCenterHeading />
+      <TrustDatabaseSection mgr={mgr} />
       <GlobalPolicies mgr={mgr} />
       <PolicyExplanations />
       <AdditionalOptions mgr={mgr} />

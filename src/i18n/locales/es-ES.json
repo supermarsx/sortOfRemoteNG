@@ -9374,6 +9374,12 @@
         "targetOverlap": "Una base de datos de destino no puede ser también uno de los orígenes de la clonación.",
         "targetRequired": "Selecciona al menos una base de datos de destino antes de continuar."
       }
+    },
+    "trustInclusion": {
+      "label": "Hosts y certificados de confianza",
+      "exportDescription": "Incluir las claves de host aceptadas, los certificados fijados y sus políticas por host. Solo material de clave pública, sin secretos.",
+      "importDescription": "Combinar los hosts y certificados de confianza del archivo en la base de datos de destino. Las entradas revocadas nunca vuelven a ser de confianza.",
+      "cloneDescription": "Copiar los hosts y certificados de confianza para que el clon no vuelva a preguntar por los hosts en los que el origen ya confía."
     }
   },
   "tagManager": {
@@ -9844,6 +9850,56 @@
         "speedWithMaximum": "{{current}} MHz (máx. {{maximum}} MHz)",
         "versionWithBuild": "{{version}} (compilación {{build}})"
       }
+    }
+  },
+  "trustCenter": {
+    "database": {
+      "title": "Base de datos de confianza",
+      "storedIn": "Almacenado en la base de datos «{{name}}»",
+      "unnamed": "Almacenado en la base de datos abierta",
+      "noDatabase": "No hay ninguna base de datos abierta",
+      "noDatabaseHint": "Las decisiones de confianza se guardan por base de datos. Abra o desbloquee una base de datos para consultarlas o modificarlas.",
+      "checking": "Comprobando qué base de datos contiene los registros de confianza…",
+      "encrypted": "Cifrado",
+      "plaintext": "Sin cifrar",
+      "encryptedHint": "El archivo de confianza se cifra con la clave maestra, igual que la base de datos a la que pertenece.",
+      "plaintextHint": "El archivo de confianza se guarda sin cifrar porque no hay ningún cifrado maestro configurado.",
+      "records": "{{total}} identidades almacenadas",
+      "seeded": "{{total}} migradas desde los archivos de confianza antiguos",
+      "perDatabaseHint": "Un host de confianza aquí no lo es en otra base de datos. Use Exportar e Importar para copiar decisiones de confianza entre bases de datos."
+    },
+    "actions": {
+      "exportJson": "Exportar JSON",
+      "exportJsonHint": "Guarde los hosts y certificados de confianza de esta base de datos en un archivo JSON. Solo material de clave pública, sin secretos.",
+      "importJson": "Importar JSON",
+      "importJsonHint": "Combine hosts y certificados de confianza desde un archivo JSON. Las entradas revocadas nunca vuelven a ser de confianza.",
+      "importKnownHosts": "Importar desde known_hosts",
+      "importKnownHostsHint": "Lea el archivo ~/.ssh/known_hosts de OpenSSH y añada a esta base de datos todas las claves de host que contenga."
+    },
+    "legacy": {
+      "title": "Archivos de confianza antiguos",
+      "description": "Las decisiones de confianza anteriores al almacenamiento por base de datos siguen guardadas en archivos comunes a toda la aplicación. Se leen una sola vez para inicializar cada base de datos y nunca se modifican.",
+      "storeFile": "trust_store.json: {{total}} identidades",
+      "rdpFile": "rdp-cert-trust.json: {{total}} certificados RDP",
+      "delete": "Eliminar los archivos de confianza antiguos",
+      "blocked": "Abra cada base de datos una vez para migrar sus registros de confianza antes de eliminar los archivos antiguos.",
+      "confirmTitle": "¿Eliminar los archivos de confianza antiguos?",
+      "confirmBody": "trust_store.json y rdp-cert-trust.json se eliminarán de forma permanente. Una base de datos que nunca se haya abierto empezaría entonces con un Trust Center vacío.",
+      "confirm": "Eliminar",
+      "cancel": "Cancelar"
+    },
+    "status": {
+      "exported": "Registros de confianza guardados en {{path}}.",
+      "exportEmpty": "No hay nada que exportar: esta base de datos no tiene registros de confianza.",
+      "exportFailed": "No se pudieron exportar los registros de confianza.",
+      "imported": "Se importaron {{imported}} registros de confianza y se omitieron {{skipped}}.",
+      "importInvalid": "Ese archivo no es una exportación del Trust Center.",
+      "importFailed": "No se pudieron importar los registros de confianza.",
+      "knownHostsImported": "Se importaron {{total}} claves de host desde known_hosts.",
+      "knownHostsFailed": "No se pudo importar known_hosts.",
+      "legacyDeleted": "Se eliminaron {{total}} archivos de confianza antiguos.",
+      "legacyDeleteFailed": "No se pudieron eliminar los archivos de confianza antiguos.",
+      "unavailable": "Esta acción solo está disponible en la aplicación de escritorio."
     }
   }
 }
