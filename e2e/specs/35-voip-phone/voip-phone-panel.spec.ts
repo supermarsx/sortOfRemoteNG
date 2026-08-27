@@ -8,6 +8,7 @@
 //
 // Requires t66-e2's `voip_phone_*` command registration in the built app.
 import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
 import {
   resetAppState,
   createCollection,
@@ -88,8 +89,13 @@ async function createVoipPhoneConnection(
   await (await $(S.editorName)).setValue(CONNECTION_NAME);
 
   // Pick the protocol FIRST: handleProtocolChange resets the port to 80.
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText("VoIP Phone (Yealink)");
+  // The protocol picker is the app's custom combobox (`<button role="combobox">`
+  // plus a portalled listbox), NOT a native <select>, so it needs
+  // `selectCustomOption` — `selectByVisibleText` finds no <option> and throws.
+  await selectCustomOption(S.editorProtocol, [
+    "VoIP Phone (Yealink)",
+    "VoIP Phone",
+  ]);
   await browser.pause(200);
 
   await (await $(S.editorHostname)).setValue(FIXTURE_HOST);
