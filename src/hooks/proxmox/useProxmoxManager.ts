@@ -43,6 +43,11 @@ import type {
   LxcMigrateParams,
   VncTicket,
   TermProxyTicket,
+  ProxmoxConnectOutcome,
+  ProxmoxCertificateProbe,
+  ProxmoxInitialConfig,
+  ProxmoxPersistedFields,
+  ProxmoxTfaKind,
 } from "../../types/hardware/proxmox";
 
 // ── Tab & View Types ─────────────────────────────────────────────
@@ -66,8 +71,45 @@ export type ProxmoxTab =
 export type ConnectionState =
   | "disconnected"
   | "connecting"
+  | "tfa"
   | "connected"
   | "error";
+
+/** Pending PVE 7+ second-factor challenge. */
+export interface ProxmoxTfaChallenge {
+  username: string;
+  tfaTypes: string[];
+}
+
+/** Another tab already owns the process-wide PVE client for a different host. */
+export interface ProxmoxBusyElsewhere {
+  host: string;
+  port: number;
+}
+
+export interface ProxmoxManagerOptions {
+  /** Seed the form (hydrated from a saved integration instance). */
+  initial?: ProxmoxInitialConfig;
+  /** Connect automatically once (only when credentials are complete). */
+  autoConnect?: boolean;
+  /** Called after a successful connection with the non-secret fields to persist. */
+  onPersistFields?: (fields: ProxmoxPersistedFields) => void;
+}
+
+const errorText = (e: unknown): string =>
+  typeof e === "string" ? e : ((e as Error)?.message ?? String(e));
+
+/** `user@realm!token` → API token; `user@realm` / `user` → password. */
+export function isApiTokenUsername(username: string): boolean {
+  return username.includes("!");
+}
+
+/** Split an explicit realm out of `user@realm`. */
+export function splitRealm(username: string): { user: string; realm?: string } {
+  const at = username.lastIndexOf("@");
+  if (at <= 0 || at === username.length - 1) return { user: username };
+  return { user: username.slice(0, at), realm: username.slice(at + 1) };
+}
 
 export interface ProxmoxManagerState {
   // Connection
@@ -139,20 +181,48 @@ export interface ProxmoxManagerState {
 
 // ── The hook ─────────────────────────────────────────────────────
 
-export function useProxmoxManager(isOpen: boolean) {
+export function useProxmoxManager(
+  isOpen: boolean,
+  options: ProxmoxManagerOptions = {},
+) {
+  const initial = options.initial;
   // ---- Connection form state ----
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("disconnected");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState(8006);
-  const [username, setUsername] = useState("root@pam");
-  const [password, setPassword] = useState("");
-  const [tokenId, setTokenId] = useState("");
-  const [tokenSecret, setTokenSecret] = useState("");
-  const [useApiToken, setUseApiToken] = useState(false);
-  const [insecure, setInsecure] = useState(false);
-  const [fingerprint, setFingerprint] = useState("");
+  const [host, setHost] = useState(initial?.host ?? "");
+  const [port, setPort] = useState(initial?.port ?? 8006);
+  const [username, setUsername] = useState(
+    initial?.useApiToken ? "" : (initial?.username ?? "root@pam"),
+  );
+  const [realm, setRealm] = useState(initial?.realm ?? "");
+  const [password, setPassword] = useState(initial?.password ?? "");
+  const [tokenId, setTokenId] = useState(initial?.tokenId ?? "");
+  const [tokenSecret, setTokenSecret] = useState(initial?.tokenSecret ?? "");
+  const [useApiToken, setUseApiToken] = useState(initial?.useApiToken ?? false);
+  const [insecure, setInsecure] = useState(initial?.insecure ?? false);
+  const [fingerprint, setFingerprint] = useState(initial?.fingerprint ?? "");
+  const [timeoutSecs] = useState(initial?.timeoutSecs ?? 30);
+  const [totpSecret, setTotpSecret] = useState(initial?.totpSecret ?? "");
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [tfaChallenge, setTfaChallenge] = useState<ProxmoxTfaChallenge | null>(
+    null,
+  );
+  const [tfaSubmitting, setTfaSubmitting] = useState(false);
+  const [certProbe, setCertProbe] = useState<ProxmoxCertificateProbe | null>(
+    null,
+  );
+  const [certProbing, setCertProbing] = useState(false);
+  const [certProbeError, setCertProbeError] = useState<string | null>(null);
+  /** Set once the user accepted a probed certificate in this session — that
+   *  acceptance is the informed consent the crate's ack flag represents. */
+  const [certAccepted, setCertAccepted] = useState(false);
+  const [busyElsewhere, setBusyElsewhere] =
+    useState<ProxmoxBusyElsewhere | null>(null);
+  /** Auto-connect waits for the singleton check so it cannot hijack a
+   *  session another tab owns. */
+  const [guardChecked, setGuardChecked] = useState(false);
+  const onPersistFieldsRef = useRef(options.onPersistFields);
+  onPersistFieldsRef.current = options.onPersistFields;
   const [config, setConfig] = useState<ProxmoxConfigSafe | null>(null);
   const [version, setVersion] = useState<PveVersion | null>(null);
 
@@ -292,11 +362,58 @@ export function useProxmoxManager(isOpen: boolean) {
 
   // ── Connection ────────────────────────────────────────────────
 
+  /** Post-auth bootstrap shared by password, token and TFA completion. */
+  const finishConnect = useCallback(async () => {
+    if (!mountedRef.current) return;
+    setTfaChallenge(null);
+    setConnectionState("connected");
+    onPersistFieldsRef.current?.({
+      fingerprint: insecure ? fingerprint.trim() : "",
+      realm: realm.trim(),
+      insecure: String(insecure),
+    });
+
+    // Fetch initial data
+    const [cfg, ver] = await Promise.all([
+      safe(() => invoke<ProxmoxConfigSafe | null>("proxmox_get_config")),
+      safe(() => invoke<PveVersion>("proxmox_get_version")),
+    ]);
+    if (mountedRef.current) {
+      setConfig(cfg ?? null);
+      setVersion(ver ?? null);
+    }
+
+    // Fetch dashboard data
+    await refreshDashboard();
+  }, [insecure, fingerprint, realm, safe, refreshDashboard]);
+
+  const applyOutcome = useCallback(
+    async (outcome: ProxmoxConnectOutcome | string | null | undefined) => {
+      if (!mountedRef.current) return;
+      if (
+        outcome &&
+        typeof outcome === "object" &&
+        outcome.state === "tfaRequired"
+      ) {
+        setTfaChallenge({
+          username: outcome.username,
+          tfaTypes: outcome.tfaTypes ?? [],
+        });
+        setConnectionState("tfa");
+        return;
+      }
+      await finishConnect();
+    },
+    [finishConnect],
+  );
+
   const connect = useCallback(
     async (acknowledgeInvalidCertRisk = false) => {
       setConnectionState("connecting");
       setConnectionError(null);
-      if (insecure && !acknowledgeInvalidCertRisk) {
+      setTfaChallenge(null);
+      const ack = acknowledgeInvalidCertRisk || certAccepted;
+      if (insecure && !ack) {
         setConnectionState("error");
         setConnectionError(
           "Explicit acknowledgement is required for this self-signed certificate connection attempt",
@@ -304,40 +421,40 @@ export function useProxmoxManager(isOpen: boolean) {
         return;
       }
       try {
-        const msg = await invoke<string>("proxmox_connect", {
-          host,
-          port,
-          username,
-          password: useApiToken ? undefined : password,
-          tokenId: useApiToken ? tokenId : undefined,
-          tokenSecret: useApiToken ? tokenSecret : undefined,
-          insecure,
-          fingerprint: insecure ? fingerprint.trim() || undefined : undefined,
-          acknowledgeInvalidCertRisk: insecure && acknowledgeInvalidCertRisk,
-        });
+        const trimmedUser = username.trim();
+        const explicitRealm = splitRealm(trimmedUser).realm;
+        const outcome = await invoke<ProxmoxConnectOutcome>(
+          "proxmox_connect_ex",
+          {
+            host: host.trim(),
+            port,
+            username: useApiToken ? tokenId.trim() : trimmedUser,
+            password: useApiToken ? undefined : password,
+            tokenId: useApiToken ? tokenId.trim() : undefined,
+            tokenSecret: useApiToken ? tokenSecret : undefined,
+            insecure,
+            timeoutSecs,
+            fingerprint: insecure ? fingerprint.trim() || undefined : undefined,
+            acknowledgeInvalidCertRisk: insecure && ack,
+            realm:
+              !useApiToken && !explicitRealm && realm.trim()
+                ? realm.trim()
+                : undefined,
+            totpSecret:
+              !useApiToken && totpSecret.trim() ? totpSecret.trim() : undefined,
+          },
+        );
         if (!mountedRef.current) return;
-        setConnectionState("connected");
-
-        // Fetch initial data
-        const [cfg, ver] = await Promise.all([
-          safe(() => invoke<ProxmoxConfigSafe | null>("proxmox_get_config")),
-          safe(() => invoke<PveVersion>("proxmox_get_version")),
-        ]);
-        if (mountedRef.current) {
-          setConfig(cfg ?? null);
-          setVersion(ver ?? null);
+        setBusyElsewhere(null);
+        await applyOutcome(outcome);
+        if (outcome && typeof outcome === "object") {
+          return outcome.state === "connected" ? outcome.message : undefined;
         }
-
-        // Fetch dashboard data
-        await refreshDashboard();
-
-        return msg;
+        return outcome ?? undefined;
       } catch (e) {
-        const msg =
-          typeof e === "string" ? e : ((e as Error).message ?? String(e));
         if (mountedRef.current) {
           setConnectionState("error");
-          setConnectionError(msg);
+          setConnectionError(errorText(e));
         }
       }
     },
@@ -345,16 +462,146 @@ export function useProxmoxManager(isOpen: boolean) {
       host,
       port,
       username,
+      realm,
       password,
       tokenId,
       tokenSecret,
       useApiToken,
       insecure,
       fingerprint,
-      safe,
-      refreshDashboard,
+      timeoutSecs,
+      totpSecret,
+      certAccepted,
+      applyOutcome,
     ],
   );
+
+  /** Second step of the PVE 7+ TFA flow. */
+  const submitTfa = useCallback(
+    async (code: string, kind: ProxmoxTfaKind = "totp") => {
+      const trimmed = code.trim();
+      if (!trimmed) return;
+      setTfaSubmitting(true);
+      setConnectionError(null);
+      try {
+        const outcome = await invoke<ProxmoxConnectOutcome>(
+          "proxmox_submit_tfa",
+          { code: trimmed, kind },
+        );
+        await applyOutcome(outcome);
+      } catch (e) {
+        if (mountedRef.current) {
+          // Stay on the TFA step so the user can retry with a fresh code.
+          setConnectionError(errorText(e));
+        }
+      } finally {
+        if (mountedRef.current) setTfaSubmitting(false);
+      }
+    },
+    [applyOutcome],
+  );
+
+  const cancelTfa = useCallback(() => {
+    setTfaChallenge(null);
+    setConnectionState("disconnected");
+    setConnectionError(null);
+  }, []);
+
+  /** Credential-free TLS probe (TOFU): fetch the server's leaf certificate. */
+  const probeCertificate = useCallback(async () => {
+    setCertProbing(true);
+    setCertProbeError(null);
+    setCertProbe(null);
+    try {
+      const probe = await invoke<ProxmoxCertificateProbe>(
+        "proxmox_probe_certificate",
+        { host: host.trim(), port },
+      );
+      if (mountedRef.current) setCertProbe(probe);
+      return probe;
+    } catch (e) {
+      if (mountedRef.current) setCertProbeError(errorText(e));
+      return null;
+    } finally {
+      if (mountedRef.current) setCertProbing(false);
+    }
+  }, [host, port]);
+
+  /** Accept the probed certificate as the TLS pin. */
+  const acceptCertProbe = useCallback(() => {
+    if (!certProbe) return;
+    setFingerprint(certProbe.sha256);
+    setInsecure(true);
+    setCertAccepted(true);
+  }, [certProbe]);
+
+  const dismissCertProbe = useCallback(() => {
+    setCertProbe(null);
+    setCertProbeError(null);
+  }, []);
+
+  // ── Singleton guard: is the global client bound to another host? ──
+  const initialHost = initial?.host;
+  const initialPort = initial?.port ?? 8006;
+  useEffect(() => {
+    if (!isOpen || initialHost === undefined) return;
+    let cancelled = false;
+    setGuardChecked(false);
+    (async () => {
+      try {
+        const connected = await invoke<boolean>("proxmox_is_connected");
+        if (!connected || cancelled) return;
+        const cfg = await invoke<ProxmoxConfigSafe | null>(
+          "proxmox_get_config",
+        );
+        if (cancelled || !cfg) return;
+        const sameHost =
+          cfg.host.trim().toLowerCase() === initialHost.trim().toLowerCase() &&
+          cfg.port === initialPort;
+        if (!sameHost) setBusyElsewhere({ host: cfg.host, port: cfg.port });
+      } catch {
+        /* not connected / command unavailable → nothing to guard */
+      } finally {
+        if (!cancelled) setGuardChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, initialHost, initialPort]);
+
+  const autoConnectedRef = useRef(false);
+
+  /** Disconnect the other tab's session and connect this one. */
+  const takeOver = useCallback(async () => {
+    // Taking over is itself the (single) automatic connect for this mount.
+    autoConnectedRef.current = true;
+    try {
+      await invoke<void>("proxmox_disconnect");
+    } catch {
+      /* ignore */
+    }
+    if (!mountedRef.current) return;
+    setBusyElsewhere(null);
+    await connect(certAccepted || Boolean(fingerprint.trim()));
+  }, [connect, certAccepted, fingerprint]);
+
+  // ── Auto-connect once (StrictMode double-mount safe) ──────────
+  const connectRef = useRef(connect);
+  connectRef.current = connect;
+  const autoConnect = options.autoConnect ?? false;
+  useEffect(() => {
+    if (!isOpen || !autoConnect || !initial) return;
+    if (autoConnectedRef.current || busyElsewhere || !guardChecked) return;
+    const credentialsReady = initial.useApiToken
+      ? Boolean(initial.tokenId && initial.tokenSecret)
+      : Boolean(initial.username && initial.password);
+    if (!initial.host || !credentialsReady) return;
+    // A self-signed endpoint without a stored pin must go through TOFU first.
+    if (initial.insecure && !initial.fingerprint) return;
+    autoConnectedRef.current = true;
+    void connectRef.current(Boolean(initial.insecure));
+  }, [isOpen, autoConnect, initial, busyElsewhere, guardChecked]);
 
   const disconnect = useCallback(async () => {
     try {
@@ -364,6 +611,7 @@ export function useProxmoxManager(isOpen: boolean) {
     }
     if (mountedRef.current) {
       setConnectionState("disconnected");
+      setTfaChallenge(null);
       setConfig(null);
       setVersion(null);
       setNodes([]);
@@ -1136,11 +1384,31 @@ export function useProxmoxManager(isOpen: boolean) {
     setInsecure,
     fingerprint,
     setFingerprint,
+    realm,
+    setRealm,
+    totpSecret,
+    setTotpSecret,
+    timeoutSecs,
     connectionError,
     config,
     version,
     connect,
     disconnect,
+
+    // TFA / TOFU / singleton guard
+    tfaChallenge,
+    tfaSubmitting,
+    submitTfa,
+    cancelTfa,
+    certProbe,
+    certProbing,
+    certProbeError,
+    certAccepted,
+    probeCertificate,
+    acceptCertProbe,
+    dismissCertProbe,
+    busyElsewhere,
+    takeOver,
 
     // Navigation
     activeTab,

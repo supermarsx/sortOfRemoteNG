@@ -1017,3 +1017,50 @@ export interface ReplicationJob {
   rate?: number;
   comment?: string;
 }
+
+// ── Auth completion (t67-e1 / t67-e4) ────────────────────────────────────────
+
+/** Second-factor kinds accepted by `proxmox_submit_tfa`. */
+export type ProxmoxTfaKind = "totp" | "recovery" | "yubico";
+
+/** Structured result of `proxmox_connect_ex` / `proxmox_submit_tfa`. */
+export type ProxmoxConnectOutcome =
+  | { state: "connected"; username: string; message: string }
+  | { state: "tfaRequired"; username: string; tfaTypes: string[] };
+
+/** Result of `proxmox_probe_certificate` (credential-free TLS handshake). */
+export interface ProxmoxCertificateProbe {
+  /** Colon-delimited upper-case SHA-256 of the DER leaf (`AA:BB:…`). */
+  sha256: string;
+  subject: string;
+  issuer: string;
+  notBefore: string;
+  notAfter: string;
+  selfSigned: boolean;
+  subjectAltNames?: string[];
+}
+
+/** Seed values for the manager hook when the panel is opened from a saved
+ *  integration instance (vault-hydrated; nothing here is persisted by the hook). */
+export interface ProxmoxInitialConfig {
+  host: string;
+  port?: number;
+  username?: string;
+  realm?: string;
+  password?: string;
+  tokenId?: string;
+  tokenSecret?: string;
+  useApiToken?: boolean;
+  insecure?: boolean;
+  fingerprint?: string;
+  timeoutSecs?: number;
+  /** Base32 TOTP secret — enables auto-completion of the TFA challenge. */
+  totpSecret?: string;
+}
+
+/** Non-secret fields the manager hands back for persistence on the instance. */
+export interface ProxmoxPersistedFields {
+  fingerprint: string;
+  realm: string;
+  insecure: string;
+}

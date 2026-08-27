@@ -26,74 +26,124 @@ import {
 } from "./proxmoxPanel/SecondaryViews";
 import { AlertCircle } from "lucide-react";
 
+/**
+ * Proxmox VE panel. Two layouts:
+ *  - legacy modal (`embedded` unset): the original standalone dialog;
+ *  - embedded (`embedded`): fills its parent (a session tab) without `Modal`,
+ *    header shows the saved instance name, no close X — used by
+ *    `ProxmoxIntegrationPanel`.
+ */
 export const ProxmoxPanel: React.FC<ProxmoxPanelProps> = ({
   isOpen,
   onClose,
+  embedded = false,
+  title,
+  managerOptions,
+  onOpenWebUi,
+  onOpenWebUiExternal,
 }) => {
   const { t } = useTranslation();
-  const mgr = useProxmoxManager(isOpen);
+  const mgr = useProxmoxManager(isOpen, managerOptions);
 
   if (!isOpen) return null;
 
   const renderContent = () => {
     switch (mgr.activeTab) {
-      case "dashboard": return <DashboardView mgr={mgr} />;
-      case "nodes": return <NodesView mgr={mgr} />;
-      case "qemu": return <QemuView mgr={mgr} />;
-      case "lxc": return <LxcView mgr={mgr} />;
-      case "storage": return <StorageView mgr={mgr} />;
-      case "network": return <NetworkView mgr={mgr} />;
-      case "tasks": return <TasksView mgr={mgr} />;
-      case "backups": return <BackupsView mgr={mgr} />;
-      case "firewall": return <FirewallView mgr={mgr} />;
-      case "pools": return <PoolsView mgr={mgr} />;
-      case "ha": return <HaView mgr={mgr} />;
-      case "ceph": return <CephView mgr={mgr} />;
-      case "snapshots": return <SnapshotsView mgr={mgr} />;
-      case "console": return <ConsoleView mgr={mgr} />;
-      default: return <DashboardView mgr={mgr} />;
+      case "dashboard":
+        return <DashboardView mgr={mgr} />;
+      case "nodes":
+        return <NodesView mgr={mgr} />;
+      case "qemu":
+        return <QemuView mgr={mgr} />;
+      case "lxc":
+        return <LxcView mgr={mgr} />;
+      case "storage":
+        return <StorageView mgr={mgr} />;
+      case "network":
+        return <NetworkView mgr={mgr} />;
+      case "tasks":
+        return <TasksView mgr={mgr} />;
+      case "backups":
+        return <BackupsView mgr={mgr} />;
+      case "firewall":
+        return <FirewallView mgr={mgr} />;
+      case "pools":
+        return <PoolsView mgr={mgr} />;
+      case "ha":
+        return <HaView mgr={mgr} />;
+      case "ceph":
+        return <CephView mgr={mgr} />;
+      case "snapshots":
+        return <SnapshotsView mgr={mgr} />;
+      case "console":
+        return <ConsoleView mgr={mgr} />;
+      default:
+        return <DashboardView mgr={mgr} />;
     }
   };
 
+  const body = (
+    <div
+      className="flex flex-1 min-h-0 flex-col h-full"
+      data-testid="proxmox-panel"
+    >
+      <ProxmoxHeader
+        mgr={mgr}
+        onClose={onClose}
+        embedded={embedded}
+        title={title}
+        onOpenWebUi={onOpenWebUi}
+        onOpenWebUiExternal={onOpenWebUiExternal}
+      />
+
+      {mgr.connectionState !== "connected" ? (
+        <ConnectionForm mgr={mgr} />
+      ) : (
+        <div className="flex flex-1 min-h-0">
+          <Sidebar mgr={mgr} />
+          <div className="flex flex-1 flex-col min-w-0">
+            {/* Error bar */}
+            {mgr.dataError && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-error/10 border-b border-error/30 text-error text-xs">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{mgr.dataError}</span>
+                <button
+                  onClick={() => {
+                    /* error is auto-cleared on next action */
+                  }}
+                  className="ml-auto text-error/60 hover:text-error text-[10px]"
+                >
+                  {t("common.dismiss", "Dismiss")}
+                </button>
+              </div>
+            )}
+            {renderContent()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <>
-      <Modal
-        isOpen={isOpen}
-        onClose={onClose}
-        backdropClassName="bg-black/50"
-        panelClassName="max-w-7xl h-[92vh] rounded-xl overflow-hidden border border-[var(--color-border)]"
-        contentClassName="bg-[var(--color-surface)]"
-      >
-        <div className="flex flex-1 min-h-0 flex-col h-full" data-testid="proxmox-panel">
-          <ProxmoxHeader mgr={mgr} onClose={onClose} />
-
-          {mgr.connectionState !== "connected" ? (
-            <ConnectionForm mgr={mgr} />
-          ) : (
-            <div className="flex flex-1 min-h-0">
-              <Sidebar mgr={mgr} />
-              <div className="flex flex-1 flex-col min-w-0">
-                {/* Error bar */}
-                {mgr.dataError && (
-                  <div className="flex items-center gap-2 px-4 py-2 bg-error/10 border-b border-error/30 text-error text-xs">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{mgr.dataError}</span>
-                    <button
-                      onClick={() => {
-                        /* error is auto-cleared on next action */
-                      }}
-                      className="ml-auto text-error/60 hover:text-error text-[10px]"
-                    >
-                      {t("common.dismiss", "Dismiss")}
-                    </button>
-                  </div>
-                )}
-                {renderContent()}
-              </div>
-            </div>
-          )}
+      {embedded ? (
+        <div
+          className="flex h-full min-h-0 w-full flex-col bg-[var(--color-surface)]"
+          data-testid="proxmox-embedded"
+        >
+          {body}
         </div>
-      </Modal>
+      ) : (
+        <Modal
+          isOpen={isOpen}
+          onClose={onClose}
+          backdropClassName="bg-black/50"
+          panelClassName="max-w-7xl h-[92vh] rounded-xl overflow-hidden border border-[var(--color-border)]"
+          contentClassName="bg-[var(--color-surface)]"
+        >
+          {body}
+        </Modal>
+      )}
 
       {/* Confirm dialog */}
       <ConfirmDialog

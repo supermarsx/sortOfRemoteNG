@@ -110,11 +110,14 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
           className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
           title={t("proxmox.refresh", "Refresh")}
         >
-          <RefreshCw className={`w-3 h-3 ${mgr.refreshing ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-3 h-3 ${mgr.refreshing ? "animate-spin" : ""}`}
+          />
           {t("proxmox.refresh", "Refresh")}
         </button>
         <button
           onClick={mgr.disconnect}
+          data-testid="proxmox-disconnect-btn"
           className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-error/10 border border-error/30 text-xs text-error hover:bg-error/20 transition-colors"
           title={t("proxmox.disconnect", "Disconnect")}
         >

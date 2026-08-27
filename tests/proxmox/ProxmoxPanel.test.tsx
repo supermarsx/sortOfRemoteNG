@@ -40,7 +40,7 @@ const connectPanel = async () => {
 
   await screen.findByTestId("proxmox-tab-dashboard");
   expect(invoke).toHaveBeenCalledWith(
-    "proxmox_connect",
+    "proxmox_connect_ex",
     expect.objectContaining({ host: "10.0.0.1" }),
   );
 };
@@ -56,7 +56,12 @@ const openLoadedResourceTab = async (
 describe("ProxmoxPanel", () => {
   const wireConnectedMocks = () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-      if (cmd === "proxmox_connect") return "Connected";
+      if (cmd === "proxmox_connect_ex")
+        return {
+          state: "connected",
+          username: "root@pam",
+          message: "Connected",
+        };
       if (cmd === "proxmox_get_config") return null;
       if (cmd === "proxmox_get_version")
         return { version: "8.0", release: "8.0-1", repoid: "abc" };
@@ -160,7 +165,12 @@ describe("ProxmoxPanel", () => {
 
   it("calls proxmox_connect on connect click", async () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-      if (cmd === "proxmox_connect") return "Connected";
+      if (cmd === "proxmox_connect_ex")
+        return {
+          state: "connected",
+          username: "root@pam",
+          message: "Connected",
+        };
       if (cmd === "proxmox_get_config") return null;
       if (cmd === "proxmox_get_version")
         return { version: "8.0", release: "8.0-1", repoid: "abc" };
@@ -182,7 +192,7 @@ describe("ProxmoxPanel", () => {
     fireEvent.click(connectBtn);
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
-        "proxmox_connect",
+        "proxmox_connect_ex",
         expect.objectContaining({ host: "10.0.0.1" }),
       );
     });
@@ -301,7 +311,7 @@ describe("ProxmoxPanel", () => {
       const connectionResult = createDeferred<string>();
       const resourceResult = createDeferred<unknown[]>();
       vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-        if (cmd === "proxmox_connect") return connectionResult.promise;
+        if (cmd === "proxmox_connect_ex") return connectionResult.promise;
         if (cmd === "proxmox_get_config") return null;
         if (cmd === "proxmox_get_version") {
           return { version: "8.0", release: "8.0-1", repoid: "abc" };
@@ -324,7 +334,7 @@ describe("ProxmoxPanel", () => {
       });
       await waitFor(() => {
         expect(invoke).toHaveBeenCalledWith(
-          "proxmox_connect",
+          "proxmox_connect_ex",
           expect.objectContaining({ host: "10.0.0.1" }),
         );
       });
@@ -392,7 +402,12 @@ describe("Proxmox TypeScript types", () => {
 describe("ProxmoxPanel - connection and post-connect flows", () => {
   const wireConnectedMocks = () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-      if (cmd === "proxmox_connect") return "Connected";
+      if (cmd === "proxmox_connect_ex")
+        return {
+          state: "connected",
+          username: "root@pam",
+          message: "Connected",
+        };
       if (cmd === "proxmox_get_config") return null;
       if (cmd === "proxmox_get_version")
         return { version: "8.0", release: "8.0-1", repoid: "abc" };
@@ -483,7 +498,7 @@ describe("ProxmoxPanel - connection and post-connect flows", () => {
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
-        "proxmox_connect",
+        "proxmox_connect_ex",
         expect.objectContaining({
           host: "pve.local",
           username: "root@pam",
