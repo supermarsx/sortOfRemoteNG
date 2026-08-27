@@ -152,6 +152,7 @@ jobs:
               sorng-lxd
               sorng-mailcow
               sorng-netbox
+              sorng-nginx-proxy-mgr
               sorng-osticket
               sorng-pfsense
               sorng-prometheus
@@ -170,6 +171,7 @@ jobs:
               sorng-lxd
               sorng-mailcow
               sorng-netbox
+              sorng-nginx-proxy-mgr
               sorng-osticket
               sorng-pfsense
               sorng-prometheus
@@ -188,6 +190,7 @@ jobs:
               sorng-lxd
               sorng-mailcow
               sorng-netbox
+              sorng-nginx-proxy-mgr
               sorng-osticket
               sorng-pfsense
               sorng-prometheus

@@ -444,6 +444,12 @@ pub fn is_command(command: &str) -> bool {
             | "npm_get_reports"
             | "npm_get_audit_log"
             | "npm_get_health"
+            | "npm_refresh_token"
+            | "npm_web_ui_url"
+            | "npm_enable_redirection_host"
+            | "npm_disable_redirection_host"
+            | "npm_enable_stream"
+            | "npm_disable_stream"
             | "ddns_list_profiles"
             | "ddns_get_profile"
             | "ddns_create_profile"
@@ -953,6 +959,12 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         nginx_proxy_mgr_commands::npm_get_reports,
         nginx_proxy_mgr_commands::npm_get_audit_log,
         nginx_proxy_mgr_commands::npm_get_health,
+        nginx_proxy_mgr_commands::npm_refresh_token,
+        nginx_proxy_mgr_commands::npm_web_ui_url,
+        nginx_proxy_mgr_commands::npm_enable_redirection_host,
+        nginx_proxy_mgr_commands::npm_disable_redirection_host,
+        nginx_proxy_mgr_commands::npm_enable_stream,
+        nginx_proxy_mgr_commands::npm_disable_stream,
         // DDNS commands
         ddns_commands::ddns_list_profiles,
         ddns_commands::ddns_get_profile,

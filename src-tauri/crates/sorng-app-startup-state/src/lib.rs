@@ -342,6 +342,11 @@ pub fn register_infrastructure_prefix(
     trust_store::install_runtime(app_dir.join("databases"), trust_enc_state);
     app.manage(TrustStoreService::shared());
 
+    // t65: pin the Nginx Proxy Manager client's TOFU store to the real
+    // `app_data_dir()` instead of its `dirs::data_dir()` fallback. Idempotent.
+    #[cfg(feature = "ops")]
+    nginx_proxy_mgr::client::init_trust_store_path(app_dir.clone());
+
     let emitter = event_emitter_factory(app.handle());
     let ssh_service = ssh::SshService::new_with_emitter(emitter.clone());
     app.manage(ssh_service.clone());
