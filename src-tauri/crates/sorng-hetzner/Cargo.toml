@@ -14,4 +14,8 @@ chrono = { workspace = true }
 reqwest = { workspace = true }
 sorng-tls-trust = { path = "../sorng-tls-trust" }
 sorng-storage = { path = "../sorng-storage" }
-dirs = { workspace = true }
+
+[dev-dependencies]
+# `install_runtime_for_tests` needs a temp `databases/` dir for the
+# process-global trust runtime the TOFU verifier resolves through.
+tempfile = { workspace = true }

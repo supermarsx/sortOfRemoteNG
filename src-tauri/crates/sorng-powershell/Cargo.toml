@@ -32,7 +32,6 @@ regex = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
-dirs = { workspace = true }
 psrp-rs = { path = "../../vendor/psrp-rs-core", default-features = false }
 russh = { version = "=0.61.2", default-features = false, features = ["ring"] }
 ssh-key = { version = "=0.7.0-rc.10", features = ["ed25519", "encryption", "std"] }

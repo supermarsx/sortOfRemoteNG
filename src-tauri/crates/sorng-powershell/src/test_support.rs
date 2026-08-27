@@ -12,6 +12,13 @@ use sorng_storage::trust_store::SyncTrustStore;
 ///
 /// This token only selects the backing store. It cannot change the effective
 /// TLS policy, enable skip flags, or replace signature verification.
+///
+/// It deliberately wraps a [`SyncTrustStore::new`] *legacy single-file* store
+/// rather than the shared per-database runtime: the contract tests pre-pin a
+/// freshly generated certificate into a store they own outright, and must not
+/// depend on — or disturb — the process-global trust runtime. Production code
+/// never constructs one; `tls::build_winrm_client` always resolves the active
+/// database through `TofuTlsContext::shared`.
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct WinRmTestTrust {

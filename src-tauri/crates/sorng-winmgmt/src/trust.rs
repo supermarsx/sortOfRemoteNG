@@ -11,46 +11,18 @@
 //! (`skip_ca_check || skip_cn_check`) map to an explicit, visible, revocable
 //! `AlwaysTrust` per-connection override instead of a blind skip.
 //!
-//! The transport is constructed deep inside the crate with no access to Tauri
-//! app state, so the store handle is built against the *same*
-//! `<app_data_dir>/trust_store.json` file the async `TrustStoreService` uses
-//! (see [`default_trust_store_path`]). The JSON file is the shared source of
-//! truth, so records pinned here appear in the Trust Center UI and vice-versa.
-
-use std::path::PathBuf;
-use std::sync::Arc;
+//! Since t62 the Trust Center is **per user database**: records live in
+//! `databases/<id>.trust.json` beside the connections payload, written through
+//! the same SDBF ladder and the same master-DEK envelope. The transport is
+//! constructed deep inside the crate with no access to Tauri app state, but it
+//! no longer needs any: [`sorng_tls_trust::TofuTlsContext::shared`] resolves
+//! the active database through the process-global trust runtime installed at
+//! startup. Records pinned here appear in the Trust Center UI and vice-versa;
+//! with no database open the handshake fails closed.
 
 use sorng_tls_trust::{build_tofu_client, skip_flag_to_override, TofuTlsContext};
-use sorng_storage::trust_store::SyncTrustStore;
 
 use crate::types::WmiConnectionConfig;
-
-/// Tauri bundle identifier — must match `tauri.conf.json` `identifier` so the
-/// resolved path matches `app.path().app_data_dir()` used by the registry.
-const APP_IDENTIFIER: &str = "com.sortofremote.ng";
-
-/// The trust-store filename the async `TrustStoreService` is registered with
-/// (`state_registry.rs`: `app_dir.join("trust_store.json")`).
-const TRUST_STORE_FILE: &str = "trust_store.json";
-
-/// Resolve the canonical `<app_data_dir>/trust_store.json` path that the async
-/// `TrustStoreService` (and the Trust Center UI) use, so the sync façade reads
-/// and writes the same shared file.
-///
-/// On every platform Tauri's `app_data_dir()` is `<data_dir>/<identifier>`,
-/// where `<data_dir>` is `dirs::data_dir()` (Roaming AppData on Windows,
-/// `~/.local/share` on Linux, `~/Library/Application Support` on macOS). When
-/// the data dir cannot be resolved we fall back to a relative path so the
-/// verifier still functions (it will simply start with an empty store).
-pub fn default_trust_store_path() -> PathBuf {
-    let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join(APP_IDENTIFIER).join(TRUST_STORE_FILE)
-}
-
-/// Build a blocking handle to the shared Trust Center store.
-fn store_handle() -> Arc<SyncTrustStore> {
-    Arc::new(SyncTrustStore::new(default_trust_store_path()))
-}
 
 /// Build the WMI transport's `reqwest::Client`, routing TLS certificate trust
 /// through the Trust Center with TOFU as the default.
@@ -66,16 +38,90 @@ pub fn build_wmi_client(
     builder: reqwest::ClientBuilder,
     config: &WmiConnectionConfig,
 ) -> Result<reqwest::Client, String> {
-    let ctx = TofuTlsContext {
-        store: store_handle(),
+    let ctx = TofuTlsContext::shared(
         // `computer_name` is already a bare host (no scheme); pair it with the
         // effective port so the record is keyed `tls:host:port` exactly as the
         // connection dials it.
-        host: config.computer_name.clone(),
-        port: config.effective_port(),
-        policy_override: skip_flag_to_override(config.skip_ca_check || config.skip_cn_check),
-    };
+        config.computer_name.clone(),
+        config.effective_port(),
+        skip_flag_to_override(config.skip_ca_check || config.skip_cn_check),
+    );
 
-    build_tofu_client(builder, ctx)
-        .map_err(|e| format!("Failed to build HTTP client: {e}"))
+    build_tofu_client(builder, ctx).map_err(|e| format!("Failed to build HTTP client: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sorng_storage::trust_store::test_support::{
+        install_active_runtime_for_tests, install_runtime_for_tests,
+    };
+    use sorng_storage::trust_store::{CertIdentity, Identity};
+
+    fn tls_identity(fingerprint: &str) -> Identity {
+        Identity::Tls(Box::new(CertIdentity {
+            fingerprint: fingerprint.to_string(),
+            subject: Some("CN=wmi.example".into()),
+            issuer: Some("CN=wmi.example".into()),
+            first_seen: "2026-01-01T00:00:00Z".into(),
+            last_seen: "2026-01-01T00:00:00Z".into(),
+            valid_from: None,
+            valid_to: None,
+            pem: None,
+            serial: None,
+            signature_algorithm: None,
+            san: None,
+            chain_fingerprints: Vec::new(),
+            subject_cn: None,
+            subject_org: None,
+            subject_ou: None,
+            subject_country: None,
+            subject_state: None,
+            subject_locality: None,
+            subject_email: None,
+            issuer_cn: None,
+            issuer_org: None,
+            issuer_country: None,
+            key_algorithm: None,
+            key_size: None,
+            version: None,
+            chain: None,
+        }))
+    }
+
+    /// The context the transport builds pins into the *active database's*
+    /// trust file, keyed exactly as the connection dials it.
+    #[test]
+    fn pins_into_the_active_database_trust_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        let _guard = install_active_runtime_for_tests(databases.clone(), "winmgmt-db");
+
+        let ctx = TofuTlsContext::shared("wmi.example", 5986, None);
+        ctx.store
+            .trust(
+                "wmi.example:5986".into(),
+                "tls".into(),
+                tls_identity("ee55"),
+                false,
+            )
+            .expect("pin into the active database");
+
+        assert!(
+            databases.join("winmgmt-db.trust.json").exists(),
+            "the pin must land in databases/<id>.trust.json"
+        );
+    }
+
+    #[test]
+    fn fails_closed_without_an_active_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = install_runtime_for_tests(dir.path().join("databases"), None);
+
+        let ctx = TofuTlsContext::shared("wmi.example", 5986, None);
+        assert!(ctx
+            .store
+            .verify("wmi.example:5986", "tls", tls_identity("ee55"))
+            .is_err());
+    }
 }

@@ -2,44 +2,8 @@ use crate::error::{HetznerError, HetznerResult};
 use crate::types::HetznerConnectionConfig;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::de::DeserializeOwned;
-use std::sync::{Arc, OnceLock};
 
 const DEFAULT_BASE_URL: &str = "https://api.hetzner.cloud/v1";
-
-/// Tauri bundle identifier — the `app_data_dir()` segment under which the
-/// shared Trust Center store lives (`<data_dir>/<identifier>/trust_store.json`).
-/// Must match `src-tauri/tauri.conf.json` `identifier`.
-const APP_IDENTIFIER: &str = "com.sortofremote.ng";
-
-/// Process-global slot holding the Trust Center store path. The app/state layer
-/// may call [`init_trust_store_path`] at startup with the same
-/// `app.path().app_data_dir()` it passes to `TrustStoreService::new`, so the
-/// sync TOFU verifier shares one coherent `trust_store.json` with the async
-/// service and the Trust Center UI. When unset, [`resolve_trust_store_path`]
-/// falls back to the canonical `app_data_dir()` layout (identical path), so the
-/// client stays coherent even if startup wiring has not run yet.
-static TRUST_STORE_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
-
-/// Initialize the Trust Center store path used by Hetzner's TOFU TLS verifier.
-/// Call once at app startup with `app.path().app_data_dir()` (the directory
-/// that contains `trust_store.json`). Idempotent — only the first call wins.
-pub fn init_trust_store_path(app_data_dir: std::path::PathBuf) {
-    let _ = TRUST_STORE_PATH.set(app_data_dir.join("trust_store.json"));
-}
-
-/// Resolve the Trust Center store path: the explicitly-initialized path if set,
-/// else the canonical `dirs::data_dir()/<identifier>/trust_store.json` — the
-/// exact location Tauri's `app_data_dir()` resolves to, so records pinned here
-/// are visible in the Trust Center ("Legacy TLS") and vice-versa.
-fn resolve_trust_store_path() -> std::path::PathBuf {
-    if let Some(path) = TRUST_STORE_PATH.get() {
-        return path.clone();
-    }
-    dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join(APP_IDENTIFIER)
-        .join("trust_store.json")
-}
 
 /// Derive the canonical `(host, port)` the connection actually dials, so the
 /// Trust Center record is keyed `tls:host:port` consistently. Strips the scheme
@@ -87,20 +51,18 @@ impl HetznerClient {
 
         // Route TLS trust through the Trust Center (TOFU default). The legacy
         // `tls_skip_verify` flag maps to an explicit `AlwaysTrust` override.
+        // The store is the active user database's trust file
+        // (`databases/<id>.trust.json`), resolved through the process-global
+        // trust runtime; with no database open the handshake fails closed.
         let (host, port) = canonical_host_port(&base_url);
-        let store: Arc<sorng_storage::trust_store::SyncTrustStore> = Arc::new(
-            sorng_storage::trust_store::SyncTrustStore::new(resolve_trust_store_path()),
-        );
-        let ctx = sorng_tls_trust::TofuTlsContext {
-            store,
+        let ctx = sorng_tls_trust::TofuTlsContext::shared(
             host,
             port,
-            policy_override: sorng_tls_trust::skip_flag_to_override(
-                config.tls_skip_verify == Some(true),
-            ),
-        };
-        let http = sorng_tls_trust::build_tofu_client(builder, ctx)
-            .map_err(|e| HetznerError::connection_failed(format!("Failed to create HTTP client: {e}")))?;
+            sorng_tls_trust::skip_flag_to_override(config.tls_skip_verify == Some(true)),
+        );
+        let http = sorng_tls_trust::build_tofu_client(builder, ctx).map_err(|e| {
+            HetznerError::connection_failed(format!("Failed to create HTTP client: {e}"))
+        })?;
 
         Ok(Self {
             config,
@@ -291,5 +253,85 @@ impl HetznerClient {
     pub async fn ping(&self) -> HetznerResult<()> {
         let _: crate::types::ServersResponse = self.get("/servers?per_page=1").await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod trust_runtime_tests {
+    use super::*;
+    use sorng_storage::trust_store::test_support::{
+        install_active_runtime_for_tests, install_runtime_for_tests,
+    };
+    use sorng_storage::trust_store::{CertIdentity, Identity};
+    use sorng_tls_trust::TofuTlsContext;
+
+    fn tls_identity(fingerprint: &str) -> Identity {
+        Identity::Tls(Box::new(CertIdentity {
+            fingerprint: fingerprint.to_string(),
+            subject: Some("CN=api.hetzner.cloud".into()),
+            issuer: Some("CN=api.hetzner.cloud".into()),
+            first_seen: "2026-01-01T00:00:00Z".into(),
+            last_seen: "2026-01-01T00:00:00Z".into(),
+            valid_from: None,
+            valid_to: None,
+            pem: None,
+            serial: None,
+            signature_algorithm: None,
+            san: None,
+            chain_fingerprints: Vec::new(),
+            subject_cn: None,
+            subject_org: None,
+            subject_ou: None,
+            subject_country: None,
+            subject_state: None,
+            subject_locality: None,
+            subject_email: None,
+            issuer_cn: None,
+            issuer_org: None,
+            issuer_country: None,
+            key_algorithm: None,
+            key_size: None,
+            version: None,
+            chain: None,
+        }))
+    }
+
+    /// The context the client builds pins into the *active database's* trust
+    /// file, not a global sidecar.
+    #[test]
+    fn pins_into_the_active_database_trust_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        let _guard = install_active_runtime_for_tests(databases.clone(), "hetzner-db");
+
+        let (host, port) = canonical_host_port(DEFAULT_BASE_URL);
+        assert_eq!((host.as_str(), port), ("api.hetzner.cloud", 443));
+        let ctx = TofuTlsContext::shared(host, port, None);
+
+        ctx.store
+            .trust(
+                "api.hetzner.cloud:443".into(),
+                "tls".into(),
+                tls_identity("bb22"),
+                false,
+            )
+            .expect("pin into the active database");
+
+        assert!(
+            databases.join("hetzner-db.trust.json").exists(),
+            "the pin must land in databases/<id>.trust.json"
+        );
+    }
+
+    #[test]
+    fn fails_closed_without_an_active_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = install_runtime_for_tests(dir.path().join("databases"), None);
+
+        let ctx = TofuTlsContext::shared("api.hetzner.cloud", 443, None);
+        assert!(ctx
+            .store
+            .verify("api.hetzner.cloud:443", "tls", tls_identity("bb22"))
+            .is_err());
     }
 }

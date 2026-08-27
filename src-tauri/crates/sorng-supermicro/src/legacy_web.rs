@@ -47,6 +47,11 @@ impl LegacyWebClient {
         // `policy_override: None` (defer to the store's effective/global policy,
         // which defaults to TOFU). A user can still set a per-host AlwaysTrust
         // override in the Trust Center for lab BMCs.
+        //
+        // The store is the active user database's trust file
+        // (`databases/<id>.trust.json`), resolved through the process-global
+        // trust runtime — see [`crate::trust::trust_store_handle`]. With no
+        // database open the handshake fails closed.
         let builder = Client::builder()
             .cookie_store(true)
             .timeout(std::time::Duration::from_secs(30));

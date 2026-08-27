@@ -27,13 +27,16 @@ impl OciClient {
         // The t3 audit noted oracle-cloud "may skip via skip_ca_check ||
         // skip_cn_check"; the actual config carries a single `tls_skip_verify`
         // boolean, so that is the legacy opt-out we honour here.
+        //
+        // The store is the active user database's trust file
+        // (`databases/<id>.trust.json`), resolved through the process-global
+        // trust runtime; with no database open the handshake fails closed.
         let skip = config.tls_skip_verify == Some(true);
-        let ctx = sorng_tls_trust::TofuTlsContext {
-            store: Self::trust_store(),
-            host: Self::canonical_host(&config.region),
-            port: 443,
-            policy_override: sorng_tls_trust::skip_flag_to_override(skip),
-        };
+        let ctx = sorng_tls_trust::TofuTlsContext::shared(
+            Self::canonical_host(&config.region),
+            443,
+            sorng_tls_trust::skip_flag_to_override(skip),
+        );
         let http = sorng_tls_trust::build_tofu_client(builder, ctx)
             .map_err(|e| OciError::connection(format!("Failed to create HTTP client: {e}")))?;
 
@@ -45,18 +48,6 @@ impl OciClient {
     /// stable `tls:host:443` identity per OCI region targeted by the connection.
     fn canonical_host(region: &str) -> String {
         format!("{region}.oraclecloud.com")
-    }
-
-    /// Blocking handle to the persistent Trust Center store, backed by the same
-    /// `<app_data_dir>/trust_store.json` the async `TrustStoreService` and the
-    /// Trust Center UI use (Tauri's `app_data_dir` = platform data dir +
-    /// bundle identifier). Coherent across the sync verifier and the async UI.
-    fn trust_store() -> std::sync::Arc<dyn sorng_tls_trust::BlockingTrustStore> {
-        let path = dirs::data_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("com.sortofremote.ng")
-            .join("trust_store.json");
-        std::sync::Arc::new(sorng_storage::trust_store::SyncTrustStore::new(path))
     }
 
     /// Build the full URL for an OCI service endpoint.
@@ -211,5 +202,89 @@ impl OciClient {
             .compartment_id
             .as_deref()
             .unwrap_or(&self.config.tenancy_ocid)
+    }
+}
+
+#[cfg(test)]
+mod trust_runtime_tests {
+    use super::*;
+    use sorng_storage::trust_store::test_support::{
+        install_active_runtime_for_tests, install_runtime_for_tests,
+    };
+    use sorng_storage::trust_store::{CertIdentity, Identity};
+    use sorng_tls_trust::TofuTlsContext;
+
+    fn tls_identity(fingerprint: &str) -> Identity {
+        Identity::Tls(Box::new(CertIdentity {
+            fingerprint: fingerprint.to_string(),
+            subject: Some("CN=oraclecloud.com".into()),
+            issuer: Some("CN=oraclecloud.com".into()),
+            first_seen: "2026-01-01T00:00:00Z".into(),
+            last_seen: "2026-01-01T00:00:00Z".into(),
+            valid_from: None,
+            valid_to: None,
+            pem: None,
+            serial: None,
+            signature_algorithm: None,
+            san: None,
+            chain_fingerprints: Vec::new(),
+            subject_cn: None,
+            subject_org: None,
+            subject_ou: None,
+            subject_country: None,
+            subject_state: None,
+            subject_locality: None,
+            subject_email: None,
+            issuer_cn: None,
+            issuer_org: None,
+            issuer_country: None,
+            key_algorithm: None,
+            key_size: None,
+            version: None,
+            chain: None,
+        }))
+    }
+
+    /// The context the client builds pins into the *active database's* trust
+    /// file, keyed by the region-anchored canonical host.
+    #[test]
+    fn pins_into_the_active_database_trust_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        let _guard = install_active_runtime_for_tests(databases.clone(), "oci-db");
+
+        let host = OciClient::canonical_host("eu-frankfurt-1");
+        assert_eq!(host, "eu-frankfurt-1.oraclecloud.com");
+        let ctx = TofuTlsContext::shared(host.clone(), 443, None);
+
+        ctx.store
+            .trust(
+                format!("{host}:443"),
+                "tls".into(),
+                tls_identity("cc33"),
+                false,
+            )
+            .expect("pin into the active database");
+
+        assert!(
+            databases.join("oci-db.trust.json").exists(),
+            "the pin must land in databases/<id>.trust.json"
+        );
+    }
+
+    #[test]
+    fn fails_closed_without_an_active_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = install_runtime_for_tests(dir.path().join("databases"), None);
+
+        let ctx = TofuTlsContext::shared("eu-frankfurt-1.oraclecloud.com", 443, None);
+        assert!(ctx
+            .store
+            .verify(
+                "eu-frankfurt-1.oraclecloud.com:443",
+                "tls",
+                tls_identity("cc33")
+            )
+            .is_err());
     }
 }

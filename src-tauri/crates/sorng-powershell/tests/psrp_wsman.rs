@@ -108,8 +108,11 @@ impl SoapFixture {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let trust_directory = tempfile::tempdir().unwrap();
+        // A store this fixture owns outright (legacy single-file mode), not the
+        // process-global per-database trust runtime: the contract pre-pins its
+        // own generated certificate and must not disturb other tests.
         let trust_store = Arc::new(SyncTrustStore::new(
-            trust_directory.path().join("trust_store.json"),
+            trust_directory.path().join("winrm-contract-trust.json"),
         ));
         let now = Utc::now().to_rfc3339();
         trust_store

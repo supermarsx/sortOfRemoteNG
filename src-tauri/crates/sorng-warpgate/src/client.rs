@@ -4,36 +4,9 @@
 use crate::error::{WarpgateError, WarpgateResult};
 use crate::types::*;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, COOKIE};
-use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
-use sorng_storage::trust_store::SyncTrustStore;
 use sorng_tls_trust::{build_tofu_client, skip_flag_to_override, TofuTlsContext};
-
-/// Tauri application identifier (`tauri.conf.json` `identifier`). Used to locate
-/// the shared `<app_data_dir>/trust_store.json` the Trust Center uses, so the
-/// records this client pins are coherent with the Trust Center UI.
-const APP_IDENTIFIER: &str = "com.sortofremote.ng";
-
-/// Resolve the path to the shared Trust Center store (`trust_store.json`).
-///
-/// Mirrors how `TrustStoreService` is registered in the app
-/// (`<app_data_dir>/trust_store.json`). The Warpgate client builds its reqwest
-/// client deep inside the crate with no access to Tauri app state, so — per the
-/// t24 integration recipe — it constructs a `SyncTrustStore` pointed at the same
-/// file the async `TrustStoreService` uses. An explicit `SORNG_TRUST_STORE_PATH`
-/// env override wins (used by the state/command layer or tests to pin the path).
-fn resolve_trust_store_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("SORNG_TRUST_STORE_PATH") {
-        return PathBuf::from(p);
-    }
-    // Tauri's `app_data_dir()` on every platform resolves to
-    // `<data_dir>/<identifier>` (Windows: RoamingAppData; macOS: Application
-    // Support; Linux: XDG data home), matching `dirs::data_dir()`.
-    let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join(APP_IDENTIFIER).join("trust_store.json")
-}
 
 /// Canonical `(host, port)` the connection actually dials, so the Trust Center
 /// record is keyed `tls:host:port` and not duplicated. Strips any scheme prefix
@@ -95,14 +68,13 @@ impl WarpgateClient {
         // by `skip_tls_verify`). The legacy `skip_tls_verify` flag now maps to
         // an explicit, revocable `AlwaysTrust` per-connection override; when it
         // is unset, the store's effective/global policy (default TOFU) governs.
+        //
+        // The store is the active user database's trust file
+        // (`databases/<id>.trust.json`), resolved through the process-global
+        // trust runtime — no path derivation, no env override. With no database
+        // open the handshake fails closed.
         let (host, port) = canonical_host_port(&config.host);
-        let store: Arc<SyncTrustStore> = Arc::new(SyncTrustStore::new(resolve_trust_store_path()));
-        let ctx = TofuTlsContext {
-            store,
-            host,
-            port,
-            policy_override: skip_flag_to_override(config.skip_tls_verify),
-        };
+        let ctx = TofuTlsContext::shared(host, port, skip_flag_to_override(config.skip_tls_verify));
         let http = build_tofu_client(builder, ctx).map_err(|e| WarpgateError::connection(&e))?;
         let base_url = config.host.trim_end_matches('/').to_string();
 
@@ -400,5 +372,83 @@ mod tests {
             canonical_host_port("https://warpgate.example.com:8888/admin/"),
             ("warpgate.example.com".to_string(), 8888)
         );
+    }
+}
+
+#[cfg(test)]
+mod trust_runtime_tests {
+    use super::*;
+    use sorng_storage::trust_store::test_support::{
+        install_active_runtime_for_tests, install_runtime_for_tests,
+    };
+    use sorng_storage::trust_store::{CertIdentity, Identity};
+
+    fn tls_identity(fingerprint: &str) -> Identity {
+        Identity::Tls(Box::new(CertIdentity {
+            fingerprint: fingerprint.to_string(),
+            subject: Some("CN=warpgate.example.com".into()),
+            issuer: Some("CN=warpgate.example.com".into()),
+            first_seen: "2026-01-01T00:00:00Z".into(),
+            last_seen: "2026-01-01T00:00:00Z".into(),
+            valid_from: None,
+            valid_to: None,
+            pem: None,
+            serial: None,
+            signature_algorithm: None,
+            san: None,
+            chain_fingerprints: Vec::new(),
+            subject_cn: None,
+            subject_org: None,
+            subject_ou: None,
+            subject_country: None,
+            subject_state: None,
+            subject_locality: None,
+            subject_email: None,
+            issuer_cn: None,
+            issuer_org: None,
+            issuer_country: None,
+            key_algorithm: None,
+            key_size: None,
+            version: None,
+            chain: None,
+        }))
+    }
+
+    /// The context the client builds pins into the *active database's* trust
+    /// file, keyed by the canonical `host:port` the admin API is dialled on.
+    #[test]
+    fn pins_into_the_active_database_trust_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        let _guard = install_active_runtime_for_tests(databases.clone(), "warpgate-db");
+
+        let (host, port) = canonical_host_port("https://warpgate.example.com:8888/admin/");
+        let ctx = TofuTlsContext::shared(host.clone(), port, None);
+
+        ctx.store
+            .trust(
+                format!("{host}:{port}"),
+                "tls".into(),
+                tls_identity("dd44"),
+                false,
+            )
+            .expect("pin into the active database");
+
+        assert!(
+            databases.join("warpgate-db.trust.json").exists(),
+            "the pin must land in databases/<id>.trust.json"
+        );
+    }
+
+    #[test]
+    fn fails_closed_without_an_active_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = install_runtime_for_tests(dir.path().join("databases"), None);
+
+        let ctx = TofuTlsContext::shared("warpgate.example.com", 8888, None);
+        assert!(ctx
+            .store
+            .verify("warpgate.example.com:8888", "tls", tls_identity("dd44"))
+            .is_err());
     }
 }

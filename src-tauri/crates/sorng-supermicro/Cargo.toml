@@ -20,10 +20,12 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 sorng-tls-trust = { path = "../sorng-tls-trust" }
 sorng-storage = { path = "../sorng-storage" }
-dirs = { workspace = true }
 
 [dev-dependencies]
 # Used in tests to install the process-global ring crypto provider (normally
 # installed by sorng-app at startup) so `build_tofu_client` can construct a
 # rustls ClientConfig under `cargo test`.
 rustls = { workspace = true, features = ["ring"] }
+# `install_runtime_for_tests` needs a temp `databases/` dir for the
+# process-global trust runtime the TOFU verifier resolves through.
+tempfile = { workspace = true }
