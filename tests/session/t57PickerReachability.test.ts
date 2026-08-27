@@ -153,16 +153,13 @@ describe("t66 voip-phone picker reachability", () => {
     );
     expect(getDirectSessionUnavailableMessage(protocol)).toBeNull();
 
-    // The management-runtime descriptor is registered by the session-panel
-    // executor (t66-e4). Until it lands the picker entry is contract-only;
-    // once present it must resolve to a real panel like every t57 target.
+    // The management-runtime descriptor (t66-e4) must resolve to a real
+    // panel like every t57 target.
     const descriptor = findBuiltInManagementRuntime(protocol);
-    if (descriptor) {
-      expect(descriptor).toEqual(
-        expect.objectContaining({ protocol, category: "networking" }),
-      );
-      const panelModule = await descriptor.importPanel();
-      expect(panelModule.default).toBeTypeOf("function");
-    }
+    expect(descriptor).toEqual(
+      expect.objectContaining({ protocol, category: "networking" }),
+    );
+    const panelModule = await descriptor!.importPanel();
+    expect(panelModule.default).toBeTypeOf("function");
   });
 });

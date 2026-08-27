@@ -16,6 +16,7 @@ import {
   iloRuntimeDescriptor,
   lenovoRuntimeDescriptor,
   supermicroRuntimeDescriptor,
+  voipPhoneRuntimeDescriptor,
 } from "../../utils/session/builtInManagementRuntimeRegistry";
 import {
   azureRuntimeDescriptor,
@@ -69,6 +70,11 @@ const SupermicroSessionPanel = dynamic(
     supermicroRuntimeDescriptor
       .importPanel()
       .then((module) => module.default),
+  { ssr: false },
+);
+const VoipPhoneSessionPanel = dynamic(
+  () =>
+    voipPhoneRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const GcpSessionPanel = dynamic(
@@ -435,6 +441,16 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         <SupermicroSessionPanel
           session={session}
           onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === voipPhoneRuntimeDescriptor.protocol) {
+      return (
+        <VoipPhoneSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+          onOpenConnection={onReconnect}
         />
       );
     }

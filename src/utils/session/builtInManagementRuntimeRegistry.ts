@@ -69,11 +69,22 @@ export const supermicroRuntimeDescriptor = {
   importPanel: () => import("../../components/hardware/SupermicroSessionPanel"),
 } satisfies BuiltInManagementRuntimeDescriptor<"supermicro">;
 
+export const voipPhoneRuntimeDescriptor = {
+  protocol: "voip-phone",
+  label: "VoIP Phone (Yealink)",
+  category: "networking",
+  frontendPath: "src/components/voipPhone/VoipPhoneSessionPanel.tsx",
+  backendPath: "src-tauri/crates/sorng-voip-phone",
+  testPath: "tests/voipPhone/VoipPhoneSessionPanel.test.tsx",
+  importPanel: () => import("../../components/voipPhone/VoipPhoneSessionPanel"),
+} satisfies BuiltInManagementRuntimeDescriptor<"voip-phone">;
+
 export const builtInManagementRuntimeRegistry = [
   idracRuntimeDescriptor,
   iloRuntimeDescriptor,
   lenovoRuntimeDescriptor,
   supermicroRuntimeDescriptor,
+  voipPhoneRuntimeDescriptor,
 ] as const;
 
 export function findBuiltInManagementRuntime(
