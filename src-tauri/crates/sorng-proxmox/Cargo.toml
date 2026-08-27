@@ -26,7 +26,7 @@ tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
 sorng-core = { path = "../sorng-core" }
 # Certificate metadata for `proxmox_probe_certificate` (same pin as sorng-tls-trust).
-x509-parser = "0.15"
+x509-parser = "0.18"
 # Pure RFC 6238 generator for the optional `totpSecret` auto-TFA path.
 sorng-totp = { path = "../sorng-totp" }
 

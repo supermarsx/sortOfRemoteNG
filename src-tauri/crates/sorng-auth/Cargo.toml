@@ -37,7 +37,7 @@ log = { workspace = true }
 uuid = { workspace = true }
 data-encoding = "2.5"
 hex = { workspace = true }
-x509-parser = { version = "0.15", optional = true }
+x509-parser = { version = "0.18", optional = true }
 pbkdf2 = { workspace = true }
 hmac = { workspace = true }
 serde_urlencoded = "0.7"
