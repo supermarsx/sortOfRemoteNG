@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { DiscoveredHost, DiscoveredService } from "../../types/connection/connection";
+import {
+  DiscoveredHost,
+  DiscoveredService,
+} from "../../types/connection/connection";
 import { NetworkDiscoveryConfig } from "../../types/settings/settings";
 import { Semaphore } from "../core/semaphore";
 import serviceMap from "../discovery/serviceMap";
@@ -385,11 +388,7 @@ export class NetworkScanner {
         }
         openPorts.push(port);
 
-        const service = this.identifyService(
-          port,
-          result.banner,
-          protocol,
-        );
+        const service = this.identifyService(port, result.banner, protocol);
         if (service) {
           services.push(service);
         }
@@ -401,11 +400,7 @@ export class NetworkScanner {
     }
 
     const responseTime = Date.now() - startTime;
-    const hostname = await this.resolveHostname(
-      ip,
-      config.hostnameTtl,
-      signal,
-    );
+    const hostname = await this.resolveHostname(ip, config.hostnameTtl, signal);
     if (signal?.aborted) {
       return null;
     }
@@ -490,7 +485,12 @@ export class NetworkScanner {
       }
 
       if (strategy === "websocket") {
-        const wsResult = await this.probeWebSocket(ip, port, config.timeout, signal);
+        const wsResult = await this.probeWebSocket(
+          ip,
+          port,
+          config.timeout,
+          signal,
+        );
         if (wsResult !== null) {
           if (wsResult.isOpen || strategies.length === 1) {
             return wsResult;
@@ -500,7 +500,12 @@ export class NetworkScanner {
         }
         // wsResult null means creation failed; fall through to next strategy
       } else if (strategy === "http") {
-        const httpResult = await this.probeHttp(ip, port, config.timeout, signal);
+        const httpResult = await this.probeHttp(
+          ip,
+          port,
+          config.timeout,
+          signal,
+        );
         if (httpResult !== null) {
           return httpResult;
         }
@@ -677,12 +682,16 @@ export class NetworkScanner {
       try {
         response = await fetch(url, {
           method: "HEAD",
-          signal: signal ? this.mergeSignals(signal, controller.signal) : controller.signal,
+          signal: signal
+            ? this.mergeSignals(signal, controller.signal)
+            : controller.signal,
         });
       } catch {
         response = await fetch(url, {
           method: "GET",
-          signal: signal ? this.mergeSignals(signal, controller.signal) : controller.signal,
+          signal: signal
+            ? this.mergeSignals(signal, controller.signal)
+            : controller.signal,
         });
       }
       clearTimeout(timer);
@@ -694,7 +703,10 @@ export class NetworkScanner {
     }
   }
 
-  private mergeSignals(signalA: AbortSignal, signalB: AbortSignal): AbortSignal {
+  private mergeSignals(
+    signalA: AbortSignal,
+    signalB: AbortSignal,
+  ): AbortSignal {
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (signalA.aborted || signalB.aborted) {

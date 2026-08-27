@@ -1,13 +1,13 @@
-import { useEffect, useState, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { DiscoveredHost } from '../../types/connection/connection';
-import { NetworkDiscoveryConfig } from '../../types/settings/settings';
-import { useConnections } from '../../contexts/useConnections';
-import { generateId } from '../../utils/core/id';
-import { discoveredHostsToCsv } from '../../utils/discovery/discoveredHostsCsv';
-import { NetworkScanner } from '../../utils/network/networkScanner';
-import { normalizeImportedProtocol } from '../../utils/connection/normalizeImportedProtocol';
-import { invoke } from '@tauri-apps/api/core';
+import { useEffect, useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import { DiscoveredHost } from "../../types/connection/connection";
+import { NetworkDiscoveryConfig } from "../../types/settings/settings";
+import { useConnections } from "../../contexts/useConnections";
+import { generateId } from "../../utils/core/id";
+import { discoveredHostsToCsv } from "../../utils/discovery/discoveredHostsCsv";
+import { NetworkScanner } from "../../utils/network/networkScanner";
+import { normalizeImportedProtocol } from "../../utils/connection/normalizeImportedProtocol";
+import { invoke } from "@tauri-apps/api/core";
 
 interface UseNetworkDiscoveryParams {
   onClose: () => void;
@@ -27,7 +27,7 @@ const mergeDiscoveredHosts = (
     serviceHosts.map((host) => [host.ip, cloneDiscoveredHost(host)]),
   );
   for (const ip of pingHosts) {
-    if (typeof ip !== 'string' || merged.has(ip)) continue;
+    if (typeof ip !== "string" || merged.has(ip)) continue;
     merged.set(ip, {
       ip,
       openPorts: [],
@@ -46,22 +46,22 @@ const scanPingHosts = async (
   signal: AbortSignal,
 ): Promise<string[]> => {
   if (signal.aborted) return [];
-  const abortedToken = Symbol('network-discovery-ping-aborted');
+  const abortedToken = Symbol("network-discovery-ping-aborted");
   let abortHandler: (() => void) | undefined;
   const aborted = new Promise<typeof abortedToken>((resolve) => {
     abortHandler = () => resolve(abortedToken);
-    signal.addEventListener('abort', abortHandler, { once: true });
+    signal.addEventListener("abort", abortHandler, { once: true });
   });
-  const invoked = invoke<unknown>('scan_network', { subnet, maxConcurrent })
+  const invoked = invoke<unknown>("scan_network", { subnet, maxConcurrent })
     .then((value) =>
       Array.isArray(value)
-        ? value.filter((ip): ip is string => typeof ip === 'string')
+        ? value.filter((ip): ip is string => typeof ip === "string")
         : [],
     )
     .catch(() => []);
   const result = await Promise.race([invoked, aborted]);
   if (abortHandler) {
-    signal.removeEventListener('abort', abortHandler);
+    signal.removeEventListener("abort", abortHandler);
   }
   return result === abortedToken || signal.aborted ? [] : result;
 };
@@ -71,9 +71,9 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
   const { dispatch } = useConnections();
   const [config, setConfig] = useState<NetworkDiscoveryConfig>({
     enabled: true,
-    ipRange: '192.168.1.0/24',
-    portRanges: ['22', '80', '443', '3389', '5900'],
-    protocols: ['ssh', 'http', 'https', 'rdp', 'vnc'],
+    ipRange: "192.168.1.0/24",
+    portRanges: ["22", "80", "443", "3389", "5900"],
+    protocols: ["ssh", "http", "https", "rdp", "vnc"],
     timeout: 5000,
     maxConcurrent: 50,
     maxPortConcurrent: 100,
@@ -88,10 +88,10 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
       telnet: [23],
     },
     probeStrategies: {
-      default: ['websocket'],
-      http: ['websocket', 'http'],
-      https: ['websocket', 'http'],
-      vnc: ['rfb'],
+      default: ["websocket"],
+      http: ["websocket", "http"],
+      https: ["websocket", "http"],
+      vnc: ["rfb"],
     },
     cacheTTL: 300000,
     hostnameTtl: 300000,
@@ -102,7 +102,7 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
   const [scanProgress, setScanProgress] = useState(0);
   const [selectedHosts, setSelectedHosts] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [filterText, setFilterText] = useState('');
+  const [filterText, setFilterText] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const scannerRef = useRef<NetworkScanner | null>(null);
   const scanner = scannerRef.current ?? new NetworkScanner();
@@ -136,11 +136,7 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
           },
           controller.signal,
         ),
-        scanPingHosts(
-          config.ipRange,
-          config.maxConcurrent,
-          controller.signal,
-        ),
+        scanPingHosts(config.ipRange, config.maxConcurrent, controller.signal),
       ]);
       if (
         abortControllerRef.current === controller &&
@@ -151,7 +147,7 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
       }
     } catch (error) {
       if (!controller.signal.aborted) {
-        console.error('Network scan failed:', error);
+        console.error("Network scan failed:", error);
       }
     } finally {
       if (abortControllerRef.current === controller) {
@@ -185,10 +181,10 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
           isGroup: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          description: `Auto-discovered ${service.service} service${service.version ? ` (${service.version})` : ''}`,
-          tags: ['auto-discovered'],
+          description: `Auto-discovered ${service.service} service${service.version ? ` (${service.version})` : ""}`,
+          tags: ["auto-discovered"],
         };
-        dispatch({ type: 'ADD_CONNECTION', payload: connection });
+        dispatch({ type: "ADD_CONNECTION", payload: connection });
       });
     });
     setSelectedHosts(new Set());
@@ -215,11 +211,11 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
 
   const handleExportCSV = () => {
     const csv = discoveredHostsToCsv(filteredHosts);
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
-    link.download = 'discovered_hosts.csv';
+    link.download = "discovered_hosts.csv";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

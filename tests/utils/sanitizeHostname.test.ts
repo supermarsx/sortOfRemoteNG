@@ -272,7 +272,7 @@ describe("schemeToProtocol", () => {
 
   it("returns undefined for schemes without a connection protocol", () => {
     expect(schemeToProtocol("redis")).toBeUndefined();
-    expect(schemeToProtocol("mongodb")).toBeUndefined();
+    expect(schemeToProtocol("mongodb")).toBe("mongodb"); // registered by t69 (8a9adeef)
     expect(schemeToProtocol("mailto")).toBeUndefined();
     expect(schemeToProtocol("")).toBeUndefined();
   });
