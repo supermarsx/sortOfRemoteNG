@@ -16,6 +16,8 @@ sorng-encryption = { path = "../sorng-encryption" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-vault = { path = "../sorng-vault" }
 log = { workspace = true }
+# `platform.rs` implements `AppEventEmitter`, whose payload is a `serde_json::Value`.
+serde_json = { workspace = true }
 tauri = { workspace = true }
 tokio = { workspace = true }
 

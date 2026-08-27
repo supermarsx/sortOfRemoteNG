@@ -1,5 +1,26 @@
 use super::*;
 
+/// Bridges [`sorng_core::events::AppEventEmitter`] to this app handle.
+///
+/// `register_platform` is called with only the `App`, so — unlike the
+/// registrars that are handed an [`EventEmitterFactory`] — this module builds
+/// its own emitter. It is the same three-line adapter the root crate uses for
+/// the connectivity services.
+struct PlatformEventEmitter(tauri::AppHandle);
+
+impl sorng_core::events::AppEventEmitter for PlatformEventEmitter {
+    fn emit_event(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+        use tauri::Emitter;
+        self.0
+            .emit(event, payload)
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn platform_emitter(app: &tauri::App<tauri::Wry>) -> DynEventEmitter {
+    Arc::new(PlatformEventEmitter(app.handle().clone()))
+}
+
 pub(super) fn register(app: &mut tauri::App<tauri::Wry>) {
     let hyperv: HyperVServiceState = Arc::new(Mutex::new(hyperv::service::HyperVService::new()));
     app.manage(hyperv);
@@ -8,8 +29,11 @@ pub(super) fn register(app: &mut tauri::App<tauri::Wry>) {
     let desktop: VmwDesktopServiceState =
         Arc::new(Mutex::new(vmware_desktop::service::VmwDesktopService::new()));
     app.manage(desktop);
-    let proxmox: ProxmoxServiceState =
-        Arc::new(Mutex::new(proxmox::service::ProxmoxService::new()));
+    // t67-e5: the xterm.js console relay streams `proxmox-console-*` events,
+    // so this service is built with an emitter (mirrors serial/ssh3).
+    let proxmox: ProxmoxServiceState = Arc::new(Mutex::new(
+        proxmox::service::ProxmoxService::new_with_emitter(platform_emitter(app)),
+    ));
     app.manage(proxmox);
     let idrac: IdracServiceState = Arc::new(Mutex::new(idrac::service::IdracService::new()));
     app.manage(idrac);

@@ -3,7 +3,7 @@
 // Every command is `async`, takes `State<'_, ProxmoxServiceState>` and
 // returns `Result<T, String>` (Tauri requires `String` errors).
 
-use super::service::ProxmoxServiceState;
+use super::service::{ConsoleSessionHandle, ProxmoxServiceState};
 use super::types::*;
 use tauri::State;
 
@@ -1382,6 +1382,74 @@ pub async fn proxmox_node_termproxy(
 ) -> Result<TermProxyTicket, String> {
     let svc = state.lock().await;
     svc.node_termproxy(&node).await.map_err(|e| e.to_string())
+}
+
+// ── Live xterm.js consoles (termproxy WebSocket relay) ───────────────
+//
+// `proxmox_console_open` returns a `sessionId` that keys every other console
+// command and every console event:
+//   `proxmox-console-output` { sessionId, data }    — base64, ≤ 64 KiB per event
+//   `proxmox-console-closed` { sessionId, reason }  — once, last
+//   `proxmox-console-error`  { sessionId, message } — non-fatal unless a close follows
+
+/// Open a console on a QEMU VM (`vm_type: "qemu"`), an LXC container
+/// (`"lxc"`) or a node shell (`"node"`, no `vmid`). Omitting `vm_type`
+/// infers `qemu` when a `vmid` is given and `node` otherwise.
+#[tauri::command]
+pub async fn proxmox_console_open(
+    state: State<'_, ProxmoxServiceState>,
+    node: String,
+    vmid: Option<u64>,
+    vm_type: Option<String>,
+) -> Result<ConsoleSessionHandle, String> {
+    let svc = state.lock().await;
+    svc.console_open(&node, vmid, vm_type.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Send terminal input. `data` is plain UTF-8 (xterm.js `onData`); output
+/// comes back base64-encoded because it may carry arbitrary bytes.
+#[tauri::command]
+pub async fn proxmox_console_send(
+    state: State<'_, ProxmoxServiceState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.console_send(&session_id, &data)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn proxmox_console_resize(
+    state: State<'_, ProxmoxServiceState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.console_resize(&session_id, cols, rows)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn proxmox_console_close(
+    state: State<'_, ProxmoxServiceState>,
+    session_id: String,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.console_close(&session_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Live console sessions (lets the panel re-attach after a remount).
+#[tauri::command]
+pub async fn proxmox_console_list(
+    state: State<'_, ProxmoxServiceState>,
+) -> Result<Vec<ConsoleSessionHandle>, String> {
+    let svc = state.lock().await;
+    Ok(svc.console_sessions())
 }
 
 // ── Snapshots ───────────────────────────────────────────────────────

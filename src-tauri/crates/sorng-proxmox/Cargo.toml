@@ -22,6 +22,9 @@ rustls-native-certs = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 tokio-rustls = { workspace = true }
+# termproxy console relay (console_ws.rs): WebSocket client + frontend events.
+tokio-tungstenite = { workspace = true }
+sorng-core = { path = "../sorng-core" }
 # Certificate metadata for `proxmox_probe_certificate` (same pin as sorng-tls-trust).
 x509-parser = "0.15"
 # Pure RFC 6238 generator for the optional `totpSecret` auto-TFA path.

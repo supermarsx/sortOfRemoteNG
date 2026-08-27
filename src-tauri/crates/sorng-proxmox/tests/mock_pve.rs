@@ -10,6 +10,11 @@
 //! `otp`, PVE 7+ `NeedTFA` challenge + `tfa-challenge` completion (`totp:`,
 //! `recovery:`), ticket-as-password renewal, API tokens, ticket invalidation
 //! (to force 401s), and a `/version` body padding knob for response caps.
+//!
+//! The `ws` section at the bottom (t67-e5) adds the console surface: the
+//! `termproxy` ticket endpoints and the `vncwebsocket` upgrade, behind which a
+//! minimal PVE termproxy is emulated (`user:ticket\n` → `OK`, then `0:`/`1:`/`2`
+//! frames, echoing input back as server output).
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
@@ -69,6 +74,28 @@ pub struct MockState {
     /// Extra bytes appended to the `/version` payload (response cap tests).
     pub version_padding: usize,
     pub vm_status: HashMap<u64, String>,
+    /// ── `ws` section (t67-e5) ──────────────────────────────────────
+    /// Issued termproxy tickets: `vncticket -> user`.
+    pub console_tickets: HashMap<String, String>,
+    pub console_issued: u64,
+    /// Reject every `vncwebsocket` upgrade with 401 (expired-ticket path).
+    pub console_reject_upgrade: bool,
+    /// Handshake lines (`user:ticket\n`) the websocket endpoint received.
+    pub console_handshakes: Vec<String>,
+    /// Payloads of the `0:<len>:<data>` input frames, in order.
+    pub console_inputs: Vec<Vec<u8>>,
+    /// `(cols, rows)` from the `1:<cols>:<rows>:` frames, in order.
+    pub console_resizes: Vec<(u16, u16)>,
+    /// Count of `2` keepalive frames.
+    pub console_pings: usize,
+    /// Websocket upgrades that reached the termproxy emulation.
+    pub console_connections: usize,
+    /// Echo `0:` input payloads back as server output (default `true`).
+    pub console_echo: bool,
+    /// Malformed frames the emulation could not parse.
+    pub console_bad_frames: Vec<String>,
+    /// Server-pushed output / close, broadcast to every live console.
+    console_directives: tokio::sync::broadcast::Sender<WsDirective>,
 }
 
 impl MockState {
@@ -87,6 +114,17 @@ impl MockState {
             requests: Vec::new(),
             version_padding: 0,
             vm_status,
+            console_tickets: HashMap::new(),
+            console_issued: 0,
+            console_reject_upgrade: false,
+            console_handshakes: Vec::new(),
+            console_inputs: Vec::new(),
+            console_resizes: Vec::new(),
+            console_pings: 0,
+            console_connections: 0,
+            console_echo: true,
+            console_bad_frames: Vec::new(),
+            console_directives: tokio::sync::broadcast::channel(64).0,
         }
     }
 
@@ -225,6 +263,42 @@ where
                 Ok(read) => buffer.extend_from_slice(&chunk[..read]),
             }
         };
+        // `ws` section: a `vncwebsocket` upgrade hijacks the connection.
+        if is_websocket_upgrade(&request) {
+            let decision = {
+                let mut guard = state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                guard.requests.push(request.clone());
+                console_upgrade(&mut guard, &request)
+            };
+            match decision {
+                Ok(upgrade) => {
+                    let response = format!(
+                        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",
+                        upgrade.accept_key
+                    );
+                    if stream.write_all(response.as_bytes()).await.is_err()
+                        || stream.flush().await.is_err()
+                    {
+                        return;
+                    }
+                    serve_console_ws(stream, state, upgrade).await;
+                }
+                Err((status, body)) => {
+                    let response = format!(
+                        "HTTP/1.1 {status} {}\r\nContent-Type: application/json;charset=UTF-8\r\nContent-Length: {}\r\n\r\n",
+                        reason(status),
+                        body.len()
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                    let _ = stream.write_all(body.as_bytes()).await;
+                    let _ = stream.flush().await;
+                }
+            }
+            return;
+        }
+
         let (status, body) = {
             let mut guard = state
                 .lock()
@@ -368,6 +442,19 @@ fn route(state: &mut MockState, request: &RecordedRequest) -> (u16, String) {
             )
         }
         ("GET", ["nodes", MOCK_NODE, "lxc"]) => (200, json(serde_json::json!([]))),
+        // ── `ws` section: termproxy tickets ────────────────────────
+        ("POST", ["nodes", MOCK_NODE, "termproxy"]) => issue_console_ticket(state, request),
+        ("POST", ["nodes", MOCK_NODE, kind, vmid, "termproxy"])
+            if matches!(*kind, "qemu" | "lxc") =>
+        {
+            let Ok(vmid) = vmid.parse::<u64>() else {
+                return (400, error_body("vmid"));
+            };
+            if *kind == "qemu" && !state.vm_status.contains_key(&vmid) {
+                return (404, error_body("no such vm"));
+            }
+            issue_console_ticket(state, request)
+        }
         ("GET", ["nodes", MOCK_NODE, "qemu", vmid, "status", "current"]) => {
             let Ok(vmid) = vmid.parse::<u64>() else {
                 return (400, error_body("vmid"));
@@ -534,4 +621,316 @@ fn access_ticket(state: &mut MockState, request: &RecordedRequest) -> (u16, Stri
             "CSRFPreventionToken": csrf,
         })),
     )
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  ws — termproxy tickets + `vncwebsocket` upgrade (t67-e5)
+// ══════════════════════════════════════════════════════════════════════
+
+use futures::{SinkExt, StreamExt};
+use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Role};
+use tokio_tungstenite::tungstenite::Message;
+
+/// Server-side pushes a test can trigger on every live console.
+#[derive(Debug, Clone)]
+pub enum WsDirective {
+    /// Raw bytes the emulated shell writes back.
+    Output(Vec<u8>),
+    /// Close the websocket with this reason.
+    Close(String),
+}
+
+/// What the 101 response and the emulation need from the upgrade request.
+pub struct WsUpgrade {
+    accept_key: String,
+    /// The user the accepted `vncticket` was issued to.
+    expected_user: String,
+    expected_ticket: String,
+    directives: tokio::sync::broadcast::Receiver<WsDirective>,
+}
+
+impl MockPve {
+    /// Push raw output to every live console (as the emulated shell would).
+    pub fn push_console_output(&self, bytes: &[u8]) {
+        let sender = self.state().console_directives.clone();
+        let _ = sender.send(WsDirective::Output(bytes.to_vec()));
+    }
+
+    /// Close every live console with `reason`.
+    pub fn close_consoles(&self, reason: &str) {
+        let sender = self.state().console_directives.clone();
+        let _ = sender.send(WsDirective::Close(reason.to_string()));
+    }
+
+    /// Poll until `predicate` holds for the mock state, or `timeout` elapses.
+    pub async fn wait_for(
+        &self,
+        timeout: std::time::Duration,
+        predicate: impl Fn(&MockState) -> bool,
+    ) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            // Scope the guard so it never spans the await below.
+            let matched = {
+                let state = self.state();
+                predicate(&state)
+            };
+            if matched {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+}
+
+impl MockState {
+    /// Every `vncticket` the mock has handed out, sorted.
+    pub fn console_ticket_values(&self) -> Vec<String> {
+        let mut tickets: Vec<String> = self.console_tickets.keys().cloned().collect();
+        tickets.sort();
+        tickets
+    }
+}
+
+/// Identify the caller from the session credential the request carries.
+fn requesting_user(state: &MockState, request: &RecordedRequest) -> Option<String> {
+    if let Some(authorization) = request.header("Authorization") {
+        let token = authorization.strip_prefix("PVEAPIToken=")?;
+        let (token_id, _secret) = token.rsplit_once('=')?;
+        return Some(token_id.split('!').next()?.to_string());
+    }
+    let cookie = request.header("Cookie")?;
+    let ticket = cookie
+        .split(';')
+        .map(str::trim)
+        .filter_map(|pair| pair.strip_prefix("PVEAuthCookie="))
+        .find(|ticket| state.valid_tickets.contains(*ticket))?;
+    // Issued tickets look like `PVE:<user>:<counter>::mocksig`.
+    ticket.split(':').nth(1).map(str::to_string)
+}
+
+/// `POST …/termproxy` — hand out a single-use console ticket.
+fn issue_console_ticket(state: &mut MockState, request: &RecordedRequest) -> (u16, String) {
+    let Some(user) = requesting_user(state, request) else {
+        return (401, error_body("No ticket"));
+    };
+    state.console_issued += 1;
+    let ticket = format!("PVEVNC:{:08X}::consolesig", state.console_issued);
+    let port = format!("{}", 5900 + state.console_issued);
+    state.console_tickets.insert(ticket.clone(), user.clone());
+    (
+        200,
+        json(serde_json::json!({
+            "ticket": ticket,
+            "port": port,
+            "user": user,
+            "upid": format!("UPID:{MOCK_NODE}:0000:vncproxy:{user}:"),
+        })),
+    )
+}
+
+fn is_websocket_upgrade(request: &RecordedRequest) -> bool {
+    request.path.ends_with("/vncwebsocket")
+        && request
+            .header("Upgrade")
+            .is_some_and(|value| value.eq_ignore_ascii_case("websocket"))
+}
+
+/// Validate the upgrade; `Err` is an HTTP status + body to answer with.
+fn console_upgrade(
+    state: &mut MockState,
+    request: &RecordedRequest,
+) -> Result<WsUpgrade, (u16, String)> {
+    if !is_authenticated(state, request) {
+        return Err((401, error_body("No ticket")));
+    }
+    if state.console_reject_upgrade {
+        return Err((401, error_body("invalid ticket")));
+    }
+    let Some(key) = request.header("Sec-WebSocket-Key") else {
+        return Err((400, error_body("missing websocket key")));
+    };
+    let accept_key = derive_accept_key(key.as_bytes());
+
+    let query: HashMap<String, String> = url::form_urlencoded::parse(request.query.as_bytes())
+        .into_owned()
+        .collect();
+    // PVE requires both the port that came with the ticket and the ticket.
+    if query.get("port").is_none_or(|port| port.is_empty()) {
+        return Err((400, error_body("missing port")));
+    }
+    let Some(vncticket) = query.get("vncticket") else {
+        return Err((401, error_body("missing vncticket")));
+    };
+    let Some(expected_user) = state.console_tickets.get(vncticket).cloned() else {
+        return Err((401, error_body("invalid ticket")));
+    };
+
+    Ok(WsUpgrade {
+        accept_key,
+        expected_user,
+        expected_ticket: vncticket.clone(),
+        directives: state.console_directives.subscribe(),
+    })
+}
+
+/// Minimal PVE termproxy: `user:ticket\n` then `OK`, then `0:`/`1:`/`2` frames.
+async fn serve_console_ws<S>(stream: S, state: Arc<Mutex<MockState>>, upgrade: WsUpgrade)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let mut socket =
+        tokio_tungstenite::WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
+    let mut directives = upgrade.directives;
+
+    // ── Handshake line ─────────────────────────────────────────────
+    let Some(Ok(first)) = socket.next().await else {
+        return;
+    };
+    let handshake =
+        String::from_utf8_lossy(&message_payload(&first).unwrap_or_default()).into_owned();
+    {
+        let mut guard = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.console_handshakes.push(handshake.clone());
+    }
+    let expected = format!("{}:{}\n", upgrade.expected_user, upgrade.expected_ticket);
+    if handshake != expected {
+        let _ = socket.send(Message::Close(None)).await;
+        let _ = socket.flush().await;
+        return;
+    }
+    if socket.send(Message::Text("OK".into())).await.is_err() {
+        return;
+    }
+    {
+        let mut guard = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.console_connections += 1;
+    }
+
+    // ── Frame loop ─────────────────────────────────────────────────
+    loop {
+        tokio::select! {
+            incoming = socket.next() => {
+                let Some(Ok(message)) = incoming else { return };
+                match message {
+                    Message::Close(_) => {
+                        let _ = socket.send(Message::Close(None)).await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                    Message::Ping(payload) => {
+                        if socket.send(Message::Pong(payload)).await.is_err() {
+                            return;
+                        }
+                    }
+                    Message::Pong(_) | Message::Frame(_) => {}
+                    other => {
+                        let Some(payload) = message_payload(&other) else {
+                            continue;
+                        };
+                        if let Some(echo) = handle_console_frame(&state, &payload) {
+                            if socket.send(Message::Binary(echo.into())).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            directive = directives.recv() => {
+                match directive {
+                    Ok(WsDirective::Output(bytes)) => {
+                        if socket.send(Message::Binary(bytes.into())).await.is_err() {
+                            return;
+                        }
+                    }
+                    Ok(WsDirective::Close(reason)) => {
+                        let _ = socket
+                            .send(Message::Close(Some(CloseFrame {
+                                code: CloseCode::Normal,
+                                reason: reason.into(),
+                            })))
+                            .await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                }
+            }
+        }
+    }
+}
+
+fn message_payload(message: &Message) -> Option<Vec<u8>> {
+    match message {
+        Message::Text(text) => Some(text.as_bytes().to_vec()),
+        Message::Binary(bytes) => Some(bytes.to_vec()),
+        _ => None,
+    }
+}
+
+/// Parse one client frame, record it, and return bytes to echo back.
+fn handle_console_frame(state: &Arc<Mutex<MockState>>, payload: &[u8]) -> Option<Vec<u8>> {
+    let mut guard = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match payload.first() {
+        // `0:<len>:<data>`
+        Some(b'0') => {
+            let mut parts = payload[1..].splitn(3, |byte| *byte == b':');
+            let (Some(empty), Some(len), Some(data)) = (parts.next(), parts.next(), parts.next())
+            else {
+                guard
+                    .console_bad_frames
+                    .push(String::from_utf8_lossy(payload).into_owned());
+                return None;
+            };
+            let declared = std::str::from_utf8(len)
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok());
+            if !empty.is_empty() || declared != Some(data.len()) {
+                guard
+                    .console_bad_frames
+                    .push(String::from_utf8_lossy(payload).into_owned());
+                return None;
+            }
+            guard.console_inputs.push(data.to_vec());
+            guard.console_echo.then(|| data.to_vec())
+        }
+        // `1:<cols>:<rows>:`
+        Some(b'1') => {
+            let text = String::from_utf8_lossy(payload).into_owned();
+            let fields: Vec<&str> = text.split(':').collect();
+            match (
+                fields.get(1).and_then(|value| value.parse::<u16>().ok()),
+                fields.get(2).and_then(|value| value.parse::<u16>().ok()),
+            ) {
+                (Some(cols), Some(rows)) if fields.len() == 4 && fields[3].is_empty() => {
+                    guard.console_resizes.push((cols, rows));
+                }
+                _ => guard.console_bad_frames.push(text),
+            }
+            None
+        }
+        // `2`
+        Some(b'2') if payload.len() == 1 => {
+            guard.console_pings += 1;
+            None
+        }
+        _ => {
+            guard
+                .console_bad_frames
+                .push(String::from_utf8_lossy(payload).into_owned());
+            None
+        }
+    }
 }

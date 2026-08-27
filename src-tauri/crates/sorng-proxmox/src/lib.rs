@@ -25,6 +25,8 @@
 //! - **ceph** — Ceph monitors, OSDs, pools, status
 //! - **sdn** — Software Defined Networking (zones, vnets, subnets)
 //! - **console** — VNC and SPICE console ticket acquisition
+//! - **console_ws** — live `termproxy` WebSocket relay behind the xterm.js
+//!   consoles (bounded buffers, keepalive, frontend events)
 //! - **metrics** — RRD data for nodes, VMs, containers
 //! - **snapshot** — Snapshot CRUD for QEMU & LXC
 //! - **template** — Appliance template downloads
@@ -36,6 +38,7 @@ pub mod ceph;
 pub mod client;
 pub mod cluster;
 pub mod console;
+pub mod console_ws;
 pub mod error;
 pub mod firewall;
 pub mod ha;

@@ -8,7 +8,8 @@ use crate::backup::BackupManager;
 use crate::ceph::CephManager;
 use crate::client::{LoginOutcome, PveClient};
 use crate::cluster::ClusterManager;
-use crate::console::ConsoleManager;
+use crate::console::{ConsoleManager, ConsoleTarget};
+use crate::console_ws::{ConsoleRegistry, ProxmoxConsoleSession};
 use crate::error::{ProxmoxError, ProxmoxResult};
 use crate::firewall::FirewallManager;
 use crate::ha::HaManager;
@@ -32,13 +33,16 @@ use tokio::sync::Mutex;
 pub type ProxmoxServiceState = Arc<Mutex<ProxmoxService>>;
 
 // Re-exported so the `include!`-based command wiring (which only sees
-// `super::service` and `super::types`) can name the second-factor kind.
+// `super::service` and `super::types`) can name the second-factor kind and the
+// console session handle.
 pub use crate::client::TfaKind;
+pub use crate::console_ws::ProxmoxConsoleSession as ConsoleSessionHandle;
 
 /// Top-level service that aggregates all Proxmox VE subsystems.
 pub struct ProxmoxService {
     client: Option<PveClient>,
     config: Option<ProxmoxConfig>,
+    consoles: ConsoleRegistry,
 }
 
 impl Default for ProxmoxService {
@@ -48,11 +52,34 @@ impl Default for ProxmoxService {
 }
 
 impl ProxmoxService {
-    /// Create a new (disconnected) service.
+    /// Create a new (disconnected) service with no frontend event sink.
+    ///
+    /// Console sessions still work; their output is simply discarded. The app
+    /// uses [`Self::new_with_emitter`].
     pub fn new() -> Self {
         Self {
             client: None,
             config: None,
+            consoles: ConsoleRegistry::new(None),
+        }
+    }
+
+    /// Create a service whose console relays emit
+    /// `proxmox-console-{output,closed,error}` to the frontend.
+    pub fn new_with_emitter(emitter: sorng_core::events::DynEventEmitter) -> Self {
+        Self {
+            client: None,
+            config: None,
+            consoles: ConsoleRegistry::new(Some(emitter)),
+        }
+    }
+
+    /// Test hook: a service with lowered console ceilings.
+    pub fn with_console_registry(consoles: ConsoleRegistry) -> Self {
+        Self {
+            client: None,
+            config: None,
+            consoles,
         }
     }
 
@@ -199,7 +226,57 @@ impl ProxmoxService {
         Ok(url)
     }
 
+    // ── xterm.js consoles (termproxy WebSocket relay) ───────────────
+
+    /// Open a live console on a QEMU VM, an LXC container or a node shell.
+    ///
+    /// Acquires a `termproxy` ticket, upgrades to the PVE `vncwebsocket`
+    /// endpoint reusing this connection's TLS posture (certificate pin
+    /// included) and starts relaying. Output arrives as
+    /// `proxmox-console-output` events keyed by the returned `sessionId`.
+    pub async fn console_open(
+        &self,
+        node: &str,
+        vmid: Option<u64>,
+        vm_type: Option<&str>,
+    ) -> ProxmoxResult<ProxmoxConsoleSession> {
+        let target = ConsoleTarget::parse(node, vmid, vm_type)?;
+        let client = self.require_client()?;
+        let config = self
+            .config
+            .as_ref()
+            .ok_or_else(|| ProxmoxError::connection("Not connected to Proxmox VE"))?;
+        crate::console_ws::open_console(&self.consoles, client, config, target).await
+    }
+
+    /// Queue terminal input (UTF-8, as produced by xterm.js `onData`).
+    pub fn console_send(&self, session_id: &str, data: &str) -> ProxmoxResult<()> {
+        self.consoles.send(session_id, data)
+    }
+
+    /// Queue a terminal resize (`1:<cols>:<rows>:`).
+    pub fn console_resize(&self, session_id: &str, cols: u16, rows: u16) -> ProxmoxResult<()> {
+        self.consoles.resize(session_id, cols, rows)
+    }
+
+    /// Close one console session; `proxmox-console-closed` follows.
+    pub fn console_close(&self, session_id: &str) -> ProxmoxResult<()> {
+        self.consoles.close(session_id)
+    }
+
+    /// Live console sessions, ordered by id.
+    pub fn console_sessions(&self) -> Vec<ProxmoxConsoleSession> {
+        self.consoles.sessions()
+    }
+
+    /// The console registry (diagnostics/tests).
+    pub fn consoles(&self) -> &ConsoleRegistry {
+        &self.consoles
+    }
+
     pub async fn disconnect(&mut self) -> ProxmoxResult<()> {
+        // Consoles are bound to the session ticket: they cannot outlive it.
+        self.consoles.close_all();
         if let Some(ref mut client) = self.client {
             let _ = client.logout().await;
         }
