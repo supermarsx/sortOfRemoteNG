@@ -180,6 +180,7 @@ members = [
   "crates/sorng-rabbitmq",
   "crates/sorng-kafka",
   "crates/sorng-pfsense",
+  "crates/sorng-draytek",
   "crates/sorng-mysql-admin",
   "crates/sorng-postgres-admin",
   "crates/sorng-prometheus",
