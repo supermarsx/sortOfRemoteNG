@@ -1,0 +1,24 @@
+<html>
+<head>
+<title>Yealink SIP-T21P E2</title>
+<script type="text/javascript" src="/js/rsa.js"></script>
+<script type="text/javascript">
+  var rsakey = "{{MODULUS}}";
+  function doLogin() {
+    var rsa = new RSAKey();
+    rsa.setPublic(rsakey, "10001");
+    document.getElementById("pwd").value = hex2b64(rsa.encrypt(document.getElementById("pwd").value));
+    document.getElementById("rsakey").value = rsakey;
+    document.loginForm.submit();
+  }
+</script>
+</head>
+<body>
+<form name="loginForm" method="post" action="/servlet?m=mod_listener&p=login&q=login">
+  <input type="text" name="username" id="username" />
+  <input type="password" name="pwd" id="pwd" />
+  <input type="hidden" name="rsakey" id="rsakey" />
+  <input type="submit" id="login" value="Confirm" onclick="doLogin();return false;" />
+</form>
+</body>
+</html>
