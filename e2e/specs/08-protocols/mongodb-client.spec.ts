@@ -80,7 +80,9 @@ async function browseToPeople(): Promise<void> {
       timeoutMsg: "testdb not listed in the database browser",
     },
   );
-  const testdb = await databases.$("*=testdb");
+  const testdb = await databases.$(
+    '[data-testid="mongodb-database"][data-name="testdb"]',
+  );
   await testdb.click();
 
   const collections = await $(S.mongodbCollections);
@@ -92,7 +94,9 @@ async function browseToPeople(): Promise<void> {
       timeoutMsg: "people collection not listed for testdb",
     },
   );
-  const people = await collections.$("*=people");
+  const people = await collections.$(
+    '[data-testid="mongodb-collection"][data-name="people"]',
+  );
   await people.click();
 }
 

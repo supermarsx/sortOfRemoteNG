@@ -277,8 +277,17 @@ export const S = {
   proxmoxDashboard: '[data-testid="proxmox-dashboard"]',
   proxmoxNodeItem: '[data-testid="proxmox-node-item"]',
   proxmoxVmItem: '[data-testid="proxmox-vm-item"]',
-  // t67-e7 (frontend consoles) has not landed; this id does not exist yet.
+  // Console overlays (t67-e7).
+  proxmoxOpenNodeConsoleBtn: '[data-testid="proxmox-open-node-console-btn"]',
   proxmoxConsoleOverlay: '[data-testid="proxmox-console-overlay"]',
+  proxmoxConsoleStatus: '[data-testid="proxmox-console-status"]',
+  proxmoxConsoleTerminal: '[data-testid="proxmox-console-terminal"]',
+  proxmoxConsoleCloseBtn: '[data-testid="proxmox-console-close-btn"]',
+  proxmoxConsoleError: '[data-testid="proxmox-console-error"]',
+  proxmoxVncOverlay: '[data-testid="proxmox-vnc-overlay"]',
+  proxmoxVncStatus: '[data-testid="proxmox-vnc-status"]',
+  proxmoxVncCloseBtn: '[data-testid="proxmox-vnc-close-btn"]',
+  proxmoxVncError: '[data-testid="proxmox-vnc-error"]',
 
   // Portainer (t64; testids per .orchestration/plans/t64.md §e4)
   portainerPanel: '[data-testid="portainer-panel"]',

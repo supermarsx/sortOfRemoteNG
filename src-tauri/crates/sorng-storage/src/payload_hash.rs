@@ -92,7 +92,10 @@ impl std::fmt::Display for PayloadHashError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Serialize(e) => {
-                write!(f, "canonical hash: failed to serialise payload to JSON: {e}")
+                write!(
+                    f,
+                    "canonical hash: failed to serialise payload to JSON: {e}"
+                )
             }
         }
     }
@@ -132,18 +135,15 @@ mod tests {
     fn key_order_does_not_matter() {
         // Two JSON objects with the same keys in different declared
         // order must produce the same canonical hash.
-        let a: serde_json::Value =
-            serde_json::from_str(r#"{"a":1,"b":2,"c":3}"#).unwrap();
-        let b: serde_json::Value =
-            serde_json::from_str(r#"{"c":3,"a":1,"b":2}"#).unwrap();
+        let a: serde_json::Value = serde_json::from_str(r#"{"a":1,"b":2,"c":3}"#).unwrap();
+        let b: serde_json::Value = serde_json::from_str(r#"{"c":3,"a":1,"b":2}"#).unwrap();
         assert_eq!(payload_hash(&a).unwrap(), payload_hash(&b).unwrap());
     }
 
     #[test]
     fn nested_objects_canonicalise() {
         let a = serde_json::json!({ "outer": { "x": 1, "y": 2 } });
-        let b: serde_json::Value =
-            serde_json::from_str(r#"{"outer":{"y":2,"x":1}}"#).unwrap();
+        let b: serde_json::Value = serde_json::from_str(r#"{"outer":{"y":2,"x":1}}"#).unwrap();
         assert_eq!(payload_hash(&a).unwrap(), payload_hash(&b).unwrap());
     }
 
@@ -167,7 +167,10 @@ mod tests {
     fn null_distinct_from_missing_key() {
         let with_null = serde_json::json!({ "x": null });
         let empty = serde_json::json!({});
-        assert_ne!(payload_hash(&with_null).unwrap(), payload_hash(&empty).unwrap());
+        assert_ne!(
+            payload_hash(&with_null).unwrap(),
+            payload_hash(&empty).unwrap()
+        );
     }
 
     #[test]

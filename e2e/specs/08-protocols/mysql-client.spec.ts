@@ -150,7 +150,7 @@ describe("MySQL Client", function () {
       },
     );
 
-    const testdb = await databases.$("*=testdb");
+    const testdb = await databases.$('[aria-label="Browse database testdb"]');
     await testdb.click();
 
     const tables = await $(S.mysqlTables);

@@ -9697,6 +9697,7 @@ name = "sorng-app-startup-state"
 version = "26.28.0"
 dependencies = [
  "log",
+ "serde_json",
  "sorng-app-api",
  "sorng-app-domains",
  "sorng-app-shell",
@@ -11532,7 +11533,6 @@ name = "sorng-nginx-proxy-mgr"
 version = "26.28.0"
 dependencies = [
  "chrono",
- "dirs 6.0.0",
  "log",
  "reqwest 0.12.28",
  "rustls",
@@ -11540,6 +11540,7 @@ dependencies = [
  "serde_json",
  "sorng-storage",
  "sorng-tls-trust",
+ "tempfile",
  "tokio",
  "uuid",
 ]
@@ -12040,6 +12041,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sorng-core",
  "sorng-totp",
  "tokio",
  "tokio-rustls",
@@ -12290,8 +12292,10 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
+ "sorng-storage",
  "ssh-key 0.6.7",
  "ssh2",
+ "tempfile",
  "tokio",
  "uuid",
  "walkdir",
@@ -12993,7 +12997,6 @@ version = "26.28.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
- "dirs 6.0.0",
  "log",
  "rand 0.8.7",
  "regex",
@@ -13004,6 +13007,7 @@ dependencies = [
  "serde_json",
  "sorng-storage",
  "sorng-tls-trust",
+ "tempfile",
  "tokio",
  "url",
 ]

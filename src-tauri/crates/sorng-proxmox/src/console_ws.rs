@@ -341,7 +341,33 @@ impl ConsoleRegistry {
 
     /// Ask a session to close; the relay task emits [`EVENT_CONSOLE_CLOSED`].
     pub fn close(&self, session_id: &str) -> ProxmoxResult<()> {
-        self.push(session_id, ConsoleCommand::Close)
+        let queued = {
+            let sessions = self.guard();
+            let entry = sessions
+                .get(session_id)
+                .ok_or_else(|| ProxmoxError::console("Unknown Proxmox console session"))?;
+            entry.queue.push(ConsoleCommand::Close).is_ok()
+        };
+        if queued {
+            return Ok(());
+        }
+        // The outbound queue can be saturated by input frames (a stalled write
+        // plus a full slot channel) even though `Close` costs no bytes. Input
+        // is drop-newest, but a close must never be dropped, or the relay task
+        // would run on with no way for the UI to stop it. Tear the session down
+        // directly instead, exactly as `close_all` does.
+        let entry = self.guard().remove(session_id);
+        if let Some(entry) = entry {
+            entry.task.abort();
+            self.emit(
+                EVENT_CONSOLE_CLOSED,
+                serde_json::json!({
+                    "sessionId": entry.info.session_id,
+                    "reason": "Console closed",
+                }),
+            );
+        }
+        Ok(())
     }
 
     /// Close every session immediately (disconnect / shutdown).
@@ -857,6 +883,48 @@ mod tests {
         };
         let client = PveClient::new(&config).expect("client");
         assert!(auth_header_for(&config, &client).is_err());
+    }
+
+    #[tokio::test]
+    async fn a_close_is_never_dropped_by_a_saturated_queue() {
+        // One slot and nothing draining it: the queue is full after one frame,
+        // long before the byte budget is touched (Close/Resize cost 0 bytes).
+        let registry = ConsoleRegistry::with_limits(None, 4, BUFFER_LIMIT_BYTES);
+        let (queue, _receiver, _budget) = OutboundQueue::new(BUFFER_LIMIT_BYTES, 1);
+        assert_eq!(queue.push(ConsoleCommand::Input(b"a".to_vec())), Ok(()));
+        assert_eq!(
+            queue.push(ConsoleCommand::Close),
+            Err(0),
+            "precondition: the queue can no longer take a Close frame"
+        );
+
+        let task = tokio::spawn(std::future::pending::<()>());
+        {
+            registry.guard().insert(
+                "saturated".to_string(),
+                SessionEntry {
+                    info: ProxmoxConsoleSession {
+                        session_id: "saturated".to_string(),
+                        node: "pve".to_string(),
+                        vmid: Some(100),
+                        vm_type: "qemu".to_string(),
+                        user: "root@pam".to_string(),
+                        port: "5900".to_string(),
+                    },
+                    queue,
+                    task,
+                },
+            );
+        }
+        assert_eq!(registry.len(), 1);
+
+        registry.close("saturated").expect("close must not error");
+
+        assert_eq!(
+            registry.len(),
+            0,
+            "a close must tear the session down even when the queue is full"
+        );
     }
 
     #[test]

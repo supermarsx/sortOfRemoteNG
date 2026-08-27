@@ -21,7 +21,12 @@ import {
   closeAllSessions,
 } from "../../helpers/app";
 import { selectCustomOption } from "../../helpers/forms";
-import { startMockPve, type MockPveHandle } from "../../helpers/mock-pve";
+import {
+  startMockPve,
+  MOCK_PVE_PORT,
+  type MockPveHandle,
+  type MockPveInfo,
+} from "../../helpers/mock-pve";
 
 let mockPve: MockPveHandle;
 
@@ -35,7 +40,10 @@ async function selectProtocol(protocol: string): Promise<void> {
   await selectCustomOption(S.editorProtocol, protocol);
 }
 
-async function createProxmoxConnection(name: string): Promise<void> {
+async function createProxmoxConnection(
+  name: string,
+  target: MockPveInfo = mockPve,
+): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
   await addBtn.click();
 
@@ -50,7 +58,7 @@ async function createProxmoxConnection(name: string): Promise<void> {
   const hostname = await $(S.editorHostname);
   if (await hostname.isExisting()) {
     await hostname.clearValue();
-    await hostname.setValue(mockPve.host);
+    await hostname.setValue(target.host);
   }
 
   await (await $(S.editorSave)).click();
@@ -63,8 +71,11 @@ async function openConnection(index: number): Promise<void> {
   await items[index].doubleClick();
 }
 
-async function openProxmoxPanel(name: string): Promise<void> {
-  await createProxmoxConnection(name);
+async function openProxmoxPanel(
+  name: string,
+  target: MockPveInfo = mockPve,
+): Promise<void> {
+  await createProxmoxConnection(name, target);
   await openConnection(0);
 
   const panel = await $(S.proxmoxPanel);
@@ -72,25 +83,28 @@ async function openProxmoxPanel(name: string): Promise<void> {
 }
 
 /** Fill the panel's connection form with the mock's endpoint + credentials. */
-async function fillConnectionForm(password = mockPve.password): Promise<void> {
+async function fillConnectionForm(
+  password?: string,
+  target: MockPveInfo = mockPve,
+): Promise<void> {
   const form = await $(S.proxmoxConnectionForm);
   await form.waitForDisplayed({ timeout: 20_000 });
 
   const host = await $(S.proxmoxHost);
   await host.clearValue();
-  await host.setValue(mockPve.host);
+  await host.setValue(target.host);
 
   const port = await $(S.proxmoxPort);
   await port.clearValue();
-  await port.setValue(String(mockPve.port));
+  await port.setValue(String(target.port));
 
   const username = await $(S.proxmoxUsername);
   await username.clearValue();
-  await username.setValue(mockPve.user);
+  await username.setValue(target.user);
 
   const passwordField = await $(S.proxmoxPassword);
   await passwordField.clearValue();
-  await passwordField.setValue(password);
+  await passwordField.setValue(password ?? target.password);
 }
 
 /**
@@ -358,12 +372,115 @@ describe("Proxmox VE panel — mock PVE fixture", () => {
     expect(await (await $(S.proxmoxDashboardTab)).isExisting()).toBe(false);
   });
 
-  // COVERAGE GAP (t67-e8): the xterm console overlay is not asserted here.
-  // `S.proxmoxConsoleOverlay` / the console-specific ids are owned by t67-e7
-  // (frontend consoles), which has not run — the ids do not exist in `src/`
-  // yet, so an assertion on them would be a guaranteed red rather than a test.
-  // The mock already serves the whole termproxy path (`POST …/termproxy`, the
-  // `vncwebsocket` upgrade, the `user:ticket` handshake, `0:`/`1:`/`2` framing)
-  // and `tests/e2e-mock-pve/mock-pve.node-test.mjs` covers it, so wiring the overlay
-  // step is a spec-only follow-up once t67-e7 lands. Flagged for t67-g1.
+  // t67-g1: the console coverage gap t67-e8 flagged is closed here — t67-e7's
+  // overlays have landed, so these drive the real termproxy relay and the real
+  // loopback VNC bridge against the mock rather than stopping at the ticket.
+  it("opens the xterm console overlay and reaches the termproxy relay", async () => {
+    await connectToMock("PVE Mock");
+
+    await (await $(S.proxmoxConsoleTab)).click();
+
+    const openBtn = await $(S.proxmoxOpenNodeConsoleBtn);
+    await openBtn.waitForDisplayed({ timeout: 20_000 });
+    await openBtn.click();
+
+    const overlay = await $(S.proxmoxConsoleOverlay);
+    await overlay.waitForDisplayed({ timeout: 20_000 });
+
+    // "Connected" only appears once the Rust relay has fetched a termproxy
+    // ticket, upgraded the vncwebsocket and passed the `user:ticket` handshake.
+    const status = await $(S.proxmoxConsoleStatus);
+    await browser.waitUntil(
+      async () => (await status.getText()).trim().toLowerCase() === "connected",
+      {
+        timeout: 30_000,
+        timeoutMsg: "Expected the termproxy relay to report Connected",
+      },
+    );
+
+    expect(await (await $(S.proxmoxConsoleError)).isExisting()).toBe(false);
+    expect(await (await $(S.proxmoxConsoleTerminal)).isDisplayed()).toBe(true);
+
+    await (await $(S.proxmoxConsoleCloseBtn)).click();
+    await overlay.waitForDisplayed({ reverse: true, timeout: 10_000 });
+  });
+
+  it("opens the noVNC overlay on a loopback bridge port", async () => {
+    await connectToMock("PVE Mock");
+
+    await (await $(S.proxmoxQemuTab)).click();
+
+    const consoleBtn = await $(
+      `[data-testid="proxmox-qemu-console-btn-${mockPve.vmid}"]`,
+    );
+    await consoleBtn.waitForDisplayed({ timeout: 20_000 });
+    await consoleBtn.click();
+
+    const overlay = await $(S.proxmoxVncOverlay);
+    await overlay.waitForDisplayed({ timeout: 20_000 });
+
+    // The endpoint only renders once proxmox_vnc_bridge_open has returned, so
+    // this asserts the bridge really bound a loopback port for this VM.
+    const endpoint = await $('[data-testid="proxmox-vnc-endpoint"]');
+    await endpoint.waitForDisplayed({ timeout: 30_000 });
+    expect(await endpoint.getText()).toMatch(/127\.0\.0\.1:\d+/u);
+
+    await (await $(S.proxmoxVncCloseBtn)).click();
+    await overlay.waitForDisplayed({ reverse: true, timeout: 10_000 });
+  });
+});
+
+describe("Proxmox VE panel — TFA challenge", () => {
+  let tfaMock: MockPveHandle;
+
+  before(async () => {
+    // Second mock so the password-only suite above keeps its own server.
+    tfaMock = await startMockPve({
+      port: MOCK_PVE_PORT + 1,
+      requireTfa: true,
+    });
+  });
+
+  after(async () => {
+    await tfaMock?.stop();
+  });
+
+  beforeEach(async () => {
+    await resetAppState();
+    await createCollection("Proxmox TFA");
+    const tree = await $(S.connectionTree);
+    await tree.waitForExist({ timeout: 10_000 });
+  });
+
+  afterEach(async () => {
+    await closeAllSessions();
+  });
+
+  it("stops on the second factor and connects with a recovery code", async () => {
+    await openProxmoxPanel("PVE TFA", tfaMock);
+    await fillConnectionForm(undefined, tfaMock);
+    await probeAndPinCertificate();
+
+    await (await $(S.proxmoxConnectBtn)).click();
+
+    // NeedTFA => the panel must not report a session yet.
+    const tfaForm = await $(S.proxmoxTfaForm);
+    await tfaForm.waitForDisplayed({ timeout: 30_000 });
+    expect(await (await $(S.proxmoxDashboardTab)).isExisting()).toBe(false);
+
+    const kind = await $(S.proxmoxTfaKind);
+    if (await kind.isExisting()) {
+      await kind.selectByAttribute("value", "recovery");
+    }
+
+    // The fixture's default single recovery code (server.mjs `recoveryCodes`).
+    await (await $(S.proxmoxTfaCode)).setValue("recovery-one");
+    await (await $(S.proxmoxTfaSubmit)).click();
+
+    const dashboardTab = await $(S.proxmoxDashboardTab);
+    await dashboardTab.waitForDisplayed({ timeout: 30_000 });
+
+    const panel = await $(S.proxmoxPanel);
+    expect(await panel.getText()).toContain(tfaMock.node);
+  });
 });
