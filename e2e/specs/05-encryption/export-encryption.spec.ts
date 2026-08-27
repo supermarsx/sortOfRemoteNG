@@ -1,8 +1,12 @@
-import { S } from '../../helpers/selectors';
-import { resetAppState, createCollection, openImportExport } from '../../helpers/app';
-import { selectCustomOption } from '../../helpers/forms';
+import { S } from "../../helpers/selectors";
+import {
+  resetAppState,
+  createCollection,
+  openImportExport,
+} from "../../helpers/app";
+import { selectCustomOption } from "../../helpers/forms";
 
-const EXPORT_PASSWORD = 'Exp0rt!Encrypt#2026';
+const EXPORT_PASSWORD = "Exp0rt!Encrypt#2026";
 
 interface TestConnection {
   name: string;
@@ -22,12 +26,12 @@ interface DownloadCapture {
 }
 
 const ROUND_TRIP_CONNECTION: TestConnection = {
-  name: 'Encrypted SSH',
-  hostname: 'enc.example.com',
-  protocol: 'SSH',
-  port: '22',
-  username: 'vault-admin',
-  password: 'VaultPass!42',
+  name: "Encrypted SSH",
+  hostname: "enc.example.com",
+  protocol: "SSH",
+  port: "22",
+  username: "vault-admin",
+  password: "VaultPass!42",
 };
 
 async function listConnectionNames(): Promise<string[]> {
@@ -60,7 +64,7 @@ async function findVisibleEditor(): Promise<WebdriverIO.Element> {
     }
   }
 
-  throw new Error('Visible connection editor not found');
+  throw new Error("Visible connection editor not found");
 }
 
 async function openNewConnectionEditor(): Promise<WebdriverIO.Element> {
@@ -79,14 +83,16 @@ async function openNewConnectionEditor(): Promise<WebdriverIO.Element> {
     },
     {
       timeout: 10_000,
-      timeoutMsg: 'Expected connection editor to open',
+      timeoutMsg: "Expected connection editor to open",
     },
   );
 
   return findVisibleEditor();
 }
 
-async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> {
+async function openConnectionEditor(
+  name: string,
+): Promise<WebdriverIO.Element> {
   const items = await $$(S.connectionItem);
   let matchingItem: WebdriverIO.Element | undefined;
 
@@ -107,7 +113,7 @@ async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> 
   // `$$` yields a ChainablePromiseArray, which is not a Promise in the type
   // system, so awaiting it does not unwrap to an array and `.at()` does not
   // type-check. Spreading the (iterable) result gives a real Element[].
-  const rowButtons = [...(await matchingItem.$$('button'))];
+  const rowButtons = [...(await matchingItem.$$("button"))];
   const menuButton = rowButtons.at(-1);
   if (!menuButton) {
     throw new Error(`Connection actions button not found for "${name}"`);
@@ -120,8 +126,8 @@ async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> 
   await menu.waitForDisplayed({ timeout: 5_000 });
 
   let editButton: WebdriverIO.Element | undefined;
-  for (const button of await menu.$$('button')) {
-    if ((await button.getText()).trim() === 'Edit') {
+  for (const button of await menu.$$("button")) {
+    if ((await button.getText()).trim() === "Edit") {
       editButton = button;
       break;
     }
@@ -147,7 +153,7 @@ async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> 
             continue;
           }
 
-          if ((await nameInput.getValue().catch(() => '')) === name) {
+          if ((await nameInput.getValue().catch(() => "")) === name) {
             return true;
           }
         }
@@ -174,7 +180,7 @@ async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> 
       continue;
     }
 
-    if ((await nameInput.getValue().catch(() => '')) === name) {
+    if ((await nameInput.getValue().catch(() => "")) === name) {
       return editor;
     }
   }
@@ -205,12 +211,15 @@ async function selectProtocol(protocol: string): Promise<void> {
   const protocolInput = await $(S.editorProtocol);
   const tagName = await protocolInput.getTagName();
 
-  if (tagName.toLowerCase() === 'select') {
+  if (tagName.toLowerCase() === "select") {
     await protocolInput.selectByVisibleText(protocol);
     return;
   }
 
-  await selectCustomOption(S.editorProtocol, [protocol, protocol.toUpperCase()]);
+  await selectCustomOption(S.editorProtocol, [
+    protocol,
+    protocol.toUpperCase(),
+  ]);
 }
 
 async function addTestConnection(connection: TestConnection): Promise<void> {
@@ -263,7 +272,9 @@ async function openImportTab(): Promise<void> {
   await (await $(S.importFileInput)).waitForExist({ timeout: 10_000 });
 }
 
-async function selectExportFormat(label: 'JSON' | 'XML' | 'CSV'): Promise<void> {
+async function selectExportFormat(
+  label: "JSON" | "XML" | "CSV",
+): Promise<void> {
   const formatGrid = await $(S.exportFormat);
   const button = await formatGrid.$(
     `./button[.//div[normalize-space()="${label}"] or normalize-space()="${label}"]`,
@@ -284,7 +295,10 @@ async function setIncludePasswords(enabled: boolean): Promise<void> {
   }
 }
 
-async function setEncryptedExport(enabled: boolean, password?: string): Promise<void> {
+async function setEncryptedExport(
+  enabled: boolean,
+  password?: string,
+): Promise<void> {
   const checkbox = await $(S.exportEncrypt);
   await checkbox.waitForExist({ timeout: 5_000 });
 
@@ -334,10 +348,13 @@ async function installDownloadCapture(): Promise<void> {
         return originalCreateObjectURL(blob);
       }) as typeof URL.createObjectURL;
 
-      document.createElement = ((tagName: string, options?: ElementCreationOptions) => {
+      document.createElement = ((
+        tagName: string,
+        options?: ElementCreationOptions,
+      ) => {
         const element = originalCreateElement(tagName, options);
 
-        if (tagName.toLowerCase() === 'a') {
+        if (tagName.toLowerCase() === "a") {
           const anchor = element as HTMLAnchorElement;
           const originalClick = anchor.click.bind(anchor);
 
@@ -376,7 +393,7 @@ async function waitForDownloadCapture(): Promise<DownloadCapture> {
     },
     {
       timeout: 10_000,
-      timeoutMsg: 'Expected encrypted export download to be captured',
+      timeoutMsg: "Expected encrypted export download to be captured",
     },
   );
 
@@ -385,9 +402,11 @@ async function waitForDownloadCapture(): Promise<DownloadCapture> {
   )) as DownloadCapture;
 }
 
-async function exportEncryptedJson(includePasswords: boolean): Promise<DownloadCapture> {
+async function exportEncryptedJson(
+  includePasswords: boolean,
+): Promise<DownloadCapture> {
   await openExportTab();
-  await selectExportFormat('JSON');
+  await selectExportFormat("JSON");
   await setIncludePasswords(includePasswords);
   await setEncryptedExport(true, EXPORT_PASSWORD);
   await installDownloadCapture();
@@ -404,14 +423,16 @@ async function stubPrompt(response: string | null): Promise<void> {
     const win = window as any;
     win.__promptCalls = [];
     win.prompt = (message?: string) => {
-      win.__promptCalls.push(String(message ?? ''));
+      win.__promptCalls.push(String(message ?? ""));
       return nextResponse;
     };
   }, response);
 }
 
 async function getPromptCalls(): Promise<string[]> {
-  return (await browser.execute(() => (window as any).__promptCalls ?? [])) as string[];
+  return (await browser.execute(
+    () => (window as any).__promptCalls ?? [],
+  )) as string[];
 }
 
 async function injectVirtualFile(
@@ -426,16 +447,18 @@ async function injectVirtualFile(
         throw new Error(`Input not found for selector: ${selector}`);
       }
 
-      const file = new File([new Blob([fileContent], { type })], fileName, { type });
+      const file = new File([new Blob([fileContent], { type })], fileName, {
+        type,
+      });
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
 
-      Object.defineProperty(input, 'files', {
+      Object.defineProperty(input, "files", {
         value: dataTransfer.files,
         configurable: true,
       });
 
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
     },
     S.importFileInput,
     filename,
@@ -452,17 +475,21 @@ async function confirmImport(): Promise<void> {
   await confirmButton.click();
 
   await browser.waitUntil(
-    async () => !(await $(S.importExportDialog).isDisplayed().catch(() => false)),
+    async () =>
+      !(await $(S.importExportDialog)
+        .isDisplayed()
+        .catch(() => false)),
     {
       timeout: 10_000,
-      timeoutMsg: 'Expected import/export dialog to close after confirming import',
+      timeoutMsg:
+        "Expected import/export dialog to close after confirming import",
     },
   );
 }
 
 function requireExportText(capture: DownloadCapture): string {
   if (!capture.text) {
-    throw new Error('Expected encrypted export content to be captured');
+    throw new Error("Expected encrypted export content to be captured");
   }
 
   return capture.text;
@@ -470,7 +497,7 @@ function requireExportText(capture: DownloadCapture): string {
 
 function asEncryptedFilename(filename: string | null): string {
   if (!filename) {
-    return 'sortofremoteng-exports.encrypted.json';
+    return "sortofremoteng-exports.encrypted.json";
   }
 
   const match = filename.match(/^(.*?)(\.[^.]+)$/);
@@ -481,61 +508,77 @@ function asEncryptedFilename(filename: string | null): string {
   return `${match[1]}.encrypted${match[2]}`;
 }
 
-describe('Export Encryption', () => {
+describe("Export Encryption", () => {
   beforeEach(async () => {
-    await prepareCollection('Encrypted Export Test');
+    await prepareCollection("Encrypted Export Test");
     await addTestConnection(ROUND_TRIP_CONNECTION);
   });
 
-  it('exports encrypted JSON without leaking plaintext connection data', async () => {
+  it("exports encrypted JSON without leaking plaintext connection data", async () => {
     const capture = await exportEncryptedJson(false);
     const text = requireExportText(capture);
 
     expect(capture.error).toBeNull();
     expect(capture.filename).toMatch(/^sortofremoteng-exports-.*\.json$/);
-    expect(capture.mimeType).toBe('application/json');
+    expect(capture.mimeType).toBe("application/json");
     expect(text).not.toContain(ROUND_TRIP_CONNECTION.name);
     expect(text).not.toContain(ROUND_TRIP_CONNECTION.hostname);
     expect(text).not.toContain(ROUND_TRIP_CONNECTION.password);
   });
 
-  it('reimports exported encrypted JSON when the correct decryption password is provided', async () => {
+  it("reimports exported encrypted JSON when the correct decryption password is provided", async () => {
     const capture = await exportEncryptedJson(true);
     const text = requireExportText(capture);
 
-    await prepareCollection('Encrypted Import Test');
+    await prepareCollection("Encrypted Import Test");
     await openImportTab();
     await stubPrompt(EXPORT_PASSWORD);
-    await injectVirtualFile(text, asEncryptedFilename(capture.filename), 'application/json');
+    await injectVirtualFile(
+      text,
+      asEncryptedFilename(capture.filename),
+      "application/json",
+    );
 
     const previewText = await (await $(S.importPreview)).getText();
     const promptCalls = await getPromptCalls();
-    expect(promptCalls).toEqual(['Enter decryption password:']);
-    expect(previewText).toContain('Import Successful');
-    expect(previewText).toContain('Found 1 connections ready to import.');
+    expect(promptCalls).toEqual(["Enter decryption password:"]);
+    expect(previewText).toContain("Import Successful");
+    expect(previewText).toContain("Found 1 connections ready to import.");
 
     await confirmImport();
-    await waitForConnectionName('Encrypted SSH');
+    await waitForConnectionName("Encrypted SSH");
 
-    const editor = await openConnectionEditor('Encrypted SSH');
-    expect(await (await editor.$(S.editorHostname)).getValue()).toBe('enc.example.com');
-    expect(await (await findVisibleEditorField(editor, S.editorUsername)).getValue()).toBe('vault-admin');
-    expect(await (await findVisibleEditorField(editor, S.editorPassword)).getValue()).toBe('VaultPass!42');
+    const editor = await openConnectionEditor("Encrypted SSH");
+    expect(await (await editor.$(S.editorHostname)).getValue()).toBe(
+      "enc.example.com",
+    );
+    expect(
+      await (await findVisibleEditorField(editor, S.editorUsername)).getValue(),
+    ).toBe("vault-admin");
+    expect(
+      await (await findVisibleEditorField(editor, S.editorPassword)).getValue(),
+    ).toBe("VaultPass!42");
   });
 
-  it('rejects exported encrypted JSON when the wrong password is supplied', async () => {
+  it("rejects exported encrypted JSON when the wrong password is supplied", async () => {
     const capture = await exportEncryptedJson(true);
     const text = requireExportText(capture);
 
-    await prepareCollection('Encrypted Import Failure');
+    await prepareCollection("Encrypted Import Failure");
     await openImportTab();
-    await stubPrompt('TotallyWrongP@ss');
-    await injectVirtualFile(text, asEncryptedFilename(capture.filename), 'application/json');
+    await stubPrompt("TotallyWrongP@ss");
+    await injectVirtualFile(
+      text,
+      asEncryptedFilename(capture.filename),
+      "application/json",
+    );
 
     const previewText = await (await $(S.importPreview)).getText();
     const promptCalls = await getPromptCalls();
-    expect(promptCalls).toEqual(['Enter decryption password:']);
-    expect(previewText).toContain('Import Failed');
-    expect(previewText).toContain('Failed to decrypt file. Check your password.');
+    expect(promptCalls).toEqual(["Enter decryption password:"]);
+    expect(previewText).toContain("Import Failed");
+    expect(previewText).toContain(
+      "Failed to decrypt file. Check your password.",
+    );
   });
 });

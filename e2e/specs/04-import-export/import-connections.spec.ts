@@ -1,24 +1,30 @@
-import { readFileSync } from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { S } from '../../helpers/selectors';
-import { resetAppState, createCollection, openImportExport } from '../../helpers/app';
+import { readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { S } from "../../helpers/selectors";
+import {
+  resetAppState,
+  createCollection,
+  openImportExport,
+} from "../../helpers/app";
 
-const fixturesDir = fileURLToPath(new URL('../../helpers/fixtures', import.meta.url));
+const fixturesDir = fileURLToPath(
+  new URL("../../helpers/fixtures", import.meta.url),
+);
 
 function getFixtureMimeType(filename: string): string {
   const extension = path.extname(filename).toLowerCase();
 
   switch (extension) {
-    case '.xml':
-      return 'application/xml';
-    case '.csv':
-      return 'text/csv';
-    case '.reg':
-      return 'text/plain';
-    case '.json':
+    case ".xml":
+      return "application/xml";
+    case ".csv":
+      return "text/csv";
+    case ".reg":
+      return "text/plain";
+    case ".json":
     default:
-      return 'application/json';
+      return "application/json";
   }
 }
 
@@ -35,27 +41,36 @@ async function openImportTab(): Promise<void> {
 async function importFixture(filename: string): Promise<void> {
   await openImportTab();
 
-  const content = readFileSync(path.resolve(fixturesDir, filename), 'utf8');
+  const content = readFileSync(path.resolve(fixturesDir, filename), "utf8");
 
   await browser.execute(
-    (selector: string, fileName: string, fileContent: string, mimeType: string) => {
+    (
+      selector: string,
+      fileName: string,
+      fileContent: string,
+      mimeType: string,
+    ) => {
       const input = document.querySelector(selector) as HTMLInputElement | null;
       if (!input) {
         throw new Error(`Input not found for selector: ${selector}`);
       }
 
-      const file = new File([new Blob([fileContent], { type: mimeType })], fileName, {
-        type: mimeType,
-      });
+      const file = new File(
+        [new Blob([fileContent], { type: mimeType })],
+        fileName,
+        {
+          type: mimeType,
+        },
+      );
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
 
-      Object.defineProperty(input, 'files', {
+      Object.defineProperty(input, "files", {
         value: dataTransfer.files,
         configurable: true,
       });
 
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
     },
     S.importFileInput,
     filename,
@@ -72,10 +87,14 @@ async function confirmImport(): Promise<void> {
   await confirmButton.click();
 
   await browser.waitUntil(
-    async () => !(await $(S.importExportDialog).isDisplayed().catch(() => false)),
+    async () =>
+      !(await $(S.importExportDialog)
+        .isDisplayed()
+        .catch(() => false)),
     {
       timeout: 10_000,
-      timeoutMsg: 'Expected import/export dialog to close after confirming import',
+      timeoutMsg:
+        "Expected import/export dialog to close after confirming import",
     },
   );
 }
@@ -104,7 +123,9 @@ async function waitForConnectionName(name: string): Promise<void> {
 async function waitForGroupName(name: string): Promise<void> {
   await browser.waitUntil(
     async () =>
-      (await $(`//div[@data-testid="connection-group"]//span[normalize-space()="${name}"]`)
+      (await $(
+        `//div[@data-testid="connection-group"]//span[normalize-space()="${name}"]`,
+      )
         .isExisting()
         .catch(() => false)) === true,
     {
@@ -123,10 +144,12 @@ async function findVisibleEditor(): Promise<WebdriverIO.Element> {
     }
   }
 
-  throw new Error('Visible connection editor not found');
+  throw new Error("Visible connection editor not found");
 }
 
-async function findVisibleEditorByName(name: string): Promise<WebdriverIO.Element> {
+async function findVisibleEditorByName(
+  name: string,
+): Promise<WebdriverIO.Element> {
   const editors = await $$(S.editorPanel);
 
   for (const editor of editors) {
@@ -139,7 +162,7 @@ async function findVisibleEditorByName(name: string): Promise<WebdriverIO.Elemen
       continue;
     }
 
-    if ((await nameInput.getValue().catch(() => '')) === name) {
+    if ((await nameInput.getValue().catch(() => "")) === name) {
       return editor;
     }
   }
@@ -159,7 +182,9 @@ async function findConnectionItem(name: string): Promise<WebdriverIO.Element> {
   throw new Error(`Connection tree item "${name}" not found`);
 }
 
-async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> {
+async function openConnectionEditor(
+  name: string,
+): Promise<WebdriverIO.Element> {
   const item = await findConnectionItem(name);
   await item.scrollIntoView();
   await item.moveTo();
@@ -167,7 +192,7 @@ async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> 
   // `$$` yields a ChainablePromiseArray, which is not a Promise in the type
   // system, so awaiting it does not unwrap to an array and `.at()` does not
   // type-check. Spreading the (iterable) result gives a real Element[].
-  const rowButtons = [...(await item.$$('button'))];
+  const rowButtons = [...(await item.$$("button"))];
   const menuButton = rowButtons.at(-1);
   if (!menuButton) {
     throw new Error(`Connection actions button not found for "${name}"`);
@@ -180,8 +205,8 @@ async function openConnectionEditor(name: string): Promise<WebdriverIO.Element> 
   await menu.waitForDisplayed({ timeout: 5_000 });
 
   let editButton: WebdriverIO.Element | undefined;
-  for (const button of await menu.$$('button')) {
-    if ((await button.getText()).trim() === 'Edit') {
+  for (const button of await menu.$$("button")) {
+    if ((await button.getText()).trim() === "Edit") {
       editButton = button;
       break;
     }
@@ -230,77 +255,93 @@ async function findVisibleEditorField(
   throw new Error(`Visible editor field not found for selector: ${selector}`);
 }
 
-describe('Import Connections', () => {
+describe("Import Connections", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Import Test');
+    await createCollection("Import Test");
     await (await $(S.connectionTree)).waitForDisplayed({ timeout: 10_000 });
   });
 
-  it('imports mRemoteNG XML with folders and nested connections', async () => {
-    await importFixture('mremoteng-export.xml');
+  it("imports mRemoteNG XML with folders and nested connections", async () => {
+    await importFixture("mremoteng-export.xml");
 
     const previewText = await (await $(S.importPreview)).getText();
-    expect(previewText).toContain('Import Successful');
-    expect(previewText).toContain('Found 8 connections ready to import.');
+    expect(previewText).toContain("Import Successful");
+    expect(previewText).toContain("Found 8 connections ready to import.");
 
     await confirmImport();
 
-    await waitForGroupName('Production Servers');
-    await waitForConnectionName('Windows DC');
-    await waitForConnectionName('Standalone VNC');
+    await waitForGroupName("Production Servers");
+    await waitForConnectionName("Windows DC");
+    await waitForConnectionName("Standalone VNC");
 
-    const editor = await openConnectionEditor('Windows DC');
-    expect(await (await editor.$(S.editorHostname)).getValue()).toBe('dc01.prod.example.com');
-    expect(await (await findVisibleEditorField(editor, S.editorUsername)).getValue()).toBe('Administrator');
-    expect(await (await editor.$(S.editorPort)).getValue()).toBe('3389');
+    const editor = await openConnectionEditor("Windows DC");
+    expect(await (await editor.$(S.editorHostname)).getValue()).toBe(
+      "dc01.prod.example.com",
+    );
+    expect(
+      await (await findVisibleEditorField(editor, S.editorUsername)).getValue(),
+    ).toBe("Administrator");
+    expect(await (await editor.$(S.editorPort)).getValue()).toBe("3389");
   });
 
-  it('imports CSV connections with host and credential fields intact', async () => {
-    await importFixture('csv-connections.csv');
+  it("imports CSV connections with host and credential fields intact", async () => {
+    await importFixture("csv-connections.csv");
 
     const previewText = await (await $(S.importPreview)).getText();
-    expect(previewText).toContain('Found 5 connections ready to import.');
+    expect(previewText).toContain("Found 5 connections ready to import.");
 
     await confirmImport();
 
-    await waitForConnectionName('RDP Workstation');
+    await waitForConnectionName("RDP Workstation");
 
-    const editor = await openConnectionEditor('RDP Workstation');
-    expect(await (await editor.$(S.editorHostname)).getValue()).toBe('win-ws01.example.com');
-    expect(await (await findVisibleEditorField(editor, S.editorUsername)).getValue()).toBe('john.doe');
-    expect(await (await editor.$(S.editorPort)).getValue()).toBe('3389');
+    const editor = await openConnectionEditor("RDP Workstation");
+    expect(await (await editor.$(S.editorHostname)).getValue()).toBe(
+      "win-ws01.example.com",
+    );
+    expect(
+      await (await findVisibleEditorField(editor, S.editorUsername)).getValue(),
+    ).toBe("john.doe");
+    expect(await (await editor.$(S.editorPort)).getValue()).toBe("3389");
   });
 
-  it('imports generic JSON exports and opens the imported editor state', async () => {
-    await importFixture('connections.json');
+  it("imports generic JSON exports and opens the imported editor state", async () => {
+    await importFixture("connections.json");
 
     const previewText = await (await $(S.importPreview)).getText();
-    expect(previewText).toContain('Found 5 connections ready to import.');
+    expect(previewText).toContain("Found 5 connections ready to import.");
 
     await confirmImport();
 
-    await waitForConnectionName('Production SSH');
+    await waitForConnectionName("Production SSH");
 
-    const editor = await openConnectionEditor('Production SSH');
-    expect(await (await editor.$(S.editorHostname)).getValue()).toBe('prod-server.example.com');
-    expect(await (await findVisibleEditorField(editor, S.editorUsername)).getValue()).toBe('admin');
-    expect(await (await editor.$(S.editorPort)).getValue()).toBe('22');
+    const editor = await openConnectionEditor("Production SSH");
+    expect(await (await editor.$(S.editorHostname)).getValue()).toBe(
+      "prod-server.example.com",
+    );
+    expect(
+      await (await findVisibleEditorField(editor, S.editorUsername)).getValue(),
+    ).toBe("admin");
+    expect(await (await editor.$(S.editorPort)).getValue()).toBe("22");
   });
 
-  it('imports PuTTY registry exports and preserves non-SSH port mapping', async () => {
-    await importFixture('putty-export.reg');
+  it("imports PuTTY registry exports and preserves non-SSH port mapping", async () => {
+    await importFixture("putty-export.reg");
 
     const previewText = await (await $(S.importPreview)).getText();
-    expect(previewText).toContain('Found 3 connections ready to import.');
+    expect(previewText).toContain("Found 3 connections ready to import.");
 
     await confirmImport();
 
-    await waitForConnectionName('Legacy Telnet');
+    await waitForConnectionName("Legacy Telnet");
 
-    const editor = await openConnectionEditor('Legacy Telnet');
-    expect(await (await editor.$(S.editorHostname)).getValue()).toBe('legacy.example.com');
-    expect(await (await editor.$(S.editorPort)).getValue()).toBe('23');
-    expect(await (await findVisibleEditorField(editor, S.editorUsername)).getValue()).toBe('');
+    const editor = await openConnectionEditor("Legacy Telnet");
+    expect(await (await editor.$(S.editorHostname)).getValue()).toBe(
+      "legacy.example.com",
+    );
+    expect(await (await editor.$(S.editorPort)).getValue()).toBe("23");
+    expect(
+      await (await findVisibleEditorField(editor, S.editorUsername)).getValue(),
+    ).toBe("");
   });
 });
