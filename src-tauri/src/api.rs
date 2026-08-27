@@ -660,10 +660,10 @@ pub fn create_router(state: ApiState) -> Router {
         // Database
         .route("/db/connect", post(connect_mysql))
         .route("/db/query", post(execute_query))
-        .route("/db/disconnect/:connection_id", post(disconnect_mysql))
+        .route("/db/disconnect/{connection_id}", post(disconnect_mysql))
         // FTP
         .route("/ftp/connect", post(connect_ftp))
-        .route("/ftp/files/:session_id", get(list_ftp_files))
+        .route("/ftp/files/{session_id}", get(list_ftp_files))
         // Network
         .route("/network/ping", post(ping_host))
         .route("/network/scan", post(scan_network))
@@ -682,260 +682,260 @@ pub fn create_router(state: ApiState) -> Router {
         // RustDesk
         .route("/rustdesk/connect", post(connect_rustdesk_api))
         .route(
-            "/rustdesk/disconnect/:session_id",
+            "/rustdesk/disconnect/{session_id}",
             post(disconnect_rustdesk_api),
         )
         .route("/rustdesk/sessions", get(list_rustdesk_sessions_api))
         .route(
-            "/rustdesk/session/:session_id",
+            "/rustdesk/session/{session_id}",
             get(get_rustdesk_session_api),
         )
         .route(
-            "/rustdesk/settings/:session_id",
+            "/rustdesk/settings/{session_id}",
             post(update_rustdesk_settings_api),
         )
-        .route("/rustdesk/input/:session_id", post(send_rustdesk_input_api))
+        .route("/rustdesk/input/{session_id}", post(send_rustdesk_input_api))
         .route(
-            "/rustdesk/screenshot/:session_id",
+            "/rustdesk/screenshot/{session_id}",
             get(get_rustdesk_screenshot_api),
         )
         .route("/rustdesk/status", get(rustdesk_status_api))
         // WMI
         .route("/wmi/connect", post(connect_wmi_api))
-        .route("/wmi/disconnect/:session_id", post(disconnect_wmi_api))
+        .route("/wmi/disconnect/{session_id}", post(disconnect_wmi_api))
         .route("/wmi/sessions", get(list_wmi_sessions_api))
-        .route("/wmi/session/:session_id", get(get_wmi_session_api))
-        .route("/wmi/query/:session_id", post(execute_wmi_query_api))
-        .route("/wmi/classes/:session_id", get(get_wmi_classes_api))
-        .route("/wmi/namespaces/:session_id", get(get_wmi_namespaces_api))
+        .route("/wmi/session/{session_id}", get(get_wmi_session_api))
+        .route("/wmi/query/{session_id}", post(execute_wmi_query_api))
+        .route("/wmi/classes/{session_id}", get(get_wmi_classes_api))
+        .route("/wmi/namespaces/{session_id}", get(get_wmi_namespaces_api))
         // RPC
         .route("/rpc/connect", post(connect_rpc_api))
-        .route("/rpc/disconnect/:session_id", post(disconnect_rpc_api))
+        .route("/rpc/disconnect/{session_id}", post(disconnect_rpc_api))
         .route("/rpc/sessions", get(list_rpc_sessions_api))
-        .route("/rpc/session/:session_id", get(get_rpc_session_api))
-        .route("/rpc/call/:session_id", post(call_rpc_method_api))
-        .route("/rpc/methods/:session_id", get(discover_rpc_methods_api))
-        .route("/rpc/batch/:session_id", post(batch_rpc_calls_api))
+        .route("/rpc/session/{session_id}", get(get_rpc_session_api))
+        .route("/rpc/call/{session_id}", post(call_rpc_method_api))
+        .route("/rpc/methods/{session_id}", get(discover_rpc_methods_api))
+        .route("/rpc/batch/{session_id}", post(batch_rpc_calls_api))
         // MeshCentral
         .route("/meshcentral/connect", post(connect_meshcentral_api))
         .route(
-            "/meshcentral/disconnect/:session_id",
+            "/meshcentral/disconnect/{session_id}",
             post(disconnect_meshcentral_api),
         )
         .route("/meshcentral/sessions", get(list_meshcentral_sessions_api))
         .route(
-            "/meshcentral/session/:session_id",
+            "/meshcentral/session/{session_id}",
             get(get_meshcentral_session_api),
         )
         .route(
-            "/meshcentral/devices/:session_id",
+            "/meshcentral/devices/{session_id}",
             get(get_meshcentral_devices_api),
         )
         .route(
-            "/meshcentral/groups/:session_id",
+            "/meshcentral/groups/{session_id}",
             get(get_meshcentral_groups_api),
         )
         .route(
-            "/meshcentral/command/:session_id",
+            "/meshcentral/command/{session_id}",
             post(execute_meshcentral_command_api),
         )
         .route(
-            "/meshcentral/command/:session_id/:command_id",
+            "/meshcentral/command/{session_id}/{command_id}",
             get(get_meshcentral_command_result_api),
         )
         .route(
-            "/meshcentral/server/:session_id",
+            "/meshcentral/server/{session_id}",
             get(get_meshcentral_server_info_api),
         )
         // Agent
         .route("/agent/connect", post(connect_agent_api))
-        .route("/agent/disconnect/:session_id", post(disconnect_agent_api))
+        .route("/agent/disconnect/{session_id}", post(disconnect_agent_api))
         .route("/agent/sessions", get(list_agent_sessions_api))
-        .route("/agent/session/:session_id", get(get_agent_session_api))
-        .route("/agent/metrics/:session_id", get(get_agent_metrics_api))
-        .route("/agent/logs/:session_id", get(get_agent_logs_api))
+        .route("/agent/session/{session_id}", get(get_agent_session_api))
+        .route("/agent/metrics/{session_id}", get(get_agent_metrics_api))
+        .route("/agent/logs/{session_id}", get(get_agent_logs_api))
         .route(
-            "/agent/command/:session_id",
+            "/agent/command/{session_id}",
             post(execute_agent_command_api),
         )
         .route(
-            "/agent/command/:session_id/:command_id",
+            "/agent/command/{session_id}/{command_id}",
             get(get_agent_command_result_api),
         )
-        .route("/agent/status/:session_id", post(update_agent_status_api))
-        .route("/agent/info/:session_id", get(get_agent_info_api))
+        .route("/agent/status/{session_id}", post(update_agent_status_api))
+        .route("/agent/info/{session_id}", get(get_agent_info_api))
         // Commander
         .route("/commander/connect", post(connect_commander_api))
         .route(
-            "/commander/disconnect/:session_id",
+            "/commander/disconnect/{session_id}",
             post(disconnect_commander_api),
         )
         .route("/commander/sessions", get(list_commander_sessions_api))
         .route(
-            "/commander/session/:session_id",
+            "/commander/session/{session_id}",
             get(get_commander_session_api),
         )
         .route(
-            "/commander/command/:session_id",
+            "/commander/command/{session_id}",
             post(execute_commander_command_api),
         )
         .route(
-            "/commander/command/:session_id/:command_id",
+            "/commander/command/{session_id}/{command_id}",
             get(get_commander_command_result_api),
         )
         .route(
-            "/commander/upload/:session_id",
+            "/commander/upload/{session_id}",
             post(upload_commander_file_api),
         )
         .route(
-            "/commander/download/:session_id",
+            "/commander/download/{session_id}",
             post(download_commander_file_api),
         )
         .route(
-            "/commander/transfer/:session_id/:transfer_id",
+            "/commander/transfer/{session_id}/{transfer_id}",
             get(get_commander_file_transfer_api),
         )
         .route(
-            "/commander/list/:session_id",
+            "/commander/list/{session_id}",
             get(list_commander_directory_api),
         )
         .route(
-            "/commander/status/:session_id",
+            "/commander/status/{session_id}",
             post(update_commander_status_api),
         )
         .route(
-            "/commander/system/:session_id",
+            "/commander/system/{session_id}",
             get(get_commander_system_info_api),
         )
         // AWS
         .route("/aws/connect", post(connect_aws_api))
-        .route("/aws/disconnect/:session_id", post(disconnect_aws_api))
+        .route("/aws/disconnect/{session_id}", post(disconnect_aws_api))
         .route("/aws/sessions", get(list_aws_sessions_api))
-        .route("/aws/session/:session_id", get(get_aws_session_api))
+        .route("/aws/session/{session_id}", get(get_aws_session_api))
         .route(
-            "/aws/ec2/instances/:session_id",
+            "/aws/ec2/instances/{session_id}",
             get(list_ec2_instances_api),
         )
         .route(
-            "/aws/ec2/instance/:session_id/:instance_id",
+            "/aws/ec2/instance/{session_id}/{instance_id}",
             get(get_ec2_instance_api),
         )
         .route(
-            "/aws/ec2/action/:session_id/:instance_id",
+            "/aws/ec2/action/{session_id}/{instance_id}",
             post(execute_ec2_action_api),
         )
-        .route("/aws/s3/buckets/:session_id", get(list_s3_buckets_api))
+        .route("/aws/s3/buckets/{session_id}", get(list_s3_buckets_api))
         .route(
-            "/aws/s3/bucket/:session_id/:bucket_name",
+            "/aws/s3/bucket/{session_id}/{bucket_name}",
             get(get_s3_bucket_api),
         )
         .route(
-            "/aws/s3/objects/:session_id/:bucket_name",
+            "/aws/s3/objects/{session_id}/{bucket_name}",
             get(list_s3_objects_api),
         )
         .route(
-            "/aws/s3/object/:session_id/:bucket_name/*key",
+            "/aws/s3/object/{session_id}/{bucket_name}/{*key}",
             get(get_s3_object_api),
         )
         .route(
-            "/aws/rds/instances/:session_id",
+            "/aws/rds/instances/{session_id}",
             get(list_rds_instances_api),
         )
         .route(
-            "/aws/rds/instance/:session_id/:instance_id",
+            "/aws/rds/instance/{session_id}/{instance_id}",
             get(get_rds_instance_api),
         )
         .route(
-            "/aws/lambda/functions/:session_id",
+            "/aws/lambda/functions/{session_id}",
             get(list_lambda_functions_api),
         )
         .route(
-            "/aws/lambda/function/:session_id/:function_name",
+            "/aws/lambda/function/{session_id}/{function_name}",
             get(get_lambda_function_api),
         )
         .route(
-            "/aws/cloudwatch/metrics/:session_id",
+            "/aws/cloudwatch/metrics/{session_id}",
             get(get_cloudwatch_metrics_api),
         )
         // Vercel
         .route("/vercel/connect", post(connect_vercel_api))
         .route(
-            "/vercel/disconnect/:session_id",
+            "/vercel/disconnect/{session_id}",
             post(disconnect_vercel_api),
         )
         .route("/vercel/sessions", get(list_vercel_sessions_api))
-        .route("/vercel/session/:session_id", get(get_vercel_session_api))
+        .route("/vercel/session/{session_id}", get(get_vercel_session_api))
         .route(
-            "/vercel/projects/:session_id",
+            "/vercel/projects/{session_id}",
             get(list_vercel_projects_api),
         )
         .route(
-            "/vercel/project/:session_id/:project_id",
+            "/vercel/project/{session_id}/{project_id}",
             get(get_vercel_project_api),
         )
         .route(
-            "/vercel/deployments/:session_id/:project_id",
+            "/vercel/deployments/{session_id}/{project_id}",
             get(list_vercel_deployments_api),
         )
         .route(
-            "/vercel/deployment/:session_id/:deployment_id",
+            "/vercel/deployment/{session_id}/{deployment_id}",
             get(get_vercel_deployment_api),
         )
-        .route("/vercel/domains/:session_id", get(list_vercel_domains_api))
+        .route("/vercel/domains/{session_id}", get(list_vercel_domains_api))
         .route(
-            "/vercel/domain/:session_id/:domain_name",
+            "/vercel/domain/{session_id}/{domain_name}",
             get(get_vercel_domain_api),
         )
-        .route("/vercel/teams/:session_id", get(list_vercel_teams_api))
+        .route("/vercel/teams/{session_id}", get(list_vercel_teams_api))
         .route(
-            "/vercel/team/:session_id/:team_id",
+            "/vercel/team/{session_id}/{team_id}",
             get(get_vercel_team_api),
         )
         // Cloudflare
         .route("/cloudflare/connect", post(connect_cloudflare_api))
         .route(
-            "/cloudflare/disconnect/:session_id",
+            "/cloudflare/disconnect/{session_id}",
             post(disconnect_cloudflare_api),
         )
         .route("/cloudflare/sessions", get(list_cloudflare_sessions_api))
         .route(
-            "/cloudflare/session/:session_id",
+            "/cloudflare/session/{session_id}",
             get(get_cloudflare_session_api),
         )
         .route(
-            "/cloudflare/zones/:session_id",
+            "/cloudflare/zones/{session_id}",
             get(list_cloudflare_zones_api),
         )
         .route(
-            "/cloudflare/zone/:session_id/:zone_id",
+            "/cloudflare/zone/{session_id}/{zone_id}",
             get(get_cloudflare_zone_api),
         )
         .route(
-            "/cloudflare/dns/:session_id/:zone_id",
+            "/cloudflare/dns/{session_id}/{zone_id}",
             get(list_cloudflare_dns_records_api),
         )
         .route(
-            "/cloudflare/dns/:session_id/:zone_id/:record_id",
+            "/cloudflare/dns/{session_id}/{zone_id}/{record_id}",
             get(get_cloudflare_dns_record_api),
         )
         .route(
-            "/cloudflare/workers/:session_id",
+            "/cloudflare/workers/{session_id}",
             get(list_cloudflare_workers_api),
         )
         .route(
-            "/cloudflare/worker/:session_id/:worker_id",
+            "/cloudflare/worker/{session_id}/{worker_id}",
             get(get_cloudflare_worker_api),
         )
         .route(
-            "/cloudflare/pagerules/:session_id/:zone_id",
+            "/cloudflare/pagerules/{session_id}/{zone_id}",
             get(list_cloudflare_page_rules_api),
         )
         .route(
-            "/cloudflare/pagerule/:session_id/:zone_id/:rule_id",
+            "/cloudflare/pagerule/{session_id}/{zone_id}/{rule_id}",
             get(get_cloudflare_page_rule_api),
         )
         .route(
-            "/cloudflare/analytics/:session_id/:zone_id",
+            "/cloudflare/analytics/{session_id}/{zone_id}",
             get(get_cloudflare_analytics_api),
         )
         // Middleware stack, applied outer → inner as:

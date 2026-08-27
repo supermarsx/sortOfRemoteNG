@@ -34,7 +34,7 @@ base64 = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 futures-util = "0.3"
-axum = "0.7"
+axum = "0.8"
 flate2 = "1.0"
 hex = { workspace = true }
 zeroize = { workspace = true }

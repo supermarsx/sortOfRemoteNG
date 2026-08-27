@@ -8,7 +8,7 @@ description = "External REST API router and runtime configuration for SortOfRemo
 [dependencies]
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 anyhow = "1"
-axum = "0.7"
+axum = "0.8"
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
 hex = { workspace = true }
 rand = { workspace = true }
@@ -19,7 +19,7 @@ sha2 = { workspace = true }
 subtle = "2"
 tokio = { workspace = true }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
