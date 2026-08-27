@@ -38,6 +38,7 @@ pub fn is_command(command: &str) -> bool {
             | "mysql_list_users"
             | "mysql_show_grants"
             | "mysql_server_uptime"
+            | "mysql_server_info"
             | "pg_connect"
             | "pg_disconnect"
             | "pg_disconnect_all"
@@ -161,6 +162,16 @@ pub fn is_command(command: &str) -> bool {
             | "mongo_replica_set_status"
             | "mongo_current_op"
             | "mongo_kill_op"
+            | "mongo_find"
+            | "mongo_count_documents"
+            | "mongo_estimated_count"
+            | "mongo_aggregate"
+            | "mongo_insert_documents"
+            | "mongo_update_documents"
+            | "mongo_delete_documents"
+            | "mongo_list_indexes"
+            | "mongo_create_index"
+            | "mongo_drop_index"
             | "redis_connect"
             | "redis_disconnect"
             | "redis_disconnect_all"
@@ -441,6 +452,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         mysql_commands::mysql_list_users,
         mysql_commands::mysql_show_grants,
         mysql_commands::mysql_server_uptime,
+        mysql_commands::mysql_server_info,
         // ── PostgreSQL ──────────────────────────────────────────────
         postgres_commands::pg_connect,
         postgres_commands::pg_disconnect,
@@ -568,6 +580,16 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         mongodb_commands::mongo_replica_set_status,
         mongodb_commands::mongo_current_op,
         mongodb_commands::mongo_kill_op,
+        mongodb_commands::mongo_find,
+        mongodb_commands::mongo_count_documents,
+        mongodb_commands::mongo_estimated_count,
+        mongodb_commands::mongo_aggregate,
+        mongodb_commands::mongo_insert_documents,
+        mongodb_commands::mongo_update_documents,
+        mongodb_commands::mongo_delete_documents,
+        mongodb_commands::mongo_list_indexes,
+        mongodb_commands::mongo_create_index,
+        mongodb_commands::mongo_drop_index,
         // ── Redis ───────────────────────────────────────────────────
         redis_commands::redis_connect,
         redis_commands::redis_disconnect,
@@ -842,6 +864,25 @@ mod tests {
             assert!(is_command(command), "{command} is missing from is_command");
             assert!(
                 SESSION_HANDLER_SOURCE.contains(&format!("postgres_commands::{command},")),
+                "{command} is missing from tauri::generate_handler!"
+            );
+        }
+    }
+    #[test]
+    fn mongodb_commands_are_recognized_and_generated() {
+        const MONGODB_COMMANDS_SOURCE: &str =
+            include_str!("../../sorng-mongodb/src/mongodb/commands.rs");
+        let commands = MONGODB_COMMANDS_SOURCE
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("pub async fn mongo_"))
+            .filter_map(|rest| rest.split('(').next())
+            .map(|name| format!("mongo_{name}"))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(commands.len(), 27, "expected 27 mongo_* commands");
+        for command in &commands {
+            assert!(is_command(command), "{command} is missing from is_command");
+            assert!(
+                SESSION_HANDLER_SOURCE.contains(&format!("mongodb_commands::{command},")),
                 "{command} is missing from tauri::generate_handler!"
             );
         }
