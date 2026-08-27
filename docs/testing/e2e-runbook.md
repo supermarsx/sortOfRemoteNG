@@ -164,6 +164,17 @@ gate.
 
 ## Concurrent WDIO Runs
 
+### Prerequisite: the native driver
+
+`tauri-driver` needs msedgedriver on Windows and exits immediately with
+`can not find binary msedgedriver.exe in the PATH` / `CannotFindBinaryPath` when
+it cannot find one. It is generally **not** on `PATH` and not in the WinGet
+cache, so set `TAURI_NATIVE_DRIVER_PATH` (or `EDGE_DRIVER_PATH`) to the full
+path of the executable before running any WDIO suite. A cold run without it
+fails at driver startup with no obvious cause.
+
+### Port allocation
+
 More than one WDIO run can share a machine. Each run allocates its own driver
 ports at config load time in `e2e/helpers/driver-ports.ts`:
 
@@ -201,6 +212,22 @@ concurrent run.
 If a driver does survive (for example after a forced kill of the whole console),
 the next run's port re-check simply allocates around it, but the stray process
 and its app window are worth killing by PID.
+
+### What per-run ports do not isolate
+
+Ports are not the only resource two concurrent runs share. Every run of the same
+binary uses the same application data directory —
+`%APPDATA%\com.sortofremote.ng` on Windows — because Tauri derives it from the
+bundle identifier in `src-tauri/tauri.conf.json`. Nothing in `e2e/helpers/`
+overrides it, and `app_data_dir()` resolves through the Windows known-folder
+API, so an `APPDATA` environment override does not redirect it either.
+`scripts/readme-screenshot.mjs` gets isolation only by building under a separate
+identifier (`com.sortofremote.ng.readme-capture`).
+
+Consequently only observational specs are safe to run concurrently. Specs that
+create, rename or delete collections, connections or tags, or that touch
+encryption and vault state, can still cross-talk through the filesystem even
+with separate driver ports, and must be serialised.
 
 ## CI Workflows
 
