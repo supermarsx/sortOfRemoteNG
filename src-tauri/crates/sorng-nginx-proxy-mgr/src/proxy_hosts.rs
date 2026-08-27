@@ -36,21 +36,27 @@ impl ProxyHostManager {
         client.delete(&format!("/nginx/proxy-hosts/{}", id)).await
     }
 
+    /// NPM answers `POST …/enable` with the bare JSON literal `true`, **not**
+    /// the entity — discard the body and re-read the host so the caller still
+    /// gets its fresh state.
     pub async fn enable(client: &NpmClient, id: u64) -> NpmResult<NpmProxyHost> {
         client
-            .post(
+            .post::<_, serde_json::Value>(
                 &format!("/nginx/proxy-hosts/{}/enable", id),
                 &serde_json::json!({}),
             )
-            .await
+            .await?;
+        Self::get(client, id).await
     }
 
+    /// See [`ProxyHostManager::enable`] — `disable` returns `true` as well.
     pub async fn disable(client: &NpmClient, id: u64) -> NpmResult<NpmProxyHost> {
         client
-            .post(
+            .post::<_, serde_json::Value>(
                 &format!("/nginx/proxy-hosts/{}/disable", id),
                 &serde_json::json!({}),
             )
-            .await
+            .await?;
+        Self::get(client, id).await
     }
 }

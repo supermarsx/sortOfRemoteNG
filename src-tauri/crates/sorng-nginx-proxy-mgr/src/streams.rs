@@ -31,21 +31,27 @@ impl StreamManager {
         client.delete(&format!("/nginx/streams/{}", id)).await
     }
 
+    /// NPM answers `POST …/enable` with the bare JSON literal `true`, **not**
+    /// the entity — discard the body and re-read the stream so the caller
+    /// still gets its fresh state.
     pub async fn enable(client: &NpmClient, id: u64) -> NpmResult<NpmStream> {
         client
-            .post(
+            .post::<_, serde_json::Value>(
                 &format!("/nginx/streams/{}/enable", id),
                 &serde_json::json!({}),
             )
-            .await
+            .await?;
+        Self::get(client, id).await
     }
 
+    /// See [`StreamManager::enable`] — `disable` returns `true` as well.
     pub async fn disable(client: &NpmClient, id: u64) -> NpmResult<NpmStream> {
         client
-            .post(
+            .post::<_, serde_json::Value>(
                 &format!("/nginx/streams/{}/disable", id),
                 &serde_json::json!({}),
             )
-            .await
+            .await?;
+        Self::get(client, id).await
     }
 }

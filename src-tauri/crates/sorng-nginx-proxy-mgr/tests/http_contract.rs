@@ -245,6 +245,51 @@ async fn login_401_is_authentication_failed() {
     server.finish();
 }
 
+/// The real server (jc21/nginx-proxy-manager:2.15.1) rejects a wrong secret
+/// with **400**, not 401 — a generic `HttpError` here would leave the panel
+/// unable to say "check your credentials".
+#[tokio::test]
+async fn login_400_invalid_auth_is_authentication_failed() {
+    let server = MockServer::start(vec![ex(
+        "POST",
+        "/api/tokens",
+        None,
+        400,
+        r#"{"error":{"code":400,"message":"Invalid email or password","message_i18n":"error.invalid-auth"}}"#,
+    )]);
+    let mut service = NpmService::new();
+    let err = service
+        .connect("c1".into(), password_config(&server))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, NpmErrorKind::AuthenticationFailed);
+    assert!(
+        !err.message.contains("changeme"),
+        "password leaked: {}",
+        err.message
+    );
+    server.finish();
+}
+
+/// An unrelated 400 must stay a plain HTTP error.
+#[tokio::test]
+async fn login_400_other_error_stays_http_error() {
+    let server = MockServer::start(vec![ex(
+        "POST",
+        "/api/tokens",
+        None,
+        400,
+        r#"{"error":{"code":400,"message":"identity must be an email"}}"#,
+    )]);
+    let mut service = NpmService::new();
+    let err = service
+        .connect("c1".into(), password_config(&server))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, NpmErrorKind::HttpError);
+    server.finish();
+}
+
 #[tokio::test]
 async fn preemptive_refresh_when_expiry_is_near() {
     let server = MockServer::start(vec![
@@ -493,9 +538,18 @@ async fn proxy_hosts_parse_integer_booleans_and_toggle_paths() {
             200,
             &format!("[{host}]"),
         ),
+        // Every toggle answers with the bare literal `true` (NPM 2.15.1) and
+        // the client must then re-read the entity for its fresh state.
         ex(
             "POST",
             "/api/nginx/proxy-hosts/3/disable",
+            Some("Bearer tok-1"),
+            200,
+            "true",
+        ),
+        ex(
+            "GET",
+            "/api/nginx/proxy-hosts/3",
             Some("Bearer tok-1"),
             200,
             &disabled,
@@ -505,11 +559,25 @@ async fn proxy_hosts_parse_integer_booleans_and_toggle_paths() {
             "/api/nginx/proxy-hosts/3/enable",
             Some("Bearer tok-1"),
             200,
+            "true",
+        ),
+        ex(
+            "GET",
+            "/api/nginx/proxy-hosts/3",
+            Some("Bearer tok-1"),
+            200,
             host,
         ),
         ex(
             "POST",
             "/api/nginx/redirection-hosts/4/enable",
+            Some("Bearer tok-1"),
+            200,
+            "true",
+        ),
+        ex(
+            "GET",
+            "/api/nginx/redirection-hosts/4",
             Some("Bearer tok-1"),
             200,
             r#"{"id":4,"domain_names":["r.local"],"forward_http_code":301,"forward_domain_name":"x.local","forward_scheme":"https","enabled":1,"preserve_path":1}"#,
@@ -519,6 +587,13 @@ async fn proxy_hosts_parse_integer_booleans_and_toggle_paths() {
             "/api/nginx/redirection-hosts/4/disable",
             Some("Bearer tok-1"),
             200,
+            "true",
+        ),
+        ex(
+            "GET",
+            "/api/nginx/redirection-hosts/4",
+            Some("Bearer tok-1"),
+            200,
             r#"{"id":4,"domain_names":["r.local"],"forward_http_code":301,"forward_domain_name":"x.local","forward_scheme":"https","enabled":0,"preserve_path":1}"#,
         ),
         ex(
@@ -526,11 +601,25 @@ async fn proxy_hosts_parse_integer_booleans_and_toggle_paths() {
             "/api/nginx/streams/5/enable",
             Some("Bearer tok-1"),
             200,
+            "true",
+        ),
+        ex(
+            "GET",
+            "/api/nginx/streams/5",
+            Some("Bearer tok-1"),
+            200,
             r#"{"id":5,"incoming_port":2222,"forwarding_host":"h","forwarding_port":22,"enabled":true}"#,
         ),
         ex(
             "POST",
             "/api/nginx/streams/5/disable",
+            Some("Bearer tok-1"),
+            200,
+            "true",
+        ),
+        ex(
+            "GET",
+            "/api/nginx/streams/5",
             Some("Bearer tok-1"),
             200,
             r#"{"id":5,"incoming_port":2222,"forwarding_host":"h","forwarding_port":22,"enabled":false}"#,

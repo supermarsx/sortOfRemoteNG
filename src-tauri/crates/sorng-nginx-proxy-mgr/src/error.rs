@@ -91,6 +91,10 @@ impl NpmError {
     pub fn from_status(status: u16, body: &str) -> Self {
         let excerpt: String = body.chars().take(512).collect();
         let kind = match status {
+            // NPM rejects a wrong email/password on `POST /api/tokens` with
+            // **400**, not 401 — without this the panel would show a generic
+            // HTTP error instead of "invalid credentials".
+            400 if is_invalid_auth_body(body) => NpmErrorKind::AuthenticationFailed,
             401 => NpmErrorKind::TokenExpired,
             403 => NpmErrorKind::PermissionDenied,
             404 => NpmErrorKind::ProxyHostNotFound,
@@ -121,6 +125,31 @@ impl NpmError {
         }
         Self::connection(format!("{context}: {chain}"))
     }
+}
+
+/// Does an HTTP 400 body carry NPM's "bad credentials" marker?
+///
+/// A wrong secret on `POST /api/tokens` answers **400** with
+/// `{"error":{"code":400,"message":"Invalid email or password",
+/// "message_i18n":"error.invalid-auth"}}` (verified against
+/// `jc21/nginx-proxy-manager:2.15.1`). The structured `message_i18n` is the
+/// primary signal; the message text is a fallback for builds that omit it.
+pub fn is_invalid_auth_body(body: &str) -> bool {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+        let err = &value["error"];
+        if err["message_i18n"].as_str() == Some("error.invalid-auth") {
+            return true;
+        }
+        if let Some(message) = err["message"].as_str() {
+            if message.eq_ignore_ascii_case("invalid email or password") {
+                return true;
+            }
+        }
+        return false;
+    }
+    // Non-JSON body (proxy error page, truncated response): fall back to text.
+    let lower = body.to_ascii_lowercase();
+    lower.contains("error.invalid-auth") || lower.contains("invalid email or password")
 }
 
 /// Heuristic over the reqwest/rustls error chain (the TOFU verifier rejects
@@ -154,6 +183,40 @@ mod tests {
             NpmErrorKind::ProxyHostNotFound
         );
         assert_eq!(NpmError::from_status(500, "").kind, NpmErrorKind::HttpError);
+    }
+
+    /// NPM 2.15.1 answers a wrong password with 400, not 401.
+    #[test]
+    fn invalid_credentials_400_is_authentication_failed() {
+        let body = r#"{"error":{"code":400,"message":"Invalid email or password","message_i18n":"error.invalid-auth"}}"#;
+        assert_eq!(
+            NpmError::from_status(400, body).kind,
+            NpmErrorKind::AuthenticationFailed
+        );
+        // message text alone (no message_i18n) is enough
+        let no_i18n = r#"{"error":{"code":400,"message":"Invalid email or password"}}"#;
+        assert_eq!(
+            NpmError::from_status(400, no_i18n).kind,
+            NpmErrorKind::AuthenticationFailed
+        );
+        // an unrelated 400 stays a generic HTTP error
+        let other = r#"{"error":{"code":400,"message":"domain_names must be an array"}}"#;
+        assert_eq!(
+            NpmError::from_status(400, other).kind,
+            NpmErrorKind::HttpError
+        );
+        assert_eq!(NpmError::from_status(400, "").kind, NpmErrorKind::HttpError);
+    }
+
+    #[test]
+    fn invalid_auth_body_detection() {
+        assert!(is_invalid_auth_body(
+            r#"{"error":{"message_i18n":"error.invalid-auth"}}"#
+        ));
+        // non-JSON fallback
+        assert!(is_invalid_auth_body("Invalid email or password"));
+        assert!(!is_invalid_auth_body("{}"));
+        assert!(!is_invalid_auth_body("gateway timeout"));
     }
 
     #[test]
