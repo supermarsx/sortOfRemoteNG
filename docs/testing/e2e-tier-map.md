@@ -96,6 +96,22 @@ deeper configuration or session behavior.
 - [e2e/specs/21-i18n/language-switching.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/21-i18n/language-switching.spec.ts)
 - [e2e/specs/22-smart-filters/smart-filter-manager.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/22-smart-filters/smart-filter-manager.spec.ts)
 - [e2e/specs/22-smart-filters/smart-filter-presets.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/22-smart-filters/smart-filter-presets.spec.ts)
+- [e2e/specs/28-proxmox/proxmox-panel.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/28-proxmox/proxmox-panel.spec.ts)
+
+Promoted from `lab-only` by t67: the suite no longer needs a real Proxmox VE
+node. It forks the disposable HTTPS mock in
+[e2e/helpers/fixtures/mock-pve/server.mjs](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/helpers/fixtures/mock-pve/server.mjs)
+(lifecycle in `e2e/helpers/mock-pve.ts`), which serves the PVE
+`/api2/json` surface the panel uses — ticket and API-token auth, the PVE 7+
+`NeedTFA` challenge, ticket renewal, nodes/QEMU/LXC inventory, power actions,
+and the `termproxy` / `vncproxy` WebSocket endpoints. It is `opt-in` rather
+than `required` because it needs `openssl` on PATH: the fixture generates a
+fresh self-signed certificate on start so the spec goes through the app's real
+TOFU probe-and-pin flow instead of skipping TLS verification. No Docker is
+involved (Proxmox VE is not containerisable). The fixture itself is covered
+without the desktop binary by `npm run e2e:mock-pve:test`
+(`tests/e2e-mock-pve/mock-pve.node-test.mjs`); `npm run e2e:mock-pve` starts it
+standalone on port 18006 for manual poking.
 
 ### `nightly`
 
@@ -144,7 +160,6 @@ flows that should not be considered normal hosted-CI coverage.
 - [e2e/specs/25-ddns/ddns-manager.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/25-ddns/ddns-manager.spec.ts)
 - [e2e/specs/26-synology/synology-panel.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/26-synology/synology-panel.spec.ts)
 - [e2e/specs/27-idrac/idrac-panel.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/27-idrac/idrac-panel.spec.ts)
-- [e2e/specs/28-proxmox/proxmox-panel.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/28-proxmox/proxmox-panel.spec.ts)
 - [e2e/specs/29-debug/debug-panel.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/29-debug/debug-panel.spec.ts)
 
 ## Rust E2E Tiers

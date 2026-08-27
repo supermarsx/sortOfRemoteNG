@@ -46,6 +46,8 @@
     "e2e:fixtures:prepare": "node ./scripts/ci/e2e-http-fixtures.mjs prepare",
     "e2e:fixtures:validate": "node ./scripts/ci/e2e-http-fixtures.mjs validate",
     "e2e:fixtures:test": "node --test ./tests/e2e-http-fixtures/*.test.mjs",
+    "e2e:mock-pve": "node ./e2e/helpers/fixtures/mock-pve/server.mjs",
+    "e2e:mock-pve:test": "node --test ./tests/e2e-mock-pve/*.node-test.mjs",
     "tauri": "tauri",
     "tauri:dev": "node ./scripts/tauri-dev.mjs --features full-dev -- --no-default-features",
     "tauri:build": "node ./scripts/native-build-env.mjs tauri build --features full -- --no-default-features",
