@@ -6,9 +6,8 @@ use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use sorng_core::events::{AppEventEmitter, DynEventEmitter};
 use sorng_rdp::rdp::cert_trust::{
-    bind_session_prompt_context, evaluate_presented_certificate, initialize_store_path,
-    submit_prompt_response, ChainStatus, PresentedCertificate, ServerCertValidationMode,
-    SessionPromptContext,
+    bind_session_prompt_context, evaluate_presented_certificate, submit_prompt_response,
+    ChainStatus, PresentedCertificate, ServerCertValidationMode, SessionPromptContext,
 };
 use sorng_rdp::rdp::frame_store::SharedFrameStore;
 use sorng_rdp::rdp::session_runner::{
@@ -19,6 +18,7 @@ use sorng_rdp::rdp::stats::RdpSessionStats;
 use sorng_rdp::rdp::types::RdpLogEntry;
 use sorng_rdp::rdp::wake_channel::create_wake_channel;
 use sorng_rdp::rdp::RdpSettingsPayload;
+use sorng_storage::trust_store::test_support::install_active_runtime_for_tests;
 
 #[derive(Clone, Default)]
 struct RecordingEmitter {
@@ -150,7 +150,9 @@ fn reconnect_loop_reuses_cached_secret_and_resumes_frames() {
     let port = 3389;
     let tempdir = tempfile::tempdir().expect("tempdir");
 
-    initialize_store_path(Some(tempdir.path().to_path_buf()));
+    // Certificate trust lives in the active database's Trust Center store, so
+    // the reconnect loop needs a runtime installed just like the app does.
+    let _trust = install_active_runtime_for_tests(tempdir.path().join("databases"), "db-reconnect");
 
     let emitter = RecordingEmitter::default();
     let dyn_emitter: DynEventEmitter = Arc::new(emitter.clone());
@@ -165,8 +167,7 @@ fn reconnect_loop_reuses_cached_secret_and_resumes_frames() {
     let frame_store = SharedFrameStore::new();
     let stats = Arc::new(RdpSessionStats::new());
     let (_cmd_tx, mut cmd_rx) = create_wake_channel().expect("wake channel");
-    let (log_tx, _log_rx) =
-        std::sync::mpsc::sync_channel::<RdpLogEntry>(RDP_LOG_CHANNEL_CAPACITY);
+    let (log_tx, _log_rx) = std::sync::mpsc::sync_channel::<RdpLogEntry>(RDP_LOG_CHANNEL_CAPACITY);
     let settings = reconnect_settings();
     let cached_password = SecretString::new("opensesame".to_string());
 

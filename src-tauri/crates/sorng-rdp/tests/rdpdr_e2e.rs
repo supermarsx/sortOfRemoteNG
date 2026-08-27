@@ -20,8 +20,8 @@ use secrecy::SecretString;
 use serde_json::Value;
 use sorng_core::events::{AppEventEmitter, DynEventEmitter};
 use sorng_rdp::rdp::cert_trust::{
-    bind_session_prompt_context, initialize_store_path, submit_prompt_response,
-    ServerCertValidationMode, SessionPromptContext,
+    bind_session_prompt_context, submit_prompt_response, ServerCertValidationMode,
+    SessionPromptContext,
 };
 use sorng_rdp::rdp::clipboard::{
     build_file_list, ClipboardState, StagedFile, CF_UNICODETEXT, FILEGROUPDESCRIPTORW_ID,
@@ -44,6 +44,9 @@ use sorng_rdp::rdp::RdpSettingsPayload;
 use sorng_rdp_vendor::ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardFormatId, FileContentsFlags, FileContentsRequest,
     FileContentsResponse, FormatDataRequest, FormatDataResponse,
+};
+use sorng_storage::trust_store::test_support::{
+    install_active_runtime_for_tests, RuntimeTestGuard,
 };
 use tempfile::TempDir;
 use tokio::net::TcpStream;
@@ -121,6 +124,7 @@ struct SessionHarness {
     cmd_tx: WakeSender,
     handle: JoinHandle<()>,
     _trust_store_dir: TempDir,
+    _trust_runtime: RuntimeTestGuard,
 }
 
 impl SessionHarness {
@@ -128,7 +132,8 @@ impl SessionHarness {
         ensure_rustls_provider();
 
         let trust_store_dir = tempfile::tempdir().map_err(|error| format!("tempdir: {error}"))?;
-        initialize_store_path(Some(trust_store_dir.path().to_path_buf()));
+        let trust_guard =
+            install_active_runtime_for_tests(trust_store_dir.path().join("databases"), "db-rdpdr");
 
         let session_id = format!("rdpdr-e2e-{}", Uuid::new_v4());
         let emitter = RecordingEmitter::default();
@@ -182,6 +187,7 @@ impl SessionHarness {
             cmd_tx,
             handle,
             _trust_store_dir: trust_store_dir,
+            _trust_runtime: trust_guard,
         })
     }
 

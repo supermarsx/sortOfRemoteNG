@@ -40,6 +40,9 @@ rdp-multimon = []
 # ── sorng crates (always statically linked) ──────────────────────────
 sorng-core = { path = "../sorng-core" }
 sorng-dns = { path = "../sorng-dns" }
+# Trust Center: RDP server-certificate decisions live in the active
+# database's trust store, not in a private sidecar (t62).
+sorng-storage = { path = "../sorng-storage" }
 
 # ── Vendor boundary (IronRDP ecosystem — linked as an rlib) ─────────
 sorng-rdp-vendor = { path = "../sorng-rdp-vendor", default-features = false }

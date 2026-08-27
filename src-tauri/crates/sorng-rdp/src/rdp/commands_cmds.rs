@@ -179,8 +179,6 @@ pub async fn connect_rdp(
     let cert_validation_mode =
         crate::rdp::cert_trust::ServerCertValidationMode::from_payload(&payload);
 
-    crate::rdp::cert_trust::initialize_store_path(app_handle.path().app_data_dir().ok());
-
     let session = RdpSession {
         id: session_id.clone(),
         connection_id: connection_id.clone(),

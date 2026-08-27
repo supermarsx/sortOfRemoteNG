@@ -1,19 +1,23 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
-use std::fs;
-use std::path::PathBuf;
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::Duration;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sorng_core::events::DynEventEmitter;
+use sorng_storage::trust_store::{self, CertIdentity, Identity, SyncTrustStore, TrustRecord};
 
 use super::session_state::FailureClass;
 use super::settings::RdpSettingsPayload;
 
 const DEFAULT_CERT_PROMPT_TIMEOUT_SECS: u64 = 60;
+
+/// Trust Center record type for RDP server certificates. Shares the store
+/// with the frontend's `rdp` records and with the migration seed that reads
+/// the retired sidecar.
+const RDP_RECORD_TYPE: &str = "rdp";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServerCertValidationMode {
@@ -170,6 +174,10 @@ pub enum CertTrustError {
     Rejected,
     PromptTimeout,
     PromptUnavailable(String),
+    /// The Trust Center holds a revoked record for this host. Revocation is
+    /// a deliberate user decision, so it is never silently re-approved here —
+    /// the record has to be reinstated in the Trust Center first.
+    Revoked(String),
     Store(String),
     Emit(String),
 }
@@ -186,6 +194,7 @@ impl CertTrustError {
                 Self::Rejected => "user_rejected",
                 Self::PromptTimeout => "prompt_timeout",
                 Self::PromptUnavailable(_) => "prompt_unavailable",
+                Self::Revoked(_) => "trust_revoked",
                 Self::Store(_) => "trust_store_error",
                 Self::Emit(_) => "prompt_emit_error",
             },
@@ -210,6 +219,11 @@ impl fmt::Display for CertTrustError {
                  prompt path"
             ),
             Self::PromptUnavailable(message) => write!(f, "{message}"),
+            Self::Revoked(host) => write!(
+                f,
+                "the certificate trust record for {host} is revoked in the Trust Center; \
+                 reinstate it there before connecting again"
+            ),
             Self::Store(message) => write!(f, "certificate trust store error: {message}"),
             Self::Emit(message) => write!(f, "failed to emit certificate trust prompt: {message}"),
         }
@@ -218,19 +232,66 @@ impl fmt::Display for CertTrustError {
 
 impl std::error::Error for CertTrustError {}
 
-#[derive(Clone, Debug)]
+/// RDP's view of the Trust Center.
+///
+/// Server-certificate decisions used to live in a private plaintext
+/// `<app_data>/rdp-cert-trust.json` sidecar that nothing else could see —
+/// the frontend wrote a second, independent `rdp` record into the Trust
+/// Center after every prompt, and the two could disagree. This is now a thin
+/// adapter over [`SyncTrustStore::shared`]: one record per `host:port` of
+/// type `rdp` in the active database's `databases/<id>.trust.json`, written
+/// through the same SDBF ladder and P4 envelope as the database itself.
+///
+/// Consequences worth knowing:
+/// - Trust is **per database**. A host pinned in one database is unknown in
+///   another (export/import moves records between them).
+/// - With no active database — locked or closed — every lookup and every
+///   write fails closed rather than falling back to a local file.
+/// - Records revoked in the Trust Center are refused, not re-prompted.
+#[derive(Clone)]
 pub struct CertTrustStore {
-    path: PathBuf,
+    store: SyncTrustStore,
+}
+
+impl Default for CertTrustStore {
+    fn default() -> Self {
+        Self::shared()
+    }
+}
+
+impl fmt::Debug for CertTrustStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CertTrustStore").finish_non_exhaustive()
+    }
 }
 
 impl CertTrustStore {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+    /// The Trust Center store for the currently active database.
+    pub fn shared() -> Self {
+        Self {
+            store: SyncTrustStore::shared(),
+        }
     }
 
     pub fn lookup(&self, host: &str, port: u16) -> Result<Option<CertTrustEntry>, CertTrustError> {
-        let document = self.load_document()?;
-        Ok(document.entries.get(&store_key(host, port)).cloned())
+        let key = store_key(host, port);
+        let document = trust_store::runtime()
+            .and_then(|runtime| runtime.export(None))
+            .map_err(CertTrustError::Store)?;
+
+        let Some(record) = document
+            .records
+            .into_iter()
+            .find(|record| record.record_type == RDP_RECORD_TYPE && record.host == key)
+        else {
+            return Ok(None);
+        };
+
+        if record.revoked {
+            return Err(CertTrustError::Revoked(key));
+        }
+
+        entry_from_record(host, port, &record).map(Some)
     }
 
     pub fn remember(
@@ -238,55 +299,100 @@ impl CertTrustStore {
         cert: &PresentedCertificate,
         previous: Option<&CertTrustEntry>,
     ) -> Result<CertTrustEntry, CertTrustError> {
-        let mut document = self.load_document()?;
         let entry = CertTrustEntry::from_presented(
             cert,
             previous.map(|existing| existing.first_seen.clone()),
         );
-        document
-            .entries
-            .insert(store_key(&cert.host, cert.port), entry.clone());
-        self.save_document(&document)?;
+
+        self.store
+            .trust_identity_blocking(
+                store_key(&cert.host, cert.port),
+                RDP_RECORD_TYPE.to_string(),
+                Identity::Tls(Box::new(identity_from_entry(&entry))),
+                true,
+            )
+            .map_err(CertTrustError::Store)?;
+
         Ok(entry)
-    }
-
-    fn load_document(&self) -> Result<CertTrustDocument, CertTrustError> {
-        if !self.path.exists() {
-            return Ok(CertTrustDocument::default());
-        }
-
-        let raw = fs::read_to_string(&self.path).map_err(|error| {
-            CertTrustError::Store(format!("failed to read {}: {error}", self.path.display()))
-        })?;
-        if raw.trim().is_empty() {
-            return Ok(CertTrustDocument::default());
-        }
-
-        serde_json::from_str(&raw).map_err(|error| {
-            CertTrustError::Store(format!("failed to parse {}: {error}", self.path.display()))
-        })
-    }
-
-    fn save_document(&self, document: &CertTrustDocument) -> Result<(), CertTrustError> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                CertTrustError::Store(format!("failed to create {}: {error}", parent.display()))
-            })?;
-        }
-
-        let raw = serde_json::to_string_pretty(document).map_err(|error| {
-            CertTrustError::Store(format!("failed to encode trust store: {error}"))
-        })?;
-        fs::write(&self.path, raw).map_err(|error| {
-            CertTrustError::Store(format!("failed to write {}: {error}", self.path.display()))
-        })
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CertTrustDocument {
-    entries: HashMap<String, CertTrustEntry>,
+/// Project a Trust Center record back into the flat shape the RDP prompt
+/// plumbing works with. An `rdp` record carrying an SSH identity is corrupt
+/// (or hand-edited) and fails closed rather than being treated as unknown.
+fn entry_from_record(
+    host: &str,
+    port: u16,
+    record: &TrustRecord,
+) -> Result<CertTrustEntry, CertTrustError> {
+    let Identity::Tls(cert) = &record.identity else {
+        return Err(CertTrustError::Store(format!(
+            "trust record for {}:{} is not a certificate identity",
+            host, port
+        )));
+    };
+
+    Ok(CertTrustEntry {
+        host: host.to_string(),
+        port,
+        fingerprint: cert.fingerprint.clone(),
+        subject: cert.subject.clone().unwrap_or_default(),
+        issuer: cert.issuer.clone().unwrap_or_default(),
+        valid_from: cert.valid_from.clone().unwrap_or_default(),
+        valid_to: cert.valid_to.clone().unwrap_or_default(),
+        serial: cert.serial.clone().unwrap_or_default(),
+        signature_algorithm: cert.signature_algorithm.clone().unwrap_or_default(),
+        san: cert.san.clone().unwrap_or_default(),
+        pem: cert.pem.clone().unwrap_or_default(),
+        first_seen: cert.first_seen.clone(),
+        last_seen: cert.last_seen.clone(),
+        // The identity is only rewritten when the user approves it, so its
+        // `last_seen` is exactly the moment of the last approval.
+        last_approved_at: cert.last_seen.clone(),
+    })
+}
+
+fn identity_from_entry(entry: &CertTrustEntry) -> CertIdentity {
+    let non_empty = |value: &str| {
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    };
+
+    CertIdentity {
+        fingerprint: entry.fingerprint.clone(),
+        subject: non_empty(&entry.subject),
+        issuer: non_empty(&entry.issuer),
+        first_seen: entry.first_seen.clone(),
+        last_seen: entry.last_seen.clone(),
+        valid_from: non_empty(&entry.valid_from),
+        valid_to: non_empty(&entry.valid_to),
+        pem: non_empty(&entry.pem),
+        serial: non_empty(&entry.serial),
+        signature_algorithm: non_empty(&entry.signature_algorithm),
+        san: if entry.san.is_empty() {
+            None
+        } else {
+            Some(entry.san.clone())
+        },
+        chain_fingerprints: Vec::new(),
+        subject_cn: None,
+        subject_org: None,
+        subject_ou: None,
+        subject_country: None,
+        subject_state: None,
+        subject_locality: None,
+        subject_email: None,
+        issuer_cn: None,
+        issuer_org: None,
+        issuer_country: None,
+        key_algorithm: None,
+        key_size: None,
+        version: None,
+        chain: None,
+    }
 }
 
 pub fn evaluate_certificate_trust<F>(
@@ -616,7 +722,6 @@ struct PendingPrompt {
 
 #[derive(Default)]
 struct RuntimeTrustState {
-    store_path: Mutex<Option<PathBuf>>,
     pending: Mutex<HashMap<PendingPromptKey, PendingPrompt>>,
 }
 
@@ -624,14 +729,6 @@ static RUNTIME_TRUST_STATE: OnceLock<RuntimeTrustState> = OnceLock::new();
 
 fn runtime_state() -> &'static RuntimeTrustState {
     RUNTIME_TRUST_STATE.get_or_init(RuntimeTrustState::default)
-}
-
-pub fn initialize_store_path(app_data_dir: Option<PathBuf>) {
-    let mut slot = runtime_state()
-        .store_path
-        .lock()
-        .expect("certificate trust store path lock poisoned");
-    *slot = Some(resolve_store_path(app_data_dir));
 }
 
 pub fn evaluate_presented_certificate(
@@ -650,7 +747,7 @@ pub fn evaluate_presented_certificate(
     let session_id = session_context
         .as_ref()
         .map(|context| context.session_id.as_str());
-    let store = current_store();
+    let store = CertTrustStore::shared();
 
     evaluate_certificate_trust(
         &store,
@@ -791,26 +888,6 @@ impl RuntimeTrustState {
         sender
             .send(decision)
             .map_err(|_| "The pending certificate trust prompt is no longer waiting".to_string())
-    }
-}
-
-fn current_store() -> CertTrustStore {
-    let path = runtime_state()
-        .store_path
-        .lock()
-        .expect("certificate trust store path lock poisoned")
-        .clone()
-        .unwrap_or_else(|| resolve_store_path(None));
-    CertTrustStore::new(path)
-}
-
-fn resolve_store_path(app_data_dir: Option<PathBuf>) -> PathBuf {
-    match app_data_dir {
-        Some(path) => path.join("rdp-cert-trust.json"),
-        None => dirs::data_local_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("sortOfRemoteNG")
-            .join("rdp-cert-trust.json"),
     }
 }
 
