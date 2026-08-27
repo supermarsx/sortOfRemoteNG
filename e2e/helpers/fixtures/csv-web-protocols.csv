@@ -1,0 +1,4 @@
+Name,Hostname,Port,Protocol,Username,Domain,Description,Tags
+"Web Dashboard",dash.example.com,443,Web,,,Monitoring dashboard,monitoring;web
+"Legacy Web App",legacy.example.com,8080,HTTP/S,,,Old intranet app,intranet
+"Mistyped Jump",jump.example.com,443,rdp,,,Web console wrongly typed as RDP,repair

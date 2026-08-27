@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="..." ConfVersion="2.6">
+  <Node Name="Intranet Portal" Type="Connection" Descr="Company portal" Protocol="HTTPS" Hostname="portal.example.com" Port="443" Username="" Domain="" />
+  <Node Name="Proxmox Web" Type="Connection" Descr="Hypervisor web UI" Protocol="Web" Hostname="pve.example.com" Port="8443" />
+  <Node Name="Router Admin" Type="Connection" Descr="Router admin page" Protocol="HTTP" Hostname="http://router.local/admin" Port="80" />
+  <Node Name="Web Consoles" Type="Container" Expanded="true" Descr="Out-of-band consoles" Protocol="HTTPS" Hostname="" Port="443">
+    <Node Name="iLO Console" Type="Connection" Descr="Server iLO" Protocol="RDP" InheritProtocol="true" Hostname="ilo.example.com" Port="443" />
+  </Node>
+</Connections>
