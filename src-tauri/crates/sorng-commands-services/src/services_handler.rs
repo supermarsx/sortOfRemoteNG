@@ -61,6 +61,20 @@ pub fn is_command(command: &str) -> bool {
             | "budibase_update_datasource"
             | "budibase_delete_datasource"
             | "budibase_test_datasource"
+            | "portainer_connect"
+            | "portainer_disconnect"
+            | "portainer_list_connections"
+            | "portainer_ping"
+            | "portainer_web_ui_url"
+            | "portainer_list_endpoints"
+            | "portainer_list_containers"
+            | "portainer_start_container"
+            | "portainer_stop_container"
+            | "portainer_restart_container"
+            | "portainer_container_logs"
+            | "portainer_list_stacks"
+            | "portainer_start_stack"
+            | "portainer_stop_stack"
             | "osticket_connect"
             | "osticket_disconnect"
             | "osticket_list_connections"
@@ -541,6 +555,21 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         budibase_commands::budibase_update_datasource,
         budibase_commands::budibase_delete_datasource,
         budibase_commands::budibase_test_datasource,
+        // Portainer commands
+        portainer_commands::portainer_connect,
+        portainer_commands::portainer_disconnect,
+        portainer_commands::portainer_list_connections,
+        portainer_commands::portainer_ping,
+        portainer_commands::portainer_web_ui_url,
+        portainer_commands::portainer_list_endpoints,
+        portainer_commands::portainer_list_containers,
+        portainer_commands::portainer_start_container,
+        portainer_commands::portainer_stop_container,
+        portainer_commands::portainer_restart_container,
+        portainer_commands::portainer_container_logs,
+        portainer_commands::portainer_list_stacks,
+        portainer_commands::portainer_start_stack,
+        portainer_commands::portainer_stop_stack,
         // osTicket commands
         osticket_commands::osticket_connect,
         osticket_commands::osticket_disconnect,

@@ -1,5 +1,6 @@
 pub use sorng_budibase as budibase;
 pub use sorng_osticket as osticket;
+pub use sorng_portainer as portainer;
 pub use sorng_jira as jira;
 pub use sorng_i18n as i18n;
 pub use sorng_letsencrypt as letsencrypt;
@@ -13,6 +14,8 @@ pub use sorng_yubikey as yubikey;
 mod budibase_commands;
 #[path = "../../sorng-commands-ops/src/osticket_commands.rs"]
 mod osticket_commands;
+#[path = "../../sorng-commands-ops/src/portainer_commands.rs"]
+mod portainer_commands;
 #[path = "../../sorng-commands-ops/src/jira_commands.rs"]
 mod jira_commands;
 #[path = "../../sorng-commands-ops/src/i18n_commands.rs"]

@@ -9,6 +9,7 @@ description = "Services command handlers — split from ops to reduce coherence 
 sorng-budibase = { path = "../sorng-budibase" }
 sorng-osticket = { path = "../sorng-osticket" }
 sorng-jira = { path = "../sorng-jira" }
+sorng-portainer = { path = "../sorng-portainer" }
 sorng-i18n = { path = "../sorng-i18n" }
 sorng-letsencrypt = { path = "../sorng-letsencrypt" }
 sorng-ssh-agent = { path = "../sorng-ssh-agent" }

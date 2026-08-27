@@ -52,6 +52,7 @@ use pfsense::service::PfsenseServiceState;
 use pg_admin::service::PgServiceState;
 use php_mgmt::service::PhpServiceState;
 use port_knock::service::PortKnockServiceState;
+use portainer::service::PortainerServiceState;
 use postfix::service::PostfixServiceState;
 use powershell::runspace_session::{PowerShellSessionService, PowerShellSessionServiceState};
 use powershell::service::{PsRemotingService, PsRemotingServiceState};
@@ -79,7 +80,7 @@ use kafka::service::KafkaServiceState;
 /// Number of concrete Tauri state registrations owned by this codegen unit.
 /// Kept as an explicit parity contract so state additions cannot accidentally
 /// migrate back into the root `app_lib` composition unit unnoticed.
-pub const MANAGED_STATE_REGISTRATIONS: usize = 73;
+pub const MANAGED_STATE_REGISTRATIONS: usize = 75;
 
 const LOCALES_DIRECTORY_NAME: &str = "locales";
 const PORTABLE_RESOURCES_DIRECTORY_NAME: &str = "resources";
@@ -156,6 +157,17 @@ pub fn register(
     let budibase_state: BudibaseServiceState =
         Arc::new(Mutex::new(budibase::service::BudibaseService::new()));
     app.manage(budibase_state);
+
+    // t64: Portainer. The service holds the Trust Center handle so HTTPS
+    // endpoints (the default `:9443` is self-signed) go through the same TOFU
+    // verifier as every other management client rather than a bare reqwest
+    // builder. `SyncTrustStore::shared()` resolves the active database's trust
+    // file on every call, so it is safe to construct before a database is open.
+    let portainer_state: PortainerServiceState =
+        Arc::new(Mutex::new(portainer::service::PortainerService::new(Some(
+            Arc::new(sorng_storage::trust_store::SyncTrustStore::shared()),
+        ))));
+    app.manage(portainer_state);
 
     let osticket_state: OsticketServiceState =
         Arc::new(Mutex::new(osticket::service::OsticketService::new()));

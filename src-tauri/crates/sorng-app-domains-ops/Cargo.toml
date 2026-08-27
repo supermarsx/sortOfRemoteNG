@@ -65,6 +65,7 @@ sorng-pfsense = { path = "../sorng-pfsense" }
 sorng-php = { path = "../sorng-php" }
 sorng-port-knock = { path = "../sorng-port-knock" }
 sorng-portable = { path = "../sorng-portable" }
+sorng-portainer = { path = "../sorng-portainer" }
 sorng-postfix = { path = "../sorng-postfix" }
 sorng-postgres-admin = { path = "../sorng-postgres-admin" }
 sorng-powershell = { path = "../sorng-powershell" }
@@ -81,6 +82,10 @@ sorng-scheduler = { path = "../sorng-scheduler" }
 sorng-snmp = { path = "../sorng-snmp" }
 sorng-spamassassin = { path = "../sorng-spamassassin" }
 sorng-ssh-agent = { path = "../sorng-ssh-agent" }
+# t64: the Portainer service takes an injected Trust Center handle
+# (`SyncTrustStore`, which implements `sorng_tls_trust::BlockingTrustStore`)
+# so TOFU decisions route through the same store as every other TLS client.
+sorng-storage = { path = "../sorng-storage" }
 sorng-ssh-scripts = { path = "../sorng-ssh-scripts" }
 sorng-tailscale = { path = "../sorng-tailscale" }
 sorng-terraform = { path = "../sorng-terraform" }

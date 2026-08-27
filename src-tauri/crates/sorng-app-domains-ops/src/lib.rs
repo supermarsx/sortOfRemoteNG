@@ -59,6 +59,7 @@ pub use sorng_pfsense as pfsense;
 pub use sorng_php as php_mgmt;
 pub use sorng_port_knock as port_knock;
 pub use sorng_portable as portable;
+pub use sorng_portainer as portainer;
 pub use sorng_postfix as postfix;
 pub use sorng_postgres_admin as pg_admin;
 pub use sorng_powershell as powershell;
