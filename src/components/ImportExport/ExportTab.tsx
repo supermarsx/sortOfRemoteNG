@@ -26,6 +26,7 @@ import { DatabasePickerRow } from "./DatabasePickerRow";
 import {
   InclusionItemPickers,
   InclusionProtocolFilter,
+  TrustInclusionToggle,
   type InclusionConnectionOption,
   type InclusionFolderOption,
   type InclusionListOption,
@@ -526,7 +527,8 @@ const ExportTab: React.FC<ExportTabProps> = ({
       inclusion.includeColorTags ||
       inclusion.includeSettings ||
       inclusion.includeExportMetadata ||
-      inclusion.includeDatabaseMetadata)
+      inclusion.includeDatabaseMetadata ||
+      inclusion.includeTrust)
       ? [t("exportTab.warningSidecarsLimited")]
       : []),
     ...(!inclusion.includeConnections
@@ -1193,6 +1195,11 @@ const ExportTab: React.FC<ExportTabProps> = ({
                         defaultValue: "tunnel chains",
                       })
                     : undefined,
+                  inclusion.includeTrust
+                    ? t("importExport.trustInclusion.label", {
+                        defaultValue: "Trusted hosts & certificates",
+                      })
+                    : undefined,
                 ]
                   .filter(Boolean)
                   .join(", ") ||
@@ -1799,6 +1806,15 @@ const ExportTab: React.FC<ExportTabProps> = ({
                     </span>
                   </label>
                 ))}
+
+                <TrustInclusionToggle
+                  context="export"
+                  checked={inclusion.includeTrust}
+                  onChange={(value: boolean) =>
+                    updateInclusion({ includeTrust: value })
+                  }
+                  dataTestId="export-inclusion-includeTrust"
+                />
               </div>
 
               <InclusionProtocolFilter

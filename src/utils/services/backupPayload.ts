@@ -1,12 +1,22 @@
 import type { BackupConfig } from "../../types/settings/backupSettings";
 import type { Connection } from "../../types/connection/connection";
 import type { GlobalSettings } from "../../types/settings/settings";
+import {
+  isTrustExportDocument,
+  type TrustExportDocument,
+} from "./trustPortability";
 
 export interface BackupSourcePayload {
   connections?: unknown[];
   settings?: Record<string, unknown> | Partial<GlobalSettings>;
   timestamp?: number;
   app_data?: Record<string, unknown>;
+  /**
+   * Trust Center document for the backed-up database (t62 / D6). Callers
+   * fetch it with `readTrustDocument()`; leaving it out simply produces a
+   * backup without trust records, which restores exactly as before.
+   */
+  trustRecords?: TrustExportDocument | null;
 }
 
 export interface BackupPayload {
@@ -14,6 +24,7 @@ export interface BackupPayload {
   settings: Record<string, unknown>;
   timestamp: number;
   app_data?: Record<string, unknown>;
+  trustRecords?: TrustExportDocument;
 }
 
 const SECRET_FIELD_NAMES = new Set([
@@ -156,6 +167,14 @@ export function buildBackupPayload(
     if (isPlainObject(sanitizedAppData)) {
       payload.app_data = sanitizedAppData;
     }
+  }
+
+  // Passed through unsanitized on purpose: a trust record holds public key
+  // material only (fingerprints, PEM, host key types), and running it through
+  // the secret stripper would delete legitimate fields whose names happen to
+  // look sensitive.
+  if (isTrustExportDocument(source.trustRecords)) {
+    payload.trustRecords = source.trustRecords;
   }
 
   return payload;

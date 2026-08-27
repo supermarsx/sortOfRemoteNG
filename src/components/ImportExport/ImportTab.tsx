@@ -37,6 +37,7 @@ import { useToastContext } from "../../contexts/ToastContext";
 import { useTranslation } from "react-i18next";
 import { Select, type SelectOption } from "../ui/forms";
 import { DatabasePickerRow } from "./DatabasePickerRow";
+import { TrustInclusionToggle } from "./InclusionPickers";
 import { Wizard } from "./Wizard";
 import { useWizardNavigation, type WizardStep } from "./useWizardNavigation";
 import { formatPortableProtocolLabel } from "./advancedProtocolPortability";
@@ -95,6 +96,7 @@ const FALLBACK_OPTIONS: ImportOptions = {
   includeVpnData: true,
   includeTunnelChains: true,
   includeSshTunnels: true,
+  includeTrust: true,
   conflictPolicy: "duplicate",
   addTags: "",
   switchToTargetDatabaseAfterImport: false,
@@ -1498,6 +1500,15 @@ const ImportOptionsPanel: React.FC<{
               {label}
             </label>
           ))}
+          <TrustInclusionToggle
+            context="import"
+            variant="inline"
+            checked={options.includeTrust}
+            onChange={(value: boolean) =>
+              updateOptions({ includeTrust: value })
+            }
+            dataTestId="import-options-includeTrust"
+          />
         </div>
       </div>
     </ImportSection>
@@ -2434,6 +2445,11 @@ const ImportTab: React.FC<ImportTabProps> = ({
                     importOptions.includeSshTunnels
                       ? t("importTab.review.sshTunnels", {
                           defaultValue: "SSH tunnels",
+                        })
+                      : null,
+                    importOptions.includeTrust
+                      ? t("importExport.trustInclusion.label", {
+                          defaultValue: "Trusted hosts & certificates",
                         })
                       : null,
                   ]

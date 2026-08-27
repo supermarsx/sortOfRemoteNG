@@ -6,6 +6,11 @@ import { SettingsManager } from "../../utils/settings/settingsManager";
 import { Connection } from "../../types/connection/connection";
 import { GlobalSettings } from "../../types/settings/settings";
 import { buildBackupPayload } from "../../utils/services/backupPayload";
+import {
+  applyTrustDocument,
+  readTrustDocument,
+  type TrustExportDocument,
+} from "../../utils/services/trustPortability";
 
 export interface BackupStatus {
   isRunning: boolean;
@@ -61,6 +66,11 @@ interface BackupRestorePayload {
   connections?: Connection[];
   settings?: Partial<GlobalSettings>;
   timestamp?: number;
+  /**
+   * Trust Center document written by t62-aware backups (D6). Backups taken
+   * before t62 have none — the restore must succeed either way.
+   */
+  trustRecords?: TrustExportDocument;
 }
 
 export interface BackupRunMetadata {
@@ -437,11 +447,15 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
         const settings = settingsManager.getSettings();
         const backupConfig = settings.backup;
         const connections = state?.connections ?? [];
+        // t62 / D6 — carry the active database's Trust Center records.
+        // Best-effort: null when the Trust Center is unavailable.
+        const trustRecords = await readTrustDocument();
         const data = buildBackupPayload(
           {
             connections,
             settings,
             timestamp: Date.now(),
+            trustRecords,
           },
           backupConfig,
         );
@@ -547,6 +561,12 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
               updatedAt: conn.updatedAt ? new Date(conn.updatedAt) : new Date(),
             }))
           : [];
+
+        // t62 / D6 — re-import the backup's trust records into the active
+        // database. Best-effort and tolerant of older backups: a payload
+        // without `trustRecords` is a no-op, and a failing Trust Center
+        // never turns a committed restore into a reported failure.
+        await applyTrustDocument(data?.trustRecords, { mode: "merge" });
 
         const hadConnections = Array.isArray(data?.connections);
         const hadSettings = Boolean(

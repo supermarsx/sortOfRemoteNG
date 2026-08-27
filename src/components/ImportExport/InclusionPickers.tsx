@@ -1008,3 +1008,103 @@ const ListPickerSection: React.FC<{
     </AccordionSection>
   );
 };
+
+/* ── Trusted hosts & certificates (t62 / D6) ───────────────────────── */
+
+export type TrustInclusionContext = "export" | "import" | "clone";
+
+interface TrustInclusionToggleProps {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  /** Picks the wording that matches the flow the toggle sits in. */
+  context: TrustInclusionContext;
+  /**
+   * `"card"` matches Export's bordered inclusion rows; `"inline"` matches the
+   * compact checkbox grids Import and Clone use for their options.
+   */
+  variant?: "card" | "inline";
+  disabled?: boolean;
+  className?: string;
+  dataTestId?: string;
+}
+
+/**
+ * The single "Trusted hosts & certificates" switch shared by Export, Import
+ * and Clone so the three flows cannot drift apart in wording or default.
+ *
+ * Default is **on**: trust records are what stops a moved database from
+ * re-prompting for every host it already knows, they carry public key
+ * material only, and the native merge never lets an unrevoked import
+ * overwrite a revoked record.
+ */
+export const TrustInclusionToggle: React.FC<TrustInclusionToggleProps> = ({
+  checked,
+  onChange,
+  context,
+  variant = "card",
+  disabled = false,
+  className,
+  dataTestId = "inclusion-include-trust",
+}) => {
+  const { t } = useTranslation();
+
+  const label = t("importExport.trustInclusion.label", {
+    defaultValue: "Trusted hosts & certificates",
+  });
+  const description =
+    context === "export"
+      ? t("importExport.trustInclusion.exportDescription", {
+          defaultValue:
+            "Include accepted host keys, pinned certificates and their per-host policies. Public key material only — no secrets.",
+        })
+      : context === "import"
+        ? t("importExport.trustInclusion.importDescription", {
+            defaultValue:
+              "Merge trusted hosts and certificates from the file into the target database. Revoked entries are never re-trusted.",
+          })
+        : t("importExport.trustInclusion.cloneDescription", {
+            defaultValue:
+              "Copy trusted hosts and certificates so the clone does not prompt again for hosts the source already trusts.",
+          });
+
+  if (variant === "inline") {
+    return (
+      <label
+        className={`inline-flex items-start gap-2 ${className ?? ""}`}
+        title={description}
+        data-testid={dataTestId}
+      >
+        <Checkbox
+          checked={checked}
+          disabled={disabled}
+          onChange={onChange}
+          aria-label={label}
+        />
+        <span>{label}</span>
+      </label>
+    );
+  }
+
+  return (
+    <label
+      className={`flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${disabled ? "opacity-60" : "cursor-pointer"} ${className ?? ""}`}
+      data-testid={dataTestId}
+    >
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        className="mt-0.5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+        aria-label={label}
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-[var(--color-text)]">
+          {label}
+        </span>
+        <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
+          {description}
+        </span>
+      </span>
+    </label>
+  );
+};

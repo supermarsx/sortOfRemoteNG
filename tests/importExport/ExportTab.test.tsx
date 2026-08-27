@@ -99,6 +99,7 @@ const defaultConfig: ExportConfig = {
     includeTunnelChains: true,
     includeExportMetadata: true,
     includeDatabaseMetadata: true,
+    includeTrust: true,
     includedProtocols: [],
   },
   includePasswords: false,
@@ -775,5 +776,39 @@ describe("ExportTab", () => {
     expect(screen.getByTestId("export-wizard-error")).toHaveTextContent(
       /minimum strength/i,
     );
+  });
+  // ── t62 / D6 — trusted hosts & certificates ────────────────────
+  it("offers the trust inclusion toggle on by default and reports changes", async () => {
+    const { onConfigChange } = await renderExportTab();
+    advanceExportTo("content");
+
+    const toggle = within(
+      screen.getByTestId("export-inclusion-includeTrust"),
+    ).getByRole("checkbox");
+    expect(toggle).toBeChecked();
+    expect(
+      screen.getByText("Trusted hosts & certificates"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(onConfigChange).toHaveBeenCalledWith({
+      inclusion: { includeTrust: false },
+    });
+  });
+
+  it("renders the trust toggle unchecked when the inclusion opts out", async () => {
+    await renderExportTab({
+      config: {
+        ...defaultConfig,
+        inclusion: { ...defaultConfig.inclusion, includeTrust: false },
+      },
+    });
+    advanceExportTo("content");
+
+    expect(
+      within(screen.getByTestId("export-inclusion-includeTrust")).getByRole(
+        "checkbox",
+      ),
+    ).not.toBeChecked();
   });
 });

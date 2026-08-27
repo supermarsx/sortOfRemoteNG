@@ -13,6 +13,13 @@ import {
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { getInvoke } from "../../utils/tauri/invoke";
 import {
+  applyTrustDocument,
+  isTrustExportDocument,
+  mergeTrustDocuments,
+  readTrustDocument,
+  type TrustExportDocument,
+} from "../../utils/services/trustPortability";
+import {
   ExportDatabaseOption,
   ExportInclusionConfig,
   ExportScopeMode,
@@ -110,6 +117,7 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   includeVpnData: true,
   includeTunnelChains: true,
   includeSshTunnels: true,
+  includeTrust: true,
   conflictPolicy: "duplicate",
   addTags: "",
   switchToTargetDatabaseAfterImport: false,
@@ -185,6 +193,8 @@ interface ExportDatabaseDataset {
   settings: Record<string, unknown>;
   tabGroups: DatabaseExportSnapshot["tabGroups"];
   colorTags: DatabaseExportSnapshot["colorTags"];
+  /** Trust Center document for this database (t62 / D6), when included. */
+  trustRecords?: TrustExportDocument;
 }
 
 interface ExportSidecars {
@@ -247,6 +257,10 @@ const createDefaultExportInclusion = (
   includeTunnelChains: settings.includeTunnelChainsByDefault,
   includeExportMetadata: settings.includeExportMetadataByDefault,
   includeDatabaseMetadata: settings.includeDatabaseMetadataByDefault,
+  // Trust records are not part of ExportSecuritySettings: they hold no
+  // secrets, and dropping them is what makes a moved database re-prompt for
+  // every host it already knows. Default on (t62 / D6).
+  includeTrust: true,
   includedProtocols: [],
   includedConnectionIds: [],
   includedFolderIds: [],
@@ -1722,7 +1736,12 @@ export function useImportExport({
         } else {
           try {
             const snapshot =
-              await databaseManager.readExportableDatabaseSnapshot(databaseId);
+              await databaseManager.readExportableDatabaseSnapshot(
+                databaseId,
+                false,
+                // Catalog rows only need names and protocols.
+                { includeTrust: false },
+              );
             sourceConnections = snapshot?.connections ?? [];
           } catch (e) {
             console.warn(
@@ -2153,9 +2172,9 @@ export function useImportExport({
     [exportDatabaseOptions, exportScopeMode, selectedExportDatabaseIds],
   );
 
-  const buildCurrentDatabaseDataset = (
+  const buildCurrentDatabaseDataset = async (
     currentDatabase: ConnectionDatabase,
-  ): ExportDatabaseDataset => {
+  ): Promise<ExportDatabaseDataset> => {
     const rawSettings = settingsManager.getSettings?.();
     const settings = (rawSettings ?? {}) as unknown as Record<string, unknown>;
     const colorTags = (
@@ -2178,6 +2197,15 @@ export function useImportExport({
         : {},
       tabGroups: includeTabGroups ? (state.tabGroups ?? []) : [],
       colorTags,
+      // The open database's records never travel through
+      // `readExportableDatabaseSnapshot` (its data is already in memory), so
+      // they are fetched straight from the Trust Center here.
+      ...(exportInclusion.includeTrust
+        ? {
+            trustRecords:
+              (await readTrustDocument(currentDatabase.id)) ?? undefined,
+          }
+        : {}),
     };
   };
 
@@ -2200,6 +2228,9 @@ export function useImportExport({
       : {},
     tabGroups: includeTabGroups ? (snapshot.tabGroups ?? []) : [],
     colorTags: includeColorTags ? (snapshot.colorTags ?? {}) : {},
+    ...(exportInclusion.includeTrust && snapshot.trustRecords
+      ? { trustRecords: snapshot.trustRecords }
+      : {}),
   });
 
   const buildExportDatasets = async (): Promise<ExportBuildResult> => {
@@ -2234,7 +2265,7 @@ export function useImportExport({
     const datasets: ExportDatabaseDataset[] = [];
     for (const databaseId of selectedIds) {
       if (databaseId === currentDatabase.id) {
-        datasets.push(buildCurrentDatabaseDataset(currentDatabase));
+        datasets.push(await buildCurrentDatabaseDataset(currentDatabase));
         continue;
       }
 
@@ -2242,6 +2273,7 @@ export function useImportExport({
         databaseId,
         exportInclusion.includeConnections &&
           exportInclusion.includeCredentials,
+        { includeTrust: exportInclusion.includeTrust },
       );
       datasets.push(snapshotToDataset(snapshot));
     }
@@ -2862,6 +2894,9 @@ export function useImportExport({
     ...(exportInclusion.includeDatabaseMetadata
       ? { databaseMetadata: buildDatabaseExportMetadata(dataset) }
       : {}),
+    ...(exportInclusion.includeTrust && dataset.trustRecords
+      ? { trustRecords: dataset.trustRecords }
+      : {}),
     ...(exportMetadata ? { exportMetadata } : {}),
     ...(sidecars.vpnConnections
       ? { vpnConnections: sidecars.vpnConnections }
@@ -2896,6 +2931,9 @@ export function useImportExport({
       ...(includeColorTags ? { colorTags: dataset.colorTags ?? {} } : {}),
       ...(exportInclusion.includeDatabaseMetadata
         ? { databaseMetadata: buildDatabaseExportMetadata(dataset) }
+        : {}),
+      ...(exportInclusion.includeTrust && dataset.trustRecords
+        ? { trustRecords: dataset.trustRecords }
         : {}),
     })),
     ...(sidecars.vpnConnections
@@ -3414,6 +3452,8 @@ ${tableRows}
         const snapshot = await databaseManager.readExportableDatabaseSnapshot(
           target.id,
           true,
+          // Only used to detect conflicts against existing connections.
+          { includeTrust: false },
         );
         return snapshot.connections ?? [];
       }),
@@ -3564,6 +3604,7 @@ ${tableRows}
           : undefined;
       let vpnConnections: ImportVpnData | undefined;
       let tunnelChainTemplates: ImportResult["tunnelChainTemplates"];
+      let importedTrustRecords: TrustExportDocument | undefined;
       if (detectedFormat === "json") {
         try {
           const parsed = JSON.parse(processedContent);
@@ -3585,6 +3626,21 @@ ${tableRows}
           if (Array.isArray(importedTunnelChains)) {
             tunnelChainTemplates = importedTunnelChains;
           }
+          // t62 / D6: a database export carries its Trust Center records at
+          // the top level; a multi-database package carries one per database.
+          // Files written before t62 have none — absence is not an error.
+          const trustCandidates: unknown[] = [
+            parsed?.trustRecords,
+            ...(Array.isArray(parsed?.databases)
+              ? parsed.databases.map(
+                  (entry: { trustRecords?: unknown }) => entry?.trustRecords,
+                )
+              : []),
+          ];
+          importedTrustRecords =
+            mergeTrustDocuments(
+              trustCandidates.filter(isTrustExportDocument),
+            ) ?? undefined;
         } catch {
           // Not a JSON file or no VPN data -- ignore
         }
@@ -3751,6 +3807,7 @@ ${tableRows}
         connections,
         vpnConnections,
         tunnelChainTemplates,
+        ...(importedTrustRecords ? { trustRecords: importedTrustRecords } : {}),
         analysis,
         previewItems,
         selectedIds: previewItems
@@ -4174,15 +4231,31 @@ ${tableRows}
         ? connectionsToImport.filter(hasConnectionSshTunnel).length
         : 0;
 
+      // t62 / D6 — trust records travel with the file when the user leaves
+      // the "Trusted hosts & certificates" toggle on. Absent in pre-t62
+      // exports, in which case this is a no-op.
+      const importTrustDocument = importResult?.trustRecords ?? null;
+      const importIncludeTrust = importOptions.includeTrust;
+
       for (const targetDatabase of targetDatabases) {
         if (targetDatabase.id === currentDatabase?.id) {
           connectionsToImport.forEach((conn) => {
             dispatch({ type: "ADD_CONNECTION", payload: conn });
           });
+          // The open database is written through the reducer, so its trust
+          // records have to be merged explicitly.
+          await applyTrustDocument(importTrustDocument, {
+            databaseId: targetDatabase.id,
+            includeTrust: importIncludeTrust,
+          });
         } else {
           await databaseManager.appendConnectionsToDatabase(
             targetDatabase.id,
             connectionsToImport,
+            {
+              trustRecords: importTrustDocument,
+              includeTrust: importIncludeTrust,
+            },
           );
         }
       }
@@ -4304,6 +4377,8 @@ ${tableRows}
     try {
       // ── Collect + filter source connections ──────────────────
       const currentDatabase = databaseManager.getCurrentDatabase();
+      const cloneIncludeTrust = cloneInclusion.includeTrust;
+      const sourceTrustDocuments: Array<TrustExportDocument | null> = [];
       const sourceDatasets: Array<{
         databaseId: string;
         connections: Connection[];
@@ -4314,14 +4389,22 @@ ${tableRows}
             databaseId: id,
             connections: state.connections,
           });
+          if (cloneIncludeTrust) {
+            sourceTrustDocuments.push(await readTrustDocument(id));
+          }
         } else {
           try {
             const snapshot =
-              await databaseManager.readExportableDatabaseSnapshot(id);
+              await databaseManager.readExportableDatabaseSnapshot(id, false, {
+                includeTrust: cloneIncludeTrust,
+              });
             sourceDatasets.push({
               databaseId: id,
               connections: snapshot?.connections ?? [],
             });
+            if (cloneIncludeTrust) {
+              sourceTrustDocuments.push(snapshot?.trustRecords ?? null);
+            }
           } catch (e) {
             console.warn(
               `[clone] Failed to read snapshot of source database ${id}:`,
@@ -4330,6 +4413,12 @@ ${tableRows}
           }
         }
       }
+      // A clone can fan several sources into one target, so the documents are
+      // folded with the same rules the native merge uses (newest wins; a
+      // revoked record is never replaced by an unrevoked one).
+      const cloneTrustDocument = cloneIncludeTrust
+        ? mergeTrustDocuments(sourceTrustDocuments)
+        : null;
 
       const selectedConnectionIds = cloneInclusion.includedConnectionIds ?? [];
       const usesQualifiedConnectionIds = selectedConnectionIds.some((id) =>
@@ -4422,7 +4511,12 @@ ${tableRows}
             existing = state.connections;
           } else {
             const snapshot =
-              await databaseManager.readExportableDatabaseSnapshot(targetId);
+              await databaseManager.readExportableDatabaseSnapshot(
+                targetId,
+                false,
+                // Only used to detect conflicts against existing connections.
+                { includeTrust: false },
+              );
             existing = snapshot?.connections ?? [];
           }
           const items = buildApplyItems(
@@ -4441,10 +4535,20 @@ ${tableRows}
             applied.remapped.forEach((conn) => {
               dispatch({ type: "ADD_CONNECTION", payload: conn });
             });
+            // The open database is written through the reducer, so its trust
+            // records have to be merged explicitly.
+            await applyTrustDocument(cloneTrustDocument, {
+              databaseId: targetId,
+              includeTrust: cloneIncludeTrust,
+            });
           } else {
             await databaseManager.appendConnectionsToDatabase(
               targetId,
               applied.remapped,
+              {
+                trustRecords: cloneTrustDocument,
+                includeTrust: cloneIncludeTrust,
+              },
             );
           }
 

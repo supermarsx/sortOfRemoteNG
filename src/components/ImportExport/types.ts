@@ -13,6 +13,7 @@ import {
   ZeroTierConnection,
 } from "../../utils/network/proxyOpenVPNManager";
 import { SavedTunnelChain } from "../../types/settings/settings";
+import type { TrustExportDocument } from "../../utils/services/trustPortability";
 
 export type ExportScopeMode = "current" | "selected" | "all";
 export type ImportTargetMode = "current" | "selected" | "all";
@@ -29,6 +30,13 @@ export interface ExportInclusionConfig {
   includeTunnelChains: boolean;
   includeExportMetadata: boolean;
   includeDatabaseMetadata: boolean;
+  /**
+   * Carry the database's Trust Center records — accepted host keys, pinned
+   * certificates, per-host policies and their history (t62 / D6). Default on:
+   * without them an imported or cloned database re-prompts for every host the
+   * original already trusted. Trust records hold public key material only.
+   */
+  includeTrust: boolean;
   includedProtocols: Connection["protocol"][];
   /** Specific connection ids to include. Empty array = all connections. */
   includedConnectionIds?: string[];
@@ -232,6 +240,12 @@ export interface ImportOptions {
   includeVpnData: boolean;
   includeTunnelChains: boolean;
   includeSshTunnels: boolean;
+  /**
+   * Merge the import file's Trust Center records into the target database
+   * (t62 / D6). Default on; files written before t62 simply carry none, so
+   * an old export imports exactly as it always did.
+   */
+  includeTrust: boolean;
   conflictPolicy: "duplicate" | "skip" | "rename";
   addTags: string;
   switchToTargetDatabaseAfterImport: boolean;
@@ -248,6 +262,11 @@ export interface ImportResult {
   previewItems?: ImportPreviewItem[];
   selectedIds?: string[];
   selectedCount?: number;
+  /**
+   * Trust Center document found in the source file (t62 / D6), applied to the
+   * target database(s) on confirm when `ImportOptions.includeTrust` is set.
+   */
+  trustRecords?: TrustExportDocument;
 }
 
 // ─── Clone ───────────────────────────────────────────────────────────

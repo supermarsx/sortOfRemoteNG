@@ -1363,7 +1363,11 @@ describe("useImportExport", () => {
       exportedJson.databases.map((entry: any) => entry.collection.id),
     ).toEqual(["col-1", "col-2"]);
     expect(JSON.stringify(exportedJson)).not.toContain("col-locked");
-    expect(mockReadExportableSnapshot).toHaveBeenCalledWith("col-2", false);
+    // t62 / D6 — the export inclusion toggle rides along on every snapshot
+    // read, defaulting to on.
+    expect(mockReadExportableSnapshot).toHaveBeenCalledWith("col-2", false, {
+      includeTrust: true,
+    });
     expect(mockReadExportableSnapshot).not.toHaveBeenCalledWith(
       "col-locked",
       expect.anything(),
@@ -2855,6 +2859,9 @@ describe("useImportExport", () => {
     expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
       "col-2",
       importedConns,
+      // t62 / D6 — this fixture's file carries no trust records, so the
+      // append is handed `null` and the native import is skipped.
+      { trustRecords: null, includeTrust: true },
     );
     expect(mockSelectDatabase).toHaveBeenCalledWith("col-2");
     expect(mockLoadData).toHaveBeenCalled();
@@ -3663,6 +3670,7 @@ describe("useImportExport", () => {
       expect.arrayContaining([
         expect.objectContaining({ name: "Archive SSH", hostname: "10.0.0.50" }),
       ]),
+      { trustRecords: null, includeTrust: true },
     );
     expect(mockAppendConnectionsToDatabase.mock.calls[0][1]).toHaveLength(1);
   });
@@ -4008,6 +4016,7 @@ describe("useImportExport", () => {
           proxyChainId: "proxy-chain-new",
         }),
       ]),
+      { trustRecords: null, includeTrust: true },
     );
     const clonedConnection = (
       mockAppendConnectionsToDatabase.mock.calls[0][1] as Connection[]
@@ -4400,5 +4409,326 @@ describe("useImportExport", () => {
     // No prompt was shown; no unlockDatabase call.
     expect(result.current.passwordPrompt).toBeNull();
     expect(mockUnlockDatabase).not.toHaveBeenCalled();
+  });
+  // -- t62 / D6 -- trust records travel with export and import ------
+  it("handleExport JSON carries the source database's trust records", async () => {
+    const restoreBlob = stubReadableBlob();
+    const trustRecords = {
+      version: 1,
+      records: [
+        {
+          host: "archive.example.test:22",
+          record_type: "ssh",
+          identity: {
+            key_type: "ssh-ed25519",
+            fingerprint: "SHA256:abc",
+            last_seen: "2026-05-01T00:00:00.000Z",
+          },
+          user_approved: true,
+          nickname: "Archive jump host",
+          history: [{ reason: "Initial", at: FIXTURE_NOW }],
+          revoked: false,
+        },
+      ],
+      policy: "tofu",
+    };
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ]);
+    mockReadExportableSnapshot.mockResolvedValueOnce({
+      collection: {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        exportDate: FIXTURE_NOW,
+      },
+      connections: [],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+      trustRecords,
+    });
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setExportScopeMode("all");
+    });
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const exportedJson = JSON.parse(text);
+    const archive = exportedJson.databases.find(
+      (entry: any) => entry.collection.id === "col-2",
+    );
+    // Nickname, history and revoked state survive into the file verbatim.
+    expect(archive.trustRecords).toEqual(trustRecords);
+
+    restoreBlob();
+  });
+
+  it("handleExport omits trust records when the inclusion toggle is off", async () => {
+    const restoreBlob = stubReadableBlob();
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ]);
+    mockReadExportableSnapshot.mockResolvedValueOnce({
+      collection: {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        exportDate: FIXTURE_NOW,
+      },
+      connections: [],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+      trustRecords: {
+        version: 1,
+        records: [{ host: "h:22", record_type: "ssh" }],
+      },
+    });
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setExportScopeMode("all");
+      result.current.updateExportInclusion({ includeTrust: false });
+    });
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    // The opt-out reaches the database layer *and* the written file, so a
+    // snapshot that still carries records cannot leak into the export.
+    expect(mockReadExportableSnapshot).toHaveBeenCalledWith("col-2", false, {
+      includeTrust: false,
+    });
+    const { text } = await getLastDownloadedText();
+    const archive = JSON.parse(text).databases.find(
+      (entry: any) => entry.collection.id === "col-2",
+    );
+    expect(archive).not.toHaveProperty("trustRecords");
+
+    restoreBlob();
+  });
+
+  it("confirmImport merges the file's trust records into the target database", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    mockGetExportableDatabases
+      .mockResolvedValueOnce(databases)
+      .mockResolvedValueOnce(databases);
+    const importedConns = [{ id: "archive-1", name: "Archive Host" }];
+    mockImportConnections.mockResolvedValue(importedConns);
+
+    const trustRecords = {
+      version: 1,
+      records: [
+        {
+          host: "archive.example.test:22",
+          record_type: "ssh",
+          identity: { fingerprint: "SHA256:abc" },
+          user_approved: true,
+          nickname: "Archive jump host",
+          history: [{ reason: "Initial", at: FIXTURE_NOW }],
+          revoked: true,
+        },
+      ],
+    };
+    const fileBody = JSON.stringify({
+      collection: { id: "col-src", name: "Source" },
+      connections: importedConns,
+      trustRecords,
+    });
+
+    const { result } = renderImportExport();
+    await waitFor(() => {
+      expect(result.current.importDatabaseOptions).toHaveLength(2);
+    });
+    await act(async () => {
+      await result.current.setSelectedImportDatabaseId("col-2");
+    });
+
+    const file = new File([fileBody], "archive.json", {
+      type: "application/json",
+    });
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    await act(async () => {
+      await result.current.confirmImport("archive.json");
+    });
+
+    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
+      "col-2",
+      expect.any(Array),
+      { trustRecords, includeTrust: true },
+    );
+  });
+
+  it("confirmImport drops the file's trust records when the toggle is off", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    mockGetExportableDatabases
+      .mockResolvedValueOnce(databases)
+      .mockResolvedValueOnce(databases);
+    const importedConns = [{ id: "archive-1", name: "Archive Host" }];
+    mockImportConnections.mockResolvedValue(importedConns);
+    const fileBody = JSON.stringify({
+      collection: { id: "col-src", name: "Source" },
+      connections: importedConns,
+      trustRecords: {
+        version: 1,
+        records: [{ host: "h:22", record_type: "ssh" }],
+      },
+    });
+
+    const { result } = renderImportExport();
+    await waitFor(() => {
+      expect(result.current.importDatabaseOptions).toHaveLength(2);
+    });
+    await act(async () => {
+      await result.current.setSelectedImportDatabaseId("col-2");
+      result.current.updateImportOptions({ includeTrust: false });
+    });
+
+    const file = new File([fileBody], "archive.json", {
+      type: "application/json",
+    });
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    await act(async () => {
+      await result.current.confirmImport("archive.json");
+    });
+
+    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
+      "col-2",
+      expect.any(Array),
+      expect.objectContaining({ includeTrust: false }),
+    );
+  });
+
+  it("confirmImport of a pre-t62 file carries no trust document", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    mockGetExportableDatabases
+      .mockResolvedValueOnce(databases)
+      .mockResolvedValueOnce(databases);
+    const importedConns = [{ id: "archive-1", name: "Archive Host" }];
+    mockImportConnections.mockResolvedValue(importedConns);
+    const fileBody = JSON.stringify({
+      collection: { id: "col-src", name: "Source" },
+      connections: importedConns,
+    });
+
+    const { result } = renderImportExport();
+    await waitFor(() => {
+      expect(result.current.importDatabaseOptions).toHaveLength(2);
+    });
+    await act(async () => {
+      await result.current.setSelectedImportDatabaseId("col-2");
+    });
+
+    const file = new File([fileBody], "legacy.json", {
+      type: "application/json",
+    });
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    await act(async () => {
+      await result.current.confirmImport("legacy.json");
+    });
+
+    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
+      "col-2",
+      expect.any(Array),
+      { trustRecords: null, includeTrust: true },
+    );
   });
 });

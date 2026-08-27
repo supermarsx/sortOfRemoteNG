@@ -30,6 +30,7 @@ import { DatabasePickerRow } from "./DatabasePickerRow";
 import {
   InclusionItemPickers,
   InclusionProtocolFilter,
+  TrustInclusionToggle,
   type InclusionConnectionOption,
   type InclusionFolderOption,
   type InclusionListOption,
@@ -695,6 +696,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
         includeEmptyFolders: true,
         includeTunnelChains: true,
         includeVpnData: true,
+        includeTrust: true,
         includedProtocols: [],
         includedConnectionIds: [],
         includedFolderIds: [],
@@ -716,6 +718,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
         includeEmptyFolders: false,
         includeTunnelChains: false,
         includeVpnData: false,
+        includeTrust: false,
         includedProtocols: [],
         includedConnectionIds: [],
         includedFolderIds: [],
@@ -1322,6 +1325,15 @@ const CloneTab: React.FC<CloneTabProps> = ({
                       defaultValue: "Include credentials",
                     })}
                   </label>
+                  <TrustInclusionToggle
+                    context="clone"
+                    variant="inline"
+                    checked={inclusion.includeTrust}
+                    onChange={(value: boolean) =>
+                      updateInclusion({ includeTrust: value })
+                    }
+                    dataTestId="clone-options-includeTrust"
+                  />
                   <label className="inline-flex items-center gap-2 sm:col-span-2">
                     <input
                       type="checkbox"

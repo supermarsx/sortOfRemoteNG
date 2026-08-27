@@ -124,6 +124,7 @@ const inclusion: ExportInclusionConfig = {
   includeTunnelChains: false,
   includeExportMetadata: false,
   includeDatabaseMetadata: false,
+  includeTrust: true,
   includedProtocols: [],
   includedConnectionIds: [],
   includedFolderIds: [],
@@ -528,5 +529,27 @@ describe("CloneTab", () => {
     expect(updateInclusion).toHaveBeenCalledWith({
       includedVpnConnectionIds: ["vpn-openvpn"],
     });
+  });
+  // ── t62 / D6 — trusted hosts & certificates ────────────────────
+  it("offers the trust inclusion toggle on by default and reports changes", () => {
+    const { updateInclusion } = renderCloneTab();
+    advanceLatestCloneTo("options");
+
+    const toggle = screen.getByRole("checkbox", {
+      name: "Trusted hosts & certificates",
+    });
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(updateInclusion).toHaveBeenCalledWith({ includeTrust: false });
+  });
+
+  it("renders the trust toggle unchecked when the inclusion opts out", () => {
+    renderCloneTab({ inclusion: { ...inclusion, includeTrust: false } });
+    advanceLatestCloneTo("options");
+
+    expect(
+      screen.getByRole("checkbox", { name: "Trusted hosts & certificates" }),
+    ).not.toBeChecked();
   });
 });

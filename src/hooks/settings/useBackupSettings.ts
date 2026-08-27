@@ -18,6 +18,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { appDataDir, documentDir, join, homeDir } from "@tauri-apps/api/path";
 import { useConnections } from "../../contexts/useConnections";
 import { buildBackupPayload } from "../../utils/services/backupPayload";
+import { readTrustDocument } from "../../utils/services/trustPortability";
 
 /* ═══════════════════════════════════════════════════════════════
    Static label / description maps
@@ -184,11 +185,17 @@ export function useBackupSettings(
     try {
       await invoke("backup_update_config", { config: backup });
 
+      // t62 / D6 — a backup that omitted the Trust Center would restore a
+      // database that re-prompts for every host it already trusted.
+      // Best-effort: `readTrustDocument` returns null instead of throwing.
+      const trustRecords = await readTrustDocument();
+
       const data = buildBackupPayload(
         {
           connections: state.connections,
           settings: backup.includeSettings ? settings : {},
           timestamp: Date.now(),
+          trustRecords,
         },
         backup,
       );

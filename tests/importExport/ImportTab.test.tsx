@@ -514,4 +514,49 @@ describe("ImportTab", () => {
 
     expect(cancelImport).toHaveBeenCalledTimes(1);
   });
+  // ── t62 / D6 — trusted hosts & certificates ────────────────────
+  it("offers the trust inclusion toggle on by default and reports changes", () => {
+    const { updateImportOptions } = renderImportTab({
+      importResult: {
+        success: true,
+        imported: 1,
+        errors: [],
+        connections: [],
+      },
+    });
+
+    const toggle = screen.getByRole("checkbox", {
+      name: "Trusted hosts & certificates",
+    });
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(updateImportOptions).toHaveBeenCalledWith({ includeTrust: false });
+  });
+
+  it("renders the trust toggle unchecked when the options opt out", () => {
+    renderImportTab({
+      importResult: {
+        success: true,
+        imported: 1,
+        errors: [],
+        connections: [],
+      },
+      importOptions: {
+        preserveFolders: true,
+        includeCredentials: true,
+        includeVpnData: true,
+        includeTunnelChains: true,
+        includeSshTunnels: true,
+        includeTrust: false,
+        conflictPolicy: "duplicate",
+        addTags: "",
+        switchToTargetDatabaseAfterImport: false,
+      },
+    });
+
+    expect(
+      screen.getByRole("checkbox", { name: "Trusted hosts & certificates" }),
+    ).not.toBeChecked();
+  });
 });
