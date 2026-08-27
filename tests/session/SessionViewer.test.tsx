@@ -25,6 +25,7 @@ const mockState = vi.hoisted(() => ({
   rustDeskClientProps: vi.fn(),
   mySqlClientProps: vi.fn(),
   postgreSqlClientProps: vi.fn(),
+  mongoDbClientProps: vi.fn(),
   spiceClientProps: vi.fn(),
   xdmcpClientProps: vi.fn(),
   x2goNativeClientProps: vi.fn(),
@@ -178,6 +179,13 @@ vi.mock("../../src/components/protocol/PostgreSQLClient", () => ({
   PostgreSQLClient: (props: any) => {
     mockState.postgreSqlClientProps(props);
     return <div data-testid="mock-postgresql-client">PostgreSQL Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/MongoDBClient", () => ({
+  MongoDBClient: (props: any) => {
+    mockState.mongoDbClientProps(props);
+    return <div data-testid="mock-mongodb-client">MongoDB Client</div>;
   },
 }));
 
@@ -494,6 +502,7 @@ describe("SessionViewer", () => {
     ["rustdesk", "mock-rustdesk-client"],
     ["mysql", "mock-mysql-client"],
     ["postgresql", "mock-postgresql-client"],
+    ["mongodb", "mock-mongodb-client"],
     ["spice", "mock-spice-client"],
     ["xdmcp", "mock-xdmcp-client"],
     ["x2go", "mock-x2go-client"],

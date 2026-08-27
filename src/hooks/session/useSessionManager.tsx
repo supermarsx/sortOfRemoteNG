@@ -1397,6 +1397,16 @@ export const useSessionManager = () => {
       }
     }
 
+    if (session.protocol === "mongodb" && session.backendSessionId) {
+      try {
+        await invoke("mongo_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect MongoDB session:", error);
+      }
+    }
+
     if (session.protocol === "spice" && session.backendSessionId) {
       try {
         await invoke("disconnect_spice", {

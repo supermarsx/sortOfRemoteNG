@@ -277,6 +277,29 @@ describe("handleSessionClose — sessions with no live transport", () => {
     expect(sessions()).toEqual([]);
   });
 
+  it("disconnects an error MongoDB tab through mongo_disconnect with its backend session id", async () => {
+    const conn = makeConnection("mongo-1", {
+      protocol: "mongodb",
+      port: 27017,
+    });
+    const session = makeSession("s-mongo", conn.id, {
+      protocol: "mongodb",
+      backendSessionId: "mongo-backend-3",
+    });
+    seed([conn], [session]);
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("mongo_disconnect", {
+      sessionId: "mongo-backend-3",
+    });
+    expect(sessions()).toEqual([]);
+  });
+
   it("skips the MySQL backend disconnect when the tab never got a backend session id", async () => {
     const conn = makeConnection("mysql-2", { protocol: "mysql", port: 3306 });
     const session = makeSession("s-mysql-none", conn.id, { protocol: "mysql" });

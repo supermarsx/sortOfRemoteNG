@@ -177,6 +177,11 @@ const PostgreSQLClient = dynamic(
     ),
   { ssr: false },
 );
+const MongoDBClient = dynamic(
+  () =>
+    import("../protocol/MongoDBClient").then((module) => module.MongoDBClient),
+  { ssr: false },
+);
 const SpiceClient = dynamic(
   () => import("../protocol/SpiceClient").then((module) => module.SpiceClient),
   { ssr: false },
@@ -621,6 +626,15 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "reconnecting")
     ) {
       return <PostgreSQLClient session={session} />;
+    }
+
+    if (
+      session.protocol === "mongodb" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <MongoDBClient session={session} />;
     }
 
     if (
