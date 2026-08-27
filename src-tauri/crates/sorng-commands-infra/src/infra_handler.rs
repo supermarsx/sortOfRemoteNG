@@ -311,6 +311,11 @@ pub fn is_command(command: &str) -> bool {
             | "proxmox_submit_tfa"
             | "proxmox_probe_certificate"
             | "proxmox_web_ui_url"
+            | "proxmox_console_open"
+            | "proxmox_console_send"
+            | "proxmox_console_resize"
+            | "proxmox_console_close"
+            | "proxmox_console_list"
             | "proxmox_vnc_bridge_open"
             | "proxmox_vnc_bridge_close"
             | "idrac_connect"
@@ -1021,6 +1026,12 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         proxmox_commands::proxmox_submit_tfa,
         proxmox_commands::proxmox_probe_certificate,
         proxmox_commands::proxmox_web_ui_url,
+        // Proxmox VE commands — termproxy console relay
+        proxmox_commands::proxmox_console_open,
+        proxmox_commands::proxmox_console_send,
+        proxmox_commands::proxmox_console_resize,
+        proxmox_commands::proxmox_console_close,
+        proxmox_commands::proxmox_console_list,
         // Proxmox VE commands — noVNC loopback bridge
         proxmox_commands::proxmox_vnc_bridge_open,
         proxmox_commands::proxmox_vnc_bridge_close,
