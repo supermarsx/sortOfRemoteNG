@@ -21,3 +21,14 @@ rustls = { workspace = true, features = ["ring"] }
 rustls-native-certs = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+tokio-rustls = { workspace = true }
+# Certificate metadata for `proxmox_probe_certificate` (same pin as sorng-tls-trust).
+x509-parser = "0.15"
+# Pure RFC 6238 generator for the optional `totpSecret` auto-TFA path.
+sorng-totp = { path = "../sorng-totp" }
+
+[dev-dependencies]
+# In-process TLS mock PVE (tests/mock_pve.rs) — all already in the workspace lock.
+rcgen = { version = "0.12", features = ["pem"] }
+tokio-rustls = { workspace = true }
+tokio-tungstenite = { workspace = true }

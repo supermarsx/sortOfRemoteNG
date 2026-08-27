@@ -105,13 +105,23 @@ impl<'a> ConsoleManager<'a> {
     }
 }
 
-fn urlencoding(input: &str) -> String {
-    input
-        .replace('%', "%25")
-        .replace(' ', "%20")
-        .replace('+', "%2B")
-        .replace('=', "%3D")
-        .replace('&', "%26")
-        .replace('?', "%3F")
-        .replace('#', "%23")
+/// Encode a query-string value (`application/x-www-form-urlencoded`, which the
+/// PVE `vncwebsocket` endpoint decodes; every reserved character is escaped).
+pub(crate) fn urlencoding(input: &str) -> String {
+    url::form_urlencoded::byte_serialize(input.as_bytes()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::urlencoding;
+
+    #[test]
+    fn urlencoding_escapes_every_reserved_character() {
+        assert_eq!(
+            urlencoding("PVEVNC:abc/def+g=h&i?j#k%l m"),
+            "PVEVNC%3Aabc%2Fdef%2Bg%3Dh%26i%3Fj%23k%25l+m"
+        );
+        assert_eq!(urlencoding("plain-._~"), "plain-._%7E");
+        assert_eq!(urlencoding("é"), "%C3%A9");
+    }
 }

@@ -21,9 +21,15 @@ pub enum ProxmoxAuthMethod {
         /// Optional realm (e.g. "pam", "pve", "ldap").  Defaults to "pam".
         #[serde(default = "default_realm")]
         realm: String,
-        /// Optional OTP / TFA code
+        /// Optional OTP / TFA code (PVE 6 inline `otp` form field, or used as the
+        /// TOTP code for a PVE 7+ `NeedTFA` challenge).
         #[serde(default)]
         otp: Option<String>,
+        /// Optional base32 TOTP secret. When present, a PVE 7+ `NeedTFA`
+        /// challenge is completed automatically (and renewals that fall back
+        /// to a full re-login can pass TFA too). Never serialised to the UI.
+        #[serde(default, skip_serializing)]
+        totp_secret: Option<String>,
     },
     /// API Token (PVEAPIToken header)
     ApiToken { token_id: String, secret: String },
@@ -72,6 +78,7 @@ impl Default for ProxmoxConfig {
                 password: String::new(),
                 realm: "pam".into(),
                 otp: None,
+                totp_secret: None,
             },
             insecure: false,
             timeout_secs: 30,
@@ -90,6 +97,46 @@ pub struct ProxmoxConfigSafe {
     pub username: Option<String>,
     pub token_id: Option<String>,
     pub insecure: bool,
+}
+
+/// Structured result of `proxmox_connect_ex` / `proxmox_submit_tfa`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", tag = "state")]
+pub enum ProxmoxConnectOutcome {
+    /// Fully authenticated.
+    #[serde(rename_all = "camelCase")]
+    Connected {
+        /// `user@realm` (or the token id for API-token sessions).
+        username: String,
+        /// Human-readable status line ("Connected to host").
+        message: String,
+    },
+    /// PVE 7+ second-factor challenge pending; call `proxmox_submit_tfa`.
+    #[serde(rename_all = "camelCase")]
+    TfaRequired {
+        username: String,
+        /// Second-factor kinds the server offers (e.g. `totp`, `recovery`, `yubico`, `webauthn`).
+        tfa_types: Vec<String>,
+    },
+}
+
+/// Result of `proxmox_probe_certificate` — the server's leaf certificate,
+/// captured from a bare TLS handshake that sends no credentials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxmoxCertificateProbe {
+    /// Colon-delimited upper-case SHA-256 of the DER leaf certificate (`AA:BB:…`).
+    pub sha256: String,
+    pub subject: String,
+    pub issuer: String,
+    /// RFC 3339 validity bounds.
+    pub not_before: String,
+    pub not_after: String,
+    /// Subject equals issuer (typical for the default PVE certificate).
+    pub self_signed: bool,
+    /// Subject alternative names (DNS + IP), when present.
+    #[serde(default)]
+    pub subject_alt_names: Vec<String>,
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

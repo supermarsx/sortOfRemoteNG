@@ -8,7 +8,9 @@
 //!
 //! - **types** — Shared data structures (nodes, VMs, containers, storage, etc.)
 //! - **error** — Crate-specific error types
-//! - **client** — Proxmox PVE REST API HTTP client with ticket + API-token auth
+//! - **client** — Proxmox PVE REST API HTTP client with ticket + API-token auth,
+//!   PVE 7+ `NeedTFA` challenge flow, ticket renewal and a credential-free
+//!   certificate probe
 //! - **nodes** — Node management (status, services, syslog, DNS, time, APT)
 //! - **qemu** — QEMU VM lifecycle (create, power, config, clone, migrate, resize)
 //! - **lxc** — LXC container lifecycle (create, power, clone, migrate, resize)

@@ -6,7 +6,7 @@
 
 use crate::backup::BackupManager;
 use crate::ceph::CephManager;
-use crate::client::PveClient;
+use crate::client::{LoginOutcome, PveClient};
 use crate::cluster::ClusterManager;
 use crate::console::ConsoleManager;
 use crate::error::{ProxmoxError, ProxmoxResult};
@@ -30,6 +30,10 @@ use tokio::sync::Mutex;
 
 /// Thread-safe handle managed by Tauri.
 pub type ProxmoxServiceState = Arc<Mutex<ProxmoxService>>;
+
+// Re-exported so the `include!`-based command wiring (which only sees
+// `super::service` and `super::types`) can name the second-factor kind.
+pub use crate::client::TfaKind;
 
 /// Top-level service that aggregates all Proxmox VE subsystems.
 pub struct ProxmoxService {
@@ -70,13 +74,129 @@ impl ProxmoxService {
 
     // ── Connection ──────────────────────────────────────────────────
 
+    /// Connect; a pending second factor surfaces as `ProxmoxErrorKind::TfaRequired`.
     pub async fn connect(&mut self, config: ProxmoxConfig) -> ProxmoxResult<String> {
+        match self.connect_ex(config).await? {
+            ProxmoxConnectOutcome::Connected { message, .. } => Ok(message),
+            ProxmoxConnectOutcome::TfaRequired { .. } => Err(ProxmoxError::tfa("TFA_REQUIRED")),
+        }
+    }
+
+    /// Connect, reporting a PVE 7+ `NeedTFA` challenge as an outcome. While the
+    /// challenge is pending the service is *not* connected; call
+    /// [`Self::submit_tfa`] to finish.
+    pub async fn connect_ex(
+        &mut self,
+        config: ProxmoxConfig,
+    ) -> ProxmoxResult<ProxmoxConnectOutcome> {
         let mut client = PveClient::new(&config)?;
-        client.login().await?;
-        let msg = format!("Connected to {}", config.host);
+        let outcome = client.login_ex().await?;
+        let host = config.host.clone();
         self.config = Some(config);
         self.client = Some(client);
-        Ok(msg)
+        Ok(match outcome {
+            LoginOutcome::Connected { username } => ProxmoxConnectOutcome::Connected {
+                username,
+                message: format!("Connected to {host}"),
+            },
+            LoginOutcome::TfaRequired {
+                username,
+                tfa_types,
+            } => ProxmoxConnectOutcome::TfaRequired {
+                username,
+                tfa_types,
+            },
+        })
+    }
+
+    /// Complete a pending second-factor challenge started by [`Self::connect_ex`].
+    pub async fn submit_tfa(
+        &self,
+        kind: TfaKind,
+        code: &str,
+    ) -> ProxmoxResult<ProxmoxConnectOutcome> {
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ProxmoxError::tfa("No Proxmox second-factor challenge is pending"))?;
+        let username = client.submit_tfa(kind, code).await?;
+        let host = self
+            .config
+            .as_ref()
+            .map(|config| config.host.clone())
+            .unwrap_or_default();
+        Ok(ProxmoxConnectOutcome::Connected {
+            username,
+            message: format!("Connected to {host}"),
+        })
+    }
+
+    /// True while a `NeedTFA` challenge awaits its second factor.
+    pub fn tfa_pending(&self) -> bool {
+        self.client
+            .as_ref()
+            .is_some_and(|client| client.pending_tfa().is_some())
+    }
+
+    /// Borrow the live client (diagnostics/tests).
+    pub fn client(&self) -> Option<&PveClient> {
+        self.client.as_ref()
+    }
+
+    /// Credential-free TLS probe of a server's leaf certificate (see
+    /// [`crate::client::probe_certificate`]). Does not touch the session.
+    pub async fn probe_certificate(
+        host: &str,
+        port: u16,
+    ) -> ProxmoxResult<ProxmoxCertificateProbe> {
+        crate::client::probe_certificate(host, port).await
+    }
+
+    /// `https://host:port/` plus an optional `#v1:0:=<kind>%2F<id>` deep link.
+    /// `host`/`port` default to the active connection.
+    pub fn web_ui_url(
+        &self,
+        host: Option<&str>,
+        port: Option<u16>,
+        target: Option<(&str, &str)>,
+    ) -> ProxmoxResult<String> {
+        let (host, port) = match (host.map(str::trim).filter(|h| !h.is_empty()), port) {
+            (Some(host), port) => (host.to_string(), port.unwrap_or(8006)),
+            (None, _) => {
+                let config = self.config.as_ref().ok_or_else(|| {
+                    ProxmoxError::connection("Not connected to Proxmox VE and no host was provided")
+                })?;
+                (config.host.clone(), port.unwrap_or(config.port))
+            }
+        };
+        if port == 0 {
+            return Err(ProxmoxError::connection("Invalid Proxmox port"));
+        }
+        let host = crate::client::normalize_host(&host)?;
+        let mut url = format!("https://{host}:{port}/");
+        if let Some((kind, id)) = target {
+            let kind =
+                match kind.trim().to_ascii_lowercase().as_str() {
+                    "qemu" | "vm" => "qemu",
+                    "lxc" | "ct" | "container" => "lxc",
+                    "node" => "node",
+                    "storage" => "storage",
+                    _ => return Err(ProxmoxError::connection(
+                        "Invalid Proxmox web UI target kind (expected qemu, lxc, node or storage)",
+                    )),
+                };
+            let id = id.trim();
+            if id.is_empty()
+                || id.len() > 128
+                || !id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+            {
+                return Err(ProxmoxError::connection("Invalid Proxmox web UI target id"));
+            }
+            url.push_str(&format!("#v1:0:={kind}%2F{id}"));
+        }
+        Ok(url)
     }
 
     pub async fn disconnect(&mut self) -> ProxmoxResult<()> {

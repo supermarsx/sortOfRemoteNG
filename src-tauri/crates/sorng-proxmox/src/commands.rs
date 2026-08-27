@@ -11,6 +11,13 @@ const MAX_USERNAME_BYTES: usize = 256;
 const MAX_PASSWORD_BYTES: usize = 4096;
 const MAX_TOKEN_ID_BYTES: usize = 512;
 const MAX_TOKEN_SECRET_BYTES: usize = 4096;
+const MAX_REALM_BYTES: usize = 128;
+const MAX_OTP_BYTES: usize = 256;
+const MAX_TOTP_SECRET_BYTES: usize = 512;
+
+/// Literal error returned by `proxmox_connect` when the server wants a second
+/// factor; callers should switch to `proxmox_connect_ex` + `proxmox_submit_tfa`.
+pub const PROXMOX_TFA_REQUIRED: &str = "TFA_REQUIRED";
 
 fn validate_identifier(value: String, label: &str, max_bytes: usize) -> Result<String, String> {
     let value = value.trim();
@@ -44,6 +51,93 @@ fn validate_password_username(username: String) -> Result<String, String> {
     Ok(username)
 }
 
+fn validate_optional_realm(realm: Option<String>) -> Result<String, String> {
+    let Some(realm) = realm.map(|value| value.trim().to_string()).filter(|v| !v.is_empty())
+    else {
+        return Ok("pam".to_string());
+    };
+    if realm.len() > MAX_REALM_BYTES
+        || !realm
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err("Invalid Proxmox authentication realm".to_string());
+    }
+    Ok(realm)
+}
+
+fn validate_optional_secret(
+    value: Option<String>,
+    label: &str,
+    max_bytes: usize,
+) -> Result<Option<String>, String> {
+    match value.map(|v| v.trim().to_string()) {
+        None => Ok(None),
+        Some(v) if v.is_empty() => Ok(None),
+        Some(v) => validate_secret(Some(v), label, max_bytes).map(Some),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_connect_config(
+    host: String,
+    port: Option<u16>,
+    username: String,
+    password: Option<String>,
+    token_id: Option<String>,
+    token_secret: Option<String>,
+    insecure: Option<bool>,
+    timeout_secs: Option<u64>,
+    fingerprint: Option<String>,
+    acknowledge_invalid_cert_risk: Option<bool>,
+    realm: Option<String>,
+    otp: Option<String>,
+    totp_secret: Option<String>,
+) -> Result<ProxmoxConfig, String> {
+    let insecure = insecure.unwrap_or(false);
+    if insecure && acknowledge_invalid_cert_risk != Some(true) {
+        return Err(
+            "Explicit acknowledgement is required for this self-signed certificate connection attempt"
+                .to_string(),
+        );
+    }
+
+    let auth = match (token_id, token_secret) {
+        (Some(token_id), Some(token_secret)) => ProxmoxAuthMethod::ApiToken {
+            token_id: validate_token_id(token_id)?,
+            secret: validate_secret(
+                Some(token_secret),
+                "Proxmox API token secret",
+                MAX_TOKEN_SECRET_BYTES,
+            )?,
+        },
+        (None, None) => ProxmoxAuthMethod::Password {
+            username: validate_password_username(username)?,
+            password: validate_secret(password, "Proxmox password", MAX_PASSWORD_BYTES)?,
+            realm: validate_optional_realm(realm)?,
+            otp: validate_optional_secret(otp, "Proxmox one-time code", MAX_OTP_BYTES)?,
+            totp_secret: validate_optional_secret(
+                totp_secret,
+                "Proxmox TOTP secret",
+                MAX_TOTP_SECRET_BYTES,
+            )?,
+        },
+        _ => {
+            return Err(
+                "Proxmox API token ID and token secret must be provided together".to_string(),
+            )
+        }
+    };
+    Ok(ProxmoxConfig {
+        host,
+        port: port.unwrap_or(8006),
+        auth,
+        insecure,
+        timeout_secs: timeout_secs.unwrap_or(30),
+        fingerprint,
+    })
+}
+
 fn validate_token_id(token_id: String) -> Result<String, String> {
     let token_id = validate_identifier(token_id, "Proxmox API token ID", MAX_TOKEN_ID_BYTES)?;
     let Some((principal, token_name)) = token_id.rsplit_once('!') else {
@@ -74,46 +168,121 @@ pub async fn proxmox_connect(
     timeout_secs: Option<u64>,
     fingerprint: Option<String>,
     acknowledge_invalid_cert_risk: Option<bool>,
+    realm: Option<String>,
+    otp: Option<String>,
+    totp_secret: Option<String>,
 ) -> Result<String, String> {
-    let insecure = insecure.unwrap_or(false);
-    if insecure && acknowledge_invalid_cert_risk != Some(true) {
-        return Err(
-            "Explicit acknowledgement is required for this self-signed certificate connection attempt"
-                .to_string(),
-        );
+    let config = build_connect_config(
+        host,
+        port,
+        username,
+        password,
+        token_id,
+        token_secret,
+        insecure,
+        timeout_secs,
+        fingerprint,
+        acknowledge_invalid_cert_risk,
+        realm,
+        otp,
+        totp_secret,
+    )?;
+    let mut svc = state.lock().await;
+    match svc.connect_ex(config).await.map_err(|e| e.to_string())? {
+        ProxmoxConnectOutcome::Connected { message, .. } => Ok(message),
+        ProxmoxConnectOutcome::TfaRequired { .. } => Err(PROXMOX_TFA_REQUIRED.to_string()),
     }
+}
 
-    let auth = match (token_id, token_secret) {
-        (Some(token_id), Some(token_secret)) => ProxmoxAuthMethod::ApiToken {
-            token_id: validate_token_id(token_id)?,
-            secret: validate_secret(
-                Some(token_secret),
-                "Proxmox API token secret",
-                MAX_TOKEN_SECRET_BYTES,
-            )?,
-        },
-        (None, None) => ProxmoxAuthMethod::Password {
-            username: validate_password_username(username)?,
-            password: validate_secret(password, "Proxmox password", MAX_PASSWORD_BYTES)?,
-            realm: "pam".into(),
-            otp: None,
-        },
+/// Like `proxmox_connect`, but returns a structured outcome so the UI can run
+/// the second-factor step (`proxmox_submit_tfa`) instead of failing.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn proxmox_connect_ex(
+    state: State<'_, ProxmoxServiceState>,
+    host: String,
+    port: Option<u16>,
+    username: String,
+    password: Option<String>,
+    token_id: Option<String>,
+    token_secret: Option<String>,
+    insecure: Option<bool>,
+    timeout_secs: Option<u64>,
+    fingerprint: Option<String>,
+    acknowledge_invalid_cert_risk: Option<bool>,
+    realm: Option<String>,
+    otp: Option<String>,
+    totp_secret: Option<String>,
+) -> Result<ProxmoxConnectOutcome, String> {
+    let config = build_connect_config(
+        host,
+        port,
+        username,
+        password,
+        token_id,
+        token_secret,
+        insecure,
+        timeout_secs,
+        fingerprint,
+        acknowledge_invalid_cert_risk,
+        realm,
+        otp,
+        totp_secret,
+    )?;
+    let mut svc = state.lock().await;
+    svc.connect_ex(config).await.map_err(|e| e.to_string())
+}
+
+/// Complete a pending `NeedTFA` challenge. `kind` is `totp`, `recovery` or `yubico`.
+#[tauri::command]
+pub async fn proxmox_submit_tfa(
+    state: State<'_, ProxmoxServiceState>,
+    code: String,
+    kind: Option<String>,
+) -> Result<ProxmoxConnectOutcome, String> {
+    let kind = kind.unwrap_or_else(|| "totp".to_string());
+    let kind = super::service::TfaKind::parse(&kind)
+        .ok_or_else(|| "Invalid Proxmox second-factor kind".to_string())?;
+    let code = validate_secret(Some(code), "Proxmox second-factor code", MAX_OTP_BYTES)?;
+    let svc = state.lock().await;
+    svc.submit_tfa(kind, &code).await.map_err(|e| e.to_string())
+}
+
+/// Fetch the server's TLS leaf certificate (SHA-256, subject, issuer, validity)
+/// without sending any credentials. Nothing is stored.
+#[tauri::command]
+pub async fn proxmox_probe_certificate(
+    host: String,
+    port: Option<u16>,
+) -> Result<ProxmoxCertificateProbe, String> {
+    let host = validate_identifier(host, "Proxmox host", 253)?;
+    super::service::ProxmoxService::probe_certificate(&host, port.unwrap_or(8006))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Build the web UI URL (`https://host:port/`, optionally deep-linked to a
+/// `qemu`/`lxc`/`node`/`storage` object). Defaults to the active connection.
+#[tauri::command]
+pub async fn proxmox_web_ui_url(
+    state: State<'_, ProxmoxServiceState>,
+    host: Option<String>,
+    port: Option<u16>,
+    target_kind: Option<String>,
+    target_id: Option<String>,
+) -> Result<String, String> {
+    let svc = state.lock().await;
+    let target = match (target_kind.as_deref(), target_id.as_deref()) {
+        (Some(kind), Some(id)) => Some((kind, id)),
+        (None, None) => None,
         _ => {
             return Err(
-                "Proxmox API token ID and token secret must be provided together".to_string(),
+                "Proxmox web UI target kind and id must be provided together".to_string(),
             )
         }
     };
-    let config = ProxmoxConfig {
-        host,
-        port: port.unwrap_or(8006),
-        auth,
-        insecure,
-        timeout_secs: timeout_secs.unwrap_or(30),
-        fingerprint,
-    };
-    let mut svc = state.lock().await;
-    svc.connect(config).await.map_err(|e| e.to_string())
+    svc.web_ui_url(host.as_deref(), port, target)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
