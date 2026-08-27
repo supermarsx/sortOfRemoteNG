@@ -20,6 +20,7 @@ import {
   waitForContainer,
   PORTAINER_PORT,
 } from "../../helpers/docker";
+import { selectCustomOption } from "../../helpers/forms";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -58,8 +59,10 @@ async function createPortainerConnection(): Promise<void> {
   const nameInput = await $(S.editorName);
   await nameInput.setValue("Portainer E2E");
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText("Portainer");
+  // `S.editorProtocol` is a custom Select trigger (a <button> + listbox), not a
+  // native <select>, so WebdriverIO's selectByVisibleText cannot drive it —
+  // see the note in e2e/specs/04-import-export/import-web-protocols.spec.ts.
+  await selectCustomOption(S.editorProtocol, ["Portainer"]);
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
