@@ -400,7 +400,13 @@ async function switchToDatabase(
 
 // ── suite ───────────────────────────────────────────────────────────────────
 
-describe("Trust Center — per-database storage (docker sshd fixture)", () => {
+describe("Trust Center — per-database storage (docker sshd fixture)", function () {
+  // Each case creates databases, saves a connection, completes a real SSH
+  // handshake against the container, opens Settings and reads files off disk.
+  // That is well past wdio.conf's 90s per-test default, and blowing the mocha
+  // timeout kills the WebDriver session, taking the following case with it.
+  this.timeout(300_000);
+
   let dockerAvailable = false;
   /** Snapshot of the legacy sidecar, when this profile still has one. */
   let legacyBefore: Buffer | null = null;
