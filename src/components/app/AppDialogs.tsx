@@ -8,6 +8,7 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { ErrorLogBar } from "./ErrorLogBar";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
+import { ProtocolRepairNotice } from "../connection/ProtocolRepairDialog";
 
 const AutoLockManager = dynamic(
   () =>
@@ -239,6 +240,10 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
       />
 
       <RDPCertTrustPrompt />
+
+      <ProtocolRepairNotice
+        databaseId={databaseManager.getCurrentDatabase()?.id ?? null}
+      />
     </>
   );
 };

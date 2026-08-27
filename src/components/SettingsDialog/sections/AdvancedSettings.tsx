@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { GlobalSettings } from "../../../types/settings/settings";
 import {
@@ -14,6 +14,7 @@ import {
   Monitor,
   ExternalLink,
   HardDrive,
+  Wrench,
 } from "lucide-react";
 import SectionHeading from "../../ui/SectionHeading";
 import {
@@ -28,6 +29,8 @@ import {
   defaultMemoryWatchdogSettings,
   MemoryWatchdogSettings,
 } from "../../../types/settings/settings";
+import { useProtocolRepair } from "../../../hooks/connection/useProtocolRepair";
+import { ProtocolRepairDialog } from "../../connection/ProtocolRepairDialog";
 
 interface AdvancedSettingsProps {
   settings: GlobalSettings;
@@ -127,6 +130,62 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
         settings={settings}
         updateSettings={updateSettings}
       />
+
+      {/* Connection maintenance (t71 D4 repair tool) */}
+      <ConnectionMaintenanceSection />
+    </div>
+  );
+};
+
+/* ── Connection maintenance subsection ───────────────── */
+
+const ConnectionMaintenanceSection: React.FC = () => {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const { suggestions } = useProtocolRepair();
+  const count = suggestions.length;
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Wrench className="w-4 h-4 text-primary" />}
+        title={t("protocolRepair.sectionTitle", "Connection maintenance")}
+      />
+      <Card>
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm text-[var(--color-text)]">
+              {t("protocolRepair.cardTitle", "Repair mis-typed connections")}
+            </div>
+            <div className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+              {t(
+                "protocolRepair.cardDescription",
+                "Finds connections typed RDP whose port or address points at a web server (e.g. 443, https://) and lets you switch them to HTTP/HTTPS. Nothing is changed automatically.",
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded text-sm border border-[var(--color-border)] hover:bg-[var(--color-border)]"
+            data-testid="protocol-repair-open"
+          >
+            <Wrench size={14} />
+            {t("protocolRepair.openButton", "Review")}
+            <span
+              className={`px-1.5 rounded-full text-xs ${
+                count > 0
+                  ? "bg-warning/20 text-warning"
+                  : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
+              }`}
+              data-testid="protocol-repair-count"
+            >
+              {count}
+            </span>
+          </button>
+        </div>
+      </Card>
+      <ProtocolRepairDialog isOpen={open} onClose={() => setOpen(false)} />
     </div>
   );
 };
