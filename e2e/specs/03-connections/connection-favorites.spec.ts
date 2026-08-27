@@ -1,4 +1,5 @@
 import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
 import { resetAppState, createCollection } from "../../helpers/app";
 
 async function createTestConnection(
@@ -14,7 +15,7 @@ async function createTestConnection(
 
   await (await $(S.editorName)).setValue(name);
   await (await $(S.editorHostname)).setValue(hostname);
-  await (await $(S.editorProtocol)).selectByVisibleText(protocol);
+  await selectCustomOption(S.editorProtocol, protocol);
 
   await (await $(S.editorSave)).click();
   await browser.waitUntil(

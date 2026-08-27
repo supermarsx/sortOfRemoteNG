@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 async function createTestConnection(
@@ -14,7 +15,7 @@ async function createTestConnection(
 
   await (await $(S.editorName)).setValue(name);
   await (await $(S.editorHostname)).setValue(hostname);
-  await (await $(S.editorProtocol)).selectByVisibleText(protocol);
+  await selectCustomOption(S.editorProtocol, protocol);
 
   await (await $(S.editorSave)).click();
   await browser.pause(500);
@@ -71,7 +72,7 @@ describe('Connection Groups', () => {
 
     const parentFolder = await $(S.editorParentFolder);
     await parentFolder.waitForDisplayed({ timeout: 3_000 });
-    await parentFolder.selectByVisibleText('Staging');
+    await selectCustomOption(S.editorParentFolder, 'Staging');
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
@@ -130,8 +131,7 @@ describe('Connection Groups', () => {
     const editor = await $(S.editorPanel);
     await editor.waitForDisplayed({ timeout: 5_000 });
 
-    const parentFolder = await $(S.editorParentFolder);
-    await parentFolder.selectByVisibleText('Collapsible');
+    await selectCustomOption(S.editorParentFolder, 'Collapsible');
     await (await $(S.editorSave)).click();
     await browser.pause(500);
 

@@ -52,6 +52,25 @@ export async function selectCustomOption(
     }
   }
 
+  // Second pass, only reached when no option matched the label exactly.
+  // Some comboboxes render each option as a role="option" whose *full* text is
+  // the label plus a secondary line — the connection editor's protocol picker
+  // appends the protocol description, and its parent-folder picker appends the
+  // folder path — so `normalize-space(.)` on the option itself can never equal
+  // the label. Match the label against a descendant element instead.
+  for (const label of labels) {
+    const optionLiteral = toXPathLiteral(label);
+    const labelledOption = await $(
+      `//*[@role="option"][.//*[normalize-space(.)=${optionLiteral}]]`,
+    );
+
+    if (await labelledOption.isExisting().catch(() => false)) {
+      await labelledOption.scrollIntoView();
+      await labelledOption.click();
+      return;
+    }
+  }
+
   const listboxOptions = await $$('//*[@role="option"]');
   const inlineButtonOptions = await trigger.$$('./following-sibling::*//button');
   const optionTexts = [

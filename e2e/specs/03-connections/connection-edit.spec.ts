@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { selectCustomOption } from '../../helpers/forms';
 import { resetAppState, createCollection } from '../../helpers/app';
 
 // t54-B: the Connect-from-editor button has no entry in the shared selector
@@ -30,7 +31,7 @@ async function createTestConnection(
 
   await (await $(S.editorName)).setValue(name);
   await (await $(S.editorHostname)).setValue(hostname);
-  await (await $(S.editorProtocol)).selectByVisibleText(protocol);
+  await selectCustomOption(S.editorProtocol, protocol);
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
@@ -136,14 +137,13 @@ describe('Connection Editing', () => {
   it('should update default port when protocol is changed', async () => {
     await selectConnection('Alpha');
 
-    const protocolSelect = await $(S.editorProtocol);
-    await protocolSelect.selectByVisibleText('RDP');
+    await selectCustomOption(S.editorProtocol, 'RDP');
     await browser.pause(300);
 
     const portInput = await $(S.editorPort);
     expect(await portInput.getValue()).toBe('3389');
 
-    await protocolSelect.selectByVisibleText('VNC');
+    await selectCustomOption(S.editorProtocol, 'VNC');
     await browser.pause(300);
     expect(await portInput.getValue()).toBe('5900');
   });
