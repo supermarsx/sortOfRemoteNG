@@ -11,6 +11,7 @@ import {
   clearRuntimeConnectionsForTests,
   resolveRuntimeConnection,
 } from "../../../utils/session/runtimeConnectionRegistry";
+import { LOGIN_FORM_VARIANTS } from "../../../../scripts/ci/e2e-npm-fixture.mjs";
 
 describe("parseNpmWebUiTarget", () => {
   it("defaults to http and port 81 when the scheme/port are omitted", () => {
@@ -46,13 +47,62 @@ describe("parseNpmWebUiTarget", () => {
 });
 
 describe("NPM_AUTO_LOGIN_SELECTORS", () => {
-  it("targets NPM's login form inputs (identity / secret)", () => {
+  it("targets the modern (react) form first and the legacy (backbone) one as a fallback", () => {
     expect(NPM_AUTO_LOGIN_SELECTORS).toEqual({
-      usernameSelector: 'input[name="identity"]',
-      passwordSelector: 'input[name="secret"]',
+      usernameSelector: 'input[name="email"], input[name="identity"]',
+      passwordSelector: 'input[name="password"], input[name="secret"]',
       submitSelector: 'button[type="submit"]',
     });
     expect(Object.isFrozen(NPM_AUTO_LOGIN_SELECTORS)).toBe(true);
+  });
+
+  // The CI fixture's variant table is the source of truth for "which login
+  // forms NPM ships". Deriving the expectation from it means a new NPM UI
+  // shape added there fails HERE too, instead of only when a live container is
+  // available.
+  it.each(LOGIN_FORM_VARIANTS)(
+    "covers the $id variant ($since)",
+    ({ usernameSelector, passwordSelector, submitSelector }) => {
+      const listed = (selectors: string | undefined) =>
+        (selectors ?? "").split(",").map((part) => part.trim());
+      expect(listed(NPM_AUTO_LOGIN_SELECTORS.usernameSelector)).toContain(
+        usernameSelector,
+      );
+      expect(listed(NPM_AUTO_LOGIN_SELECTORS.passwordSelector)).toContain(
+        passwordSelector,
+      );
+      expect(listed(NPM_AUTO_LOGIN_SELECTORS.submitSelector)).toContain(
+        submitSelector,
+      );
+    },
+  );
+
+  it("resolves to the right input on each form and to nothing on neither", () => {
+    const query = (html: string, selectors: string | undefined) => {
+      const host = document.createElement("div");
+      host.innerHTML = html;
+      const found = host.querySelector(selectors ?? "");
+      return found ? (found as HTMLInputElement).name : null;
+    };
+    const react = `<form><input name="email" /><input name="password" type="password" /></form>`;
+    const backbone = `<form><input name="identity" /><input name="secret" type="password" /></form>`;
+    const unknown = `<form><input name="user" /><input name="pass" type="password" /></form>`;
+
+    expect(query(react, NPM_AUTO_LOGIN_SELECTORS.usernameSelector)).toBe(
+      "email",
+    );
+    expect(query(react, NPM_AUTO_LOGIN_SELECTORS.passwordSelector)).toBe(
+      "password",
+    );
+    expect(query(backbone, NPM_AUTO_LOGIN_SELECTORS.usernameSelector)).toBe(
+      "identity",
+    );
+    expect(query(backbone, NPM_AUTO_LOGIN_SELECTORS.passwordSelector)).toBe(
+      "secret",
+    );
+    expect(
+      query(unknown, NPM_AUTO_LOGIN_SELECTORS.usernameSelector),
+    ).toBeNull();
   });
 });
 

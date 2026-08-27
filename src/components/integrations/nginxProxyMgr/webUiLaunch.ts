@@ -31,13 +31,35 @@ export interface OpenRuntimeConnectionDetail {
   source: "nginxProxyMgr";
 }
 
-/** NPM login view (`/login`): the inputs are named after the API's token
- *  request fields (`identity` / `secret`). Kept in ONE constant so a
- *  live-container check (t65-e5) can fix them in a single line. */
+/** NPM login view (`/login`). Two form shapes have shipped and both are
+ *  matched here:
+ *
+ *  - **react** — NPM 2.13+ (Vite/React/Formik): `input[name="email"]` /
+ *    `input[name="password"]`. Verified against a live
+ *    `jc21/nginx-proxy-manager:2.15.1` container (t65-e5).
+ *  - **backbone** — NPM <= 2.12: `input[name="identity"]` /
+ *    `input[name="secret"]`, named after the API's token request fields.
+ *
+ *  Each value is a CSS *selector list*: the auto-login client runs
+ *  `document.querySelector(...)` (`sorng-protocols/src/themed_autologin.rs`),
+ *  which accepts a comma-separated list and returns the first match. Only one
+ *  of the two forms is ever present on a page, so listing both is an
+ *  unambiguous fallback rather than a guess about ordering. Expressing it this
+ *  way keeps `HttpAutoLoginSelectors` a plain `string` per field, which it must
+ *  stay to mirror the Rust struct field-for-field for serde.
+ *
+ *  Tolerating the legacy form matters: when `passwordSelector` is set but
+ *  matches nothing, the client aborts instead of falling back to its
+ *  auto-detection heuristic, so a too-narrow selector silently fills nothing.
+ *
+ *  `scripts/ci/e2e-npm-fixture.mjs` (`verify-login-form`) checks a running
+ *  container against `LOGIN_FORM_VARIANTS`; the unit test asserts every variant
+ *  there is covered by this constant, so a new NPM UI shape fails loudly in
+ *  both places. */
 export const NPM_AUTO_LOGIN_SELECTORS: Readonly<HttpAutoLoginSelectors> =
   Object.freeze({
-    usernameSelector: 'input[name="identity"]',
-    passwordSelector: 'input[name="secret"]',
+    usernameSelector: 'input[name="email"], input[name="identity"]',
+    passwordSelector: 'input[name="password"], input[name="secret"]',
     submitSelector: 'button[type="submit"]',
   });
 
