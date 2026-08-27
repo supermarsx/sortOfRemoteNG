@@ -7,6 +7,8 @@ import {
   stripCredentialFields,
   type SanitizedValue,
 } from "../../utils/storage/appDataJsonStore";
+import { normalizeImportedProtocol } from "../../utils/connection/normalizeImportedProtocol";
+import type { ConnectionProtocol } from "../../types/connection/connection";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -251,19 +253,40 @@ const CATEGORY_FILTERS: { value: CategoryFilter; label: string }[] = [
   { value: "custom", label: "Custom" },
 ];
 
-const PROTOCOL_OPTIONS = [
-  "SSH",
-  "RDP",
-  "VNC",
-  "SFTP",
-  "HTTP",
-  "MySQL",
-  "MariaDB",
-  "PostgreSQL",
-  "MongoDB",
-  "K8s",
-  "Other",
+/** Picker values are the lower-case protocol identifiers; labels stay upper-case. */
+const PROTOCOL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "ssh", label: "SSH" },
+  { value: "rdp", label: "RDP" },
+  { value: "vnc", label: "VNC" },
+  { value: "sftp", label: "SFTP" },
+  { value: "http", label: "HTTP" },
+  { value: "https", label: "HTTPS" },
+  { value: "mysql", label: "MySQL" },
+  { value: "mariadb", label: "MariaDB" },
+  { value: "postgresql", label: "PostgreSQL" },
+  { value: "mongodb", label: "MongoDB" },
+  { value: "k8s", label: "K8s" },
+  { value: "other", label: "Other" },
 ];
+
+const toProtocolPickerValue = (protocol: string): string =>
+  protocol.trim().toLowerCase();
+
+/** Human label for a stored protocol value (built-ins are upper-case, user templates lower-case). */
+const protocolBadgeLabel = (protocol: string): string =>
+  PROTOCOL_OPTIONS.find((p) => p.value === toProtocolPickerValue(protocol))
+    ?.label ?? protocol;
+
+/**
+ * Resolve a template's protocol string (any casing / alias, e.g. "HTTP",
+ * "Web", "K8s") to the canonical connection protocol before it is applied
+ * to a new connection. Never falls back to RDP without evidence.
+ */
+export const resolveTemplateProtocol = (
+  protocol: string,
+  port?: number,
+): ConnectionProtocol =>
+  normalizeImportedProtocol({ raw: protocol, port }).protocol;
 
 const STORAGE_KEY = "sor-connection-templates";
 
@@ -361,7 +384,7 @@ export default function ConnectionTemplates({
   /* ---- form state ---- */
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formProtocol, setFormProtocol] = useState("SSH");
+  const [formProtocol, setFormProtocol] = useState("ssh");
   const [formPort, setFormPort] = useState(22);
   const [formCategory, setFormCategory] = useState("ssh");
   const [formTags, setFormTags] = useState("");
@@ -462,7 +485,10 @@ export default function ConnectionTemplates({
           ),
         ).catch(() => undefined);
       }
-      onCreateFromTemplate?.(tpl);
+      onCreateFromTemplate?.({
+        ...tpl,
+        protocol: resolveTemplateProtocol(tpl.protocol, tpl.port),
+      });
     },
     [commitTemplates, onCreateFromTemplate],
   );
@@ -470,7 +496,7 @@ export default function ConnectionTemplates({
   const resetForm = useCallback(() => {
     setFormName("");
     setFormDescription("");
-    setFormProtocol("SSH");
+    setFormProtocol("ssh");
     setFormPort(22);
     setFormCategory("ssh");
     setFormTags("");
@@ -486,7 +512,7 @@ export default function ConnectionTemplates({
   const openEditForm = useCallback((tpl: ConnectionTemplate) => {
     setFormName(tpl.name);
     setFormDescription(tpl.description);
-    setFormProtocol(tpl.protocol);
+    setFormProtocol(toProtocolPickerValue(tpl.protocol));
     setFormPort(tpl.port);
     setFormCategory(tpl.category);
     setFormTags(tpl.tags.join(", "));
@@ -646,7 +672,7 @@ export default function ConnectionTemplates({
       if (mountedRef.current && connections?.length) {
         const conn = connections[0];
         setFormName(conn.name + " (template)");
-        setFormProtocol(conn.protocol ?? "SSH");
+        setFormProtocol(toProtocolPickerValue(conn.protocol ?? "ssh"));
         setFormPort(conn.port ?? 22);
       }
     } catch {
@@ -699,7 +725,10 @@ export default function ConnectionTemplates({
               onChange={(v) => setFormProtocol(v)}
               variant="form-sm"
               className="w-full"
-              options={PROTOCOL_OPTIONS.map((p) => ({ value: p, label: p }))}
+              options={PROTOCOL_OPTIONS.map((p) => ({
+                value: p.value,
+                label: p.label,
+              }))}
             />
           </div>
           <div className="sor-tpl-field">
@@ -811,7 +840,9 @@ export default function ConnectionTemplates({
           <span className="sor-tpl-detail-icon">{tpl.icon}</span>
           <div>
             <h3 className="sor-tpl-detail-name">{tpl.name}</h3>
-            <span className="sor-tpl-badge">{tpl.protocol}</span>
+            <span className="sor-tpl-badge">
+              {protocolBadgeLabel(tpl.protocol)}
+            </span>
             <span className="sor-tpl-detail-port">:{tpl.port}</span>
           </div>
           <button
@@ -980,7 +1011,9 @@ export default function ConnectionTemplates({
             >
               <div className="sor-tpl-card-top">
                 <span className="sor-tpl-card-icon">{tpl.icon}</span>
-                <span className="sor-tpl-badge">{tpl.protocol}</span>
+                <span className="sor-tpl-badge">
+                  {protocolBadgeLabel(tpl.protocol)}
+                </span>
               </div>
               <h4 className="sor-tpl-card-name">{tpl.name}</h4>
               <p className="sor-tpl-card-desc">{tpl.description}</p>

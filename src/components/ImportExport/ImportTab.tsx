@@ -31,6 +31,8 @@ import {
   IMPORT_FORMAT_ORDER,
   type ImportFormat,
 } from "./utils";
+import { serializeConnectionsToNativeXml } from "./advancedProtocolPortability";
+import type { Connection } from "../../types/connection/connection";
 import { useToastContext } from "../../contexts/ToastContext";
 import { useTranslation } from "react-i18next";
 import { Select, type SelectOption } from "../ui/forms";
@@ -103,6 +105,7 @@ const CSV_TEMPLATE = `Name,Protocol,Hostname,Port,Username,Domain,Description,Pa
 "Database Server",RDP,192.168.1.20,3389,administrator,DOMAIN,SQL Server,,false,"production;database"
 "Dev Folder",SSH,,,,,Development servers,,true,""
 "Dev Server 1",SSH,10.0.0.5,22,devuser,,Dev environment,Dev Folder,false,"development;test"
+"Admin Portal",HTTPS,portal.example.com,443,,,Web management portal,,false,"web;portal"
 "Router Admin",HTTP,192.168.1.1,80,admin,,Network router,,false,"network;router"
 "VNC Desktop",VNC,192.168.1.30,5900,,,Remote desktop access,,false,"desktop;vnc"`;
 
@@ -134,19 +137,117 @@ const JSON_TEMPLATE = {
       isGroup: false,
       tags: ["production", "database"],
     },
+    {
+      name: "Admin Portal",
+      protocol: "HTTPS",
+      hostname: "portal.example.com",
+      port: 443,
+      username: "",
+      domain: "",
+      description: "Web management portal",
+      parentId: null,
+      isGroup: false,
+      tags: ["web", "portal"],
+    },
   ],
 };
 
-const XML_TEMPLATE = `<?xml version="1.0" encoding="utf-8"?>
-<sortOfRemoteNG version="1.0">
-  <connections>
-    <connection name="Web Server 1" protocol="SSH" hostname="192.168.1.10" port="22" username="admin" description="Web server in datacenter" tags="production;linux" />
-    <connection name="Database Server" protocol="RDP" hostname="192.168.1.20" port="3389" username="administrator" domain="DOMAIN" description="SQL Server" tags="production;database" />
-    <group name="Dev Folder">
-      <connection name="Dev Server 1" protocol="SSH" hostname="10.0.0.5" port="22" username="devuser" description="Dev environment" tags="development;test" />
-    </group>
-  </connections>
-</sortOfRemoteNG>`;
+/**
+ * Typed sample rows for the XML template. Serialised with the same
+ * `serializeConnectionsToNativeXml` the exporter uses, so the template is
+ * guaranteed to carry the attributes `importFromXML` reads (RC1).
+ */
+const XML_TEMPLATE_TIMESTAMP = "2024-01-01T00:00:00.000Z";
+
+const xmlSample = (
+  overrides: Partial<Connection> &
+    Pick<Connection, "id" | "name" | "protocol" | "hostname" | "port">,
+): Connection => ({
+  username: "",
+  domain: "",
+  description: "",
+  parentId: undefined,
+  isGroup: false,
+  tags: [],
+  createdAt: XML_TEMPLATE_TIMESTAMP,
+  updatedAt: XML_TEMPLATE_TIMESTAMP,
+  ...overrides,
+});
+
+const XML_TEMPLATE_CONNECTIONS: Connection[] = [
+  xmlSample({
+    id: "tpl-web-server-1",
+    name: "Web Server 1",
+    protocol: "ssh",
+    hostname: "192.168.1.10",
+    port: 22,
+    username: "admin",
+    description: "Web server in datacenter",
+    tags: ["production", "linux"],
+  }),
+  xmlSample({
+    id: "tpl-database-server",
+    name: "Database Server",
+    protocol: "rdp",
+    hostname: "192.168.1.20",
+    port: 3389,
+    username: "administrator",
+    domain: "DOMAIN",
+    description: "SQL Server",
+    tags: ["production", "database"],
+  }),
+  xmlSample({
+    id: "tpl-dev-folder",
+    name: "Dev Folder",
+    protocol: "ssh",
+    hostname: "",
+    port: 22,
+    description: "Development servers",
+    isGroup: true,
+  }),
+  xmlSample({
+    id: "tpl-dev-server-1",
+    name: "Dev Server 1",
+    protocol: "ssh",
+    hostname: "10.0.0.5",
+    port: 22,
+    username: "devuser",
+    description: "Dev environment",
+    parentId: "tpl-dev-folder",
+    tags: ["development", "test"],
+  }),
+  xmlSample({
+    id: "tpl-admin-portal",
+    name: "Admin Portal",
+    protocol: "https",
+    hostname: "portal.example.com",
+    port: 443,
+    description: "Web management portal",
+    tags: ["web", "portal"],
+  }),
+  xmlSample({
+    id: "tpl-router-admin",
+    name: "Router Admin",
+    protocol: "http",
+    hostname: "192.168.1.1",
+    port: 80,
+    username: "admin",
+    description: "Network router",
+    tags: ["network", "router"],
+  }),
+  xmlSample({
+    id: "tpl-vnc-desktop",
+    name: "VNC Desktop",
+    protocol: "vnc",
+    hostname: "192.168.1.30",
+    port: 5900,
+    description: "Remote desktop access",
+    tags: ["desktop", "vnc"],
+  }),
+];
+
+const buildXmlTemplate = (): string =>
+  serializeConnectionsToNativeXml(XML_TEMPLATE_CONNECTIONS);
 
 const INI_TEMPLATE = `; sortOfRemoteNG import template (INI)
 ; One section per connection. Tags are semicolon-separated.
@@ -166,11 +267,18 @@ Port=3389
 Username=administrator
 Domain=DOMAIN
 Description=SQL Server
-Tags=production;database`;
+Tags=production;database
 
-type TemplateKind = "csv" | "json" | "xml" | "ini";
+[Admin Portal]
+Protocol=HTTPS
+Hostname=portal.example.com
+Port=443
+Description=Web management portal
+Tags=web;portal`;
 
-interface TemplateSpec {
+export type TemplateKind = "csv" | "json" | "xml" | "ini";
+
+export interface TemplateSpec {
   kind: TemplateKind;
   labelKey: string;
   defaultLabel: string;
@@ -179,7 +287,7 @@ interface TemplateSpec {
   build: () => string;
 }
 
-const TEMPLATES: TemplateSpec[] = [
+export const IMPORT_TEMPLATES: readonly TemplateSpec[] = [
   {
     kind: "csv",
     labelKey: "importTab.templates.csv",
@@ -202,7 +310,7 @@ const TEMPLATES: TemplateSpec[] = [
     defaultLabel: "XML Template",
     filename: "sortofremoteng-import-template.xml",
     mimeType: "application/xml",
-    build: () => XML_TEMPLATE,
+    build: buildXmlTemplate,
   },
   {
     kind: "ini",
@@ -553,8 +661,7 @@ const SourceHeader: React.FC<{
                   {analysis.xml && (
                     <div>
                       {t("importTab.source.xmlDetails", {
-                        defaultValue:
-                          "XML: {{root}}, {{count}} source node(s)",
+                        defaultValue: "XML: {{root}}, {{count}} source node(s)",
                         root:
                           analysis.xml.rootElement ||
                           t("importTab.source.unknownRoot", {
@@ -1277,120 +1384,122 @@ const ImportOptionsPanel: React.FC<{
       })}
       icon={Filter}
     >
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label
-            htmlFor="import-options-conflict-policy"
-            className="block text-xs text-[var(--color-textSecondary)]"
-          >
-            {t("importTab.options.conflictPolicy", {
-              defaultValue: "Conflict policy",
-            })}
-          </label>
-          <select
-            id="import-options-conflict-policy"
-            value={options.conflictPolicy}
-            onChange={(event) =>
-              updateOptions({
-                conflictPolicy: event.target
-                  .value as ImportOptions["conflictPolicy"],
-              })
-            }
-            className="sor-form-input-xs w-full"
-          >
-            <option value="duplicate">
-              {t("importTab.options.conflict.duplicate", {
-                defaultValue: "Import as duplicate",
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label
+              htmlFor="import-options-conflict-policy"
+              className="block text-xs text-[var(--color-textSecondary)]"
+            >
+              {t("importTab.options.conflictPolicy", {
+                defaultValue: "Conflict policy",
               })}
-            </option>
-            <option value="rename">
-              {t("importTab.options.conflict.rename", {
-                defaultValue: "Rename conflicts",
-              })}
-            </option>
-            <option value="skip">
-              {t("importTab.options.conflict.skip", {
-                defaultValue: "Skip conflicts",
-              })}
-            </option>
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <label
-            htmlFor="import-options-add-tags"
-            className="block text-xs text-[var(--color-textSecondary)]"
-          >
-            {t("importTab.options.addTags", {
-              defaultValue: "Add tags to imported items",
-            })}
-          </label>
-          <input
-            id="import-options-add-tags"
-            value={options.addTags}
-            onChange={(event) => updateOptions({ addTags: event.target.value })}
-            placeholder={t("importTab.options.tagsPlaceholder", {
-              defaultValue: "comma-separated tags",
-            })}
-            className="sor-form-input-xs w-full"
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] sm:grid-cols-2">
-        {[
-          [
-            "preserveFolders",
-            t("importTab.options.preserveFolders", {
-              defaultValue: "Preserve folders",
-            }),
-          ],
-          [
-            "includeCredentials",
-            t("importTab.options.includeCredentials", {
-              defaultValue: "Include credentials",
-            }),
-          ],
-          [
-            "includeVpnData",
-            t("importTab.options.includeVpnData", {
-              defaultValue: "Import VPN data",
-            }),
-          ],
-          [
-            "includeTunnelChains",
-            t("importTab.options.includeTunnelChains", {
-              defaultValue: "Import tunnel chains",
-            }),
-          ],
-          [
-            "includeSshTunnels",
-            t("importTab.options.includeSshTunnels", {
-              defaultValue: "Import SSH tunnels",
-            }),
-          ],
-          [
-            "switchToTargetDatabaseAfterImport",
-            t("importTab.options.switchTarget", {
-              defaultValue: "Switch to target after import",
-            }),
-          ],
-        ].map(([key, label]) => (
-          <label key={key} className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={Boolean(options[key as keyof ImportOptions])}
+            </label>
+            <select
+              id="import-options-conflict-policy"
+              value={options.conflictPolicy}
               onChange={(event) =>
                 updateOptions({
-                  [key]: event.target.checked,
-                } as Partial<ImportOptions>)
+                  conflictPolicy: event.target
+                    .value as ImportOptions["conflictPolicy"],
+                })
               }
+              className="sor-form-input-xs w-full"
+            >
+              <option value="duplicate">
+                {t("importTab.options.conflict.duplicate", {
+                  defaultValue: "Import as duplicate",
+                })}
+              </option>
+              <option value="rename">
+                {t("importTab.options.conflict.rename", {
+                  defaultValue: "Rename conflicts",
+                })}
+              </option>
+              <option value="skip">
+                {t("importTab.options.conflict.skip", {
+                  defaultValue: "Skip conflicts",
+                })}
+              </option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="import-options-add-tags"
+              className="block text-xs text-[var(--color-textSecondary)]"
+            >
+              {t("importTab.options.addTags", {
+                defaultValue: "Add tags to imported items",
+              })}
+            </label>
+            <input
+              id="import-options-add-tags"
+              value={options.addTags}
+              onChange={(event) =>
+                updateOptions({ addTags: event.target.value })
+              }
+              placeholder={t("importTab.options.tagsPlaceholder", {
+                defaultValue: "comma-separated tags",
+              })}
+              className="sor-form-input-xs w-full"
             />
-            {label}
-          </label>
-        ))}
+          </div>
+        </div>
+
+        <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] sm:grid-cols-2">
+          {[
+            [
+              "preserveFolders",
+              t("importTab.options.preserveFolders", {
+                defaultValue: "Preserve folders",
+              }),
+            ],
+            [
+              "includeCredentials",
+              t("importTab.options.includeCredentials", {
+                defaultValue: "Include credentials",
+              }),
+            ],
+            [
+              "includeVpnData",
+              t("importTab.options.includeVpnData", {
+                defaultValue: "Import VPN data",
+              }),
+            ],
+            [
+              "includeTunnelChains",
+              t("importTab.options.includeTunnelChains", {
+                defaultValue: "Import tunnel chains",
+              }),
+            ],
+            [
+              "includeSshTunnels",
+              t("importTab.options.includeSshTunnels", {
+                defaultValue: "Import SSH tunnels",
+              }),
+            ],
+            [
+              "switchToTargetDatabaseAfterImport",
+              t("importTab.options.switchTarget", {
+                defaultValue: "Switch to target after import",
+              }),
+            ],
+          ].map(([key, label]) => (
+            <label key={key} className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={Boolean(options[key as keyof ImportOptions])}
+                onChange={(event) =>
+                  updateOptions({
+                    [key]: event.target.checked,
+                  } as Partial<ImportOptions>)
+                }
+              />
+              {label}
+            </label>
+          ))}
+        </div>
       </div>
-    </div>
     </ImportSection>
   );
 };
@@ -1401,79 +1510,81 @@ const PreviewDetails: React.FC<{ item: ImportPreviewItem }> = ({ item }) => {
   const { t } = useTranslation();
   return (
     <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-xs">
-    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-      <div>
-        <div className="font-medium text-[var(--color-text)]">{item.name}</div>
-        <div className="mt-1 text-[var(--color-textMuted)]">
-          {t("importTab.details.sourceSummary", {
-            defaultValue: "Source #{{index}} | {{kind}} | {{status}}",
-            index: item.sourceIndex,
-            kind: item.kind,
-            status: item.conflictStatus,
-          })}
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="font-medium text-[var(--color-text)]">
+            {item.name}
+          </div>
+          <div className="mt-1 text-[var(--color-textMuted)]">
+            {t("importTab.details.sourceSummary", {
+              defaultValue: "Source #{{index}} | {{kind}} | {{status}}",
+              index: item.sourceIndex,
+              kind: item.kind,
+              status: item.conflictStatus,
+            })}
+          </div>
+        </div>
+        <span
+          className={`rounded border px-2 py-0.5 ${
+            item.importable
+              ? "border-success/30 bg-success/10 text-success"
+              : "border-error/30 bg-error/10 text-error"
+          }`}
+        >
+          {item.importable
+            ? t("importTab.details.importable", { defaultValue: "Importable" })
+            : t("importTab.details.blocked", { defaultValue: "Blocked" })}
+        </span>
+      </div>
+
+      <div className="mb-3 grid grid-cols-1 gap-1 text-[var(--color-textSecondary)] sm:grid-cols-2">
+        <div>
+          {t("importTab.details.path", { defaultValue: "Path:" })}{" "}
+          {item.sourcePath}
+        </div>
+        <div>
+          {t("importTab.details.parent", { defaultValue: "Parent:" })}{" "}
+          {item.parentName || "-"}
+        </div>
+        <div>
+          {t("importTab.details.host", { defaultValue: "Host:" })}{" "}
+          {item.hostname || "-"}
+        </div>
+        <div>
+          {t("importTab.details.port", { defaultValue: "Port:" })}{" "}
+          {item.port || "-"}
+        </div>
+        <div>
+          {t("importTab.details.username", { defaultValue: "Username:" })}{" "}
+          {item.username || "-"}
+        </div>
+        <div>
+          {t("importTab.details.tags", { defaultValue: "Tags:" })}{" "}
+          {item.tags.join(", ") || "-"}
         </div>
       </div>
-      <span
-        className={`rounded border px-2 py-0.5 ${
-          item.importable
-            ? "border-success/30 bg-success/10 text-success"
-            : "border-error/30 bg-error/10 text-error"
-        }`}
-      >
-        {item.importable
-          ? t("importTab.details.importable", { defaultValue: "Importable" })
-          : t("importTab.details.blocked", { defaultValue: "Blocked" })}
-      </span>
-    </div>
 
-    <div className="mb-3 grid grid-cols-1 gap-1 text-[var(--color-textSecondary)] sm:grid-cols-2">
-      <div>
-        {t("importTab.details.path", { defaultValue: "Path:" })}{" "}
-        {item.sourcePath}
-      </div>
-      <div>
-        {t("importTab.details.parent", { defaultValue: "Parent:" })}{" "}
-        {item.parentName || "-"}
-      </div>
-      <div>
-        {t("importTab.details.host", { defaultValue: "Host:" })}{" "}
-        {item.hostname || "-"}
-      </div>
-      <div>
-        {t("importTab.details.port", { defaultValue: "Port:" })}{" "}
-        {item.port || "-"}
-      </div>
-      <div>
-        {t("importTab.details.username", { defaultValue: "Username:" })}{" "}
-        {item.username || "-"}
-      </div>
-      <div>
-        {t("importTab.details.tags", { defaultValue: "Tags:" })}{" "}
-        {item.tags.join(", ") || "-"}
-      </div>
-    </div>
+      {item.issues.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1">
+          {item.issues.map((issue) => (
+            <span
+              key={`${issue.code}-${issue.message}`}
+              className={`rounded border px-1.5 py-0.5 ${severityClass(issue.severity)}`}
+            >
+              {issue.message}
+            </span>
+          ))}
+        </div>
+      )}
 
-    {item.issues.length > 0 && (
-      <div className="mb-3 flex flex-wrap gap-1">
-        {item.issues.map((issue) => (
-          <span
-            key={`${issue.code}-${issue.message}`}
-            className={`rounded border px-1.5 py-0.5 ${severityClass(issue.severity)}`}
-          >
-            {issue.message}
-          </span>
-        ))}
+      <div className="text-[var(--color-textMuted)]">
+        {t("importTab.details.fullRecord", {
+          defaultValue: "Full parsed record",
+        })}
       </div>
-    )}
-
-    <div className="text-[var(--color-textMuted)]">
-      {t("importTab.details.fullRecord", {
-        defaultValue: "Full parsed record",
-      })}
-    </div>
-    <pre className="mt-2 max-h-[320px] overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[11px] leading-relaxed text-[var(--color-textSecondary)]">
-      {buildPreviewDetailJson(item)}
-    </pre>
+      <pre className="mt-2 max-h-[320px] overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[11px] leading-relaxed text-[var(--color-textSecondary)]">
+        {buildPreviewDetailJson(item)}
+      </pre>
     </div>
   );
 };
@@ -1490,182 +1601,183 @@ const PreviewTable: React.FC<{
   const { t } = useTranslation();
   return (
     <div className="overflow-hidden border-t border-[var(--color-border)]">
-    <div className="max-h-[460px] overflow-auto">
-      <table className="w-full min-w-[640px] text-left text-xs">
-        <thead className="sticky top-0 z-10 bg-[var(--color-background)] text-[var(--color-textMuted)] shadow-[inset_0_-1px_0_var(--color-border)]">
-          <tr>
-            <th className="w-10 px-3 py-2">
-              {t("importTab.table.use", { defaultValue: "Use" })}
-            </th>
-            <th className="px-3 py-2">
-              {t("importTab.table.name", { defaultValue: "Name" })}
-            </th>
-            <th className="px-3 py-2">
-              {t("importTab.table.type", { defaultValue: "Type" })}
-            </th>
-            <th className="px-3 py-2">
-              {t("importTab.table.host", { defaultValue: "Host" })}
-            </th>
-            <th className="px-3 py-2">
-              {t("importTab.table.folderPath", {
-                defaultValue: "Folder Path",
-              })}
-            </th>
-            <th className="px-3 py-2">
-              {t("importTab.table.tags", { defaultValue: "Tags" })}
-            </th>
-            <th className="px-3 py-2">
-              {t("importTab.table.issues", { defaultValue: "Issues" })}
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--color-border)]">
-          {items.map((item) => {
-            const focused = focusedItemId === item.id;
-            const selected = selectedIds.has(item.id);
-            return (
-              <React.Fragment key={item.id}>
-                <tr
-                  tabIndex={0}
-                  onClick={() => onFocusItem(item.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onFocusItem(item.id);
-                    }
-                  }}
-                  className={`${
-                    selected ? "bg-primary/10" : "bg-[var(--color-surface)]"
-                  } cursor-pointer outline-none transition-colors hover:bg-[var(--color-surfaceHover)] ${
-                    focused ? "ring-1 ring-inset ring-primary" : ""
-                  }`}
-                >
-                  <td className="px-3 py-2 align-top">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(item.id)}
-                      disabled={!item.importable}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={() => toggleSelection(item.id)}
-                      aria-label={t("importTab.table.selectItem", {
-                        defaultValue: "Select {{name}}",
-                        name: item.name,
-                      })}
-                    />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
+      <div className="max-h-[460px] overflow-auto">
+        <table className="w-full min-w-[640px] text-left text-xs">
+          <thead className="sticky top-0 z-10 bg-[var(--color-background)] text-[var(--color-textMuted)] shadow-[inset_0_-1px_0_var(--color-border)]">
+            <tr>
+              <th className="w-10 px-3 py-2">
+                {t("importTab.table.use", { defaultValue: "Use" })}
+              </th>
+              <th className="px-3 py-2">
+                {t("importTab.table.name", { defaultValue: "Name" })}
+              </th>
+              <th className="px-3 py-2">
+                {t("importTab.table.type", { defaultValue: "Type" })}
+              </th>
+              <th className="px-3 py-2">
+                {t("importTab.table.host", { defaultValue: "Host" })}
+              </th>
+              <th className="px-3 py-2">
+                {t("importTab.table.folderPath", {
+                  defaultValue: "Folder Path",
+                })}
+              </th>
+              <th className="px-3 py-2">
+                {t("importTab.table.tags", { defaultValue: "Tags" })}
+              </th>
+              <th className="px-3 py-2">
+                {t("importTab.table.issues", { defaultValue: "Issues" })}
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-border)]">
+            {items.map((item) => {
+              const focused = focusedItemId === item.id;
+              const selected = selectedIds.has(item.id);
+              return (
+                <React.Fragment key={item.id}>
+                  <tr
+                    tabIndex={0}
+                    onClick={() => onFocusItem(item.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
                         onFocusItem(item.id);
-                      }}
-                      className="flex items-center gap-1.5 text-left font-medium text-[var(--color-text)] hover:text-primary"
-                    >
-                      {focused ? (
-                        <ChevronDown
-                          size={11}
-                          className="text-[var(--color-textMuted)]"
-                        />
-                      ) : (
-                        <ChevronRight
-                          size={11}
-                          className="text-[var(--color-textMuted)]"
-                        />
+                      }
+                    }}
+                    className={`${
+                      selected ? "bg-primary/10" : "bg-[var(--color-surface)]"
+                    } cursor-pointer outline-none transition-colors hover:bg-[var(--color-surfaceHover)] ${
+                      focused ? "ring-1 ring-inset ring-primary" : ""
+                    }`}
+                  >
+                    <td className="px-3 py-2 align-top">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        disabled={!item.importable}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => toggleSelection(item.id)}
+                        aria-label={t("importTab.table.selectItem", {
+                          defaultValue: "Select {{name}}",
+                          name: item.name,
+                        })}
+                      />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onFocusItem(item.id);
+                        }}
+                        className="flex items-center gap-1.5 text-left font-medium text-[var(--color-text)] hover:text-primary"
+                      >
+                        {focused ? (
+                          <ChevronDown
+                            size={11}
+                            className="text-[var(--color-textMuted)]"
+                          />
+                        ) : (
+                          <ChevronRight
+                            size={11}
+                            className="text-[var(--color-textMuted)]"
+                          />
+                        )}
+                        <span>{item.name}</span>
+                      </button>
+                      {item.username && (
+                        <div className="mt-0.5 pl-[18px] text-[var(--color-textMuted)]">
+                          {item.username}
+                        </div>
                       )}
-                      <span>{item.name}</span>
-                    </button>
-                    {item.username && (
-                      <div className="mt-0.5 pl-[18px] text-[var(--color-textMuted)]">
-                        {item.username}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <span className="rounded border border-[var(--color-border)] px-2 py-0.5 uppercase text-[var(--color-textSecondary)]">
-                      {item.kind === "connection"
-                        ? item.connection
-                          ? formatPortableProtocolLabel(item.connection)
-                          : item.protocol
-                        : item.kind === "tunnelChain"
-                          ? t("importTab.table.tunnelKind", {
-                              defaultValue: "tunnel",
-                            })
-                          : item.kind === "sshTunnel"
-                            ? t("importTab.table.sshTunnelKind", {
-                                defaultValue: "ssh tunnel",
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <span className="rounded border border-[var(--color-border)] px-2 py-0.5 uppercase text-[var(--color-textSecondary)]">
+                        {item.kind === "connection"
+                          ? item.connection
+                            ? formatPortableProtocolLabel(item.connection)
+                            : item.protocol
+                          : item.kind === "tunnelChain"
+                            ? t("importTab.table.tunnelKind", {
+                                defaultValue: "tunnel",
                               })
-                            : item.kind}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 align-top text-[var(--color-textSecondary)]">
-                    {item.hostname || "-"}
-                    {item.port ? `:${item.port}` : ""}
-                  </td>
-                  <td className="px-3 py-2 align-top text-[var(--color-textSecondary)]">
-                    {item.sourcePath}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <div className="flex flex-wrap gap-1">
-                      {item.tags.length === 0 && (
-                        <span className="text-[var(--color-textMuted)]">-</span>
-                      )}
-                      {item.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded bg-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-textSecondary)]"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <div className="flex flex-wrap gap-1">
-                      {item.issues.length === 0 && (
-                        <span className="rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
-                          {t("importTab.table.clean", {
-                            defaultValue: "clean",
-                          })}
-                        </span>
-                      )}
-                      {item.issues.slice(0, 3).map((issue) => (
-                        <span
-                          key={`${issue.code}-${issue.message}`}
-                          className={`rounded border px-1.5 py-0.5 ${severityClass(issue.severity)}`}
-                        >
-                          {issue.code}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-                {focused && (
-                  <tr className="bg-[var(--color-background)]/60">
-                    <td colSpan={7} className="px-3 py-3">
-                      <PreviewDetails item={item} />
+                            : item.kind === "sshTunnel"
+                              ? t("importTab.table.sshTunnelKind", {
+                                  defaultValue: "ssh tunnel",
+                                })
+                              : item.kind}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top text-[var(--color-textSecondary)]">
+                      {item.hostname || "-"}
+                      {item.port ? `:${item.port}` : ""}
+                    </td>
+                    <td className="px-3 py-2 align-top text-[var(--color-textSecondary)]">
+                      {item.sourcePath}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex flex-wrap gap-1">
+                        {item.tags.length === 0 && (
+                          <span className="text-[var(--color-textMuted)]">
+                            -
+                          </span>
+                        )}
+                        {item.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded bg-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-textSecondary)]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex flex-wrap gap-1">
+                        {item.issues.length === 0 && (
+                          <span className="rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
+                            {t("importTab.table.clean", {
+                              defaultValue: "clean",
+                            })}
+                          </span>
+                        )}
+                        {item.issues.slice(0, 3).map((issue) => (
+                          <span
+                            key={`${issue.code}-${issue.message}`}
+                            className={`rounded border px-1.5 py-0.5 ${severityClass(issue.severity)}`}
+                          >
+                            {issue.code}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                   </tr>
-                )}
-              </React.Fragment>
-            );
-          })}
-          {items.length === 0 && (
-            <tr>
-              <td
-                colSpan={7}
-                className="px-3 py-8 text-center text-[var(--color-textMuted)]"
-              >
-                {t("importTab.table.empty", {
-                  defaultValue:
-                    "No preview rows match the current filters.",
-                })}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+                  {focused && (
+                    <tr className="bg-[var(--color-background)]/60">
+                      <td colSpan={7} className="px-3 py-3">
+                        <PreviewDetails item={item} />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {items.length === 0 && (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-3 py-8 text-center text-[var(--color-textMuted)]"
+                >
+                  {t("importTab.table.empty", {
+                    defaultValue: "No preview rows match the current filters.",
+                  })}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -1733,7 +1845,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
   const visibleCount = visiblePreviewItems.length;
 
   const downloadTemplate = (kind: TemplateKind) => {
-    const spec = TEMPLATES.find((entry) => entry.kind === kind);
+    const spec = IMPORT_TEMPLATES.find((entry) => entry.kind === kind);
     if (!spec) return;
 
     const blob = new Blob([spec.build()], { type: spec.mimeType });
@@ -1827,7 +1939,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
       icon={Download}
     >
       <div className="flex flex-wrap gap-2">
-        {TEMPLATES.map((template) => (
+        {IMPORT_TEMPLATES.map((template) => (
           <button
             key={template.kind}
             onClick={() => downloadTemplate(template.kind)}
@@ -1933,8 +2045,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
       if (stepId === "source" && !importResult?.success) {
         return isProcessing
           ? t("importTab.validation.processing", {
-              defaultValue:
-                "Wait for the selected file to finish processing.",
+              defaultValue: "Wait for the selected file to finish processing.",
             })
           : t("importTab.validation.chooseFile", {
               defaultValue:

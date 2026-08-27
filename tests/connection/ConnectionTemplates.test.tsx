@@ -93,6 +93,65 @@ describe("ConnectionTemplates", () => {
     );
   });
 
+  it("normalises the template protocol to the canonical lower-case value when used (t71)", () => {
+    const onCreate = vi.fn();
+    render(<ConnectionTemplates onCreateFromTemplate={onCreate} />);
+    const card = screen
+      .getByText("HTTP API")
+      .closest('[data-testid="template-item"]') as HTMLElement;
+    fireEvent.click(within(card).getByText("Use Template"));
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "HTTP API", protocol: "http" }),
+    );
+  });
+
+  it("never turns an unknown template protocol into RDP", async () => {
+    const onCreate = vi.fn();
+    const userTemplate = {
+      id: "tpl-web",
+      name: "Portal (user)",
+      description: "",
+      protocol: "Web",
+      port: 443,
+      category: "web",
+      icon: "🌐",
+      settings: {},
+      tags: [],
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+      usageCount: 0,
+    };
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "read_app_data") {
+        return Promise.resolve(JSON.stringify([userTemplate]));
+      }
+      if (command === "compare_and_swap_app_data") return Promise.resolve(true);
+      return Promise.resolve([]);
+    });
+    render(<ConnectionTemplates onCreateFromTemplate={onCreate} />);
+    const name = await screen.findByText("Portal (user)");
+    const card = name.closest('[data-testid="template-item"]') as HTMLElement;
+    fireEvent.click(within(card).getByText("Use Template"));
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ protocol: "https", port: 443 }),
+    );
+  });
+
+  it("uses lower-case protocol values with upper-case labels in the create form", () => {
+    render(<ConnectionTemplates />);
+    fireEvent.click(screen.getByText(/New Template/));
+    const selects = screen.getAllByTestId("select") as HTMLSelectElement[];
+    const protocolSelect = selects.find((el) =>
+      Array.from(el.options).some((o) => o.value === "https"),
+    );
+    expect(protocolSelect).toBeDefined();
+    const https = Array.from(protocolSelect!.options).find(
+      (o) => o.value === "https",
+    );
+    expect(https?.label).toBe("HTTPS");
+    expect(protocolSelect!.value).toBe("ssh");
+  });
+
   it("does not persist usage counts for built-in templates", async () => {
     const onCreate = vi.fn();
     render(<ConnectionTemplates onCreateFromTemplate={onCreate} />);
