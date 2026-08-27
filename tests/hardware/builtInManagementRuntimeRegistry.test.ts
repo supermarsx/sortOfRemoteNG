@@ -10,18 +10,36 @@ import {
 
 afterEach(() => resetBuiltInManagementRuntimeLeasesForTests());
 
+/**
+ * Registration gate: every routed built-in management runtime and the category
+ * it must advertise. Lights-out BMCs are `lights-out`; the Yealink desk phone
+ * (t66) rides the same runtime registry but is a `networking` device.
+ */
+const EXPECTED_RUNTIME_CATEGORIES: Record<string, string> = {
+  idrac: "lights-out",
+  ilo: "lights-out",
+  lenovo: "lights-out",
+  supermicro: "lights-out",
+  "voip-phone": "networking",
+};
+
 describe("built-in management runtime registry", () => {
-  it("registers all routed lights-out providers", () => {
+  it("registers all routed management providers", () => {
     expect(
       builtInManagementRuntimeRegistry.map(({ protocol }) => protocol),
-    ).toEqual(["idrac", "ilo", "lenovo", "supermicro"]);
+    ).toEqual(Object.keys(EXPECTED_RUNTIME_CATEGORIES));
     expect(findBuiltInManagementRuntime("ilo")?.label).toBe("HPE iLO");
+    expect(findBuiltInManagementRuntime("voip-phone")?.label).toBe(
+      "VoIP Phone (Yealink)",
+    );
     expect(findBuiltInManagementRuntime("unknown")).toBeUndefined();
   });
 
-  it("lazy-loads every registered lights-out panel", async () => {
+  it("lazy-loads every registered management panel", async () => {
     for (const descriptor of builtInManagementRuntimeRegistry) {
-      expect(descriptor.category).toBe("lights-out");
+      expect(descriptor.category, descriptor.protocol).toBe(
+        EXPECTED_RUNTIME_CATEGORIES[descriptor.protocol],
+      );
       const panelModule = await descriptor.importPanel();
       expect(panelModule.default, descriptor.protocol).toBeTypeOf("function");
     }
