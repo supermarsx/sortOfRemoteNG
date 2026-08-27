@@ -24,13 +24,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { S } from "../../helpers/selectors";
-import {
-  resetAppState,
-  createCollection,
-  closeAllSessions,
-  openSettings,
-  closeSettings,
-} from "../../helpers/app";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 import {
   isDockerAvailable,
   startContainers,
@@ -57,7 +52,6 @@ const T = {
   bannerName: '[data-testid="trust-database-name"]',
   bannerEncryption: '[data-testid="trust-database-encryption"]',
   bannerCount: '[data-testid="trust-database-count"]',
-  storedIdentities: '[data-testid="settings-dialog"]',
 } as const;
 
 // ── native bridge (the commands the wizard and the Trust Center call) ────────
@@ -79,15 +73,19 @@ async function invokeNative<T>(
       payload: Record<string, unknown>,
       done: (value: { ok: boolean; value?: unknown; error?: string }) => void,
     ) => {
-      const bridge = (
-        globalThis as {
-          __TAURI__?: {
-            core?: {
-              invoke?: (c: string, a?: unknown) => Promise<unknown>;
-            };
-          };
-        }
-      ).__TAURI__?.core?.invoke;
+      // `withGlobalTauri` is off, so `window.__TAURI__` exists only in some
+      // shells; `__TAURI_INTERNALS__.invoke` is the one that is always there.
+      // Same fallback chain `e2e/helpers/readme-screenshot.ts` uses.
+      const globals = globalThis as {
+        __TAURI__?: {
+          core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> };
+        };
+        __TAURI_INTERNALS__?: {
+          invoke?: (c: string, a?: unknown) => Promise<unknown>;
+        };
+      };
+      const bridge =
+        globals.__TAURI__?.core?.invoke ?? globals.__TAURI_INTERNALS__?.invoke;
       if (typeof bridge !== "function") {
         done({ ok: false, error: "the Tauri bridge is not available" });
         return;
@@ -201,14 +199,36 @@ async function createSshConnection(name: string): Promise<void> {
   await editor.waitForDisplayed({ timeout: 5_000 });
 
   await (await $(S.editorName)).setValue(name);
+
+  // The protocol picker is the app's custom combobox (`<button role="combobox">`
+  // plus a portalled listbox), not a native `<select>`, so `selectByVisibleText`
+  // finds no `<option>` and throws. Pick it FIRST: `handleProtocolChange` resets
+  // the port to the protocol default.
+  await selectCustomOption(S.editorProtocol, "SSH");
+  await browser.pause(200);
+
   await (await $(S.editorHostname)).setValue(SSH_HOST);
-  await (await $(S.editorProtocol)).selectByVisibleText("SSH");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
   await portInput.setValue(String(SSH_PORT));
 
-  await (await $(S.editorUsername)).setValue(SSH_USER);
+  // Credentials are not on the General tab: the editor keeps them on
+  // Protocol → Authentication, and `editor-username` / `editor-password` only
+  // carry their testids while the protocol is SSH.
+  const protocolTab = await $('[data-testid="connection-editor-tab-protocol"]');
+  await protocolTab.waitForClickable({ timeout: 10_000 });
+  await protocolTab.click();
+
+  const authSubtab = await $(
+    '[data-testid="connection-editor-protocol-subtab-authentication"]',
+  );
+  await authSubtab.waitForClickable({ timeout: 10_000 });
+  await authSubtab.click();
+
+  const username = await $(S.editorUsername);
+  await username.waitForDisplayed({ timeout: 10_000 });
+  await username.setValue(SSH_USER);
   await (await $(S.editorPassword)).setValue(SSH_PASSWORD);
 
   await (await $(S.editorSave)).click();
@@ -252,10 +272,47 @@ async function connectAndTrustHostKey(): Promise<void> {
   await terminal.waitForDisplayed({ timeout: 30_000 });
 }
 
+/**
+ * Close every open session, answering the "Close the active session …?"
+ * confirmation. The shared `closeAllSessions()` helper looks for a
+ * `confirm-dialog` testid that no component renders any more — only
+ * `confirm-yes` exists — so it never answers the prompt and leaves a modal
+ * sitting over everything that follows. Answered here directly.
+ */
+async function closeSessionsAnsweringConfirm(): Promise<void> {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const tabs = await $$(S.sessionTab);
+    if ((await tabs.length) === 0) return;
+
+    const closeButton = await tabs[0].$('[data-testid="session-tab-close"]');
+    if (await closeButton.isExisting().catch(() => false)) {
+      await closeButton.click().catch(() => undefined);
+    }
+
+    const confirmYes = await $(S.confirmYes);
+    if (
+      await confirmYes
+        .waitForClickable({ timeout: 2_000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      await confirmYes.click().catch(() => undefined);
+    }
+    await browser.pause(300);
+  }
+  throw new Error("Session tabs did not close within the bounded cleanup");
+}
+
 async function openTrustCenter(): Promise<void> {
-  await openSettings();
+  // Settings may render as a modal or as a docked tab depending on the layout
+  // settings this profile carries, so wait for the trust tab itself rather than
+  // for one particular container.
+  const settingsButton = await $(S.toolbarSettings);
+  await settingsButton.waitForClickable({ timeout: 10_000 });
+  await settingsButton.click();
+
   const tab = await $(T.settingsTabTrust);
-  await tab.waitForClickable({ timeout: 10_000 });
+  await tab.waitForClickable({ timeout: 15_000 });
   await tab.click();
   const banner = await $(T.banner);
   await banner.waitForDisplayed({ timeout: 10_000 });
@@ -270,9 +327,39 @@ async function openTrustCenter(): Promise<void> {
   );
 }
 
+/**
+ * The rendered Trust Center panel text. Read from the banner's nearest
+ * settings/panel ancestor so the assertion covers the section — the stored
+ * identities included — without depending on whether settings render as a
+ * modal or as a docked tab, and without swallowing the connection tree.
+ */
 async function trustCenterText(): Promise<string> {
-  const dialog = await $(T.storedIdentities);
-  return (await dialog.getText()).replace(/\s+/g, " ");
+  const text = await browser.execute(() => {
+    const banner = document.querySelector(
+      '[data-testid="trust-database-banner"]',
+    );
+    const container =
+      banner?.closest('[data-testid="settings-dialog"]') ??
+      banner?.closest('[role="tabpanel"]') ??
+      banner?.parentElement?.parentElement ??
+      null;
+    return container?.textContent ?? "";
+  });
+  return String(text).replace(/\s+/g, " ");
+}
+
+/** Close whichever surface Settings opened in. */
+async function closeSettingsSurface(): Promise<void> {
+  const modalClose = await $(S.modalClose);
+  if (await modalClose.isDisplayed().catch(() => false)) {
+    await modalClose.click();
+  } else {
+    await browser.keys(["Escape"]);
+  }
+  const trustTab = await $(T.settingsTabTrust);
+  await trustTab
+    .waitForExist({ timeout: 10_000, reverse: true })
+    .catch(() => undefined);
 }
 
 /**
@@ -346,7 +433,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
   });
 
   afterEach(async () => {
-    await closeAllSessions().catch(() => undefined);
+    await closeSessionsAnsweringConfirm().catch(() => undefined);
   });
 
   it("stores an accepted SSH host key in the active database and shows it in the Trust Center", async () => {
@@ -359,7 +446,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
 
     await createSshConnection("Trust SSH A");
     await connectAndTrustHostKey();
-    await closeAllSessions();
+    await closeSessionsAnsweringConfirm();
 
     await openTrustCenter();
     const banner = await $(T.bannerName);
@@ -379,7 +466,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
     ).toBeGreaterThan(0);
 
     expect(await trustCenterText()).toContain(SSH_HOST);
-    await closeSettings();
+    await closeSettingsSurface();
 
     // The record is durable beside the database payload...
     const active = await activeTrustDatabase();
@@ -418,7 +505,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
     await createCollection(dbA);
     await createSshConnection("Trust SSH A");
     await connectAndTrustHostKey();
-    await closeAllSessions();
+    await closeSessionsAnsweringConfirm();
 
     const source = await activeTrustDatabase();
     const document = await invokeNative<TrustExportDocument>(
@@ -449,7 +536,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
     await openTrustCenter();
     expect(await (await $(T.bannerName)).getText()).toContain(dbB);
     expect(await trustCenterText()).not.toContain(TRUST_HOST);
-    await closeSettings();
+    await closeSettingsSurface();
 
     // The Import/Export wizard's merge, driven through its own command.
     const outcome = await invokeNative<{ imported: number; skipped: number }>(
@@ -491,6 +578,6 @@ describe("Trust Center — per-database storage (docker sshd fixture)", () => {
     await openTrustCenter();
     expect(await (await $(T.bannerName)).getText()).toContain(dbC);
     expect(await trustCenterText()).not.toContain(TRUST_HOST);
-    await closeSettings();
+    await closeSettingsSurface();
   });
 });
