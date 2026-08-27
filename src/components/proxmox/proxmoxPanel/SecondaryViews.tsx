@@ -12,6 +12,7 @@ import {
 import type { SubProps } from "./types";
 import { useProxmoxConsoleLauncher } from "../../../hooks/proxmox/useProxmoxConsole";
 import ProxmoxTermConsole from "../ProxmoxTermConsole";
+import ProxmoxVncConsole from "../ProxmoxVncConsole";
 
 /** Backup Jobs view */
 export const BackupsView: React.FC<SubProps> = ({ mgr }) => {
@@ -367,8 +368,15 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
                     </span>
                     <div className="flex gap-1">
                       <button
+                        data-testid={`proxmox-console-vnc-qemu-${vm.vmid}`}
                         onClick={() =>
-                          node && mgr.openVncConsole(node, vm.vmid, "qemu")
+                          node &&
+                          consoles.openVnc({
+                            node,
+                            vmid: vm.vmid,
+                            vmType: "qemu",
+                            label: vm.name || `VM ${vm.vmid}`,
+                          })
                         }
                         className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
                       >
@@ -419,8 +427,15 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
                     </span>
                     <div className="flex gap-1">
                       <button
+                        data-testid={`proxmox-console-vnc-lxc-${ct.vmid}`}
                         onClick={() =>
-                          node && mgr.openVncConsole(node, ct.vmid, "lxc")
+                          node &&
+                          consoles.openVnc({
+                            node,
+                            vmid: ct.vmid,
+                            vmType: "lxc",
+                            label: ct.name || `CT ${ct.vmid}`,
+                          })
                         }
                         className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
                       >
@@ -453,6 +468,12 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
         <ProxmoxTermConsole
           target={consoles.termTarget}
           onClose={consoles.closeTerm}
+        />
+      ) : null}
+      {consoles.vncTarget ? (
+        <ProxmoxVncConsole
+          target={consoles.vncTarget}
+          onClose={consoles.closeVnc}
         />
       ) : null}
     </div>

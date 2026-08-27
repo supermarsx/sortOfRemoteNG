@@ -43,6 +43,26 @@ vi.mock("../../src/components/proxmox/ProxmoxTermConsole", () => ({
   ),
 }));
 
+vi.mock("../../src/components/proxmox/ProxmoxVncConsole", () => ({
+  __esModule: true,
+  default: ({
+    target,
+    onClose,
+  }: {
+    target: { node: string; vmid: number; vmType: string };
+    onClose: () => void;
+  }) => (
+    <div data-testid="proxmox-vnc-overlay">
+      <span data-testid="vnc-overlay-target">
+        {`${target.node}/${target.vmid}/${target.vmType}`}
+      </span>
+      <button data-testid="vnc-overlay-close" onClick={onClose}>
+        close
+      </button>
+    </div>
+  ),
+}));
+
 import { ConsoleView } from "../../src/components/proxmox/proxmoxPanel/SecondaryViews";
 import NodesView from "../../src/components/proxmox/proxmoxPanel/NodesView";
 import QemuView from "../../src/components/proxmox/proxmoxPanel/QemuView";
@@ -86,6 +106,11 @@ const expectOverlayTarget = async (expected: string) => {
   expect(screen.getByTestId("overlay-target").textContent).toBe(expected);
 };
 
+const expectVncOverlayTarget = async (expected: string) => {
+  expect(await screen.findByTestId("proxmox-vnc-overlay")).toBeTruthy();
+  expect(screen.getByTestId("vnc-overlay-target").textContent).toBe(expected);
+};
+
 describe("Proxmox console button wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -121,23 +146,58 @@ describe("Proxmox console button wiring", () => {
     );
   });
 
+  it("ConsoleView opens a QEMU VNC console", async () => {
+    render(<ConsoleView mgr={makeMgr()} />);
+    fireEvent.click(screen.getByTestId("proxmox-console-vnc-qemu-100"));
+    await expectVncOverlayTarget("pve1/100/qemu");
+  });
+
+  it("ConsoleView opens an LXC VNC console", async () => {
+    render(<ConsoleView mgr={makeMgr()} />);
+    fireEvent.click(screen.getByTestId("proxmox-console-vnc-lxc-200"));
+    await expectVncOverlayTarget("pve1/200/lxc");
+  });
+
+  it("ConsoleView shows only one overlay at a time", async () => {
+    render(<ConsoleView mgr={makeMgr()} />);
+    fireEvent.click(screen.getByTestId("proxmox-console-xterm-qemu-100"));
+    await screen.findByTestId("proxmox-console-overlay");
+    fireEvent.click(screen.getByTestId("proxmox-console-vnc-qemu-100"));
+    await screen.findByTestId("proxmox-vnc-overlay");
+    expect(screen.queryByTestId("proxmox-console-overlay")).toBeNull();
+  });
+
   it("NodesView opens the node shell for the clicked node", async () => {
     render(<NodesView mgr={makeMgr()} />);
     fireEvent.click(screen.getByTestId("proxmox-node-console-btn-pve1"));
     await expectOverlayTarget("pve1/-/node");
   });
 
-  it("QemuView opens the console for the expanded VM", async () => {
+  it("QemuView Console opens the graphical (VNC) console", async () => {
     render(<QemuView mgr={makeMgr()} />);
     fireEvent.click(screen.getByText("web-01"));
     fireEvent.click(await screen.findByTestId("proxmox-qemu-console-btn-100"));
+    await expectVncOverlayTarget("pve1/100/qemu");
+  });
+
+  it("QemuView Shell opens the xterm console", async () => {
+    render(<QemuView mgr={makeMgr()} />);
+    fireEvent.click(screen.getByText("web-01"));
+    fireEvent.click(await screen.findByTestId("proxmox-qemu-shell-btn-100"));
     await expectOverlayTarget("pve1/100/qemu");
   });
 
-  it("LxcView opens the console for the expanded container", async () => {
+  it("LxcView Console opens the xterm console", async () => {
     render(<LxcView mgr={makeMgr()} />);
     fireEvent.click(screen.getByText("dns-01"));
     fireEvent.click(await screen.findByTestId("proxmox-lxc-console-btn-200"));
     await expectOverlayTarget("pve1/200/lxc");
+  });
+
+  it("LxcView VNC opens the graphical console", async () => {
+    render(<LxcView mgr={makeMgr()} />);
+    fireEvent.click(screen.getByText("dns-01"));
+    fireEvent.click(await screen.findByTestId("proxmox-lxc-vnc-btn-200"));
+    await expectVncOverlayTarget("pve1/200/lxc");
   });
 });

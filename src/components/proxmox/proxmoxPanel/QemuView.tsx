@@ -20,6 +20,7 @@ import {
 import type { SubProps } from "./types";
 import { useProxmoxConsoleLauncher } from "../../../hooks/proxmox/useProxmoxConsole";
 import ProxmoxTermConsole from "../ProxmoxTermConsole";
+import ProxmoxVncConsole from "../ProxmoxVncConsole";
 
 const QemuView: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -202,10 +203,24 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
                   )}
                   <div className="w-px bg-[var(--color-border)] mx-1" />
                   <ActionBtn
-                    icon={Terminal}
+                    icon={Monitor}
                     label={t("proxmox.qemu.console", "Console")}
-                    color="text-info"
+                    color="text-primary"
                     testId={`proxmox-qemu-console-btn-${vm.vmid}`}
+                    onClick={() =>
+                      consoles.openVnc({
+                        node,
+                        vmid: vm.vmid,
+                        vmType: "qemu",
+                        label: vm.name || `VM ${vm.vmid}`,
+                      })
+                    }
+                  />
+                  <ActionBtn
+                    icon={Terminal}
+                    label={t("proxmox.qemu.shell", "Shell")}
+                    color="text-info"
+                    testId={`proxmox-qemu-shell-btn-${vm.vmid}`}
                     onClick={() =>
                       consoles.openTerm({
                         node,
@@ -273,6 +288,12 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
         <ProxmoxTermConsole
           target={consoles.termTarget}
           onClose={consoles.closeTerm}
+        />
+      ) : null}
+      {consoles.vncTarget ? (
+        <ProxmoxVncConsole
+          target={consoles.vncTarget}
+          onClose={consoles.closeVnc}
         />
       ) : null}
     </div>

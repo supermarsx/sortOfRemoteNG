@@ -10,6 +10,7 @@ import {
   ArrowRightLeft,
   Trash2,
   Terminal,
+  Monitor,
   Camera,
   Cpu,
   MemoryStick,
@@ -19,6 +20,7 @@ import {
 import type { SubProps } from "./types";
 import { useProxmoxConsoleLauncher } from "../../../hooks/proxmox/useProxmoxConsole";
 import ProxmoxTermConsole from "../ProxmoxTermConsole";
+import ProxmoxVncConsole from "../ProxmoxVncConsole";
 
 const LxcView: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -198,6 +200,20 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                     }
                   />
                   <ActionBtn
+                    icon={Monitor}
+                    label={t("proxmox.lxc.vncConsole", "VNC")}
+                    color="text-primary"
+                    testId={`proxmox-lxc-vnc-btn-${ct.vmid}`}
+                    onClick={() =>
+                      consoles.openVnc({
+                        node,
+                        vmid: ct.vmid,
+                        vmType: "lxc",
+                        label: ct.name || `CT ${ct.vmid}`,
+                      })
+                    }
+                  />
+                  <ActionBtn
                     icon={Camera}
                     label={t("proxmox.lxc.snapshot", "Snapshot")}
                     color="text-primary"
@@ -255,6 +271,12 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
         <ProxmoxTermConsole
           target={consoles.termTarget}
           onClose={consoles.closeTerm}
+        />
+      ) : null}
+      {consoles.vncTarget ? (
+        <ProxmoxVncConsole
+          target={consoles.vncTarget}
+          onClose={consoles.closeVnc}
         />
       ) : null}
     </div>
