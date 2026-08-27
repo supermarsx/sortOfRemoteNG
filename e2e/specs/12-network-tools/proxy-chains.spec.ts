@@ -1,14 +1,14 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
-describe('Proxy Chains', () => {
+describe("Proxy Chains", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Proxy Tests');
+    await createCollection("Proxy Tests");
   });
 
-  it('should create a proxy profile', async () => {
+  it("should create a proxy profile", async () => {
     const proxyBtn = await $('[data-testid="open-proxy-manager"]');
     await proxyBtn.click();
     await browser.pause(500);
@@ -17,13 +17,13 @@ describe('Proxy Chains', () => {
     await addProxyBtn.click();
 
     const nameInput = await $('[data-testid="proxy-name"]');
-    await nameInput.setValue('Test Proxy');
+    await nameInput.setValue("Test Proxy");
 
     const hostInput = await $('[data-testid="proxy-host"]');
-    await hostInput.setValue('proxy.example.com');
+    await hostInput.setValue("proxy.example.com");
 
     const portInput = await $('[data-testid="proxy-port"]');
-    await portInput.setValue('8080');
+    await portInput.setValue("8080");
 
     const saveBtn = await $('[data-testid="proxy-save"]');
     await saveBtn.click();
@@ -31,24 +31,24 @@ describe('Proxy Chains', () => {
 
     const items = await $$('[data-testid="proxy-item"]');
     const names = await items.map((i) => i.getText());
-    expect(names).toContain('Test Proxy');
+    expect(names).toContain("Test Proxy");
   });
 
-  it('should create a proxy chain', async () => {
+  it("should create a proxy chain", async () => {
     const proxyBtn = await $('[data-testid="open-proxy-manager"]');
     await proxyBtn.click();
     await browser.pause(500);
 
     // Create two proxies first
-    for (const proxyName of ['Proxy A', 'Proxy B']) {
+    for (const proxyName of ["Proxy A", "Proxy B"]) {
       const addProxyBtn = await $('[data-testid="proxy-add"]');
       await addProxyBtn.click();
       const nameInput = await $('[data-testid="proxy-name"]');
       await nameInput.setValue(proxyName);
       const hostInput = await $('[data-testid="proxy-host"]');
-      await hostInput.setValue('proxy.example.com');
+      await hostInput.setValue("proxy.example.com");
       const portInput = await $('[data-testid="proxy-port"]');
-      await portInput.setValue('8080');
+      await portInput.setValue("8080");
       const saveBtn = await $('[data-testid="proxy-save"]');
       await saveBtn.click();
       await browser.pause(500);
@@ -62,7 +62,7 @@ describe('Proxy Chains', () => {
     expect(await chainPanel.isDisplayed()).toBe(true);
   });
 
-  it('should associate proxy with a connection', async () => {
+  it("should associate proxy with a connection", async () => {
     // Create a proxy first
     const proxyBtn = await $('[data-testid="open-proxy-manager"]');
     await proxyBtn.click();
@@ -71,11 +71,11 @@ describe('Proxy Chains', () => {
     const addProxyBtn = await $('[data-testid="proxy-add"]');
     await addProxyBtn.click();
     const nameInput = await $('[data-testid="proxy-name"]');
-    await nameInput.setValue('Connection Proxy');
+    await nameInput.setValue("Connection Proxy");
     const hostInput = await $('[data-testid="proxy-host"]');
-    await hostInput.setValue('proxy.example.com');
+    await hostInput.setValue("proxy.example.com");
     const portInput = await $('[data-testid="proxy-port"]');
-    await portInput.setValue('8080');
+    await portInput.setValue("8080");
     const saveBtn = await $('[data-testid="proxy-save"]');
     await saveBtn.click();
     await browser.pause(500);
@@ -90,14 +90,16 @@ describe('Proxy Chains', () => {
     const editor = await $(S.editorPanel);
     await editor.waitForDisplayed({ timeout: 5_000 });
     const connName = await $(S.editorName);
-    await connName.setValue('Proxied Server');
+    await connName.setValue("Proxied Server");
     const hostname = await $(S.editorHostname);
-    await hostname.setValue('10.0.0.1');
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await hostname.setValue("10.0.0.1");
+    await selectCustomOption(S.editorProtocol, "SSH");
 
     const proxySelect = await $('[data-testid="editor-proxy-select"]');
     await proxySelect.click();
-    const proxyOption = await $('[data-testid="proxy-option-connection-proxy"]');
+    const proxyOption = await $(
+      '[data-testid="proxy-option-connection-proxy"]',
+    );
     await proxyOption.click();
 
     const connSaveBtn = await $(S.editorSave);

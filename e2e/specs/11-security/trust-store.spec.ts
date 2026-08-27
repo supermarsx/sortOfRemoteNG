@@ -1,13 +1,22 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, waitForContainer, SSH_PORT } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  waitForContainer,
+  SSH_PORT,
+} from "../../helpers/docker";
 
-describe('Trust Store', () => {
+describe("Trust Store", () => {
   before(async function () {
     this.timeout(120_000);
     startContainers();
-    await waitForContainer('test-ssh', SSH_PORT, 60_000);
+    await waitForContainer("test-ssh", SSH_PORT, 60_000);
   });
 
   after(() => {
@@ -16,23 +25,23 @@ describe('Trust Store', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Trust Tests');
+    await createCollection("Trust Tests");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should show trust dialog on first SSH connection to unknown host', async () => {
+  it("should show trust dialog on first SSH connection to unknown host", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const editor = await $(S.editorPanel);
     await editor.waitForDisplayed({ timeout: 5_000 });
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Unknown Host');
+    await nameInput.setValue("Unknown Host");
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('localhost');
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await hostnameInput.setValue("localhost");
+    await selectCustomOption(S.editorProtocol, "SSH");
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -42,7 +51,7 @@ describe('Trust Store', () => {
     const items = await tree.$$(S.connectionItem);
     for (const item of items) {
       const text = await item.getText();
-      if (text.includes('Unknown Host')) {
+      if (text.includes("Unknown Host")) {
         await item.doubleClick();
         break;
       }
@@ -53,16 +62,16 @@ describe('Trust Store', () => {
     expect(await trustDialog.isDisplayed()).toBe(true);
   });
 
-  it('should store host key after accepting trust dialog', async () => {
+  it("should store host key after accepting trust dialog", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const editor = await $(S.editorPanel);
     await editor.waitForDisplayed({ timeout: 5_000 });
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Trust Host');
+    await nameInput.setValue("Trust Host");
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('localhost');
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await hostnameInput.setValue("localhost");
+    await selectCustomOption(S.editorProtocol, "SSH");
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -71,7 +80,7 @@ describe('Trust Store', () => {
     const items = await tree.$$(S.connectionItem);
     for (const item of items) {
       const text = await item.getText();
-      if (text.includes('Trust Host')) {
+      if (text.includes("Trust Host")) {
         await item.doubleClick();
         break;
       }
@@ -88,7 +97,7 @@ describe('Trust Store', () => {
     await trustDialog.waitForExist({ timeout: 5_000, reverse: true });
   });
 
-  it('should manage trust records in trust store panel', async () => {
+  it("should manage trust records in trust store panel", async () => {
     const trustStoreBtn = await $('[data-testid="open-trust-store"]');
     await trustStoreBtn.click();
     await browser.pause(500);

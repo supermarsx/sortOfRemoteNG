@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, SSH_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  SSH_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 // SFTP-specific selectors
 const SFTP = {
@@ -24,22 +33,22 @@ async function createAndConnectSSH(): Promise<void> {
   await editor.waitForDisplayed({ timeout: 5_000 });
 
   const nameInput = await $(S.editorName);
-  await nameInput.setValue('SFTP Test');
+  await nameInput.setValue("SFTP Test");
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'SSH');
+  await selectCustomOption(S.editorProtocol, "SSH");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
   await portInput.setValue(String(SSH_PORT));
 
   const usernameInput = await $(S.editorUsername);
-  await usernameInput.setValue('testuser');
+  await usernameInput.setValue("testuser");
 
   const passwordInput = await $(S.editorPassword);
-  await passwordInput.setValue('testpass123');
+  await passwordInput.setValue("testpass123");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
@@ -54,10 +63,10 @@ async function createAndConnectSSH(): Promise<void> {
   await browser.pause(3000);
 }
 
-describe('SSH File Transfer (SFTP)', () => {
+describe("SSH File Transfer (SFTP)", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('ssh', SSH_PORT, 30_000);
+    await waitForContainer("ssh", SSH_PORT, 30_000);
   });
 
   after(async () => {
@@ -66,14 +75,14 @@ describe('SSH File Transfer (SFTP)', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('SFTP Test');
+    await createCollection("SFTP Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should open the file transfer panel', async () => {
+  it("should open the file transfer panel", async () => {
     await createAndConnectSSH();
 
     const ftTab = await $(SFTP.fileTransferTab);
@@ -90,7 +99,7 @@ describe('SSH File Transfer (SFTP)', () => {
     }
   });
 
-  it('should list remote directory contents', async () => {
+  it("should list remote directory contents", async () => {
     await createAndConnectSSH();
 
     const ftTab = await $(SFTP.fileTransferTab);
@@ -106,7 +115,7 @@ describe('SSH File Transfer (SFTP)', () => {
     }
   });
 
-  it('should upload a file to remote server', async () => {
+  it("should upload a file to remote server", async () => {
     await createAndConnectSSH();
 
     const ftTab = await $(SFTP.fileTransferTab);
@@ -122,12 +131,12 @@ describe('SSH File Transfer (SFTP)', () => {
         // Check that progress indicator appeared
         const progress = await $(SFTP.transferProgress);
         const progressShown = await progress.isExisting();
-        expect(typeof progressShown).toBe('boolean');
+        expect(typeof progressShown).toBe("boolean");
       }
     }
   });
 
-  it('should download a file from remote server', async () => {
+  it("should download a file from remote server", async () => {
     await createAndConnectSSH();
 
     const ftTab = await $(SFTP.fileTransferTab);
@@ -148,13 +157,13 @@ describe('SSH File Transfer (SFTP)', () => {
           // Check progress
           const progress = await $(SFTP.transferProgress);
           const progressShown = await progress.isExisting();
-          expect(typeof progressShown).toBe('boolean');
+          expect(typeof progressShown).toBe("boolean");
         }
       }
     }
   });
 
-  it('should show transfer progress indicator during file transfer', async () => {
+  it("should show transfer progress indicator during file transfer", async () => {
     await createAndConnectSSH();
 
     const ftTab = await $(SFTP.fileTransferTab);
@@ -171,7 +180,7 @@ describe('SSH File Transfer (SFTP)', () => {
         const progress = await $(SFTP.transferProgress);
         // Progress indicator may be transient
         const exists = await progress.isExisting();
-        expect(typeof exists).toBe('boolean');
+        expect(typeof exists).toBe("boolean");
       }
     }
   });

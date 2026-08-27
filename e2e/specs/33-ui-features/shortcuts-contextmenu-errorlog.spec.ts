@@ -1,14 +1,19 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, openSettings, closeSettings } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  openSettings,
+  closeSettings,
+} from "../../helpers/app";
 
-describe('Shortcut Manager', () => {
+describe("Shortcut Manager", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Shortcut Tests');
+    await createCollection("Shortcut Tests");
   });
 
-  it('should open shortcut manager dialog', async () => {
+  it("should open shortcut manager dialog", async () => {
     const shortcutBtn = await $(S.shortcutManagerBtn);
     await shortcutBtn.click();
     await browser.pause(500);
@@ -18,7 +23,7 @@ describe('Shortcut Manager', () => {
     expect(await dialog.isDisplayed()).toBe(true);
   });
 
-  it('should display list of shortcuts', async () => {
+  it("should display list of shortcuts", async () => {
     const shortcutBtn = await $(S.shortcutManagerBtn);
     await shortcutBtn.click();
     await browser.pause(500);
@@ -30,13 +35,13 @@ describe('Shortcut Manager', () => {
     expect(shortcuts.length).toBeGreaterThan(0);
   });
 
-  it('should search shortcuts by name', async () => {
+  it("should search shortcuts by name", async () => {
     const shortcutBtn = await $(S.shortcutManagerBtn);
     await shortcutBtn.click();
     await browser.pause(500);
 
     const searchInput = await $(S.shortcutSearch);
-    await searchInput.setValue('settings');
+    await searchInput.setValue("settings");
     await browser.pause(500);
 
     const shortcuts = await $$(S.shortcutItem);
@@ -44,7 +49,7 @@ describe('Shortcut Manager', () => {
     expect(shortcuts).toBeDefined();
   });
 
-  it('should open shortcut edit mode', async () => {
+  it("should open shortcut edit mode", async () => {
     const shortcutBtn = await $(S.shortcutManagerBtn);
     await shortcutBtn.click();
     await browser.pause(500);
@@ -62,7 +67,7 @@ describe('Shortcut Manager', () => {
     }
   });
 
-  it('should have reset to default option', async () => {
+  it("should have reset to default option", async () => {
     const shortcutBtn = await $(S.shortcutManagerBtn);
     await shortcutBtn.click();
     await browser.pause(500);
@@ -72,10 +77,10 @@ describe('Shortcut Manager', () => {
   });
 });
 
-describe('Context Menu — Connection', () => {
+describe("Context Menu — Connection", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Context Menu Tests');
+    await createCollection("Context Menu Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
@@ -87,74 +92,74 @@ describe('Context Menu — Connection', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
 
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Test Connection');
+    await nameInput.setValue("Test Connection");
 
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('10.0.0.1');
+    await hostnameInput.setValue("10.0.0.1");
 
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await selectCustomOption(S.editorProtocol, "SSH");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
   });
 
-  it('should show context menu on right-click', async () => {
+  it("should show context menu on right-click", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
-    await items[0].click({ button: 'right' });
+    await items[0].click({ button: "right" });
     await browser.pause(500);
 
     const contextMenu = await $(S.contextMenu);
     expect(await contextMenu.isDisplayed()).toBe(true);
   });
 
-  it('should show Connect option in context menu', async () => {
+  it("should show Connect option in context menu", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
-    await items[0].click({ button: 'right' });
+    await items[0].click({ button: "right" });
     await browser.pause(500);
 
     const connectOption = await $(S.contextMenuConnect);
     expect(await connectOption.isExisting()).toBe(true);
   });
 
-  it('should show Edit option in context menu', async () => {
+  it("should show Edit option in context menu", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
-    await items[0].click({ button: 'right' });
+    await items[0].click({ button: "right" });
     await browser.pause(500);
 
     const editOption = await $(S.contextMenuEdit);
     expect(await editOption.isExisting()).toBe(true);
   });
 
-  it('should show Duplicate option in context menu', async () => {
+  it("should show Duplicate option in context menu", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
-    await items[0].click({ button: 'right' });
+    await items[0].click({ button: "right" });
     await browser.pause(500);
 
     const duplicateOption = await $(S.contextMenuDuplicate);
     expect(await duplicateOption.isExisting()).toBe(true);
   });
 
-  it('should show Delete option in context menu', async () => {
+  it("should show Delete option in context menu", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
-    await items[0].click({ button: 'right' });
+    await items[0].click({ button: "right" });
     await browser.pause(500);
 
     const deleteOption = await $(S.contextMenuDelete);
     expect(await deleteOption.isExisting()).toBe(true);
   });
 
-  it('should duplicate connection via context menu', async () => {
+  it("should duplicate connection via context menu", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const initialCount = await items.length;
 
-    await items[0].click({ button: 'right' });
+    await items[0].click({ button: "right" });
     await browser.pause(500);
 
     const duplicateOption = await $(S.contextMenuDuplicate);
@@ -165,12 +170,12 @@ describe('Context Menu — Connection', () => {
     expect(updatedItems.length).toBe(initialCount + 1);
   });
 
-  it('should delete connection via context menu', async () => {
+  it("should delete connection via context menu", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const initialCount = await items.length;
 
-    await items[0].click({ button: 'right' });
+    await items[0].click({ button: "right" });
     await browser.pause(500);
 
     const deleteOption = await $(S.contextMenuDelete);
@@ -186,19 +191,19 @@ describe('Context Menu — Connection', () => {
   });
 });
 
-describe('Error Log Bar', () => {
+describe("Error Log Bar", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Error Log Tests');
+    await createCollection("Error Log Tests");
   });
 
-  it('should display error log bar when errors occur', async () => {
+  it("should display error log bar when errors occur", async () => {
     const errorLogBar = await $(S.errorLogBar);
     // May or may not be visible depending on state
     expect(await errorLogBar.isExisting()).toBe(true);
   });
 
-  it('should expand error log to show entries', async () => {
+  it("should expand error log to show entries", async () => {
     const errorLogBar = await $(S.errorLogBar);
     if (await errorLogBar.isDisplayed()) {
       const expandBtn = await $(S.errorLogExpand);
@@ -210,7 +215,7 @@ describe('Error Log Bar', () => {
     }
   });
 
-  it('should have clear log button', async () => {
+  it("should have clear log button", async () => {
     const errorLogBar = await $(S.errorLogBar);
     if (await errorLogBar.isDisplayed()) {
       const expandBtn = await $(S.errorLogExpand);

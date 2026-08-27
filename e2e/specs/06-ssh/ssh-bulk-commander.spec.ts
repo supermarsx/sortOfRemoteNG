@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, SSH_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  SSH_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 // Bulk commander selectors
 const BULK_CMD = {
@@ -26,29 +35,29 @@ async function createSSHConnection(name: string): Promise<void> {
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'SSH');
+  await selectCustomOption(S.editorProtocol, "SSH");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
   await portInput.setValue(String(SSH_PORT));
 
   const usernameInput = await $(S.editorUsername);
-  await usernameInput.setValue('testuser');
+  await usernameInput.setValue("testuser");
 
   const passwordInput = await $(S.editorPassword);
-  await passwordInput.setValue('testpass123');
+  await passwordInput.setValue("testpass123");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
   await browser.pause(500);
 }
 
-describe('SSH Bulk Commander', () => {
+describe("SSH Bulk Commander", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('ssh', SSH_PORT, 30_000);
+    await waitForContainer("ssh", SSH_PORT, 30_000);
   });
 
   after(async () => {
@@ -57,16 +66,16 @@ describe('SSH Bulk Commander', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Bulk Commander Test');
+    await createCollection("Bulk Commander Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should select multiple SSH connections for bulk operations', async () => {
-    await createSSHConnection('Host A');
-    await createSSHConnection('Host B');
+  it("should select multiple SSH connections for bulk operations", async () => {
+    await createSSHConnection("Host A");
+    await createSSHConnection("Host B");
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
@@ -74,9 +83,9 @@ describe('SSH Bulk Commander', () => {
 
     // Select both items using bulk select (Ctrl+click)
     await items[0].click();
-    await browser.keys(['Control']);
+    await browser.keys(["Control"]);
     await items[1].click();
-    await browser.keys([]);  // release keys
+    await browser.keys([]); // release keys
 
     await browser.pause(500);
 
@@ -86,16 +95,16 @@ describe('SSH Bulk Commander', () => {
     expect(bulkExists).toBe(true);
   });
 
-  it('should open bulk commander panel', async () => {
-    await createSSHConnection('Cmd Host A');
-    await createSSHConnection('Cmd Host B');
+  it("should open bulk commander panel", async () => {
+    await createSSHConnection("Cmd Host A");
+    await createSSHConnection("Cmd Host B");
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
 
     // Select both
     await items[0].click();
-    await browser.keys(['Control']);
+    await browser.keys(["Control"]);
     await items[1].click();
     await browser.keys([]);
 
@@ -111,16 +120,16 @@ describe('SSH Bulk Commander', () => {
     }
   });
 
-  it('should execute command across multiple hosts', async () => {
-    await createSSHConnection('Exec Host A');
-    await createSSHConnection('Exec Host B');
+  it("should execute command across multiple hosts", async () => {
+    await createSSHConnection("Exec Host A");
+    await createSSHConnection("Exec Host B");
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
 
     // Select both
     await items[0].click();
-    await browser.keys(['Control']);
+    await browser.keys(["Control"]);
     await items[1].click();
     await browser.keys([]);
 
@@ -129,7 +138,7 @@ describe('SSH Bulk Commander', () => {
     const cmdPanel = await $(BULK_CMD.bulkCommanderPanel);
     if (await cmdPanel.isExisting()) {
       const cmdInput = await $(BULK_CMD.bulkCommandInput);
-      await cmdInput.setValue('whoami');
+      await cmdInput.setValue("whoami");
 
       const executeBtn = await $(BULK_CMD.bulkExecuteBtn);
       await executeBtn.click();
@@ -140,15 +149,15 @@ describe('SSH Bulk Commander', () => {
     }
   });
 
-  it('should show per-host results after bulk execution', async () => {
-    await createSSHConnection('Result Host A');
-    await createSSHConnection('Result Host B');
+  it("should show per-host results after bulk execution", async () => {
+    await createSSHConnection("Result Host A");
+    await createSSHConnection("Result Host B");
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
 
     await items[0].click();
-    await browser.keys(['Control']);
+    await browser.keys(["Control"]);
     await items[1].click();
     await browser.keys([]);
 
@@ -157,7 +166,7 @@ describe('SSH Bulk Commander', () => {
     const cmdPanel = await $(BULK_CMD.bulkCommanderPanel);
     if (await cmdPanel.isExisting()) {
       const cmdInput = await $(BULK_CMD.bulkCommandInput);
-      await cmdInput.setValue('hostname');
+      await cmdInput.setValue("hostname");
 
       const executeBtn = await $(BULK_CMD.bulkExecuteBtn);
       await executeBtn.click();

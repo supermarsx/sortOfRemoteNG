@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, SSH_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  SSH_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 async function createSSHConnectionWithCreds(
   name: string,
@@ -18,9 +27,9 @@ async function createSSHConnectionWithCreds(
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'SSH');
+  await selectCustomOption(S.editorProtocol, "SSH");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
@@ -43,10 +52,10 @@ async function connectFirstItem(): Promise<void> {
   await item.doubleClick();
 }
 
-describe('SSH Auth Methods', () => {
+describe("SSH Auth Methods", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('ssh', SSH_PORT, 30_000);
+    await waitForContainer("ssh", SSH_PORT, 30_000);
   });
 
   after(async () => {
@@ -55,15 +64,15 @@ describe('SSH Auth Methods', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('SSH Auth Test');
+    await createCollection("SSH Auth Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should connect successfully with correct password', async () => {
-    await createSSHConnectionWithCreds('Good Auth', 'testuser', 'testpass123');
+  it("should connect successfully with correct password", async () => {
+    await createSSHConnectionWithCreds("Good Auth", "testuser", "testpass123");
     await connectFirstItem();
 
     const terminal = await $(S.sshTerminal);
@@ -71,8 +80,8 @@ describe('SSH Auth Methods', () => {
     expect(await terminal.isDisplayed()).toBe(true);
   });
 
-  it('should show error with wrong password', async () => {
-    await createSSHConnectionWithCreds('Bad Auth', 'testuser', 'wrongpassword');
+  it("should show error with wrong password", async () => {
+    await createSSHConnectionWithCreds("Bad Auth", "testuser", "wrongpassword");
     await connectFirstItem();
 
     // Wait for connection attempt to fail
@@ -94,12 +103,12 @@ describe('SSH Auth Methods', () => {
     }
   });
 
-  it('should show host key trust dialog on first connect', async () => {
+  it("should show host key trust dialog on first connect", async () => {
     // Clear any stored host keys by resetting state
     await resetAppState();
-    await createCollection('SSH TOFU Test');
+    await createCollection("SSH TOFU Test");
 
-    await createSSHConnectionWithCreds('TOFU SSH', 'testuser', 'testpass123');
+    await createSSHConnectionWithCreds("TOFU SSH", "testuser", "testpass123");
     await connectFirstItem();
 
     // On first connection a host key confirmation dialog may appear
@@ -125,9 +134,9 @@ describe('SSH Auth Methods', () => {
     }
   });
 
-  it('should not show host key dialog on subsequent connects', async () => {
+  it("should not show host key dialog on subsequent connects", async () => {
     // First connect — accept host key
-    await createSSHConnectionWithCreds('Repeat SSH', 'testuser', 'testpass123');
+    await createSSHConnectionWithCreds("Repeat SSH", "testuser", "testpass123");
     await connectFirstItem();
 
     await browser.pause(5000);

@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, VNC_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  VNC_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 // VNC-specific selectors
 const VNC = {
@@ -25,16 +34,16 @@ async function createVNCConnection(name: string): Promise<void> {
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'VNC');
+  await selectCustomOption(S.editorProtocol, "VNC");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
   await portInput.setValue(String(VNC_PORT));
 
   const passwordInput = await $(S.editorPassword);
-  await passwordInput.setValue('vnctest123');
+  await passwordInput.setValue("vnctest123");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
@@ -47,10 +56,10 @@ async function connectFirstItem(): Promise<void> {
   await item.doubleClick();
 }
 
-describe('VNC Connect', () => {
+describe("VNC Connect", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('vnc', VNC_PORT, 30_000);
+    await waitForContainer("vnc", VNC_PORT, 30_000);
   });
 
   after(async () => {
@@ -59,22 +68,22 @@ describe('VNC Connect', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('VNC Test');
+    await createCollection("VNC Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should connect to VNC server and render viewer', async () => {
-    await createVNCConnection('Test VNC');
+  it("should connect to VNC server and render viewer", async () => {
+    await createVNCConnection("Test VNC");
     await connectFirstItem();
 
     // Handle password dialog if it appears
     const pwDialog = await $(VNC.vncPasswordDialog);
     if (await pwDialog.isExisting()) {
       const pwInput = await $(VNC.vncPasswordInput);
-      await pwInput.setValue('vnctest123');
+      await pwInput.setValue("vnctest123");
       const pwSubmit = await $(VNC.vncPasswordSubmit);
       await pwSubmit.click();
       await browser.pause(1000);
@@ -85,14 +94,14 @@ describe('VNC Connect', () => {
     expect(await viewer.isDisplayed()).toBe(true);
   });
 
-  it('should show VNC canvas after connection', async () => {
-    await createVNCConnection('VNC Canvas');
+  it("should show VNC canvas after connection", async () => {
+    await createVNCConnection("VNC Canvas");
     await connectFirstItem();
 
     const pwDialog = await $(VNC.vncPasswordDialog);
     if (await pwDialog.isExisting()) {
       const pwInput = await $(VNC.vncPasswordInput);
-      await pwInput.setValue('vnctest123');
+      await pwInput.setValue("vnctest123");
       const pwSubmit = await $(VNC.vncPasswordSubmit);
       await pwSubmit.click();
       await browser.pause(1000);
@@ -103,14 +112,14 @@ describe('VNC Connect', () => {
     expect(await canvas.isDisplayed()).toBe(true);
   });
 
-  it('should show session tab when VNC is connected', async () => {
-    await createVNCConnection('VNC Tab');
+  it("should show session tab when VNC is connected", async () => {
+    await createVNCConnection("VNC Tab");
     await connectFirstItem();
 
     const pwDialog = await $(VNC.vncPasswordDialog);
     if (await pwDialog.isExisting()) {
       const pwInput = await $(VNC.vncPasswordInput);
-      await pwInput.setValue('vnctest123');
+      await pwInput.setValue("vnctest123");
       const pwSubmit = await $(VNC.vncPasswordSubmit);
       await pwSubmit.click();
       await browser.pause(1000);
@@ -123,14 +132,14 @@ describe('VNC Connect', () => {
     expect(tabs.length).toBeGreaterThan(0);
   });
 
-  it('should disconnect cleanly from VNC session', async () => {
-    await createVNCConnection('VNC Disconnect');
+  it("should disconnect cleanly from VNC session", async () => {
+    await createVNCConnection("VNC Disconnect");
     await connectFirstItem();
 
     const pwDialog = await $(VNC.vncPasswordDialog);
     if (await pwDialog.isExisting()) {
       const pwInput = await $(VNC.vncPasswordInput);
-      await pwInput.setValue('vnctest123');
+      await pwInput.setValue("vnctest123");
       const pwSubmit = await $(VNC.vncPasswordSubmit);
       await pwSubmit.click();
       await browser.pause(1000);

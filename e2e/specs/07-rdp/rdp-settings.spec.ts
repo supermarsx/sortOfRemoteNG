@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, RDP_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  RDP_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 // RDP settings selectors
 const RDP_SETTINGS = {
@@ -24,19 +33,19 @@ async function createRDPConnection(name: string): Promise<void> {
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'RDP');
+  await selectCustomOption(S.editorProtocol, "RDP");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
   await portInput.setValue(String(RDP_PORT));
 
   const usernameInput = await $(S.editorUsername);
-  await usernameInput.setValue('testuser');
+  await usernameInput.setValue("testuser");
 
   const passwordInput = await $(S.editorPassword);
-  await passwordInput.setValue('testpass123');
+  await passwordInput.setValue("testpass123");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
@@ -57,10 +66,10 @@ async function openConnectionEditor(name: string): Promise<void> {
   await editor.waitForDisplayed({ timeout: 5_000 });
 }
 
-describe('RDP Settings', () => {
+describe("RDP Settings", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('rdp', RDP_PORT, 60_000);
+    await waitForContainer("rdp", RDP_PORT, 60_000);
   });
 
   after(async () => {
@@ -69,20 +78,20 @@ describe('RDP Settings', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('RDP Settings Test');
+    await createCollection("RDP Settings Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should change RDP resolution in connection settings', async () => {
-    await createRDPConnection('RDP Res');
-    await openConnectionEditor('RDP Res');
+  it("should change RDP resolution in connection settings", async () => {
+    await createRDPConnection("RDP Res");
+    await openConnectionEditor("RDP Res");
 
     const resolution = await $(RDP_SETTINGS.resolutionSelect);
     if (await resolution.isExisting()) {
-      await resolution.selectByVisibleText('1280x720');
+      await resolution.selectByVisibleText("1280x720");
       await browser.pause(500);
 
       const saveBtn = await $(S.editorSave);
@@ -90,16 +99,16 @@ describe('RDP Settings', () => {
       await browser.pause(500);
 
       // Re-open editor and verify the setting persisted
-      await openConnectionEditor('RDP Res');
+      await openConnectionEditor("RDP Res");
       const resValue = await $(RDP_SETTINGS.resolutionSelect);
       const selected = await resValue.getValue();
-      expect(selected).toContain('1280');
+      expect(selected).toContain("1280");
     }
   });
 
-  it('should toggle audio redirection', async () => {
-    await createRDPConnection('RDP Audio');
-    await openConnectionEditor('RDP Audio');
+  it("should toggle audio redirection", async () => {
+    await createRDPConnection("RDP Audio");
+    await openConnectionEditor("RDP Audio");
 
     const audioToggle = await $(RDP_SETTINGS.audioRedirection);
     if (await audioToggle.isExisting()) {
@@ -116,9 +125,9 @@ describe('RDP Settings', () => {
     }
   });
 
-  it('should toggle clipboard redirection', async () => {
-    await createRDPConnection('RDP Clipboard');
-    await openConnectionEditor('RDP Clipboard');
+  it("should toggle clipboard redirection", async () => {
+    await createRDPConnection("RDP Clipboard");
+    await openConnectionEditor("RDP Clipboard");
 
     const clipboardToggle = await $(RDP_SETTINGS.clipboardRedirection);
     if (await clipboardToggle.isExisting()) {
@@ -135,13 +144,13 @@ describe('RDP Settings', () => {
     }
   });
 
-  it('should change performance settings', async () => {
-    await createRDPConnection('RDP Perf');
-    await openConnectionEditor('RDP Perf');
+  it("should change performance settings", async () => {
+    await createRDPConnection("RDP Perf");
+    await openConnectionEditor("RDP Perf");
 
     const perfSelect = await $(RDP_SETTINGS.performanceSelect);
     if (await perfSelect.isExisting()) {
-      await perfSelect.selectByVisibleText('LAN');
+      await perfSelect.selectByVisibleText("LAN");
       await browser.pause(300);
 
       const saveBtn = await $(S.editorSave);
@@ -149,20 +158,20 @@ describe('RDP Settings', () => {
       await browser.pause(500);
 
       // Verify persistence
-      await openConnectionEditor('RDP Perf');
+      await openConnectionEditor("RDP Perf");
       const perfValue = await $(RDP_SETTINGS.performanceSelect);
       const selected = await perfValue.getValue();
-      expect(selected.toLowerCase()).toContain('lan');
+      expect(selected.toLowerCase()).toContain("lan");
     }
   });
 
-  it('should apply resolution setting when connecting', async () => {
-    await createRDPConnection('RDP Apply Res');
-    await openConnectionEditor('RDP Apply Res');
+  it("should apply resolution setting when connecting", async () => {
+    await createRDPConnection("RDP Apply Res");
+    await openConnectionEditor("RDP Apply Res");
 
     const resolution = await $(RDP_SETTINGS.resolutionSelect);
     if (await resolution.isExisting()) {
-      await resolution.selectByVisibleText('1280x720');
+      await resolution.selectByVisibleText("1280x720");
 
       const saveBtn = await $(S.editorSave);
       await saveBtn.click();

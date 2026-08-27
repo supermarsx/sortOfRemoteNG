@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, SSH_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  SSH_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 // Tunnel-specific selectors
 const TUNNEL = {
@@ -26,22 +35,22 @@ async function createAndConnectSSH(): Promise<void> {
   await editor.waitForDisplayed({ timeout: 5_000 });
 
   const nameInput = await $(S.editorName);
-  await nameInput.setValue('Tunnel Test');
+  await nameInput.setValue("Tunnel Test");
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'SSH');
+  await selectCustomOption(S.editorProtocol, "SSH");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
   await portInput.setValue(String(SSH_PORT));
 
   const usernameInput = await $(S.editorUsername);
-  await usernameInput.setValue('testuser');
+  await usernameInput.setValue("testuser");
 
   const passwordInput = await $(S.editorPassword);
-  await passwordInput.setValue('testpass123');
+  await passwordInput.setValue("testpass123");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
@@ -56,10 +65,10 @@ async function createAndConnectSSH(): Promise<void> {
   await browser.pause(3000);
 }
 
-describe('SSH Tunnels (Port Forwarding)', () => {
+describe("SSH Tunnels (Port Forwarding)", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('ssh', SSH_PORT, 30_000);
+    await waitForContainer("ssh", SSH_PORT, 30_000);
   });
 
   after(async () => {
@@ -68,14 +77,14 @@ describe('SSH Tunnels (Port Forwarding)', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('SSH Tunnel Test');
+    await createCollection("SSH Tunnel Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should create a local port forward', async () => {
+  it("should create a local port forward", async () => {
     await createAndConnectSSH();
 
     const tunnelPanel = await $(TUNNEL.tunnelPanel);
@@ -85,16 +94,16 @@ describe('SSH Tunnels (Port Forwarding)', () => {
       await browser.pause(500);
 
       const typeSelect = await $(TUNNEL.tunnelType);
-      await typeSelect.selectByVisibleText('Local');
+      await typeSelect.selectByVisibleText("Local");
 
       const localPort = await $(TUNNEL.tunnelLocalPort);
-      await localPort.setValue('18080');
+      await localPort.setValue("18080");
 
       const remoteHost = await $(TUNNEL.tunnelRemoteHost);
-      await remoteHost.setValue('localhost');
+      await remoteHost.setValue("localhost");
 
       const remotePort = await $(TUNNEL.tunnelRemotePort);
-      await remotePort.setValue('80');
+      await remotePort.setValue("80");
 
       const saveBtn = await $(TUNNEL.tunnelSave);
       await saveBtn.click();
@@ -105,7 +114,7 @@ describe('SSH Tunnels (Port Forwarding)', () => {
     }
   });
 
-  it('should create a dynamic SOCKS proxy', async () => {
+  it("should create a dynamic SOCKS proxy", async () => {
     await createAndConnectSSH();
 
     const tunnelPanel = await $(TUNNEL.tunnelPanel);
@@ -115,10 +124,10 @@ describe('SSH Tunnels (Port Forwarding)', () => {
       await browser.pause(500);
 
       const typeSelect = await $(TUNNEL.tunnelType);
-      await typeSelect.selectByVisibleText('Dynamic');
+      await typeSelect.selectByVisibleText("Dynamic");
 
       const localPort = await $(TUNNEL.tunnelLocalPort);
-      await localPort.setValue('11080');
+      await localPort.setValue("11080");
 
       const saveBtn = await $(TUNNEL.tunnelSave);
       await saveBtn.click();
@@ -129,7 +138,7 @@ describe('SSH Tunnels (Port Forwarding)', () => {
     }
   });
 
-  it('should show tunnel as active during session', async () => {
+  it("should show tunnel as active during session", async () => {
     await createAndConnectSSH();
 
     const tunnelPanel = await $(TUNNEL.tunnelPanel);
@@ -139,16 +148,16 @@ describe('SSH Tunnels (Port Forwarding)', () => {
       await browser.pause(500);
 
       const typeSelect = await $(TUNNEL.tunnelType);
-      await typeSelect.selectByVisibleText('Local');
+      await typeSelect.selectByVisibleText("Local");
 
       const localPort = await $(TUNNEL.tunnelLocalPort);
-      await localPort.setValue('18081');
+      await localPort.setValue("18081");
 
       const remoteHost = await $(TUNNEL.tunnelRemoteHost);
-      await remoteHost.setValue('localhost');
+      await remoteHost.setValue("localhost");
 
       const remotePort = await $(TUNNEL.tunnelRemotePort);
-      await remotePort.setValue('80');
+      await remotePort.setValue("80");
 
       const saveBtn = await $(TUNNEL.tunnelSave);
       await saveBtn.click();
@@ -157,12 +166,12 @@ describe('SSH Tunnels (Port Forwarding)', () => {
       const status = await $(TUNNEL.tunnelStatus);
       if (await status.isExisting()) {
         const text = await status.getText();
-        expect(text.toLowerCase()).toContain('active');
+        expect(text.toLowerCase()).toContain("active");
       }
     }
   });
 
-  it('should close tunnel on disconnect', async () => {
+  it("should close tunnel on disconnect", async () => {
     await createAndConnectSSH();
 
     const tunnelPanel = await $(TUNNEL.tunnelPanel);
@@ -172,16 +181,16 @@ describe('SSH Tunnels (Port Forwarding)', () => {
       await browser.pause(500);
 
       const typeSelect = await $(TUNNEL.tunnelType);
-      await typeSelect.selectByVisibleText('Local');
+      await typeSelect.selectByVisibleText("Local");
 
       const localPort = await $(TUNNEL.tunnelLocalPort);
-      await localPort.setValue('18082');
+      await localPort.setValue("18082");
 
       const remoteHost = await $(TUNNEL.tunnelRemoteHost);
-      await remoteHost.setValue('localhost');
+      await remoteHost.setValue("localhost");
 
       const remotePort = await $(TUNNEL.tunnelRemotePort);
-      await remotePort.setValue('80');
+      await remotePort.setValue("80");
 
       const saveBtn = await $(TUNNEL.tunnelSave);
       await saveBtn.click();
@@ -198,7 +207,7 @@ describe('SSH Tunnels (Port Forwarding)', () => {
         const status = await items[0].$(TUNNEL.tunnelStatus);
         if (await status.isExisting()) {
           const text = await status.getText();
-          expect(text.toLowerCase()).not.toContain('active');
+          expect(text.toLowerCase()).not.toContain("active");
         }
       }
     }

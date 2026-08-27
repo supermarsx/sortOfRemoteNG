@@ -1,16 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
-describe('Smart Filter Presets', () => {
+describe("Smart Filter Presets", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Preset Tests');
+    await createCollection("Preset Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
   });
 
-  it('should save a filter as a preset', async () => {
+  it("should save a filter as a preset", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -19,12 +19,12 @@ describe('Smart Filter Presets', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'protocol');
+    await selectCustomOption(S.smartFilterField, "protocol");
 
-    await selectCustomOption(S.smartFilterOperator, 'equals');
+    await selectCustomOption(S.smartFilterOperator, "equals");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('SSH');
+    await valueInput.setValue("SSH");
 
     // Save as preset
     const savePresetBtn = await $(S.smartFilterSavePreset);
@@ -32,7 +32,7 @@ describe('Smart Filter Presets', () => {
     await browser.pause(300);
 
     const presetNameInput = await $(S.smartFilterPresetName);
-    await presetNameInput.setValue('SSH Only');
+    await presetNameInput.setValue("SSH Only");
 
     const confirmBtn = await $(S.smartFilterPresetConfirm);
     await confirmBtn.click();
@@ -45,10 +45,10 @@ describe('Smart Filter Presets', () => {
 
     const presetItems = await $$('[data-testid="smart-filter-preset-item"]');
     const presetNames = await presetItems.map((item) => item.getText());
-    expect(presetNames).toContain('SSH Only');
+    expect(presetNames).toContain("SSH Only");
   });
 
-  it('should load a saved preset', async () => {
+  it("should load a saved preset", async () => {
     // First save a preset
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
@@ -58,19 +58,19 @@ describe('Smart Filter Presets', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'protocol');
+    await selectCustomOption(S.smartFilterField, "protocol");
 
-    await selectCustomOption(S.smartFilterOperator, 'equals');
+    await selectCustomOption(S.smartFilterOperator, "equals");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('RDP');
+    await valueInput.setValue("RDP");
 
     const savePresetBtn = await $(S.smartFilterSavePreset);
     await savePresetBtn.click();
     await browser.pause(300);
 
     const presetNameInput = await $(S.smartFilterPresetName);
-    await presetNameInput.setValue('RDP Only');
+    await presetNameInput.setValue("RDP Only");
 
     const confirmBtn = await $(S.smartFilterPresetConfirm);
     await confirmBtn.click();
@@ -89,7 +89,7 @@ describe('Smart Filter Presets', () => {
     const presetItems = await $$('[data-testid="smart-filter-preset-item"]');
     for (const item of presetItems) {
       const text = await item.getText();
-      if (text.includes('RDP Only')) {
+      if (text.includes("RDP Only")) {
         await item.click();
         break;
       }
@@ -99,6 +99,6 @@ describe('Smart Filter Presets', () => {
     // Verify filter is applied
     const appliedField = await $(S.smartFilterField);
     const selectedText = await appliedField.getValue();
-    expect(selectedText).toContain('protocol');
+    expect(selectedText).toContain("protocol");
   });
 });

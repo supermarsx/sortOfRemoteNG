@@ -1,11 +1,11 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 describe("Let's Encrypt Manager", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('LetsEncrypt Tests');
+    await createCollection("LetsEncrypt Tests");
   });
 
   it("should open Let's Encrypt manager", async () => {
@@ -18,7 +18,7 @@ describe("Let's Encrypt Manager", () => {
     expect(await overviewTab.isDisplayed()).toBe(true);
   });
 
-  it('should show all tabs', async () => {
+  it("should show all tabs", async () => {
     const leManager = await $(S.letsEncryptManager);
     await leManager.click();
     await browser.pause(500);
@@ -36,7 +36,7 @@ describe("Let's Encrypt Manager", () => {
     expect(await healthTab.isExisting()).toBe(true);
   });
 
-  it('should show certificates list', async () => {
+  it("should show certificates list", async () => {
     const leManager = await $(S.letsEncryptManager);
     await leManager.click();
     await browser.pause(500);
@@ -49,7 +49,7 @@ describe("Let's Encrypt Manager", () => {
     expect(certItems).toBeDefined();
   });
 
-  it('should have request certificate button', async () => {
+  it("should have request certificate button", async () => {
     const leManager = await $(S.letsEncryptManager);
     await leManager.click();
     await browser.pause(500);
@@ -63,13 +63,13 @@ describe("Let's Encrypt Manager", () => {
   });
 });
 
-describe('Credential Manager — Extended', () => {
+describe("Credential Manager — Extended", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Credential Extended Tests');
+    await createCollection("Credential Extended Tests");
   });
 
-  it('should show credential tabs (All, Expiring, Expired, Groups, Policies, Audit)', async () => {
+  it("should show credential tabs (All, Expiring, Expired, Groups, Policies, Audit)", async () => {
     const credManager = await $('[data-testid="open-credential-manager"]');
     await credManager.click();
     await browser.pause(500);
@@ -92,7 +92,7 @@ describe('Credential Manager — Extended', () => {
     expect(await auditTab.isExisting()).toBe(true);
   });
 
-  it('should add a new credential', async () => {
+  it("should add a new credential", async () => {
     const credManager = await $('[data-testid="open-credential-manager"]');
     await credManager.click();
     await browser.pause(500);
@@ -106,10 +106,10 @@ describe('Credential Manager — Extended', () => {
       await browser.pause(300);
 
       const credNameInput = await $('[data-testid="credential-name-input"]');
-      await credNameInput.setValue('Test API Key');
+      await credNameInput.setValue("Test API Key");
 
       const credValueInput = await $('[data-testid="credential-value-input"]');
-      await credValueInput.setValue('secret-api-key-123');
+      await credValueInput.setValue("secret-api-key-123");
 
       const saveBtn = await $('[data-testid="credential-save"]');
       await saveBtn.click();
@@ -120,7 +120,7 @@ describe('Credential Manager — Extended', () => {
     }
   });
 
-  it('should show password strength indicator', async () => {
+  it("should show password strength indicator", async () => {
     const credManager = await $('[data-testid="open-credential-manager"]');
     await credManager.click();
     await browser.pause(500);
@@ -134,15 +134,17 @@ describe('Credential Manager — Extended', () => {
       await browser.pause(300);
 
       const credValueInput = await $('[data-testid="credential-value-input"]');
-      await credValueInput.setValue('Str0ng!P@ssword#123');
+      await credValueInput.setValue("Str0ng!P@ssword#123");
       await browser.pause(500);
 
-      const strengthMeter = await $('[data-testid="credential-strength-meter"]');
+      const strengthMeter = await $(
+        '[data-testid="credential-strength-meter"]',
+      );
       expect(await strengthMeter.isExisting()).toBe(true);
     }
   });
 
-  it('should switch to Expiring tab and show soon-to-expire items', async () => {
+  it("should switch to Expiring tab and show soon-to-expire items", async () => {
     const credManager = await $('[data-testid="open-credential-manager"]');
     await credManager.click();
     await browser.pause(500);
@@ -159,7 +161,7 @@ describe('Credential Manager — Extended', () => {
     expect(items).toBeDefined();
   });
 
-  it('should switch to Policies tab', async () => {
+  it("should switch to Policies tab", async () => {
     const credManager = await $('[data-testid="open-credential-manager"]');
     await credManager.click();
     await browser.pause(500);
@@ -176,10 +178,10 @@ describe('Credential Manager — Extended', () => {
   });
 });
 
-describe('Connection Editor — Recovery Info', () => {
+describe("Connection Editor — Recovery Info", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Recovery Info Tests');
+    await createCollection("Recovery Info Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
@@ -191,19 +193,19 @@ describe('Connection Editor — Recovery Info', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
 
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Recovery Test');
+    await nameInput.setValue("Recovery Test");
 
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('10.0.0.1');
+    await hostnameInput.setValue("10.0.0.1");
 
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await selectCustomOption(S.editorProtocol, "SSH");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
   });
 
-  it('should show recovery info section in editor', async () => {
+  it("should show recovery info section in editor", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     await items[0].doubleClick();
@@ -218,7 +220,7 @@ describe('Connection Editor — Recovery Info', () => {
     expect(hasRecoveryFields).toBe(true);
   });
 
-  it('should save recovery phone number', async () => {
+  it("should save recovery phone number", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     await items[0].doubleClick();
@@ -226,7 +228,7 @@ describe('Connection Editor — Recovery Info', () => {
 
     const recoveryPhone = await $(S.editorRecoveryPhone);
     if (await recoveryPhone.isExisting()) {
-      await recoveryPhone.setValue('+1-555-0100');
+      await recoveryPhone.setValue("+1-555-0100");
 
       const saveBtn = await $(S.editorSave);
       await saveBtn.click();
@@ -239,11 +241,11 @@ describe('Connection Editor — Recovery Info', () => {
 
       const savedPhone = await $(S.editorRecoveryPhone);
       const value = await savedPhone.getValue();
-      expect(value).toContain('555-0100');
+      expect(value).toContain("555-0100");
     }
   });
 
-  it('should show backup codes section', async () => {
+  it("should show backup codes section", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     await items[0].doubleClick();
@@ -255,7 +257,7 @@ describe('Connection Editor — Recovery Info', () => {
     }
   });
 
-  it('should show security questions section', async () => {
+  it("should show security questions section", async () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     await items[0].doubleClick();

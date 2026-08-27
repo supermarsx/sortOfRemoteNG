@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, HTTP_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  HTTP_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 // HTTP-specific selectors
 const HTTP = {
@@ -14,7 +23,10 @@ const HTTP = {
   httpStatusIndicator: '[data-testid="http-status"]',
 } as const;
 
-async function createHTTPConnection(name: string, useAuth: boolean = false): Promise<void> {
+async function createHTTPConnection(
+  name: string,
+  useAuth: boolean = false,
+): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
   await addBtn.click();
 
@@ -25,9 +37,9 @@ async function createHTTPConnection(name: string, useAuth: boolean = false): Pro
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'HTTP');
+  await selectCustomOption(S.editorProtocol, "HTTP");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
@@ -35,10 +47,10 @@ async function createHTTPConnection(name: string, useAuth: boolean = false): Pro
 
   if (useAuth) {
     const usernameInput = await $(S.editorUsername);
-    await usernameInput.setValue('testuser');
+    await usernameInput.setValue("testuser");
 
     const passwordInput = await $(S.editorPassword);
-    await passwordInput.setValue('testpass123');
+    await passwordInput.setValue("testpass123");
   }
 
   const saveBtn = await $(S.editorSave);
@@ -52,10 +64,10 @@ async function connectFirstItem(): Promise<void> {
   await item.doubleClick();
 }
 
-describe('HTTP Viewer', () => {
+describe("HTTP Viewer", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('http', HTTP_PORT, 30_000);
+    await waitForContainer("http", HTTP_PORT, 30_000);
   });
 
   after(async () => {
@@ -64,24 +76,24 @@ describe('HTTP Viewer', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('HTTP Test');
+    await createCollection("HTTP Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should create an HTTP connection', async () => {
-    await createHTTPConnection('Test HTTP');
+  it("should create an HTTP connection", async () => {
+    await createHTTPConnection("Test HTTP");
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const names = await items.map((item) => item.getText());
-    expect(names.some((n) => n.includes('Test HTTP'))).toBe(true);
+    expect(names.some((n) => n.includes("Test HTTP"))).toBe(true);
   });
 
-  it('should load page in HTTP viewer when connecting', async () => {
-    await createHTTPConnection('HTTP View');
+  it("should load page in HTTP viewer when connecting", async () => {
+    await createHTTPConnection("HTTP View");
     await connectFirstItem();
 
     const viewer = await $(HTTP.httpViewer);
@@ -89,8 +101,8 @@ describe('HTTP Viewer', () => {
     expect(await viewer.isDisplayed()).toBe(true);
   });
 
-  it('should show a webview or iframe for HTTP content', async () => {
-    await createHTTPConnection('HTTP Webview');
+  it("should show a webview or iframe for HTTP content", async () => {
+    await createHTTPConnection("HTTP Webview");
     await connectFirstItem();
 
     const webview = await $(HTTP.httpWebview);
@@ -98,8 +110,8 @@ describe('HTTP Viewer', () => {
     expect(await webview.isDisplayed()).toBe(true);
   });
 
-  it('should send basic auth automatically when credentials configured', async () => {
-    await createHTTPConnection('HTTP Auth', true);
+  it("should send basic auth automatically when credentials configured", async () => {
+    await createHTTPConnection("HTTP Auth", true);
     await connectFirstItem();
 
     const viewer = await $(HTTP.httpViewer);
@@ -110,15 +122,15 @@ describe('HTTP Viewer', () => {
     if (await status.isExisting()) {
       const text = await status.getText();
       // Status should indicate success, not 401 Unauthorized
-      expect(text).not.toContain('401');
+      expect(text).not.toContain("401");
     }
 
     // The viewer should still be displayed (page loaded)
     expect(await viewer.isDisplayed()).toBe(true);
   });
 
-  it('should show session tab when HTTP viewer is active', async () => {
-    await createHTTPConnection('HTTP Tab');
+  it("should show session tab when HTTP viewer is active", async () => {
+    await createHTTPConnection("HTTP Tab");
     await connectFirstItem();
 
     const viewer = await $(HTTP.httpViewer);
@@ -128,8 +140,8 @@ describe('HTTP Viewer', () => {
     expect(tabs.length).toBeGreaterThan(0);
   });
 
-  it('should have navigation controls in viewer', async () => {
-    await createHTTPConnection('HTTP Nav');
+  it("should have navigation controls in viewer", async () => {
+    await createHTTPConnection("HTTP Nav");
     await connectFirstItem();
 
     const viewer = await $(HTTP.httpViewer);

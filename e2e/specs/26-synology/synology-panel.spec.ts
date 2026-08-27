@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 async function createSynologyConnection(): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
@@ -10,36 +10,36 @@ async function createSynologyConnection(): Promise<void> {
   await editor.waitForDisplayed({ timeout: 5_000 });
 
   const nameInput = await $(S.editorName);
-  await nameInput.setValue('Test NAS');
+  await nameInput.setValue("Test NAS");
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('192.168.1.100');
+  await hostnameInput.setValue("192.168.1.100");
 
-  await selectCustomOption(S.editorProtocol, 'Synology');
+  await selectCustomOption(S.editorProtocol, "Synology");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
   await browser.pause(500);
 }
 
-describe('Synology Panel — Connection', () => {
+describe("Synology Panel — Connection", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Synology Tests');
+    await createCollection("Synology Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
   });
 
-  it('should create a Synology connection', async () => {
+  it("should create a Synology connection", async () => {
     await createSynologyConnection();
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const names = await items.map((item) => item.getText());
-    expect(names).toContain('Test NAS');
+    expect(names).toContain("Test NAS");
   });
 
-  it('should open Synology panel when connecting', async () => {
+  it("should open Synology panel when connecting", async () => {
     await createSynologyConnection();
 
     const tree = await $(S.connectionTree);
@@ -52,7 +52,7 @@ describe('Synology Panel — Connection', () => {
     expect(await panel.isDisplayed()).toBe(true);
   });
 
-  it('should show connection form when not connected', async () => {
+  it("should show connection form when not connected", async () => {
     await createSynologyConnection();
 
     const tree = await $(S.connectionTree);
@@ -67,7 +67,7 @@ describe('Synology Panel — Connection', () => {
     expect(await connectionForm.isExisting()).toBe(true);
   });
 
-  it('should have host, username and password fields in connection form', async () => {
+  it("should have host, username and password fields in connection form", async () => {
     await createSynologyConnection();
 
     const tree = await $(S.connectionTree);
@@ -90,10 +90,10 @@ describe('Synology Panel — Connection', () => {
   });
 });
 
-describe('Synology Panel — Tab Navigation', () => {
+describe("Synology Panel — Tab Navigation", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Synology Tab Tests');
+    await createCollection("Synology Tab Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
@@ -107,50 +107,50 @@ describe('Synology Panel — Tab Navigation', () => {
     await panel.waitForDisplayed({ timeout: 10_000 });
   });
 
-  it('should show Dashboard tab', async () => {
+  it("should show Dashboard tab", async () => {
     const dashboardTab = await $(S.synologyDashboardTab);
     expect(await dashboardTab.isExisting()).toBe(true);
   });
 
-  it('should show System tab', async () => {
+  it("should show System tab", async () => {
     const systemTab = await $(S.synologySystemTab);
     expect(await systemTab.isExisting()).toBe(true);
   });
 
-  it('should show Storage tab', async () => {
+  it("should show Storage tab", async () => {
     const storageTab = await $(S.synologyStorageTab);
     expect(await storageTab.isExisting()).toBe(true);
   });
 
-  it('should show FileStation tab', async () => {
+  it("should show FileStation tab", async () => {
     const fileStationTab = await $(S.synologyFileStationTab);
     expect(await fileStationTab.isExisting()).toBe(true);
   });
 
-  it('should show Packages tab', async () => {
+  it("should show Packages tab", async () => {
     const packagesTab = await $(S.synologyPackagesTab);
     expect(await packagesTab.isExisting()).toBe(true);
   });
 
-  it('should show Docker tab', async () => {
+  it("should show Docker tab", async () => {
     const dockerTab = await $(S.synologyDockerTab);
     expect(await dockerTab.isExisting()).toBe(true);
   });
 
-  it('should switch between tabs', async () => {
+  it("should switch between tabs", async () => {
     const systemTab = await $(S.synologySystemTab);
     await systemTab.click();
     await browser.pause(500);
 
     // System should be active
-    const activeClass = await systemTab.getAttribute('class');
+    const activeClass = await systemTab.getAttribute("class");
     expect(activeClass).toMatch(/active|selected/);
 
     const storageTab = await $(S.synologyStorageTab);
     await storageTab.click();
     await browser.pause(500);
 
-    const storageClass = await storageTab.getAttribute('class');
+    const storageClass = await storageTab.getAttribute("class");
     expect(storageClass).toMatch(/active|selected/);
   });
 });

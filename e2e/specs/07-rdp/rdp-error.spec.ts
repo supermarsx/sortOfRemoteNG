@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, RDP_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  RDP_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 // RDP error selectors
 const RDP_ERR = {
@@ -29,7 +38,7 @@ async function createRDPConnection(
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue(host);
 
-  await selectCustomOption(S.editorProtocol, 'RDP');
+  await selectCustomOption(S.editorProtocol, "RDP");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
@@ -52,10 +61,10 @@ async function connectFirstItem(): Promise<void> {
   await item.doubleClick();
 }
 
-describe('RDP Error Handling', () => {
+describe("RDP Error Handling", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('rdp', RDP_PORT, 60_000);
+    await waitForContainer("rdp", RDP_PORT, 60_000);
   });
 
   after(async () => {
@@ -64,16 +73,16 @@ describe('RDP Error Handling', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('RDP Error Test');
+    await createCollection("RDP Error Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should show RDPErrorScreen when host is unreachable', async () => {
+  it("should show RDPErrorScreen when host is unreachable", async () => {
     // Use an unreachable host — 192.0.2.1 is reserved for documentation (RFC 5737)
-    await createRDPConnection('Bad RDP', '192.0.2.1', 3389, 'admin', 'admin');
+    await createRDPConnection("Bad RDP", "192.0.2.1", 3389, "admin", "admin");
     await connectFirstItem();
 
     // Wait for connection timeout
@@ -84,8 +93,8 @@ describe('RDP Error Handling', () => {
     expect(isErrorDisplayed).toBe(true);
   });
 
-  it('should have retry button on error screen', async () => {
-    await createRDPConnection('Retry RDP', '192.0.2.1', 3389, 'admin', 'admin');
+  it("should have retry button on error screen", async () => {
+    await createRDPConnection("Retry RDP", "192.0.2.1", 3389, "admin", "admin");
     await connectFirstItem();
 
     await browser.pause(15_000);
@@ -98,8 +107,8 @@ describe('RDP Error Handling', () => {
     expect(retryExists).toBe(true);
   });
 
-  it('should have close button on error screen', async () => {
-    await createRDPConnection('Close RDP', '192.0.2.1', 3389, 'admin', 'admin');
+  it("should have close button on error screen", async () => {
+    await createRDPConnection("Close RDP", "192.0.2.1", 3389, "admin", "admin");
     await connectFirstItem();
 
     await browser.pause(15_000);
@@ -112,8 +121,14 @@ describe('RDP Error Handling', () => {
     expect(closeExists).toBe(true);
   });
 
-  it('should close error screen when clicking close button', async () => {
-    await createRDPConnection('Close Error', '192.0.2.1', 3389, 'admin', 'admin');
+  it("should close error screen when clicking close button", async () => {
+    await createRDPConnection(
+      "Close Error",
+      "192.0.2.1",
+      3389,
+      "admin",
+      "admin",
+    );
     await connectFirstItem();
 
     await browser.pause(15_000);
@@ -131,9 +146,15 @@ describe('RDP Error Handling', () => {
     }
   });
 
-  it('should show NLA authentication failure message', async () => {
+  it("should show NLA authentication failure message", async () => {
     // Connect to the real RDP container with wrong credentials
-    await createRDPConnection('NLA Fail', 'localhost', RDP_PORT, 'wronguser', 'wrongpass');
+    await createRDPConnection(
+      "NLA Fail",
+      "localhost",
+      RDP_PORT,
+      "wronguser",
+      "wrongpass",
+    );
     await connectFirstItem();
 
     await browser.pause(15_000);

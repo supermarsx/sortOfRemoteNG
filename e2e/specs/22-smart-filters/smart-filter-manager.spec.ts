@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 async function addConnection(
   name: string,
@@ -33,21 +33,21 @@ async function addConnection(
   await browser.pause(500);
 }
 
-describe('Smart Filter Manager', () => {
+describe("Smart Filter Manager", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Filter Tests');
+    await createCollection("Filter Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
     // Create diverse connections for filtering
-    await addConnection('SSH Prod', '10.0.0.1', 'SSH', '22');
-    await addConnection('SSH Dev', '10.0.0.2', 'SSH', '2222');
-    await addConnection('RDP Server', '10.0.0.3', 'RDP', '3389');
-    await addConnection('Web Dashboard', 'https://web.example.com', 'HTTP');
+    await addConnection("SSH Prod", "10.0.0.1", "SSH", "22");
+    await addConnection("SSH Dev", "10.0.0.2", "SSH", "2222");
+    await addConnection("RDP Server", "10.0.0.3", "RDP", "3389");
+    await addConnection("Web Dashboard", "https://web.example.com", "HTTP");
   });
 
-  it('should open smart filter manager', async () => {
+  it("should open smart filter manager", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -57,7 +57,7 @@ describe('Smart Filter Manager', () => {
     expect(await filterManager.isDisplayed()).toBe(true);
   });
 
-  it('should add a filter condition by protocol', async () => {
+  it("should add a filter condition by protocol", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -66,12 +66,12 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'protocol');
+    await selectCustomOption(S.smartFilterField, "protocol");
 
-    await selectCustomOption(S.smartFilterOperator, 'equals');
+    await selectCustomOption(S.smartFilterOperator, "equals");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('SSH');
+    await valueInput.setValue("SSH");
 
     const applyBtn = await $(S.smartFilterApply);
     await applyBtn.click();
@@ -81,12 +81,12 @@ describe('Smart Filter Manager', () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const names = await items.map((item) => item.getText());
-    expect(names).toContain('SSH Prod');
-    expect(names).toContain('SSH Dev');
-    expect(names).not.toContain('RDP Server');
+    expect(names).toContain("SSH Prod");
+    expect(names).toContain("SSH Dev");
+    expect(names).not.toContain("RDP Server");
   });
 
-  it('should filter by hostname using contains operator', async () => {
+  it("should filter by hostname using contains operator", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -95,12 +95,12 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'hostname');
+    await selectCustomOption(S.smartFilterField, "hostname");
 
-    await selectCustomOption(S.smartFilterOperator, 'contains');
+    await selectCustomOption(S.smartFilterOperator, "contains");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('10.0.0');
+    await valueInput.setValue("10.0.0");
 
     const applyBtn = await $(S.smartFilterApply);
     await applyBtn.click();
@@ -111,7 +111,7 @@ describe('Smart Filter Manager', () => {
     expect(items.length).toBe(3); // SSH Prod, SSH Dev, RDP Server
   });
 
-  it('should combine multiple conditions with AND logic', async () => {
+  it("should combine multiple conditions with AND logic", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -121,12 +121,12 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'protocol');
+    await selectCustomOption(S.smartFilterField, "protocol");
 
-    await selectCustomOption(S.smartFilterOperator, 'equals');
+    await selectCustomOption(S.smartFilterOperator, "equals");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('SSH');
+    await valueInput.setValue("SSH");
 
     // Second condition: name contains "Prod"
     await addCondition.click();
@@ -137,15 +137,15 @@ describe('Smart Filter Manager', () => {
     // XPath indices are 1-based, hence [2] where the old code used [1].
     await selectCustomOption(
       `(//*[@data-testid="smart-filter-field"])[2]`,
-      'name',
+      "name",
     );
     await selectCustomOption(
       `(//*[@data-testid="smart-filter-operator"])[2]`,
-      'contains',
+      "contains",
     );
 
     const values = await $$(`${S.smartFilterValue}`);
-    await values[1].setValue('Prod');
+    await values[1].setValue("Prod");
 
     const applyBtn = await $(S.smartFilterApply);
     await applyBtn.click();
@@ -156,7 +156,7 @@ describe('Smart Filter Manager', () => {
     expect(items.length).toBe(1); // Only "SSH Prod"
   });
 
-  it('should toggle between AND/OR logic', async () => {
+  it("should toggle between AND/OR logic", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -171,7 +171,7 @@ describe('Smart Filter Manager', () => {
     expect(newText).not.toBe(initialText);
   });
 
-  it('should clear all filter conditions', async () => {
+  it("should clear all filter conditions", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -180,12 +180,12 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'protocol');
+    await selectCustomOption(S.smartFilterField, "protocol");
 
-    await selectCustomOption(S.smartFilterOperator, 'equals');
+    await selectCustomOption(S.smartFilterOperator, "equals");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('SSH');
+    await valueInput.setValue("SSH");
 
     const applyBtn = await $(S.smartFilterApply);
     await applyBtn.click();
@@ -201,7 +201,7 @@ describe('Smart Filter Manager', () => {
     expect(items.length).toBe(4);
   });
 
-  it('should show filter preview count', async () => {
+  it("should show filter preview count", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -210,20 +210,20 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'protocol');
+    await selectCustomOption(S.smartFilterField, "protocol");
 
-    await selectCustomOption(S.smartFilterOperator, 'equals');
+    await selectCustomOption(S.smartFilterOperator, "equals");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('SSH');
+    await valueInput.setValue("SSH");
     await browser.pause(500);
 
     const preview = await $(S.smartFilterPreview);
     const previewText = await preview.getText();
-    expect(previewText).toContain('2');
+    expect(previewText).toContain("2");
   });
 
-  it('should support regex matching', async () => {
+  it("should support regex matching", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);
@@ -232,12 +232,12 @@ describe('Smart Filter Manager', () => {
     await addCondition.click();
     await browser.pause(300);
 
-    await selectCustomOption(S.smartFilterField, 'name');
+    await selectCustomOption(S.smartFilterField, "name");
 
-    await selectCustomOption(S.smartFilterOperator, 'regex_match');
+    await selectCustomOption(S.smartFilterOperator, "regex_match");
 
     const valueInput = await $(S.smartFilterValue);
-    await valueInput.setValue('SSH.*');
+    await valueInput.setValue("SSH.*");
 
     const applyBtn = await $(S.smartFilterApply);
     await applyBtn.click();
@@ -248,7 +248,7 @@ describe('Smart Filter Manager', () => {
     expect(items.length).toBe(2);
   });
 
-  it('should remove a single condition', async () => {
+  it("should remove a single condition", async () => {
     const filterBtn = await $(S.smartFilterBtn);
     await filterBtn.click();
     await browser.pause(300);

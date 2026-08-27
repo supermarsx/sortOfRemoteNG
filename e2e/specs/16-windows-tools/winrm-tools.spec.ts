@@ -1,24 +1,27 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
-describe('WinRM Tools', () => {
+describe("WinRM Tools", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('WinRM Test');
+    await createCollection("WinRM Test");
   });
 
-  it('should open Windows tool panel for WinRM connection', async () => {
+  it("should open Windows tool panel for WinRM connection", async () => {
     // Create a WinRM connection
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const nameInput = await $(S.editorName);
     await nameInput.waitForDisplayed();
-    await nameInput.setValue('Windows Server');
+    await nameInput.setValue("Windows Server");
     const hostInput = await $(S.editorHostname);
-    await hostInput.setValue('localhost');
+    await hostInput.setValue("localhost");
     // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
-    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
+    await selectCustomOption(S.editorProtocol, [
+      "PowerShell Remoting",
+      "WinRM",
+    ]);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -33,17 +36,20 @@ describe('WinRM Tools', () => {
     expect(await toolPanel.isDisplayed()).toBe(true);
   });
 
-  it('should show Event Viewer tab', async () => {
+  it("should show Event Viewer tab", async () => {
     // Create and open WinRM connection
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const nameInput = await $(S.editorName);
     await nameInput.waitForDisplayed();
-    await nameInput.setValue('EventViewer Host');
+    await nameInput.setValue("EventViewer Host");
     const hostInput = await $(S.editorHostname);
-    await hostInput.setValue('localhost');
+    await hostInput.setValue("localhost");
     // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
-    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
+    await selectCustomOption(S.editorProtocol, [
+      "PowerShell Remoting",
+      "WinRM",
+    ]);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -60,21 +66,26 @@ describe('WinRM Tools', () => {
     await eventTab.click();
     await browser.pause(1000);
 
-    const eventContent = await $('[data-testid="windows-event-viewer-content"]');
+    const eventContent = await $(
+      '[data-testid="windows-event-viewer-content"]',
+    );
     await eventContent.waitForDisplayed({ timeout: 10_000 });
     expect(await eventContent.isDisplayed()).toBe(true);
   });
 
-  it('should show Services tab', async () => {
+  it("should show Services tab", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const nameInput = await $(S.editorName);
     await nameInput.waitForDisplayed();
-    await nameInput.setValue('Services Host');
+    await nameInput.setValue("Services Host");
     const hostInput = await $(S.editorHostname);
-    await hostInput.setValue('localhost');
+    await hostInput.setValue("localhost");
     // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
-    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
+    await selectCustomOption(S.editorProtocol, [
+      "PowerShell Remoting",
+      "WinRM",
+    ]);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -96,16 +107,19 @@ describe('WinRM Tools', () => {
     expect(await servicesContent.isDisplayed()).toBe(true);
   });
 
-  it('should display WinRM error screen for unreachable host', async () => {
+  it("should display WinRM error screen for unreachable host", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const nameInput = await $(S.editorName);
     await nameInput.waitForDisplayed();
-    await nameInput.setValue('Bad WinRM');
+    await nameInput.setValue("Bad WinRM");
     const hostInput = await $(S.editorHostname);
-    await hostInput.setValue('192.0.2.1');
+    await hostInput.setValue("192.0.2.1");
     // The option's label is 'PowerShell Remoting' (desc 'WSMan / WinRM').
-    await selectCustomOption(S.editorProtocol, ['PowerShell Remoting', 'WinRM']);
+    await selectCustomOption(S.editorProtocol, [
+      "PowerShell Remoting",
+      "WinRM",
+    ]);
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);

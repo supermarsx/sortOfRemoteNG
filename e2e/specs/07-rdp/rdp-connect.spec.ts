@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, RDP_PORT, waitForContainer } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  RDP_PORT,
+  waitForContainer,
+} from "../../helpers/docker";
 
 async function createRDPConnection(name: string): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
@@ -14,19 +23,19 @@ async function createRDPConnection(name: string): Promise<void> {
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'RDP');
+  await selectCustomOption(S.editorProtocol, "RDP");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
   await portInput.setValue(String(RDP_PORT));
 
   const usernameInput = await $(S.editorUsername);
-  await usernameInput.setValue('testuser');
+  await usernameInput.setValue("testuser");
 
   const passwordInput = await $(S.editorPassword);
-  await passwordInput.setValue('testpass123');
+  await passwordInput.setValue("testpass123");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
@@ -39,10 +48,10 @@ async function connectFirstItem(): Promise<void> {
   await item.doubleClick();
 }
 
-describe('RDP Connect', () => {
+describe("RDP Connect", () => {
   before(async () => {
     startContainers();
-    await waitForContainer('rdp', RDP_PORT, 60_000);
+    await waitForContainer("rdp", RDP_PORT, 60_000);
   });
 
   after(async () => {
@@ -51,15 +60,15 @@ describe('RDP Connect', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('RDP Test');
+    await createCollection("RDP Test");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should connect to RDP server and render canvas', async () => {
-    await createRDPConnection('Test RDP');
+  it("should connect to RDP server and render canvas", async () => {
+    await createRDPConnection("Test RDP");
     await connectFirstItem();
 
     const canvas = await $(S.rdpCanvas);
@@ -67,8 +76,8 @@ describe('RDP Connect', () => {
     expect(await canvas.isDisplayed()).toBe(true);
   });
 
-  it('should show resolution in status bar after connecting', async () => {
-    await createRDPConnection('RDP Resolution');
+  it("should show resolution in status bar after connecting", async () => {
+    await createRDPConnection("RDP Resolution");
     await connectFirstItem();
 
     const canvas = await $(S.rdpCanvas);
@@ -82,8 +91,8 @@ describe('RDP Connect', () => {
     }
   });
 
-  it('should disconnect from RDP session', async () => {
-    await createRDPConnection('RDP Disconnect');
+  it("should disconnect from RDP session", async () => {
+    await createRDPConnection("RDP Disconnect");
     await connectFirstItem();
 
     const canvas = await $(S.rdpCanvas);
@@ -100,8 +109,8 @@ describe('RDP Connect', () => {
     expect(!isCanvasDisplayed || (await tabs.length) === 0).toBe(true);
   });
 
-  it('should reconnect after disconnect', async () => {
-    await createRDPConnection('RDP Reconnect');
+  it("should reconnect after disconnect", async () => {
+    await createRDPConnection("RDP Reconnect");
     await connectFirstItem();
 
     const canvas = await $(S.rdpCanvas);
@@ -120,8 +129,8 @@ describe('RDP Connect', () => {
     expect(await canvasAgain.isDisplayed()).toBe(true);
   });
 
-  it('should show session tab when RDP is connected', async () => {
-    await createRDPConnection('RDP Tab');
+  it("should show session tab when RDP is connected", async () => {
+    await createRDPConnection("RDP Tab");
     await connectFirstItem();
 
     const canvas = await $(S.rdpCanvas);
@@ -132,7 +141,7 @@ describe('RDP Connect', () => {
 
     // Tab text should contain the connection name
     const tabTexts = await tabs.map((t) => t.getText());
-    const hasRDPTab = tabTexts.some((t) => t.includes('RDP Tab'));
+    const hasRDPTab = tabTexts.some((t) => t.includes("RDP Tab"));
     expect(hasRDPTab).toBe(true);
   });
 });

@@ -1,24 +1,24 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
-describe('Certificate Viewer', () => {
+describe("Certificate Viewer", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Certificate Tests');
+    await createCollection("Certificate Tests");
   });
 
-  it('should view certificate chain for HTTPS connection', async () => {
+  it("should view certificate chain for HTTPS connection", async () => {
     // Create an HTTPS connection
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const editor = await $(S.editorPanel);
     await editor.waitForDisplayed({ timeout: 5_000 });
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('HTTPS Site');
+    await nameInput.setValue("HTTPS Site");
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('example.com');
-    await selectCustomOption(S.editorProtocol, 'HTTPS');
+    await hostnameInput.setValue("example.com");
+    await selectCustomOption(S.editorProtocol, "HTTPS");
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
@@ -35,16 +35,16 @@ describe('Certificate Viewer', () => {
     expect(certChain.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('should display certificate details including issuer and expiry', async () => {
+  it("should display certificate details including issuer and expiry", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
     const editor = await $(S.editorPanel);
     await editor.waitForDisplayed({ timeout: 5_000 });
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Cert Detail Host');
+    await nameInput.setValue("Cert Detail Host");
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('example.com');
-    await selectCustomOption(S.editorProtocol, 'HTTPS');
+    await hostnameInput.setValue("example.com");
+    await selectCustomOption(S.editorProtocol, "HTTPS");
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);

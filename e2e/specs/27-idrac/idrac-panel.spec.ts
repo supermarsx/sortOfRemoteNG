@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 async function createIdracConnection(): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
@@ -10,37 +10,37 @@ async function createIdracConnection(): Promise<void> {
   await editor.waitForDisplayed({ timeout: 5_000 });
 
   const nameInput = await $(S.editorName);
-  await nameInput.setValue('Dell Server R740');
+  await nameInput.setValue("Dell Server R740");
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('10.0.0.50');
+  await hostnameInput.setValue("10.0.0.50");
 
   // The option's label is 'Dell iDRAC'; 'iDRAC' is kept as a fallback.
-  await selectCustomOption(S.editorProtocol, ['Dell iDRAC', 'iDRAC']);
+  await selectCustomOption(S.editorProtocol, ["Dell iDRAC", "iDRAC"]);
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
   await browser.pause(500);
 }
 
-describe('iDRAC Panel — Connection', () => {
+describe("iDRAC Panel — Connection", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('iDRAC Tests');
+    await createCollection("iDRAC Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
   });
 
-  it('should create an iDRAC connection', async () => {
+  it("should create an iDRAC connection", async () => {
     await createIdracConnection();
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const names = await items.map((item) => item.getText());
-    expect(names).toContain('Dell Server R740');
+    expect(names).toContain("Dell Server R740");
   });
 
-  it('should open iDRAC panel when connecting', async () => {
+  it("should open iDRAC panel when connecting", async () => {
     await createIdracConnection();
 
     const tree = await $(S.connectionTree);
@@ -53,7 +53,7 @@ describe('iDRAC Panel — Connection', () => {
     expect(await panel.isDisplayed()).toBe(true);
   });
 
-  it('should show connection form with credentials', async () => {
+  it("should show connection form with credentials", async () => {
     await createIdracConnection();
 
     const tree = await $(S.connectionTree);
@@ -76,10 +76,10 @@ describe('iDRAC Panel — Connection', () => {
   });
 });
 
-describe('iDRAC Panel — Tab Navigation', () => {
+describe("iDRAC Panel — Tab Navigation", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('iDRAC Tab Tests');
+    await createCollection("iDRAC Tab Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
@@ -93,62 +93,62 @@ describe('iDRAC Panel — Tab Navigation', () => {
     await panel.waitForDisplayed({ timeout: 10_000 });
   });
 
-  it('should show Dashboard tab', async () => {
+  it("should show Dashboard tab", async () => {
     const dashboardTab = await $(S.idracDashboardTab);
     expect(await dashboardTab.isExisting()).toBe(true);
   });
 
-  it('should show Power tab', async () => {
+  it("should show Power tab", async () => {
     const powerTab = await $(S.idracPowerTab);
     expect(await powerTab.isExisting()).toBe(true);
   });
 
-  it('should show Thermal tab', async () => {
+  it("should show Thermal tab", async () => {
     const thermalTab = await $(S.idracThermalTab);
     expect(await thermalTab.isExisting()).toBe(true);
   });
 
-  it('should show Hardware tab', async () => {
+  it("should show Hardware tab", async () => {
     const hardwareTab = await $(S.idracHardwareTab);
     expect(await hardwareTab.isExisting()).toBe(true);
   });
 
-  it('should show Storage tab', async () => {
+  it("should show Storage tab", async () => {
     const storageTab = await $(S.idracStorageTab);
     expect(await storageTab.isExisting()).toBe(true);
   });
 
-  it('should show Network tab', async () => {
+  it("should show Network tab", async () => {
     const networkTab = await $(S.idracNetworkTab);
     expect(await networkTab.isExisting()).toBe(true);
   });
 
-  it('should show Firmware tab', async () => {
+  it("should show Firmware tab", async () => {
     const firmwareTab = await $(S.idracFirmwareTab);
     expect(await firmwareTab.isExisting()).toBe(true);
   });
 
-  it('should switch between tabs', async () => {
+  it("should switch between tabs", async () => {
     const powerTab = await $(S.idracPowerTab);
     await powerTab.click();
     await browser.pause(500);
 
-    const powerClass = await powerTab.getAttribute('class');
+    const powerClass = await powerTab.getAttribute("class");
     expect(powerClass).toMatch(/active|selected/);
 
     const thermalTab = await $(S.idracThermalTab);
     await thermalTab.click();
     await browser.pause(500);
 
-    const thermalClass = await thermalTab.getAttribute('class');
+    const thermalClass = await thermalTab.getAttribute("class");
     expect(thermalClass).toMatch(/active|selected/);
   });
 });
 
-describe('iDRAC Panel — Power Management', () => {
+describe("iDRAC Panel — Power Management", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('iDRAC Power Tests');
+    await createCollection("iDRAC Power Tests");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
@@ -162,7 +162,7 @@ describe('iDRAC Panel — Power Management', () => {
     await panel.waitForDisplayed({ timeout: 10_000 });
   });
 
-  it('should show power control buttons', async () => {
+  it("should show power control buttons", async () => {
     const powerTab = await $(S.idracPowerTab);
     await powerTab.click();
     await browser.pause(500);
@@ -176,7 +176,7 @@ describe('iDRAC Panel — Power Management', () => {
     expect(await powerReset.isExisting()).toBe(true);
   });
 
-  it('should require confirmation for power off', async () => {
+  it("should require confirmation for power off", async () => {
     const powerTab = await $(S.idracPowerTab);
     await powerTab.click();
     await browser.pause(500);
@@ -194,7 +194,7 @@ describe('iDRAC Panel — Power Management', () => {
     await browser.pause(300);
   });
 
-  it('should require confirmation for power reset', async () => {
+  it("should require confirmation for power reset", async () => {
     const powerTab = await $(S.idracPowerTab);
     await powerTab.click();
     await browser.pause(500);

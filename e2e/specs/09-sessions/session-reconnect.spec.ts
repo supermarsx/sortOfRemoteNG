@@ -1,7 +1,16 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
-import { startContainers, stopContainers, waitForContainer, SSH_PORT } from '../../helpers/docker';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
+import {
+  startContainers,
+  stopContainers,
+  waitForContainer,
+  SSH_PORT,
+} from "../../helpers/docker";
 
 async function createAndConnectSSH(name: string): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
@@ -14,19 +23,19 @@ async function createAndConnectSSH(name: string): Promise<void> {
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
-  await selectCustomOption(S.editorProtocol, 'SSH');
+  await selectCustomOption(S.editorProtocol, "SSH");
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
-  await portInput.setValue('22');
+  await portInput.setValue("22");
 
   const usernameInput = await $(S.editorUsername);
-  await usernameInput.setValue('testuser');
+  await usernameInput.setValue("testuser");
 
   const passwordInput = await $(S.editorPassword);
-  await passwordInput.setValue('testpass123');
+  await passwordInput.setValue("testpass123");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
@@ -46,11 +55,11 @@ async function createAndConnectSSH(name: string): Promise<void> {
   await terminal.waitForDisplayed({ timeout: 15_000 });
 }
 
-describe('Session Reconnect', () => {
+describe("Session Reconnect", () => {
   before(async function () {
     this.timeout(120_000);
     startContainers();
-    await waitForContainer('test-ssh', SSH_PORT, 60_000);
+    await waitForContainer("test-ssh", SSH_PORT, 60_000);
   });
 
   after(() => {
@@ -59,15 +68,15 @@ describe('Session Reconnect', () => {
 
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Reconnect Tests');
+    await createCollection("Reconnect Tests");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should reconnect SSH session via reconnect button after disconnect', async () => {
-    await createAndConnectSSH('Reconnect SSH');
+  it("should reconnect SSH session via reconnect button after disconnect", async () => {
+    await createAndConnectSSH("Reconnect SSH");
 
     const disconnectBtn = await $(S.terminalDisconnect);
     await disconnectBtn.click();
@@ -82,15 +91,17 @@ describe('Session Reconnect', () => {
     expect(await terminal.isDisplayed()).toBe(true);
   });
 
-  it('should attempt automatic reconnection on connection failure', async () => {
-    await createAndConnectSSH('Auto Reconnect');
+  it("should attempt automatic reconnection on connection failure", async () => {
+    await createAndConnectSSH("Auto Reconnect");
 
     const disconnectBtn = await $(S.terminalDisconnect);
     await disconnectBtn.click();
     await browser.pause(2_000);
 
     // Verify retry indicator appears
-    const retryIndicator = await $('[data-testid="connection-retry-indicator"]');
+    const retryIndicator = await $(
+      '[data-testid="connection-retry-indicator"]',
+    );
     const exists = await retryIndicator.isExisting();
     if (exists) {
       expect(await retryIndicator.isDisplayed()).toBe(true);
@@ -101,8 +112,8 @@ describe('Session Reconnect', () => {
     }
   });
 
-  it('should restore session after network recovery', async () => {
-    await createAndConnectSSH('Recovery SSH');
+  it("should restore session after network recovery", async () => {
+    await createAndConnectSSH("Recovery SSH");
 
     // Simulate disconnect by clicking disconnect
     const disconnectBtn = await $(S.terminalDisconnect);
@@ -120,6 +131,6 @@ describe('Session Reconnect', () => {
     // Verify session tab still shows the same connection name
     const tab = await $(S.sessionTab);
     const tabText = await tab.getText();
-    expect(tabText).toContain('Recovery SSH');
+    expect(tabText).toContain("Recovery SSH");
   });
 });
