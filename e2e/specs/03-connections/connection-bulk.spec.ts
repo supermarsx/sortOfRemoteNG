@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 async function createTestConnection(
   name: string,
@@ -21,19 +21,19 @@ async function createTestConnection(
   await browser.pause(500);
 }
 
-describe('Bulk Operations', () => {
+describe("Bulk Operations", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Test');
+    await createCollection("Test");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
-    await createTestConnection('BulkA', '10.0.0.1', 'SSH');
-    await createTestConnection('BulkB', '10.0.0.2', 'RDP');
-    await createTestConnection('BulkC', '10.0.0.3', 'HTTP');
+    await createTestConnection("BulkA", "10.0.0.1", "SSH");
+    await createTestConnection("BulkB", "10.0.0.2", "RDP");
+    await createTestConnection("BulkC", "10.0.0.3", "HTTP");
   });
 
-  it('should open bulk editor and show table view', async () => {
+  it("should open bulk editor and show table view", async () => {
     const bulkBtn = await $('[data-testid="bulk-editor-btn"]');
     await bulkBtn.waitForDisplayed({ timeout: 3_000 });
     await bulkBtn.click();
@@ -46,7 +46,7 @@ describe('Bulk Operations', () => {
     expect(rows.length).toBe(3);
   });
 
-  it('should select multiple connections via checkboxes', async () => {
+  it("should select multiple connections via checkboxes", async () => {
     const bulkBtn = await $('[data-testid="bulk-editor-btn"]');
     await bulkBtn.click();
 
@@ -66,7 +66,7 @@ describe('Bulk Operations', () => {
     expect(await checkboxes[2].isSelected()).toBe(false);
   });
 
-  it('should select all via select-all checkbox', async () => {
+  it("should select all via select-all checkbox", async () => {
     const bulkBtn = await $('[data-testid="bulk-editor-btn"]');
     await bulkBtn.click();
 
@@ -83,7 +83,7 @@ describe('Bulk Operations', () => {
     }
   });
 
-  it('should bulk duplicate selected connections', async () => {
+  it("should bulk duplicate selected connections", async () => {
     const bulkBtn = await $('[data-testid="bulk-editor-btn"]');
     await bulkBtn.click();
 
@@ -106,7 +106,7 @@ describe('Bulk Operations', () => {
     expect(rows.length).toBe(5);
   });
 
-  it('should bulk delete with confirmation', async () => {
+  it("should bulk delete with confirmation", async () => {
     const bulkBtn = await $('[data-testid="bulk-editor-btn"]');
     await bulkBtn.click();
 
@@ -136,7 +136,7 @@ describe('Bulk Operations', () => {
     expect(rows.length).toBe(0);
   });
 
-  it('should search within bulk editor', async () => {
+  it("should search within bulk editor", async () => {
     const bulkBtn = await $('[data-testid="bulk-editor-btn"]');
     await bulkBtn.click();
 
@@ -145,13 +145,13 @@ describe('Bulk Operations', () => {
 
     const searchInput = await $('[data-testid="bulk-editor-search"]');
     await searchInput.waitForDisplayed({ timeout: 3_000 });
-    await searchInput.setValue('BulkA');
+    await searchInput.setValue("BulkA");
     await browser.pause(500);
 
     const rows = await $$('[data-testid="bulk-editor-row"]');
     expect(rows.length).toBe(1);
 
     const rowText = await rows[0].getText();
-    expect(rowText).toContain('BulkA');
+    expect(rowText).toContain("BulkA");
   });
 });

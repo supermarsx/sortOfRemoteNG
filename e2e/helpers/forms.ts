@@ -21,11 +21,13 @@ export async function selectCustomOption(
   await trigger.click();
 
   await browser.waitUntil(
-    async () => (await trigger.getAttribute('aria-expanded').catch(() => null)) === 'true',
+    async () =>
+      (await trigger.getAttribute("aria-expanded").catch(() => null)) ===
+      "true",
     {
       timeout: 5_000,
       interval: 100,
-      timeoutMsg: 'Expected custom select to open',
+      timeoutMsg: "Expected custom select to open",
     },
   );
 
@@ -72,15 +74,19 @@ export async function selectCustomOption(
   }
 
   const listboxOptions = await $$('//*[@role="option"]');
-  const inlineButtonOptions = await trigger.$$('./following-sibling::*//button');
+  const inlineButtonOptions = await trigger.$$(
+    "./following-sibling::*//button",
+  );
   const optionTexts = [
-    ...(await listboxOptions.map((option) => option.getText().catch(() => ''))),
-    ...(await inlineButtonOptions.map((option) => option.getText().catch(() => ''))),
+    ...(await listboxOptions.map((option) => option.getText().catch(() => ""))),
+    ...(await inlineButtonOptions.map((option) =>
+      option.getText().catch(() => ""),
+    )),
   ];
 
   throw new Error(
-    `Custom select option not found. Tried: ${labels.join(', ')}. Available: ${optionTexts
+    `Custom select option not found. Tried: ${labels.join(", ")}. Available: ${optionTexts
       .filter(Boolean)
-      .join(', ')}`,
+      .join(", ")}`,
   );
 }

@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 async function createTestConnection(
   name: string,
@@ -21,18 +21,18 @@ async function createTestConnection(
   await browser.pause(500);
 }
 
-describe('Connection Templates', () => {
+describe("Connection Templates", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Test');
+    await createCollection("Test");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
-    await createTestConnection('BaseSSH', '10.0.0.1', 'SSH');
-    await createTestConnection('BaseRDP', '10.0.0.2', 'RDP');
+    await createTestConnection("BaseSSH", "10.0.0.1", "SSH");
+    await createTestConnection("BaseRDP", "10.0.0.2", "RDP");
   });
 
-  it('should show built-in templates', async () => {
+  it("should show built-in templates", async () => {
     const templatesBtn = await $('[data-testid="templates-btn"]');
     await templatesBtn.waitForDisplayed({ timeout: 3_000 });
     await templatesBtn.click();
@@ -44,7 +44,7 @@ describe('Connection Templates', () => {
     expect(items.length).toBeGreaterThan(0);
   });
 
-  it('should pre-fill fields when applying a template', async () => {
+  it("should pre-fill fields when applying a template", async () => {
     const templatesBtn = await $('[data-testid="templates-btn"]');
     await templatesBtn.click();
 
@@ -73,11 +73,11 @@ describe('Connection Templates', () => {
     expect(portValue).toBeTruthy();
   });
 
-  it('should create a custom template from an existing connection', async () => {
+  it("should create a custom template from an existing connection", async () => {
     // Select a connection
     const items = await $$(S.connectionItem);
     for (const item of items) {
-      if ((await item.getText()).includes('BaseSSH')) {
+      if ((await item.getText()).includes("BaseSSH")) {
         await item.click();
         break;
       }
@@ -93,7 +93,7 @@ describe('Connection Templates', () => {
 
     const templateNameInput = await $('[data-testid="template-name-input"]');
     await templateNameInput.waitForDisplayed({ timeout: 3_000 });
-    await templateNameInput.setValue('My SSH Template');
+    await templateNameInput.setValue("My SSH Template");
 
     const templateSaveBtn = await $('[data-testid="template-save"]');
     await templateSaveBtn.click();
@@ -108,10 +108,10 @@ describe('Connection Templates', () => {
 
     const templateItems = await $$(S.templateItem);
     const templateNames = await templateItems.map((t) => t.getText());
-    expect(templateNames.some((n) => n.includes('My SSH Template'))).toBe(true);
+    expect(templateNames.some((n) => n.includes("My SSH Template"))).toBe(true);
   });
 
-  it('should filter templates by category', async () => {
+  it("should filter templates by category", async () => {
     const templatesBtn = await $('[data-testid="templates-btn"]');
     await templatesBtn.click();
 
@@ -121,7 +121,7 @@ describe('Connection Templates', () => {
     // Click a category filter
     const categoryFilter = await $('[data-testid="template-category-filter"]');
     await categoryFilter.waitForDisplayed({ timeout: 3_000 });
-    await categoryFilter.selectByVisibleText('SSH');
+    await categoryFilter.selectByVisibleText("SSH");
     await browser.pause(500);
 
     const items = await $$(S.templateItem);
@@ -130,7 +130,7 @@ describe('Connection Templates', () => {
     // All visible templates should be SSH-related
     for (const item of items) {
       const text = await item.getText();
-      expect(text.toLowerCase()).toContain('ssh');
+      expect(text.toLowerCase()).toContain("ssh");
     }
   });
 });

@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 // t54-B: the Connect-from-editor button has no entry in the shared selector
 // map; use an inline selector, mirroring how this file already targets the
@@ -55,66 +55,71 @@ async function selectConnection(name: string): Promise<void> {
   throw new Error(`Connection "${name}" not found in tree`);
 }
 
-describe('Connection Editing', () => {
+describe("Connection Editing", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Test');
+    await createCollection("Test");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
     // Seed test data
-    await createTestConnection('Alpha', '192.168.1.10', 'SSH', '22');
-    await createTestConnection('Bravo', '10.0.0.20', 'RDP', '3389');
-    await createTestConnection('Charlie', 'https://charlie.local', 'HTTP', '443');
+    await createTestConnection("Alpha", "192.168.1.10", "SSH", "22");
+    await createTestConnection("Bravo", "10.0.0.20", "RDP", "3389");
+    await createTestConnection(
+      "Charlie",
+      "https://charlie.local",
+      "HTTP",
+      "443",
+    );
   });
 
-  it('should open editor with current values when selecting a connection', async () => {
-    await selectConnection('Alpha');
+  it("should open editor with current values when selecting a connection", async () => {
+    await selectConnection("Alpha");
 
     const nameInput = await $(S.editorName);
-    expect(await nameInput.getValue()).toBe('Alpha');
+    expect(await nameInput.getValue()).toBe("Alpha");
 
     const hostnameInput = await $(S.editorHostname);
-    expect(await hostnameInput.getValue()).toBe('192.168.1.10');
+    expect(await hostnameInput.getValue()).toBe("192.168.1.10");
 
     const portInput = await $(S.editorPort);
-    expect(await portInput.getValue()).toBe('22');
+    expect(await portInput.getValue()).toBe("22");
   });
 
-  it('should modify hostname and persist after save', async () => {
-    await selectConnection('Alpha');
+  it("should modify hostname and persist after save", async () => {
+    await selectConnection("Alpha");
 
     const hostnameInput = await $(S.editorHostname);
     await hostnameInput.clearValue();
-    await hostnameInput.setValue('10.10.10.10');
+    await hostnameInput.setValue("10.10.10.10");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
     await browser.pause(500);
 
     // Re-select and verify
-    await selectConnection('Bravo');
+    await selectConnection("Bravo");
     await browser.pause(300);
-    await selectConnection('Alpha');
+    await selectConnection("Alpha");
 
     const updatedHostname = await $(S.editorHostname);
-    expect(await updatedHostname.getValue()).toBe('10.10.10.10');
+    expect(await updatedHostname.getValue()).toBe("10.10.10.10");
   });
 
-  it('should allow editing SSH-specific options', async () => {
-    await selectConnection('Alpha');
+  it("should allow editing SSH-specific options", async () => {
+    await selectConnection("Alpha");
 
     // Look for SSH-specific option fields
     const timeoutInput = await $('[data-testid="editor-ssh-timeout"]');
     if (await timeoutInput.isExisting()) {
       await timeoutInput.clearValue();
-      await timeoutInput.setValue('30');
+      await timeoutInput.setValue("30");
     }
 
     const keepaliveInput = await $('[data-testid="editor-ssh-keepalive"]');
     if (await keepaliveInput.isExisting()) {
       await keepaliveInput.clearValue();
-      await keepaliveInput.setValue('15');
+      await keepaliveInput.setValue("15");
     }
 
     const saveBtn = await $(S.editorSave);
@@ -122,80 +127,84 @@ describe('Connection Editing', () => {
     await browser.pause(500);
 
     // Re-select and verify
-    await selectConnection('Bravo');
+    await selectConnection("Bravo");
     await browser.pause(300);
-    await selectConnection('Alpha');
+    await selectConnection("Alpha");
 
     if (await timeoutInput.isExisting()) {
-      expect(await $('[data-testid="editor-ssh-timeout"]').getValue()).toBe('30');
+      expect(await $('[data-testid="editor-ssh-timeout"]').getValue()).toBe(
+        "30",
+      );
     }
     if (await keepaliveInput.isExisting()) {
-      expect(await $('[data-testid="editor-ssh-keepalive"]').getValue()).toBe('15');
+      expect(await $('[data-testid="editor-ssh-keepalive"]').getValue()).toBe(
+        "15",
+      );
     }
   });
 
-  it('should update default port when protocol is changed', async () => {
-    await selectConnection('Alpha');
+  it("should update default port when protocol is changed", async () => {
+    await selectConnection("Alpha");
 
-    await selectCustomOption(S.editorProtocol, 'RDP');
+    await selectCustomOption(S.editorProtocol, "RDP");
     await browser.pause(300);
 
     const portInput = await $(S.editorPort);
-    expect(await portInput.getValue()).toBe('3389');
+    expect(await portInput.getValue()).toBe("3389");
 
-    await selectCustomOption(S.editorProtocol, 'VNC');
+    await selectCustomOption(S.editorProtocol, "VNC");
     await browser.pause(300);
-    expect(await portInput.getValue()).toBe('5900');
+    expect(await portInput.getValue()).toBe("5900");
   });
 
-  it('should auto-save after modification and a brief wait', async () => {
-    await selectConnection('Bravo');
+  it("should auto-save after modification and a brief wait", async () => {
+    await selectConnection("Bravo");
 
     const hostnameInput = await $(S.editorHostname);
     await hostnameInput.clearValue();
-    await hostnameInput.setValue('172.16.0.99');
+    await hostnameInput.setValue("172.16.0.99");
 
     // Wait for auto-save to trigger
     await browser.pause(3_000);
 
     // Navigate away and back
-    await selectConnection('Alpha');
+    await selectConnection("Alpha");
     await browser.pause(300);
-    await selectConnection('Bravo');
+    await selectConnection("Bravo");
 
     const updatedHostname = await $(S.editorHostname);
-    expect(await updatedHostname.getValue()).toBe('172.16.0.99');
+    expect(await updatedHostname.getValue()).toBe("172.16.0.99");
   });
 
   // t54-B — Connect from the edit tab. NOTE: like every spec here this runs
   // only under the gate's Tauri driver rig (wdio.conf.ts hard-requires a built
   // binary); it is authored to the contract, not executed in the unit gate.
-  describe('Connect from the editor (t54-B)', () => {
-    it('shows a Connect button for a saved connection', async () => {
-      await selectConnection('Alpha');
+  describe("Connect from the editor (t54-B)", () => {
+    it("shows a Connect button for a saved connection", async () => {
+      await selectConnection("Alpha");
 
       const connectBtn = await $(EDITOR_CONNECT);
       await connectBtn.waitForDisplayed({ timeout: 5_000 });
       expect(await connectBtn.isDisplayed()).toBe(true);
     });
 
-    it('opens a session tab when Connect is clicked', async () => {
-      await selectConnection('Bravo');
+    it("opens a session tab when Connect is clicked", async () => {
+      await selectConnection("Bravo");
 
       const connectBtn = await $(EDITOR_CONNECT);
       await connectBtn.waitForDisplayed({ timeout: 5_000 });
       await connectBtn.click();
       await browser.pause(1_000);
 
-      expect(await sessionTabExists('Bravo')).toBe(true);
+      expect(await sessionTabExists("Bravo")).toBe(true);
     });
 
-    it('save-then-connect: connects to the freshly edited hostname', async () => {
-      await selectConnection('Alpha');
+    it("save-then-connect: connects to the freshly edited hostname", async () => {
+      await selectConnection("Alpha");
 
       const hostnameInput = await $(S.editorHostname);
       await hostnameInput.clearValue();
-      await hostnameInput.setValue('10.20.30.40');
+      await hostnameInput.setValue("10.20.30.40");
 
       const connectBtn = await $(EDITOR_CONNECT);
       await connectBtn.waitForDisplayed({ timeout: 5_000 });
@@ -203,18 +212,18 @@ describe('Connection Editing', () => {
       await browser.pause(1_000);
 
       // A session tab opened for the connection...
-      expect(await sessionTabExists('Alpha')).toBe(true);
+      expect(await sessionTabExists("Alpha")).toBe(true);
 
       // ...and Connect implicitly persisted the edit (the editor stays open for
       // an existing connection, so re-selecting shows the saved new hostname).
-      await selectConnection('Charlie');
+      await selectConnection("Charlie");
       await browser.pause(300);
-      await selectConnection('Alpha');
-      expect(await (await $(S.editorHostname)).getValue()).toBe('10.20.30.40');
+      await selectConnection("Alpha");
+      expect(await (await $(S.editorHostname)).getValue()).toBe("10.20.30.40");
     });
 
-    it('keeps the edit tab open after connecting (existing connection)', async () => {
-      await selectConnection('Bravo');
+    it("keeps the edit tab open after connecting (existing connection)", async () => {
+      await selectConnection("Bravo");
 
       const connectBtn = await $(EDITOR_CONNECT);
       await connectBtn.waitForDisplayed({ timeout: 5_000 });
@@ -225,7 +234,7 @@ describe('Connection Editing', () => {
       expect(await (await $(S.editorPanel)).isDisplayed()).toBe(true);
     });
 
-    it('hides the Connect button for a new, unsaved connection', async () => {
+    it("hides the Connect button for a new, unsaved connection", async () => {
       const addBtn = await $(S.toolbarNewConnection);
       await addBtn.click();
 

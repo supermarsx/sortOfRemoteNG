@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 async function addConnection(
   name: string,
@@ -33,15 +33,15 @@ async function addConnection(
   await browser.pause(500);
 }
 
-describe('Connection Creation', () => {
+describe("Connection Creation", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Test');
+    await createCollection("Test");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
   });
 
-  it('should open editor when clicking Add Connection', async () => {
+  it("should open editor when clicking Add Connection", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
 
@@ -50,16 +50,16 @@ describe('Connection Creation', () => {
     expect(await editor.isDisplayed()).toBe(true);
   });
 
-  it('should create an SSH connection with basic fields', async () => {
-    await addConnection('Dev Server', '192.168.1.10', 'SSH', '22');
+  it("should create an SSH connection with basic fields", async () => {
+    await addConnection("Dev Server", "192.168.1.10", "SSH", "22");
 
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const names = await items.map((item) => item.getText());
-    expect(names).toContain('Dev Server');
+    expect(names).toContain("Dev Server");
   });
 
-  it('should create an RDP connection with all basic fields', async () => {
+  it("should create an RDP connection with all basic fields", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
 
@@ -67,22 +67,22 @@ describe('Connection Creation', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
 
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Windows Box');
+    await nameInput.setValue("Windows Box");
 
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('10.0.0.50');
+    await hostnameInput.setValue("10.0.0.50");
 
-    await selectCustomOption(S.editorProtocol, 'RDP');
+    await selectCustomOption(S.editorProtocol, "RDP");
 
     const portInput = await $(S.editorPort);
     await portInput.clearValue();
-    await portInput.setValue('3389');
+    await portInput.setValue("3389");
 
     const usernameInput = await $(S.editorUsername);
-    await usernameInput.setValue('admin');
+    await usernameInput.setValue("admin");
 
     const passwordInput = await $(S.editorPassword);
-    await passwordInput.setValue('secret');
+    await passwordInput.setValue("secret");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
@@ -91,10 +91,10 @@ describe('Connection Creation', () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const names = await items.map((item) => item.getText());
-    expect(names).toContain('Windows Box');
+    expect(names).toContain("Windows Box");
   });
 
-  it('should create an HTTP connection with URL', async () => {
+  it("should create an HTTP connection with URL", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
 
@@ -102,12 +102,12 @@ describe('Connection Creation', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
 
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Web Dashboard');
+    await nameInput.setValue("Web Dashboard");
 
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('https://dashboard.example.com');
+    await hostnameInput.setValue("https://dashboard.example.com");
 
-    await selectCustomOption(S.editorProtocol, 'HTTP');
+    await selectCustomOption(S.editorProtocol, "HTTP");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
@@ -116,10 +116,10 @@ describe('Connection Creation', () => {
     const tree = await $(S.connectionTree);
     const items = await tree.$$(S.connectionItem);
     const names = await items.map((item) => item.getText());
-    expect(names).toContain('Web Dashboard');
+    expect(names).toContain("Web Dashboard");
   });
 
-  it('should create a connection inside a group', async () => {
+  it("should create a connection inside a group", async () => {
     // First create a group
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
@@ -128,16 +128,16 @@ describe('Connection Creation', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
 
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Grouped Server');
+    await nameInput.setValue("Grouped Server");
 
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('10.0.0.1');
+    await hostnameInput.setValue("10.0.0.1");
 
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await selectCustomOption(S.editorProtocol, "SSH");
 
     const parentFolder = await $(S.editorParentFolder);
     if (await parentFolder.isExisting()) {
-      await selectCustomOption(S.editorParentFolder, 'Production');
+      await selectCustomOption(S.editorParentFolder, "Production");
     }
 
     const saveBtn = await $(S.editorSave);
@@ -146,11 +146,13 @@ describe('Connection Creation', () => {
 
     const groups = await $$(S.connectionGroup);
     const groupTexts = await groups.map((g) => g.getText());
-    const hasGroupedChild = groupTexts.some((text) => text.includes('Grouped Server'));
+    const hasGroupedChild = groupTexts.some((text) =>
+      text.includes("Grouped Server"),
+    );
     expect(hasGroupedChild).toBe(true);
   });
 
-  it('should reject an empty name', async () => {
+  it("should reject an empty name", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
 
@@ -159,9 +161,9 @@ describe('Connection Creation', () => {
 
     // Leave name empty, fill other fields
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('192.168.1.1');
+    await hostnameInput.setValue("192.168.1.1");
 
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await selectCustomOption(S.editorProtocol, "SSH");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
@@ -173,12 +175,13 @@ describe('Connection Creation', () => {
     // Validation error should be visible on name field
     const nameInput = await $(S.editorName);
     const isInvalid =
-      (await nameInput.getAttribute('aria-invalid')) === 'true' ||
-      (await nameInput.getCSSProperty('border-color')).parsed?.hex === '#ff0000';
+      (await nameInput.getAttribute("aria-invalid")) === "true" ||
+      (await nameInput.getCSSProperty("border-color")).parsed?.hex ===
+        "#ff0000";
     expect(isInvalid).toBe(true);
   });
 
-  it('should reject an invalid port number', async () => {
+  it("should reject an invalid port number", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
 
@@ -186,17 +189,17 @@ describe('Connection Creation', () => {
     await editor.waitForDisplayed({ timeout: 5_000 });
 
     const nameInput = await $(S.editorName);
-    await nameInput.setValue('Bad Port');
+    await nameInput.setValue("Bad Port");
 
     const hostnameInput = await $(S.editorHostname);
-    await hostnameInput.setValue('10.0.0.1');
+    await hostnameInput.setValue("10.0.0.1");
 
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await selectCustomOption(S.editorProtocol, "SSH");
 
     // Try port 0
     const portInput = await $(S.editorPort);
     await portInput.clearValue();
-    await portInput.setValue('0');
+    await portInput.setValue("0");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
@@ -205,13 +208,13 @@ describe('Connection Creation', () => {
 
     // Try port > 65535
     await portInput.clearValue();
-    await portInput.setValue('70000');
+    await portInput.setValue("70000");
     await saveBtn.click();
     await browser.pause(300);
     expect(await editor.isDisplayed()).toBe(true);
   });
 
-  it('should auto-fill default port when protocol is selected', async () => {
+  it("should auto-fill default port when protocol is selected", async () => {
     const addBtn = await $(S.toolbarNewConnection);
     await addBtn.click();
 
@@ -221,18 +224,18 @@ describe('Connection Creation', () => {
     const portInput = await $(S.editorPort);
 
     // SSH → 22
-    await selectCustomOption(S.editorProtocol, 'SSH');
+    await selectCustomOption(S.editorProtocol, "SSH");
     await browser.pause(200);
-    expect(await portInput.getValue()).toBe('22');
+    expect(await portInput.getValue()).toBe("22");
 
     // RDP → 3389
-    await selectCustomOption(S.editorProtocol, 'RDP');
+    await selectCustomOption(S.editorProtocol, "RDP");
     await browser.pause(200);
-    expect(await portInput.getValue()).toBe('3389');
+    expect(await portInput.getValue()).toBe("3389");
 
     // VNC → 5900
-    await selectCustomOption(S.editorProtocol, 'VNC');
+    await selectCustomOption(S.editorProtocol, "VNC");
     await browser.pause(200);
-    expect(await portInput.getValue()).toBe('5900');
+    expect(await portInput.getValue()).toBe("5900");
   });
 });

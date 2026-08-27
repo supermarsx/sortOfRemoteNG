@@ -1,6 +1,6 @@
-import { S } from '../../helpers/selectors';
-import { selectCustomOption } from '../../helpers/forms';
-import { resetAppState, createCollection } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
+import { resetAppState, createCollection } from "../../helpers/app";
 
 async function createTestConnection(
   name: string,
@@ -34,34 +34,34 @@ async function createGroup(name: string): Promise<void> {
   await browser.pause(500);
 }
 
-describe('Connection Groups', () => {
+describe("Connection Groups", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Test');
+    await createCollection("Test");
     const tree = await $(S.connectionTree);
     await tree.waitForExist({ timeout: 10_000 });
 
-    await createTestConnection('ServerA', '192.168.1.10', 'SSH');
-    await createTestConnection('ServerB', '192.168.1.20', 'RDP');
+    await createTestConnection("ServerA", "192.168.1.10", "SSH");
+    await createTestConnection("ServerB", "192.168.1.20", "RDP");
   });
 
-  it('should create a new group/folder', async () => {
-    await createGroup('Production');
+  it("should create a new group/folder", async () => {
+    await createGroup("Production");
 
     const groups = await $$(S.connectionGroup);
     const texts = await groups.map((g) => g.getText());
-    const hasProduction = texts.some((t) => t.includes('Production'));
+    const hasProduction = texts.some((t) => t.includes("Production"));
     expect(hasProduction).toBe(true);
   });
 
-  it('should move a connection into a group', async () => {
-    await createGroup('Staging');
+  it("should move a connection into a group", async () => {
+    await createGroup("Staging");
 
     // Select a connection and assign it to the group
     const items = await $$(S.connectionItem);
     for (const item of items) {
       const text = await item.getText();
-      if (text.includes('ServerA')) {
+      if (text.includes("ServerA")) {
         await item.click();
         break;
       }
@@ -72,7 +72,7 @@ describe('Connection Groups', () => {
 
     const parentFolder = await $(S.editorParentFolder);
     await parentFolder.waitForDisplayed({ timeout: 3_000 });
-    await selectCustomOption(S.editorParentFolder, 'Staging');
+    await selectCustomOption(S.editorParentFolder, "Staging");
 
     const saveBtn = await $(S.editorSave);
     await saveBtn.click();
@@ -82,7 +82,7 @@ describe('Connection Groups', () => {
     const groups = await $$(S.connectionGroup);
     for (const group of groups) {
       const text = await group.getText();
-      if (text.includes('Staging')) {
+      if (text.includes("Staging")) {
         await group.click();
         await browser.pause(300);
         break;
@@ -91,38 +91,38 @@ describe('Connection Groups', () => {
 
     const childItems = await $$(S.connectionItem);
     const childNames = await childItems.map((c) => c.getText());
-    expect(childNames.some((n) => n.includes('ServerA'))).toBe(true);
+    expect(childNames.some((n) => n.includes("ServerA"))).toBe(true);
   });
 
-  it('should support nested groups', async () => {
-    await createGroup('Environment');
+  it("should support nested groups", async () => {
+    await createGroup("Environment");
 
     // Create a child group inside the parent
     const groups = await $$(S.connectionGroup);
     for (const group of groups) {
       const text = await group.getText();
-      if (text.includes('Environment')) {
+      if (text.includes("Environment")) {
         await group.click();
         await browser.pause(300);
         break;
       }
     }
 
-    await createGroup('Dev');
+    await createGroup("Dev");
 
     // Verify nested structure
     const allGroups = await $$(S.connectionGroup);
     const allTexts = await allGroups.map((g) => g.getText());
-    expect(allTexts.some((t) => t.includes('Dev'))).toBe(true);
+    expect(allTexts.some((t) => t.includes("Dev"))).toBe(true);
   });
 
-  it('should expand and collapse groups', async () => {
-    await createGroup('Collapsible');
+  it("should expand and collapse groups", async () => {
+    await createGroup("Collapsible");
 
     // Move a connection into the group via the editor
     const items = await $$(S.connectionItem);
     for (const item of items) {
-      if ((await item.getText()).includes('ServerB')) {
+      if ((await item.getText()).includes("ServerB")) {
         await item.click();
         break;
       }
@@ -131,7 +131,7 @@ describe('Connection Groups', () => {
     const editor = await $(S.editorPanel);
     await editor.waitForDisplayed({ timeout: 5_000 });
 
-    await selectCustomOption(S.editorParentFolder, 'Collapsible');
+    await selectCustomOption(S.editorParentFolder, "Collapsible");
     await (await $(S.editorSave)).click();
     await browser.pause(500);
 
@@ -139,7 +139,7 @@ describe('Connection Groups', () => {
     const groups = await $$(S.connectionGroup);
     let targetGroup: WebdriverIO.Element | undefined;
     for (const group of groups) {
-      if ((await group.getText()).includes('Collapsible')) {
+      if ((await group.getText()).includes("Collapsible")) {
         targetGroup = group;
         break;
       }
@@ -151,7 +151,7 @@ describe('Connection Groups', () => {
     await browser.pause(300);
     let visibleItems = await $$(S.connectionItem);
     let visibleNames = await visibleItems.map((i) => i.getText());
-    expect(visibleNames.some((n) => n.includes('ServerB'))).toBe(true);
+    expect(visibleNames.some((n) => n.includes("ServerB"))).toBe(true);
 
     // Collapse
     await targetGroup!.click();
@@ -170,35 +170,35 @@ describe('Connection Groups', () => {
     let serverBVisible = false;
     for (const item of visibleItems) {
       const text = await item.getText();
-      if (text.includes('ServerB') && (await item.isDisplayed())) {
+      if (text.includes("ServerB") && (await item.isDisplayed())) {
         serverBVisible = true;
       }
     }
     expect(serverBVisible).toBe(false);
   });
 
-  it('should render depth indicators for nested items', async () => {
-    await createGroup('Level1');
+  it("should render depth indicators for nested items", async () => {
+    await createGroup("Level1");
 
     const groups = await $$(S.connectionGroup);
     for (const group of groups) {
-      if ((await group.getText()).includes('Level1')) {
+      if ((await group.getText()).includes("Level1")) {
         await group.click();
         await browser.pause(300);
         break;
       }
     }
 
-    await createGroup('Level2');
+    await createGroup("Level2");
 
     // Check for depth indicator CSS or data attributes
     const allGroups = await $$(S.connectionGroup);
     for (const group of allGroups) {
       const text = await group.getText();
-      if (text.includes('Level2')) {
+      if (text.includes("Level2")) {
         const depth =
-          (await group.getAttribute('data-depth')) ||
-          (await group.getCSSProperty('padding-left')).value;
+          (await group.getAttribute("data-depth")) ||
+          (await group.getCSSProperty("padding-left")).value;
         expect(depth).toBeTruthy();
         break;
       }
