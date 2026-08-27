@@ -6,8 +6,9 @@
 //! directory, several user databases side by side, the encrypted and the
 //! plaintext file mode, the two legacy sidecars migrating into two databases
 //! with disjoint connection scopes, the synchronous verifier façade and the
-//! async command service reading each other's writes, and the delete hook
-//! `delete_database_data` calls.
+//! async command service reading each other's writes, the delete hook
+//! `delete_database_data` calls, and the `known_hosts` importer that spans
+//! `sorng-ssh` and the storage runtime (t62-e3, `4066152d`).
 //!
 //! The runtime is process-global, so every test takes the guard returned by
 //! `trust_store::test_support` (which holds a process-wide mutex) and never
@@ -809,4 +810,158 @@ async fn the_installed_runtime_is_the_one_every_facade_resolves() {
             .unwrap(),
         dirs.databases()
     );
+}
+
+// ── 10. known_hosts import: sorng-ssh writes into the active database ───────
+//
+// `trust_import_known_hosts` (e3) is the one t62 command whose implementation
+// lives in `sorng-ssh` while its durable effect lands in `sorng-storage`'s
+// per-database file, so the seam only shows up at this level. `sorng-ssh`'s own
+// tests cover the parser; what is asserted here is where the records go.
+
+/// A syntactically valid `ssh-ed25519` blob: `string("ssh-ed25519")` followed
+/// by `string(32 key bytes)`. Only the fingerprint of these bytes is ever
+/// compared, so fixed contents are fine — and make the record deterministic.
+const TEST_HOST_KEY: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIA0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m";
+
+fn write_known_hosts(path: &Path) {
+    // A plain name (implicit port 22), a bracketed `[host]:port`, and a
+    // wildcard pattern that must be skipped rather than guessed at.
+    let contents = format!(
+        "alpha.example.com ssh-ed25519 {key}\n\
+         [beta.example.com]:2222 ssh-ed25519 {key}\n\
+         *.wild.example.com ssh-ed25519 {key}\n",
+        key = TEST_HOST_KEY
+    );
+    std::fs::write(path, contents).expect("write known_hosts");
+}
+
+#[tokio::test]
+async fn known_hosts_import_lands_in_the_active_database_and_never_rewrites_the_file() {
+    let dirs = AppDirs::new();
+    let guard = test_support::install_runtime_for_tests(dirs.databases(), None);
+    let runtime = guard.runtime.clone();
+
+    let known_hosts = dirs.app_dir.join("known_hosts");
+    write_known_hosts(&known_hosts);
+    let original = std::fs::read(&known_hosts).expect("read known_hosts");
+    let path = known_hosts.to_string_lossy().to_string();
+
+    // With no database open the importer has nowhere to put anything, and must
+    // say so rather than inventing a store.
+    let error = app_lib::ssh::service::import_known_hosts(Some(path.clone()))
+        .expect_err("import without an active database must fail closed");
+    assert!(
+        error.contains("Trust Center") || error.contains("no active"),
+        "{error}"
+    );
+
+    runtime
+        .activate_database(Some("db-import".into()), &[])
+        .await
+        .expect("activate");
+
+    let outcome =
+        app_lib::ssh::service::import_known_hosts(Some(path.clone())).expect("import known_hosts");
+    assert_eq!(outcome.path, path);
+    assert_eq!(outcome.imported, 2, "both concrete endpoints import");
+    assert!(
+        outcome.skipped >= 1,
+        "the wildcard pattern must be skipped, not guessed at: {outcome:?}"
+    );
+
+    // The records land in THIS database's file, typed and keyed exactly the way
+    // the SSH/SFTP/SCP verifiers and the frontend's dual-write key them.
+    let document = runtime.export(Some("db-import")).expect("export");
+    assert_eq!(
+        hosts(&document.records),
+        vec!["ssh:alpha.example.com:22", "ssh:beta.example.com:2222"]
+    );
+    for record in &document.records {
+        assert!(
+            !record.user_approved,
+            "an imported key is adopted, not user-approved: {}",
+            record.host
+        );
+        match &record.identity {
+            Identity::Ssh(key) => assert!(!key.fingerprint.is_empty()),
+            other => panic!("known_hosts must import an SSH identity, got {other:?}"),
+        }
+    }
+    assert!(dirs.trust_file("db-import").exists());
+
+    // The shared system file is an input only.
+    assert_eq!(
+        std::fs::read(&known_hosts).expect("re-read"),
+        original,
+        "known_hosts must never be rewritten by an import"
+    );
+
+    // Importing again adopts nothing new — existing records win.
+    let again = app_lib::ssh::service::import_known_hosts(Some(path.clone())).expect("re-import");
+    assert_eq!(again.imported, 0);
+    assert_eq!(
+        runtime.export(Some("db-import")).unwrap().records.len(),
+        2,
+        "a second import must not duplicate records"
+    );
+
+    // A different database sees none of it.
+    runtime
+        .activate_database(Some("db-untouched".into()), &[])
+        .await
+        .expect("activate other");
+    assert!(runtime
+        .export(Some("db-untouched"))
+        .unwrap()
+        .records
+        .is_empty());
+}
+
+#[tokio::test]
+async fn a_known_hosts_import_can_never_re_trust_a_revoked_host_key() {
+    let dirs = AppDirs::new();
+    let guard = test_support::install_runtime_for_tests(dirs.databases(), None);
+    let runtime = guard.runtime.clone();
+    runtime
+        .activate_database(Some("db-revoked".into()), &[])
+        .await
+        .expect("activate");
+
+    let known_hosts = dirs.app_dir.join("known_hosts");
+    write_known_hosts(&known_hosts);
+    let path = known_hosts.to_string_lossy().to_string();
+
+    assert_eq!(
+        app_lib::ssh::service::import_known_hosts(Some(path.clone()))
+            .expect("first import")
+            .imported,
+        2
+    );
+
+    // The user revokes one of them in Settings → Security.
+    let service = TrustStoreService::shared();
+    {
+        let mut service = service.lock().await;
+        service.reload_from_disk().expect("reload");
+        service
+            .revoke_identity("alpha.example.com:22", "ssh")
+            .await
+            .expect("revoke");
+    }
+
+    // Re-importing the very same `known_hosts` line must not undo that.
+    let after = app_lib::ssh::service::import_known_hosts(Some(path)).expect("second import");
+    assert_eq!(
+        after.imported, 0,
+        "a revoked endpoint must not be re-trusted"
+    );
+
+    let document = runtime.export(Some("db-revoked")).expect("export");
+    let revoked = document
+        .records
+        .iter()
+        .find(|record| record.host == "alpha.example.com:22")
+        .expect("record still present");
+    assert!(revoked.revoked, "the revocation must survive the import");
 }
