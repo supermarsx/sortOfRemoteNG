@@ -225,3 +225,27 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  test-draytek:
+    # Fake DrayTek Vigor (DrayOS) web admin (t68): 8092 = classic wlogin.cgi
+    # (aa/ab base64, fw < 4.4), 8093 = sFormAuthStr token variant (fw >= 4.4).
+    # DRAYTEK_RSA=1 turns 8093 into the RSA-login page the crate refuses.
+    # Login admin/admin; status at /doc/status.sht; reboot POST /cgi-bin/reboot.cgi.
+    image: node:20-alpine
+    working_dir: /fixture
+    command: ["node", "server.mjs"]
+    ports:
+      - "8092:8092"
+      - "8093:8093"
+    environment:
+      - MODE=both
+      - PORT_CLASSIC=8092
+      - PORT_TOKEN=8093
+      - RSA=${DRAYTEK_RSA:-0}
+    volumes:
+      - ./fixtures/draytek:/fixture:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8092/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
