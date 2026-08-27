@@ -307,6 +307,10 @@ pub fn is_command(command: &str) -> bool {
             | "proxmox_download_appliance"
             | "proxmox_list_isos"
             | "proxmox_list_container_templates"
+            | "proxmox_connect_ex"
+            | "proxmox_submit_tfa"
+            | "proxmox_probe_certificate"
+            | "proxmox_web_ui_url"
             | "idrac_connect"
             | "idrac_disconnect"
             | "idrac_check_session"
@@ -1002,6 +1006,11 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         proxmox_commands::proxmox_download_appliance,
         proxmox_commands::proxmox_list_isos,
         proxmox_commands::proxmox_list_container_templates,
+        // Proxmox VE commands — Realm/TFA auth, ticket renewal, certificate probe
+        proxmox_commands::proxmox_connect_ex,
+        proxmox_commands::proxmox_submit_tfa,
+        proxmox_commands::proxmox_probe_certificate,
+        proxmox_commands::proxmox_web_ui_url,
         // Dell iDRAC commands — Connection
         idrac_commands::idrac_connect,
         idrac_commands::idrac_disconnect,
