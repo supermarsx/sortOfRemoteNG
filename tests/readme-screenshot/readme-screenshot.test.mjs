@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,7 +9,10 @@ import {
   README_SCREENSHOT_WIDTH,
   validateReadmeScreenshot,
 } from "../../scripts/readme-screenshot-validation.mjs";
-import { assertLoopbackOnlySshFixturePorts } from "../../scripts/readme-screenshot.mjs";
+import {
+  assertLoopbackOnlySshFixturePorts,
+  pinDriverPorts,
+} from "../../scripts/readme-screenshot.mjs";
 
 const PNG_SIGNATURE = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -166,4 +170,70 @@ test("accepts only the loopback README SSH fixture port binding", () => {
       }),
     /must publish exactly 127\.0\.0\.1:2222:2222\/tcp/,
   );
+});
+
+async function withDriverPortEnv(run) {
+  const saved = {
+    driver: process.env.TAURI_DRIVER_PORT,
+    native: process.env.TAURI_NATIVE_DRIVER_PORT,
+  };
+
+  try {
+    return await run();
+  } finally {
+    for (const [name, value] of [
+      ["TAURI_DRIVER_PORT", saved.driver],
+      ["TAURI_NATIVE_DRIVER_PORT", saved.native],
+    ]) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
+}
+
+function canBind(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => server.close(() => resolve(true)));
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+test("pins a distinct, free driver port pair for both capture phases", async () => {
+  await withDriverPortEnv(async () => {
+    delete process.env.TAURI_DRIVER_PORT;
+    delete process.env.TAURI_NATIVE_DRIVER_PORT;
+
+    const driverPort = await pinDriverPorts();
+    const nativePort = Number.parseInt(
+      process.env.TAURI_NATIVE_DRIVER_PORT,
+      10,
+    );
+
+    // Both phases are separate wdio invocations that must agree on the port,
+    // so the values have to be published to the environment they inherit.
+    assert.equal(String(driverPort), process.env.TAURI_DRIVER_PORT);
+    assert.ok(Number.isInteger(driverPort) && driverPort > 0);
+    assert.ok(Number.isInteger(nativePort) && nativePort > 0);
+    assert.notEqual(driverPort, nativePort);
+
+    // Released, not still held by the allocator.
+    assert.equal(await canBind(driverPort), true);
+    assert.equal(await canBind(nativePort), true);
+  });
+});
+
+test("keeps an explicitly pinned driver port pair", async () => {
+  await withDriverPortEnv(async () => {
+    process.env.TAURI_DRIVER_PORT = "4444";
+    process.env.TAURI_NATIVE_DRIVER_PORT = "4445";
+
+    assert.equal(await pinDriverPorts(), 4444);
+    assert.equal(process.env.TAURI_DRIVER_PORT, "4444");
+    assert.equal(process.env.TAURI_NATIVE_DRIVER_PORT, "4445");
+  });
 });

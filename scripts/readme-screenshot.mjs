@@ -180,7 +180,7 @@ async function waitForPortToClose(host, port, timeoutMs) {
  * Allocating a free pair here keeps that handshake honest while still letting
  * this script run alongside a normal E2E run.
  */
-async function pinDriverPorts() {
+export async function pinDriverPorts() {
   const servers = await Promise.all(
     [0, 0].map(
       (port) =>
