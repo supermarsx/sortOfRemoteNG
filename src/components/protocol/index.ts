@@ -8,3 +8,4 @@ export { SMBClient } from "./SMBClient";
 export { VNCClient } from "./VNCClient";
 export { WebBrowser } from "./WebBrowser";
 export { default as WhatsAppPanel } from "./WhatsAppPanel";
+export { MongoDBClient } from "./MongoDBClient";

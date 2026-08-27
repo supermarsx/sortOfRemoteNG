@@ -264,26 +264,28 @@ export const S = {
   portainerOpenWebUi: '[data-testid="portainer-open-web-ui"]',
   portainerContainerRow: '[data-testid="portainer-container-row"]',
 
-  // DrayTek Vigor panel (t68). The panel ships no data-testids yet, so these
-  // are text/placeholder selectors scoped by the spec to the panel root
-  // (the `h2` title's grandparent). Swap for testids once the panel adds them.
-  draytekPanelTitle: "h2*=DrayTek Vigor",
-  draytekHost: 'input[placeholder="192.168.1.1"]',
-  draytekName: 'input[placeholder="vigor-office"]',
-  draytekPort: 'input[inputmode="numeric"]',
-  draytekUsername: "label*=Username",
-  draytekPassword: 'input[type="password"]',
-  draytekUseTls: "label*=Use TLS",
-  draytekConnectBtn: "button*=Connect",
-  draytekDisconnectBtn: "button*=Disconnect",
-  draytekTabStatus: "button=Status",
-  draytekTabActions: "button=Actions",
-  draytekStatusTitle: "h3*=Device status",
-  draytekRebootBtn: "button*=Reboot router",
-  draytekRebootConfirm: '[role="alertdialog"]',
-  draytekRebootYes: "button*=Yes, reboot",
-  draytekRebootCancel: "button=Cancel",
-  draytekOpenWebUi: "button*=Open Web UI",
+  // DrayTek Vigor panel (t68; data-testids from src/components/integrations/draytek/**)
+  draytekPanelTitle: '[data-testid="draytek-panel-title"]',
+  draytekHost: '[data-testid="draytek-host"]',
+  draytekName: '[data-testid="draytek-name"]',
+  draytekPort: '[data-testid="draytek-port"]',
+  draytekUsername: '[data-testid="draytek-username"]',
+  draytekPassword: '[data-testid="draytek-password"]',
+  draytekUseTls: '[data-testid="draytek-use-tls"]',
+  draytekConnectBtn: '[data-testid="draytek-connect"]',
+  draytekDisconnectBtn: '[data-testid="draytek-disconnect"]',
+  draytekTabStatus: '[data-testid="draytek-tab-status"]',
+  draytekTabActions: '[data-testid="draytek-tab-actions"]',
+  draytekStatusTitle: '[data-testid="draytek-status-title"]',
+  draytekRebootBtn: '[data-testid="draytek-reboot"]',
+  draytekRebootConfirm: '[data-testid="draytek-reboot-confirm"]',
+  draytekRebootYes: '[data-testid="draytek-reboot-yes"]',
+  draytekRebootCancel: '[data-testid="draytek-reboot-cancel"]',
+  draytekOpenWebUi: '[data-testid="draytek-open-web-ui"]',
+  draytekPanel: '[data-testid="draytek-panel"]',
+  draytekError: '[data-testid="draytek-error"]',
+  draytekWebUiUrl: '[data-testid="draytek-web-ui-url"]',
+  draytekRebootResult: '[data-testid="draytek-reboot-result"]',
 
   // MySQL / MariaDB workbench (t69; testids per .orchestration/plans/t69.md D1.2)
   mysqlClient: '[data-testid="mysql-client"]',
@@ -464,6 +466,16 @@ export const S = {
     '[data-testid="session-tab"][data-session-status="connecting"]',
   sessionTabConnected:
     '[data-testid="session-tab"][data-session-status="connected"]',
+
+  // Quick Connect + protocol repair (t71)
+  quickConnectHostname: '[data-testid="quick-connect-hostname"]',
+  quickConnectProtocol: '[data-testid="quick-connect-protocol"]',
+  settingsTabAdvanced: '[data-testid="settings-tab-advanced"]',
+  protocolRepairOpen: '[data-testid="protocol-repair-open"]',
+  protocolRepairCount: '[data-testid="protocol-repair-count"]',
+  protocolRepairDialog: '[data-testid="protocol-repair-dialog"]',
+  protocolRepairRow: '[data-testid^="protocol-repair-row-"]',
+  protocolRepairApply: '[data-testid="protocol-repair-apply"]',
 } as const;
 
 /** Session tab carrying the given `data-session-status` (t63). */

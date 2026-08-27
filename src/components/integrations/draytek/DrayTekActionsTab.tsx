@@ -56,7 +56,10 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
   return (
     <div className="flex flex-col gap-6 p-4">
       {error && (
-        <div className="rounded border border-[var(--color-border)] bg-[var(--color-dangerBg,#3a1a1a)] px-3 py-2 text-xs text-[var(--color-danger,#f87171)]">
+        <div
+          className="rounded border border-[var(--color-border)] bg-[var(--color-dangerBg,#3a1a1a)] px-3 py-2 text-xs text-[var(--color-danger,#f87171)]"
+          data-testid="draytek-actions-error"
+        >
           {error}
         </div>
       )}
@@ -72,7 +75,10 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
             "Opens the DrayOS web admin in your browser. This panel's HTTP session is the reliable logged-in path; browser pre-authentication is best-effort and newer firmware (4.4+) may still show the login page.",
           )}
         </p>
-        <code className="text-xs text-[var(--color-textSecondary)]">
+        <code
+          className="text-xs text-[var(--color-textSecondary)]"
+          data-testid="draytek-web-ui-url"
+        >
           {webUiUrl}
         </code>
         <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
@@ -80,6 +86,7 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
             type="checkbox"
             checked={preAuth}
             onChange={(e) => setPreAuth(e.target.checked)}
+            data-testid="draytek-web-ui-preauth"
           />
           {t(
             "integrations.draytek.actions.webUi.preAuth",
@@ -88,6 +95,7 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
         </label>
         <button
           onClick={openWebUi}
+          data-testid="draytek-open-web-ui"
           className="flex w-fit items-center gap-2 rounded bg-primary px-3 py-2 text-sm font-medium text-white"
         >
           <ExternalLink size={16} />
@@ -109,6 +117,7 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
         {!confirmReboot ? (
           <button
             onClick={() => setConfirmReboot(true)}
+            data-testid="draytek-reboot"
             disabled={loading}
             className="flex w-fit items-center gap-2 rounded border border-[var(--color-danger,#f87171)] px-3 py-2 text-sm font-medium text-[var(--color-danger,#f87171)] disabled:opacity-50"
           >
@@ -118,6 +127,7 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
         ) : (
           <div
             role="alertdialog"
+            data-testid="draytek-reboot-confirm"
             aria-label={t(
               "integrations.draytek.actions.reboot.confirmTitle",
               "Confirm reboot",
@@ -134,6 +144,7 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
             <div className="flex gap-2">
               <button
                 onClick={() => void doReboot()}
+                data-testid="draytek-reboot-yes"
                 disabled={loading}
                 className="flex items-center gap-2 rounded bg-[var(--color-danger,#f87171)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
               >
@@ -149,6 +160,7 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
               </button>
               <button
                 onClick={() => setConfirmReboot(false)}
+                data-testid="draytek-reboot-cancel"
                 className="app-bar-button px-3 py-1.5 text-sm"
               >
                 {t("integrations.draytek.actions.reboot.cancel", "Cancel")}
@@ -157,7 +169,10 @@ const DrayTekActionsTab: React.FC<DraytekTabProps> = ({
           </div>
         )}
         {lastResult && (
-          <p className="text-xs text-[var(--color-textSecondary)]">
+          <p
+            className="text-xs text-[var(--color-textSecondary)]"
+            data-testid="draytek-reboot-result"
+          >
             {lastResult.accepted
               ? t(
                   "integrations.draytek.actions.reboot.accepted",

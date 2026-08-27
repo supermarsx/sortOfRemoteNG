@@ -302,7 +302,10 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
     : "";
 
   return (
-    <div className="flex h-full flex-col bg-[var(--color-surface)]">
+    <div
+      className="flex h-full flex-col bg-[var(--color-surface)]"
+      data-testid="draytek-panel"
+    >
       <InsecureTlsWarningModal
         key={tlsPromptOpen ? "open" : "closed"}
         isOpen={tlsPromptOpen}
@@ -320,11 +323,17 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
         }}
       />
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
+        <h2
+          className="flex items-center gap-2 text-base font-semibold text-[var(--color-text)]"
+          data-testid="draytek-panel-title"
+        >
           <Router className="h-5 w-5 text-primary" />
           {t("integrations.draytek.title", "DrayTek Vigor")}
           {summaryLine && (
-            <span className="text-xs font-normal text-[var(--color-textSecondary)]">
+            <span
+              className="text-xs font-normal text-[var(--color-textSecondary)]"
+              data-testid="draytek-summary"
+            >
               {summaryLine}
             </span>
           )}
@@ -332,6 +341,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
         {connected && (
           <button
             onClick={handleDisconnect}
+            data-testid="draytek-disconnect"
             className="app-bar-button flex items-center gap-1 px-2 py-1 text-xs"
             title={t("integrations.draytek.disconnect", "Disconnect")}
           >
@@ -342,7 +352,10 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
       </div>
 
       {error && (
-        <div className="border-b border-[var(--color-border)] bg-[var(--color-dangerBg,#3a1a1a)] px-4 py-2 text-xs text-[var(--color-danger,#f87171)]">
+        <div
+          className="border-b border-[var(--color-border)] bg-[var(--color-dangerBg,#3a1a1a)] px-4 py-2 text-xs text-[var(--color-danger,#f87171)]"
+          data-testid="draytek-error"
+        >
           {error}
         </div>
       )}
@@ -364,6 +377,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                 value={form.name}
                 onChange={(e) => setField("name", e.target.value)}
                 placeholder="vigor-office"
+                data-testid="draytek-name"
               />
             </label>
 
@@ -375,6 +389,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                   value={form.host}
                   onChange={(e) => setField("host", e.target.value)}
                   placeholder="192.168.1.1"
+                  data-testid="draytek-host"
                 />
               </label>
               <label className={`${labelClass} w-24`}>
@@ -384,6 +399,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                   value={form.port}
                   onChange={(e) => setField("port", e.target.value)}
                   inputMode="numeric"
+                  data-testid="draytek-port"
                 />
               </label>
             </div>
@@ -395,6 +411,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                 value={form.username}
                 onChange={(e) => setField("username", e.target.value)}
                 autoComplete="off"
+                data-testid="draytek-username"
               />
             </label>
 
@@ -406,6 +423,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                 value={form.password}
                 onChange={(e) => setField("password", e.target.value)}
                 autoComplete="off"
+                data-testid="draytek-password"
               />
             </label>
 
@@ -414,6 +432,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                 type="checkbox"
                 checked={form.useTls}
                 onChange={(e) => setField("useTls", e.target.checked)}
+                data-testid="draytek-use-tls"
               />
               {t("integrations.draytek.fields.useTls", "Use TLS (HTTPS)")}
             </label>
@@ -425,6 +444,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                 onChange={(e) =>
                   setField("acceptInvalidCerts", e.target.checked)
                 }
+                data-testid="draytek-accept-invalid-certs"
               />
               {t(
                 "integrations.draytek.fields.acceptInvalidCerts",
@@ -434,6 +454,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
 
             <button
               onClick={handleConnect}
+              data-testid="draytek-connect"
               disabled={connecting || !form.host.trim()}
               className="mt-2 flex items-center justify-center gap-2 rounded bg-primary px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
@@ -455,6 +476,7 @@ const DrayTekPanel: React.FC<DrayTekPanelProps> = ({ isOpen, instanceId }) => {
                   <button
                     key={tab.categoryKey}
                     onClick={() => setActiveTab(tab.categoryKey)}
+                    data-testid={`draytek-tab-${tab.categoryKey}`}
                     className={`px-3 py-2 text-sm ${
                       activeTab === tab.categoryKey
                         ? "border-b-2 border-primary text-[var(--color-text)]"

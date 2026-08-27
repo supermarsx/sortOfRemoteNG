@@ -18,3 +18,4 @@ export * from "./useSerialSession";
 export * from "./useNxClient";
 export * from "./useXdmcpClient";
 export * from "./useMacClient";
+export * from "./useMongoDBClient";

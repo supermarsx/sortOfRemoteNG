@@ -73,11 +73,11 @@ function resetRouterState(): void {
   }
 }
 
-/** The panel root: the `h2` title sits in the header row inside the root div. */
+/** The panel root (`data-testid="draytek-panel"`). */
 async function draytekPanel(): Promise<ChainablePromiseElement> {
-  const title = await $(S.draytekPanelTitle);
-  await title.waitForDisplayed({ timeout: 10_000 });
-  return title.parentElement().parentElement();
+  const panel = await $(S.draytekPanel);
+  await panel.waitForDisplayed({ timeout: 10_000 });
+  return panel;
 }
 
 async function createDraytekConnection(): Promise<void> {
@@ -124,7 +124,7 @@ async function fillFormAndConnect(
   await port.clearValue();
   await port.setValue(String(ports[scheme]));
 
-  const username = await panel.$(S.draytekUsername).$("input");
+  const username = await panel.$(S.draytekUsername);
   await username.clearValue();
   await username.setValue(ROUTER_USER);
 
@@ -133,7 +133,7 @@ async function fillFormAndConnect(
   await pass.setValue(password);
 
   // The fixture is plain HTTP: untick "Use TLS".
-  const tls = await panel.$(S.draytekUseTls).$("input");
+  const tls = await panel.$(S.draytekUseTls);
   if (await tls.isSelected()) {
     await tls.click();
   }
@@ -188,9 +188,9 @@ describe("DrayTek Vigor Panel — login, status, reboot (fake-router fixture)", 
 
     expect(await panel.$(S.draytekHost).isExisting()).toBe(true);
     expect(await panel.$(S.draytekPort).isExisting()).toBe(true);
-    expect(await panel.$(S.draytekUsername).$("input").isExisting()).toBe(true);
+    expect(await panel.$(S.draytekUsername).isExisting()).toBe(true);
     expect(await panel.$(S.draytekPassword).isExisting()).toBe(true);
-    expect(await panel.$(S.draytekUseTls).$("input").isExisting()).toBe(true);
+    expect(await panel.$(S.draytekUseTls).isExisting()).toBe(true);
     expect(await panel.$(S.draytekConnectBtn).isExisting()).toBe(true);
   });
 
