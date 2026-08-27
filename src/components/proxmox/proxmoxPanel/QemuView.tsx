@@ -18,11 +18,14 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import type { SubProps } from "./types";
+import { useProxmoxConsoleLauncher } from "../../../hooks/proxmox/useProxmoxConsole";
+import ProxmoxTermConsole from "../ProxmoxTermConsole";
 
 const QemuView: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
   const [expandedVm, setExpandedVm] = useState<number | null>(null);
   const node = mgr.selectedNode;
+  const consoles = useProxmoxConsoleLauncher();
 
   if (!node) {
     return (
@@ -34,17 +37,23 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
 
   const statusColor = (status: string) => {
     switch (status) {
-      case "running": return "bg-success";
-      case "stopped": return "bg-text-secondary";
-      case "paused": return "bg-warning";
-      default: return "bg-text-muted";
+      case "running":
+        return "bg-success";
+      case "stopped":
+        return "bg-text-secondary";
+      case "paused":
+        return "bg-warning";
+      default:
+        return "bg-text-muted";
     }
   };
 
   const formatBytes = (bytes: number) => {
     if (!bytes) return "—";
     const gb = bytes / (1024 * 1024 * 1024);
-    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+    return gb >= 1
+      ? `${gb.toFixed(1)} GB`
+      : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
   };
 
   return (
@@ -86,7 +95,9 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
                 }}
                 className="w-full flex items-center gap-3 p-3 text-left hover:bg-[var(--color-surfaceHover)] transition-colors"
               >
-                <div className={`w-2 h-2 rounded-full ${statusColor(vm.status)}`} />
+                <div
+                  className={`w-2 h-2 rounded-full ${statusColor(vm.status)}`}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[var(--color-text)] truncate">
                     {vm.name || `VM ${vm.vmid}`}
@@ -136,22 +147,32 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
                         icon={Power}
                         label={t("proxmox.qemu.shutdown", "Shutdown")}
                         color="text-warning"
-                        onClick={() => mgr.requestConfirm(
-                          t("proxmox.qemu.shutdownTitle", "Shutdown VM"),
-                          t("proxmox.qemu.shutdownMsg", `Gracefully shutdown VM ${vm.vmid}?`),
-                          () => mgr.vmAction(node, vm.vmid, "shutdown"),
-                        )}
+                        onClick={() =>
+                          mgr.requestConfirm(
+                            t("proxmox.qemu.shutdownTitle", "Shutdown VM"),
+                            t(
+                              "proxmox.qemu.shutdownMsg",
+                              `Gracefully shutdown VM ${vm.vmid}?`,
+                            ),
+                            () => mgr.vmAction(node, vm.vmid, "shutdown"),
+                          )
+                        }
                         disabled={mgr.loading}
                       />
                       <ActionBtn
                         icon={Square}
                         label={t("proxmox.qemu.stop", "Stop")}
                         color="text-error"
-                        onClick={() => mgr.requestConfirm(
-                          t("proxmox.qemu.stopTitle", "Stop VM"),
-                          t("proxmox.qemu.stopMsg", `Force stop VM ${vm.vmid}? This may cause data loss.`),
-                          () => mgr.vmAction(node, vm.vmid, "stop"),
-                        )}
+                        onClick={() =>
+                          mgr.requestConfirm(
+                            t("proxmox.qemu.stopTitle", "Stop VM"),
+                            t(
+                              "proxmox.qemu.stopMsg",
+                              `Force stop VM ${vm.vmid}? This may cause data loss.`,
+                            ),
+                            () => mgr.vmAction(node, vm.vmid, "stop"),
+                          )
+                        }
                         disabled={mgr.loading}
                       />
                       <ActionBtn
@@ -184,7 +205,15 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
                     icon={Terminal}
                     label={t("proxmox.qemu.console", "Console")}
                     color="text-info"
-                    onClick={() => mgr.openVncConsole(node, vm.vmid, "qemu")}
+                    testId={`proxmox-qemu-console-btn-${vm.vmid}`}
+                    onClick={() =>
+                      consoles.openTerm({
+                        node,
+                        vmid: vm.vmid,
+                        vmType: "qemu",
+                        label: vm.name || `VM ${vm.vmid}`,
+                      })
+                    }
                   />
                   <ActionBtn
                     icon={Camera}
@@ -219,13 +248,18 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
                     icon={Trash2}
                     label={t("proxmox.qemu.delete", "Delete")}
                     color="text-error"
-                    onClick={() => mgr.requestConfirm(
-                      t("proxmox.qemu.deleteTitle", "Delete VM"),
-                      t("proxmox.qemu.deleteMsg", `Permanently delete VM ${vm.vmid} (${vm.name})?`),
-                      async () => {
-                        await mgr.vmAction(node, vm.vmid, "delete");
-                      },
-                    )}
+                    onClick={() =>
+                      mgr.requestConfirm(
+                        t("proxmox.qemu.deleteTitle", "Delete VM"),
+                        t(
+                          "proxmox.qemu.deleteMsg",
+                          `Permanently delete VM ${vm.vmid} (${vm.name})?`,
+                        ),
+                        async () => {
+                          await mgr.vmAction(node, vm.vmid, "delete");
+                        },
+                      )
+                    }
                     disabled={mgr.loading}
                   />
                 </div>
@@ -234,6 +268,13 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
           ))}
         </div>
       )}
+
+      {consoles.termTarget ? (
+        <ProxmoxTermConsole
+          target={consoles.termTarget}
+          onClose={consoles.closeTerm}
+        />
+      ) : null}
     </div>
   );
 };
@@ -244,10 +285,12 @@ const ActionBtn: React.FC<{
   color: string;
   onClick: () => void;
   disabled?: boolean;
-}> = ({ icon: Icon, label, color, onClick, disabled }) => (
+  testId?: string;
+}> = ({ icon: Icon, label, color, onClick, disabled, testId }) => (
   <button
     onClick={onClick}
     disabled={disabled}
+    data-testid={testId}
     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-50 ${color}`}
   >
     <Icon className="w-3 h-3" />

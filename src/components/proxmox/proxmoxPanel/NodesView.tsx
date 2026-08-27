@@ -1,15 +1,28 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Server, Cpu, MemoryStick, HardDrive, Terminal, RotateCcw, Power } from "lucide-react";
+import {
+  Server,
+  Cpu,
+  MemoryStick,
+  HardDrive,
+  Terminal,
+  RotateCcw,
+  Power,
+} from "lucide-react";
 import type { SubProps } from "./types";
+import { useProxmoxConsoleLauncher } from "../../../hooks/proxmox/useProxmoxConsole";
+import ProxmoxTermConsole from "../ProxmoxTermConsole";
 
 const NodesView: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
+  const consoles = useProxmoxConsoleLauncher();
 
   const formatBytes = (bytes: number) => {
     if (!bytes) return "—";
     const gb = bytes / (1024 * 1024 * 1024);
-    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+    return gb >= 1
+      ? `${gb.toFixed(1)} GB`
+      : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
   };
 
   return (
@@ -39,43 +52,68 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${node.status === "online" ? "bg-success" : "bg-error"}`} />
-                  <span className="text-sm font-semibold text-[var(--color-text)]">{node.node}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    node.status === "online" ? "bg-success/15 text-success" : "bg-error/15 text-error"
-                  }`}>
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full ${node.status === "online" ? "bg-success" : "bg-error"}`}
+                  />
+                  <span className="text-sm font-semibold text-[var(--color-text)]">
+                    {node.node}
+                  </span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      node.status === "online"
+                        ? "bg-success/15 text-success"
+                        : "bg-error/15 text-error"
+                    }`}
+                  >
                     {node.status}
                   </span>
                 </div>
                 <div className="flex gap-1.5">
                   <button
-                    onClick={() => mgr.openNodeConsole(node.node)}
+                    data-testid={`proxmox-node-console-btn-${node.node}`}
+                    onClick={() =>
+                      consoles.openTerm({
+                        node: node.node,
+                        vmType: "node",
+                        label: `${node.node} — ${t("proxmox.nodes.console", "Node Console")}`,
+                      })
+                    }
                     className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-info hover:bg-info/10 transition-colors"
                     title={t("proxmox.nodes.console", "Node Console")}
                   >
                     <Terminal className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => mgr.requestConfirm(
-                      t("proxmox.nodes.rebootTitle", "Reboot Node"),
-                      t("proxmox.nodes.rebootMsg", `Reboot node ${node.node}?`),
-                      async () => {
-                        await mgr.refreshDashboard(); // Placeholder — the actual reboot is via invoke in mgr
-                      },
-                    )}
+                    onClick={() =>
+                      mgr.requestConfirm(
+                        t("proxmox.nodes.rebootTitle", "Reboot Node"),
+                        t(
+                          "proxmox.nodes.rebootMsg",
+                          `Reboot node ${node.node}?`,
+                        ),
+                        async () => {
+                          await mgr.refreshDashboard(); // Placeholder — the actual reboot is via invoke in mgr
+                        },
+                      )
+                    }
                     className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-warning hover:bg-warning/10 transition-colors"
                     title={t("proxmox.nodes.reboot", "Reboot")}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => mgr.requestConfirm(
-                      t("proxmox.nodes.shutdownTitle", "Shutdown Node"),
-                      t("proxmox.nodes.shutdownMsg", `Shutdown node ${node.node}? This will stop all guests.`),
-                      async () => {
-                        await mgr.refreshDashboard();
-                      },
-                    )}
+                    onClick={() =>
+                      mgr.requestConfirm(
+                        t("proxmox.nodes.shutdownTitle", "Shutdown Node"),
+                        t(
+                          "proxmox.nodes.shutdownMsg",
+                          `Shutdown node ${node.node}? This will stop all guests.`,
+                        ),
+                        async () => {
+                          await mgr.refreshDashboard();
+                        },
+                      )
+                    }
                     className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-error hover:bg-error/10 transition-colors"
                     title={t("proxmox.nodes.shutdown", "Shutdown")}
                   >
@@ -104,27 +142,37 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
                     color="bg-success"
                   />
                 )}
-                {node.disk != null && node.maxdisk != null && node.maxdisk > 0 && (
-                  <ResourceBar
-                    icon={HardDrive}
-                    label={t("proxmox.nodes.disk", "Disk")}
-                    pct={(node.disk / node.maxdisk) * 100}
-                    detail={`${formatBytes(node.disk)} / ${formatBytes(node.maxdisk)}`}
-                    color="bg-primary"
-                  />
-                )}
+                {node.disk != null &&
+                  node.maxdisk != null &&
+                  node.maxdisk > 0 && (
+                    <ResourceBar
+                      icon={HardDrive}
+                      label={t("proxmox.nodes.disk", "Disk")}
+                      pct={(node.disk / node.maxdisk) * 100}
+                      detail={`${formatBytes(node.disk)} / ${formatBytes(node.maxdisk)}`}
+                      color="bg-primary"
+                    />
+                  )}
               </div>
 
               {/* Uptime */}
               {node.uptime != null && (
                 <div className="mt-3 text-[10px] text-[var(--color-textSecondary)]">
-                  {t("proxmox.nodes.uptime", "Uptime")}: {formatUptime(node.uptime)}
+                  {t("proxmox.nodes.uptime", "Uptime")}:{" "}
+                  {formatUptime(node.uptime)}
                 </div>
               )}
             </div>
           ))}
         </div>
       )}
+
+      {consoles.termTarget ? (
+        <ProxmoxTermConsole
+          target={consoles.termTarget}
+          onClose={consoles.closeTerm}
+        />
+      ) : null}
     </div>
   );
 };

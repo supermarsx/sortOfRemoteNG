@@ -84,6 +84,15 @@ import type {
   PveRole,
   PveGroup,
 } from "../../types/hardware/proxmox";
+import {
+  PROXMOX_CONSOLE_CLOSE_COMMAND,
+  PROXMOX_CONSOLE_LIST_COMMAND,
+  PROXMOX_CONSOLE_OPEN_COMMAND,
+  PROXMOX_CONSOLE_RESIZE_COMMAND,
+  PROXMOX_CONSOLE_SEND_COMMAND,
+  type ProxmoxConsoleSessionHandle,
+  type ProxmoxConsoleVmType,
+} from "./useProxmoxConsole";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -348,6 +357,26 @@ export interface UseProxmoxReturn extends UseProxmoxState {
   lxcSpiceProxy: (node: string, vmid: number) => Promise<SpiceTicket>;
   lxcTermproxy: (node: string, vmid: number) => Promise<TermProxyTicket>;
   nodeTermproxy: (node: string) => Promise<TermProxyTicket>;
+
+  /**
+   * Interactive console relay (`console_ws.rs`). `openConsole` returns a
+   * handle whose `sessionId` addresses every other call and every
+   * `proxmox-console-*` event; `useProxmoxConsole` drives the full lifecycle,
+   * these wrappers exist for callers that only need one operation.
+   */
+  openConsole: (
+    node: string,
+    vmid: number | undefined,
+    vmType: ProxmoxConsoleVmType,
+  ) => Promise<ProxmoxConsoleSessionHandle>;
+  sendConsoleInput: (sessionId: string, data: string) => Promise<void>;
+  resizeConsole: (
+    sessionId: string,
+    cols: number,
+    rows: number,
+  ) => Promise<void>;
+  closeConsole: (sessionId: string) => Promise<void>;
+  listConsoles: () => Promise<ProxmoxConsoleSessionHandle[]>;
 
   // Snapshots
   listQemuSnapshots: (node: string, vmid: number) => Promise<SnapshotSummary[]>;
@@ -1082,6 +1111,42 @@ export function useProxmox(): UseProxmoxReturn {
     [call],
   );
 
+  const openConsole = useCallback(
+    (
+      node: string,
+      vmid: number | undefined,
+      vmType: ProxmoxConsoleVmType,
+    ): Promise<ProxmoxConsoleSessionHandle> =>
+      call<ProxmoxConsoleSessionHandle>(PROXMOX_CONSOLE_OPEN_COMMAND, {
+        node,
+        vmid,
+        vmType,
+      }),
+    [call],
+  );
+  const sendConsoleInput = useCallback(
+    (sessionId: string, data: string) =>
+      call<void>(PROXMOX_CONSOLE_SEND_COMMAND, { sessionId, data }),
+    [call],
+  );
+  const resizeConsole = useCallback(
+    (sessionId: string, cols: number, rows: number) =>
+      call<void>(PROXMOX_CONSOLE_RESIZE_COMMAND, { sessionId, cols, rows }),
+    [call],
+  );
+  const closeConsole = useCallback(
+    (sessionId: string) =>
+      call<void>(PROXMOX_CONSOLE_CLOSE_COMMAND, { sessionId }),
+    [call],
+  );
+  const listConsoles = useCallback(
+    () =>
+      call<ProxmoxConsoleSessionHandle[]>(PROXMOX_CONSOLE_LIST_COMMAND).then(
+        (sessions) => sessions ?? [],
+      ),
+    [call],
+  );
+
   // ── Snapshots ─────────────────────────────────────────────────
 
   const listQemuSnapshots = useCallback(
@@ -1297,6 +1362,11 @@ export function useProxmox(): UseProxmoxReturn {
     lxcSpiceProxy,
     lxcTermproxy,
     nodeTermproxy,
+    openConsole,
+    sendConsoleInput,
+    resizeConsole,
+    closeConsole,
+    listConsoles,
     listQemuSnapshots,
     createQemuSnapshot,
     rollbackQemuSnapshot,

@@ -10,6 +10,8 @@ import {
   Terminal,
 } from "lucide-react";
 import type { SubProps } from "./types";
+import { useProxmoxConsoleLauncher } from "../../../hooks/proxmox/useProxmoxConsole";
+import ProxmoxTermConsole from "../ProxmoxTermConsole";
 
 /** Backup Jobs view */
 export const BackupsView: React.FC<SubProps> = ({ mgr }) => {
@@ -25,21 +27,34 @@ export const BackupsView: React.FC<SubProps> = ({ mgr }) => {
         refreshing={mgr.refreshing}
       />
       {mgr.backupJobs.length === 0 ? (
-        <EmptyState icon={Archive} message={t("proxmox.backups.noJobs", "No backup jobs configured")} />
+        <EmptyState
+          icon={Archive}
+          message={t("proxmox.backups.noJobs", "No backup jobs configured")}
+        />
       ) : (
         <div className="space-y-2">
           {mgr.backupJobs.map((job, i) => (
-            <div key={job.id ?? i} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
+            <div
+              key={job.id ?? i}
+              className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]"
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-medium text-[var(--color-text)]">{job.id ?? `Job ${i + 1}`}</div>
+                  <div className="text-sm font-medium text-[var(--color-text)]">
+                    {job.id ?? `Job ${i + 1}`}
+                  </div>
                   <div className="text-[10px] text-[var(--color-textSecondary)]">
-                    {job.schedule ?? "no schedule"} — {job.storage ?? "default"} — {job.mode ?? "snapshot"}
+                    {job.schedule ?? "no schedule"} — {job.storage ?? "default"}{" "}
+                    — {job.mode ?? "snapshot"}
                   </div>
                 </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  job.enabled !== false ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"
-                }`}>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    job.enabled !== false
+                      ? "bg-success/15 text-success"
+                      : "bg-text-secondary/15 text-text-muted"
+                  }`}
+                >
                   {job.enabled !== false ? "enabled" : "disabled"}
                 </span>
               </div>
@@ -66,11 +81,16 @@ export const FirewallView: React.FC<SubProps> = ({ mgr }) => {
       />
       {mgr.firewallOptions && (
         <div className="mb-4 p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] text-xs text-[var(--color-textSecondary)]">
-          Firewall: {mgr.firewallOptions.enable ? "enabled" : "disabled"} | Policy IN: {mgr.firewallOptions.policyIn ?? "—"} | Policy OUT: {mgr.firewallOptions.policyOut ?? "—"}
+          Firewall: {mgr.firewallOptions.enable ? "enabled" : "disabled"} |
+          Policy IN: {mgr.firewallOptions.policyIn ?? "—"} | Policy OUT:{" "}
+          {mgr.firewallOptions.policyOut ?? "—"}
         </div>
       )}
       {mgr.firewallRules.length === 0 ? (
-        <EmptyState icon={Shield} message={t("proxmox.firewall.noRules", "No firewall rules")} />
+        <EmptyState
+          icon={Shield}
+          message={t("proxmox.firewall.noRules", "No firewall rules")}
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -87,15 +107,22 @@ export const FirewallView: React.FC<SubProps> = ({ mgr }) => {
             </thead>
             <tbody>
               {mgr.firewallRules.map((rule, i) => (
-                <tr key={`rule-${rule.pos ?? i}`} className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]">
+                <tr
+                  key={`rule-${rule.pos ?? i}`}
+                  className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]"
+                >
                   <td className="py-1.5 pr-3">{rule.pos ?? i}</td>
                   <td className="py-1.5 pr-3">{rule.ruleType ?? "—"}</td>
                   <td className="py-1.5 pr-3">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                      rule.action === "ACCEPT" ? "bg-success/15 text-success" :
-                      rule.action === "DROP" ? "bg-error/15 text-error" :
-                      "bg-warning/15 text-warning"
-                    }`}>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        rule.action === "ACCEPT"
+                          ? "bg-success/15 text-success"
+                          : rule.action === "DROP"
+                            ? "bg-error/15 text-error"
+                            : "bg-warning/15 text-warning"
+                      }`}
+                    >
                       {rule.action}
                     </span>
                   </td>
@@ -127,13 +154,25 @@ export const PoolsView: React.FC<SubProps> = ({ mgr }) => {
         refreshing={mgr.refreshing}
       />
       {mgr.pools.length === 0 ? (
-        <EmptyState icon={Boxes} message={t("proxmox.pools.noPools", "No resource pools")} />
+        <EmptyState
+          icon={Boxes}
+          message={t("proxmox.pools.noPools", "No resource pools")}
+        />
       ) : (
         <div className="space-y-2">
           {mgr.pools.map((pool) => (
-            <div key={pool.poolid} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
-              <div className="text-sm font-medium text-[var(--color-text)]">{pool.poolid}</div>
-              {pool.comment && <div className="text-[10px] text-[var(--color-textSecondary)]">{pool.comment}</div>}
+            <div
+              key={pool.poolid}
+              className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]"
+            >
+              <div className="text-sm font-medium text-[var(--color-text)]">
+                {pool.poolid}
+              </div>
+              {pool.comment && (
+                <div className="text-[10px] text-[var(--color-textSecondary)]">
+                  {pool.comment}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -158,16 +197,26 @@ export const HaView: React.FC<SubProps> = ({ mgr }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Resources */}
         <section>
-          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">Resources ({mgr.haResources.length})</h4>
+          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">
+            Resources ({mgr.haResources.length})
+          </h4>
           {mgr.haResources.length === 0 ? (
-            <div className="text-xs text-[var(--color-textSecondary)]">No HA resources</div>
+            <div className="text-xs text-[var(--color-textSecondary)]">
+              No HA resources
+            </div>
           ) : (
             <div className="space-y-1.5">
               {mgr.haResources.map((r) => (
-                <div key={r.sid} className="p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] text-xs">
-                  <div className="font-medium text-[var(--color-text)]">{r.sid}</div>
+                <div
+                  key={r.sid}
+                  className="p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] text-xs"
+                >
+                  <div className="font-medium text-[var(--color-text)]">
+                    {r.sid}
+                  </div>
                   <div className="text-[10px] text-[var(--color-textSecondary)]">
-                    state: {r.state ?? "—"} | group: {r.group ?? "—"} | max relocate: {r.maxRelocate ?? "—"}
+                    state: {r.state ?? "—"} | group: {r.group ?? "—"} | max
+                    relocate: {r.maxRelocate ?? "—"}
                   </div>
                 </div>
               ))}
@@ -176,16 +225,26 @@ export const HaView: React.FC<SubProps> = ({ mgr }) => {
         </section>
         {/* Groups */}
         <section>
-          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">Groups ({mgr.haGroups.length})</h4>
+          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">
+            Groups ({mgr.haGroups.length})
+          </h4>
           {mgr.haGroups.length === 0 ? (
-            <div className="text-xs text-[var(--color-textSecondary)]">No HA groups</div>
+            <div className="text-xs text-[var(--color-textSecondary)]">
+              No HA groups
+            </div>
           ) : (
             <div className="space-y-1.5">
               {mgr.haGroups.map((g) => (
-                <div key={g.group} className="p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] text-xs">
-                  <div className="font-medium text-[var(--color-text)]">{g.group}</div>
+                <div
+                  key={g.group}
+                  className="p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] text-xs"
+                >
+                  <div className="font-medium text-[var(--color-text)]">
+                    {g.group}
+                  </div>
                   <div className="text-[10px] text-[var(--color-textSecondary)]">
-                    nodes: {g.nodes ?? "—"} | restricted: {g.restricted ? "yes" : "no"}
+                    nodes: {g.nodes ?? "—"} | restricted:{" "}
+                    {g.restricted ? "yes" : "no"}
                   </div>
                 </div>
               ))}
@@ -214,19 +273,31 @@ export const CephView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.cephStatus && (
         <div className="mb-4 p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
           <div className="text-xs text-[var(--color-textSecondary)]">
-            Health: <span className="font-medium text-[var(--color-text)]">{String(mgr.cephStatus.health?.status ?? "—")}</span>
+            Health:{" "}
+            <span className="font-medium text-[var(--color-text)]">
+              {String(mgr.cephStatus.health?.status ?? "—")}
+            </span>
           </div>
         </div>
       )}
       {mgr.cephPools.length === 0 ? (
-        <EmptyState icon={Database} message={t("proxmox.ceph.noPools", "No Ceph pools")} />
+        <EmptyState
+          icon={Database}
+          message={t("proxmox.ceph.noPools", "No Ceph pools")}
+        />
       ) : (
         <div className="space-y-2">
           {mgr.cephPools.map((pool) => (
-            <div key={pool.poolName ?? pool.pool} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
-              <div className="text-sm font-medium text-[var(--color-text)]">{pool.poolName ?? `Pool ${pool.pool}`}</div>
+            <div
+              key={pool.poolName ?? pool.pool}
+              className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]"
+            >
+              <div className="text-sm font-medium text-[var(--color-text)]">
+                {pool.poolName ?? `Pool ${pool.pool}`}
+              </div>
               <div className="text-[10px] text-[var(--color-textSecondary)]">
-                size: {pool.size ?? "—"} | pg: {pool.pgNum ?? "—"} | crush rule: {pool.crushRule ?? "—"}
+                size: {pool.size ?? "—"} | pg: {pool.pgNum ?? "—"} | crush rule:{" "}
+                {pool.crushRule ?? "—"}
               </div>
             </div>
           ))}
@@ -240,6 +311,7 @@ export const CephView: React.FC<SubProps> = ({ mgr }) => {
 export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
   const node = mgr.selectedNode;
+  const consoles = useProxmoxConsoleLauncher();
   return (
     <div className="p-6 overflow-y-auto flex-1">
       <h3 className="text-sm font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
@@ -254,7 +326,14 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
             {t("proxmox.console.nodeConsole", "Node Console")}
           </h4>
           <button
-            onClick={() => mgr.openNodeConsole(node)}
+            data-testid="proxmox-open-node-console-btn"
+            onClick={() =>
+              consoles.openTerm({
+                node,
+                vmType: "node",
+                label: `${node} — ${t("proxmox.console.nodeConsole", "Node Console")}`,
+              })
+            }
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-info hover:bg-info text-[var(--color-text)] text-xs font-medium transition-colors"
           >
             <Terminal className="w-3.5 h-3.5" />
@@ -267,63 +346,115 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* QEMU VMs */}
         <section>
-          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">QEMU VMs</h4>
-          {mgr.qemuVms.filter(v => v.status === "running").length === 0 ? (
-            <div className="text-xs text-[var(--color-textSecondary)]">No running VMs</div>
+          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">
+            QEMU VMs
+          </h4>
+          {mgr.qemuVms.filter((v) => v.status === "running").length === 0 ? (
+            <div className="text-xs text-[var(--color-textSecondary)]">
+              No running VMs
+            </div>
           ) : (
             <div className="space-y-1.5">
-              {mgr.qemuVms.filter(v => v.status === "running").map((vm) => (
-                <div key={vm.vmid} className="flex items-center justify-between p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
-                  <span className="text-xs text-[var(--color-text)]">{vm.name || `VM ${vm.vmid}`}</span>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => node && mgr.openVncConsole(node, vm.vmid, "qemu")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
-                    >
-                      VNC
-                    </button>
-                    <button
-                      onClick={() => node && mgr.openTermConsole(node, vm.vmid, "qemu")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-info/15 text-info hover:bg-info/25 transition-colors"
-                    >
-                      xterm
-                    </button>
+              {mgr.qemuVms
+                .filter((v) => v.status === "running")
+                .map((vm) => (
+                  <div
+                    key={vm.vmid}
+                    className="flex items-center justify-between p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)]"
+                  >
+                    <span className="text-xs text-[var(--color-text)]">
+                      {vm.name || `VM ${vm.vmid}`}
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() =>
+                          node && mgr.openVncConsole(node, vm.vmid, "qemu")
+                        }
+                        className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
+                      >
+                        VNC
+                      </button>
+                      <button
+                        data-testid={`proxmox-console-xterm-qemu-${vm.vmid}`}
+                        onClick={() =>
+                          node &&
+                          consoles.openTerm({
+                            node,
+                            vmid: vm.vmid,
+                            vmType: "qemu",
+                            label: vm.name || `VM ${vm.vmid}`,
+                          })
+                        }
+                        className="px-2 py-1 rounded text-[10px] font-medium bg-info/15 text-info hover:bg-info/25 transition-colors"
+                      >
+                        xterm
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </section>
         {/* LXC Containers */}
         <section>
-          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">LXC Containers</h4>
-          {mgr.lxcContainers.filter(c => c.status === "running").length === 0 ? (
-            <div className="text-xs text-[var(--color-textSecondary)]">No running containers</div>
+          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">
+            LXC Containers
+          </h4>
+          {mgr.lxcContainers.filter((c) => c.status === "running").length ===
+          0 ? (
+            <div className="text-xs text-[var(--color-textSecondary)]">
+              No running containers
+            </div>
           ) : (
             <div className="space-y-1.5">
-              {mgr.lxcContainers.filter(c => c.status === "running").map((ct) => (
-                <div key={ct.vmid} className="flex items-center justify-between p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
-                  <span className="text-xs text-[var(--color-text)]">{ct.name || `CT ${ct.vmid}`}</span>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => node && mgr.openVncConsole(node, ct.vmid, "lxc")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
-                    >
-                      VNC
-                    </button>
-                    <button
-                      onClick={() => node && mgr.openTermConsole(node, ct.vmid, "lxc")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-info/15 text-info hover:bg-info/25 transition-colors"
-                    >
-                      xterm
-                    </button>
+              {mgr.lxcContainers
+                .filter((c) => c.status === "running")
+                .map((ct) => (
+                  <div
+                    key={ct.vmid}
+                    className="flex items-center justify-between p-2 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)]"
+                  >
+                    <span className="text-xs text-[var(--color-text)]">
+                      {ct.name || `CT ${ct.vmid}`}
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() =>
+                          node && mgr.openVncConsole(node, ct.vmid, "lxc")
+                        }
+                        className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
+                      >
+                        VNC
+                      </button>
+                      <button
+                        data-testid={`proxmox-console-xterm-lxc-${ct.vmid}`}
+                        onClick={() =>
+                          node &&
+                          consoles.openTerm({
+                            node,
+                            vmid: ct.vmid,
+                            vmType: "lxc",
+                            label: ct.name || `CT ${ct.vmid}`,
+                          })
+                        }
+                        className="px-2 py-1 rounded text-[10px] font-medium bg-info/15 text-info hover:bg-info/25 transition-colors"
+                      >
+                        xterm
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </section>
       </div>
+
+      {consoles.termTarget ? (
+        <ProxmoxTermConsole
+          target={consoles.termTarget}
+          onClose={consoles.closeTerm}
+        />
+      ) : null}
     </div>
   );
 };
@@ -342,13 +473,17 @@ const ViewHeader: React.FC<{
     <h3 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
       <Icon className={`w-4 h-4 ${color}`} />
       {title}
-      <span className="text-xs font-normal text-[var(--color-textSecondary)]">({count})</span>
+      <span className="text-xs font-normal text-[var(--color-textSecondary)]">
+        ({count})
+      </span>
     </h3>
     <button
       onClick={onRefresh}
       className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
     >
-      <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+      <RefreshCw
+        className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
+      />
     </button>
   </div>
 );
