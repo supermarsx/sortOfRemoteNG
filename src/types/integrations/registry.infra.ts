@@ -6,6 +6,7 @@ import { netboxDescriptor } from "../../components/integrations/netbox/descripto
 import { cpanelDescriptor } from "../../components/integrations/cpanel/descriptor";
 import { ansibleDescriptor } from "../../components/integrations/ansible/descriptor";
 import { proxmoxDescriptor } from "../../components/integrations/proxmox/descriptor";
+import { portainerDescriptor } from "../../components/integrations/portainer/descriptor";
 import {
   lxdDescriptor,
   pfsenseDescriptor,
@@ -24,4 +25,5 @@ export const infraIntegrations: IntegrationDescriptor[] = [
   ansibleDescriptor,
   draytekDescriptor,
   proxmoxDescriptor,
+  portainerDescriptor,
 ];

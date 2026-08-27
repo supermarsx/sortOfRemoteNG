@@ -100,9 +100,11 @@ const EXPECTED_PANELS: { key: string; category: ConnectionTypeCategory }[] = [
   { key: "draytek", category: "networking" },
   // t67: Proxmox VE (src/components/integrations/proxmox/descriptor.ts)
   { key: "proxmox", category: "virtualization" },
+  // t64: Portainer (src/components/integrations/portainer/descriptor.ts)
+  { key: "portainer", category: "virtualization" },
 ];
 
-const EXPECTED_PANEL_COUNT = 25;
+const EXPECTED_PANEL_COUNT = 26;
 
 // Category → sorted panel keys, derived from the manifest. This is the shape
 // `groupByCategory()` must reproduce over the registry (10 integration-populated
