@@ -111,6 +111,7 @@ members = [
   "crates/sorng-ilo",
   "crates/sorng-lenovo",
   "crates/sorng-supermicro",
+  "crates/sorng-voip-phone",
   "crates/sorng-synology",
   "crates/sorng-notifications",
   "crates/sorng-filters",
