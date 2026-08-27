@@ -123,11 +123,6 @@ _Verify TLS_) is the normal way to clear a stale pin.
 
 ## Consoles
 
-> **Status:** shipping in t67 phase 3. The terminal relay, noVNC bridge and
-> their panel overlays are being built on top of the ticket commands that
-> already exist; until they land the console buttons in the panel only fetch a
-> ticket. This section describes the target behaviour.
-
 The console actions on nodes, VMs and containers open an overlay inside the
 Proxmox tab; they do not create a separate session tab.
 
@@ -147,13 +142,11 @@ Proxmox tab; they do not create a separate session tab.
   handoff needs a `.vv` launcher path that is not wired for Proxmox yet.
   Use the terminal or noVNC console, or the web UI.
 
-The terminal console is the primary path; the noVNC bridge is the later
-phase and is the first thing to verify against a real node if a console
-does not open.
+The terminal console is the primary path; the noVNC bridge landed after it
+and is the first thing to verify against a real node if a console does not
+open.
 
 ## Open web UI
-
-> **Status:** shipping in t67 phase 3 (panel adapter work).
 
 **Open web UI** opens `https://host:port/` (deep-linked to the selected VM
 when one is chosen) in an in-app HTTPS session with auto-login: the app fills
@@ -197,8 +190,8 @@ containerisable, so two mock servers stand in:
 - **Frontend:** `npx vitest run tests/proxmox tests/integrations` covers the
   panel adapter, hydration from saved fields and vault secrets, the TFA
   state machine, the certificate-probe prompt and the console hook.
-- **E2E (opt-in, shipping in t67 phase 3):** `e2e/helpers/fixtures/mock-pve/server.mjs`
+- **E2E (opt-in):** `e2e/helpers/fixtures/mock-pve/server.mjs`
   is a Node HTTPS mock on port `18006` with the same endpoints, driven by
   `e2e/specs/28-proxmox/proxmox-panel.spec.ts` against the built Tauri
-  binary. Until it lands, the spec is listed as lab-only in the
+  binary. The spec is listed as opt-in in the
   [E2E tier map](../testing/e2e-tier-map.md).
