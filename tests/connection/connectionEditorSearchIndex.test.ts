@@ -441,6 +441,48 @@ describe("connection editor search index", () => {
     expect(serialIndex.map((entry) => entry.fieldId)).not.toContain("port");
     expect(serialIndex.map((entry) => entry.fieldId)).not.toContain("username");
     expect(serialIndex.map((entry) => entry.fieldId)).not.toContain("password");
+
+    const autoSerialIndex = buildIndex({
+      isGroup: false,
+      protocol: "serial",
+      hostname: "auto:match",
+      serialSettings: {
+        version: 1,
+        portName: "",
+        portSelection: { mode: "match", vid: 1027, pid: 24577, match: "ftdi" },
+        baudRate: 9600,
+        dataBits: "8",
+        parity: "none",
+        stopBits: "1",
+        flowControl: "none",
+        readTimeoutMs: 100,
+        writeTimeoutMs: 1000,
+        rxBufferSize: 4096,
+        txBufferSize: 4096,
+        dtrOnOpen: true,
+        rtsOnOpen: true,
+        lineEnding: "crLf",
+        charDelayMs: 0,
+        localEcho: false,
+      },
+    });
+    expect(
+      searchConnectionEditorIndex(autoSerialIndex, "first detected")[0],
+    ).toMatchObject({
+      fieldId: "serial-device",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(autoSerialIndex, "vendor id")[0],
+    ).toMatchObject({
+      fieldId: "serial-device-match",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(autoSerialIndex, "ftdi").find(
+        (entry) => entry.fieldId === "serial-device-match",
+      ),
+    ).toBeDefined();
   });
 
   it("indexes ARD and saved-protocol settings on their truthful subtabs", () => {
