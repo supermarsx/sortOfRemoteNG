@@ -1,14 +1,20 @@
-import type { ChildProcess } from 'child_process';
-import { execFileSync, spawn } from 'child_process';
-import fs from 'fs';
-import net from 'net';
-import path from 'path';
+import type { ChildProcess } from "child_process";
+import { execFileSync, spawn } from "child_process";
+import fs from "fs";
+import net from "net";
+import path from "path";
 
-const DRIVER_PORT = Number.parseInt(process.env.TAURI_DRIVER_PORT ?? '4444', 10);
+const DRIVER_PORT = Number.parseInt(
+  process.env.TAURI_DRIVER_PORT ?? "4444",
+  10,
+);
 const DRIVER_START_TIMEOUT_MS = 30_000;
 const DRIVER_INSTALL_HINT =
-  'cargo install tauri-driver --version 2.0.5 --locked';
-const NATIVE_DRIVER_ENV_VARS = ['TAURI_NATIVE_DRIVER_PATH', 'EDGE_DRIVER_PATH'] as const;
+  "cargo install tauri-driver --version 2.0.5 --locked";
+const NATIVE_DRIVER_ENV_VARS = [
+  "TAURI_NATIVE_DRIVER_PATH",
+  "EDGE_DRIVER_PATH",
+] as const;
 
 /**
  * Custom WDIO service that starts and stops `tauri-driver`
@@ -35,19 +41,19 @@ export default class TauriDriverService {
     const startupOutput: string[] = [];
 
     this.process = spawn(driverCommand, driverArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ["ignore", "pipe", "pipe"],
       shell: false,
     });
 
-    this.process.stdout?.on('data', (data: Buffer) => {
+    this.process.stdout?.on("data", (data: Buffer) => {
       this.captureOutput(startupOutput, data);
     });
 
-    this.process.stderr?.on('data', (data: Buffer) => {
+    this.process.stderr?.on("data", (data: Buffer) => {
       const msg = data.toString();
       this.captureOutput(startupOutput, data);
-      if (msg.includes('error') || msg.includes('Error')) {
-        console.error('[tauri-driver]', msg.trim());
+      if (msg.includes("error") || msg.includes("Error")) {
+        console.error("[tauri-driver]", msg.trim());
       }
     });
 
@@ -58,18 +64,18 @@ export default class TauriDriverService {
 
     try {
       await Promise.race([
-        this.waitForPort(DRIVER_PORT, DRIVER_START_TIMEOUT_MS, startupOutput).then(
-          () => {
-            startupFailure.markReady();
-          },
-        ),
+        this.waitForPort(
+          DRIVER_PORT,
+          DRIVER_START_TIMEOUT_MS,
+          startupOutput,
+        ).then(() => {
+          startupFailure.markReady();
+        }),
         startupFailure.failed,
       ]);
     } catch (error) {
       await this.onComplete();
-      console.error(
-        error instanceof Error ? error.message : String(error),
-      );
+      console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   }
@@ -85,7 +91,7 @@ export default class TauriDriverService {
 
   private resolveDriverCommand(): string {
     const override = process.env.TAURI_DRIVER_PATH?.trim();
-    return override && override.length > 0 ? override : 'tauri-driver';
+    return override && override.length > 0 ? override : "tauri-driver";
   }
 
   private resolveDriverLaunchConfig(): {
@@ -93,18 +99,18 @@ export default class TauriDriverService {
     driverArgs: string[];
   } {
     const driverCommand = this.resolveDriverCommand();
-    const driverArgs: string[] = ['--port', String(DRIVER_PORT)];
+    const driverArgs: string[] = ["--port", String(DRIVER_PORT)];
 
     const nativeDriverPath = this.resolveNativeDriverPath();
     if (nativeDriverPath) {
-      driverArgs.push('--native-driver', nativeDriverPath);
+      driverArgs.push("--native-driver", nativeDriverPath);
     }
 
     return { driverCommand, driverArgs };
   }
 
   private resolveNativeDriverPath(): string | null {
-    if (process.platform !== 'win32') {
+    if (process.platform !== "win32") {
       return null;
     }
 
@@ -142,9 +148,9 @@ export default class TauriDriverService {
 
   private findNativeDriverOnPath(): string | null {
     try {
-      const output = execFileSync('where', ['msedgedriver'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
+      const output = execFileSync("where", ["msedgedriver"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
       });
 
       const match = output
@@ -164,12 +170,17 @@ export default class TauriDriverService {
       return null;
     }
 
-    const packagesDir = path.join(localAppData, 'Microsoft', 'WinGet', 'Packages');
+    const packagesDir = path.join(
+      localAppData,
+      "Microsoft",
+      "WinGet",
+      "Packages",
+    );
     if (!fs.existsSync(packagesDir)) {
       return null;
     }
 
-    return this.findFileRecursive(packagesDir, 'msedgedriver.exe');
+    return this.findFileRecursive(packagesDir, "msedgedriver.exe");
   }
 
   private findFileRecursive(rootDir: string, fileName: string): string | null {
@@ -190,7 +201,10 @@ export default class TauriDriverService {
 
       for (const entry of entries) {
         const fullPath = path.join(currentDir, entry.name);
-        if (entry.isFile() && entry.name.toLowerCase() === fileName.toLowerCase()) {
+        if (
+          entry.isFile() &&
+          entry.name.toLowerCase() === fileName.toLowerCase()
+        ) {
           return fullPath;
         }
 
@@ -225,7 +239,7 @@ export default class TauriDriverService {
     let ready = false;
 
     const failed = new Promise<never>((_, reject) => {
-      this.process?.once('error', (error: NodeJS.ErrnoException) => {
+      this.process?.once("error", (error: NodeJS.ErrnoException) => {
         if (ready) {
           return;
         }
@@ -233,7 +247,7 @@ export default class TauriDriverService {
         reject(this.createSpawnError(driverCommand, startupOutput, error));
       });
 
-      this.process?.once('exit', (code, signal) => {
+      this.process?.once("exit", (code, signal) => {
         if (ready) {
           return;
         }
@@ -241,14 +255,14 @@ export default class TauriDriverService {
         reject(
           new Error(
             [
-              'tauri-driver exited before the WebDriver server was ready.',
+              "tauri-driver exited before the WebDriver server was ready.",
               `Command: ${driverCommand}`,
-              `Exit code: ${code ?? 'unknown'}`,
-              `Signal: ${signal ?? 'none'}`,
+              `Exit code: ${code ?? "unknown"}`,
+              `Signal: ${signal ?? "none"}`,
               this.formatCapturedOutput(startupOutput),
             ]
               .filter(Boolean)
-              .join('\n'),
+              .join("\n"),
           ),
         );
       });
@@ -278,21 +292,21 @@ export default class TauriDriverService {
                 this.formatCapturedOutput(startupOutput),
               ]
                 .filter(Boolean)
-                .join('\n'),
+                .join("\n"),
             ),
           );
           return;
         }
         const socket = new net.Socket();
-        socket.once('connect', () => {
+        socket.once("connect", () => {
           socket.destroy();
           resolve();
         });
-        socket.once('error', () => {
+        socket.once("error", () => {
           socket.destroy();
           setTimeout(tryConnect, 250);
         });
-        socket.connect(port, '127.0.0.1');
+        socket.connect(port, "127.0.0.1");
       };
       tryConnect();
     });
@@ -303,21 +317,21 @@ export default class TauriDriverService {
     startupOutput: string[],
     error: NodeJS.ErrnoException,
   ): Error {
-    if (error.code === 'ENOENT') {
+    if (error.code === "ENOENT") {
       const details = process.env.TAURI_DRIVER_PATH?.trim()
-        ? 'The TAURI_DRIVER_PATH override does not point to a runnable tauri-driver binary.'
-        : 'The tauri-driver binary was not found on PATH.';
+        ? "The TAURI_DRIVER_PATH override does not point to a runnable tauri-driver binary."
+        : "The tauri-driver binary was not found on PATH.";
 
       return new Error(
         [
           `Unable to start tauri-driver using "${driverCommand}".`,
           details,
           `Install it with: ${DRIVER_INSTALL_HINT}`,
-          'Or set TAURI_DRIVER_PATH to the full path of the installed executable.',
+          "Or set TAURI_DRIVER_PATH to the full path of the installed executable.",
           this.formatCapturedOutput(startupOutput),
         ]
           .filter(Boolean)
-          .join('\n'),
+          .join("\n"),
       );
     }
 
@@ -327,16 +341,16 @@ export default class TauriDriverService {
         this.formatCapturedOutput(startupOutput),
       ]
         .filter(Boolean)
-        .join('\n'),
+        .join("\n"),
     );
   }
 
   private formatCapturedOutput(startupOutput: string[]): string {
     if (startupOutput.length === 0) {
-      return '';
+      return "";
     }
 
-    return `Driver output:\n${startupOutput.join('\n')}`;
+    return `Driver output:\n${startupOutput.join("\n")}`;
   }
 
   private formatCommand(command: string, args: string[]): string {
@@ -344,6 +358,6 @@ export default class TauriDriverService {
       return command;
     }
 
-    return [command, ...args].join(' ');
+    return [command, ...args].join(" ");
   }
 }
