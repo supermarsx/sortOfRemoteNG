@@ -377,7 +377,9 @@ struct ConsoleConnection {
     handshake: String,
 }
 
-fn auth_header_for(
+/// Shared with [`crate::vnc_bridge`], which carries the same session
+/// credential on its own `vncwebsocket` upgrade.
+pub(crate) fn auth_header_for(
     config: &ProxmoxConfig,
     client: &PveClient,
 ) -> ProxmoxResult<(&'static str, String)> {
@@ -399,7 +401,10 @@ fn auth_header_for(
 /// Mirrors [`PveClient::new`]: a pinned self-signed certificate when the
 /// connection opted into `insecure` + fingerprint, otherwise the platform
 /// trust store. Both use the `ring` provider the app installs at startup.
-fn tls_connector(fingerprint: Option<[u8; 32]>) -> ProxmoxResult<Connector> {
+///
+/// Shared with [`crate::vnc_bridge`] so both websocket paths inherit the same
+/// TLS posture from one place.
+pub(crate) fn tls_connector(fingerprint: Option<[u8; 32]>) -> ProxmoxResult<Connector> {
     let builder = rustls::ClientConfig::builder_with_provider(Arc::new(
         rustls::crypto::ring::default_provider(),
     ))

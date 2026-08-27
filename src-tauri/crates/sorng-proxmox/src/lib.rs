@@ -27,6 +27,8 @@
 //! - **console** — VNC and SPICE console ticket acquisition
 //! - **console_ws** — live `termproxy` WebSocket relay behind the xterm.js
 //!   consoles (bounded buffers, keepalive, frontend events)
+//! - **vnc_bridge** — loopback TCP → `vncproxy` WebSocket bridge that lets the
+//!   native VNC client attach to a Proxmox guest framebuffer
 //! - **metrics** — RRD data for nodes, VMs, containers
 //! - **snapshot** — Snapshot CRUD for QEMU & LXC
 //! - **template** — Appliance template downloads
@@ -55,3 +57,4 @@ pub mod storage;
 pub mod tasks;
 pub mod template;
 pub mod types;
+pub mod vnc_bridge;

@@ -15,6 +15,11 @@
 //! `termproxy` ticket endpoints and the `vncwebsocket` upgrade, behind which a
 //! minimal PVE termproxy is emulated (`user:ticket\n` → `OK`, then `0:`/`1:`/`2`
 //! frames, echoing input back as server output).
+//!
+//! The `vnc` section (t67-e6) adds the `vncproxy` ticket endpoints and, behind
+//! the same `vncwebsocket` upgrade, a fake RFB server (greets with
+//! `RFB 003.008\n`, records everything the client writes). Which emulation runs
+//! is decided by the ticket the upgrade carries.
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
@@ -96,6 +101,18 @@ pub struct MockState {
     pub console_bad_frames: Vec<String>,
     /// Server-pushed output / close, broadcast to every live console.
     console_directives: tokio::sync::broadcast::Sender<WsDirective>,
+    /// ── `vnc` section (t67-e6) ─────────────────────────────────────
+    /// Issued `vncproxy` tickets: `vncticket -> user`.
+    pub vnc_tickets: HashMap<String, String>,
+    pub vnc_issued: u64,
+    /// Reject every VNC `vncwebsocket` upgrade with 401 (expired-ticket path).
+    pub vnc_reject_upgrade: bool,
+    /// Websocket upgrades that reached the RFB emulation.
+    pub vnc_connections: usize,
+    /// Everything the bridged client wrote, concatenated in order.
+    pub vnc_client_bytes: Vec<u8>,
+    /// Server-pushed output / close, broadcast to every live VNC socket.
+    vnc_directives: tokio::sync::broadcast::Sender<WsDirective>,
 }
 
 impl MockState {
@@ -125,6 +142,12 @@ impl MockState {
             console_echo: true,
             console_bad_frames: Vec::new(),
             console_directives: tokio::sync::broadcast::channel(64).0,
+            vnc_tickets: HashMap::new(),
+            vnc_issued: 0,
+            vnc_reject_upgrade: false,
+            vnc_connections: 0,
+            vnc_client_bytes: Vec::new(),
+            vnc_directives: tokio::sync::broadcast::channel(64).0,
         }
     }
 
@@ -455,6 +478,19 @@ fn route(state: &mut MockState, request: &RecordedRequest) -> (u16, String) {
             }
             issue_console_ticket(state, request)
         }
+        // ── `vnc` section: vncproxy tickets ────────────────────────
+        ("POST", ["nodes", MOCK_NODE, "vncproxy"]) => issue_vnc_ticket(state, request),
+        ("POST", ["nodes", MOCK_NODE, kind, vmid, "vncproxy"])
+            if matches!(*kind, "qemu" | "lxc") =>
+        {
+            let Ok(vmid) = vmid.parse::<u64>() else {
+                return (400, error_body("vmid"));
+            };
+            if *kind == "qemu" && !state.vm_status.contains_key(&vmid) {
+                return (404, error_body("no such vm"));
+            }
+            issue_vnc_ticket(state, request)
+        }
         ("GET", ["nodes", MOCK_NODE, "qemu", vmid, "status", "current"]) => {
             let Ok(vmid) = vmid.parse::<u64>() else {
                 return (400, error_body("vmid"));
@@ -642,9 +678,19 @@ pub enum WsDirective {
     Close(String),
 }
 
+/// Which emulation runs behind an accepted `vncwebsocket` upgrade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WsMode {
+    /// PVE termproxy: `user:ticket\n` → `OK`, then `0:`/`1:`/`2` frames.
+    TermProxy,
+    /// PVE vncproxy: raw RFB, no handshake line (t67-e6).
+    VncProxy,
+}
+
 /// What the 101 response and the emulation need from the upgrade request.
 pub struct WsUpgrade {
     accept_key: String,
+    mode: WsMode,
     /// The user the accepted `vncticket` was issued to.
     expected_user: String,
     expected_ticket: String,
@@ -767,12 +813,26 @@ fn console_upgrade(
     let Some(vncticket) = query.get("vncticket") else {
         return Err((401, error_body("missing vncticket")));
     };
+    // The same endpoint serves both proxies; the ticket decides which.
+    if let Some(expected_user) = state.vnc_tickets.get(vncticket).cloned() {
+        if state.vnc_reject_upgrade {
+            return Err((401, error_body("invalid ticket")));
+        }
+        return Ok(WsUpgrade {
+            accept_key,
+            mode: WsMode::VncProxy,
+            expected_user,
+            expected_ticket: vncticket.clone(),
+            directives: state.vnc_directives.subscribe(),
+        });
+    }
     let Some(expected_user) = state.console_tickets.get(vncticket).cloned() else {
         return Err((401, error_body("invalid ticket")));
     };
 
     Ok(WsUpgrade {
         accept_key,
+        mode: WsMode::TermProxy,
         expected_user,
         expected_ticket: vncticket.clone(),
         directives: state.console_directives.subscribe(),
@@ -786,6 +846,10 @@ where
 {
     let mut socket =
         tokio_tungstenite::WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
+    if upgrade.mode == WsMode::VncProxy {
+        serve_vnc_ws(socket, state, upgrade.directives).await;
+        return;
+    }
     let mut directives = upgrade.directives;
 
     // ── Handshake line ─────────────────────────────────────────────
@@ -931,6 +995,137 @@ fn handle_console_frame(state: &Arc<Mutex<MockState>>, payload: &[u8]) -> Option
                 .console_bad_frames
                 .push(String::from_utf8_lossy(payload).into_owned());
             None
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  vnc — `vncproxy` tickets + a fake RFB server behind the websocket (t67-e6)
+// ══════════════════════════════════════════════════════════════════════
+
+/// The greeting a real RFB 3.8 server opens with; the bridge must deliver it
+/// byte-for-byte to the loopback client.
+pub const RFB_GREETING: &[u8] = b"RFB 003.008\n";
+
+impl MockPve {
+    /// Push raw bytes to every live VNC socket (as the framebuffer would).
+    pub fn push_vnc_output(&self, bytes: &[u8]) {
+        let sender = self.state().vnc_directives.clone();
+        let _ = sender.send(WsDirective::Output(bytes.to_vec()));
+    }
+
+    /// Close every live VNC socket with `reason`.
+    pub fn close_vnc(&self, reason: &str) {
+        let sender = self.state().vnc_directives.clone();
+        let _ = sender.send(WsDirective::Close(reason.to_string()));
+    }
+}
+
+impl MockState {
+    /// Every `vncproxy` ticket the mock has handed out, sorted.
+    pub fn vnc_ticket_values(&self) -> Vec<String> {
+        let mut tickets: Vec<String> = self.vnc_tickets.keys().cloned().collect();
+        tickets.sort();
+        tickets
+    }
+}
+
+/// `POST …/vncproxy` — hand out a single-use VNC ticket.
+///
+/// A real PVE also returns `cert` (the node's certificate chain) and a `upid`;
+/// both are echoed so the deserializer sees the full shape.
+fn issue_vnc_ticket(state: &mut MockState, request: &RecordedRequest) -> (u16, String) {
+    let Some(user) = requesting_user(state, request) else {
+        return (401, error_body("No ticket"));
+    };
+    state.vnc_issued += 1;
+    let ticket = format!("PVEVNC:{:08X}::vncsig", state.vnc_issued);
+    let port = format!("{}", 5700 + state.vnc_issued);
+    state.vnc_tickets.insert(ticket.clone(), user.clone());
+    (
+        200,
+        json(serde_json::json!({
+            "ticket": ticket,
+            "port": port,
+            "user": user,
+            "upid": format!("UPID:{MOCK_NODE}:0000:vncproxy:{user}:"),
+            "cert": "-----BEGIN CERTIFICATE-----\nmock\n-----END CERTIFICATE-----\n",
+        })),
+    )
+}
+
+/// Minimal RFB server: greet, record everything the client writes, relay
+/// whatever a test pushes. There is no `user:ticket` handshake on this path —
+/// a real PVE hands the raw VNC stream straight through.
+async fn serve_vnc_ws<S>(
+    mut socket: tokio_tungstenite::WebSocketStream<S>,
+    state: Arc<Mutex<MockState>>,
+    mut directives: tokio::sync::broadcast::Receiver<WsDirective>,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    if socket
+        .send(Message::Binary(RFB_GREETING.to_vec().into()))
+        .await
+        .is_err()
+    {
+        return;
+    }
+    {
+        let mut guard = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.vnc_connections += 1;
+    }
+
+    loop {
+        tokio::select! {
+            incoming = socket.next() => {
+                let Some(Ok(message)) = incoming else { return };
+                match message {
+                    Message::Close(_) => {
+                        let _ = socket.send(Message::Close(None)).await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                    Message::Ping(payload) => {
+                        if socket.send(Message::Pong(payload)).await.is_err() {
+                            return;
+                        }
+                    }
+                    Message::Pong(_) | Message::Frame(_) => {}
+                    other => {
+                        let Some(payload) = message_payload(&other) else {
+                            continue;
+                        };
+                        let mut guard = state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        guard.vnc_client_bytes.extend_from_slice(&payload);
+                    }
+                }
+            }
+            directive = directives.recv() => {
+                match directive {
+                    Ok(WsDirective::Output(bytes)) => {
+                        if socket.send(Message::Binary(bytes.into())).await.is_err() {
+                            return;
+                        }
+                    }
+                    Ok(WsDirective::Close(reason)) => {
+                        let _ = socket
+                            .send(Message::Close(Some(CloseFrame {
+                                code: CloseCode::Normal,
+                                reason: reason.into(),
+                            })))
+                            .await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                }
+            }
         }
     }
 }

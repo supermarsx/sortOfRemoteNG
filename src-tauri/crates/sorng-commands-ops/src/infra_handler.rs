@@ -311,6 +311,8 @@ pub fn is_command(command: &str) -> bool {
             | "proxmox_submit_tfa"
             | "proxmox_probe_certificate"
             | "proxmox_web_ui_url"
+            | "proxmox_vnc_bridge_open"
+            | "proxmox_vnc_bridge_close"
             | "idrac_connect"
             | "idrac_disconnect"
             | "idrac_check_session"
@@ -1011,6 +1013,9 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         proxmox_commands::proxmox_submit_tfa,
         proxmox_commands::proxmox_probe_certificate,
         proxmox_commands::proxmox_web_ui_url,
+        // Proxmox VE commands — noVNC loopback bridge
+        proxmox_commands::proxmox_vnc_bridge_open,
+        proxmox_commands::proxmox_vnc_bridge_close,
         // Dell iDRAC commands — Connection
         idrac_commands::idrac_connect,
         idrac_commands::idrac_disconnect,

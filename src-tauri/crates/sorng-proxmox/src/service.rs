@@ -25,6 +25,7 @@ use crate::storage::StorageManager;
 use crate::tasks::TaskManager;
 use crate::template::TemplateManager;
 use crate::types::*;
+use crate::vnc_bridge::{ProxmoxVncBridge, VncBridgeRegistry};
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -37,12 +38,14 @@ pub type ProxmoxServiceState = Arc<Mutex<ProxmoxService>>;
 // console session handle.
 pub use crate::client::TfaKind;
 pub use crate::console_ws::ProxmoxConsoleSession as ConsoleSessionHandle;
+pub use crate::vnc_bridge::ProxmoxVncBridge as VncBridgeHandle;
 
 /// Top-level service that aggregates all Proxmox VE subsystems.
 pub struct ProxmoxService {
     client: Option<PveClient>,
     config: Option<ProxmoxConfig>,
     consoles: ConsoleRegistry,
+    bridges: VncBridgeRegistry,
 }
 
 impl Default for ProxmoxService {
@@ -61,16 +64,19 @@ impl ProxmoxService {
             client: None,
             config: None,
             consoles: ConsoleRegistry::new(None),
+            bridges: VncBridgeRegistry::new(None),
         }
     }
 
     /// Create a service whose console relays emit
-    /// `proxmox-console-{output,closed,error}` to the frontend.
+    /// `proxmox-console-{output,closed,error}` and `proxmox-vnc-bridge-closed`
+    /// to the frontend.
     pub fn new_with_emitter(emitter: sorng_core::events::DynEventEmitter) -> Self {
         Self {
             client: None,
             config: None,
-            consoles: ConsoleRegistry::new(Some(emitter)),
+            consoles: ConsoleRegistry::new(Some(Arc::clone(&emitter))),
+            bridges: VncBridgeRegistry::new(Some(emitter)),
         }
     }
 
@@ -80,7 +86,16 @@ impl ProxmoxService {
             client: None,
             config: None,
             consoles,
+            bridges: VncBridgeRegistry::new(None),
         }
+    }
+
+    /// Test hook: swap in a VNC bridge registry with lowered ceilings and
+    /// timeouts. Chains onto [`Self::new`] / [`Self::with_console_registry`].
+    #[must_use]
+    pub fn with_vnc_bridge_registry(mut self, bridges: VncBridgeRegistry) -> Self {
+        self.bridges = bridges;
+        self
     }
 
     pub fn is_connected(&self) -> bool {
@@ -274,9 +289,50 @@ impl ProxmoxService {
         &self.consoles
     }
 
+    // ── noVNC loopback bridges ──────────────────────────────────────
+
+    /// Open a loopback TCP bridge onto a guest's VNC console.
+    ///
+    /// Acquires a `vncproxy` ticket, binds `127.0.0.1:0` and returns as soon as
+    /// the port is listening. The first client to connect owns the bridge; the
+    /// WebSocket to PVE is opened only then, reusing this connection's TLS
+    /// posture (certificate pin included). The returned `ticket` is the RFB
+    /// password the VNC client must answer with.
+    pub async fn vnc_bridge_open(
+        &self,
+        node: &str,
+        vmid: Option<u64>,
+        vm_type: Option<&str>,
+    ) -> ProxmoxResult<ProxmoxVncBridge> {
+        let target = ConsoleTarget::parse(node, vmid, vm_type)?;
+        let client = self.require_client()?;
+        let config = self
+            .config
+            .as_ref()
+            .ok_or_else(|| ProxmoxError::connection("Not connected to Proxmox VE"))?;
+        crate::vnc_bridge::open_bridge(&self.bridges, client, config, target).await
+    }
+
+    /// Tear one bridge down; `proxmox-vnc-bridge-closed` follows.
+    pub fn vnc_bridge_close(&self, bridge_id: &str) -> ProxmoxResult<()> {
+        self.bridges.close(bridge_id)
+    }
+
+    /// Live VNC bridges, ordered by id.
+    pub fn vnc_bridges(&self) -> Vec<ProxmoxVncBridge> {
+        self.bridges.bridges()
+    }
+
+    /// The VNC bridge registry (diagnostics/tests).
+    pub fn vnc_bridge_registry(&self) -> &VncBridgeRegistry {
+        &self.bridges
+    }
+
     pub async fn disconnect(&mut self) -> ProxmoxResult<()> {
-        // Consoles are bound to the session ticket: they cannot outlive it.
+        // Consoles and bridges are bound to the session ticket: they cannot
+        // outlive it.
         self.consoles.close_all();
+        self.bridges.close_all();
         if let Some(ref mut client) = self.client {
             let _ = client.logout().await;
         }

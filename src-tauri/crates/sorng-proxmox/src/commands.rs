@@ -3,7 +3,7 @@
 // Every command is `async`, takes `State<'_, ProxmoxServiceState>` and
 // returns `Result<T, String>` (Tauri requires `String` errors).
 
-use super::service::{ConsoleSessionHandle, ProxmoxServiceState};
+use super::service::{ConsoleSessionHandle, ProxmoxServiceState, VncBridgeHandle};
 use super::types::*;
 use tauri::State;
 
@@ -1450,6 +1450,43 @@ pub async fn proxmox_console_list(
 ) -> Result<Vec<ConsoleSessionHandle>, String> {
     let svc = state.lock().await;
     Ok(svc.console_sessions())
+}
+
+// ── noVNC loopback bridges ──────────────────────────────────────────
+//
+// `proxmox_vnc_bridge_open` returns `{ bridgeId, localPort, ticket, user, … }`.
+// The frontend points the native VNC client at `127.0.0.1:<localPort>` with
+// `ticket` as the password and unencrypted transport allowed (TLS terminates
+// at the websocket, and the socket never leaves loopback). The bridge accepts
+// exactly one client within 10 s, then closes on disconnect, after 10 minutes
+// without traffic, or on `proxmox_vnc_bridge_close`. Its end is announced by
+// `proxmox-vnc-bridge-closed` { bridgeId, reason }.
+
+/// Open a VNC bridge onto a QEMU VM (`vm_type: "qemu"`), an LXC container
+/// (`"lxc"`) or a node shell (`"node"`, no `vmid`). Omitting `vm_type` infers
+/// `qemu` when a `vmid` is given and `node` otherwise.
+#[tauri::command]
+pub async fn proxmox_vnc_bridge_open(
+    state: State<'_, ProxmoxServiceState>,
+    node: String,
+    vmid: Option<u64>,
+    vm_type: Option<String>,
+) -> Result<VncBridgeHandle, String> {
+    let svc = state.lock().await;
+    svc.vnc_bridge_open(&node, vmid, vm_type.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Tear a bridge down. A second call on a closed bridge reports it as unknown;
+/// treat that as already-closed.
+#[tauri::command]
+pub async fn proxmox_vnc_bridge_close(
+    state: State<'_, ProxmoxServiceState>,
+    bridge_id: String,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.vnc_bridge_close(&bridge_id).map_err(|e| e.to_string())
 }
 
 // ── Snapshots ───────────────────────────────────────────────────────
