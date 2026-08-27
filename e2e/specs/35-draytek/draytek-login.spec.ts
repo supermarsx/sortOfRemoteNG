@@ -8,6 +8,7 @@
 //
 // Requires t68-e2's `draytek_*` command registration in the built app.
 import { S } from "../../helpers/selectors";
+import { selectCustomOption } from "../../helpers/forms";
 import {
   resetAppState,
   createCollection,
@@ -90,8 +91,10 @@ async function createDraytekConnection(): Promise<void> {
   const nameInput = await $(S.editorName);
   await nameInput.setValue("DrayTek E2E");
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText("DrayTek Vigor");
+  // The protocol picker is the app's custom combobox (`role="combobox"` plus a
+  // portalled `role="listbox"`), not a native `<select>`, so WebdriverIO's
+  // `selectByVisibleText` cannot drive it — use the repo's helper.
+  await selectCustomOption(S.editorProtocol, "DrayTek Vigor");
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
