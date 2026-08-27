@@ -32,7 +32,7 @@ ssh2 = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 shell-escape = "0.1"
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { version = "0.6", features = ["all"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 rquickjs = { version = "0.12", features = ["full-async"], optional = true }

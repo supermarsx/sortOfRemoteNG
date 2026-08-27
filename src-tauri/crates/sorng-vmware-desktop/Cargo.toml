@@ -17,4 +17,4 @@ url = { workspace = true }
 base64 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
+winreg = "0.56"

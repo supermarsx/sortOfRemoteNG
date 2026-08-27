@@ -23,7 +23,7 @@ sqlx = { workspace = true, features = ["mysql", "runtime-tokio", "tls-rustls"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 sha2 = { workspace = true }
-socket2 = "0.5"
+socket2 = "0.6"
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
 regex = { workspace = true }
 rustls = { workspace = true }

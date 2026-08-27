@@ -58,7 +58,7 @@ log = { workspace = true }
 tracing = { workspace = true }
 x509-cert = { version = "0.2", features = ["std"] }
 sha2 = { workspace = true }
-socket2 = "0.5"
+socket2 = "0.6"
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
