@@ -646,6 +646,14 @@ pub fn is_command(command: &str) -> bool {
             | "syn_get_notification_config"
             | "syn_test_email_notification"
             | "syn_get_dashboard"
+            | "voip_phone_probe"
+            | "voip_phone_connect"
+            | "voip_phone_disconnect"
+            | "voip_phone_list"
+            | "voip_phone_get_config"
+            | "voip_phone_get_status"
+            | "voip_phone_reboot"
+            | "voip_phone_web_login_hint"
     )
 }
 
@@ -1435,5 +1443,44 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         synology_commands::syn_test_email_notification,
         // Synology NAS commands — Dashboard
         synology_commands::syn_get_dashboard,
+        // VoIP desk-phone (Yealink T2x) commands
+        voip_phone_commands::voip_phone_probe,
+        voip_phone_commands::voip_phone_connect,
+        voip_phone_commands::voip_phone_disconnect,
+        voip_phone_commands::voip_phone_list,
+        voip_phone_commands::voip_phone_get_config,
+        voip_phone_commands::voip_phone_get_status,
+        voip_phone_commands::voip_phone_reboot,
+        voip_phone_commands::voip_phone_web_login_hint,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_command;
+
+    const VOIP_PHONE_COMMANDS: &[&str] = &[
+        "voip_phone_probe",
+        "voip_phone_connect",
+        "voip_phone_disconnect",
+        "voip_phone_list",
+        "voip_phone_get_config",
+        "voip_phone_get_status",
+        "voip_phone_reboot",
+        "voip_phone_web_login_hint",
+    ];
+
+    #[test]
+    fn voip_phone_command_recognition_matches_handler_registration() {
+        let source = include_str!("infra_handler.rs");
+        for command in VOIP_PHONE_COMMANDS {
+            assert!(is_command(command), "{command} missing from is_command");
+            let registration = format!("voip_phone_commands::{command},");
+            assert!(
+                source.contains(&registration),
+                "{command} missing from generate_handler!"
+            );
+        }
+        assert!(!is_command("voip_phone_unknown"));
+    }
 }

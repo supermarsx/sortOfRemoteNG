@@ -123,6 +123,8 @@ use synology::service::SynologyServiceState;
 use vmware::service::VmwareServiceState;
 #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 use vmware_desktop::service::VmwDesktopServiceState;
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
+use voip_phone::service::VoipPhoneServiceState;
 
 #[cfg(all(feature = "opkssh", not(feature = "ops")))]
 use sorng_opkssh::service::OpksshServiceState;
@@ -213,6 +215,7 @@ pub const PLATFORM_REGISTRATION_ORDER: &[&str] = &[
     "MeshCentralServiceState",
     "MremotengServiceState",
     "TermServServiceState",
+    "VoipPhoneServiceState",
 ];
 
 pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
@@ -236,8 +239,8 @@ pub const API_REGISTRATION_ORDER: &[&str] =
     &["ApiService", "DisabledCapsSetter", "ApiServerController"];
 
 /// Maximum moved inventory: 13 infrastructure/API + 40 security/data + 5
-/// access + 12 platform + 14 collaboration registrations.
-pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 84;
+/// access + 13 platform + 14 collaboration registrations.
+pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 85;
 
 pub struct InfrastructureHandles {
     pub app_dir: std::path::PathBuf,
@@ -435,11 +438,11 @@ mod tests {
     #[test]
     fn fixed_registrar_inventories_match_the_moved_contract() {
         assert_eq!(ACCESS_REGISTRATION_ORDER.len(), 5);
-        assert_eq!(PLATFORM_REGISTRATION_ORDER.len(), 12);
+        assert_eq!(PLATFORM_REGISTRATION_ORDER.len(), 13);
         assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 14);
         assert_eq!(API_REGISTRATION_ORDER.len(), 3);
         assert_eq!(34 + 6, 40);
-        assert_eq!(10 + 3 + 40 + 5 + 12 + 14, MAX_MANAGED_STATE_REGISTRATIONS);
+        assert_eq!(10 + 3 + 40 + 5 + 13 + 14, MAX_MANAGED_STATE_REGISTRATIONS);
     }
 
     #[test]

@@ -12,5 +12,6 @@ pub use sorng_synology as synology;
 pub use sorng_termserv as termserv;
 pub use sorng_vmware as vmware;
 pub use sorng_vmware_desktop as vmware_desktop;
+pub use sorng_voip_phone as voip_phone;
 pub use sorng_x2go::x2go;
 pub use sorng_xdmcp::xdmcp;

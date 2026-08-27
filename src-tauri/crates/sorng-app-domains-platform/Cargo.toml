@@ -19,6 +19,7 @@ sorng-synology = { path = "../sorng-synology" }
 sorng-termserv = { path = "../sorng-termserv" }
 sorng-vmware = { path = "../sorng-vmware" }
 sorng-vmware-desktop = { path = "../sorng-vmware-desktop" }
+sorng-voip-phone = { path = "../sorng-voip-phone" }
 
 sorng-x2go = { path = "../sorng-x2go" }
 sorng-xdmcp = { path = "../sorng-xdmcp" }

@@ -73,11 +73,11 @@ fn remaining_startup_registrars_are_concrete_and_preserve_state_identity() {
 
 #[test]
 fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
-    assert_eq!(sorng_app_startup_state::MAX_MANAGED_STATE_REGISTRATIONS, 84);
+    assert_eq!(sorng_app_startup_state::MAX_MANAGED_STATE_REGISTRATIONS, 85);
     assert_eq!(sorng_app_startup_state::ACCESS_REGISTRATION_ORDER.len(), 5);
     assert_eq!(
         sorng_app_startup_state::PLATFORM_REGISTRATION_ORDER.len(),
-        12
+        13
     );
     assert_eq!(sorng_app_startup_state::COLLAB_REGISTRATION_ORDER.len(), 14);
     assert_eq!(sorng_app_startup_state::API_REGISTRATION_ORDER.len(), 3);
@@ -134,7 +134,7 @@ fn root_registry_only_orchestrates_external_registrars_in_original_order() {
 }
 
 #[test]
-fn startup_state_crate_owns_all_eighty_four_manage_monomorphizations() {
+fn startup_state_crate_owns_all_eighty_five_manage_monomorphizations() {
     let sources = [
         include_str!("../crates/sorng-app-startup-state/src/lib.rs"),
         include_str!("../crates/sorng-app-startup-state/src/security_data.rs"),
@@ -146,7 +146,7 @@ fn startup_state_crate_owns_all_eighty_four_manage_monomorphizations() {
         .iter()
         .map(|source| source.matches("app.manage(").count())
         .sum::<usize>();
-    assert_eq!(registrations, 84);
+    assert_eq!(registrations, 85);
 }
 
 fn assert_source_fragments_in_order(source: &str, registrar: &str, fragments: &[&str]) {
@@ -170,7 +170,7 @@ fn every_moved_registrar_keeps_its_internal_registration_order() {
             "app.manage(UpdaterService::new",
             "app.manage(auth_service.clone());",
             "app.manage(secure_storage);",
-            "app.manage(TrustStoreService::new(",
+            "app.manage(TrustStoreService::shared());",
             "app.manage(ssh_service.clone());",
             "app.manage(SftpService::new());",
             "app.manage(smb_service);",
@@ -277,6 +277,8 @@ fn every_moved_registrar_keeps_its_internal_registration_order() {
             "app.manage(MeshCentralService::new",
             "app.manage(MremotengService::new",
             "app.manage(termserv::service::TermServService::new_state",
+            "let voip_phone: VoipPhoneServiceState",
+            "app.manage(voip_phone);",
         ],
     );
     assert_source_fragments_in_order(

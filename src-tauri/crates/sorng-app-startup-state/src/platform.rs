@@ -25,4 +25,7 @@ pub(super) fn register(app: &mut tauri::App<tauri::Wry>) {
     app.manage(MeshCentralService::new());
     app.manage(MremotengService::new());
     app.manage(termserv::service::TermServService::new_state());
+    let voip_phone: VoipPhoneServiceState =
+        Arc::new(Mutex::new(voip_phone::service::VoipPhoneService::new()));
+    app.manage(voip_phone);
 }
