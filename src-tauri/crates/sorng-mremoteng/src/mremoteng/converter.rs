@@ -402,15 +402,15 @@ pub fn app_connection_to_mrng(conn: &Value) -> MremotengResult<MrngConnectionInf
         };
     }
 
-    // Connection basics
+    // Connection basics (port first: it is evidence for the protocol mapping)
+    if let Some(port) = obj.get("port").and_then(|v| v.as_u64()) {
+        mrng.port = port as u16;
+    }
     if let Some(protocol) = obj.get("protocol").and_then(|v| v.as_str()) {
-        mrng.protocol = app_protocol_to_mrng(protocol);
+        mrng.protocol = app_protocol_to_mrng(protocol, mrng.port);
     }
     if let Some(hostname) = obj.get("hostname").and_then(|v| v.as_str()) {
         mrng.hostname = hostname.to_string();
-    }
-    if let Some(port) = obj.get("port").and_then(|v| v.as_u64()) {
-        mrng.port = port as u16;
     }
 
     // Credentials
@@ -599,19 +599,31 @@ fn mrng_protocol_to_app(protocol: &MrngProtocol) -> &'static str {
 }
 
 /// Map app protocol string to mRemoteNG protocol.
-fn app_protocol_to_mrng(protocol: &str) -> MrngProtocol {
-    match protocol {
-        "rdp" => MrngProtocol::RDP,
-        "vnc" => MrngProtocol::VNC,
-        "ssh" | "sftp" | "scp" => MrngProtocol::SSH2,
+///
+/// App protocols with no mRemoteNG equivalent (`ilo`, `proxmox`,
+/// `integration:*`, ...) are mapped by port evidence: a web port yields
+/// HTTP/HTTPS (most of those are browser-based management UIs), anything
+/// else is exported as RAW. RDP is never chosen without evidence.
+fn app_protocol_to_mrng(protocol: &str, port: u16) -> MrngProtocol {
+    match protocol.trim().to_ascii_lowercase().as_str() {
+        "rdp" | "ica" => MrngProtocol::RDP,
+        "vnc" | "ard" => MrngProtocol::VNC,
+        "ssh" | "sftp" | "scp" | "mosh" => MrngProtocol::SSH2,
         "telnet" => MrngProtocol::Telnet,
         "rlogin" => MrngProtocol::Rlogin,
         "raw" | "raw-tcp" | "raw_tcp" => MrngProtocol::RAW,
         "http" => MrngProtocol::HTTP,
         "https" => MrngProtocol::HTTPS,
-        "winrm" => MrngProtocol::PowerShell,
+        "winrm" | "powershell" | "psremoting" => MrngProtocol::PowerShell,
+        "winbox" => MrngProtocol::Winbox,
         "ftp" => MrngProtocol::RAW, // No direct match, use RAW
-        _ => MrngProtocol::RDP,
+        other => match MrngProtocol::from_port(port) {
+            Some(p @ (MrngProtocol::HTTP | MrngProtocol::HTTPS)) => p,
+            // Non-web port evidence for an unknown app protocol is too weak to
+            // claim a specific mRemoteNG protocol; fall back to string aliases
+            // (e.g. "web") and finally RAW, which is honest and openable.
+            _ => MrngProtocol::from_str_with_port(other, 0),
+        },
     }
 }
 
@@ -1078,12 +1090,42 @@ mod tests {
         assert_eq!(mrng_protocol_to_app(&MrngProtocol::HTTPS), "https");
         assert_eq!(mrng_protocol_to_app(&MrngProtocol::PowerShell), "winrm");
 
-        assert_eq!(app_protocol_to_mrng("rdp"), MrngProtocol::RDP);
-        assert_eq!(app_protocol_to_mrng("ssh"), MrngProtocol::SSH2);
-        assert_eq!(app_protocol_to_mrng("vnc"), MrngProtocol::VNC);
-        assert_eq!(app_protocol_to_mrng("rlogin"), MrngProtocol::Rlogin);
-        assert_eq!(app_protocol_to_mrng("raw"), MrngProtocol::RAW);
-        assert_eq!(app_protocol_to_mrng("winrm"), MrngProtocol::PowerShell);
+        assert_eq!(app_protocol_to_mrng("rdp", 3389), MrngProtocol::RDP);
+        assert_eq!(app_protocol_to_mrng("ssh", 22), MrngProtocol::SSH2);
+        assert_eq!(app_protocol_to_mrng("vnc", 5900), MrngProtocol::VNC);
+        assert_eq!(app_protocol_to_mrng("rlogin", 513), MrngProtocol::Rlogin);
+        assert_eq!(app_protocol_to_mrng("raw", 0), MrngProtocol::RAW);
+        assert_eq!(
+            app_protocol_to_mrng("winrm", 5985),
+            MrngProtocol::PowerShell
+        );
+    }
+
+    #[test]
+    fn test_app_protocol_to_mrng_unknown_uses_port_evidence() {
+        // Web-based management protocols export as HTTPS/HTTP, not RDP.
+        assert_eq!(app_protocol_to_mrng("ilo", 443), MrngProtocol::HTTPS);
+        assert_eq!(app_protocol_to_mrng("proxmox", 8006), MrngProtocol::HTTPS);
+        assert_eq!(
+            app_protocol_to_mrng("integration:portainer", 9000),
+            MrngProtocol::HTTP
+        );
+        // No evidence at all -> RAW, never RDP.
+        assert_eq!(app_protocol_to_mrng("ilo", 0), MrngProtocol::RAW);
+        assert_eq!(app_protocol_to_mrng("frobnicate", 9999), MrngProtocol::RAW);
+        // Port never overrides an explicit protocol.
+        assert_eq!(app_protocol_to_mrng("ssh", 443), MrngProtocol::SSH2);
+    }
+
+    #[test]
+    fn test_app_connection_to_mrng_web_protocol_export() {
+        let conn = serde_json::json!({
+            "id": "c1", "name": "iLO", "hostname": "10.0.0.5",
+            "protocol": "ilo", "port": 443
+        });
+        let mrng = app_connection_to_mrng(&conn).unwrap();
+        assert_eq!(mrng.protocol, MrngProtocol::HTTPS);
+        assert_eq!(mrng.port, 443);
     }
 
     // ── SSH tunnel name → id resolution ────────────────────────────

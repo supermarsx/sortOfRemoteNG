@@ -160,7 +160,10 @@ pub fn putty_session_to_connection(session: &PuttySession) -> MrngConnectionInfo
         "rlogin" => MrngProtocol::Rlogin,
         "raw" => MrngProtocol::RAW,
         "serial" => MrngProtocol::RAW, // Map serial to RAW (closest)
-        _ => MrngProtocol::SSH2,
+        // PuTTY's own default protocol is SSH when the key is absent.
+        "" => MrngProtocol::SSH2,
+        // Anything else: string aliases first, then port evidence, else RAW.
+        other => MrngProtocol::from_str_with_port(other, session.port),
     };
 
     let port = if session.port == 0 {

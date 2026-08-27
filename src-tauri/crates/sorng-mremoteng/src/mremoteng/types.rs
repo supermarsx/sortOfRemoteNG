@@ -24,21 +24,94 @@ pub enum MrngProtocol {
 }
 
 impl MrngProtocol {
-    pub fn from_str_loose(s: &str) -> Self {
-        match s.to_uppercase().as_str() {
-            "RDP" | "0" => Self::RDP,
-            "VNC" | "1" => Self::VNC,
+    /// Parse a protocol name **without** defaulting to RDP.
+    ///
+    /// Accepts mRemoteNG's canonical names and numeric enum values, plus the
+    /// loose aliases seen in real-world exports (`Web`, `HTTP/S`, `WWW`,
+    /// `Browser`, `SSH`, `PS`, `WinRM`, …). Returns `None` when the string
+    /// carries no protocol evidence so callers can fall back to port evidence
+    /// (see [`Self::from_str_with_port`]) instead of silently picking RDP.
+    pub fn try_from_str_loose(s: &str) -> Option<Self> {
+        let norm: String = s
+            .trim()
+            .to_uppercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
+        let p = match norm.as_str() {
+            "" => return None,
+            "RDP" | "0" | "ICA" | "MSTSC" | "TERMINALSERVICES" => Self::RDP,
+            "VNC" | "1" | "ARD" => Self::VNC,
             "SSH1" | "2" => Self::SSH1,
-            "SSH2" | "SSH" | "3" => Self::SSH2,
+            "SSH2" | "SSH" | "3" | "SFTP" | "SCP" | "MOSH" => Self::SSH2,
             "TELNET" | "4" => Self::Telnet,
             "RLOGIN" | "5" => Self::Rlogin,
-            "RAW" | "6" => Self::RAW,
-            "HTTP" | "7" => Self::HTTP,
-            "HTTPS" | "8" => Self::HTTPS,
-            "POWERSHELL" | "10" => Self::PowerShell,
+            "RAW" | "6" | "RAWTCP" | "TCP" => Self::RAW,
+            "HTTP" | "7" | "WWW" | "WEB" | "WEBUI" | "BROWSER" | "URL" | "WEBSITE"
+            | "WEBBROWSER" => Self::HTTP,
+            "HTTPS" | "8" | "SSL" | "TLS" | "HTTPSWEB" | "HTTPSHTTP" => Self::HTTPS,
+            "POWERSHELL" | "10" | "PS" | "WINRM" | "PSREMOTING" => Self::PowerShell,
             "WINBOX" | "11" => Self::Winbox,
-            "INTAPP" | "20" => Self::IntApp,
-            _ => Self::RDP,
+            "INTAPP" | "20" | "EXTAPP" | "EXTERNAL" => Self::IntApp,
+            _ => return None,
+        };
+        // Generic "web" aliases without a scheme lean HTTPS (modern default);
+        // `from_str_with_port` refines this when a plain-HTTP port is present.
+        if Self::is_generic_web_alias(&norm) {
+            return Some(Self::HTTPS);
+        }
+        Some(p)
+    }
+
+    /// `true` for aliases that mean "a web UI" without saying http vs https.
+    fn is_generic_web_alias(norm: &str) -> bool {
+        matches!(
+            norm,
+            "WWW" | "WEB" | "WEBUI" | "BROWSER" | "URL" | "WEBSITE" | "WEBBROWSER"
+        )
+    }
+
+    /// Infer a protocol from a port number alone (`None` when ambiguous).
+    pub fn from_port(port: u16) -> Option<Self> {
+        Some(match port {
+            0 => return None,
+            22 => Self::SSH2,
+            23 => Self::Telnet,
+            513 => Self::Rlogin,
+            3389 => Self::RDP,
+            5900..=5906 => Self::VNC,
+            5985 | 5986 => Self::PowerShell,
+            8291 => Self::Winbox,
+            80 | 8080 | 8000 | 8008 | 8081 | 8888 | 81 | 9000 | 10000 => Self::HTTP,
+            443 | 8443 | 4443 | 9443 | 8006 | 8043 | 10443 | 8834 | 9090 => Self::HTTPS,
+            _ => return None,
+        })
+    }
+
+    /// Loose parse; unknown or empty input yields [`Self::RAW`] (never RDP —
+    /// RDP is only chosen when the string actually says so).
+    pub fn from_str_loose(s: &str) -> Self {
+        Self::try_from_str_loose(s).unwrap_or(Self::RAW)
+    }
+
+    /// Evidence-based parse: the protocol string wins when it is recognised;
+    /// generic web aliases are refined by the port (80-class → HTTP,
+    /// otherwise HTTPS); an unrecognised or empty string falls back to the
+    /// port table, and finally to [`Self::RAW`].
+    pub fn from_str_with_port(s: &str, port: u16) -> Self {
+        let norm: String = s
+            .trim()
+            .to_uppercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
+        match Self::try_from_str_loose(s) {
+            Some(p) if Self::is_generic_web_alias(&norm) => match Self::from_port(port) {
+                Some(Self::HTTP) => Self::HTTP,
+                _ => p,
+            },
+            Some(p) => p,
+            None => Self::from_port(port).unwrap_or(Self::RAW),
         }
     }
 
@@ -842,5 +915,88 @@ impl ExportFormat {
             Self::MremotengXml => "mRemoteNG XML (confCons.xml)",
             Self::MremotengCsv => "mRemoteNG CSV",
         }
+    }
+}
+
+#[cfg(test)]
+mod protocol_mapping_tests {
+    use super::MrngProtocol;
+
+    #[test]
+    fn loose_web_aliases_map_to_https() {
+        assert_eq!(MrngProtocol::from_str_loose("Web"), MrngProtocol::HTTPS);
+        assert_eq!(MrngProtocol::from_str_loose("HTTP/S"), MrngProtocol::HTTPS);
+        assert_eq!(MrngProtocol::from_str_loose("https"), MrngProtocol::HTTPS);
+        assert_eq!(MrngProtocol::from_str_loose(" WWW "), MrngProtocol::HTTPS);
+        assert_eq!(MrngProtocol::from_str_loose("http"), MrngProtocol::HTTP);
+    }
+
+    #[test]
+    fn loose_unknown_or_empty_is_raw_not_rdp() {
+        assert_eq!(MrngProtocol::from_str_loose(""), MrngProtocol::RAW);
+        assert_eq!(
+            MrngProtocol::from_str_loose("Frobnicate"),
+            MrngProtocol::RAW
+        );
+        assert_eq!(MrngProtocol::try_from_str_loose(""), None);
+        assert_eq!(MrngProtocol::try_from_str_loose("99"), None);
+        assert_eq!(MrngProtocol::from_str_loose("RDP"), MrngProtocol::RDP);
+        assert_eq!(MrngProtocol::from_str_loose("ssh"), MrngProtocol::SSH2);
+    }
+
+    #[test]
+    fn with_port_uses_port_evidence_when_string_is_silent() {
+        assert_eq!(
+            MrngProtocol::from_str_with_port("", 443),
+            MrngProtocol::HTTPS
+        );
+        assert_eq!(
+            MrngProtocol::from_str_with_port("", 8443),
+            MrngProtocol::HTTPS
+        );
+        assert_eq!(
+            MrngProtocol::from_str_with_port("", 8080),
+            MrngProtocol::HTTP
+        );
+        assert_eq!(MrngProtocol::from_str_with_port("", 80), MrngProtocol::HTTP);
+        assert_eq!(MrngProtocol::from_str_with_port("", 22), MrngProtocol::SSH2);
+        assert_eq!(
+            MrngProtocol::from_str_with_port("", 3389),
+            MrngProtocol::RDP
+        );
+        assert_eq!(
+            MrngProtocol::from_str_with_port("Frob", 9999),
+            MrngProtocol::RAW
+        );
+        assert_eq!(MrngProtocol::from_str_with_port("", 0), MrngProtocol::RAW);
+    }
+
+    #[test]
+    fn with_port_string_wins_and_refines_generic_web() {
+        assert_eq!(
+            MrngProtocol::from_str_with_port("Web", 80),
+            MrngProtocol::HTTP
+        );
+        assert_eq!(
+            MrngProtocol::from_str_with_port("Web", 443),
+            MrngProtocol::HTTPS
+        );
+        assert_eq!(
+            MrngProtocol::from_str_with_port("Web", 8443),
+            MrngProtocol::HTTPS
+        );
+        assert_eq!(
+            MrngProtocol::from_str_with_port("Web", 0),
+            MrngProtocol::HTTPS
+        );
+        // An explicit protocol is never overridden by the port.
+        assert_eq!(
+            MrngProtocol::from_str_with_port("HTTP", 443),
+            MrngProtocol::HTTP
+        );
+        assert_eq!(
+            MrngProtocol::from_str_with_port("SSH2", 443),
+            MrngProtocol::SSH2
+        );
     }
 }

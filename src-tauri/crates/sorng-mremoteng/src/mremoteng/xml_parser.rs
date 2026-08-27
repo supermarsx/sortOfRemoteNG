@@ -186,6 +186,7 @@ fn parse_node_element(
     kdf_iterations: u32,
 ) -> MremotengResult<MrngConnectionInfo> {
     let mut node = MrngConnectionInfo::default();
+    let mut raw_protocol = String::new();
 
     for attr in e.attributes() {
         let attr = attr?;
@@ -214,7 +215,7 @@ fn parse_node_element(
             // ── Connection ───────────────────────────────────────
             "Hostname" => node.hostname = val.to_string(),
             "Port" => node.port = val.parse().unwrap_or(0),
-            "Protocol" => node.protocol = MrngProtocol::from_str_loose(val),
+            "Protocol" => raw_protocol = val.to_string(),
             "RdpVersion" | "RDPVersion" => {
                 node.rdp_version = parse_enum_u32::<RdpVersion>(val);
             }
@@ -470,6 +471,10 @@ fn parse_node_element(
             _ => { /* Ignore unknown attributes for forward compatibility */ }
         }
     }
+
+    // Resolve protocol after all attributes are read so the port can act as
+    // evidence for loose/empty protocol strings (never default to RDP).
+    node.protocol = MrngProtocol::from_str_with_port(&raw_protocol, node.port);
 
     Ok(node)
 }
@@ -748,7 +753,8 @@ impl From<u32> for MrngProtocol {
             10 => Self::PowerShell,
             11 => Self::Winbox,
             20 => Self::IntApp,
-            _ => Self::RDP,
+            // Unknown numeric values carry no evidence: RAW, never RDP.
+            _ => Self::RAW,
         }
     }
 }
@@ -933,5 +939,38 @@ mod tests {
         ] {
             assert_eq!(MrngProtocol::from_str_loose(val), *expected);
         }
+    }
+
+    #[test]
+    fn test_parse_web_protocols_by_evidence_not_rdp() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+             KdfIterations="1000" FullFileEncryption="false" Protected="" ConfVersion="2.6">
+    <Node Name="Portal" Type="Connection" Hostname="portal.local" Protocol="HTTPS" Port="443" />
+    <Node Name="Web" Type="Connection" Hostname="web.local" Protocol="Web" Port="8443" />
+    <Node Name="Router" Type="Connection" Hostname="router.local" Protocol="HTTP/S" Port="80" />
+    <Node Name="NoProto" Type="Connection" Hostname="x.local" Protocol="" Port="8080" />
+    <Node Name="Bogus" Type="Connection" Hostname="y.local" Protocol="Frobnicate" Port="9999" />
+    <Node Name="Attr order" Type="Connection" Port="443" Protocol="" Hostname="z.local" />
+</Connections>"#;
+        let file = parse_xml(xml, "mR3m").unwrap();
+        let protos: Vec<MrngProtocol> = file.root.children.iter().map(|n| n.protocol).collect();
+        assert_eq!(
+            protos,
+            vec![
+                MrngProtocol::HTTPS,
+                MrngProtocol::HTTPS,
+                MrngProtocol::HTTPS,
+                MrngProtocol::HTTP,
+                MrngProtocol::RAW,
+                MrngProtocol::HTTPS,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_from_u32_unknown_is_raw() {
+        assert_eq!(MrngProtocol::from(99), MrngProtocol::RAW);
+        assert_eq!(MrngProtocol::from(8), MrngProtocol::HTTPS);
     }
 }

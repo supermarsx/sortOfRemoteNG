@@ -40,6 +40,7 @@ pub fn parse_csv(
     for result in reader.records() {
         let record = result.map_err(|e| MremotengError::CsvParse(e.to_string()))?;
         let mut node = MrngConnectionInfo::default();
+        let mut raw_protocol = String::new();
 
         for (i, header) in headers.iter().enumerate() {
             let val = record.get(i).unwrap_or("");
@@ -56,7 +57,7 @@ pub fn parse_csv(
                 "Panel" => node.panel = val.to_string(),
                 "Hostname" => node.hostname = val.to_string(),
                 "Port" => node.port = val.parse().unwrap_or(0),
-                "Protocol" => node.protocol = MrngProtocol::from_str_loose(val),
+                "Protocol" => raw_protocol = val.to_string(),
                 "Username" => node.username = val.to_string(),
                 "Password" => {
                     node.password =
@@ -108,6 +109,9 @@ pub fn parse_csv(
             }
         }
 
+        // Port is evidence for loose/empty protocol strings (never default to RDP).
+        node.protocol = MrngProtocol::from_str_with_port(&raw_protocol, node.port);
+
         if !node.name.is_empty() {
             connections.push(node);
         }
@@ -122,4 +126,33 @@ fn parse_bool(val: &str) -> bool {
 
 fn parse_enum_u32<T: Default + From<u32>>(val: &str) -> T {
     val.parse::<u32>().map(T::from).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_web_protocols_map_by_evidence_not_rdp() {
+        let csv = "Name;Type;Hostname;Port;Protocol\n\
+Portal;Connection;portal.local;443;HTTPS\n\
+Web;Connection;web.local;443;Web\n\
+Plain;Connection;plain.local;8080;WWW\n\
+NoProto;Connection;x.local;8443;\n\
+Bogus;Connection;y.local;9999;Frobnicate\n\
+Box;Connection;srv.local;3389;RDP\n";
+        let rows = parse_csv(csv, "mR3m", 1000).unwrap();
+        let protos: Vec<MrngProtocol> = rows.iter().map(|n| n.protocol).collect();
+        assert_eq!(
+            protos,
+            vec![
+                MrngProtocol::HTTPS,
+                MrngProtocol::HTTPS,
+                MrngProtocol::HTTP,
+                MrngProtocol::HTTPS,
+                MrngProtocol::RAW,
+                MrngProtocol::RDP,
+            ]
+        );
+    }
 }
