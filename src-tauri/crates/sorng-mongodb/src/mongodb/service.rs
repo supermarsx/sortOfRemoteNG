@@ -1,60 +1,38 @@
-//! Lightweight MongoDB service built around `mongosh`.
+//! MongoDB service built on the official `mongodb` driver.
+//!
+//! Every session owns one driver [`Client`]. Connection URIs and passwords are
+//! held only for the duration of `connect` (zeroized afterwards); they are never
+//! logged, echoed in errors, or retained on the session.
 
 use crate::mongodb::types::*;
 use chrono::Utc;
+use futures::TryStreamExt;
 use log::info;
+use mongodb::bson::{doc, Bson, Document};
+use mongodb::error::{Error as DriverError, ErrorKind, WriteFailure};
+use mongodb::options::{ClientOptions, IndexOptions, Tls, TlsOptions, UpdateModifications};
+use mongodb::{Client, IndexModel};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::future::Future;
-use std::io::Write as SyncWrite;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::process::Stdio;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
-use tempfile::NamedTempFile;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, Command};
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
-use tokio::time::timeout;
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
-const MONGOSH_PATH_ENV: &str = "SORNG_MONGOSH_PATH";
 const MAX_CONNECTION_URI_BYTES: usize = 8 * 1024;
-const MAX_SCRIPT_BYTES: usize = 256 * 1024;
-const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
-const MAX_SESSIONS: usize = 32;
+pub const MAX_SESSIONS: usize = 32;
 const MAX_HOSTS: usize = 32;
 const MAX_HOST_BYTES: usize = 512;
 const MAX_FIELD_BYTES: usize = 1024;
 const MAX_PATH_BYTES: usize = 4096;
 const MAX_SESSION_ID_BYTES: usize = 128;
 const MAX_TIMEOUT_SECS: u64 = 300;
-const PROCESS_TIMEOUT: Duration = Duration::from_secs(45);
-const REAP_TIMEOUT: Duration = Duration::from_secs(3);
-
-type MongoRunnerFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, MongoError>> + Send + 'a>>;
-
-trait MongoRunner: Send + Sync {
-    fn run_json<'a>(&'a self, connection_string: &'a str, script: &'a str)
-        -> MongoRunnerFuture<'a>;
-}
-
-struct MongoshRunner;
-
-impl MongoRunner for MongoshRunner {
-    fn run_json<'a>(
-        &'a self,
-        connection_string: &'a str,
-        script: &'a str,
-    ) -> MongoRunnerFuture<'a> {
-        Box::pin(run_mongosh_json(connection_string, script))
-    }
-}
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_SERVER_SELECTION_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_APP_NAME: &str = "sortOfRemoteNG";
 
 pub type MongoServiceState = Arc<Mutex<MongoService>>;
 
@@ -63,14 +41,15 @@ pub fn new_state() -> MongoServiceState {
 }
 
 struct MongoSession {
-    connection_string: Zeroizing<String>,
+    client: Client,
     info: SessionInfo,
-    ssh_child: Option<std::process::Child>,
 }
 
 pub struct MongoService {
     sessions: HashMap<String, MongoSession>,
-    runner: Arc<dyn MongoRunner>,
+    /// Test hook: skip the post-connect server probe so sessions can be created
+    /// without a live server.
+    probe_server: bool,
 }
 
 impl Default for MongoService {
@@ -83,15 +62,15 @@ impl MongoService {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
-            runner: Arc::new(MongoshRunner),
+            probe_server: true,
         }
     }
 
     #[cfg(test)]
-    fn with_runner(runner: Arc<dyn MongoRunner>) -> Self {
+    fn offline() -> Self {
         Self {
             sessions: HashMap::new(),
-            runner,
+            probe_server: false,
         }
     }
 
@@ -122,7 +101,7 @@ impl MongoService {
             scrub_config_secrets(&mut config);
             return Err(MongoError::new(
                 MongoErrorKind::InvalidConfig,
-                "MongoDB SSH tunnelling is not implemented; refusing a direct connection",
+                "MongoDB SSH tunnelling is not available; use a direct target",
             ));
         }
 
@@ -139,34 +118,35 @@ impl MongoService {
                 return Err(error);
             }
         };
-        let ssh_child = None;
 
+        // Secrets that must never surface in an error message.
+        let secrets = collect_secrets(&config);
         let connection_string = Zeroizing::new(config.to_connection_string());
+        let options_result = build_client_options(&config, connection_string.as_str()).await;
         scrub_config_secrets(&mut config);
+        let options = match options_result {
+            Ok(options) => options,
+            Err(error) => return Err(redact_error(error, &secrets)),
+        };
+        drop(connection_string);
 
-        let connection_info = self
-            .runner
-            .run_json(
-                connection_string.as_str(),
-                r#"
-const admin = db.getSiblingDB('admin');
-const ping = admin.runCommand({ ping: 1 });
-const buildInfo = admin.runCommand({ buildInfo: 1 });
-if (ping.ok !== 1) {
-  throw new Error(ping.errmsg || 'MongoDB ping failed');
-}
-print(JSON.stringify({
-  ok: true,
-  version: buildInfo.version ?? null
-}));
-"#,
-            )
-            .await?;
+        let client = match Client::with_options(options) {
+            Ok(client) => client,
+            Err(error) => return Err(redact_error(driver_error(&error), &secrets)),
+        };
 
-        let server_version = connection_info
-            .get("version")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned);
+        let server_version = if self.probe_server {
+            match probe_server(&client).await {
+                Ok(version) => version,
+                Err(error) => {
+                    client.shutdown().await;
+                    return Err(redact_error(error, &secrets));
+                }
+            }
+        } else {
+            None
+        };
+        drop(secrets);
 
         let info = SessionInfo {
             id: session_id.clone(),
@@ -180,40 +160,24 @@ print(JSON.stringify({
         };
 
         info!("MongoDB connected: {session_id}");
-
-        self.sessions.insert(
-            session_id.clone(),
-            MongoSession {
-                connection_string,
-                info,
-                ssh_child,
-            },
-        );
-
+        self.sessions
+            .insert(session_id.clone(), MongoSession { client, info });
         Ok(session_id)
     }
 
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), MongoError> {
-        let mut session = self
+        let session = self
             .sessions
             .remove(session_id)
             .ok_or_else(|| MongoError::session_not_found(session_id))?;
-
-        if let Some(ref mut child) = session.ssh_child {
-            let _ = child.kill();
-        }
-        session.connection_string.zeroize();
-
+        session.client.shutdown().await;
         info!("MongoDB disconnected: {session_id}");
         Ok(())
     }
 
     pub async fn disconnect_all(&mut self) {
-        for (id, mut session) in self.sessions.drain() {
-            if let Some(ref mut child) = session.ssh_child {
-                let _ = child.kill();
-            }
-            session.connection_string.zeroize();
+        for (id, session) in self.sessions.drain() {
+            session.client.shutdown().await;
             info!("MongoDB disconnected: {id}");
         }
     }
@@ -232,51 +196,34 @@ print(JSON.stringify({
             .ok_or_else(|| MongoError::session_not_found(session_id))
     }
 
+    // ── Admin operations ─────────────────────────────────────────────
+
     pub async fn ping(&self, session_id: &str) -> Result<bool, MongoError> {
-        self.run_session_json(
-            session_id,
-            r#"
-const admin = db.getSiblingDB('admin');
-const result = admin.runCommand({ ping: 1 });
-print(JSON.stringify({ ok: result.ok === 1 }));
-"#,
-        )
-        .await
-        .map(|value| value.get("ok").and_then(Value::as_bool).unwrap_or(false))
+        let client = self.client(session_id)?;
+        let reply = run_admin_command(client, doc! { "ping": 1 }).await?;
+        Ok(reply_ok(&reply))
     }
 
     pub async fn list_databases(&self, session_id: &str) -> Result<Vec<DatabaseInfo>, MongoError> {
-        let value = self
-            .run_session_json(
-                session_id,
-                r#"
-const admin = db.getSiblingDB('admin');
-const result = admin.runCommand({ listDatabases: 1, nameOnly: true });
-if (result.ok !== 1) {
-  throw new Error(result.errmsg || 'listDatabases failed');
-}
-print(JSON.stringify(result.databases.map(entry => ({ name: entry.name }))));
-"#,
-            )
-            .await?;
-
-        serde_json::from_value(value).map_err(serialization_error)
+        let client = self.client(session_id)?;
+        let names = client
+            .list_database_names()
+            .await
+            .map_err(|error| driver_error(&error))?;
+        Ok(names
+            .into_iter()
+            .map(|name| DatabaseInfo { name })
+            .collect())
     }
 
     pub async fn drop_database(&self, session_id: &str, db_name: &str) -> Result<(), MongoError> {
-        let script = format!(
-            r#"
-const database = db.getSiblingDB({});
-const result = database.dropDatabase();
-if (result.ok !== 1) {{
-  throw new Error(result.errmsg || 'dropDatabase failed');
-}}
-print(JSON.stringify({{ ok: true }}));
-"#,
-            js_string(db_name)?
-        );
-
-        self.run_session_json(session_id, &script).await.map(|_| ())
+        validate_required_field("MongoDB database name", db_name, MAX_FIELD_BYTES)?;
+        let client = self.client(session_id)?;
+        client
+            .database(db_name)
+            .drop()
+            .await
+            .map_err(|error| driver_error(&error))
     }
 
     pub async fn list_collections(
@@ -285,19 +232,21 @@ print(JSON.stringify({{ ok: true }}));
         db_name: Option<&str>,
     ) -> Result<Vec<CollectionInfo>, MongoError> {
         let selected_db = self.resolve_db_name(session_id, db_name)?;
-        let script = format!(
-            r#"
-const database = db.getSiblingDB({});
-print(JSON.stringify(database.getCollectionInfos().map(info => ({{
-  name: info.name,
-  collection_type: info.type || 'collection'
-}}))));
-"#,
-            js_string(&selected_db)?
-        );
-
-        let value = self.run_session_json(session_id, &script).await?;
-        serde_json::from_value(value).map_err(serialization_error)
+        let client = self.client(session_id)?;
+        let reply = run_db_command(
+            client,
+            &selected_db,
+            doc! { "listCollections": 1, "nameOnly": false },
+        )
+        .await?;
+        let batch = cursor_first_batch(&reply);
+        Ok(batch
+            .into_iter()
+            .map(|entry| CollectionInfo {
+                name: entry.get_str("name").unwrap_or_default().to_string(),
+                collection_type: entry.get_str("type").unwrap_or("collection").to_string(),
+            })
+            .collect())
     }
 
     pub async fn create_collection(
@@ -306,21 +255,14 @@ print(JSON.stringify(database.getCollectionInfos().map(info => ({{
         db_name: Option<&str>,
         collection_name: &str,
     ) -> Result<(), MongoError> {
+        validate_required_field("MongoDB collection name", collection_name, MAX_FIELD_BYTES)?;
         let selected_db = self.resolve_db_name(session_id, db_name)?;
-        let script = format!(
-            r#"
-const database = db.getSiblingDB({});
-const result = database.createCollection({});
-if (result.ok !== 1) {{
-  throw new Error(result.errmsg || 'createCollection failed');
-}}
-print(JSON.stringify({{ ok: true }}));
-"#,
-            js_string(&selected_db)?,
-            js_string(collection_name)?
-        );
-
-        self.run_session_json(session_id, &script).await.map(|_| ())
+        let client = self.client(session_id)?;
+        client
+            .database(&selected_db)
+            .create_collection(collection_name)
+            .await
+            .map_err(|error| driver_error(&error))
     }
 
     pub async fn drop_collection(
@@ -329,21 +271,15 @@ print(JSON.stringify({{ ok: true }}));
         db_name: Option<&str>,
         collection_name: &str,
     ) -> Result<(), MongoError> {
+        validate_required_field("MongoDB collection name", collection_name, MAX_FIELD_BYTES)?;
         let selected_db = self.resolve_db_name(session_id, db_name)?;
-        let script = format!(
-            r#"
-const database = db.getSiblingDB({});
-const result = database.getCollection({}).drop();
-if (result !== true) {{
-  throw new Error('drop collection failed');
-}}
-print(JSON.stringify({{ ok: true }}));
-"#,
-            js_string(&selected_db)?,
-            js_string(collection_name)?
-        );
-
-        self.run_session_json(session_id, &script).await.map(|_| ())
+        let client = self.client(session_id)?;
+        client
+            .database(&selected_db)
+            .collection::<Document>(collection_name)
+            .drop()
+            .await
+            .map_err(|error| driver_error(&error))
     }
 
     pub async fn collection_stats(
@@ -352,57 +288,36 @@ print(JSON.stringify({{ ok: true }}));
         db_name: Option<&str>,
         collection_name: &str,
     ) -> Result<CollectionStats, MongoError> {
+        validate_required_field("MongoDB collection name", collection_name, MAX_FIELD_BYTES)?;
         let selected_db = self.resolve_db_name(session_id, db_name)?;
-        let script = format!(
-            r#"
-const database = db.getSiblingDB({});
-const stats = database.runCommand({{ collStats: {} }});
-if (stats.ok !== 1) {{
-  throw new Error(stats.errmsg || 'collStats failed');
-}}
-print(JSON.stringify({{
-  namespace: stats.ns || '',
-  count: Number(stats.count || 0),
-  size: Number(stats.size || 0),
-  storage_size: Number(stats.storageSize || 0),
-  num_indexes: Number(stats.nindexes || 0),
-  total_index_size: Number(stats.totalIndexSize || 0),
-  capped: Boolean(stats.capped)
-}}));
-"#,
-            js_string(&selected_db)?,
-            js_string(collection_name)?
-        );
-
-        let value = self.run_session_json(session_id, &script).await?;
-        serde_json::from_value(value).map_err(serialization_error)
+        let client = self.client(session_id)?;
+        let stats =
+            run_db_command(client, &selected_db, doc! { "collStats": collection_name }).await?;
+        Ok(CollectionStats {
+            namespace: stats.get_str("ns").unwrap_or_default().to_string(),
+            count: bson_i64(stats.get("count")),
+            size: bson_i64(stats.get("size")),
+            storage_size: bson_i64(stats.get("storageSize")),
+            num_indexes: bson_i64(stats.get("nindexes")) as i32,
+            total_index_size: bson_i64(stats.get("totalIndexSize")),
+            capped: stats.get_bool("capped").unwrap_or(false),
+        })
     }
 
     pub async fn server_status(&self, session_id: &str) -> Result<ServerStatus, MongoError> {
-        let value = self
-            .run_session_json(
-                session_id,
-                r#"
-const admin = db.getSiblingDB('admin');
-const result = admin.runCommand({ serverStatus: 1 });
-if (result.ok !== 1) {
-  throw new Error(result.errmsg || 'serverStatus failed');
-}
-print(JSON.stringify({
-  host: result.host || 'unknown',
-  version: result.version || 'unknown',
-  uptime_secs: Number(result.uptime || 0),
-  connections: {
-    current: Number(result.connections?.current || 0),
-    available: Number(result.connections?.available || 0),
-    total_created: Number(result.connections?.totalCreated || 0)
-  }
-}));
-"#,
-            )
-            .await?;
-
-        serde_json::from_value(value).map_err(serialization_error)
+        let client = self.client(session_id)?;
+        let status = run_admin_command(client, doc! { "serverStatus": 1 }).await?;
+        let connections = status.get_document("connections").ok();
+        Ok(ServerStatus {
+            host: status.get_str("host").unwrap_or("unknown").to_string(),
+            version: status.get_str("version").unwrap_or("unknown").to_string(),
+            uptime_secs: bson_f64(status.get("uptime")),
+            connections: ConnectionStats {
+                current: bson_i64(connections.and_then(|c| c.get("current"))) as i32,
+                available: bson_i64(connections.and_then(|c| c.get("available"))) as i32,
+                total_created: bson_i64(connections.and_then(|c| c.get("totalCreated"))),
+            },
+        })
     }
 
     pub async fn list_users(
@@ -411,96 +326,345 @@ print(JSON.stringify({
         db_name: Option<&str>,
     ) -> Result<Vec<MongoUserInfo>, MongoError> {
         let selected_db = self.resolve_db_name(session_id, db_name.or(Some("admin")))?;
-        let script = format!(
-            r#"
-const database = db.getSiblingDB({});
-const result = database.runCommand({{ usersInfo: 1 }});
-if (result.ok !== 1) {{
-  throw new Error(result.errmsg || 'usersInfo failed');
-}}
-print(JSON.stringify((result.users || []).map(user => ({{
-  user: user.user || '',
-  database: user.db || '',
-  roles: (user.roles || []).map(role => ({{
-    role: role.role || '',
-    db: role.db || ''
-  }}))
-}}))));
-"#,
-            js_string(&selected_db)?
-        );
-
-        let value = self.run_session_json(session_id, &script).await?;
-        serde_json::from_value(value).map_err(serialization_error)
+        let client = self.client(session_id)?;
+        let reply = run_db_command(client, &selected_db, doc! { "usersInfo": 1 }).await?;
+        let users = reply
+            .get_array("users")
+            .map(|users| users.to_vec())
+            .unwrap_or_default();
+        Ok(users
+            .iter()
+            .filter_map(Bson::as_document)
+            .map(|user| MongoUserInfo {
+                user: user.get_str("user").unwrap_or_default().to_string(),
+                database: user.get_str("db").unwrap_or_default().to_string(),
+                roles: user
+                    .get_array("roles")
+                    .map(|roles| {
+                        roles
+                            .iter()
+                            .filter_map(Bson::as_document)
+                            .map(|role| MongoRole {
+                                role: role.get_str("role").unwrap_or_default().to_string(),
+                                db: role.get_str("db").unwrap_or_default().to_string(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            })
+            .collect())
     }
 
     pub async fn replica_set_status(
         &self,
         session_id: &str,
     ) -> Result<Vec<ReplicaSetMember>, MongoError> {
-        let value = self
-            .run_session_json(
-                session_id,
-                r#"
-const admin = db.getSiblingDB('admin');
-const result = admin.runCommand({ replSetGetStatus: 1 });
-if (result.ok !== 1) {
-  throw new Error(result.errmsg || 'replSetGetStatus failed');
-}
-print(JSON.stringify((result.members || []).map(member => ({
-  name: member.name || '',
-  state_str: member.stateStr || '',
-  state: Number(member.state || 0),
-  health: Number(member.health || 0),
-  self: member.self ?? null,
-  uptime: member.uptime == null ? null : Number(member.uptime)
-}))));
-"#,
-            )
-            .await?;
-
-        serde_json::from_value(value).map_err(serialization_error)
+        let client = self.client(session_id)?;
+        let reply = run_admin_command(client, doc! { "replSetGetStatus": 1 }).await?;
+        let members = reply
+            .get_array("members")
+            .map(|members| members.to_vec())
+            .unwrap_or_default();
+        Ok(members
+            .iter()
+            .filter_map(Bson::as_document)
+            .map(|member| ReplicaSetMember {
+                name: member.get_str("name").unwrap_or_default().to_string(),
+                state_str: member.get_str("stateStr").unwrap_or_default().to_string(),
+                state: bson_i64(member.get("state")) as i32,
+                health: bson_f64(member.get("health")),
+                is_self: member.get_bool("self").ok(),
+                uptime: member.get("uptime").map(|value| bson_i64(Some(value))),
+            })
+            .collect())
     }
 
-    pub async fn current_op(&self, session_id: &str) -> Result<Vec<serde_json::Value>, MongoError> {
-        let value = self
-            .run_session_json(
-                session_id,
-                r#"
-const admin = db.getSiblingDB('admin');
-const result = admin.runCommand({ currentOp: 1 });
-if (result.ok !== 1) {
-  throw new Error(result.errmsg || 'currentOp failed');
-}
-print(EJSON.stringify(result.inprog || []));
-"#,
-            )
-            .await?;
-
-        serde_json::from_value(value).map_err(serialization_error)
+    pub async fn current_op(&self, session_id: &str) -> Result<Vec<Value>, MongoError> {
+        let client = self.client(session_id)?;
+        let cursor = client
+            .database("admin")
+            .aggregate(vec![doc! { "$currentOp": {} }])
+            .await
+            .map_err(|error| driver_error(&error))?;
+        let docs: Vec<Document> = cursor
+            .try_collect()
+            .await
+            .map_err(|error| driver_error(&error))?;
+        Ok(docs.into_iter().map(document_to_json).collect())
     }
 
     pub async fn kill_op(&self, session_id: &str, op_id: i64) -> Result<(), MongoError> {
-        let script = format!(
-            r#"
-const admin = db.getSiblingDB('admin');
-const result = admin.runCommand({{ killOp: 1, op: Number({}) }});
-if (result.ok !== 1) {{
-  throw new Error(result.errmsg || 'killOp failed');
-}}
-print(JSON.stringify({{ ok: true }}));
-"#,
-            op_id
-        );
-
-        self.run_session_json(session_id, &script).await.map(|_| ())
+        let client = self.client(session_id)?;
+        run_admin_command(client, doc! { "killOp": 1, "op": op_id }).await?;
+        Ok(())
     }
 
-    fn connection_string(&self, session_id: &str) -> Result<&str, MongoError> {
+    // ── Document operations ──────────────────────────────────────────
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn find(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        filter: Value,
+        projection: Option<Value>,
+        sort: Option<Value>,
+        limit: Option<i64>,
+        skip: Option<u64>,
+    ) -> Result<FindResult, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        let filter = json_to_document(filter, "filter")?;
+        let projection = projection
+            .map(|p| json_to_document(p, "projection"))
+            .transpose()?;
+        let sort = sort.map(|s| json_to_document(s, "sort")).transpose()?;
+        let limit = clamp_limit(limit);
+
+        let started = Instant::now();
+        let mut find = collection.find(filter).limit(limit + 1);
+        if let Some(projection) = projection {
+            find = find.projection(projection);
+        }
+        if let Some(sort) = sort {
+            find = find.sort(sort);
+        }
+        if let Some(skip) = skip {
+            find = find.skip(skip);
+        }
+        let cursor = find.await.map_err(|error| driver_error(&error))?;
+        let docs: Vec<Document> = cursor
+            .try_collect()
+            .await
+            .map_err(|error| driver_error(&error))?;
+        Ok(page_result(docs, limit, started))
+    }
+
+    pub async fn count_documents(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        filter: Value,
+    ) -> Result<u64, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        let filter = json_to_document(filter, "filter")?;
+        collection
+            .count_documents(filter)
+            .await
+            .map_err(|error| driver_error(&error))
+    }
+
+    pub async fn estimated_count(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+    ) -> Result<u64, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        collection
+            .estimated_document_count()
+            .await
+            .map_err(|error| driver_error(&error))
+    }
+
+    pub async fn aggregate(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        pipeline: Vec<Value>,
+        limit: Option<i64>,
+    ) -> Result<FindResult, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        if pipeline.len() > MAX_PIPELINE_STAGES {
+            return Err(invalid_config(format!(
+                "MongoDB aggregation pipeline exceeds {MAX_PIPELINE_STAGES} stages"
+            )));
+        }
+        let stages = pipeline
+            .into_iter()
+            .map(|stage| json_to_document(stage, "pipeline stage"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let limit = clamp_limit(limit);
+
+        let started = Instant::now();
+        let mut cursor = collection
+            .aggregate(stages)
+            .await
+            .map_err(|error| driver_error(&error))?;
+        let mut docs = Vec::new();
+        while docs.len() <= limit as usize {
+            match cursor.try_next().await {
+                Ok(Some(doc)) => docs.push(doc),
+                Ok(None) => break,
+                Err(error) => return Err(driver_error(&error)),
+            }
+        }
+        Ok(page_result(docs, limit, started))
+    }
+
+    pub async fn insert_documents(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        documents: Vec<Value>,
+    ) -> Result<InsertResult, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        if documents.is_empty() {
+            return Err(invalid_config(
+                "MongoDB insert requires at least one document",
+            ));
+        }
+        if documents.len() > MAX_INSERT_DOCUMENTS {
+            return Err(invalid_config(format!(
+                "MongoDB insert exceeds {MAX_INSERT_DOCUMENTS} documents"
+            )));
+        }
+        let docs = documents
+            .into_iter()
+            .map(|document| json_to_document(document, "document"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let result = collection
+            .insert_many(docs)
+            .await
+            .map_err(|error| driver_error(&error))?;
+        let mut ids: Vec<(usize, Bson)> = result.inserted_ids.into_iter().collect();
+        ids.sort_by_key(|(index, _)| *index);
+        Ok(InsertResult {
+            inserted_count: ids.len(),
+            inserted_ids: ids
+                .into_iter()
+                .map(|(_, id)| id.into_relaxed_extjson())
+                .collect(),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_documents(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        filter: Value,
+        update: Value,
+        multi: bool,
+        upsert: bool,
+    ) -> Result<UpdateResult, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        let filter = json_to_document(filter, "filter")?;
+        let modifications = json_to_update(update)?;
+        let result = if multi {
+            collection
+                .update_many(filter, modifications)
+                .upsert(upsert)
+                .await
+        } else {
+            collection
+                .update_one(filter, modifications)
+                .upsert(upsert)
+                .await
+        }
+        .map_err(|error| driver_error(&error))?;
+        Ok(UpdateResult {
+            matched_count: result.matched_count,
+            modified_count: result.modified_count,
+            upserted_id: result.upserted_id.map(Bson::into_relaxed_extjson),
+        })
+    }
+
+    pub async fn delete_documents(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        filter: Value,
+        multi: bool,
+    ) -> Result<DeleteResult, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        let filter = json_to_document(filter, "filter")?;
+        let result = if multi {
+            collection.delete_many(filter).await
+        } else {
+            collection.delete_one(filter).await
+        }
+        .map_err(|error| driver_error(&error))?;
+        Ok(DeleteResult {
+            deleted_count: result.deleted_count,
+        })
+    }
+
+    // ── Index operations ─────────────────────────────────────────────
+
+    pub async fn list_indexes(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+    ) -> Result<Vec<IndexInfo>, MongoError> {
+        validate_required_field("MongoDB collection name", collection_name, MAX_FIELD_BYTES)?;
+        let selected_db = self.resolve_db_name(session_id, db_name)?;
+        let client = self.client(session_id)?;
+        let reply = run_db_command(
+            client,
+            &selected_db,
+            doc! { "listIndexes": collection_name },
+        )
+        .await?;
+        Ok(cursor_first_batch(&reply)
+            .into_iter()
+            .map(index_info_from_spec)
+            .collect())
+    }
+
+    pub async fn create_index(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        keys: Value,
+        options: Option<Value>,
+    ) -> Result<String, MongoError> {
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        let keys = json_to_document(keys, "index keys")?;
+        if keys.is_empty() {
+            return Err(invalid_config("MongoDB index keys must not be empty"));
+        }
+        let options = options.map(json_to_index_options).transpose()?;
+        let model = IndexModel::builder().keys(keys).options(options).build();
+        let result = collection
+            .create_index(model)
+            .await
+            .map_err(|error| driver_error(&error))?;
+        Ok(result.index_name)
+    }
+
+    pub async fn drop_index(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+        index_name: &str,
+    ) -> Result<(), MongoError> {
+        validate_required_field("MongoDB index name", index_name, MAX_FIELD_BYTES)?;
+        if index_name == "_id_" {
+            return Err(invalid_config("The _id index cannot be dropped"));
+        }
+        let collection = self.collection(session_id, db_name, collection_name)?;
+        collection
+            .drop_index(index_name)
+            .await
+            .map_err(|error| driver_error(&error))
+    }
+
+    // ── Internals ────────────────────────────────────────────────────
+
+    fn client(&self, session_id: &str) -> Result<&Client, MongoError> {
         validate_required_field("MongoDB session ID", session_id, MAX_SESSION_ID_BYTES)?;
         self.sessions
             .get(session_id)
-            .map(|session| session.connection_string.as_str())
+            .map(|session| &session.client)
             .ok_or_else(|| MongoError::session_not_found(session_id))
     }
 
@@ -513,18 +677,391 @@ print(JSON.stringify({{ ok: true }}));
             .sessions
             .get(session_id)
             .ok_or_else(|| MongoError::session_not_found(session_id))?;
-        db_name
+        let name = db_name
             .or(session.info.database.as_deref())
             .map(ToOwned::to_owned)
-            .ok_or_else(|| MongoError::new(MongoErrorKind::InvalidConfig, "No database specified"))
+            .ok_or_else(|| invalid_config("No database specified"))?;
+        validate_required_field("MongoDB database name", &name, MAX_FIELD_BYTES)?;
+        Ok(name)
     }
 
-    async fn run_session_json(&self, session_id: &str, script: &str) -> Result<Value, MongoError> {
-        let connection_string = self.connection_string(session_id)?;
-        validate_runner_input(connection_string, script)?;
-        self.runner.run_json(connection_string, script).await
+    fn collection(
+        &self,
+        session_id: &str,
+        db_name: Option<&str>,
+        collection_name: &str,
+    ) -> Result<mongodb::Collection<Document>, MongoError> {
+        validate_required_field("MongoDB collection name", collection_name, MAX_FIELD_BYTES)?;
+        let selected_db = self.resolve_db_name(session_id, db_name)?;
+        let client = self.client(session_id)?;
+        Ok(client
+            .database(&selected_db)
+            .collection::<Document>(collection_name))
     }
 }
+
+// ── Driver plumbing ──────────────────────────────────────────────────
+
+/// Builds driver options from the validated config. The URI carries hosts,
+/// credentials, auth source/mechanism, replica set, read preference, direct
+/// connection, app name, and timeouts; structured TLS settings (CA / client
+/// certificate paths) are applied on top because they cannot be expressed as
+/// URI options safely.
+async fn build_client_options(
+    config: &MongoConnectionConfig,
+    connection_string: &str,
+) -> Result<ClientOptions, MongoError> {
+    let mut options = ClientOptions::parse(connection_string)
+        .await
+        .map_err(|error| driver_error(&error))?;
+
+    if options.app_name.is_none() {
+        options.app_name = Some(DEFAULT_APP_NAME.to_string());
+    }
+    if options.connect_timeout.is_none() {
+        options.connect_timeout = Some(DEFAULT_CONNECT_TIMEOUT);
+    }
+    if options.server_selection_timeout.is_none() {
+        options.server_selection_timeout = Some(DEFAULT_SERVER_SELECTION_TIMEOUT);
+    }
+
+    if config.connection_string.is_none() {
+        if let Some(tls) = config.tls.as_ref() {
+            options.tls = Some(tls_from_config(tls)?);
+        }
+    }
+
+    Ok(options)
+}
+
+fn tls_from_config(tls: &TlsConfig) -> Result<Tls, MongoError> {
+    if !tls.enabled {
+        return Ok(Tls::Disabled);
+    }
+    let cert_key_file_path = match (
+        tls.client_cert_path.as_deref(),
+        tls.client_key_path.as_deref(),
+    ) {
+        (Some(cert), Some(key)) if cert != key => {
+            return Err(invalid_config(
+                "MongoDB client certificate and key must be supplied as one combined PEM file",
+            ))
+        }
+        (Some(cert), _) => Some(PathBuf::from(cert)),
+        (None, Some(key)) => Some(PathBuf::from(key)),
+        (None, None) => None,
+    };
+    let mut tls_options = TlsOptions::builder()
+        .allow_invalid_certificates(tls.allow_invalid_certificates)
+        .build();
+    tls_options.ca_file_path = tls.ca_cert_path.as_deref().map(PathBuf::from);
+    tls_options.cert_key_file_path = cert_key_file_path;
+    Ok(Tls::Enabled(tls_options))
+}
+
+async fn probe_server(client: &Client) -> Result<Option<String>, MongoError> {
+    let ping = run_admin_command(client, doc! { "ping": 1 }).await?;
+    if !reply_ok(&ping) {
+        return Err(MongoError::connection_failed("MongoDB ping failed"));
+    }
+    let build_info = run_admin_command(client, doc! { "buildInfo": 1 }).await?;
+    Ok(build_info.get_str("version").ok().map(ToOwned::to_owned))
+}
+
+async fn run_admin_command(client: &Client, command: Document) -> Result<Document, MongoError> {
+    run_db_command(client, "admin", command).await
+}
+
+async fn run_db_command(
+    client: &Client,
+    db_name: &str,
+    command: Document,
+) -> Result<Document, MongoError> {
+    client
+        .database(db_name)
+        .run_command(command)
+        .await
+        .map_err(|error| driver_error(&error))
+}
+
+fn reply_ok(reply: &Document) -> bool {
+    bson_f64(reply.get("ok")) == 1.0
+}
+
+fn cursor_first_batch(reply: &Document) -> Vec<Document> {
+    reply
+        .get_document("cursor")
+        .ok()
+        .and_then(|cursor| cursor.get_array("firstBatch").ok())
+        .map(|batch| {
+            batch
+                .iter()
+                .filter_map(Bson::as_document)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn page_result(mut docs: Vec<Document>, limit: i64, started: Instant) -> FindResult {
+    let has_more = docs.len() > limit as usize;
+    docs.truncate(limit as usize);
+    let documents: Vec<Value> = docs.into_iter().map(document_to_json).collect();
+    FindResult {
+        returned: documents.len(),
+        documents,
+        has_more,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    }
+}
+
+// ── JSON ⇄ BSON ──────────────────────────────────────────────────────
+
+/// Converts caller JSON (plain or extended JSON: `$oid`, `$date`,
+/// `$numberLong`, …) into a BSON document. User input is never interpolated
+/// into a string; it is converted structurally.
+pub fn json_to_document(value: Value, what: &str) -> Result<Document, MongoError> {
+    match Bson::try_from(value) {
+        Ok(Bson::Document(document)) => Ok(document),
+        Ok(_) => Err(invalid_config(format!(
+            "MongoDB {what} must be a JSON object"
+        ))),
+        Err(_) => Err(invalid_config(format!(
+            "MongoDB {what} is not valid extended JSON"
+        ))),
+    }
+}
+
+fn json_to_update(value: Value) -> Result<UpdateModifications, MongoError> {
+    match value {
+        Value::Array(stages) => {
+            if stages.is_empty() {
+                return Err(invalid_config("MongoDB update pipeline must not be empty"));
+            }
+            let stages = stages
+                .into_iter()
+                .map(|stage| json_to_document(stage, "update stage"))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(UpdateModifications::Pipeline(stages))
+        }
+        other => {
+            let document = json_to_document(other, "update")?;
+            if document.is_empty() {
+                return Err(invalid_config("MongoDB update document must not be empty"));
+            }
+            if !document.keys().all(|key| key.starts_with('$')) {
+                return Err(invalid_config(
+                    "MongoDB update documents must use update operators such as $set",
+                ));
+            }
+            Ok(UpdateModifications::Document(document))
+        }
+    }
+}
+
+fn json_to_index_options(value: Value) -> Result<IndexOptions, MongoError> {
+    let document = json_to_document(value, "index options")?;
+    let mut options = IndexOptions::default();
+    for (key, value) in document {
+        match key.as_str() {
+            "name" => {
+                let name = value
+                    .as_str()
+                    .ok_or_else(|| invalid_config("MongoDB index name must be a string"))?;
+                validate_required_field("MongoDB index name", name, MAX_FIELD_BYTES)?;
+                options.name = Some(name.to_string());
+            }
+            "unique" => options.unique = value.as_bool(),
+            "sparse" => options.sparse = value.as_bool(),
+            "hidden" => options.hidden = value.as_bool(),
+            "background" => options.background = value.as_bool(),
+            "expireAfterSeconds" => {
+                let seconds = bson_i64(Some(&value));
+                if seconds < 0 {
+                    return Err(invalid_config("MongoDB expireAfterSeconds must be >= 0"));
+                }
+                options.expire_after = Some(Duration::from_secs(seconds as u64));
+            }
+            "partialFilterExpression" => {
+                options.partial_filter_expression = value.as_document().cloned();
+            }
+            other => {
+                return Err(invalid_config(format!(
+                    "MongoDB index option '{other}' is not supported"
+                )))
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn index_info_from_spec(spec: Document) -> IndexInfo {
+    let keys = spec
+        .get_document("key")
+        .cloned()
+        .map(document_to_json)
+        .unwrap_or(Value::Object(Default::default()));
+    IndexInfo {
+        name: spec.get_str("name").unwrap_or_default().to_string(),
+        keys,
+        unique: spec.get_bool("unique").unwrap_or(false),
+        sparse: spec.get_bool("sparse").unwrap_or(false),
+        options: document_to_json(spec),
+    }
+}
+
+pub fn document_to_json(document: Document) -> Value {
+    Bson::Document(document).into_relaxed_extjson()
+}
+
+pub fn clamp_limit(limit: Option<i64>) -> i64 {
+    limit
+        .unwrap_or(DEFAULT_DOCUMENT_LIMIT)
+        .clamp(1, MAX_DOCUMENT_LIMIT)
+}
+
+fn bson_i64(value: Option<&Bson>) -> i64 {
+    match value {
+        Some(Bson::Int32(v)) => i64::from(*v),
+        Some(Bson::Int64(v)) => *v,
+        Some(Bson::Double(v)) => *v as i64,
+        _ => 0,
+    }
+}
+
+fn bson_f64(value: Option<&Bson>) -> f64 {
+    match value {
+        Some(Bson::Int32(v)) => f64::from(*v),
+        Some(Bson::Int64(v)) => *v as f64,
+        Some(Bson::Double(v)) => *v,
+        _ => 0.0,
+    }
+}
+
+// ── Errors ───────────────────────────────────────────────────────────
+
+/// Maps a driver error to a `MongoError` that never contains the connection
+/// URI or credentials. Server-side command messages are preserved because they
+/// are the only actionable detail (e.g. "not authorized on testdb").
+fn driver_error(error: &DriverError) -> MongoError {
+    match &*error.kind {
+        ErrorKind::Authentication { .. } => MongoError::new(
+            MongoErrorKind::ConnectionFailed,
+            "MongoDB authentication failed; check the username, password, and authentication database",
+        ),
+        ErrorKind::ServerSelection { .. } => MongoError::new(
+            MongoErrorKind::ConnectionFailed,
+            "MongoDB server is unreachable (server selection timed out)",
+        ),
+        ErrorKind::DnsResolve { .. } => MongoError::new(
+            MongoErrorKind::ConnectionFailed,
+            "MongoDB host name could not be resolved",
+        ),
+        ErrorKind::Io(_) => MongoError::new(
+            MongoErrorKind::ConnectionFailed,
+            "MongoDB connection I/O error",
+        ),
+        ErrorKind::InvalidTlsConfig { .. } => MongoError::new(
+            MongoErrorKind::InvalidConfig,
+            "MongoDB TLS configuration is invalid (check certificate paths)",
+        ),
+        ErrorKind::InvalidArgument { .. } => MongoError::new(
+            MongoErrorKind::InvalidConfig,
+            "MongoDB rejected the connection configuration",
+        ),
+        ErrorKind::Command(command) => MongoError::new(
+            MongoErrorKind::CommandError,
+            format!(
+                "MongoDB command failed ({}): {}",
+                command.code_name, command.message
+            ),
+        ),
+        ErrorKind::Write(WriteFailure::WriteError(write)) => MongoError::new(
+            MongoErrorKind::DatabaseError,
+            format!("MongoDB write failed: {}", write.message),
+        ),
+        ErrorKind::Write(WriteFailure::WriteConcernError(concern)) => MongoError::new(
+            MongoErrorKind::DatabaseError,
+            format!("MongoDB write concern error: {}", concern.message),
+        ),
+        ErrorKind::InsertMany(insert) => {
+            let detail = insert
+                .write_errors
+                .as_ref()
+                .and_then(|errors| errors.first())
+                .map(|first| first.message.clone())
+                .or_else(|| {
+                    insert
+                        .write_concern_error
+                        .as_ref()
+                        .map(|concern| concern.message.clone())
+                })
+                .unwrap_or_else(|| "one or more documents were rejected".to_string());
+            MongoError::new(
+                MongoErrorKind::DatabaseError,
+                format!("MongoDB insert failed: {detail}"),
+            )
+        }
+        ErrorKind::BsonDeserialization(_)
+        | ErrorKind::BsonSerialization(_)
+        | ErrorKind::Bson(_)
+        | ErrorKind::InvalidResponse { .. } => MongoError::new(
+            MongoErrorKind::SerializationError,
+            "MongoDB returned data that could not be decoded",
+        ),
+        _ => MongoError::new(
+            MongoErrorKind::DatabaseError,
+            "MongoDB operation failed",
+        ),
+    }
+}
+
+fn collect_secrets(config: &MongoConnectionConfig) -> Vec<Zeroizing<String>> {
+    let mut secrets = Vec::new();
+    if let Some(password) = config.password.as_deref() {
+        if !password.is_empty() {
+            secrets.push(Zeroizing::new(password.to_string()));
+            secrets.push(Zeroizing::new(urlencoded(password)));
+        }
+    }
+    if let Some(uri) = config.connection_string.as_deref() {
+        if let Some(password) = uri_password(uri) {
+            if !password.is_empty() {
+                secrets.push(Zeroizing::new(password.to_string()));
+            }
+        }
+    }
+    secrets
+}
+
+/// Extracts the password component of `scheme://user:password@hosts/...`.
+fn uri_password(uri: &str) -> Option<&str> {
+    let remainder = uri.split_once("://")?.1;
+    let authority = remainder.split(['/', '?']).next()?;
+    let (userinfo, _) = authority.rsplit_once('@')?;
+    userinfo.split_once(':').map(|(_, password)| password)
+}
+
+fn redact_error(mut error: MongoError, secrets: &[Zeroizing<String>]) -> MongoError {
+    error.message = redact_secrets(&error.message, secrets);
+    error.details = error
+        .details
+        .as_deref()
+        .map(|details| redact_secrets(details, secrets));
+    error
+}
+
+fn redact_secrets(message: &str, secrets: &[Zeroizing<String>]) -> String {
+    let mut redacted = message.to_string();
+    for secret in secrets {
+        if !secret.is_empty() {
+            redacted = redacted.replace(secret.as_str(), "***");
+        }
+    }
+    redacted
+}
+
+// ── Config validation & transport policy (unchanged semantics) ───────
 
 struct ParsedMongoUri {
     hosts: Vec<String>,
@@ -628,7 +1165,7 @@ fn validate_and_secure_config(
     enforce_transport_policy(&policy, insecure_tls_acknowledgement)?;
 
     let generated_uri = Zeroizing::new(config.to_connection_string());
-    validate_runner_input(generated_uri.as_str(), "policy-validation")?;
+    validate_uri_bytes(generated_uri.as_str())?;
     Ok(policy.hosts)
 }
 
@@ -661,7 +1198,7 @@ fn enforce_transport_policy(
 }
 
 fn parse_mongo_uri(uri: &str) -> Result<ParsedMongoUri, MongoError> {
-    validate_runner_input(uri, "uri-validation")?;
+    validate_uri_bytes(uri)?;
     if uri.trim() != uri || uri.contains('#') {
         return Err(invalid_uri());
     }
@@ -845,6 +1382,20 @@ fn validate_timeout(value: Option<u64>) -> Result<(), MongoError> {
     Ok(())
 }
 
+fn validate_uri_bytes(connection_string: &str) -> Result<(), MongoError> {
+    if connection_string.is_empty()
+        || connection_string.len() > MAX_CONNECTION_URI_BYTES
+        || connection_string
+            .chars()
+            .any(|character| matches!(character, '\0' | '\r' | '\n'))
+    {
+        return Err(invalid_config(
+            "MongoDB connection URI is invalid or exceeds the safety limit",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_optional_field(
     name: &str,
     value: Option<&str>,
@@ -880,95 +1431,6 @@ fn invalid_config(message: impl Into<String>) -> MongoError {
     MongoError::new(MongoErrorKind::InvalidConfig, message)
 }
 
-/// `mongosh` receives the URI only through its anonymous stdin pipe. The URI is
-/// never placed in argv, the environment, the temporary script, or an error.
-/// There is deliberately no argv fallback: if stdin cannot be established, the
-/// operation fails closed.
-async fn run_mongosh_json(connection_string: &str, script: &str) -> Result<Value, MongoError> {
-    validate_runner_input(connection_string, script)?;
-
-    let executable = resolve_mongosh()?;
-    let script_file = create_secure_script(script)?;
-    let invocation = build_invocation(&executable, script_file.path());
-
-    let mut command = Command::new(&invocation.program);
-    command
-        .args(&invocation.args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .env_remove("NODE_OPTIONS")
-        .env_remove("NODE_PATH")
-        .env_remove("MONGOSH_CONFIG_DIR")
-        .env("NO_COLOR", "1");
-    #[cfg(windows)]
-    command.creation_flags(0x0800_0000);
-
-    let mut child = command.spawn().map_err(|_| command_spawn_error())?;
-    let mut stdin = match child.stdin.take() {
-        Some(stdin) => stdin,
-        None => {
-            terminate_and_reap(&mut child).await;
-            return Err(command_io_error());
-        }
-    };
-    let stdout = match child.stdout.take() {
-        Some(stdout) => stdout,
-        None => {
-            terminate_and_reap(&mut child).await;
-            return Err(command_io_error());
-        }
-    };
-    let stderr = match child.stderr.take() {
-        Some(stderr) => stderr,
-        None => {
-            terminate_and_reap(&mut child).await;
-            return Err(command_io_error());
-        }
-    };
-
-    let stdout_task = tokio::spawn(read_bounded(stdout));
-    let stderr_task = tokio::spawn(read_bounded(stderr));
-    let status = match timeout(PROCESS_TIMEOUT, async {
-        stdin.write_all(connection_string.as_bytes()).await?;
-        stdin.shutdown().await?;
-        drop(stdin);
-        child.wait().await
-    })
-    .await
-    {
-        Ok(Ok(status)) => status,
-        Ok(Err(_)) => {
-            terminate_and_reap(&mut child).await;
-            discard_captures(stdout_task, stderr_task).await;
-            return Err(command_io_error());
-        }
-        Err(_) => {
-            terminate_and_reap(&mut child).await;
-            discard_captures(stdout_task, stderr_task).await;
-            return Err(MongoError::new(
-                MongoErrorKind::CommandError,
-                "MongoDB client operation timed out",
-            ));
-        }
-    };
-
-    let (stdout_capture, _stderr_capture) = finish_captures(stdout_task, stderr_task).await?;
-    if !status.success() {
-        let status_label = status
-            .code()
-            .map(|code| format!("exit code {code}"))
-            .unwrap_or_else(|| "terminated by the operating system".to_string());
-        return Err(MongoError::new(
-            MongoErrorKind::CommandError,
-            format!("MongoDB client operation failed ({status_label})"),
-        ));
-    }
-
-    parse_json_output(&stdout_capture)
-}
-
 fn scrub_config_secrets(config: &mut MongoConnectionConfig) {
     if let Some(password) = config.password.as_mut() {
         password.zeroize();
@@ -992,511 +1454,24 @@ fn scrub_config_secrets(config: &mut MongoConnectionConfig) {
     }
 }
 
-fn validate_runner_input(connection_string: &str, script: &str) -> Result<(), MongoError> {
-    if connection_string.is_empty()
-        || connection_string.len() > MAX_CONNECTION_URI_BYTES
-        || connection_string
-            .chars()
-            .any(|character| matches!(character, '\0' | '\r' | '\n'))
-    {
-        return Err(MongoError::new(
-            MongoErrorKind::InvalidConfig,
-            "MongoDB connection URI is invalid or exceeds the safety limit",
-        ));
-    }
-    if script.is_empty() || script.len() > MAX_SCRIPT_BYTES || script.contains('\0') {
-        return Err(MongoError::new(
-            MongoErrorKind::CommandError,
-            "MongoDB operation exceeds the safety limit",
-        ));
-    }
-    Ok(())
-}
-
-const SCRIPT_BOOTSTRAP: &str = r#""use strict";
-const __sorngFs = require("fs");
-const __sorngUri = __sorngFs.readFileSync(0, "utf8");
-if (typeof __sorngUri !== "string" || __sorngUri.length === 0) {
-  throw new Error("MongoDB connection input is unavailable");
-}
-globalThis.db = connect(__sorngUri);
-"#;
-
-fn create_secure_script(script: &str) -> Result<NamedTempFile, MongoError> {
-    let mut file = tempfile::Builder::new()
-        .prefix("sorng-mongosh-")
-        .suffix(".js")
-        .tempfile()
-        .map_err(|_| script_preparation_error())?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o600))
-            .map_err(|_| script_preparation_error())?;
-    }
-
-    SyncWrite::write_all(file.as_file_mut(), SCRIPT_BOOTSTRAP.as_bytes())
-        .and_then(|_| SyncWrite::write_all(file.as_file_mut(), script.as_bytes()))
-        .and_then(|_| SyncWrite::flush(file.as_file_mut()))
-        .map_err(|_| script_preparation_error())?;
-    Ok(file)
-}
-
-struct MongoshInvocation {
-    program: PathBuf,
-    args: Vec<OsString>,
-}
-
-fn build_invocation(executable: &Path, script_path: &Path) -> MongoshInvocation {
-    MongoshInvocation {
-        program: executable.to_path_buf(),
-        args: vec![
-            OsString::from("--quiet"),
-            OsString::from("--norc"),
-            OsString::from("--nodb"),
-            OsString::from("--file"),
-            script_path.as_os_str().to_owned(),
-        ],
-    }
-}
-
-fn resolve_mongosh() -> Result<PathBuf, MongoError> {
-    let candidates = trusted_mongosh_candidates();
-    let trusted_roots = candidates
-        .iter()
-        .map(|(_, root)| root.clone())
-        .collect::<Vec<_>>();
-
-    if let Some(explicit) = std::env::var_os(MONGOSH_PATH_ENV) {
-        let explicit = PathBuf::from(explicit);
-        if !explicit.is_absolute() {
-            return Err(executable_resolution_error());
-        }
-        return validate_executable(&explicit, &trusted_roots)
-            .ok_or_else(executable_resolution_error);
-    }
-
-    for (candidate, _) in candidates {
-        if let Some(executable) = validate_executable(&candidate, &trusted_roots) {
-            return Ok(executable);
+fn urlencoded(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for byte in s.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            use std::fmt::Write;
+            let _ = write!(out, "%{byte:02X}");
         }
     }
-
-    Err(executable_resolution_error())
-}
-
-#[cfg(windows)]
-fn trusted_mongosh_candidates() -> Vec<(PathBuf, PathBuf)> {
-    windows_mongosh_candidates(windows_program_files_roots())
-}
-
-#[cfg(windows)]
-fn windows_program_files_roots() -> Vec<PathBuf> {
-    use windows_sys::Win32::UI::Shell::{
-        FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX64, FOLDERID_ProgramFilesX86,
-    };
-
-    let mut roots = [
-        known_folder_path(&FOLDERID_ProgramFiles),
-        known_folder_path(&FOLDERID_ProgramFilesX64),
-        known_folder_path(&FOLDERID_ProgramFilesX86),
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|path| path.is_absolute())
-    .collect::<Vec<_>>();
-    roots.sort();
-    roots.dedup();
-    roots
-}
-
-#[cfg(windows)]
-struct CoTaskMemWidePath(*mut u16);
-
-#[cfg(windows)]
-impl Drop for CoTaskMemWidePath {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            // SAFETY: SHGetKnownFolderPath allocated this pointer with the COM
-            // task allocator and ownership remains with this guard.
-            unsafe {
-                windows_sys::Win32::System::Com::CoTaskMemFree(self.0.cast::<std::ffi::c_void>());
-            }
-        }
-    }
-}
-
-#[cfg(windows)]
-fn known_folder_path(folder_id: &windows_sys::core::GUID) -> Option<PathBuf> {
-    use std::os::windows::ffi::OsStringExt;
-    use windows_sys::Win32::UI::Shell::SHGetKnownFolderPath;
-
-    let mut raw = std::ptr::null_mut();
-    // SAFETY: folder_id points to a static KNOWNFOLDERID, the default token is
-    // null by contract, and raw is an out-pointer owned by the guard below.
-    let result = unsafe { SHGetKnownFolderPath(folder_id, 0, std::ptr::null_mut(), &mut raw) };
-    if result < 0 || raw.is_null() {
-        return None;
-    }
-    let allocation = CoTaskMemWidePath(raw);
-
-    let mut length = 0usize;
-    // SAFETY: a successful SHGetKnownFolderPath call guarantees a terminated
-    // UTF-16 string. MAX_PATH-sized legacy assumptions are avoided while a
-    // defensive NT path ceiling prevents unbounded scanning.
-    while length < 32_767 && unsafe { *allocation.0.add(length) } != 0 {
-        length += 1;
-    }
-    if length == 0 || length == 32_767 {
-        return None;
-    }
-    // SAFETY: the loop established that the allocation contains `length`
-    // initialized UTF-16 code units before its terminator.
-    let path =
-        std::ffi::OsString::from_wide(unsafe { std::slice::from_raw_parts(allocation.0, length) });
-    Some(PathBuf::from(path))
-}
-
-#[cfg(any(windows, test))]
-fn windows_mongosh_candidates(roots: impl IntoIterator<Item = PathBuf>) -> Vec<(PathBuf, PathBuf)> {
-    let mut candidates = Vec::new();
-    for root in roots.into_iter().filter(|path| path.is_absolute()) {
-        candidates.push((
-            root.join("MongoDB/mongosh/current/bin/mongosh.exe"),
-            root.clone(),
-        ));
-        candidates.push((root.join("MongoDB/mongosh/bin/mongosh.exe"), root.clone()));
-
-        let servers = root.join("MongoDB/Server");
-        if let Ok(entries) = std::fs::read_dir(&servers) {
-            let mut versioned: Vec<PathBuf> = entries
-                .filter_map(Result::ok)
-                .map(|entry| entry.path().join("bin/mongosh.exe"))
-                .collect();
-            versioned.sort_by(|left, right| right.cmp(left));
-            candidates.extend(
-                versioned
-                    .into_iter()
-                    .map(|candidate| (candidate, root.clone())),
-            );
-        }
-    }
-    candidates
-}
-
-#[cfg(not(windows))]
-fn trusted_mongosh_candidates() -> Vec<(PathBuf, PathBuf)> {
-    [
-        ("/usr/bin/mongosh", "/usr"),
-        ("/usr/local/bin/mongosh", "/usr/local"),
-        ("/opt/homebrew/bin/mongosh", "/opt/homebrew"),
-    ]
-    .into_iter()
-    .map(|(candidate, root)| (PathBuf::from(candidate), PathBuf::from(root)))
-    .collect()
-}
-
-fn validate_executable(candidate: &Path, trusted_roots: &[PathBuf]) -> Option<PathBuf> {
-    if !candidate.is_absolute()
-        || candidate.components().any(|component| {
-            matches!(
-                component,
-                std::path::Component::CurDir | std::path::Component::ParentDir
-            )
-        })
-    {
-        return None;
-    }
-
-    let lexical_root = trusted_roots
-        .iter()
-        .find(|root| candidate.starts_with(root))?;
-    if !parent_chain_has_no_symlinks(candidate.parent()?, lexical_root) {
-        return None;
-    }
-
-    let link_metadata = std::fs::symlink_metadata(candidate).ok()?;
-    if !link_metadata.is_file() && !link_metadata.file_type().is_symlink() {
-        return None;
-    }
-    let canonical = candidate.canonicalize().ok()?;
-    let canonical_roots = trusted_roots
-        .iter()
-        .filter_map(|root| root.canonicalize().ok())
-        .collect::<Vec<_>>();
-    if !canonical_roots
-        .iter()
-        .any(|root| canonical.starts_with(root))
-    {
-        return None;
-    }
-
-    let metadata = std::fs::metadata(&canonical).ok()?;
-    if !metadata.is_file() {
-        return None;
-    }
-
-    #[cfg(unix)]
-    {
-        if !unix_executable_chain_is_trusted(&canonical) {
-            return None;
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        // The candidate and canonical target are already confined beneath an
-        // OS-managed Program Files root. Reject a file writable by the current
-        // process as a final defense against a user-controlled replacement.
-        if std::fs::OpenOptions::new()
-            .write(true)
-            .open(&canonical)
-            .is_ok()
-        {
-            return None;
-        }
-        let canonical_root = canonical_roots
-            .iter()
-            .find(|root| canonical.starts_with(root))?;
-        if !parent_chain_has_no_symlinks(canonical.parent()?, canonical_root) {
-            return None;
-        }
-    }
-
-    Some(canonical)
-}
-
-fn parent_chain_has_no_symlinks(mut path: &Path, root: &Path) -> bool {
-    loop {
-        if !path.starts_with(root) {
-            return false;
-        }
-        let Ok(metadata) = std::fs::symlink_metadata(path) else {
-            return false;
-        };
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return false;
-        }
-        if path == root {
-            return true;
-        }
-        let Some(parent) = path.parent() else {
-            return false;
-        };
-        path = parent;
-    }
-}
-
-#[cfg(unix)]
-fn unix_executable_chain_is_trusted(executable: &Path) -> bool {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-    let Some(current_uid) = tempfile::tempfile()
-        .ok()
-        .and_then(|file| file.metadata().ok())
-        .map(|metadata| metadata.uid())
-    else {
-        return false;
-    };
-
-    let Ok(metadata) = std::fs::metadata(executable) else {
-        return false;
-    };
-    let mode = metadata.permissions().mode();
-    if !metadata.is_file()
-        || (metadata.uid() != 0 && metadata.uid() != current_uid)
-        || mode & 0o111 == 0
-        || mode & 0o022 != 0
-    {
-        return false;
-    }
-
-    for parent in executable.ancestors().skip(1) {
-        let Ok(metadata) = std::fs::symlink_metadata(parent) else {
-            return false;
-        };
-        let mode = metadata.permissions().mode();
-        let owner_is_trusted = metadata.uid() == 0 || metadata.uid() == current_uid;
-        let writable_by_others = mode & 0o022 != 0;
-        let trusted_sticky_directory = metadata.uid() == 0 && mode & 0o1000 != 0;
-        if !metadata.is_dir()
-            || metadata.file_type().is_symlink()
-            || !owner_is_trusted
-            || (writable_by_others && !trusted_sticky_directory)
-        {
-            return false;
-        }
-    }
-    true
-}
-
-struct BoundedCapture {
-    bytes: Vec<u8>,
-    truncated: bool,
-}
-
-type CaptureTask = JoinHandle<std::io::Result<BoundedCapture>>;
-
-async fn read_bounded<R>(mut reader: R) -> std::io::Result<BoundedCapture>
-where
-    R: AsyncRead + Unpin,
-{
-    let mut bytes = Vec::with_capacity(16 * 1024);
-    let mut truncated = false;
-    let mut buffer = [0_u8; 8192];
-    loop {
-        let read = reader.read(&mut buffer).await?;
-        if read == 0 {
-            break;
-        }
-        let available = MAX_CAPTURE_BYTES.saturating_sub(bytes.len());
-        let retained = available.min(read);
-        bytes.extend_from_slice(&buffer[..retained]);
-        truncated |= retained != read;
-    }
-    Ok(BoundedCapture { bytes, truncated })
-}
-
-async fn finish_captures(
-    mut stdout: CaptureTask,
-    mut stderr: CaptureTask,
-) -> Result<(BoundedCapture, BoundedCapture), MongoError> {
-    let joined = timeout(REAP_TIMEOUT, async {
-        tokio::join!(&mut stdout, &mut stderr)
-    })
-    .await;
-    match joined {
-        Ok((Ok(Ok(stdout)), Ok(Ok(stderr)))) => Ok((stdout, stderr)),
-        Ok(_) => Err(command_io_error()),
-        Err(_) => {
-            abort_and_join_captures(stdout, stderr).await;
-            Err(command_io_error())
-        }
-    }
-}
-
-async fn discard_captures(stdout: CaptureTask, stderr: CaptureTask) {
-    abort_and_join_captures(stdout, stderr).await;
-}
-
-async fn abort_and_join_captures(mut stdout: CaptureTask, mut stderr: CaptureTask) {
-    stdout.abort();
-    stderr.abort();
-    let _ = timeout(REAP_TIMEOUT, async {
-        let _ = (&mut stdout).await;
-        let _ = (&mut stderr).await;
-    })
-    .await;
-}
-
-async fn terminate_and_reap(child: &mut Child) {
-    let _ = child.start_kill();
-    let _ = timeout(REAP_TIMEOUT, child.wait()).await;
-}
-
-fn parse_json_output(output: &BoundedCapture) -> Result<Value, MongoError> {
-    if output.truncated {
-        return Err(MongoError::new(
-            MongoErrorKind::SerializationError,
-            "MongoDB client output exceeded the safety limit",
-        ));
-    }
-    let stdout = std::str::from_utf8(&output.bytes).map_err(|_| serialization_error("utf8"))?;
-    let json_line = stdout
-        .lines()
-        .rev()
-        .find(|line| !line.trim().is_empty())
-        .ok_or_else(|| serialization_error("empty"))?;
-    serde_json::from_str(json_line).map_err(serialization_error)
-}
-
-fn command_spawn_error() -> MongoError {
-    MongoError::new(
-        MongoErrorKind::ConnectionFailed,
-        "MongoDB client could not be started",
-    )
-}
-
-fn command_io_error() -> MongoError {
-    MongoError::new(
-        MongoErrorKind::CommandError,
-        "MongoDB client operation failed",
-    )
-}
-
-fn script_preparation_error() -> MongoError {
-    MongoError::new(
-        MongoErrorKind::CommandError,
-        "MongoDB client operation could not be prepared securely",
-    )
-}
-
-fn executable_resolution_error() -> MongoError {
-    MongoError::new(
-        MongoErrorKind::ConnectionFailed,
-        format!(
-            "Trusted mongosh executable not found; set {MONGOSH_PATH_ENV} to an absolute path inside a protected MongoDB installation root"
-        ),
-    )
-}
-
-fn serialization_error(_error: impl std::fmt::Display) -> MongoError {
-    MongoError::new(
-        MongoErrorKind::SerializationError,
-        "MongoDB client returned invalid structured output",
-    )
-}
-
-fn js_string(value: &str) -> Result<String, MongoError> {
-    validate_required_field("MongoDB command field", value, MAX_FIELD_BYTES)?;
-    serde_json::to_string(value).map_err(serialization_error)
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::VecDeque;
-    use std::sync::Mutex as StdMutex;
-
-    struct FakeRunner {
-        calls: StdMutex<Vec<(String, String)>>,
-        responses: StdMutex<VecDeque<Result<Value, MongoError>>>,
-    }
-
-    impl FakeRunner {
-        fn new(responses: Vec<Result<Value, MongoError>>) -> Self {
-            Self {
-                calls: StdMutex::new(Vec::new()),
-                responses: StdMutex::new(responses.into()),
-            }
-        }
-
-        fn calls(&self) -> Vec<(String, String)> {
-            self.calls.lock().unwrap().clone()
-        }
-    }
-
-    impl MongoRunner for FakeRunner {
-        fn run_json<'a>(
-            &'a self,
-            connection_string: &'a str,
-            script: &'a str,
-        ) -> MongoRunnerFuture<'a> {
-            Box::pin(async move {
-                self.calls
-                    .lock()
-                    .unwrap()
-                    .push((connection_string.to_string(), script.to_string()));
-                self.responses
-                    .lock()
-                    .unwrap()
-                    .pop_front()
-                    .expect("fake response")
-            })
-        }
-    }
+    use mongodb::options::{ConnectionString, HostInfo, ReadPreference, SelectionCriteria};
+    use serde_json::json;
 
     fn config_with_uri(uri: &str) -> MongoConnectionConfig {
         MongoConnectionConfig {
@@ -1519,6 +1494,38 @@ mod tests {
         }
     }
 
+    fn structured_config() -> MongoConnectionConfig {
+        MongoConnectionConfig {
+            label: Some("structured".into()),
+            hosts: vec![
+                "db1.example.com:27017".into(),
+                "db2.example.com:27018".into(),
+            ],
+            database: Some("app".into()),
+            username: Some("admin".into()),
+            password: Some("p@ss:word".into()),
+            auth_database: Some("authdb".into()),
+            auth_mechanism: Some(MongoAuthMechanism::ScramSha256),
+            replica_set: Some("rs0".into()),
+            read_preference: Some("secondaryPreferred".into()),
+            direct_connection: None,
+            app_name: Some("custom-app".into()),
+            connection_string: None,
+            connect_timeout_secs: Some(7),
+            server_selection_timeout_secs: Some(9),
+            ssh_tunnel: None,
+            tls: Some(TlsConfig {
+                enabled: true,
+                ca_cert_path: Some("/certs/ca.pem".into()),
+                client_cert_path: Some("/certs/client.pem".into()),
+                client_key_path: None,
+                allow_invalid_certificates: false,
+            }),
+        }
+    }
+
+    // ── Session lifecycle ────────────────────────────────────────────
+
     #[test]
     fn test_new_service() {
         let svc = MongoService::new();
@@ -1528,111 +1535,473 @@ mod tests {
     #[test]
     fn test_session_not_found() {
         let svc = MongoService::new();
-        let result = svc.get_session("nonexistent");
-        assert!(result.is_err());
+        assert!(svc.get_session("nonexistent").is_err());
     }
 
     #[tokio::test]
     async fn test_disconnect_nonexistent() {
         let mut svc = MongoService::new();
-        let result = svc.disconnect("no-such").await;
-        assert!(result.is_err());
+        assert!(svc.disconnect("no-such").await.is_err());
     }
 
     #[tokio::test]
     async fn test_ping_nonexistent() {
         let svc = MongoService::new();
-        let result = svc.ping("no-such").await;
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_js_string_quotes_value() {
-        assert_eq!(js_string("db\"name").unwrap(), "\"db\\\"name\"");
-    }
-
-    #[test]
-    fn test_command_spawn_error_is_opaque() {
-        let error = command_spawn_error();
-        assert_eq!(error.kind, MongoErrorKind::ConnectionFailed);
-        assert!(!error.message.contains("PATH"));
-    }
-
-    #[test]
-    fn test_serialization_error_kind() {
-        let error = serialization_error("boom");
-        assert_eq!(error.kind, MongoErrorKind::SerializationError);
-        assert!(!error.message.contains("boom"));
-    }
-
-    #[test]
-    fn invocation_contains_neither_uri_nor_javascript() {
-        let invocation = build_invocation(
-            Path::new("/trusted/mongosh"),
-            Path::new("/private/random-script.js"),
-        );
-        let arguments = invocation
-            .args
-            .iter()
-            .map(|arg| arg.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ");
-        assert_eq!(
-            arguments,
-            "--quiet --norc --nodb --file /private/random-script.js"
-        );
-        assert!(!arguments.contains("mongodb://"));
-        assert!(!arguments.contains("dropDatabase"));
-        assert_eq!(invocation.program, Path::new("/trusted/mongosh"));
-    }
-
-    #[test]
-    fn secure_script_is_raii_and_contains_no_connection_uri() {
-        let file = create_secure_script("print(JSON.stringify({ ok: true }));").unwrap();
-        let path = file.path().to_path_buf();
-        let contents = std::fs::read_to_string(&path).unwrap();
-        assert!(contents.contains("readFileSync(0"));
-        assert!(contents.contains("print(JSON.stringify"));
-        assert!(!contents.contains("mongodb://user:password"));
-        drop(file);
-        assert!(!path.exists());
-    }
-
-    #[test]
-    fn bounded_output_parser_uses_only_the_final_structured_line() {
-        let output = BoundedCapture {
-            bytes: b"startup noise\n{\"ok\":true}\n".to_vec(),
-            truncated: false,
-        };
-        assert_eq!(parse_json_output(&output).unwrap()["ok"], true);
-
-        let truncated = BoundedCapture {
-            bytes: b"{\"ok\":true}".to_vec(),
-            truncated: true,
-        };
-        assert!(parse_json_output(&truncated).is_err());
+        let error = svc.ping("no-such").await.unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::SessionNotFound);
     }
 
     #[tokio::test]
-    async fn fake_runner_preserves_destructive_command_boundary() {
-        let runner = Arc::new(FakeRunner::new(vec![
-            Ok(serde_json::json!({ "ok": true, "version": "8.0" })),
-            Ok(serde_json::json!({ "ok": true })),
-        ]));
-        let mut service = MongoService::with_runner(runner.clone());
-        let secret_uri = "mongodb://admin:top-secret@db.example/admin?tls=true";
-        let session_id = service.connect(config_with_uri(secret_uri)).await.unwrap();
-        let database = "prod'); throw new Error('not code";
-        service.drop_database(&session_id, database).await.unwrap();
-
-        let calls = runner.calls();
-        assert_eq!(calls.len(), 2);
-        assert_eq!(calls[1].0, secret_uri);
-        assert!(calls[1].1.contains("dropDatabase"));
-        assert!(calls[1]
-            .1
-            .contains(&serde_json::to_string(database).unwrap()));
+    async fn document_operations_require_an_existing_session() {
+        let svc = MongoService::new();
+        let error = svc
+            .find(
+                "missing",
+                Some("db"),
+                "coll",
+                json!({}),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::SessionNotFound);
+        let error = svc
+            .list_indexes("missing", Some("db"), "coll")
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::SessionNotFound);
     }
+
+    #[tokio::test]
+    async fn ssh_tunnel_is_refused_before_any_connection_attempt() {
+        let mut svc = MongoService::offline();
+        let mut config = config_with_uri("mongodb://127.0.0.1/dev");
+        config.ssh_tunnel = Some(SshTunnelConfig {
+            host: "bastion".into(),
+            port: 22,
+            username: "u".into(),
+            password: Some("tunnel-secret".into()),
+            private_key_path: None,
+            passphrase: None,
+        });
+        let error = svc.connect(config).await.unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::InvalidConfig);
+        assert!(error.message.contains("SSH"));
+        assert!(!error.message.contains("tunnel-secret"));
+        assert!(svc.list_sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn session_cap_is_enforced() {
+        let mut service = MongoService::offline();
+        for _ in 0..MAX_SESSIONS {
+            service
+                .connect(config_with_uri("mongodb://127.0.0.1/dev"))
+                .await
+                .unwrap();
+        }
+        assert_eq!(service.list_sessions().len(), MAX_SESSIONS);
+
+        let error = service
+            .connect(config_with_uri("mongodb://127.0.0.1/dev"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::InvalidConfig);
+        assert!(error.message.contains("session limit"));
+        service.disconnect_all().await;
+        assert!(service.list_sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn session_info_reflects_config_and_disconnect_removes_it() {
+        let mut service = MongoService::offline();
+        let session_id = service
+            .connect(config_with_uri("mongodb://admin:secret@127.0.0.1/admin"))
+            .await
+            .unwrap();
+        let info = service.get_session(&session_id).unwrap();
+        assert_eq!(info.hosts, vec!["127.0.0.1"]);
+        assert_eq!(info.database.as_deref(), Some("admin"));
+        assert_eq!(info.status, ConnectionStatus::Connected);
+        assert!(info.server_version.is_none());
+        let serialized = serde_json::to_string(&info).unwrap();
+        assert!(!serialized.contains("secret"));
+
+        service.disconnect(&session_id).await.unwrap();
+        assert!(service.get_session(&session_id).is_err());
+        assert!(service.client(&session_id).is_err());
+    }
+
+    #[tokio::test]
+    async fn connect_failure_never_echoes_the_password() {
+        // Loopback + credentials passes policy; the probe fails because
+        // nothing listens on this port.
+        let mut service = MongoService::new();
+        let mut config = config_with_uri("mongodb://127.0.0.1:1/dev");
+        config.connection_string = None;
+        config.hosts = vec!["127.0.0.1:1".into()];
+        config.username = Some("admin".into());
+        config.password = Some("hunter2-very-secret".into());
+        config.server_selection_timeout_secs = Some(1);
+        config.connect_timeout_secs = Some(1);
+        let error = service.connect(config).await.unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::ConnectionFailed);
+        assert!(!error.message.contains("hunter2"));
+        assert!(!error.message.contains("mongodb://"));
+        assert!(service.list_sessions().is_empty());
+    }
+
+    // ── ClientOptions mapping ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn client_options_map_structured_config() {
+        let mut config = structured_config();
+        let hosts = validate_and_secure_config(&mut config, None).unwrap();
+        assert_eq!(hosts.len(), 2);
+        let uri = config.to_connection_string();
+        let options = build_client_options(&config, &uri).await.unwrap();
+
+        assert_eq!(options.hosts.len(), 2);
+        assert_eq!(options.hosts[0].to_string(), "db1.example.com:27017");
+        assert_eq!(options.hosts[1].to_string(), "db2.example.com:27018");
+        assert_eq!(options.app_name.as_deref(), Some("custom-app"));
+        assert_eq!(options.repl_set_name.as_deref(), Some("rs0"));
+        assert_eq!(options.connect_timeout, Some(Duration::from_secs(7)));
+        assert_eq!(
+            options.server_selection_timeout,
+            Some(Duration::from_secs(9))
+        );
+        assert_eq!(options.default_database.as_deref(), Some("app"));
+        assert!(matches!(
+            options.selection_criteria,
+            Some(SelectionCriteria::ReadPreference(
+                ReadPreference::SecondaryPreferred { .. }
+            ))
+        ));
+
+        let credential = options.credential.expect("credential from userinfo");
+        assert_eq!(credential.username.as_deref(), Some("admin"));
+        assert_eq!(credential.password.as_deref(), Some("p@ss:word"));
+        assert_eq!(credential.source.as_deref(), Some("authdb"));
+        assert!(matches!(
+            credential.mechanism,
+            Some(mongodb::options::AuthMechanism::ScramSha256)
+        ));
+
+        match options.tls {
+            Some(Tls::Enabled(tls)) => {
+                assert_eq!(tls.ca_file_path, Some(PathBuf::from("/certs/ca.pem")));
+                assert_eq!(
+                    tls.cert_key_file_path,
+                    Some(PathBuf::from("/certs/client.pem"))
+                );
+                assert_eq!(tls.allow_invalid_certificates, Some(false));
+            }
+            other => panic!("expected TLS enabled, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn client_options_defaults_and_direct_connection() {
+        let mut config = config_with_uri("mongodb://127.0.0.1/dev");
+        config.connection_string = None;
+        config.hosts = vec!["127.0.0.1:27017".into()];
+        config.direct_connection = Some(true);
+        config.tls = Some(TlsConfig {
+            enabled: false,
+            ..Default::default()
+        });
+        validate_and_secure_config(&mut config, None).unwrap();
+        let uri = config.to_connection_string();
+        let options = build_client_options(&config, &uri).await.unwrap();
+
+        assert_eq!(options.app_name.as_deref(), Some(DEFAULT_APP_NAME));
+        assert_eq!(options.connect_timeout, Some(DEFAULT_CONNECT_TIMEOUT));
+        assert_eq!(
+            options.server_selection_timeout,
+            Some(DEFAULT_SERVER_SELECTION_TIMEOUT)
+        );
+        assert_eq!(options.direct_connection, Some(true));
+        assert!(options.credential.is_none());
+        assert!(matches!(options.tls, Some(Tls::Disabled)));
+    }
+
+    #[tokio::test]
+    async fn client_options_allow_invalid_certificates_only_with_acknowledgement() {
+        let mut config = config_with_uri("mongodb://127.0.0.1/dev");
+        config.connection_string = None;
+        config.hosts = vec!["db.example.com:27017".into()];
+        config.tls = Some(TlsConfig {
+            enabled: true,
+            allow_invalid_certificates: true,
+            ..Default::default()
+        });
+        assert!(validate_and_secure_config(&mut config.clone(), None).is_err());
+        validate_and_secure_config(&mut config, Some(INVALID_CERTIFICATE_ACKNOWLEDGEMENT)).unwrap();
+        let uri = config.to_connection_string();
+        let options = build_client_options(&config, &uri).await.unwrap();
+        match options.tls {
+            Some(Tls::Enabled(tls)) => assert_eq!(tls.allow_invalid_certificates, Some(true)),
+            other => panic!("expected TLS enabled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tls_mapping_rejects_split_client_cert_and_key_files() {
+        let error = tls_from_config(&TlsConfig {
+            enabled: true,
+            client_cert_path: Some("/a/cert.pem".into()),
+            client_key_path: Some("/a/key.pem".into()),
+            ..Default::default()
+        })
+        .unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::InvalidConfig);
+
+        let same = tls_from_config(&TlsConfig {
+            enabled: true,
+            client_cert_path: Some("/a/combined.pem".into()),
+            client_key_path: Some("/a/combined.pem".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        match same {
+            Tls::Enabled(tls) => assert_eq!(
+                tls.cert_key_file_path,
+                Some(PathBuf::from("/a/combined.pem"))
+            ),
+            Tls::Disabled => panic!("expected TLS enabled"),
+        }
+    }
+
+    #[test]
+    fn srv_uris_pass_through_to_the_driver_as_dns_seedlists() {
+        let parsed = parse_mongo_uri("mongodb+srv://cluster0.example.com/app").unwrap();
+        assert!(parsed.tls_enabled, "SRV implies TLS");
+        let connection_string =
+            ConnectionString::parse("mongodb+srv://cluster0.example.com/app").unwrap();
+        assert!(matches!(
+            connection_string.host_info,
+            HostInfo::DnsRecord(_)
+        ));
+        assert_eq!(connection_string.default_database.as_deref(), Some("app"));
+    }
+
+    #[tokio::test]
+    async fn raw_uri_credentials_map_to_driver_credential_with_auth_source() {
+        let config = config_with_uri("mongodb://u:p@127.0.0.1:27017/app?authSource=admin");
+        let options = build_client_options(&config, config.connection_string.as_deref().unwrap())
+            .await
+            .unwrap();
+        let credential = options.credential.unwrap();
+        assert_eq!(credential.username.as_deref(), Some("u"));
+        assert_eq!(credential.source.as_deref(), Some("admin"));
+        assert_eq!(options.default_database.as_deref(), Some("app"));
+    }
+
+    // ── JSON ⇄ BSON ──────────────────────────────────────────────────
+
+    #[test]
+    fn json_to_document_supports_extended_json() {
+        let doc = json_to_document(
+            json!({
+                "_id": { "$oid": "507f1f77bcf86cd799439011" },
+                "when": { "$date": "2026-08-26T10:00:00Z" },
+                "big": { "$numberLong": "9007199254740993" },
+                "tags": ["a", { "n": 1 }, [1, 2.5]],
+                "nested": { "flag": true, "none": null }
+            }),
+            "filter",
+        )
+        .unwrap();
+
+        assert!(matches!(doc.get("_id"), Some(Bson::ObjectId(_))));
+        assert!(matches!(doc.get("when"), Some(Bson::DateTime(_))));
+        assert_eq!(doc.get("big"), Some(&Bson::Int64(9007199254740993)));
+        let tags = doc.get_array("tags").unwrap();
+        assert_eq!(tags.len(), 3);
+        assert!(matches!(tags[1], Bson::Document(_)));
+        assert!(matches!(tags[2], Bson::Array(_)));
+        assert_eq!(
+            doc.get_document("nested").unwrap().get("none"),
+            Some(&Bson::Null)
+        );
+    }
+
+    #[test]
+    fn json_to_document_rejects_non_objects_and_bad_extjson() {
+        let error = json_to_document(json!([1, 2]), "filter").unwrap_err();
+        assert_eq!(error.kind, MongoErrorKind::InvalidConfig);
+        assert!(error.message.contains("filter"));
+        assert!(json_to_document(json!({ "_id": { "$oid": "nope" } }), "filter").is_err());
+        assert!(json_to_document(json!("string"), "sort").is_err());
+    }
+
+    #[test]
+    fn document_to_json_emits_relaxed_extended_json() {
+        let oid = mongodb::bson::oid::ObjectId::parse_str("507f1f77bcf86cd799439011").unwrap();
+        let doc = doc! {
+            "_id": oid,
+            "n": 5_i32,
+            "big": 9007199254740993_i64,
+            "f": 2.5_f64,
+            "when": mongodb::bson::DateTime::from_millis(1_700_000_000_000),
+            "nested": { "list": [1, "x"] }
+        };
+        let value = document_to_json(doc);
+        assert_eq!(value["_id"]["$oid"], "507f1f77bcf86cd799439011");
+        assert_eq!(value["n"], 5);
+        assert_eq!(value["big"], 9007199254740993_i64);
+        assert_eq!(value["f"], 2.5);
+        assert!(value["when"]["$date"].is_string());
+        assert_eq!(value["nested"]["list"][1], "x");
+    }
+
+    #[test]
+    fn json_to_update_accepts_operators_and_pipelines_only() {
+        assert!(matches!(
+            json_to_update(json!({ "$set": { "a": 1 } })).unwrap(),
+            UpdateModifications::Document(_)
+        ));
+        assert!(matches!(
+            json_to_update(json!([{ "$set": { "a": 1 } }])).unwrap(),
+            UpdateModifications::Pipeline(_)
+        ));
+        assert!(json_to_update(json!({ "a": 1 })).is_err());
+        assert!(json_to_update(json!({})).is_err());
+        assert!(json_to_update(json!([])).is_err());
+    }
+
+    #[test]
+    fn index_options_map_supported_keys_and_reject_unknown() {
+        let options = json_to_index_options(json!({
+            "name": "city_1",
+            "unique": true,
+            "sparse": false,
+            "expireAfterSeconds": 3600,
+            "partialFilterExpression": { "city": { "$exists": true } }
+        }))
+        .unwrap();
+        assert_eq!(options.name.as_deref(), Some("city_1"));
+        assert_eq!(options.unique, Some(true));
+        assert_eq!(options.sparse, Some(false));
+        assert_eq!(options.expire_after, Some(Duration::from_secs(3600)));
+        assert!(options.partial_filter_expression.is_some());
+
+        assert!(json_to_index_options(json!({ "bogus": 1 })).is_err());
+        assert!(json_to_index_options(json!({ "expireAfterSeconds": -1 })).is_err());
+        assert!(json_to_index_options(json!({ "name": "" })).is_err());
+    }
+
+    #[test]
+    fn index_info_reads_server_spec() {
+        let info = index_info_from_spec(doc! {
+            "v": 2, "key": { "city": 1 }, "name": "city_1", "unique": true
+        });
+        assert_eq!(info.name, "city_1");
+        assert_eq!(info.keys["city"], 1);
+        assert!(info.unique);
+        assert!(!info.sparse);
+        assert_eq!(info.options["v"], 2);
+    }
+
+    #[test]
+    fn limit_is_clamped_to_a_safe_page() {
+        assert_eq!(clamp_limit(None), DEFAULT_DOCUMENT_LIMIT);
+        assert_eq!(clamp_limit(Some(0)), 1);
+        assert_eq!(clamp_limit(Some(-5)), 1);
+        assert_eq!(clamp_limit(Some(10)), 10);
+        assert_eq!(
+            clamp_limit(Some(MAX_DOCUMENT_LIMIT + 1)),
+            MAX_DOCUMENT_LIMIT
+        );
+    }
+
+    #[test]
+    fn page_result_reports_has_more_from_the_extra_row() {
+        let docs = (0..4).map(|i| doc! { "i": i }).collect::<Vec<_>>();
+        let page = page_result(docs.clone(), 3, Instant::now());
+        assert_eq!(page.returned, 3);
+        assert!(page.has_more);
+        assert_eq!(page.documents[2]["i"], 2);
+
+        let page = page_result(docs, 4, Instant::now());
+        assert_eq!(page.returned, 4);
+        assert!(!page.has_more);
+    }
+
+    #[test]
+    fn cursor_reply_helpers_read_first_batch_and_numeric_shapes() {
+        let reply = doc! {
+            "ok": 1.0,
+            "cursor": { "firstBatch": [ { "name": "people", "type": "collection" }, "junk" ] }
+        };
+        assert!(reply_ok(&reply));
+        let batch = cursor_first_batch(&reply);
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch[0].get_str("name").unwrap(), "people");
+        assert_eq!(bson_i64(Some(&Bson::Int32(3))), 3);
+        assert_eq!(bson_i64(Some(&Bson::Double(3.9))), 3);
+        assert_eq!(bson_f64(Some(&Bson::Int64(2))), 2.0);
+        assert_eq!(bson_i64(None), 0);
+    }
+
+    // ── Redaction / opacity ──────────────────────────────────────────
+
+    #[test]
+    fn redaction_strips_plain_and_url_encoded_passwords() {
+        let mut config = structured_config();
+        config.connection_string = None;
+        let secrets = collect_secrets(&config);
+        let message = "failed: mongodb://admin:p%40ss%3Aword@db1 (p@ss:word)";
+        let redacted = redact_secrets(message, &secrets);
+        assert!(!redacted.contains("p@ss:word"));
+        assert!(!redacted.contains("p%40ss%3Aword"));
+        assert!(redacted.contains("***"));
+
+        let raw = config_with_uri("mongodb+srv://u:raw-secret@cluster/app");
+        let secrets = collect_secrets(&raw);
+        assert_eq!(redact_secrets("raw-secret leaked", &secrets), "*** leaked");
+        assert!(collect_secrets(&config_with_uri("mongodb://127.0.0.1/x")).is_empty());
+    }
+
+    #[test]
+    fn uri_password_extraction_handles_shapes() {
+        assert_eq!(uri_password("mongodb://u:p@h/db"), Some("p"));
+        assert_eq!(uri_password("mongodb://u@h/db"), None);
+        assert_eq!(uri_password("mongodb://h/db?x=1"), None);
+        assert_eq!(
+            uri_password("mongodb+srv://u:p%40w@h?tls=true"),
+            Some("p%40w")
+        );
+    }
+
+    #[test]
+    fn driver_errors_are_mapped_to_opaque_kinds() {
+        let io = DriverError::from(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "refused mongodb://admin:secret@host",
+        ));
+        let mapped = driver_error(&io);
+        assert_eq!(mapped.kind, MongoErrorKind::ConnectionFailed);
+        assert!(!mapped.message.contains("secret"));
+
+        let invalid = ConnectionString::parse("mongodb://admin:secret@/nohost").unwrap_err();
+        assert!(matches!(*invalid.kind, ErrorKind::InvalidArgument { .. }));
+        let mapped = driver_error(&invalid);
+        assert_eq!(mapped.kind, MongoErrorKind::InvalidConfig);
+        assert!(!mapped.message.contains("secret"));
+        assert!(!mapped.message.contains("mongodb://"));
+
+        let custom = DriverError::custom("boom with mongodb://x:y@z");
+        let mapped = driver_error(&custom);
+        assert_eq!(mapped.kind, MongoErrorKind::DatabaseError);
+        assert!(!mapped.message.contains("boom"));
+    }
+
+    // ── Transport policy (ported) ────────────────────────────────────
 
     #[test]
     fn raw_uri_parser_enforces_scheme_hosts_and_bounds_without_leaking_secrets() {
@@ -1702,102 +2071,36 @@ mod tests {
     }
 
     #[test]
-    fn field_and_script_limits_are_applied_before_runner_use() {
+    fn field_limits_are_applied_before_driver_use() {
         let mut config = config_with_uri("mongodb://127.0.0.1/dev");
         config.label = Some("x".repeat(MAX_FIELD_BYTES + 1));
         assert!(validate_and_secure_config(&mut config, None).is_err());
-        assert!(validate_runner_input(
-            "mongodb://127.0.0.1/dev",
-            &"x".repeat(MAX_SCRIPT_BYTES + 1)
-        )
+        assert!(validate_uri_bytes(&format!(
+            "mongodb://{}",
+            "x".repeat(MAX_CONNECTION_URI_BYTES)
+        ))
         .is_err());
-        assert!(js_string(&"x".repeat(MAX_FIELD_BYTES + 1)).is_err());
-    }
-
-    #[tokio::test]
-    async fn session_cap_is_enforced_before_an_additional_runner_call() {
-        let responses = (0..MAX_SESSIONS)
-            .map(|_| Ok(serde_json::json!({ "ok": true, "version": "8.0" })))
-            .collect();
-        let runner = Arc::new(FakeRunner::new(responses));
-        let mut service = MongoService::with_runner(runner.clone());
-        for _ in 0..MAX_SESSIONS {
-            service
-                .connect(config_with_uri("mongodb://127.0.0.1/dev"))
-                .await
-                .unwrap();
-        }
-
-        let error = service
-            .connect(config_with_uri("mongodb://127.0.0.1/dev"))
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind, MongoErrorKind::InvalidConfig);
-        assert_eq!(runner.calls().len(), MAX_SESSIONS);
-    }
-
-    #[tokio::test]
-    async fn disconnect_removes_retained_credential_uri() {
-        let runner = Arc::new(FakeRunner::new(vec![Ok(serde_json::json!({
-            "ok": true,
-            "version": "8.0"
-        }))]));
-        let mut service = MongoService::with_runner(runner);
-        let session_id = service
-            .connect(config_with_uri("mongodb://admin:secret@127.0.0.1/admin"))
-            .await
-            .unwrap();
-        service.disconnect(&session_id).await.unwrap();
-        assert!(service.get_session(&session_id).is_err());
-        assert!(service.connection_string(&session_id).is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn executable_validation_allows_only_in_root_canonical_symlink_targets() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
-
-        let trusted = tempfile::tempdir().unwrap();
-        std::fs::set_permissions(trusted.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-        let executable = trusted.path().join("mongosh-real");
-        std::fs::write(&executable, b"#!/bin/sh\n").unwrap();
-        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let link = trusted.path().join("mongosh");
-        symlink(&executable, &link).unwrap();
-        let roots = vec![trusted.path().to_path_buf()];
-        assert_eq!(
-            validate_executable(&link, &roots),
-            executable.canonicalize().ok()
-        );
-
-        let outside = tempfile::tempdir().unwrap();
-        std::fs::set_permissions(outside.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-        let outside_executable = outside.path().join("mongosh-real");
-        std::fs::write(&outside_executable, b"#!/bin/sh\n").unwrap();
-        std::fs::set_permissions(&outside_executable, std::fs::Permissions::from_mode(0o755))
-            .unwrap();
-        let escaping_link = trusted.path().join("mongosh-outside");
-        symlink(&outside_executable, &escaping_link).unwrap();
-        assert!(validate_executable(&escaping_link, &roots).is_none());
-
-        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o777)).unwrap();
-        assert!(validate_executable(&link, &roots).is_none());
+        assert!(validate_uri_bytes("mongodb://127.0.0.1\n/dev").is_err());
+        assert!(validate_required_field("f", "", 10).is_err());
     }
 
     #[test]
-    fn windows_candidate_builder_uses_only_supplied_trusted_roots() {
-        let trusted = tempfile::tempdir().unwrap();
-        let versioned = trusted.path().join("MongoDB/Server/8.0/bin");
-        std::fs::create_dir_all(&versioned).unwrap();
-        let candidates = windows_mongosh_candidates(vec![trusted.path().to_path_buf()]);
-
-        assert!(!candidates.is_empty());
-        assert!(candidates
-            .iter()
-            .all(|(candidate, root)| candidate.starts_with(root) && root == trusted.path()));
-        assert!(candidates
-            .iter()
-            .any(|(candidate, _)| candidate
-                .ends_with(Path::new("MongoDB/Server/8.0/bin/mongosh.exe"))));
+    fn scrub_removes_every_secret_field() {
+        let mut config = structured_config();
+        config.connection_string = Some("mongodb://u:p@h".into());
+        config.ssh_tunnel = Some(SshTunnelConfig {
+            host: "h".into(),
+            port: 22,
+            username: "u".into(),
+            password: Some("p".into()),
+            private_key_path: None,
+            passphrase: Some("pp".into()),
+        });
+        scrub_config_secrets(&mut config);
+        assert!(config.password.is_none());
+        assert!(config.connection_string.is_none());
+        let tunnel = config.ssh_tunnel.unwrap();
+        assert!(tunnel.password.is_none());
+        assert!(tunnel.passphrase.is_none());
     }
 }

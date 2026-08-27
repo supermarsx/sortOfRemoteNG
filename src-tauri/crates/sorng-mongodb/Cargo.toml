@@ -3,7 +3,7 @@ publish = false
 name = "sorng-mongodb"
 version.workspace = true
 edition = "2021"
-description = "Simple MongoDB connection, collection, and server management."
+description = "MongoDB connection, document, index, and server management on the official driver."
 
 [dependencies]
 serde = { workspace = true }
@@ -12,11 +12,10 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-tempfile = { workspace = true }
 zeroize = { workspace = true }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+futures = { workspace = true }
+mongodb = { version = "3", default-features = false, features = ["rustls-tls", "dns-resolver", "bson-3", "compat-3-3-0"] }
+bson = { version = "3", default-features = false, features = ["serde_json-1"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

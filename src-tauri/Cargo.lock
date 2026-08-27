@@ -112,6 +112,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+dependencies = [
+ "cfg-if 1.0.4",
+ "getrandom 0.3.4",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1097,6 +1110,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "bson"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3f109694c4f45353972af96bf97d8a057f82e2d6e496457f4d135b9867a518c"
+dependencies = [
+ "ahash",
+ "base64 0.22.1",
+ "bitvec",
+ "getrandom 0.3.4",
+ "hex",
+ "indexmap 2.14.0",
+ "js-sys",
+ "rand 0.9.5",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "simdutf8",
+ "thiserror 2.0.20",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "bstr"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1498,6 +1534,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
+name = "const-random"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87e00182fe74b066627d63b85fd550ac2998d4b0bd86bfed477a0ae4c7c71359"
+dependencies = [
+ "const-random-macro",
+]
+
+[[package]]
+name = "const-random-macro"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
+dependencies = [
+ "getrandom 0.2.17",
+ "once_cell",
+ "tiny-keccak",
+]
+
+[[package]]
 name = "constant_time_eq"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1508,6 +1564,15 @@ name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
+name = "convert_case"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+dependencies = [
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "convert_case"
@@ -1743,6 +1808,12 @@ name = "crossbeam-utils"
 version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17"
+
+[[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto-bigint"
@@ -2264,6 +2335,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive-syn-parse"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65d7ce8132b7c0e54497a4d9a55a1c2a0912a0d786cf894472ba818fba45762"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "derive-where"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d08b3a0bcc0d079199cd476b2cae8435016ec11d1c0986c6901c5ac223041534"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "derive_arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2341,10 +2434,12 @@ version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
 dependencies = [
+ "convert_case 0.10.0",
  "proc-macro2",
  "quote",
  "rustc_version",
  "syn 2.0.119",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -5225,6 +5320,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "macro_magic"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc33f9f0351468d26fbc53d9ce00a096c8522ecb42f19b50f34f2c422f76d21d"
+dependencies = [
+ "macro_magic_core",
+ "macro_magic_macros",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "macro_magic_core"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1687dc887e42f352865a393acae7cf79d98fab6351cde1f58e9e057da89bf150"
+dependencies = [
+ "const-random",
+ "derive-syn-parse",
+ "macro_magic_core_macros",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "macro_magic_core_macros"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b02abfe41815b5bd98dbd4260173db2c116dda171dc0fe7838cb206333b83308"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "macro_magic_macros"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73ea28ee64b88876bf45277ed9a5817c1817df061a74f2b988971a12570e5869"
+dependencies = [
+ "macro_magic_core",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5447,6 +5590,82 @@ dependencies = [
  "smallvec",
  "tagptr",
  "uuid",
+]
+
+[[package]]
+name = "mongocrypt"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8426a875ded61430d4a811dbfda7633b6b8af0225c547fc6c28b8b0aa7d79a13"
+dependencies = [
+ "bson",
+ "mongocrypt-sys",
+ "once_cell",
+ "serde",
+]
+
+[[package]]
+name = "mongocrypt-sys"
+version = "0.1.6+1.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "851fac73f7fe22f6a3ab87f720ce509cae7c9fd08e7dd27866cc232dee07ccf4"
+
+[[package]]
+name = "mongodb"
+version = "3.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99a95f3a5e3b3912e93f10d6784cd641a70a94d7ffe15561a2c89891d1bf85fd"
+dependencies = [
+ "base64 0.22.1",
+ "bitflags 2.13.1",
+ "bson",
+ "derive-where",
+ "derive_more 2.1.1",
+ "futures-core",
+ "futures-io",
+ "futures-util",
+ "hex",
+ "hickory-net",
+ "hickory-proto",
+ "hickory-resolver",
+ "hmac 0.13.0",
+ "macro_magic",
+ "md-5 0.11.0",
+ "mongocrypt",
+ "mongodb-internal-macros",
+ "pbkdf2 0.13.0",
+ "percent-encoding",
+ "rand 0.9.5",
+ "rustc_version_runtime",
+ "rustls",
+ "serde",
+ "serde_bytes",
+ "serde_with",
+ "sha1 0.11.0",
+ "sha2 0.11.0",
+ "socket2 0.6.5",
+ "stringprep",
+ "strsim",
+ "take_mut",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "typed-builder",
+ "uuid",
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "mongodb-internal-macros"
+version = "3.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a503007cb8ae06f77fbc111136222565e377d9e3f14230998950d2caaabaeeba"
+dependencies = [
+ "macro_magic",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -7933,7 +8152,7 @@ version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3cbcc8219b70ee2faa08d5339f47f15741cba2ce0cb9640e8495f2ab51293f50"
 dependencies = [
- "convert_case",
+ "convert_case 0.11.0",
  "fnv",
  "ident_case",
  "indexmap 2.14.0",
@@ -8119,6 +8338,16 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
+ "semver",
+]
+
+[[package]]
+name = "rustc_version_runtime"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dd18cd2bae1820af0b6ad5e54f4a51d0f3fcc53b05f845675074efcc7af071d"
+dependencies = [
+ "rustc_version",
  "semver",
 ]
 
@@ -9346,6 +9575,7 @@ dependencies = [
  "sorng-docker",
  "sorng-docker-compose",
  "sorng-dovecot",
+ "sorng-draytek",
  "sorng-etcd",
  "sorng-fail2ban",
  "sorng-filters",
@@ -9382,6 +9612,7 @@ dependencies = [
  "sorng-php",
  "sorng-port-knock",
  "sorng-portable",
+ "sorng-portainer",
  "sorng-postfix",
  "sorng-postgres-admin",
  "sorng-powershell",
@@ -9399,6 +9630,7 @@ dependencies = [
  "sorng-spamassassin",
  "sorng-ssh-agent",
  "sorng-ssh-scripts",
+ "sorng-storage",
  "sorng-tailscale",
  "sorng-terraform",
  "sorng-time-ntp",
@@ -9433,6 +9665,7 @@ dependencies = [
  "sorng-termserv",
  "sorng-vmware",
  "sorng-vmware-desktop",
+ "sorng-voip-phone",
  "sorng-x2go",
  "sorng-xdmcp",
 ]
@@ -9706,8 +9939,10 @@ dependencies = [
  "chrono",
  "log",
  "reqwest 0.12.28",
+ "rustls",
  "serde",
  "serde_json",
+ "sorng-tls-trust",
  "tokio",
  "url",
  "uuid",
@@ -9925,6 +10160,7 @@ dependencies = [
  "sorng-supermicro",
  "sorng-synology",
  "sorng-vmware",
+ "sorng-voip-phone",
  "tauri",
  "uuid",
 ]
@@ -9971,6 +10207,7 @@ dependencies = [
  "sorng-cron",
  "sorng-cups",
  "sorng-docker-compose",
+ "sorng-draytek",
  "sorng-etcd",
  "sorng-fail2ban",
  "sorng-freeipa",
@@ -10031,6 +10268,7 @@ dependencies = [
  "sorng-jira",
  "sorng-letsencrypt",
  "sorng-osticket",
+ "sorng-portainer",
  "sorng-ssh-agent",
  "sorng-winmgmt",
  "sorng-yubikey",
@@ -10364,6 +10602,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-draytek"
+version = "26.28.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-dropbox"
 version = "26.28.0"
 dependencies = [
@@ -10524,9 +10778,9 @@ dependencies = [
  "log",
  "regex",
  "rustls",
- "rustls-native-certs 0.8.4",
  "serde",
  "serde_json",
+ "sorng-tls-trust",
  "tokio",
  "tokio-rustls",
  "url",
@@ -10679,13 +10933,13 @@ name = "sorng-hetzner"
 version = "26.28.0"
 dependencies = [
  "chrono",
- "dirs 6.0.0",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-storage",
  "sorng-tls-trust",
+ "tempfile",
  "tokio",
  "uuid",
 ]
@@ -10821,9 +11075,12 @@ dependencies = [
  "log",
  "regex",
  "reqwest 0.12.28",
+ "rustls",
+ "rustls-pemfile 2.2.0",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sorng-tls-trust",
  "tokio",
  "tracing",
  "url",
@@ -11079,14 +11336,15 @@ dependencies = [
 name = "sorng-mongodb"
 version = "26.28.0"
 dependencies = [
+ "bson",
  "chrono",
+ "futures",
  "log",
+ "mongodb",
  "serde",
  "serde_json",
- "tempfile",
  "tokio",
  "uuid",
- "windows-sys 0.61.2",
  "zeroize",
 ]
 
@@ -11139,11 +11397,10 @@ dependencies = [
  "serde_json",
  "sorng-core",
  "sqlx",
- "ssh2",
- "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -11275,10 +11532,14 @@ name = "sorng-nginx-proxy-mgr"
 version = "26.28.0"
 dependencies = [
  "chrono",
+ "dirs 6.0.0",
  "log",
  "reqwest 0.12.28",
+ "rustls",
  "serde",
  "serde_json",
+ "sorng-storage",
+ "sorng-tls-trust",
  "tokio",
  "uuid",
 ]
@@ -11403,13 +11664,13 @@ name = "sorng-oracle-cloud"
 version = "26.28.0"
 dependencies = [
  "chrono",
- "dirs 6.0.0",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-storage",
  "sorng-tls-trust",
+ "tempfile",
  "tokio",
  "uuid",
 ]
@@ -11574,6 +11835,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-portainer"
+version = "26.28.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sorng-tls-trust",
+ "tokio",
+]
+
+[[package]]
 name = "sorng-postfix"
 version = "26.28.0"
 dependencies = [
@@ -11626,7 +11901,6 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "chrono",
- "dirs 6.0.0",
  "futures",
  "hex",
  "hmac 0.12.1",
@@ -11759,15 +12033,20 @@ dependencies = [
  "futures",
  "hex",
  "log",
+ "rcgen",
  "reqwest 0.12.28",
  "rustls",
  "rustls-native-certs 0.8.4",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sorng-totp",
  "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
  "url",
  "uuid",
+ "x509-parser",
 ]
 
 [[package]]
@@ -11812,6 +12091,7 @@ dependencies = [
  "sorng-core",
  "sorng-dns",
  "sorng-rdp-vendor",
+ "sorng-storage",
  "tempfile",
  "tokio",
  "tracing",
@@ -12072,8 +12352,10 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
+ "sorng-storage",
  "ssh-key 0.6.7",
  "ssh2",
+ "tempfile",
  "tokio",
  "tracing",
  "uuid",
@@ -12240,6 +12522,7 @@ dependencies = [
  "socket2 0.5.10",
  "sorng-core",
  "sorng-dns",
+ "sorng-storage",
  "ssh-key 0.6.7",
  "ssh2",
  "tempfile",
@@ -12314,7 +12597,6 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "chrono",
- "dirs 6.0.0",
  "futures",
  "log",
  "reqwest 0.12.28",
@@ -12324,6 +12606,7 @@ dependencies = [
  "sorng-bmc-common",
  "sorng-storage",
  "sorng-tls-trust",
+ "tempfile",
  "tokio",
  "url",
  "uuid",
@@ -12705,6 +12988,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-voip-phone"
+version = "26.28.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "dirs 6.0.0",
+ "log",
+ "rand 0.8.7",
+ "regex",
+ "reqwest 0.12.28",
+ "rsa 0.9.10",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sorng-storage",
+ "sorng-tls-trust",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "sorng-vpn"
 version = "26.28.0"
 dependencies = [
@@ -12751,13 +13055,13 @@ name = "sorng-warpgate"
 version = "26.28.0"
 dependencies = [
  "chrono",
- "dirs 6.0.0",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-storage",
  "sorng-tls-trust",
+ "tempfile",
  "tokio",
  "url",
  "uuid",
@@ -12797,7 +13101,6 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "chrono",
- "dirs 6.0.0",
  "futures",
  "hex",
  "hmac 0.12.1",
@@ -12813,6 +13116,7 @@ dependencies = [
  "sorng-core",
  "sorng-storage",
  "sorng-tls-trust",
+ "tempfile",
  "tokio",
  "url",
  "uuid",
@@ -13553,6 +13857,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 
 [[package]]
+name = "take_mut"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f764005d11ee5f36500a149ace24e00e3da98b0158b3e2d53a7495660d3f4d60"
+
+[[package]]
 name = "tao"
 version = "0.35.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14132,6 +14442,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tiny-keccak"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
+dependencies = [
+ "crunchy",
+]
+
+[[package]]
 name = "tinystr"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14627,6 +14946,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0218ef702a91e18ba84dd516edf8df33a9f9fb4431d6ada13e6f9502c3bcb6fc"
 dependencies = [
  "cipher 0.5.2",
+]
+
+[[package]]
+name = "typed-builder"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "398a3a3c918c96de527dc11e6e846cd549d4508030b8a33e1da12789c856b81a"
+dependencies = [
+ "typed-builder-macro",
+]
+
+[[package]]
+name = "typed-builder-macro"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e48cea23f68d1f78eb7bc092881b6bb88d3d6b5b7e6234f6f9c911da1ffb221"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

@@ -294,6 +294,56 @@ pub struct SessionInfo {
     pub replica_set: Option<String>,
 }
 
+// ── Document / index layer ───────────────────────────────────────────
+
+/// Default page size for `find`/`aggregate` when the caller omits `limit`.
+pub const DEFAULT_DOCUMENT_LIMIT: i64 = 50;
+/// Hard cap on documents returned by a single `find`/`aggregate` call.
+pub const MAX_DOCUMENT_LIMIT: i64 = 1000;
+/// Hard cap on documents accepted by a single `insert_documents` call.
+pub const MAX_INSERT_DOCUMENTS: usize = 1000;
+/// Hard cap on aggregation pipeline stages.
+pub const MAX_PIPELINE_STAGES: usize = 64;
+
+/// Result of a `find` or `aggregate` call. Documents are relaxed extended JSON
+/// (`{"_id": {"$oid": "..."}}`, `{"$date": "..."}`, plain numbers).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FindResult {
+    pub documents: Vec<serde_json::Value>,
+    pub returned: usize,
+    pub has_more: bool,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InsertResult {
+    pub inserted_count: usize,
+    pub inserted_ids: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateResult {
+    pub matched_count: u64,
+    pub modified_count: u64,
+    pub upserted_id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteResult {
+    pub deleted_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexInfo {
+    pub name: String,
+    /// Key specification, e.g. `{"city": 1}`.
+    pub keys: serde_json::Value,
+    pub unique: bool,
+    pub sparse: bool,
+    /// The complete index specification as reported by the server (relaxed extended JSON).
+    pub options: serde_json::Value,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
