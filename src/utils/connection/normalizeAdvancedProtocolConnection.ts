@@ -1,4 +1,5 @@
 import type { Connection } from "../../types/connection/connection";
+import { INTEGRATION_PROTOCOL_PREFIX } from "../../types/connection/connection";
 import {
   migrateRawSocketProtocol,
   normalizeRawSocketSettings,
@@ -23,6 +24,23 @@ const isValidNetworkPort = (value: unknown): value is number =>
   Number.isInteger(value) && Number(value) > 0 && Number(value) <= 65_535;
 
 /**
+ * Case-fold a persisted protocol string without destroying information.
+ *
+ * Built-in protocol identifiers are lowercase by definition, so folding them is
+ * pure canonicalization. Integration protocols are not: their suffix is a
+ * registry descriptor key (`integration:nginxProxyMgr`) whose camelCase is
+ * significant. Folding the whole string persisted `integration:nginxproxymgr`,
+ * which then failed descriptor lookup and rendered "This integration is no
+ * longer available." instead of the panel. Only the scheme half may be folded.
+ */
+const canonicalizeProtocolCase = (raw: string): string => {
+  const scheme = raw.slice(0, INTEGRATION_PROTOCOL_PREFIX.length);
+  return scheme.toLowerCase() === INTEGRATION_PROTOCOL_PREFIX
+    ? `${INTEGRATION_PROTOCOL_PREFIX}${raw.slice(INTEGRATION_PROTOCOL_PREFIX.length)}`
+    : raw.toLowerCase();
+};
+
+/**
  * Canonicalize versioned protocol settings at every connection persistence
  * boundary. The function is intentionally pure and idempotent so loading,
  * editing, adding, and updating a connection all produce the same shape.
@@ -36,9 +54,9 @@ export function normalizeAdvancedProtocolConnection(
 export function normalizeAdvancedProtocolConnection(
   input: AdvancedProtocolConnectionInput,
 ): Partial<Connection> {
-  const sourceProtocol = String(input.protocol ?? "")
-    .trim()
-    .toLowerCase();
+  const sourceProtocol = canonicalizeProtocolCase(
+    String(input.protocol ?? "").trim(),
+  );
   const rawMigration = migrateRawSocketProtocol(
     sourceProtocol,
     input.rawSocketSettings,

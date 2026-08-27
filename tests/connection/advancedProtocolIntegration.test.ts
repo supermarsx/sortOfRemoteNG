@@ -30,6 +30,29 @@ describe("advanced protocol connection integration", () => {
     expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
   });
 
+  it("preserves the descriptor key case of integration protocols", () => {
+    // Integration protocols carry a registry descriptor key in their suffix,
+    // and those keys are camelCase-significant. Case-folding the suffix here
+    // used to persist `integration:nginxproxymgr`, which then failed descriptor
+    // lookup and rendered "This integration is no longer available."
+    const saved = normalizeAdvancedProtocolConnection(
+      connection({
+        protocol: "  Integration:nginxProxyMgr  " as Connection["protocol"],
+      }),
+    );
+
+    expect(saved.protocol).toBe("integration:nginxProxyMgr");
+    // Round-trip: reloading the persisted record must not mangle it either.
+    expect(normalizeAdvancedProtocolConnection(saved)).toEqual(saved);
+    expect(
+      normalizeAdvancedProtocolConnection(
+        connection({
+          protocol: "integration:vmwareDesktop" as Connection["protocol"],
+        }),
+      ).protocol,
+    ).toBe("integration:vmwareDesktop");
+  });
+
   it("canonicalizes legacy Raw TCP and UDP aliases idempotently", () => {
     const tcp = normalizeAdvancedProtocolConnection(
       connection({

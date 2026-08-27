@@ -131,7 +131,22 @@ export function groupByCategory(
     .filter((group) => group.items.length > 0);
 }
 
-/** Look up a descriptor by its stable key. */
+/**
+ * Look up a descriptor by its stable key.
+ *
+ * The exact match is authoritative. The case-insensitive fallback exists only
+ * to repair records persisted before `normalizeAdvancedProtocolConnection`
+ * stopped case-folding integration protocols: those hold a lowercased key
+ * (`integration:nginxproxymgr` for `nginxProxyMgr`) and would otherwise render
+ * "This integration is no longer available." forever. Descriptor keys are
+ * unique case-insensitively — `tests/integrations/integrationDescriptorKeyCase`
+ * fails if a future descriptor breaks that, which is what keeps the fallback
+ * unambiguous.
+ */
 export function findDescriptor(key: string): IntegrationDescriptor | undefined {
-  return integrationRegistry.find((d) => d.key === key);
+  const exact = integrationRegistry.find((d) => d.key === key);
+  if (exact) return exact;
+  const folded = key.trim().toLowerCase();
+  if (!folded) return undefined;
+  return integrationRegistry.find((d) => d.key.toLowerCase() === folded);
 }

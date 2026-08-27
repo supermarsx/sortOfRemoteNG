@@ -25,6 +25,7 @@ import {
   type IntegrationConnectionSettings,
 } from "../../types/connection/connection";
 import {
+  findDescriptor,
   integrationRegistry,
   type ConnectionTypeCategory,
   type IntegrationDescriptor,
@@ -142,9 +143,9 @@ const findIntegrationDescriptorForProtocol = (
   protocol: string | undefined,
 ): IntegrationDescriptor | undefined => {
   const descriptorKey = getIntegrationKeyFromProtocol(protocol);
-  return descriptorKey
-    ? integrationRegistry.find((descriptor) => descriptor.key === descriptorKey)
-    : undefined;
+  // Delegate to the registry's resolver so the editor and the panel host agree
+  // on legacy lowercased descriptor keys.
+  return descriptorKey ? findDescriptor(descriptorKey) : undefined;
 };
 
 type IntegrationConnectionFormSettings = IntegrationConnectionLaunchSettings;

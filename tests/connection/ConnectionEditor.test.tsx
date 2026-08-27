@@ -60,37 +60,46 @@ const toastMocks = vi.hoisted(() => ({
   info: vi.fn(),
 }));
 
+const mockIntegrationRegistry = vi.hoisted(() => [
+  {
+    key: "netbox",
+    label: "NetBox",
+    category: "networking",
+    icon: () => null,
+    importPanel: async () => ({ default: () => null }),
+  },
+  {
+    key: "grafana",
+    label: "Grafana",
+    category: "monitoring",
+    icon: () => null,
+    importPanel: async () => ({ default: () => null }),
+  },
+  {
+    key: "exchange",
+    label: "Exchange",
+    category: "mail-server",
+    icon: () => null,
+    importPanel: async () => ({ default: () => null }),
+  },
+  {
+    key: "mail",
+    label: "Mail Server",
+    category: "mail-server",
+    icon: () => null,
+    importPanel: async () => ({ default: () => null }),
+  },
+]);
+
 vi.mock("../../src/types/integrations/registry", () => ({
-  integrationRegistry: [
-    {
-      key: "netbox",
-      label: "NetBox",
-      category: "networking",
-      icon: () => null,
-      importPanel: async () => ({ default: () => null }),
-    },
-    {
-      key: "grafana",
-      label: "Grafana",
-      category: "monitoring",
-      icon: () => null,
-      importPanel: async () => ({ default: () => null }),
-    },
-    {
-      key: "exchange",
-      label: "Exchange",
-      category: "mail-server",
-      icon: () => null,
-      importPanel: async () => ({ default: () => null }),
-    },
-    {
-      key: "mail",
-      label: "Mail Server",
-      category: "mail-server",
-      icon: () => null,
-      importPanel: async () => ({ default: () => null }),
-    },
-  ],
+  integrationRegistry: mockIntegrationRegistry,
+  // Mirrors the real resolver: exact key first, then the case-insensitive
+  // fallback that reopens connections persisted with a lowercased key.
+  findDescriptor: (key: string) =>
+    mockIntegrationRegistry.find((d) => d.key === key) ??
+    mockIntegrationRegistry.find(
+      (d) => d.key.toLowerCase() === key.trim().toLowerCase(),
+    ),
 }));
 
 // Mock ToastContext (useConnectionEditor depends on it)

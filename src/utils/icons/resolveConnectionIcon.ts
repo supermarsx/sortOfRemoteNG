@@ -138,8 +138,14 @@ export function resolveEffectiveConnectionIcon(
   const overrideState: ConnectionIconOverrideState = savedOverride
     ? "unknown"
     : "unset";
+  // Compared case-insensitively: connections persisted before the normaliser
+  // stopped case-folding integration protocols carry a lowercased descriptor
+  // key, and the registry now resolves those to the real descriptor. A strict
+  // compare here would drop the integration icon for exactly those records.
   const matchingDescriptor =
-    descriptor && integrationKey === descriptor.key ? descriptor : undefined;
+    descriptor && integrationKey?.toLowerCase() === descriptor.key.toLowerCase()
+      ? descriptor
+      : undefined;
   const descriptorDefinition = getConnectionIconDefinition(
     matchingDescriptor?.defaultConnectionIconKey,
   );
