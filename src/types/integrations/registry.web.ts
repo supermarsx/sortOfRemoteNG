@@ -3,6 +3,7 @@
 // append-only array — do not reorder existing entries.
 import type { IntegrationDescriptor } from "./registry";
 import { phpDescriptor } from "../../components/integrations/php/descriptor";
+import { nginxProxyMgrDescriptor } from "../../components/integrations/nginxProxyMgr/descriptor";
 import {
   caddyDescriptor,
   haproxyDescriptor,
@@ -16,4 +17,5 @@ export const webIntegrations: IntegrationDescriptor[] = [
   caddyDescriptor,
   traefikDescriptor,
   phpDescriptor,
+  nginxProxyMgrDescriptor,
 ];

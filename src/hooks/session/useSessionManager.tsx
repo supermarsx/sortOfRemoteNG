@@ -49,6 +49,7 @@ import {
   type SessionReconnectRequest,
 } from "./useSessionLifecycleEvents";
 import type { PersistedConnectionSession } from "../../utils/session/sessionPersistence";
+import { mysqlApi } from "../../utils/services/mysqlService";
 import {
   hasSessionVpnCleanupQuarantine,
   VPN_CLEANUP_QUARANTINE_ERROR,
@@ -1378,9 +1379,9 @@ export const useSessionManager = () => {
       }
     }
 
-    if (session.protocol === "mysql") {
+    if (session.protocol === "mysql" && session.backendSessionId) {
       try {
-        await invoke("disconnect_db");
+        await mysqlApi.disconnect(session.backendSessionId);
       } catch (error) {
         console.error("Failed to disconnect MySQL session:", error);
       }

@@ -256,6 +256,43 @@ describe("handleSessionClose — sessions with no live transport", () => {
     );
   });
 
+  it("disconnects an error MySQL tab through mysql_disconnect with its backend session id", async () => {
+    const conn = makeConnection("mysql-1", { protocol: "mysql", port: 3306 });
+    const session = makeSession("s-mysql", conn.id, {
+      protocol: "mysql",
+      backendSessionId: "mysql-backend-7",
+    });
+    seed([conn], [session]);
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("mysql_disconnect", {
+      sessionId: "mysql-backend-7",
+    });
+    expect(invokedCommands()).not.toContain("disconnect_db");
+    expect(sessions()).toEqual([]);
+  });
+
+  it("skips the MySQL backend disconnect when the tab never got a backend session id", async () => {
+    const conn = makeConnection("mysql-2", { protocol: "mysql", port: 3306 });
+    const session = makeSession("s-mysql-none", conn.id, { protocol: "mysql" });
+    seed([conn], [session]);
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(true);
+    expect(invokedCommands()).not.toContain("mysql_disconnect");
+    expect(invokedCommands()).not.toContain("disconnect_db");
+    expect(sessions()).toEqual([]);
+  });
+
   it("closes a connecting SSH tab without confirmation", async () => {
     const conn = makeConnection("ssh-2");
     const session = makeSession("s-connecting", conn.id, {

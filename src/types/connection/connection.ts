@@ -23,28 +23,15 @@ import type { NxNativeSavedOptions } from "../protocols/nxNative";
 import type { ConnectionTypeCategory } from "../integrations/registry";
 import type { VoipPhoneSettings } from "../voipPhone";
 
-/**
- * MySQL/MariaDB dialect hint chosen in the editor. The live dialect is always
- * detected from `SELECT VERSION()` after connect; the hint only changes the
- * label/icon shown before the first connection.
- */
-export type MysqlDialectHint = "auto" | "mysql" | "mariadb";
+import type {
+  MysqlDialectHint,
+  MysqlSavedTlsOptions,
+  MysqlTlsMode,
+} from "../mysql";
 
-/** MySQL/MariaDB TLS mode mapped onto the SQLx `MySqlSslMode` ladder. */
-export type MysqlTlsMode =
-  | "disabled"
-  | "preferred"
-  | "required"
-  | "verify-ca"
-  | "verify-identity";
-
+export type { MysqlDialectHint, MysqlTlsMode };
 /** Non-secret MySQL/MariaDB TLS settings persisted on the saved connection. */
-export interface MysqlTlsSavedOptions {
-  mode?: MysqlTlsMode;
-  caPath?: string;
-  clientCertPath?: string;
-  clientKeyPath?: string;
-}
+export type MysqlTlsSavedOptions = MysqlSavedTlsOptions;
 
 /** MongoDB read preference forwarded to the driver `ClientOptions`. */
 export type MongoReadPreference =
@@ -490,6 +477,8 @@ export interface Connection
   mysqlDialectHint?: MysqlDialectHint;
   /** MySQL/MariaDB TLS mode and certificate paths (non-secret). */
   mysqlTls?: MysqlTlsSavedOptions;
+  /** MySQL/MariaDB connect timeout override (seconds). */
+  mysqlConnectionTimeoutSecs?: number;
 
   /** MongoDB authentication database (`authSource`); defaults to `admin`. */
   mongoAuthDatabase?: string;
