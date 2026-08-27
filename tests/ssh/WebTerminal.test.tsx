@@ -997,10 +997,20 @@ describe("WebTerminal", () => {
           name: "Exit no-distraction fullscreen for Test Session",
         }),
       ).toBeInTheDocument();
+      // `fit()` has a second producer beyond the fullscreen reflow: the
+      // terminal's own init/resize path (a rAF chain plus a 50 ms timer in
+      // useWebTerminal). Under load one of those can land inside this window
+      // and push an exact count to 2, so assert what the reflow actually
+      // guarantees instead: exactly one focus restore (only
+      // reflowFullscreenTerminal calls term.focus() after open) preceded by a
+      // fit, since safeFit() runs synchronously before focus().
       await waitFor(() => {
-        expect(mockFit).toHaveBeenCalledTimes(1);
         expect(mockTerminal.focus).toHaveBeenCalledTimes(1);
+        expect(mockFit).toHaveBeenCalled();
       });
+      expect(Math.min(...mockFit.mock.invocationCallOrder)).toBeLessThan(
+        mockTerminal.focus.mock.invocationCallOrder[0],
+      );
       mockFit.mockClear();
       mockTerminal.focus.mockClear();
 
@@ -1010,9 +1020,12 @@ describe("WebTerminal", () => {
         expect(
           screen.getByRole("button", { name: /fullscreen/i }),
         ).toHaveFocus();
-        expect(mockFit).toHaveBeenCalledTimes(1);
         expect(mockTerminal.focus).toHaveBeenCalledTimes(1);
+        expect(mockFit).toHaveBeenCalled();
       });
+      expect(Math.min(...mockFit.mock.invocationCallOrder)).toBeLessThan(
+        mockTerminal.focus.mock.invocationCallOrder[0],
+      );
     });
   });
 
