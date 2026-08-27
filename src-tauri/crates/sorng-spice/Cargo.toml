@@ -17,7 +17,7 @@ base64 = { workspace = true }
 rand = { workspace = true }
 bytes = { workspace = true }
 byteorder = "1"
-which = "6.0"
+which = { workspace = true }
 zeroize = { workspace = true }
 url = { workspace = true }
 

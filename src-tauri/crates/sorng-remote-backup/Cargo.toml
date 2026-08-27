@@ -13,7 +13,7 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
-which = "7"
+which = { workspace = true }
 sha2 = { workspace = true }
 sha1 = "0.10"
 md-5 = "0.10"

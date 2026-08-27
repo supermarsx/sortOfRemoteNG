@@ -275,7 +275,7 @@ pbkdf2 = { version = "0.12", features = ["simple"] }
 
 # ── VPN / proxy protocols ────────────────────────────────────────────
 quinn = "0.11"
-which = "7"
+which = "8"
 zeroize = "1"
 defguard_wireguard_rs = "0.8"
 

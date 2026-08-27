@@ -16,7 +16,7 @@ log = { workspace = true }
 rand = { workspace = true }
 bytes = { workspace = true }
 byteorder = "1"
-which = "6.0"
+which = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
