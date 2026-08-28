@@ -2,6 +2,8 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type {
+  AvailableUpdate,
+  UpdaterInstallMode,
   UpdaterSettings,
   UpdaterSettingsPatch,
   UpdaterStatusSnapshot,
@@ -58,6 +60,45 @@ const idleStatus: UpdaterStatusSnapshot = {
   totalBytes: null,
   progressPercent: null,
 };
+
+const availableUpdate: AvailableUpdate = {
+  currentVersion: "25.5.0",
+  version: "25.6.0",
+  date: null,
+  body: null,
+  target: "windows-x86_64-msi",
+  downloadUrl:
+    "https://github.example/releases/download/25.6.0/sortOfRemoteNG_25.6.0_windows-x86_64.msi",
+  signaturePresent: true,
+  rawJson: {},
+};
+
+/**
+ * Wires the mocked backend to report a self-updating install of `installMode`
+ * that has an update waiting, so the install controls are live.
+ */
+function mockUpdateAvailableFor(installMode: UpdaterInstallMode): void {
+  const modeSettings: UpdaterSettings = { ...settings, installMode };
+  const modeStatus: UpdaterStatusSnapshot = {
+    ...idleStatus,
+    installMode,
+    status: "available",
+    availableUpdate: {
+      ...availableUpdate,
+      target: `windows-x86_64${installMode === "msi" ? "-msi" : ""}`,
+    },
+  };
+  mockInvoke.mockImplementation((cmd: string) => {
+    switch (cmd) {
+      case "updater_get_settings":
+        return Promise.resolve(modeSettings);
+      case "updater_get_status":
+        return Promise.resolve(modeStatus);
+      default:
+        return Promise.resolve(modeStatus);
+    }
+  });
+}
 
 describe("UpdaterSettings", () => {
   beforeEach(() => {
@@ -215,5 +256,78 @@ describe("UpdaterSettings", () => {
         },
       });
     });
+  });
+
+  it("warns an MSI install that the update needs admin approval and closes the app", async () => {
+    mockUpdateAvailableFor("msi");
+    render(<UpdaterSettingsSection />);
+
+    const notice = await screen.findByTestId("updater-msi-elevation-notice");
+    expect(notice).toHaveTextContent("Administrator approval required");
+    // The three facts the user cannot discover on their own: UAC, the app
+    // exiting, and what declining the prompt leaves behind.
+    expect(notice).toHaveTextContent(/administrator approval/i);
+    expect(notice).toHaveTextContent(/sortOfRemoteNG closes/i);
+    expect(notice).toHaveTextContent(/reopens itself/i);
+    expect(notice).toHaveTextContent(
+      /decline the prompt, nothing is installed/i,
+    );
+    // Advisory only - it must not gate the install action.
+    expect(screen.getByTestId("updater-install-btn")).not.toBeDisabled();
+  });
+
+  it.each(["nsis", "appimage"] as const)(
+    "shows no MSI elevation notice for a %s install",
+    async (installMode) => {
+      mockUpdateAvailableFor(installMode);
+      render(<UpdaterSettingsSection />);
+
+      await screen.findByTestId("updater-install-btn");
+      expect(
+        screen.queryByTestId("updater-msi-elevation-notice"),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows no MSI elevation notice while an MSI install has no update waiting", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      const modeSettings: UpdaterSettings = { ...settings, installMode: "msi" };
+      const modeStatus: UpdaterStatusSnapshot = {
+        ...idleStatus,
+        installMode: "msi",
+      };
+      return Promise.resolve(
+        cmd === "updater_get_settings" ? modeSettings : modeStatus,
+      );
+    });
+    render(<UpdaterSettingsSection />);
+
+    await screen.findByTestId("updater-check-btn");
+    expect(
+      screen.queryByTestId("updater-msi-elevation-notice"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("treats a supported MSI install as self-updating rather than externally managed", async () => {
+    mockUpdateAvailableFor("msi");
+    render(<UpdaterSettingsSection />);
+
+    await screen.findByTestId("settings-updater-section");
+    expect(
+      screen.queryByTestId("updater-self-update-notice"),
+    ).not.toBeInTheDocument();
+
+    const toggle = await screen.findByTestId("updater-auto-check-toggle");
+    const interval = screen.getByTestId("updater-check-interval");
+    await waitFor(() => {
+      expect(toggle).not.toBeDisabled();
+      expect(interval).not.toBeDisabled();
+      expect(screen.getByTestId("updater-install-btn")).not.toBeDisabled();
+    });
+    expect(
+      screen.queryByText(
+        "Automatic checks are unavailable for externally managed installations.",
+      ),
+    ).not.toBeInTheDocument();
   });
 });

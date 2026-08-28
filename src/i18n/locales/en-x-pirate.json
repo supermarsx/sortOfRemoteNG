@@ -2453,6 +2453,10 @@
     "autoCheckTooltip": "Checks never install updates without confirmation.",
     "checkIntervalHours": "Check interval (hours)",
     "artifact": "Artifact",
+    "msiElevation": {
+      "title": "Captain approval required",
+      "description": "Windows asks for captain approval before this .msi refit is installed. sortOfRemoteNG closes as soon as the installer starts, Windows shows a progress window while the installed charts are replaced, and the app reopens itself when the refit finishes. If ye decline the prompt, nothing is installed — reopen sortOfRemoteNG to keep using the current version."
+    },
     "privateEndpoint": {
       "title": "Private refit endpoint",
       "description": "Optional HTTPS URL to a private signed refit feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",

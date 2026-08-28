@@ -401,6 +401,27 @@ export const UpdaterSettings: React.FC = () => {
             </div>
           )}
 
+          {updater.installMode === "msi" && available && (
+            <div
+              role="note"
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm text-[var(--color-textSecondary)]"
+              data-testid="updater-msi-elevation-notice"
+            >
+              <p className="font-medium text-[var(--color-text)]">
+                {t(
+                  "updater.msiElevation.title",
+                  "Administrator approval required",
+                )}
+              </p>
+              <p className="mt-1 text-xs">
+                {t(
+                  "updater.msiElevation.description",
+                  "Windows asks for administrator approval before this .msi update is installed. sortOfRemoteNG closes as soon as the installer starts, Windows shows a progress window while the installed files are replaced, and the app reopens itself when the update finishes. If you decline the prompt, nothing is installed — reopen sortOfRemoteNG to keep using the current version.",
+                )}
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

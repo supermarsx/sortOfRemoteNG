@@ -2453,6 +2453,10 @@
     "autoCheckTooltip": "Prüfungen installieren niemals Updates ohne Bestätigung.",
     "checkIntervalHours": "Prüfintervall (Stunden)",
     "artifact": "Artefakt",
+    "msiElevation": {
+      "title": "Administratorfreigabe erforderlich",
+      "description": "Windows fragt nach einer Administratorfreigabe, bevor dieses .msi-Update installiert wird. sortOfRemoteNG wird beendet, sobald das Installationsprogramm startet, Windows zeigt ein Fortschrittsfenster an, während die installierten Dateien ersetzt werden, und die App startet nach dem Update von selbst neu. Wenn Sie die Abfrage ablehnen, wird nichts installiert — starten Sie sortOfRemoteNG erneut, um die aktuelle Version weiter zu nutzen."
+    },
     "privateEndpoint": {
       "title": "Privater Update-Endpunkt",
       "description": "Optionale HTTPS-URL zu einem privaten signierten Update-Feed. Der öffentliche Feed bleibt der Fallback, und Signaturen werden gegen den angehefteten Updater-Schlüssel verifiziert.",

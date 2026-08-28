@@ -2453,6 +2453,10 @@
     "autoCheckTooltip": "확인은 사용자의 동의 없이 업데이트를 설치하지 않습니다.",
     "checkIntervalHours": "확인 간격(시간)",
     "artifact": "아티팩트",
+    "msiElevation": {
+      "title": "관리자 승인이 필요합니다",
+      "description": "이 .msi 업데이트를 설치하기 전에 Windows가 관리자 승인을 요청합니다. 설치 관리자가 시작되면 sortOfRemoteNG가 종료되고, 설치된 파일을 교체하는 동안 Windows가 진행 상황 창을 표시하며, 업데이트가 끝나면 앱이 스스로 다시 열립니다. 승인을 거부하면 아무것도 설치되지 않습니다. 현재 버전을 계속 사용하려면 sortOfRemoteNG를 다시 여세요."
+    },
     "privateEndpoint": {
       "title": "비공개 업데이트 엔드포인트",
       "description": "비공개 서명 업데이트 피드에 대한 선택적 HTTPS URL입니다. 공개 피드는 폴백으로 유지되며 서명은 고정된 업데이터 키로 검증됩니다.",

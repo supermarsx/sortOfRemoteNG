@@ -2453,6 +2453,10 @@
     "autoCheckTooltip": "Checks never install updates without confirmation.",
     "checkIntervalHours": "Check interval (hours)",
     "artifact": "Artifact",
+    "msiElevation": {
+      "title": "Administrator approval required",
+      "description": "Windows asks for administrator approval before this .msi update is installed. sortOfRemoteNG closes as soon as the installer starts, Windows shows a progress window while the installed files are replaced, and the app reopens itself when the update finishes. If you decline the prompt, nothing is installed — reopen sortOfRemoteNG to keep using the current version."
+    },
     "privateEndpoint": {
       "title": "Private update endpoint",
       "description": "Optional HTTPS URL to a private signed update feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",

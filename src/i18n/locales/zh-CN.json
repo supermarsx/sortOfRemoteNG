@@ -2453,6 +2453,10 @@
     "autoCheckTooltip": "检查绝不会在未经确认的情况下安装更新。",
     "checkIntervalHours": "检查间隔（小时）",
     "artifact": "构件",
+    "msiElevation": {
+      "title": "需要管理员授权",
+      "description": "在安装此 .msi 更新之前，Windows 会请求管理员授权。安装程序一启动，sortOfRemoteNG 就会关闭；替换已安装文件时 Windows 会显示进度窗口；更新完成后应用会自行重新打开。如果拒绝该提示，则不会安装任何内容 — 请重新打开 sortOfRemoteNG 以继续使用当前版本。"
+    },
     "privateEndpoint": {
       "title": "私有更新端点",
       "description": "指向私有已签名更新源的可选 HTTPS URL。公共源仍作为回退，签名将根据固定的更新程序密钥进行验证。",

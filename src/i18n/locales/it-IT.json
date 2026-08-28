@@ -2453,6 +2453,10 @@
     "autoCheckTooltip": "I controlli non installano mai aggiornamenti senza conferma.",
     "checkIntervalHours": "Intervallo di controllo (ore)",
     "artifact": "Artefatto",
+    "msiElevation": {
+      "title": "Approvazione amministratore richiesta",
+      "description": "Windows chiede l'approvazione dell'amministratore prima di installare questo aggiornamento .msi. sortOfRemoteNG si chiude non appena parte il programma di installazione, Windows mostra una finestra di avanzamento mentre i file installati vengono sostituiti e l'app si riapre da sola al termine dell'aggiornamento. Se rifiuti la richiesta, non viene installato nulla: riapri sortOfRemoteNG per continuare a usare la versione attuale."
+    },
     "privateEndpoint": {
       "title": "Endpoint di aggiornamento privato",
       "description": "URL HTTPS opzionale verso un feed di aggiornamento privato firmato. Il feed pubblico rimane il fallback e le firme vengono verificate con la chiave di aggiornamento fissata.",

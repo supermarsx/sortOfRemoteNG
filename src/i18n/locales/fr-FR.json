@@ -2453,6 +2453,10 @@
     "autoCheckTooltip": "Les vérifications n'installent jamais de mises à jour sans confirmation.",
     "checkIntervalHours": "Intervalle de vérification (heures)",
     "artifact": "Artefact",
+    "msiElevation": {
+      "title": "Approbation administrateur requise",
+      "description": "Windows demande une approbation administrateur avant d'installer cette mise à jour .msi. sortOfRemoteNG se ferme dès le démarrage du programme d'installation, Windows affiche une fenêtre de progression pendant le remplacement des fichiers installés, et l'application se rouvre d'elle-même une fois la mise à jour terminée. Si vous refusez l'invite, rien n'est installé : rouvrez sortOfRemoteNG pour continuer à utiliser la version actuelle."
+    },
     "privateEndpoint": {
       "title": "Point de terminaison de mise à jour privé",
       "description": "URL HTTPS optionnelle vers un flux de mises à jour signé privé. Le flux public reste le repli et les signatures sont vérifiées par rapport à la clé de mise à jour épinglée.",
