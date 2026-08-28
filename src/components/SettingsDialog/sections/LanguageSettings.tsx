@@ -166,6 +166,11 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
               value={explicit}
               options={SUPPORTED_LANGUAGES}
               onChange={(v) => updateSettings({ language: v })}
+              searchable
+              searchPlaceholder={t(
+                "settings.languageSearchPlaceholder",
+                "Search languages…",
+              )}
               infoTooltip="Choose the display language for the application interface. Changes apply immediately."
             />
           </div>
