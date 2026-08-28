@@ -955,20 +955,289 @@ pub async fn encryption_export_portable_dek(
     Ok(bytes)
 }
 
+// ─── Portable-DEK import guard ─────────────────────────────────────
+//
+// Importing a portable DEK *replaces* the local master key. Every
+// local artifact still encrypted under the outgoing key becomes
+// unreadable the moment the vault entry and `dek.enc` are overwritten,
+// because the outgoing key exists nowhere else. The rotation path
+// re-encrypts the artifacts it walks and retires the outgoing key into
+// the retained key ring; an import does neither. It cannot: the blob
+// is a foreign key, and the retained ring is itself encrypted under
+// the local master being replaced, so the ring dies with it. Nothing
+// downstream can rescue these files. The only correct behaviour is to
+// refuse, name what is at risk, and let the user acknowledge
+// explicitly.
+//
+// The scan is header-only: it reads the fixed 32-byte SDBF preamble
+// plus the 6-byte SORNG envelope magic and never decrypts anything.
+
+/// Directory under `<app_data>` holding the connection databases,
+/// their index, and their per-database trust stores.
+const DATABASES_DIR_NAME: &str = "databases";
+
+// Mirror of the SDBF preamble layout owned by
+// `sorng-storage::sdbf` (`MAGIC`, `CURRENT_VERSION`, `PREAMBLE_LEN`,
+// `PAYLOAD_LEN_OFFSET`). It cannot be imported: `sorng-storage`
+// depends on this crate, so the reverse edge would be a cycle. A
+// future SDBF revision that invalidates these values makes the probe
+// classify files as `Unverifiable`, which fails *closed* (the import
+// is refused rather than allowed) — the safe direction.
+const SDBF_MAGIC: &[u8; 4] = b"SDBF";
+const SDBF_VERSION: u8 = 1;
+const SDBF_PREAMBLE_LEN: usize = 32;
+const SDBF_PAYLOAD_LEN_OFFSET: usize = 14;
+
+/// Stable machine-readable prefix on the guard's refusal message. The
+/// Settings → Security panel matches on it to render the export /
+/// acknowledge remedy instead of a bare error toast.
+pub const PORTABLE_IMPORT_BLOCKED_CODE: &str = "ERR_PORTABLE_DEK_IMPORT_LOCAL_DATA";
+
+/// Most artifact names spelled out in the refusal before it elides.
+const REFUSAL_NAME_LIMIT: usize = 12;
+
+/// What a header-only probe can tell us about one on-disk generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalArtifactState {
+    /// Payload carries the SORNG envelope magic — encrypted under the
+    /// master key the import is about to replace.
+    Encrypted,
+    /// Payload is credible legacy plaintext JSON — survives the import.
+    Plaintext,
+    /// Damaged, truncated, or unrecognised. Cannot be proven safe, so
+    /// it counts as at risk.
+    Unverifiable,
+}
+
+/// Local `databases/` artifacts that a portable-DEK import would
+/// strand, split by how confident the probe is.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalDatabaseArtifactScan {
+    /// Provably envelope-encrypted generations, as
+    /// `databases/<name>` paths, sorted.
+    pub encrypted: Vec<String>,
+    /// Generations whose header could not be read or understood.
+    pub unverifiable: Vec<String>,
+}
+
+impl LocalDatabaseArtifactScan {
+    /// Total number of generations the import would put at risk.
+    pub fn at_risk_count(&self) -> usize {
+        self.encrypted.len() + self.unverifiable.len()
+    }
+
+    /// `true` when the import has nothing to strand.
+    pub fn is_clear(&self) -> bool {
+        self.at_risk_count() == 0
+    }
+}
+
+/// Is this a name the database storage ladder writes? Matches the
+/// canonical file plus both recovery generations, for `index.json`,
+/// `<id>.json` and `<id>.trust.json` alike. `.tmp` files are transient
+/// and deliberately excluded.
+fn is_database_artifact_name(file_name: &str) -> bool {
+    file_name.ends_with(".json")
+        || file_name.ends_with(".json.bak")
+        || file_name.ends_with(".json.v0.bak")
+}
+
+/// Header-only classification of one `databases/` generation. Never
+/// decrypts, never reads the payload beyond its first six bytes, and
+/// never returns an error: anything it cannot prove plaintext is
+/// `Unverifiable`.
+fn classify_database_generation(path: &Path) -> LocalArtifactState {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return LocalArtifactState::Unverifiable;
+    };
+    if metadata.is_dir() {
+        // Directories are not artifacts; the caller filters these out
+        // already, and a directory strands nothing.
+        return LocalArtifactState::Plaintext;
+    }
+    let Ok(file) = std::fs::File::open(path) else {
+        return LocalArtifactState::Unverifiable;
+    };
+    let Ok(file_len) = file.metadata().map(|m| m.len()) else {
+        return LocalArtifactState::Unverifiable;
+    };
+
+    let prefix_len = SDBF_PREAMBLE_LEN + crate::envelope::MAGIC.len();
+    let mut prefix = Vec::with_capacity(prefix_len);
+    if file
+        .take(prefix_len as u64)
+        .read_to_end(&mut prefix)
+        .is_err()
+    {
+        return LocalArtifactState::Unverifiable;
+    }
+
+    if prefix.len() < SDBF_PREAMBLE_LEN
+        || &prefix[..SDBF_MAGIC.len()] != SDBF_MAGIC
+        || prefix[SDBF_MAGIC.len()] != SDBF_VERSION
+    {
+        return LocalArtifactState::Unverifiable;
+    }
+
+    let payload_len = u64::from_le_bytes(
+        prefix[SDBF_PAYLOAD_LEN_OFFSET..SDBF_PAYLOAD_LEN_OFFSET + 8]
+            .try_into()
+            .expect("8 bytes read from a >= 32-byte preamble"),
+    );
+    match (SDBF_PREAMBLE_LEN as u64).checked_add(payload_len) {
+        Some(expected) if expected == file_len => {}
+        _ => return LocalArtifactState::Unverifiable,
+    }
+
+    let payload_prefix = &prefix[SDBF_PREAMBLE_LEN..];
+    if payload_prefix.len() >= crate::envelope::MAGIC.len()
+        && &payload_prefix[..crate::envelope::MAGIC.len()] == crate::envelope::MAGIC
+    {
+        return LocalArtifactState::Encrypted;
+    }
+    // A payload too short to rule the magic in or out is ambiguous:
+    // fail closed rather than call it plaintext.
+    if payload_prefix.is_empty() || crate::envelope::MAGIC.starts_with(payload_prefix) {
+        return LocalArtifactState::Unverifiable;
+    }
+
+    // serde_json emits one of these bytes first for every valid JSON
+    // root. Anything else is neither a known envelope nor credible
+    // plaintext.
+    if matches!(
+        payload_prefix[0],
+        b'{' | b'[' | b'"' | b't' | b'f' | b'n' | b'-' | b'0'..=b'9'
+    ) {
+        LocalArtifactState::Plaintext
+    } else {
+        LocalArtifactState::Unverifiable
+    }
+}
+
+/// Enumerate `<app_data>/databases/` and classify every generation.
+/// A missing directory is an empty scan — a fresh profile has nothing
+/// to lose. A directory that exists but cannot be listed is *not*
+/// treated as empty: it yields a single `unverifiable` entry so the
+/// guard still trips.
+fn scan_local_database_artifacts(app_data_dir: &Path) -> LocalDatabaseArtifactScan {
+    let mut scan = LocalDatabaseArtifactScan::default();
+    let databases_dir = app_data_dir.join(DATABASES_DIR_NAME);
+
+    let entries = match std::fs::read_dir(&databases_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return scan,
+        Err(_) => {
+            scan.unverifiable.push(format!(
+                "{DATABASES_DIR_NAME}/ (directory could not be read)"
+            ));
+            return scan;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if !is_database_artifact_name(name) {
+            continue;
+        }
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let label = format!("{DATABASES_DIR_NAME}/{name}");
+        match classify_database_generation(&entry.path()) {
+            LocalArtifactState::Encrypted => scan.encrypted.push(label),
+            LocalArtifactState::Unverifiable => scan.unverifiable.push(label),
+            LocalArtifactState::Plaintext => {}
+        }
+    }
+
+    // `read_dir` order is filesystem-defined; sort so the refusal text
+    // is deterministic and diffable.
+    scan.encrypted.sort();
+    scan.unverifiable.sort();
+    scan
+}
+
+/// Render at most `REFUSAL_NAME_LIMIT` names, eliding the rest.
+fn join_artifact_names(names: &[String]) -> String {
+    if names.len() <= REFUSAL_NAME_LIMIT {
+        return names.join(", ");
+    }
+    let shown = names[..REFUSAL_NAME_LIMIT].join(", ");
+    format!("{shown}, +{} more", names.len() - REFUSAL_NAME_LIMIT)
+}
+
+/// The actionable refusal. Names what breaks, why the usual safety
+/// nets do not apply, and both ways forward.
+fn portable_import_refusal(scan: &LocalDatabaseArtifactScan) -> String {
+    let mut message = format!(
+        "{PORTABLE_IMPORT_BLOCKED_CODE}: importing this portable master key would leave {} local database file(s) permanently unreadable. ",
+        scan.at_risk_count()
+    );
+    if !scan.encrypted.is_empty() {
+        message.push_str(&format!(
+            "Encrypted under this profile's current master key: {}. ",
+            join_artifact_names(&scan.encrypted)
+        ));
+    }
+    if !scan.unverifiable.is_empty() {
+        message.push_str(&format!(
+            "Cannot be verified as plaintext, so treated as at risk: {}. ",
+            join_artifact_names(&scan.unverifiable)
+        ));
+    }
+    message.push_str(
+        "The imported key belongs to a different key ring. Unlike a rotation, an import re-encrypts nothing: \
+the outgoing master key is overwritten in the OS vault and in dek.enc and is then unrecoverable, \
+this profile's retained rotation keys are themselves encrypted under that outgoing key and are lost with it, \
+and the .bak / .v0.bak recovery generations are encrypted under the same key, so they cannot help either. \
+Export a backup first (Settings → Security → Export), or move <app_data>/databases aside, then import. \
+To import anyway and accept permanently losing access to those files, re-run with acknowledgeLocalDataLoss = true.",
+    );
+    message
+}
+
+/// Pre-flight for [`encryption_import_portable_dek`]. Refuses when the
+/// profile holds local database artifacts the incoming key cannot
+/// open, unless the caller acknowledged the loss. Returns the scan so
+/// the caller can record what was acknowledged.
+fn portable_import_guard(
+    app_data_dir: &Path,
+    acknowledged: bool,
+) -> Result<LocalDatabaseArtifactScan, String> {
+    let scan = scan_local_database_artifacts(app_data_dir);
+    if scan.is_clear() || acknowledged {
+        return Ok(scan);
+    }
+    Err(portable_import_refusal(&scan))
+}
+
 /// Import a portable wrapped DEK and adopt it as the local master
 /// key. On success the state is unlocked, the vault (if available) is
 /// updated, and `dek.enc` is written locally so the next start finds
 /// the new key.
+///
+/// Refuses up front when `<app_data>/databases` still holds artifacts
+/// encrypted under the outgoing master key — see
+/// [`portable_import_guard`]. Pass `acknowledgeLocalDataLoss: true` to
+/// override; the count is then recorded in the audit log.
 #[tauri::command]
 pub async fn encryption_import_portable_dek(
     app: AppHandle,
     state: State<'_, EncryptionState>,
     source_path: String,
     password: String,
+    acknowledge_local_data_loss: Option<bool>,
 ) -> Result<(), String> {
     let dir = ensure_app_data_dir(&app)?;
     let source = PathBuf::from(&source_path);
     require_renderer_scoped_path(&app, &source)?;
+    // Before anything is read, unwrapped, or installed: refuse if the
+    // swap would strand local data.
+    let scan = portable_import_guard(&dir, acknowledge_local_data_loss.unwrap_or(false))?;
     let blob = read_bounded_regular_file(&source, password_wrap::FILE_LEN as u64)?;
     let dek = password_wrap::unwrap(&password, &blob).map_err(|e| format!("unwrap: {e}"))?;
 
@@ -1003,7 +1272,10 @@ pub async fn encryption_import_portable_dek(
         &dir,
         AuditEvent::PortableImported,
         serde_json::json!({
-            "sourceFile": source.file_name().and_then(|value| value.to_str())
+            "sourceFile": source.file_name().and_then(|value| value.to_str()),
+            // Non-zero only when the user overrode the guard, so the
+            // audit log records exactly what was knowingly abandoned.
+            "acknowledgedAtRiskArtifacts": scan.at_risk_count(),
         }),
     );
     lockout_result?;
@@ -1468,5 +1740,254 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(recovered, payload);
+    }
+
+    // ─── Portable-DEK import guard ─────────────────────────────────
+
+    /// Compose an SDBF generation exactly as `sorng-storage::sdbf`
+    /// does — 32-byte preamble, little-endian payload length at
+    /// offset 14 — around an arbitrary payload. The checksum is left
+    /// zeroed: the guard's probe is header-only and never verifies it.
+    fn write_sdbf_generation(path: &Path, payload: &[u8]) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let mut bytes = Vec::with_capacity(SDBF_PREAMBLE_LEN + payload.len());
+        bytes.extend_from_slice(SDBF_MAGIC);
+        bytes.push(SDBF_VERSION);
+        bytes.push(0); // flags
+        bytes.extend_from_slice(&[0u8; 8]); // checksum
+        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 10]); // reserved
+        assert_eq!(bytes.len(), SDBF_PREAMBLE_LEN);
+        bytes.extend_from_slice(payload);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    /// An envelope-shaped payload: the SORNG magic plus filler. The
+    /// probe only ever looks at the magic.
+    fn envelope_payload() -> Vec<u8> {
+        let mut payload = crate::envelope::MAGIC.to_vec();
+        payload.extend_from_slice(&[0xAB; 96]);
+        payload
+    }
+
+    fn plaintext_payload() -> Vec<u8> {
+        br#"{"databases":[]}"#.to_vec()
+    }
+
+    fn databases_dir(root: &Path) -> PathBuf {
+        root.join(DATABASES_DIR_NAME)
+    }
+
+    #[test]
+    fn scan_is_clear_for_a_profile_with_no_databases_directory() {
+        let dir = tempdir().unwrap();
+        let scan = scan_local_database_artifacts(dir.path());
+        assert!(scan.is_clear());
+        assert_eq!(scan.at_risk_count(), 0);
+    }
+
+    #[test]
+    fn scan_is_clear_for_an_empty_databases_directory() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(databases_dir(dir.path())).unwrap();
+        assert!(scan_local_database_artifacts(dir.path()).is_clear());
+    }
+
+    #[test]
+    fn scan_ignores_plaintext_generations() {
+        let dir = tempdir().unwrap();
+        let databases = databases_dir(dir.path());
+        write_sdbf_generation(&databases.join("index.json"), &plaintext_payload());
+        write_sdbf_generation(&databases.join("alpha.json"), &plaintext_payload());
+        write_sdbf_generation(&databases.join("alpha.json.bak"), &plaintext_payload());
+
+        let scan = scan_local_database_artifacts(dir.path());
+        assert!(scan.is_clear(), "unexpected at-risk artifacts: {scan:?}");
+    }
+
+    #[test]
+    fn scan_flags_every_encrypted_generation_including_trust_stores_and_backups() {
+        let dir = tempdir().unwrap();
+        let databases = databases_dir(dir.path());
+        for name in [
+            "index.json",
+            "alpha.json",
+            "alpha.trust.json",
+            "alpha.json.bak",
+            "alpha.json.v0.bak",
+            "beta.json",
+        ] {
+            write_sdbf_generation(&databases.join(name), &envelope_payload());
+        }
+
+        let scan = scan_local_database_artifacts(dir.path());
+        assert_eq!(scan.unverifiable, Vec::<String>::new());
+        assert_eq!(
+            scan.encrypted,
+            vec![
+                "databases/alpha.json".to_string(),
+                "databases/alpha.json.bak".to_string(),
+                "databases/alpha.json.v0.bak".to_string(),
+                "databases/alpha.trust.json".to_string(),
+                "databases/beta.json".to_string(),
+                "databases/index.json".to_string(),
+            ],
+            "every generation of every artifact family must be reported, sorted"
+        );
+        assert_eq!(scan.at_risk_count(), 6);
+    }
+
+    #[test]
+    fn scan_ignores_transient_and_unrelated_files() {
+        let dir = tempdir().unwrap();
+        let databases = databases_dir(dir.path());
+        write_sdbf_generation(&databases.join("alpha.json.tmp"), &envelope_payload());
+        write_sdbf_generation(&databases.join("notes.txt"), &envelope_payload());
+        std::fs::create_dir_all(databases.join("nested.json")).unwrap();
+
+        let scan = scan_local_database_artifacts(dir.path());
+        assert!(scan.is_clear(), "unexpected at-risk artifacts: {scan:?}");
+    }
+
+    #[test]
+    fn scan_treats_damaged_generations_as_at_risk() {
+        let dir = tempdir().unwrap();
+        let databases = databases_dir(dir.path());
+        std::fs::create_dir_all(&databases).unwrap();
+
+        // No SDBF preamble at all.
+        std::fs::write(databases.join("garbage.json"), b"not an sdbf file at all").unwrap();
+        // Preamble claims more payload than the file holds.
+        let mut truncated = Vec::new();
+        truncated.extend_from_slice(SDBF_MAGIC);
+        truncated.push(SDBF_VERSION);
+        truncated.push(0);
+        truncated.extend_from_slice(&[0u8; 8]);
+        truncated.extend_from_slice(&4096u64.to_le_bytes());
+        truncated.extend_from_slice(&[0u8; 10]);
+        truncated.extend_from_slice(b"{}");
+        std::fs::write(databases.join("truncated.json"), truncated).unwrap();
+        // Payload too short to rule the envelope magic in or out.
+        write_sdbf_generation(&databases.join("ambiguous.json"), b"SOR");
+
+        let scan = scan_local_database_artifacts(dir.path());
+        assert_eq!(scan.encrypted, Vec::<String>::new());
+        assert_eq!(
+            scan.unverifiable,
+            vec![
+                "databases/ambiguous.json".to_string(),
+                "databases/garbage.json".to_string(),
+                "databases/truncated.json".to_string(),
+            ],
+            "anything that cannot be proven plaintext must fail closed"
+        );
+    }
+
+    #[test]
+    fn import_guard_allows_a_profile_with_nothing_at_risk() {
+        let dir = tempdir().unwrap();
+        write_sdbf_generation(
+            &databases_dir(dir.path()).join("alpha.json"),
+            &plaintext_payload(),
+        );
+
+        let scan = portable_import_guard(dir.path(), false)
+            .expect("a plaintext-only profile has nothing to strand");
+        assert!(scan.is_clear());
+    }
+
+    #[test]
+    fn import_guard_refuses_when_encrypted_artifacts_exist() {
+        let dir = tempdir().unwrap();
+        let databases = databases_dir(dir.path());
+        write_sdbf_generation(&databases.join("index.json"), &envelope_payload());
+        write_sdbf_generation(&databases.join("alpha.json"), &envelope_payload());
+        write_sdbf_generation(&databases.join("alpha.trust.json"), &envelope_payload());
+        write_sdbf_generation(&databases.join("plain.json"), &plaintext_payload());
+
+        let error = portable_import_guard(databases.parent().unwrap(), false)
+            .expect_err("the import must fail closed while local data is encrypted");
+
+        // Machine-readable code so the UI can render the remedy.
+        assert!(error.starts_with(PORTABLE_IMPORT_BLOCKED_CODE), "{error}");
+        // The count, and every affected artifact, named.
+        assert!(error.contains("3 local database file(s)"), "{error}");
+        assert!(error.contains("databases/index.json"), "{error}");
+        assert!(error.contains("databases/alpha.json"), "{error}");
+        assert!(error.contains("databases/alpha.trust.json"), "{error}");
+        // The plaintext one is not at risk and must not be named.
+        assert!(!error.contains("databases/plain.json"), "{error}");
+        // Actionable: what breaks, and both ways forward.
+        assert!(error.contains("permanently unreadable"), "{error}");
+        assert!(error.contains("Settings → Security → Export"), "{error}");
+        assert!(error.contains("acknowledgeLocalDataLoss = true"), "{error}");
+    }
+
+    #[test]
+    fn import_guard_refusal_names_unverifiable_artifacts_separately() {
+        let dir = tempdir().unwrap();
+        let databases = databases_dir(dir.path());
+        std::fs::create_dir_all(&databases).unwrap();
+        std::fs::write(databases.join("broken.json"), b"garbage").unwrap();
+
+        let error = portable_import_guard(dir.path(), false).expect_err("fail closed");
+        assert!(error.contains("1 local database file(s)"), "{error}");
+        assert!(
+            error.contains("Cannot be verified as plaintext"),
+            "the user must be told why an unreadable file blocks the import: {error}"
+        );
+        assert!(error.contains("databases/broken.json"), "{error}");
+    }
+
+    #[test]
+    fn import_guard_allows_the_import_with_an_explicit_acknowledgement() {
+        let dir = tempdir().unwrap();
+        write_sdbf_generation(
+            &databases_dir(dir.path()).join("alpha.json"),
+            &envelope_payload(),
+        );
+
+        assert!(portable_import_guard(dir.path(), false).is_err());
+        let scan = portable_import_guard(dir.path(), true)
+            .expect("an explicit acknowledgement must let the import through");
+        // The scan still reports the loss so the audit record can
+        // state exactly what was abandoned.
+        assert_eq!(scan.at_risk_count(), 1);
+        assert_eq!(scan.encrypted, vec!["databases/alpha.json".to_string()]);
+    }
+
+    #[test]
+    fn import_guard_refusal_elides_a_long_artifact_list() {
+        let dir = tempdir().unwrap();
+        let databases = databases_dir(dir.path());
+        for index in 0..(REFUSAL_NAME_LIMIT + 3) {
+            write_sdbf_generation(
+                &databases.join(format!("db{index:02}.json")),
+                &envelope_payload(),
+            );
+        }
+
+        let error = portable_import_guard(dir.path(), false).expect_err("fail closed");
+        assert!(
+            error.contains(&format!(
+                "{} local database file(s)",
+                REFUSAL_NAME_LIMIT + 3
+            )),
+            "the count must stay exact even when the names are elided: {error}"
+        );
+        assert!(error.contains("+3 more"), "{error}");
+    }
+
+    #[test]
+    fn local_database_artifact_scan_serializes_camel_case() {
+        let scan = LocalDatabaseArtifactScan {
+            encrypted: vec!["databases/alpha.json".to_string()],
+            unverifiable: vec!["databases/broken.json".to_string()],
+        };
+        let json = serde_json::to_string(&scan).unwrap();
+        assert!(json.contains("\"encrypted\":[\"databases/alpha.json\"]"));
+        assert!(json.contains("\"unverifiable\":[\"databases/broken.json\"]"));
     }
 }
