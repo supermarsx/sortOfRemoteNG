@@ -50,7 +50,24 @@ export default tseslint.config(
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
       "@next/next": nextPlugin,
+      /* Transitional alias for the oxlint migration (t80). oxlint renames these
+         three rules, so inline suppressions must name BOTH spellings to satisfy
+         either linter. ESLint 10 errors on an unknown rule name in a disable
+         directive, so the oxlint names are registered here pointing at the same
+         upstream implementations and left switched off — they never
+         double-report. Removed together with this file at the cutover. */
+      react: {
+        rules: {
+          "exhaustive-deps": reactHooks.rules["exhaustive-deps"],
+          hooks: reactHooks.rules["rules-of-hooks"],
+          "only-export-components":
+            reactRefresh.rules["only-export-components"],
+        },
+      },
     },
+    /* Paired with the alias above: a dual-named directive is "unused" from
+       ESLint's side, which would otherwise report 135 warnings. */
+    linterOptions: { reportUnusedDisableDirectives: "off" },
     rules: {
       ...reactHooksRules,
       ...nextPlugin.configs.recommended.rules,
