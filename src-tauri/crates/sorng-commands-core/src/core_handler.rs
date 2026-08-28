@@ -72,6 +72,7 @@ pub fn is_command(command: &str) -> bool {
             | "load_database_data"
             | "save_database_data"
             | "delete_database_data"
+            | "databases_encryption_status"
             | "get_cpu_aes_capabilities"
             | "get_api_capabilities"
             | "set_api_disabled_capabilities"
@@ -1400,6 +1401,7 @@ define_command_group!(
         database_files::load_database_data,
         database_files::save_database_data,
         database_files::delete_database_data,
+        database_files::databases_encryption_status,
         cpu_commands::get_cpu_aes_capabilities,
         api_capability_commands::get_api_capabilities,
         api_capability_commands::set_api_disabled_capabilities,
@@ -2936,6 +2938,30 @@ mod tests {
         assert!(is_command("compare_and_swap_app_data"));
         assert!(include_str!("core_handler.rs")
             .contains("storage_commands::compare_and_swap_app_data,"));
+    }
+
+    /// t74-e3. The `databases_encryption_status` probe is what makes
+    /// encryption-at-rest visible in the Database Center and the
+    /// Security panel. A command that is recognised but not registered
+    /// (or vice versa) fails only at runtime, in the hands of a user
+    /// who is already trying to find out whether their data is safe —
+    /// so pin both halves here rather than relying on the frontend
+    /// scanner, which cannot see a command no TS file calls yet.
+    #[test]
+    fn databases_encryption_probe_is_recognized_and_registered() {
+        assert!(
+            is_command("databases_encryption_status"),
+            "the encryption-status probe is not publicly recognized"
+        );
+        assert!(
+            GROUP_A_COMMANDS.contains(&"databases_encryption_status"),
+            "the encryption-status probe is not in the generated handler list"
+        );
+        assert_eq!(
+            command_route_count("databases_encryption_status"),
+            1,
+            "the encryption-status probe must route to exactly one handler"
+        );
     }
 
     #[test]

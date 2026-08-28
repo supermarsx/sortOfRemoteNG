@@ -173,6 +173,20 @@ async fn encrypt_payload(
 /// into). Bubbles up `EnvelopeError` so the read path can decide
 /// between "locked" (translate to error) and "not an envelope" (treat
 /// as legacy plaintext).
+///
+/// **Retained-key fallback (t74).** A file that does not authenticate
+/// under the current sub-key is retried against the bounded ring of
+/// superseded master DEKs (`sorng_encryption::key_ring`). That covers
+/// the case a rotation missed a file — historically the entire
+/// `databases/` tree — so the data opens instead of reading as
+/// unrecoverable ciphertext. The ring is defence in depth: rotation
+/// still has to walk every file, and does (see the databases step in
+/// `encryption_rotation_commands.rs`).
+///
+/// Nothing is rewritten here. A read path that rewrote would rotate the
+/// SDBF `.bak` ladder under a concurrent writer; convergence back onto
+/// the current key happens on the next ordinary save, which always
+/// encrypts under the live sub-key.
 async fn decrypt_payload(
     state: &EncryptionState,
     artifact: ArtifactKind,
@@ -182,9 +196,22 @@ async fn decrypt_payload(
         .sub_key(artifact)
         .await
         .ok_or_else(|| "encryption is locked; unlock first via Settings → Security".to_string())?;
-    let (_header, plaintext) = enc_envelope::read_envelope(&sub_key, envelope_bytes)
-        .map_err(|e| format!("envelope decrypt: {e}"))?;
-    Ok(plaintext)
+    match enc_envelope::read_envelope(&sub_key, envelope_bytes) {
+        Ok((_header, plaintext)) => Ok(plaintext),
+        Err(error) => {
+            if let Some(plaintext) =
+                sorng_encryption::key_ring::try_decrypt_retired(state, artifact, envelope_bytes)
+                    .await
+            {
+                log::warn!(
+                    "database artifact {artifact:?} opened with a retained key from a previous \
+                     rotation; it will re-encrypt under the current key on its next save"
+                );
+                return Ok(plaintext);
+            }
+            Err(format!("envelope decrypt: {error}"))
+        }
+    }
 }
 
 /// Before a locked-state plaintext write, inspect every generation
@@ -633,6 +660,595 @@ pub async fn delete_database_data(app: AppHandle, database_id: String) -> Result
         rt.delete_store(&database_id)?;
     }
     Ok(())
+}
+
+// ══════════════════════════════════════════════════════════════════
+// t74-e3 — read-only encryption-status probe
+// ──────────────────────────────────────────────────────────────────
+// Nothing in the UI tells a user whether their connection databases
+// are encrypted at rest, so a capability that has shipped since P4
+// reads as absent. This probe is the source of truth the Database
+// Center and the Security panel render from.
+//
+// It is also the diagnostic for the rotation defect this task fixes
+// (plan t74 §2 Gap A1): a master-key rotation that did not walk
+// `databases/` leaves every file carrying a valid SORNG envelope that
+// no live key opens. "Encrypted: true" is useless there — the states
+// that matter are three, not two:
+//
+//   plaintext                       no envelope on disk
+//   envelope + open-state current   opens under the live master DEK
+//   envelope + open-state no-key    STRANDED — envelope intact, key gone
+//
+// A fourth state exists once t74-e1's retained key ring lands: the
+// file opens under a *previous* DEK the ring still holds, i.e. it was
+// missed by a rotation but is still recoverable. `OpenState::RetainedKey`
+// carries that; see `retained_master_deks` for the one-function seam.
+//
+// Contract, non-negotiable:
+//   - **Strictly read-only.** No write, no migration, no "repair".
+//   - **Never fails the whole call for one bad file.** Every artifact
+//     carries its own status; directory-level trouble lands in `errors`.
+//   - **Cheap by default.** `verify = false` (the default, and what a
+//     list view uses) inspects the 32-byte SDBF preamble plus the
+//     envelope magic and stops. Decryption happens only when the
+//     caller explicitly asks for it (plan t74 §7 R5).
+// ══════════════════════════════════════════════════════════════════
+
+use serde::Serialize;
+use sorng_encryption::key_ring::{self, RetiredKeyRing};
+
+/// What the bytes on disk are, independent of whether any key opens
+/// them. Determined from the SDBF preamble + envelope magic alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AtRestState {
+    /// Payload begins with the SORNG envelope magic — encrypted at rest.
+    Envelope,
+    /// Payload is legacy plaintext JSON (pre-P4, or a store that was
+    /// never encrypted because no master DEK exists on this machine).
+    Plaintext,
+    /// No generation of the file survives header inspection: truncated,
+    /// wrong magic, length mismatch, unreadable. Reported per artifact
+    /// so one bad file never sinks the probe.
+    Unreadable,
+    /// The file (and every recovery generation of it) is absent.
+    Missing,
+}
+
+/// Whether a key this profile still holds opens the artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OpenState {
+    /// Not an envelope — there is nothing to open.
+    NotEncrypted,
+    /// Decrypts under the sub-key derived from the *current* master DEK.
+    CurrentKey,
+    /// Does **not** open under the current master DEK, but does open
+    /// under a retained (previous) DEK. The artifact was missed by a
+    /// rotation and is still recoverable — a re-save re-keys it.
+    RetainedKey,
+    /// An envelope that no available key opens. This is the stranded
+    /// state Gap A1 produces; the data is unrecoverable unless the old
+    /// DEK is restored from a backup.
+    NoKey,
+    /// Encryption is locked, so openability cannot be decided. Not a
+    /// failure — unlock and probe again.
+    Locked,
+    /// Not determined: `verify` was false, or the artifact is
+    /// `Unreadable` / `Missing` and there is nothing to attempt.
+    Unknown,
+}
+
+/// Status of one on-disk artifact (`index.json`, `<id>.json`, or
+/// `<id>.trust.json`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactEncryptionStatus {
+    /// File name only, never an absolute path — the probe result is
+    /// rendered in the UI and must not leak the user's directory
+    /// layout into a screenshot or a bug report.
+    pub file: String,
+    pub at_rest: AtRestState,
+    /// Which generation of the recovery ladder answered: `current`,
+    /// `backup`, or `v0-migration`. `null` when nothing was readable.
+    /// Anything other than `current` means the canonical file is
+    /// already damaged, independently of encryption.
+    pub source: Option<LoadSource>,
+    pub open_state: OpenState,
+    /// Human-readable reason for `Unreadable` / `NoKey`. Never contains
+    /// key material or plaintext.
+    pub detail: Option<String>,
+}
+
+impl ArtifactEncryptionStatus {
+    fn missing(file: String) -> Self {
+        Self {
+            file,
+            at_rest: AtRestState::Missing,
+            source: None,
+            open_state: OpenState::Unknown,
+            detail: None,
+        }
+    }
+}
+
+/// One row of the Database Center, joined with what is actually on disk.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseEncryptionStatus {
+    pub id: String,
+    /// From the index when it is readable, else `null`. Display only.
+    pub name: Option<String>,
+    /// Layer B — the optional per-database password (`isEncrypted` in
+    /// the index). `null` when the index could not be read. This is a
+    /// *different thing* from `data.at_rest`, and conflating the two is
+    /// the confusion this probe exists to end.
+    pub password_protected: Option<bool>,
+    /// `databases/<id>.json` — the connection payload.
+    pub data: ArtifactEncryptionStatus,
+    /// `databases/<id>.trust.json` — the per-database trust store.
+    /// `null` when the database has no trust store at all (the common
+    /// case until the user accepts a host key).
+    pub trust: Option<ArtifactEncryptionStatus>,
+}
+
+/// Roll-up across every database, for a one-line UI summary.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabasesEncryptionSummary {
+    /// Databases seen, on disk or in the index.
+    pub total: usize,
+    /// `data.at_rest == Envelope`.
+    pub encrypted: usize,
+    /// `data.at_rest == Plaintext`.
+    pub plaintext: usize,
+    /// `data.at_rest` is `Unreadable` or `Missing`.
+    pub unreadable: usize,
+    /// Envelopes that no available key opens — only ever non-zero when
+    /// `verified` is true. **This is the Gap A1 casualty count.**
+    pub stranded: usize,
+    /// Envelopes that open only under a retained key: missed by a
+    /// rotation, still recoverable.
+    pub recoverable_with_retained_key: usize,
+}
+
+/// The whole probe result.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabasesEncryptionStatus {
+    /// Master encryption has been configured for this profile (vault
+    /// entry, `dek.enc`, encrypted settings, an audit record, or an
+    /// encrypted database generation).
+    pub master_configured: bool,
+    /// A master DEK is loaded right now.
+    pub unlocked: bool,
+    /// Whether decryption was actually attempted. When false every
+    /// `open_state` is `unknown` and `stranded` is 0 — absence of
+    /// evidence, not evidence of absence.
+    pub verified: bool,
+    /// Whether any retained (previous) DEKs were available to try.
+    pub retained_keys_available: usize,
+    /// `databases/index.json`.
+    pub index: ArtifactEncryptionStatus,
+    /// Sorted by id so the UI renders stably across probes.
+    pub databases: Vec<DatabaseEncryptionStatus>,
+    pub summary: DatabasesEncryptionSummary,
+    /// Non-fatal, directory-level problems (e.g. the databases dir
+    /// could not be enumerated). Never a reason to fail the call.
+    pub errors: Vec<String>,
+}
+
+/// The retained (previous) master DEKs this profile still holds.
+///
+/// t74-e1 landed `<app_data>/dek-ring.enc`: a bounded, newest-first ring
+/// of the last `KEY_RING_CAPACITY` superseded DEKs, itself encrypted
+/// under the *current* master key. Its purpose is that a rotation which
+/// missed an artifact stays recoverable; its purpose *here* is that
+/// "missed by a rotation but still recoverable" is a materially
+/// different thing to tell a user than "gone".
+///
+/// Best-effort by construction: no ring file, a locked state, or a
+/// damaged ring all mean "no retained keys" - never an error. The
+/// probe's job is to report what it can see.
+async fn retained_key_ring(state: &EncryptionState, app_data_dir: &Path) -> RetiredKeyRing {
+    key_ring::load(&key_ring::ring_path(app_data_dir), state)
+        .await
+        .unwrap_or_else(|_| RetiredKeyRing::empty())
+}
+
+/// Header-only classification of one artifact, walking the same
+/// recovery ladder `safe_read` would (`current` → `.bak` → `.v0.bak`)
+/// so the reported state matches what a real load would actually get.
+///
+/// Reads at most `PREAMBLE_LEN + magic` bytes per generation — no
+/// payload, no decryption, no allocation proportional to file size.
+fn classify_generation_ladder(canonical: &Path) -> ArtifactEncryptionStatus {
+    let file = canonical
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let candidates = [
+        (canonical.to_path_buf(), LoadSource::Current),
+        (sibling(canonical, "bak"), LoadSource::Backup),
+        (
+            canonical.with_extension("json.v0.bak"),
+            LoadSource::V0Migration,
+        ),
+    ];
+
+    let mut any_present = false;
+    let mut first_error: Option<String> = None;
+
+    for (path, source) in candidates {
+        match path.try_exists() {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                any_present = true;
+                if first_error.is_none() {
+                    first_error = Some(format!("cannot stat {}: {error}", path.display()));
+                }
+                continue;
+            }
+        }
+        any_present = true;
+        match database_generation_is_encrypted(&path) {
+            Ok(true) => {
+                return ArtifactEncryptionStatus {
+                    file,
+                    at_rest: AtRestState::Envelope,
+                    source: Some(source),
+                    open_state: OpenState::Unknown,
+                    detail: None,
+                }
+            }
+            Ok(false) => {
+                return ArtifactEncryptionStatus {
+                    file,
+                    at_rest: AtRestState::Plaintext,
+                    source: Some(source),
+                    open_state: OpenState::NotEncrypted,
+                    detail: None,
+                }
+            }
+            Err(error) => {
+                if first_error.is_none() {
+                    // `database_generation_is_encrypted` already names
+                    // the path; strip nothing, it is a file name plus a
+                    // reason and carries no secret material.
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+
+    if !any_present {
+        return ArtifactEncryptionStatus::missing(file);
+    }
+    ArtifactEncryptionStatus {
+        file,
+        at_rest: AtRestState::Unreadable,
+        source: None,
+        open_state: OpenState::Unknown,
+        detail: first_error,
+    }
+}
+
+/// Decide `open_state` for an artifact already classified as an
+/// envelope. Only called when `verify` is true.
+///
+/// Tries the live master DEK first, then each retained DEK in turn.
+/// A failure here is *information*, never an error: `NoKey` is the
+/// answer the caller asked for.
+async fn probe_open_state(
+    state: &EncryptionState,
+    retained: &RetiredKeyRing,
+    artifact: ArtifactKind,
+    canonical: &Path,
+    status: &ArtifactEncryptionStatus,
+) -> (OpenState, Option<String>) {
+    // Read the generation the ladder would serve. `safe_read_raw`
+    // re-walks current → .bak → .v0.bak and verifies the checksum, so
+    // it lands on the same generation `classify_generation_ladder`
+    // reported.
+    let payload = match safe_read_raw(canonical) {
+        Ok(Some((payload, _source))) => payload,
+        Ok(None) => return (OpenState::Unknown, None),
+        Err(error) => return (OpenState::Unknown, Some(error.to_string())),
+    };
+    if !is_envelope_blob(&payload) {
+        return (OpenState::NotEncrypted, None);
+    }
+
+    if let Some(sub_key) = state.sub_key(artifact).await {
+        match enc_envelope::read_envelope(&sub_key, &payload) {
+            Ok(_) => return (OpenState::CurrentKey, None),
+            Err(error) => {
+                // Fall through to the retained ring, but keep the
+                // current-key failure as the reason if nothing opens it.
+                let current_failure =
+                    format!("current master key does not open {}: {error}", status.file);
+                // `try_open` walks the ring newest-first and reports how
+                // deep the match was, i.e. how many rotations ago this
+                // artifact was left behind. Depth matters: the ring is
+                // bounded, so a file near the end of it is one rotation
+                // away from being unrecoverable.
+                if let Some((_plaintext, depth)) = retained.try_open(artifact, &payload) {
+                    return (
+                        OpenState::RetainedKey,
+                        Some(format!(
+                            "{} opens under retained key {} of {} — a master-key rotation \n                             left it behind. Re-save it to re-key it under the current key; \n                             the ring keeps only the last {}.",
+                            status.file,
+                            depth + 1,
+                            retained.len(),
+                            key_ring::KEY_RING_CAPACITY
+                        )),
+                    );
+                }
+                return (OpenState::NoKey, Some(current_failure));
+            }
+        }
+    }
+
+    (OpenState::Locked, None)
+}
+
+/// Collect the database ids present in `databases/`.
+///
+/// Mirrors the enumeration the trust-store runtime uses: a database id
+/// is a file named `<id>.json` that is neither `index.json` nor a
+/// `<id>.trust.json`. Recovery generations (`.json.bak`, `.json.v0.bak`,
+/// `.json.tmp`) do not end in `.json` and are skipped — they are
+/// inspected as part of their canonical artifact's ladder instead.
+fn database_ids_on_disk(databases_dir: &Path, errors: &mut Vec<String>) -> Vec<String> {
+    let entries = match std::fs::read_dir(databases_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(error) => {
+            errors.push(format!(
+                "cannot enumerate {}: {error}",
+                databases_dir.display()
+            ));
+            return Vec::new();
+        }
+    };
+
+    let mut ids = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                errors.push(format!(
+                    "cannot inspect an entry in {}: {error}",
+                    databases_dir.display()
+                ));
+                continue;
+            }
+        };
+        match entry.file_type() {
+            Ok(file_type) if file_type.is_file() => {}
+            Ok(_) => continue,
+            Err(error) => {
+                errors.push(format!("cannot stat {}: {error}", entry.path().display()));
+                continue;
+            }
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Recovery generations count as evidence that a database
+        // exists. `safe_read` will happily serve a `.bak` when the
+        // canonical file is gone, so a probe that only looked at
+        // `<id>.json` would report nothing for a database the app can
+        // still open — the exact invisibility this command exists to
+        // end. `.tmp` is transient and never a source of truth.
+        let base = [".json.v0.bak", ".json.bak", ".json"]
+            .iter()
+            .find_map(|suffix| name.strip_suffix(suffix));
+        let base = match base {
+            Some(base) => base,
+            None => continue,
+        };
+        if base.is_empty() || base == "index" || base.ends_with(".trust") {
+            continue;
+        }
+        ids.push(base.to_string());
+    }
+    ids
+}
+
+/// Read the index for display metadata — names and the Layer-B
+/// `isEncrypted` flag. Best-effort: a locked or damaged index simply
+/// means those two fields come back `null`, never that the probe fails.
+async fn index_metadata(
+    state: &EncryptionState,
+    index_file: &Path,
+) -> Option<Vec<(String, Option<String>, Option<bool>)>> {
+    if !state.is_unlocked().await {
+        // The index may well be an envelope; do not attempt it and do
+        // not report a spurious error.
+        return None;
+    }
+    let loaded = encrypted_load(state, ArtifactKind::DatabasesIndex, index_file)
+        .await
+        .ok()??;
+    let rows = loaded.value.as_array()?;
+    Some(
+        rows.iter()
+            .filter_map(|row| {
+                let id = row.get("id")?.as_str()?.to_string();
+                let name = row.get("name").and_then(|v| v.as_str()).map(str::to_string);
+                let password = row.get("isEncrypted").and_then(serde_json::Value::as_bool);
+                Some((id, name, password))
+            })
+            .collect(),
+    )
+}
+
+/// The probe proper, factored out of the command so it can be unit
+/// tested over a tempdir with no Tauri runtime.
+async fn databases_encryption_status_inner(
+    state: &EncryptionState,
+    databases_dir: &Path,
+    master_configured: bool,
+    verify: bool,
+) -> DatabasesEncryptionStatus {
+    let mut errors = Vec::new();
+    let unlocked = state.is_unlocked().await;
+    // `<app_data>/databases` -> `<app_data>`. Derived rather than taken
+    // from `key_ring::app_data_dir()`'s process-wide slot so the probe
+    // stays hermetic and testable over a tempdir.
+    let retained = match (verify, databases_dir.parent()) {
+        (true, Some(app_data_dir)) => retained_key_ring(state, app_data_dir).await,
+        _ => RetiredKeyRing::empty(),
+    };
+
+    let index_file = databases_dir.join("index.json");
+    let mut index = classify_generation_ladder(&index_file);
+    if verify && index.at_rest == AtRestState::Envelope {
+        let (open_state, detail) = probe_open_state(
+            state,
+            &retained,
+            ArtifactKind::DatabasesIndex,
+            &index_file,
+            &index,
+        )
+        .await;
+        index.open_state = open_state;
+        index.detail = index.detail.or(detail);
+    }
+
+    let metadata = index_metadata(state, &index_file).await;
+
+    let mut ids = database_ids_on_disk(databases_dir, &mut errors);
+    // An id the index knows about but that has no file on disk is
+    // worth reporting as `missing` rather than silently omitting: it
+    // is the shape a half-finished delete or a failed restore leaves.
+    if let Some(rows) = metadata.as_ref() {
+        for (id, _, _) in rows {
+            if !ids.iter().any(|existing| existing == id) {
+                ids.push(id.clone());
+            }
+        }
+    }
+    ids.sort();
+    ids.dedup();
+
+    let mut databases = Vec::with_capacity(ids.len());
+    let mut summary = DatabasesEncryptionSummary::default();
+
+    for id in ids {
+        let data_path = databases_dir.join(format!("{id}.json"));
+        let mut data = classify_generation_ladder(&data_path);
+        if verify && data.at_rest == AtRestState::Envelope {
+            let (open_state, detail) = probe_open_state(
+                state,
+                &retained,
+                ArtifactKind::Connections,
+                &data_path,
+                &data,
+            )
+            .await;
+            data.open_state = open_state;
+            data.detail = data.detail.or(detail);
+        }
+
+        let trust_path = databases_dir.join(format!("{id}.trust.json"));
+        let mut trust = classify_generation_ladder(&trust_path);
+        let trust = if trust.at_rest == AtRestState::Missing {
+            None
+        } else {
+            if verify && trust.at_rest == AtRestState::Envelope {
+                let (open_state, detail) = probe_open_state(
+                    state,
+                    &retained,
+                    ArtifactKind::TrustStore,
+                    &trust_path,
+                    &trust,
+                )
+                .await;
+                trust.open_state = open_state;
+                trust.detail = trust.detail.or(detail);
+            }
+            Some(trust)
+        };
+
+        summary.total += 1;
+        match data.at_rest {
+            AtRestState::Envelope => summary.encrypted += 1,
+            AtRestState::Plaintext => summary.plaintext += 1,
+            AtRestState::Unreadable | AtRestState::Missing => summary.unreadable += 1,
+        }
+        match data.open_state {
+            OpenState::NoKey => summary.stranded += 1,
+            OpenState::RetainedKey => summary.recoverable_with_retained_key += 1,
+            _ => {}
+        }
+
+        let (name, password_protected) = metadata
+            .as_ref()
+            .and_then(|rows| rows.iter().find(|(row_id, _, _)| row_id == &id))
+            .map(|(_, name, password)| (name.clone(), *password))
+            .unwrap_or((None, None));
+
+        databases.push(DatabaseEncryptionStatus {
+            id,
+            name,
+            password_protected,
+            data,
+            trust,
+        });
+    }
+
+    DatabasesEncryptionStatus {
+        master_configured,
+        unlocked,
+        verified: verify,
+        retained_keys_available: retained.len(),
+        index,
+        databases,
+        summary,
+        errors,
+    }
+}
+
+/// Report, per connection database, whether it is encrypted at rest and
+/// whether this profile still holds a key that opens it.
+///
+/// **Read-only.** The command opens files, reads at most a header (or,
+/// with `verify`, the payload), and writes nothing. It never migrates,
+/// re-keys or repairs anything, and one unreadable file never fails the
+/// call — that artifact reports `unreadable` and the walk continues.
+///
+/// `verify` (default `false`): when false the probe is header-only and
+/// cheap enough to back a list view; every `open_state` is `unknown`.
+/// When true it additionally attempts an AES-GCM open of each envelope
+/// under the live master DEK (and any retained DEK), which is what
+/// distinguishes an encrypted database you can still open from one
+/// stranded by a master-key rotation that missed `databases/`.
+#[tauri::command]
+pub async fn databases_encryption_status(
+    app: AppHandle,
+    enc_state: tauri::State<'_, EncryptionState>,
+    verify: Option<bool>,
+) -> Result<DatabasesEncryptionStatus, String> {
+    let dir = databases_dir(&app)?;
+    // A vault probe that errors must not sink the whole report — the
+    // per-artifact facts are exactly what a caller needs when the
+    // keychain is the thing misbehaving. Degrade to "not configured"
+    // and carry the reason in `errors`.
+    let (configured, configured_error) = match master_encryption_configured(&app, &enc_state).await
+    {
+        Ok(configured) => (configured, None),
+        Err(error) => (false, Some(error)),
+    };
+    let mut status =
+        databases_encryption_status_inner(&enc_state, &dir, configured, verify.unwrap_or(false))
+            .await;
+    if let Some(error) = configured_error {
+        status.errors.push(error);
+    }
+    Ok(status)
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1480,5 +2096,581 @@ mod tests {
         assert_eq!(loaded.source, LoadSource::Backup);
         // Generation 1 is the previous save — the .bak we promoted.
         assert_eq!(loaded.value, serde_json::json!({ "gen": 1 }));
+    }
+    // ══════════════════════════════════════════════════════════════
+    // t74-e3 — `databases_encryption_status` probe
+    //
+    // The probe's whole reason to exist is that "encrypted: true/false"
+    // is not enough. A database can be an intact SORNG envelope that
+    // *no live key opens* — the state a master-key rotation that skipped
+    // `databases/` leaves behind (plan t74 Gap A1). These tests pin all
+    // four states plus the read-only and don't-fail-the-call contracts.
+    // ══════════════════════════════════════════════════════════════
+
+    /// Write a well-formed encrypted artifact under `seed`'s DEK.
+    async fn write_encrypted(
+        path: &Path,
+        artifact: ArtifactKind,
+        seed: u8,
+        value: serde_json::Value,
+    ) {
+        let state = unlocked_state(seed).await;
+        save_payload(&state, artifact, path, &value, true)
+            .await
+            .expect("write encrypted artifact");
+    }
+
+    /// Write a legacy plaintext-P1 artifact (raw JSON under the SDBF
+    /// preamble, no envelope).
+    fn write_plaintext(path: &Path, value: serde_json::Value) {
+        safe_write(path, &payload_json(value)).expect("write plaintext artifact");
+    }
+
+    fn find<'a>(status: &'a DatabasesEncryptionStatus, id: &str) -> &'a DatabaseEncryptionStatus {
+        status
+            .databases
+            .iter()
+            .find(|db| db.id == id)
+            .unwrap_or_else(|| panic!("no probe row for {id}"))
+    }
+
+    #[tokio::test]
+    async fn probe_classifies_envelope_plaintext_and_unreadable_without_erroring() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+
+        write_encrypted(
+            &databases.join("enc.json"),
+            ArtifactKind::Connections,
+            0x31,
+            serde_json::json!({ "connections": [] }),
+        )
+        .await;
+        write_plaintext(
+            &databases.join("plain.json"),
+            serde_json::json!({ "connections": [] }),
+        );
+        // Garbage that is not even a valid SDBF preamble. This is the
+        // file that used to be able to sink a whole scan.
+        std::fs::write(databases.join("broken.json"), b"not an sdbf file at all").unwrap();
+
+        let state = unlocked_state(0x31).await;
+        let status = databases_encryption_status_inner(&state, &databases, true, false).await;
+
+        assert_eq!(find(&status, "enc").data.at_rest, AtRestState::Envelope);
+        assert_eq!(find(&status, "plain").data.at_rest, AtRestState::Plaintext);
+        assert_eq!(
+            find(&status, "broken").data.at_rest,
+            AtRestState::Unreadable
+        );
+        assert!(
+            find(&status, "broken").data.detail.is_some(),
+            "an unreadable artifact must say why"
+        );
+        // One bad file does not fail the call, and does not become a
+        // directory-level error either.
+        assert!(
+            status.errors.is_empty(),
+            "unexpected errors: {:?}",
+            status.errors
+        );
+        assert_eq!(status.summary.total, 3);
+        assert_eq!(status.summary.encrypted, 1);
+        assert_eq!(status.summary.plaintext, 1);
+        assert_eq!(status.summary.unreadable, 1);
+    }
+
+    #[tokio::test]
+    async fn probe_reports_missing_trust_store_as_null() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        write_plaintext(&databases.join("solo.json"), serde_json::json!({}));
+        write_plaintext(&databases.join("withtrust.json"), serde_json::json!({}));
+        write_encrypted(
+            &databases.join("withtrust.trust.json"),
+            ArtifactKind::TrustStore,
+            0x32,
+            serde_json::json!({ "records": [] }),
+        )
+        .await;
+
+        let state = unlocked_state(0x32).await;
+        let status = databases_encryption_status_inner(&state, &databases, true, false).await;
+
+        assert!(find(&status, "solo").trust.is_none());
+        let trust = find(&status, "withtrust").trust.as_ref().unwrap();
+        assert_eq!(trust.at_rest, AtRestState::Envelope);
+        // The trust store must not be mistaken for a database of its own.
+        assert!(
+            status.databases.iter().all(|db| db.id != "withtrust.trust"),
+            "`<id>.trust.json` must not be enumerated as a database"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_is_header_only_until_verify_is_requested() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        write_encrypted(
+            &databases.join("a.json"),
+            ArtifactKind::Connections,
+            0x33,
+            serde_json::json!({}),
+        )
+        .await;
+
+        let state = unlocked_state(0x33).await;
+        let status = databases_encryption_status_inner(&state, &databases, true, false).await;
+        assert!(!status.verified);
+        assert_eq!(find(&status, "a").data.at_rest, AtRestState::Envelope);
+        assert_eq!(
+            find(&status, "a").data.open_state,
+            OpenState::Unknown,
+            "without verify the probe must not claim to know whether a key opens the file"
+        );
+        assert_eq!(status.summary.stranded, 0);
+
+        let verified = databases_encryption_status_inner(&state, &databases, true, true).await;
+        assert!(verified.verified);
+        assert_eq!(find(&verified, "a").data.open_state, OpenState::CurrentKey);
+    }
+
+    #[tokio::test]
+    async fn probe_reports_an_envelope_the_current_key_cannot_open() {
+        // THE state this probe exists to surface: the file is a
+        // perfectly valid, checksummed, non-corrupt SORNG envelope, and
+        // the live master DEK does not open it. A rotation that skipped
+        // `databases/` leaves exactly this. "encrypted: true" would call
+        // it healthy.
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        write_encrypted(
+            &databases.join("stranded.json"),
+            ArtifactKind::Connections,
+            0xA1,
+            serde_json::json!({ "connections": [{ "id": "c1" }] }),
+        )
+        .await;
+        write_encrypted(
+            &databases.join("stranded.trust.json"),
+            ArtifactKind::TrustStore,
+            0xA1,
+            serde_json::json!({ "records": [] }),
+        )
+        .await;
+
+        // A different master DEK — i.e. the post-rotation profile.
+        let rotated = unlocked_state(0xB2).await;
+        let status = databases_encryption_status_inner(&rotated, &databases, true, true).await;
+
+        let row = find(&status, "stranded");
+        assert_eq!(row.data.at_rest, AtRestState::Envelope);
+        assert_eq!(
+            row.data.open_state,
+            OpenState::NoKey,
+            "an envelope no live key opens must be distinguishable from a healthy one"
+        );
+        assert!(
+            row.data.detail.is_some(),
+            "the stranded state must explain itself"
+        );
+        assert_eq!(
+            row.trust.as_ref().unwrap().open_state,
+            OpenState::NoKey,
+            "trust stores are the quietest failure and must be probed too"
+        );
+        assert_eq!(status.summary.stranded, 1);
+        assert_eq!(status.summary.encrypted, 1);
+    }
+
+    #[tokio::test]
+    async fn probe_reports_retained_key_when_a_previous_dek_opens_it() {
+        // t74-e1's retained key ring turns the stranded state above into
+        // a recoverable one, and the difference is worth telling a user:
+        // "left behind by a rotation, re-save to fix" is not the same
+        // message as "the key is gone". This drives the whole path
+        // end-to-end, ring file included.
+        let dir = tempdir().unwrap();
+        let app_data = dir.path();
+        let databases = app_data.join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        let path = databases.join("missed.json");
+        write_encrypted(
+            &path,
+            ArtifactKind::Connections,
+            0xA1,
+            serde_json::json!({ "connections": [] }),
+        )
+        .await;
+
+        // The profile after a rotation to 0xB2 that missed `databases/`.
+        let rotated = unlocked_state(0xB2).await;
+
+        // No ring yet: the file is simply stranded.
+        let stranded = databases_encryption_status_inner(&rotated, &databases, true, true).await;
+        assert_eq!(find(&stranded, "missed").data.open_state, OpenState::NoKey);
+        assert_eq!(stranded.retained_keys_available, 0);
+
+        // Now the rotation retains the outgoing key, as t74-e1 makes it.
+        let mut ring = key_ring::RetiredKeyRing::empty();
+        ring.retire(&[0xA1; 32], 1_700_000_000);
+        std::fs::write(
+            key_ring::ring_path(app_data),
+            key_ring::encode(&rotated, &ring).await.unwrap(),
+        )
+        .unwrap();
+
+        let rescued = databases_encryption_status_inner(&rotated, &databases, true, true).await;
+        assert_eq!(rescued.retained_keys_available, 1);
+        let row = find(&rescued, "missed");
+        assert_eq!(
+            row.data.open_state,
+            OpenState::RetainedKey,
+            "opening only under a retained key is a distinct, recoverable state"
+        );
+        let detail = row.data.detail.as_deref().unwrap();
+        assert!(
+            detail.contains("retained key 1 of 1"),
+            "the message must say how deep in the bounded ring the key was: {detail}"
+        );
+        assert_eq!(rescued.summary.recoverable_with_retained_key, 1);
+        assert_eq!(
+            rescued.summary.stranded, 0,
+            "a recoverable file must not be counted as lost"
+        );
+
+        // A ring that does not hold the right key leaves it stranded.
+        let mut wrong = key_ring::RetiredKeyRing::empty();
+        wrong.retire(&[0xC3; 32], 1_700_000_001);
+        std::fs::write(
+            key_ring::ring_path(app_data),
+            key_ring::encode(&rotated, &wrong).await.unwrap(),
+        )
+        .unwrap();
+        let still_stranded =
+            databases_encryption_status_inner(&rotated, &databases, true, true).await;
+        assert_eq!(
+            find(&still_stranded, "missed").data.open_state,
+            OpenState::NoKey
+        );
+        assert_eq!(still_stranded.summary.stranded, 1);
+    }
+
+    #[tokio::test]
+    async fn probe_reports_locked_rather_than_guessing() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        write_encrypted(
+            &databases.join("a.json"),
+            ArtifactKind::Connections,
+            0x44,
+            serde_json::json!({}),
+        )
+        .await;
+
+        let locked = EncryptionState::new();
+        let status = databases_encryption_status_inner(&locked, &databases, true, true).await;
+        assert!(!status.unlocked);
+        assert_eq!(find(&status, "a").data.at_rest, AtRestState::Envelope);
+        assert_eq!(
+            find(&status, "a").data.open_state,
+            OpenState::Locked,
+            "a locked profile must not be reported as key-less"
+        );
+        assert_eq!(status.summary.stranded, 0);
+        // Names and the Layer-B flag are unavailable while locked, and
+        // that is reported as `null`, not guessed.
+        assert!(find(&status, "a").name.is_none());
+        assert!(find(&status, "a").password_protected.is_none());
+    }
+
+    #[tokio::test]
+    async fn probe_joins_index_metadata_and_separates_the_two_layers() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        let state = unlocked_state(0x55).await;
+
+        // Layer A (at rest) and Layer B (per-database password) are
+        // orthogonal: `pw` is password-protected but its file is an
+        // envelope just like `nopw`'s.
+        save_payload(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &databases.join("index.json"),
+            &serde_json::json!([
+                { "id": "pw", "name": "With password", "isEncrypted": true },
+                { "id": "nopw", "name": "No password", "isEncrypted": false },
+                { "id": "ghost", "name": "Deleted payload", "isEncrypted": false },
+            ]),
+            true,
+        )
+        .await
+        .unwrap();
+        write_encrypted(
+            &databases.join("pw.json"),
+            ArtifactKind::Connections,
+            0x55,
+            serde_json::json!("v2.webcrypto.envelope.string"),
+        )
+        .await;
+        write_encrypted(
+            &databases.join("nopw.json"),
+            ArtifactKind::Connections,
+            0x55,
+            serde_json::json!({ "connections": [] }),
+        )
+        .await;
+
+        let status = databases_encryption_status_inner(&state, &databases, true, true).await;
+
+        assert_eq!(status.index.at_rest, AtRestState::Envelope);
+        assert_eq!(status.index.open_state, OpenState::CurrentKey);
+
+        let pw = find(&status, "pw");
+        assert_eq!(pw.name.as_deref(), Some("With password"));
+        assert_eq!(pw.password_protected, Some(true));
+        assert_eq!(pw.data.at_rest, AtRestState::Envelope);
+
+        let nopw = find(&status, "nopw");
+        assert_eq!(nopw.password_protected, Some(false));
+        assert_eq!(
+            nopw.data.at_rest,
+            AtRestState::Envelope,
+            "encrypted at rest is independent of the per-database password"
+        );
+
+        // An index row whose payload file is gone is reported, not hidden.
+        let ghost = find(&status, "ghost");
+        assert_eq!(ghost.data.at_rest, AtRestState::Missing);
+        assert!(ghost.trust.is_none());
+
+        // Rows are sorted so the UI does not reshuffle between probes.
+        let ids: Vec<&str> = status.databases.iter().map(|db| db.id.as_str()).collect();
+        assert_eq!(ids, vec!["ghost", "nopw", "pw"]);
+    }
+
+    #[tokio::test]
+    async fn probe_falls_back_to_the_recovery_ladder_and_reports_the_source() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        let path = databases.join("ladder.json");
+        let state = unlocked_state(0x66).await;
+        write_encrypted(
+            &path,
+            ArtifactKind::Connections,
+            0x66,
+            serde_json::json!({ "gen": 1 }),
+        )
+        .await;
+        write_encrypted(
+            &path,
+            ArtifactKind::Connections,
+            0x66,
+            serde_json::json!({ "gen": 2 }),
+        )
+        .await;
+        std::fs::remove_file(&path).unwrap();
+
+        let status = databases_encryption_status_inner(&state, &databases, true, true).await;
+        let row = find(&status, "ladder");
+        assert_eq!(row.data.at_rest, AtRestState::Envelope);
+        assert_eq!(
+            row.data.source,
+            Some(LoadSource::Backup),
+            "the probe must report which generation answered, not just that one did"
+        );
+        assert_eq!(row.data.open_state, OpenState::CurrentKey);
+    }
+
+    #[tokio::test]
+    async fn probe_never_writes_anything() {
+        // Read-only is a hard contract: this command is offered to users
+        // whose data may already be stranded, and a probe that "helpfully"
+        // re-saves would promote a legacy plaintext file or rotate a good
+        // `.bak` away. Fingerprint the directory before and after.
+        fn fingerprint(dir: &Path) -> Vec<(String, u64, Vec<u8>)> {
+            let mut out: Vec<(String, u64, Vec<u8>)> = std::fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| {
+                    let entry = entry.unwrap();
+                    let bytes = std::fs::read(entry.path()).unwrap();
+                    (
+                        entry.file_name().to_string_lossy().into_owned(),
+                        bytes.len() as u64,
+                        bytes,
+                    )
+                })
+                .collect();
+            out.sort();
+            out
+        }
+
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        write_plaintext(
+            &databases.join("legacy.json"),
+            serde_json::json!({ "a": 1 }),
+        );
+        write_encrypted(
+            &databases.join("enc.json"),
+            ArtifactKind::Connections,
+            0x77,
+            serde_json::json!({ "b": 2 }),
+        )
+        .await;
+        write_encrypted(
+            &databases.join("stale.json"),
+            ArtifactKind::Connections,
+            0x99,
+            serde_json::json!({ "c": 3 }),
+        )
+        .await;
+        std::fs::write(databases.join("junk.json"), b"garbage").unwrap();
+
+        let before = fingerprint(&databases);
+        let state = unlocked_state(0x77).await;
+        // Both modes, including the one that decrypts.
+        let _ = databases_encryption_status_inner(&state, &databases, true, false).await;
+        let _ = databases_encryption_status_inner(&state, &databases, true, true).await;
+        assert_eq!(
+            before,
+            fingerprint(&databases),
+            "the probe must not create, modify or delete a single byte"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_on_a_profile_with_no_databases_dir_is_empty_not_an_error() {
+        let dir = tempdir().unwrap();
+        let state = unlocked_state(0x88).await;
+        let status =
+            databases_encryption_status_inner(&state, &dir.path().join("databases"), false, true)
+                .await;
+        assert!(status.databases.is_empty());
+        assert!(status.errors.is_empty());
+        assert_eq!(status.index.at_rest, AtRestState::Missing);
+        assert_eq!(status.summary.total, 0);
+        assert!(!status.master_configured);
+    }
+
+    #[tokio::test]
+    async fn probe_sees_a_database_that_survives_only_as_a_recovery_generation() {
+        // `safe_read` serves `<id>.json.bak` / `.v0.bak` when the
+        // canonical file is gone, so a database in that state is still
+        // openable by the app. A probe that only enumerated `<id>.json`
+        // would report it as absent — invisibility again, in the one
+        // state where the user most needs to be told something is off.
+        // `.tmp` is transient and must never become an id.
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        write_plaintext(&databases.join("real.json"), serde_json::json!({}));
+        std::fs::write(databases.join("real.json.tmp"), b"partial").unwrap();
+        write_plaintext(
+            &databases.join("orphan.json"),
+            serde_json::json!({ "o": 1 }),
+        );
+        std::fs::rename(
+            databases.join("orphan.json"),
+            databases.join("orphan.json.v0.bak"),
+        )
+        .unwrap();
+
+        let state = unlocked_state(0x9a).await;
+        let status = databases_encryption_status_inner(&state, &databases, true, false).await;
+        let ids: Vec<&str> = status.databases.iter().map(|db| db.id.as_str()).collect();
+        assert_eq!(ids, vec!["orphan", "real"]);
+        let orphan = find(&status, "orphan");
+        assert_eq!(orphan.data.at_rest, AtRestState::Plaintext);
+        assert_eq!(
+            orphan.data.source,
+            Some(LoadSource::V0Migration),
+            "the probe must name the generation that answered so the UI can warn"
+        );
+    }
+
+    #[test]
+    fn probe_result_serialises_with_the_camel_case_contract_the_ui_consumes() {
+        // e5/e6 render this shape; the discriminants are load-bearing
+        // strings in TS unions, so pin them here rather than in a
+        // frontend snapshot that would not fail this crate's build.
+        let status = DatabasesEncryptionStatus {
+            master_configured: true,
+            unlocked: true,
+            verified: true,
+            retained_keys_available: 2,
+            index: ArtifactEncryptionStatus {
+                file: "index.json".to_string(),
+                at_rest: AtRestState::Envelope,
+                source: Some(LoadSource::V0Migration),
+                open_state: OpenState::CurrentKey,
+                detail: None,
+            },
+            databases: vec![DatabaseEncryptionStatus {
+                id: "a".to_string(),
+                name: Some("Alpha".to_string()),
+                password_protected: Some(false),
+                data: ArtifactEncryptionStatus {
+                    file: "a.json".to_string(),
+                    at_rest: AtRestState::Envelope,
+                    source: Some(LoadSource::Current),
+                    open_state: OpenState::NoKey,
+                    detail: Some("boom".to_string()),
+                },
+                trust: None,
+            }],
+            summary: DatabasesEncryptionSummary {
+                total: 1,
+                encrypted: 1,
+                plaintext: 0,
+                unreadable: 0,
+                stranded: 1,
+                recoverable_with_retained_key: 0,
+            },
+            errors: vec!["nope".to_string()],
+        };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["masterConfigured"], serde_json::json!(true));
+        assert_eq!(json["retainedKeysAvailable"], serde_json::json!(2));
+        assert_eq!(json["index"]["atRest"], serde_json::json!("envelope"));
+        assert_eq!(json["index"]["source"], serde_json::json!("v0-migration"));
+        assert_eq!(json["index"]["openState"], serde_json::json!("current-key"));
+        assert_eq!(
+            json["databases"][0]["passwordProtected"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            json["databases"][0]["data"]["openState"],
+            serde_json::json!("no-key")
+        );
+        assert_eq!(json["databases"][0]["trust"], serde_json::Value::Null);
+        assert_eq!(
+            json["summary"]["recoverableWithRetainedKey"],
+            serde_json::json!(0)
+        );
+        assert_eq!(
+            serde_json::to_value(AtRestState::Unreadable).unwrap(),
+            serde_json::json!("unreadable")
+        );
+        assert_eq!(
+            serde_json::to_value(OpenState::RetainedKey).unwrap(),
+            serde_json::json!("retained-key")
+        );
+        assert_eq!(
+            serde_json::to_value(OpenState::NotEncrypted).unwrap(),
+            serde_json::json!("not-encrypted")
+        );
+        assert_eq!(
+            serde_json::to_value(OpenState::Locked).unwrap(),
+            serde_json::json!("locked")
+        );
     }
 }
