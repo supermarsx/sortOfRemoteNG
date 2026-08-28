@@ -25,7 +25,7 @@ const containsEmbeddedCredential = (value: string): boolean =>
 
 describe("default bulk SSH script catalog", () => {
   it("has stable, unique, complete catalog records", () => {
-    expect(defaultBulkScripts).toHaveLength(94);
+    expect(defaultBulkScripts).toHaveLength(151);
 
     const ids = defaultBulkScripts.map((script) => script.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -322,17 +322,50 @@ describe("default bulk SSH script catalog", () => {
   });
 
   it("keeps Cisco IOS and Arista discovery scripts read-only", () => {
-    for (const category of ["Cisco IOS", "Arista"]) {
-      const discoveryScripts = defaultBulkScripts.filter(
-        (script) =>
-          script.category === category && !script.id.endsWith("-guarded"),
-      );
-      expect(discoveryScripts.length).toBeGreaterThanOrEqual(8);
-      for (const script of discoveryScripts) {
-        for (const command of script.script.split("\n")) {
-          expect(command).toMatch(/^show\s/);
-        }
+    const ciscoDiscovery = defaultBulkScripts.filter(
+      (script) =>
+        script.category === "Cisco IOS" && !script.id.endsWith("-guarded"),
+    );
+    expect(ciscoDiscovery.length).toBeGreaterThanOrEqual(8);
+    for (const script of ciscoDiscovery) {
+      for (const command of script.script.split("\n")) {
+        expect(command).toMatch(/^show\s/);
       }
+    }
+
+    // Arista read-only scripts are classified by content rather than by an id
+    // suffix: they may open with `enable`, but must never reach configuration
+    // mode or run an operational command that mutates live switch state.
+    const aristaDiscovery = defaultBulkScripts.filter(
+      (script) =>
+        script.category === "Arista" && !script.id.endsWith("-guarded"),
+    );
+    expect(aristaDiscovery.length).toBeGreaterThanOrEqual(8);
+    for (const script of aristaDiscovery) {
+      for (const command of script.script.split("\n")) {
+        if (command.trim() === "") continue;
+        expect(command, `${script.id}: ${command}`).toMatch(
+          /^(?:enable$|show\s)/,
+        );
+      }
+      expect(
+        decorateBulkScript(script),
+        `${script.id} must not prompt for confirmation`,
+      ).toMatchObject({ type: "arista", risk: "standard" });
+    }
+
+    // ...and the converse: every Arista script that does mutate anything is
+    // flagged, so the confirmation prompt actually fires.
+    const aristaGuarded = defaultBulkScripts.filter(
+      (script) =>
+        script.category === "Arista" && script.id.endsWith("-guarded"),
+    );
+    expect(aristaGuarded.length).toBeGreaterThanOrEqual(20);
+    for (const script of aristaGuarded) {
+      expect(decorateBulkScript(script), script.id).toMatchObject({
+        type: "arista",
+        risk: "destructive",
+      });
     }
   });
 
@@ -385,7 +418,6 @@ describe("default bulk SSH script catalog", () => {
       "default-cisco-ios-save-guarded",
       "default-hpe-comware-config-save-guarded",
       "default-hpe-aruba-cx-config-save-guarded",
-      "default-arista-eos-save-guarded",
     ]) {
       const script = byId(id).script;
       expect(script).toContain("CONFIRM_SAVE_REQUIRED");
@@ -401,61 +433,468 @@ describe("default bulk SSH script catalog", () => {
     expect(ciscoConfig).toMatch(/^! configure terminal$/m);
   });
 
-  it("ships both Arista third-party transceiver methods disabled, contextualised, and verifiable", () => {
-    const inventory = byId("default-arista-eos-transceiver-inventory");
-    // The verification step both methods point at must stay read-only.
-    expect(decorateBulkScript(inventory)).toMatchObject({
-      type: "arista",
-      risk: "standard",
-    });
-    expect(inventory.script).toContain("show interfaces transceiver");
-    expect(inventory.script).toContain(
-      "show running-config all | include unsupported-transceiver",
-    );
+  it("ships the operator's Arista commands verbatim and runnable", () => {
+    // Each entry: id, the exact command block the operator supplied.
+    const verbatim: Array<[string, string[]]> = [
+      [
+        "default-arista-eos-transceiver-service-emc-guarded",
+        ["service unsupported-transceiver EMC 677096c7", "wr mem"],
+      ],
+      [
+        "default-arista-eos-transceiver-flash-enable-guarded",
+        ["bash", "touch /mnt/flash/enable3px", "sudo reboot"],
+      ],
+      ["default-arista-eos-vlan-create-guarded", ["vlan 101", "   name VOICE"]],
+      ["default-arista-eos-vlan-delete-guarded", ["no vlan 101", "show vlan"]],
+      [
+        "default-arista-eos-access-port-guarded",
+        [
+          "interface Ethernet10",
+          "   description VOICE-DEVICE",
+          "   switchport mode access",
+          "   switchport access vlan 101",
+          "   no shutdown",
+          "show interfaces Ethernet10 switchport",
+          "show interfaces Ethernet10 status",
+        ],
+      ],
+      [
+        "default-arista-eos-access-port-range-guarded",
+        ["interface Ethernet1-24", "show vlan 101", "show interfaces status"],
+      ],
+      [
+        "default-arista-eos-trunk-port-guarded",
+        [
+          "interface Ethernet52",
+          "   description UPLINK",
+          "   switchport mode trunk",
+          "   switchport trunk native vlan 1",
+          "   switchport trunk allowed vlan 1,101,303,351",
+        ],
+      ],
+      [
+        "default-arista-eos-trunk-vlan-add-guarded",
+        ["   switchport trunk allowed vlan add 101"],
+      ],
+      [
+        "default-arista-eos-trunk-vlan-remove-guarded",
+        ["   switchport trunk allowed vlan remove 101"],
+      ],
+      [
+        "default-arista-eos-port-shutdown-guarded",
+        ["interface Ethernet29", "   shutdown"],
+      ],
+      [
+        "default-arista-eos-port-range-shutdown-guarded",
+        ["interface Ethernet29-48", "   shutdown", "show interfaces status"],
+      ],
+      [
+        "default-arista-eos-port-no-shutdown-guarded",
+        ["interface Ethernet29", "   no shutdown"],
+      ],
+      [
+        "default-arista-eos-svi-static-guarded",
+        ["ip routing", "interface Vlan303", "   ip address 10.15.27.1/24"],
+      ],
+      [
+        "default-arista-eos-svi-dhcp-guarded",
+        ["interface Vlan303", "   ip address dhcp"],
+      ],
+      [
+        "default-arista-eos-default-route-guarded",
+        ["ip route 0.0.0.0/0 10.15.27.254", "show ip route 0.0.0.0/0"],
+      ],
+      [
+        "default-arista-eos-management-dhcp-guarded",
+        ["interface Management1", "   ip address dhcp"],
+      ],
+      ["default-arista-eos-show-vlans", ["show vlan", "show vlan brief"]],
+      ["default-arista-eos-show-vlan", ["show vlan 101"]],
+      [
+        "default-arista-eos-show-port-switchport",
+        ["show interfaces Ethernet52 switchport"],
+      ],
+      ["default-arista-eos-show-mac-table", ["show mac address-table"]],
+      [
+        "default-arista-eos-show-mac-table-vlan",
+        ["show mac address-table vlan 101"],
+      ],
+      [
+        "default-arista-eos-find-mac",
+        ["show mac address-table address 0011.2233.4455"],
+      ],
+      ["default-arista-eos-find-ip-arp", ["show arp | include 10.10.10.50"]],
+      [
+        "default-arista-eos-clear-mac-table-guarded",
+        ["clear mac address-table dynamic", "show mac address-table"],
+      ],
+      [
+        "default-arista-eos-clear-port-counters-guarded",
+        [
+          "clear counters Ethernet52/1",
+          "show interfaces Ethernet52/1 counters",
+          "show interfaces Ethernet52/1 phy detail",
+        ],
+      ],
+      [
+        "default-arista-eos-port-diagnostics",
+        [
+          "show interfaces Ethernet52/1 phy detail",
+          "show interfaces Ethernet52/1 transceiver",
+          "show running-config interfaces Ethernet52/1",
+          "show logging | include Ethernet52",
+        ],
+      ],
+      [
+        "default-arista-eos-interface-error-counters",
+        ["show interfaces counters errors"],
+      ],
+      [
+        "default-arista-eos-port-counters",
+        ["show interfaces Ethernet52/1 counters"],
+      ],
+      ["default-arista-eos-show-lldp-neighbors", ["show lldp neighbors"]],
+      [
+        "default-arista-eos-show-lldp-neighbors-detail",
+        ["show lldp neighbors detail"],
+      ],
+      [
+        "default-arista-eos-port-occupancy",
+        [
+          "show interfaces Ethernet10 status",
+          "show lldp neighbors Ethernet10 detail",
+          "show mac address-table interface Ethernet10",
+        ],
+      ],
+      [
+        "default-arista-eos-environment-temperature",
+        ["show environment temperature"],
+      ],
+      ["default-arista-eos-environment-cooling", ["show environment cooling"]],
+      ["default-arista-eos-environment-power", ["show environment power"]],
+      ["default-arista-eos-environment-all", ["show environment all"]],
+    ];
 
-    const config = byId("default-arista-eos-third-party-transceiver-guarded");
-    const flash = byId(
-      "default-arista-eos-third-party-transceiver-flash-guarded",
-    );
-
-    for (const script of [config, flash]) {
-      // Every state-changing line ships commented out.
-      for (const command of script.script.split("\n")) {
-        expect(command, `${script.id}: ${command}`).toMatch(/^(?:show\s|! )/);
+    for (const [id, commands] of verbatim) {
+      const script = byId(id).script;
+      for (const command of commands) {
+        // Exact line match: their values must survive, unindented and unaltered.
+        expect(
+          script.split("\n"),
+          `${id} must contain the exact line ${JSON.stringify(command)}`,
+        ).toContain(command);
       }
-      // Each method must name the shell it runs in and how to confirm success.
-      expect(script.script).toContain("! CONTEXT:");
-      expect(script.script).toContain("! VERIFY:");
-      expect(decorateBulkScript(script)).toMatchObject({
-        type: "arista",
-        risk: "destructive",
-      });
+      // Their real values are never replaced by a placeholder.
+      expect(script, id).not.toMatch(/<[A-Z_]+>/);
+    }
+  });
+
+  it("gives Arista config scripts the EOS CLI shape their context requires", () => {
+    const configScripts = defaultBulkScripts.filter(
+      (script) =>
+        script.category === "Arista" &&
+        script.script.includes("configure terminal"),
+    );
+    expect(configScripts.length).toBeGreaterThanOrEqual(20);
+
+    for (const script of configScripts) {
+      const body = script.script.split("\n");
+      // EOS CLI context: enter enable, then config mode, close it, persist it.
+      expect(body[0], script.id).toBe("enable");
+      expect(body[1], script.id).toBe("configure terminal");
+      // `end` closes a sub-mode. The transceiver service scripts set a global
+      // config line with no sub-block, and the operator's own command sequence
+      // goes straight from it to `wr mem` — shipped verbatim rather than
+      // "corrected" with an `end` they did not write.
+      if (body.some((line) => /^\s+\S/.test(line))) {
+        expect(body, script.id).toContain("end");
+      }
+      expect(
+        body.some((line) => line === "write memory" || line === "wr mem"),
+        `${script.id} must persist its change`,
+      ).toBe(true);
+      // Every config change verifies itself with a trailing show.
+      expect(body[body.length - 1], script.id).toMatch(/^show\s/);
+      // Config mode is the EOS CLI, never the underlying bash shell.
+      expect(script.script, script.id).not.toMatch(/^bash$/m);
+    }
+  });
+
+  it("keeps the two transceiver methods in their own execution contexts", () => {
+    const flash = byId("default-arista-eos-transceiver-flash-enable-guarded");
+    // Method A leaves the EOS CLI for the underlying Linux shell and reboots.
+    expect(flash.script.split("\n")).toEqual([
+      "enable",
+      "",
+      "bash",
+      "",
+      "touch /mnt/flash/enable3px",
+      "sudo reboot",
+    ]);
+    expect(flash.script).not.toContain("configure terminal");
+    expect(flash.name).toContain("REBOOTS SWITCH");
+    expect(flash.description).toContain("SERVICE AFFECTING");
+    expect(decorateBulkScript(flash).risk).toBe("destructive");
+
+    // Method B stays in the EOS CLI and never touches bash.
+    const emc = byId("default-arista-eos-transceiver-service-emc-guarded");
+    expect(emc.script).toContain(
+      "service unsupported-transceiver EMC 677096c7",
+    );
+    expect(emc.script).not.toMatch(/^bash$/m);
+    expect(emc.script).not.toContain("reboot");
+    expect(decorateBulkScript(emc).risk).toBe("destructive");
+    // The label/key pairing is explained rather than presented as universal.
+    expect(emc.description).toContain("only with the label EMC");
+
+    // ...and the parameterised sibling carries no concrete key.
+    const custom = byId(
+      "default-arista-eos-transceiver-service-custom-guarded",
+    );
+    expect(custom.script).toContain(
+      "service unsupported-transceiver <LABEL> <KEY>",
+    );
+    expect(custom.script).not.toContain("677096c7");
+    expect(custom.description).toContain("no universal value");
+  });
+
+  it("parameterises Arista variants completely, leaving no concrete values behind", () => {
+    // id -> [placeholders it must use, literals it must not retain]
+    const parameterised: Array<[string, string[], string[]]> = [
+      ["default-arista-eos-show-vlan-custom", ["<VLAN_ID>"], ["101"]],
+      [
+        "default-arista-eos-show-port-switchport-custom",
+        ["<INTERFACE>"],
+        ["Ethernet52"],
+      ],
+      ["default-arista-eos-show-mac-table-vlan-custom", ["<VLAN_ID>"], ["101"]],
+      [
+        "default-arista-eos-find-mac-custom",
+        ["<MAC_ADDRESS>"],
+        ["0011.2233.4455"],
+      ],
+      [
+        "default-arista-eos-find-ip-arp-custom",
+        ["<IP_ADDRESS>"],
+        ["10.10.10.50"],
+      ],
+      [
+        "default-arista-eos-port-counters-custom",
+        ["<INTERFACE>"],
+        ["Ethernet52/1"],
+      ],
+      [
+        "default-arista-eos-port-occupancy-custom",
+        ["<INTERFACE>"],
+        ["Ethernet10"],
+      ],
+      [
+        "default-arista-eos-clear-port-counters-custom-guarded",
+        ["<INTERFACE>"],
+        ["Ethernet52/1"],
+      ],
+      [
+        "default-arista-eos-vlan-create-custom-guarded",
+        ["<VLAN_ID>", "<VLAN_NAME>"],
+        ["101", "VOICE"],
+      ],
+      ["default-arista-eos-vlan-delete-custom-guarded", ["<VLAN_ID>"], ["101"]],
+      [
+        "default-arista-eos-access-port-custom-guarded",
+        ["<INTERFACE>", "<DESCRIPTION>", "<VLAN_ID>"],
+        ["Ethernet10", "VOICE-DEVICE", "101"],
+      ],
+      [
+        "default-arista-eos-access-port-range-custom-guarded",
+        ["<INTERFACE_RANGE>", "<VLAN_ID>"],
+        ["Ethernet1-24", "101"],
+      ],
+      [
+        "default-arista-eos-trunk-port-custom-guarded",
+        ["<INTERFACE>", "<DESCRIPTION>", "<NATIVE_VLAN>", "<ALLOWED_VLANS>"],
+        ["Ethernet52", "UPLINK", "1,101,303,351"],
+      ],
+      [
+        "default-arista-eos-trunk-vlan-add-custom-guarded",
+        ["<INTERFACE>", "<VLAN_ID>"],
+        ["Ethernet52", "101"],
+      ],
+      [
+        "default-arista-eos-trunk-vlan-remove-custom-guarded",
+        ["<INTERFACE>", "<VLAN_ID>"],
+        ["Ethernet52", "101"],
+      ],
+      [
+        "default-arista-eos-port-shutdown-custom-guarded",
+        ["<INTERFACE>"],
+        ["Ethernet29"],
+      ],
+      [
+        "default-arista-eos-port-range-shutdown-custom-guarded",
+        ["<INTERFACE_RANGE>"],
+        ["Ethernet29-48"],
+      ],
+      [
+        "default-arista-eos-port-no-shutdown-custom-guarded",
+        ["<INTERFACE>"],
+        ["Ethernet29"],
+      ],
+      [
+        "default-arista-eos-port-range-no-shutdown-custom-guarded",
+        ["<INTERFACE_RANGE>"],
+        ["Ethernet29-48"],
+      ],
+      [
+        "default-arista-eos-svi-static-custom-guarded",
+        ["<VLAN_ID>", "<IP_CIDR>"],
+        ["303", "10.15.27.1/24"],
+      ],
+      ["default-arista-eos-svi-dhcp-custom-guarded", ["<VLAN_ID>"], ["303"]],
+      [
+        "default-arista-eos-static-route-custom-guarded",
+        ["<PREFIX>", "<NEXT_HOP>"],
+        ["10.15.27.254"],
+      ],
+    ];
+
+    for (const [id, placeholders, literals] of parameterised) {
+      const script = byId(id);
+      for (const placeholder of placeholders) {
+        expect(script.script, `${id} must use ${placeholder}`).toContain(
+          placeholder,
+        );
+        // The description documents each token, since there is no variable UI.
+        expect(
+          script.description,
+          `${id} must document ${placeholder}`,
+        ).toContain(placeholder);
+      }
+      for (const literal of literals) {
+        expect(
+          script.script,
+          `${id} must not retain the concrete value ${literal}`,
+        ).not.toContain(literal);
+      }
+      expect(script.name, id).toContain("(Custom)");
     }
 
-    // Method B stays in the EOS CLI, persists with write memory, and treats the
-    // service key as label-specific rather than a constant.
-    expect(config.script).toMatch(/^! configure terminal$/m);
-    expect(config.script).toMatch(
-      /^! service unsupported-transceiver <LABEL> <KEY>$/m,
-    );
-    expect(config.script).toMatch(/^! write memory$/m);
-    expect(config.script).toContain("not a universal value");
-    expect(config.script).toContain("is rejected for any other label");
-    expect(config.script).not.toMatch(/^service unsupported-transceiver/m);
-    // The example pair must never be presented as the value to use verbatim.
-    expect(config.script).not.toMatch(
-      /^! service unsupported-transceiver EMC 677096c7$/m,
-    );
-    // No reboot for the config-service method.
-    expect(config.script).not.toMatch(/reboot/i);
+    // Every placeholder token used anywhere is documented in its description.
+    for (const script of defaultBulkScripts.filter(
+      (candidate) => candidate.category === "Arista",
+    )) {
+      for (const token of script.script.match(/<[A-Z_]+>/g) ?? []) {
+        expect(script.description, `${script.id} / ${token}`).toContain(token);
+      }
+    }
+  });
 
-    // Method A drops to bash, needs the flash flag, and reboots the switch.
-    expect(flash.script).toMatch(/^! bash$/m);
-    expect(flash.script).toMatch(/^! touch \/mnt\/flash\/enable3px$/m);
-    expect(flash.script).toMatch(/^! sudo reboot$/m);
-    expect(flash.name).toContain("Reboot");
-    expect(flash.script).toContain("SERVICE AFFECTING");
-    expect(flash.script).toContain("maintenance window");
+  it("substitutes Arista placeholders into every position, pipes included", () => {
+    const substitute = (script: string, values: Record<string, string>) =>
+      script.replace(/<([A-Z_]+)>/g, (match, name: string) => {
+        expect(values, `unexpected placeholder ${match}`).toHaveProperty(name);
+        return values[name];
+      });
+
+    // The EOS `| include` filter is interpreted by the switch CLI, not a shell.
+    // Substituting after the pipe must leave the filter intact.
+    const arp = substitute(
+      byId("default-arista-eos-find-ip-arp-custom").script,
+      {
+        IP_ADDRESS: "10.10.10.50",
+      },
+    );
+    expect(arp).toBe(byId("default-arista-eos-find-ip-arp").script);
+    expect(arp).toContain("show arp | include 10.10.10.50");
+
+    // The diagnostics bundle keeps the log filter separate from the interface:
+    // syslog references the parent port, not the breakout lane.
+    const diagnostics = byId(
+      "default-arista-eos-port-diagnostics-custom",
+    ).script;
+    expect(diagnostics).toContain("show logging | include <LOG_FILTER>");
+    expect(diagnostics).not.toContain("show logging | include <INTERFACE>");
+    const resolved = substitute(diagnostics, {
+      INTERFACE: "Ethernet52/1",
+      LOG_FILTER: "Ethernet52",
+    });
+    expect(resolved).toBe(byId("default-arista-eos-port-diagnostics").script);
+    expect(resolved).toContain("show logging | include Ethernet52");
+    expect(resolved).not.toContain("show logging | include Ethernet52/1");
+
+    // A single-token substitution reproduces the ready-to-run script exactly.
+    for (const [customId, plainId, values] of [
+      [
+        "default-arista-eos-vlan-create-custom-guarded",
+        "default-arista-eos-vlan-create-guarded",
+        { VLAN_ID: "101", VLAN_NAME: "VOICE" },
+      ],
+      [
+        "default-arista-eos-trunk-vlan-add-custom-guarded",
+        "default-arista-eos-trunk-vlan-add-guarded",
+        { INTERFACE: "Ethernet52", VLAN_ID: "101" },
+      ],
+      [
+        "default-arista-eos-port-range-shutdown-custom-guarded",
+        "default-arista-eos-port-range-shutdown-guarded",
+        { INTERFACE_RANGE: "Ethernet29-48" },
+      ],
+      [
+        "default-arista-eos-static-route-custom-guarded",
+        "default-arista-eos-default-route-guarded",
+        { PREFIX: "0.0.0.0/0", NEXT_HOP: "10.15.27.254" },
+      ],
+    ] as Array<[string, string, Record<string, string>]>) {
+      expect(
+        substitute(byId(customId).script, values),
+        `${customId} must resolve to ${plainId}`,
+      ).toBe(byId(plainId).script);
+    }
+  });
+
+  it("classifies Arista scripts by what they actually do, not by their prefix", () => {
+    // Operational `clear` commands mutate live state without configure
+    // terminal; grouping them with the `show` scripts would be wrong.
+    for (const id of [
+      "default-arista-eos-clear-mac-table-guarded",
+      "default-arista-eos-clear-port-counters-guarded",
+      "default-arista-eos-clear-port-counters-custom-guarded",
+    ]) {
+      const script = byId(id);
+      expect(script.script, id).not.toContain("configure terminal");
+      expect(script.script, id).not.toContain("write memory");
+      expect(decorateBulkScript(script).risk, id).toBe("destructive");
+      expect(script.description, id).toContain("NOT read-only");
+    }
+
+    // The two `clear` scripts have different kinds of risk, and say so.
+    expect(
+      byId("default-arista-eos-clear-mac-table-guarded").description,
+    ).toMatch(/self-healing/);
+    expect(
+      byId("default-arista-eos-clear-port-counters-guarded").description,
+    ).toMatch(/zero traffic impact/);
+
+    // The highest-consequence scripts name their consequence.
+    expect(
+      byId("default-arista-eos-management-dhcp-guarded").description,
+    ).toContain("MOST DANGEROUS SCRIPT IN THIS LIBRARY");
+    expect(byId("default-arista-eos-trunk-port-guarded").description).toContain(
+      "REPLACES the allowed list",
+    );
+    expect(
+      byId("default-arista-eos-trunk-vlan-add-guarded").description,
+    ).toContain("appends");
+    // Range scripts state how many ports they touch.
+    expect(
+      byId("default-arista-eos-port-range-shutdown-guarded").description,
+    ).toContain("20 ports");
+    expect(
+      byId("default-arista-eos-access-port-range-guarded").description,
+    ).toContain("24 live ports");
+    // The global scope of `ip routing` is called out separately from the SVI.
+    expect(byId("default-arista-eos-svi-static-guarded").description).toContain(
+      "GLOBAL, switch-wide",
+    );
   });
 
   it("treats reboot-class commands as destructive behind privilege, keyword, and comment prefixes", () => {

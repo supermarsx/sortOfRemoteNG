@@ -122,8 +122,10 @@ describe("useBulkSSHCommander script-library lifecycle", () => {
     // Built-ins are present...
     for (const id of [
       "default-arista-eos-transceiver-inventory",
-      "default-arista-eos-third-party-transceiver-guarded",
-      "default-arista-eos-third-party-transceiver-flash-guarded",
+      "default-arista-eos-transceiver-service-emc-guarded",
+      "default-arista-eos-transceiver-flash-enable-guarded",
+      "default-arista-eos-vlan-create-guarded",
+      "default-arista-eos-show-vlans",
     ]) {
       expect(byScriptId(id), id).toHaveLength(1);
     }

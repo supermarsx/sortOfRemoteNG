@@ -102,8 +102,12 @@ const destructivePatterns = [
   /(?:^|[;&|]\s*)(?:kill\s+-9|pkill|killall)\b/im,
   /\bDROP\s+(?:DATABASE|SCHEMA|TABLE)\b/i,
   /(?:^|\n)\s*[!#]?\s*(?:configure\s+terminal|conf\s+t|system-view)\s*$/im,
-  /(?:^|\n)\s*[!#]?\s*(?:write\s+memory|copy\s+running-config\s+startup-config|save(?:\s+(?:force|safely))?|commit(?:\s+confirmed)?)\s*$/im,
+  /(?:^|\n)\s*[!#]?\s*(?:write\s+memory|wr\s+mem|copy\s+running-config\s+startup-config|save(?:\s+(?:force|safely))?|commit(?:\s+confirmed)?)\s*$/im,
   /(?:^|\n)\s*[!#]?\s*(?:erase\s+startup-config|reset\s+saved-configuration|reload)\b/im,
+  // Network-CLI `clear` commands mutate live switch state (forwarding tables,
+  // counters) without entering configuration mode, so nothing else here would
+  // catch them and they must not be grouped with the read-only `show` scripts.
+  /(?:^|\n)\s*[!#]?\s*clear\s+(?:mac\s+address-table|counters|arp|logging|ip\s+route|ip\s+bgp)\b/im,
   /\b(?:adb\s+shell\s+)?(?:pm|cmd\s+package)\s+(?:uninstall|disable-user|clear|trim-caches)\b/im,
   /\badb\s+shell\s+(?:rm|reboot\s+(?:bootloader|recovery))\b/im,
   /\bfastboot\s+(?:erase|wipe|delete|format)\b/im,

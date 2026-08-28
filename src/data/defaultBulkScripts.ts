@@ -1,32 +1,11 @@
-export interface SavedBulkScript {
-  id: string;
-  name: string;
-  description: string;
-  script: string;
-  category: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import {
+  defineDefaultScript,
+  lines,
+  type SavedBulkScript,
+} from "./bulkScriptDefinition";
+import { defaultAristaEosScripts } from "./defaultAristaEosScripts";
 
-const DEFAULT_SCRIPT_TIMESTAMP = "2026-08-10T00:00:00.000Z";
-
-const lines = (...value: string[]): string => value.join("\n");
-
-const defineDefaultScript = (
-  id: string,
-  name: string,
-  description: string,
-  category: string,
-  script: string,
-): SavedBulkScript => ({
-  id,
-  name,
-  description,
-  category,
-  script,
-  createdAt: DEFAULT_SCRIPT_TIMESTAMP,
-  updatedAt: DEFAULT_SCRIPT_TIMESTAMP,
-});
+export type { SavedBulkScript };
 
 /**
  * Curated commands for the Bulk SSH Commander.
@@ -1021,170 +1000,6 @@ export const defaultBulkScripts: SavedBulkScript[] = [
     ),
   ),
   defineDefaultScript(
-    "default-arista-eos-version-inventory",
-    "Arista EOS — Version and Inventory",
-    "Collect EOS software, platform, module, transceiver, and serial-number inventory",
-    "Arista",
-    lines(
-      "show version",
-      "show inventory",
-      "show module",
-      "show interfaces transceiver",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-interfaces",
-    "Arista EOS — Interface Health",
-    "Audit EOS interface state, addressing, descriptions, counters, and errors",
-    "Arista",
-    lines(
-      "show interfaces status",
-      "show ip interface brief",
-      "show interfaces description",
-      "show interfaces counters errors",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-mlag",
-    "Arista EOS — MLAG and Port Channels",
-    "Inspect MLAG domain, peer, consistency, and port-channel health",
-    "Arista",
-    lines(
-      "show mlag",
-      "show mlag detail",
-      "show mlag interfaces",
-      "show port-channel summary",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-vlan-stp",
-    "Arista EOS — VLAN and Spanning Tree",
-    "Audit EOS VLAN membership, trunks, STP state, and root bridges",
-    "Arista",
-    lines(
-      "show vlan",
-      "show interfaces trunk",
-      "show spanning-tree summary",
-      "show spanning-tree root",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-lldp",
-    "Arista EOS — LLDP Neighbors",
-    "Discover EOS LLDP neighbors and management addressing",
-    "Arista",
-    lines("show lldp neighbors", "show lldp neighbors detail"),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-bgp-routes",
-    "Arista EOS — BGP and Routes",
-    "Audit BGP peers, IPv4/IPv6 routes, and route summaries",
-    "Arista",
-    lines(
-      "show ip bgp summary",
-      "show bgp ipv6 unicast summary",
-      "show ip route summary",
-      "show ip route",
-      "show ipv6 route",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-logs-environment",
-    "Arista EOS — Logs and Environment",
-    "Review EOS logs, hardware environment, CPU, and memory health",
-    "Arista",
-    lines(
-      "show logging last 100",
-      "show environment all",
-      "show processes top once",
-      "show version detail",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-config-audit",
-    "Arista EOS — Configuration Audit",
-    "Read EOS running/startup configuration and configuration-session state",
-    "Arista",
-    lines(
-      "show running-config",
-      "show startup-config",
-      "show configuration sessions",
-      "show running-config diffs",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-save-guarded",
-    "Arista EOS — Save Configuration (Disabled Template)",
-    "Review the running configuration diff; save remains commented until manually enabled",
-    "Arista",
-    lines(
-      "show running-config diffs",
-      "! CONFIRM_SAVE_REQUIRED: review the diff, then remove ! manually",
-      "! copy running-config startup-config",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-transceiver-inventory",
-    "Arista EOS — Transceiver Inventory and Third-Party Status",
-    "Read-only audit of installed optics, link and errdisable state, and any configured unsupported-transceiver service entry; also the verification step for both third-party optic methods",
-    "Arista",
-    lines(
-      "show version",
-      "show inventory",
-      "show interfaces transceiver",
-      "show interfaces transceiver detail",
-      "show interfaces transceiver properties",
-      "show interfaces status",
-      "show interfaces status errdisabled",
-      "show running-config all | include unsupported-transceiver",
-      "show logging | include [Tt]ransceiver",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-third-party-transceiver-guarded",
-    "Arista EOS — Enable Third-Party Transceivers, Config Service (Disabled Template)",
-    "Accept non-Arista optics from the EOS CLI with a per-label service key; no reboot required, and the configuration lines stay commented until manually enabled",
-    "Arista",
-    lines(
-      "show version",
-      "show interfaces transceiver detail",
-      "show running-config all | include unsupported-transceiver",
-      "! CONTEXT: EOS CLI in enable mode. Do not run these in the underlying bash shell.",
-      "! CONFIRM_CONFIG_REQUIRED: review the output above, then remove ! manually from the lines below.",
-      "! The key is derived from the label you choose, so it is NOT a constant: a key issued for one",
-      "! label is rejected for any other label. Obtain the label/key pair for your optic from Arista",
-      "! TAC or your Arista account team. The pair EMC 677096c7 is one known example, not a universal value.",
-      "! configure terminal",
-      "! service unsupported-transceiver <LABEL> <KEY>",
-      "! end",
-      "! CONFIRM_SAVE_REQUIRED: confirm the optic linked before persisting the change.",
-      "! write memory",
-      "! VERIFY: re-run the transceiver inventory script. The service line must appear in",
-      "! running-config and the optic must report media type and diagnostics rather than errdisable.",
-    ),
-  ),
-  defineDefaultScript(
-    "default-arista-eos-third-party-transceiver-flash-guarded",
-    "Arista EOS — Enable Third-Party Transceivers, Flash Flag (Reboot, Disabled Template)",
-    "Accept non-Arista optics by creating the /mnt/flash/enable3px flag file from the underlying bash shell; REBOOTS the switch, so every command stays commented until manually enabled",
-    "Arista",
-    lines(
-      "show version",
-      "show interfaces transceiver detail",
-      "! SERVICE AFFECTING: this method only takes effect after a switch reboot. All traffic through",
-      "! this switch stops for the duration. Schedule a maintenance window before enabling these lines.",
-      "! CONTEXT: the flag file is created in the underlying Linux bash shell, not the EOS CLI. Run",
-      "! bash first from enable mode, then run the remaining commands one at a time.",
-      "! CONFIRM_REBOOT_REQUIRED: review the output above, then remove ! manually from the lines below.",
-      "! bash",
-      "! touch /mnt/flash/enable3px",
-      "! sudo reboot",
-      "! VERIFY: after the switch returns, re-run the transceiver inventory script. The optic must",
-      "! report media type and diagnostics rather than errdisable. /mnt/flash survives reboots, so the",
-      "! flag persists; remove the file and reboot again to revert.",
-    ),
-  ),
-  defineDefaultScript(
     "default-android-device-security",
     "Android — Device and Security Info",
     "Collect device identity, build, patch level, verified boot, SELinux, and encryption state",
@@ -1329,4 +1144,5 @@ export const defaultBulkScripts: SavedBulkScript[] = [
       "df -h /data /sdcard 2>/dev/null || df -h",
     ),
   ),
+  ...defaultAristaEosScripts,
 ];
