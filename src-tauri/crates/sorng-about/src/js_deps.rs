@@ -58,7 +58,7 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("globals", "17.11.0", "MIT", "Linting"),
     ("jsdom", "29.1.1", "MIT", "Testing"),
     ("postcss", "8.5.26", "MIT", "CSS & Styling"),
-    ("prettier", "3.8.3", "MIT", "Formatting"),
+    ("prettier", "3.9.6", "MIT", "Formatting"),
     ("tailwindcss", "4.3.3", "MIT", "CSS & Styling"),
     ("turbo", "2.10.12", "MIT", "Monorepo"),
     ("typescript", "6.0.3", "Apache-2.0", "TypeScript"),

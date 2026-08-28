@@ -231,11 +231,17 @@ function createHermeticOperations({ escapeBoundary = false } = {}) {
     react: { spec: "^19.2.9", version: "19.2.9" },
     "@types/react": { spec: "^19.2.19", version: "19.2.19" },
     "@webgpu/types": { spec: "^0.1.72", version: "0.1.72" },
+    prettier: { spec: "^3.9.6", version: "3.9.6" },
   };
 
   const operations = {
     updateNpm({ repositoryRoot, eligible }) {
-      assert.deepEqual(eligible, ["@types/react", "@webgpu/types", "react"]);
+      assert.deepEqual(eligible, [
+        "@types/react",
+        "@webgpu/types",
+        "prettier",
+        "react",
+      ]);
       const manifestFile = path.join(repositoryRoot, "package.json");
       const lockFile = path.join(repositoryRoot, "package-lock.json");
       const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
@@ -352,10 +358,10 @@ test("proves exact npm/Bun direct parity and all explicit holds", () => {
     expectedCompatibleHolds(),
   );
   assert.equal(
-    result.compatibleHolds.prettier.reason,
-    "liquid-markdown-corruption",
+    Object.hasOwn(result.compatibleHolds, "prettier"),
+    false,
+    "prettier is no longer held: 3.9.6 formats Markdown/Liquid identically to 3.8.3",
   );
-  assert.deepEqual(result.compatibleHolds.prettier.allowedVersions, ["3.8.3"]);
   for (const name of [
     "@wdio/cli",
     "@wdio/local-runner",
@@ -403,18 +409,21 @@ test("fails closed on npm/Bun drift and moved exact or compatible holds", () => 
     /vitest hold moved/,
   );
 
-  const prettierManifest = fixtureManifest();
-  prettierManifest.devDependencies.prettier = "^3.9.6";
-  const prettierVersions = { ...fixtureVersions(), prettier: "3.9.6" };
+  const expectWdioManifest = fixtureManifest();
+  expectWdioManifest.devDependencies["expect-webdriverio"] = "^5.7.0";
+  const expectWdioVersions = {
+    ...fixtureVersions(),
+    "expect-webdriverio": "5.7.0",
+  };
   assert.throws(
     () =>
       inspectJsLockParity({
-        packageJson: prettierManifest,
-        packageLock: fixtureNpmLock(prettierManifest, prettierVersions),
-        bunLock: fixtureBunLock(prettierManifest, prettierVersions),
+        packageJson: expectWdioManifest,
+        packageLock: fixtureNpmLock(expectWdioManifest, expectWdioVersions),
+        bunLock: fixtureBunLock(expectWdioManifest, expectWdioVersions),
         bunVersion: "1.3.11",
       }),
-    /prettier compatible hold moved/,
+    /expect-webdriverio compatible hold moved/,
   );
 
   const wdioVersions = { ...fixtureVersions(), "@wdio/cli": "9.30.1" };
@@ -432,7 +441,7 @@ test("fails closed on npm/Bun drift and moved exact or compatible holds", () => 
 
 test("selects only compatible ranges and reports every explicit hold reason", () => {
   assert.deepEqual(buildCompatibleUpdatePolicy(fixtureManifest()), {
-    eligible: ["@types/react", "@webgpu/types", "react"],
+    eligible: ["@types/react", "@webgpu/types", "prettier", "react"],
     exactHolds: ["@types/node", "@vitest/coverage-v8", "vitest"],
     crossGraphHolds: ["@tauri-apps/api"],
     explicitHolds: expectedCompatibleHolds(),
@@ -466,8 +475,8 @@ test("rejects majors, range-boundary crossings, every hold class, and metadata d
     ["exact", (value) => (value.devDependencies.vitest = "4.1.10"), /held/],
     [
       "explicit compatible",
-      (value) => (value.devDependencies.prettier = "^3.9.6"),
-      /prettier is held/,
+      (value) => (value.devDependencies["expect-webdriverio"] = "^5.7.0"),
+      /expect-webdriverio is held/,
     ],
     [
       "tauri",
@@ -528,7 +537,7 @@ test("accepts compatible resolved movement but rejects held or major resolution 
 
   const explicitHeldVersions = {
     ...fixtureVersions(),
-    prettier: "3.9.6",
+    "expect-webdriverio": "5.7.0",
   };
   assert.throws(
     () =>
@@ -538,7 +547,7 @@ test("accepts compatible resolved movement but rejects held or major resolution 
         afterManifest: beforeManifest,
         afterLock: fixtureNpmLock(beforeManifest, explicitHeldVersions),
       }),
-    /prettier explicit compatible hold resolution is not allowed/,
+    /expect-webdriverio explicit compatible hold resolution is not allowed/,
   );
 
   const majorVersions = { ...fixtureVersions(), react: "20.0.0" };

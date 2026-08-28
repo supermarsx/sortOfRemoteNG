@@ -64,15 +64,6 @@ export const JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS = Object.freeze({
     allowedVersions: ["5.6.5"],
     ...DESKTOP_E2E_HOLD,
   }),
-  prettier: defineCompatibleHold({
-    spec: "^3.8.3",
-    allowedVersions: ["3.8.3"],
-    reason: "liquid-markdown-corruption",
-    sources: [
-      "https://github.com/prettier/prettier/issues/19724",
-      "https://github.com/prettier/prettier/pull/19730",
-    ],
-  }),
   webdriverio: defineCompatibleHold({
     spec: "^9.27.1",
     allowedVersions: ["9.27.1"],
