@@ -367,7 +367,12 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
           }
         />
         <Card>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          {/* The grid is the control: `defaultTabLayout` has no single input to
+              carry `settingKey`, so the container is the search anchor. */}
+          <div
+            data-setting-key="defaultTabLayout"
+            className="grid grid-cols-2 md:grid-cols-5 gap-2"
+          >
             {DEFAULT_TAB_LAYOUT_CONFIG.map((option) => (
               <button
                 key={option.value}
@@ -411,7 +416,11 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
           }
         />
         <Card>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {/* Anchor for search navigation — see `defaultTabLayout` above. */}
+          <div
+            data-setting-key="tabGrouping"
+            className="grid grid-cols-2 md:grid-cols-4 gap-2"
+          >
             {TAB_GROUPING_CONFIG.map((option) => (
               <button
                 key={option.value}

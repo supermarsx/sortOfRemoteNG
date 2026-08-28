@@ -148,6 +148,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               "settingsGeneral.confirmMainAppClose",
               "Confirm main app close",
             )}
+            settingKey="confirmMainAppClose"
             description={t(
               "settingsGeneral.confirmMainAppCloseDescription",
               "Show a confirmation dialog before closing the main window",
@@ -178,6 +179,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             )}
             checked={settings.detectUnexpectedClose ?? true}
             onChange={(v) => updateSettings({ detectUnexpectedClose: v })}
+            settingKey="detectUnexpectedClose"
             infoTooltip={t(
               "settingsGeneral.detectUnexpectedCloseTooltip",
               "Monitor for abnormal application exits and offer session recovery options on next launch.",
@@ -227,6 +229,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             )}
             checked={settings.hostnameOverride}
             onChange={(v) => updateSettings({ hostnameOverride: v })}
+            settingKey="hostnameOverride"
             infoTooltip={t(
               "settingsGeneral.hostnameOverrideTooltip",
               "Display the resolved server hostname in tab titles instead of the user-defined connection name.",

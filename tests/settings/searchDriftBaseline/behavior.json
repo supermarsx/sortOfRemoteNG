@@ -1,35 +1,8 @@
 {
   "tab": "behavior",
-  "missingFromIndex": [
-    "confirmDeleteTabGroup",
-    "enableFileDragDropToRdp",
-    "enableWinrmTools",
-    "openWinmgmtToolInBackground",
-    "recentlyClosedTabsMax"
-  ],
+  "missingFromIndex": [],
   "orphanEntries": [],
   "wrongSection": [],
-  "missingOptionValues": [
-    "autoReconnectBackoff: Exponential",
-    "autoReconnectBackoff: Fixed",
-    "autoReconnectBackoff: exponential",
-    "autoReconnectBackoff: fixed",
-    "mouseBackAction: Disconnect",
-    "mouseBackAction: Do nothing",
-    "mouseBackAction: Previous tab",
-    "mouseBackAction: disconnect",
-    "mouseBackAction: none",
-    "mouseBackAction: previousTab",
-    "mouseForwardAction: Do nothing",
-    "mouseForwardAction: Next tab",
-    "mouseForwardAction: Reconnect",
-    "mouseForwardAction: nextTab",
-    "mouseForwardAction: none",
-    "mouseForwardAction: reconnect",
-    "treeRightClickAction: Context menu",
-    "treeRightClickAction: Quick connect",
-    "treeRightClickAction: contextMenu",
-    "treeRightClickAction: quickConnect"
-  ],
+  "missingOptionValues": [],
   "tabHasNoEntries": false
 }

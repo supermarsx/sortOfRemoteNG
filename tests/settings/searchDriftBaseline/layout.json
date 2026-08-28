@@ -1,22 +1,7 @@
 {
   "tab": "layout",
-  "missingFromIndex": [
-    "autoRepatriateWindow",
-    "enableConnectionReorder",
-    "persistSidebarCollapsed",
-    "persistSidebarPosition",
-    "showActionLogIcon",
-    "showBackupStatusIcon",
-    "showCloudSyncStatusIcon",
-    "showCollectionSwitcherIcon",
-    "showDebugPanelIcon",
-    "showDevtoolsIcon",
-    "showImportExportIcon",
-    "showSecurityIcon",
-    "showShortcutManagerIcon",
-    "showSyncBackupStatusIcon"
-  ],
-  "orphanEntries": ["defaultTabLayout", "tabGrouping"],
+  "missingFromIndex": [],
+  "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false

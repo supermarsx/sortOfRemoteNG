@@ -238,6 +238,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
               </label>
               <input
                 type="text"
+                data-setting-key="welcomeScreenTitle"
                 value={settings.welcomeScreenTitle ?? ""}
                 onChange={(e) =>
                   updateSettings({
@@ -259,6 +260,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 <InfoTooltip text="Set a custom message to display on the welcome screen instead of the default" />
               </label>
               <Textarea
+                data-setting-key="welcomeScreenMessage"
                 value={settings.welcomeScreenMessage ?? ""}
                 onChange={(v) =>
                   updateSettings({

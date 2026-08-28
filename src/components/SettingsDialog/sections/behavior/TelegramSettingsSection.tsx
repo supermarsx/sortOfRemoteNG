@@ -1877,85 +1877,92 @@ const TelegramSettingsSection: React.FC<SectionProps> = () => {
   const activeBot = selectedBot || botNames[0] || "";
 
   return (
-    <SettingsCollapsibleSection
-      title={t("integrations.telegram.title", "Telegram bots")}
-      icon={<Send className="w-4 h-4 text-primary" />}
-      defaultOpen={false}
-    >
-      <div className="flex flex-col gap-4">
-        <p className="text-xs text-[var(--color-textSecondary)]">
-          {t(
-            "integrations.telegram.intro",
-            "Configure Telegram bots for connection-event notifications, monitoring alerts, digests, and manual messaging. Bot tokens are stored encrypted in the OS credential vault, never in the settings file.",
-          )}
-        </p>
+    // Search anchor for the whole panel. Every input below is transient console
+    // state (a chat id, a message body, a bot token) or lives in the encrypted
+    // integration credential store — none of them is a `GlobalSettings` key, so
+    // none gets its own `settingKey`. The panel itself is what search should
+    // find and scroll to, and this wrapper stays mounted while it is collapsed.
+    <div data-setting-key="telegram.bots">
+      <SettingsCollapsibleSection
+        title={t("integrations.telegram.title", "Telegram bots")}
+        icon={<Send className="w-4 h-4 text-primary" />}
+        defaultOpen={false}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            {t(
+              "integrations.telegram.intro",
+              "Configure Telegram bots for connection-event notifications, monitoring alerts, digests, and manual messaging. Bot tokens are stored encrypted in the OS credential vault, never in the settings file.",
+            )}
+          </p>
 
-        {mgr.error && (
-          <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs text-red-400">
-            {mgr.error}
-            <button className="ml-2 underline" onClick={mgr.clearError}>
-              {t("integrations.telegram.dismiss", "Dismiss")}
-            </button>
-          </div>
-        )}
-
-        <BotManager mgr={mgr} />
-
-        <div className="border-t border-[var(--color-border)] pt-3">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-[var(--color-textSecondary)]">
-              {t("integrations.telegram.activeBot", "Manage bot")}:
-            </span>
-            <select
-              className={field}
-              style={{ maxWidth: 220 }}
-              value={activeBot}
-              onChange={(e) => setSelectedBot(e.target.value)}
-            >
-              {botNames.length === 0 && (
-                <option value="">
-                  {t("integrations.telegram.noBots", "No bots")}
-                </option>
-              )}
-              {botNames.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mb-3 flex flex-wrap gap-1">
-            {TABS.map((tb) => (
-              <button
-                key={tb.key}
-                onClick={() => setTab(tb.key)}
-                className={`rounded px-2 py-1 text-xs ${
-                  tab === tb.key
-                    ? "bg-primary text-[var(--color-text)]"
-                    : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]"
-                }`}
-              >
-                {t(tb.label, tb.fallback)}
+          {mgr.error && (
+            <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs text-red-400">
+              {mgr.error}
+              <button className="ml-2 underline" onClick={mgr.clearError}>
+                {t("integrations.telegram.dismiss", "Dismiss")}
               </button>
-            ))}
-          </div>
+            </div>
+          )}
 
-          {tab === "send" && <SendTab mgr={mgr} bot={activeBot} />}
-          {tab === "messages" && <MessagesTab mgr={mgr} bot={activeBot} />}
-          {tab === "chats" && <ChatsTab mgr={mgr} bot={activeBot} />}
-          {tab === "files" && <FilesTab mgr={mgr} bot={activeBot} />}
-          {tab === "webhooks" && <WebhooksTab mgr={mgr} bot={activeBot} />}
-          {tab === "rules" && <RulesTab mgr={mgr} />}
-          {tab === "monitoring" && <MonitoringTab mgr={mgr} />}
-          {tab === "templates" && <TemplatesTab mgr={mgr} />}
-          {tab === "scheduled" && <ScheduledTab mgr={mgr} />}
-          {tab === "broadcast" && <BroadcastTab mgr={mgr} />}
-          {tab === "digests" && <DigestsTab mgr={mgr} />}
-          {tab === "logs" && <LogsTab mgr={mgr} />}
+          <BotManager mgr={mgr} />
+
+          <div className="border-t border-[var(--color-border)] pt-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-[var(--color-textSecondary)]">
+                {t("integrations.telegram.activeBot", "Manage bot")}:
+              </span>
+              <select
+                className={field}
+                style={{ maxWidth: 220 }}
+                value={activeBot}
+                onChange={(e) => setSelectedBot(e.target.value)}
+              >
+                {botNames.length === 0 && (
+                  <option value="">
+                    {t("integrations.telegram.noBots", "No bots")}
+                  </option>
+                )}
+                {botNames.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-3 flex flex-wrap gap-1">
+              {TABS.map((tb) => (
+                <button
+                  key={tb.key}
+                  onClick={() => setTab(tb.key)}
+                  className={`rounded px-2 py-1 text-xs ${
+                    tab === tb.key
+                      ? "bg-primary text-[var(--color-text)]"
+                      : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]"
+                  }`}
+                >
+                  {t(tb.label, tb.fallback)}
+                </button>
+              ))}
+            </div>
+
+            {tab === "send" && <SendTab mgr={mgr} bot={activeBot} />}
+            {tab === "messages" && <MessagesTab mgr={mgr} bot={activeBot} />}
+            {tab === "chats" && <ChatsTab mgr={mgr} bot={activeBot} />}
+            {tab === "files" && <FilesTab mgr={mgr} bot={activeBot} />}
+            {tab === "webhooks" && <WebhooksTab mgr={mgr} bot={activeBot} />}
+            {tab === "rules" && <RulesTab mgr={mgr} />}
+            {tab === "monitoring" && <MonitoringTab mgr={mgr} />}
+            {tab === "templates" && <TemplatesTab mgr={mgr} />}
+            {tab === "scheduled" && <ScheduledTab mgr={mgr} />}
+            {tab === "broadcast" && <BroadcastTab mgr={mgr} />}
+            {tab === "digests" && <DigestsTab mgr={mgr} />}
+            {tab === "logs" && <LogsTab mgr={mgr} />}
+          </div>
         </div>
-      </div>
-    </SettingsCollapsibleSection>
+      </SettingsCollapsibleSection>
+    </div>
   );
 };
 
