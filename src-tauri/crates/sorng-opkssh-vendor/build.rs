@@ -3,7 +3,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const DEFAULT_CHECKOUT_PATH: &str = "C:/Users/Mariana/AppData/Local/Temp/opkssh-copilot";
+/// Durable, repo-relative home for the pinned upstream checkout.
+///
+/// This used to default to a path under the OS temp directory, which Windows
+/// reclaims periodically. When the checkout vanished the bridge silently
+/// downgraded to a metadata-only wrapper and the app reported "no embedded
+/// libopkssh runtime" with nothing in the build log to explain why. Keep the
+/// checkout inside the repo (gitignored) so it survives reboots and temp
+/// cleanup, and treat its absence as a loud, actionable warning.
+const DEFAULT_CHECKOUT_RELATIVE: &str = ".cache/opkssh-upstream";
+/// Legacy temp-directory location, still honoured if it happens to exist.
+const LEGACY_CHECKOUT_PATH: &str = "C:/Users/Mariana/AppData/Local/Temp/opkssh-copilot";
 const DEFAULT_GO_BINARY_PATH: &str = "C:/Users/Mariana/scoop/apps/go/current/bin/go.exe";
 const DEFAULT_GO_SHIM_PATH: &str = "C:/Users/Mariana/scoop/shims/go.exe";
 const CHECKOUT_ENV: &str = "SORNG_OPKSSH_VENDOR_CHECKOUT";
@@ -40,12 +50,32 @@ fn main() {
 
     let host = env::var("HOST").ok();
     let target = env::var("TARGET").ok();
-    if host != target {
-        emit_stub_runtime("OPKSSH vendor bridge skipped for cross-compilation");
+
+    // Go's c-archive output is selected by GOOS/GOARCH, not by the Rust ABI
+    // suffix, and cgo needs a C toolchain that can target the host machine. So
+    // only the OS/arch pair has to match; an ABI-only difference
+    // (msvc host -> gnu target) is exactly the supported bridge build and must
+    // not be treated as a cross-compile.
+    if !host_and_target_share_platform(host.as_deref(), target.as_deref()) {
+        emit_stub_runtime(&format!(
+            "OPKSSH vendor bridge skipped for cross-compilation (host {}, target {})",
+            host.as_deref().unwrap_or("<unknown>"),
+            target.as_deref().unwrap_or("<unknown>")
+        ));
         return;
     }
 
-    if target.as_deref().is_some_and(|triple| triple.contains("msvc")) {
+    if target
+        .as_deref()
+        .is_some_and(|triple| triple.contains("msvc"))
+    {
+        // Expected: Go emits GNU-format archives that MSVC's linker cannot
+        // consume, so the MSVC-linked wrapper is metadata-only *by design*.
+        // The runtime is carried by the separately built windows-gnu DLL that
+        // the app dlopens at runtime. Previously this branch returned in total
+        // silence, which is how a metadata-only DLL shipped unnoticed - so
+        // report whether that staged artifact is actually present and real.
+        report_staged_bridge_health();
         emit_stub_runtime_metadata();
         return;
     }
@@ -90,6 +120,8 @@ fn main() {
         .arg(&go_entrypoint)
         .current_dir(&build_checkout)
         .env("CGO_ENABLED", "1")
+        .env("GOOS", go_os())
+        .env("GOARCH", go_arch())
         .output()
     {
         Ok(output) => output,
@@ -111,6 +143,7 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=opkssh_cabi");
     emit_platform_link_libs();
+    ensure_static_unwinder(&out_dir);
     println!("cargo:rustc-cfg=sorng_opkssh_vendor_bridge");
     println!("cargo:rustc-env={EMBEDDED_RUNTIME_ENV}=1");
     println!(
@@ -143,8 +176,133 @@ fn discover_checkout_path() -> Option<PathBuf> {
         return None;
     }
 
-    let default_path = Path::new(DEFAULT_CHECKOUT_PATH);
-    default_path.exists().then(|| default_path.to_path_buf())
+    let default_path = repo_root().join(DEFAULT_CHECKOUT_RELATIVE);
+    if default_path.exists() {
+        return Some(default_path);
+    }
+
+    let legacy_path = Path::new(LEGACY_CHECKOUT_PATH);
+    if legacy_path.exists() {
+        println!(
+            "cargo:warning=Using legacy temp-directory OPKSSH checkout at {}. \
+             This location is not durable (Windows reclaims %TEMP%). \
+             Run `npm run vendor:opkssh:checkout` to populate {}.",
+            legacy_path.display(),
+            default_path.display()
+        );
+        return Some(legacy_path.to_path_buf());
+    }
+
+    None
+}
+
+/// True when host and target describe the same OS/arch pair, ignoring the
+/// vendor/ABI components of the triple (`msvc` vs `gnu`).
+fn host_and_target_share_platform(host: Option<&str>, target: Option<&str>) -> bool {
+    let (Some(host), Some(target)) = (host, target) else {
+        return false;
+    };
+
+    if host == target {
+        return true;
+    }
+
+    fn platform_key(triple: &str) -> Option<(String, String)> {
+        let arch = triple.split('-').next()?.to_string();
+        let os = ["windows", "linux", "darwin", "android", "freebsd"]
+            .into_iter()
+            .find(|candidate| triple.contains(candidate))?
+            .to_string();
+        Some((arch, os))
+    }
+
+    match (platform_key(host), platform_key(target)) {
+        (Some(host_key), Some(target_key)) => host_key == target_key,
+        _ => false,
+    }
+}
+
+/// On MSVC the linked wrapper is intentionally metadata-only, so the only thing
+/// that can carry the embedded runtime is the staged windows-gnu DLL. Check it
+/// and complain loudly if it is missing or is itself a metadata-only build.
+fn report_staged_bridge_health() {
+    let artifact = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set for build scripts"),
+    )
+    .join("bundle")
+    .join("opkssh")
+    .join("windows-amd64")
+    .join("sorng_opkssh_vendor.dll");
+
+    println!("cargo:rerun-if-changed={}", artifact.display());
+
+    if !artifact.is_file() {
+        warn_bridge_unavailable(&format!(
+            "no staged vendor DLL at {} (MSVC builds cannot link the Go bridge directly)",
+            artifact.display()
+        ));
+        return;
+    }
+
+    // A bridge-carrying DLL embeds the Go runtime; a metadata-only one contains
+    // the Rust stub message instead. Sniff for the stub marker rather than
+    // trusting the file's mere existence.
+    const STUB_MARKER: &[u8] = b"embedded OPKSSH runtime is not available in this wrapper build";
+    match fs::read(&artifact) {
+        Ok(bytes) => {
+            let is_stub = bytes
+                .windows(STUB_MARKER.len())
+                .any(|window| window == STUB_MARKER);
+            if is_stub {
+                warn_bridge_unavailable(&format!(
+                    "staged vendor DLL at {} is a metadata-only build (no embedded Go runtime)",
+                    artifact.display()
+                ));
+            }
+        }
+        Err(error) => {
+            println!(
+                "cargo:warning=Unable to inspect staged OPKSSH vendor DLL {}: {error}",
+                artifact.display()
+            );
+        }
+    }
+}
+
+/// Repository root, derived from this crate's manifest directory
+/// (`<repo>/src-tauri/crates/sorng-opkssh-vendor`).
+fn repo_root() -> PathBuf {
+    let manifest_dir = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set for build scripts"),
+    );
+
+    manifest_dir
+        .ancestors()
+        .nth(3)
+        .map(Path::to_path_buf)
+        .unwrap_or(manifest_dir)
+}
+
+/// Emit a prominent, actionable multi-line warning explaining exactly why the
+/// embedded Go runtime is missing and how to restore it. A one-line note was
+/// too easy to lose in build output, which is how the metadata-only wrapper
+/// shipped unnoticed.
+fn warn_bridge_unavailable(reason: &str) {
+    println!("cargo:warning=================================================================");
+    println!("cargo:warning=OPKSSH EMBEDDED RUNTIME NOT BUILT: {reason}");
+    println!(
+        "cargo:warning=The staged vendor wrapper will be METADATA-ONLY: OPKSSH login \
+         falls back to the external CLI and the app reports no embedded libopkssh runtime."
+    );
+    println!(
+        "cargo:warning=To build the real bridge, run: npm run vendor:opkssh:build \
+         (requires Go + MinGW; see docs/opkssh-vendor-bridge.md)."
+    );
+    println!(
+        "cargo:warning=Expected checkout: {} (override with {CHECKOUT_ENV})",
+        repo_root().join(DEFAULT_CHECKOUT_RELATIVE).display()
+    );
+    println!("cargo:warning=================================================================");
 }
 
 fn discover_go_binary() -> Option<PathBuf> {
@@ -285,6 +443,90 @@ fn write_overlay_file(destination: &Path, contents: &str) -> Result<(), String> 
     })
 }
 
+/// Map the Cargo target OS/arch onto Go's `GOOS`/`GOARCH` names.
+fn go_os() -> String {
+    match env::var("CARGO_CFG_TARGET_OS").unwrap_or_default().as_str() {
+        "macos" => "darwin".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn go_arch() -> String {
+    match env::var("CARGO_CFG_TARGET_ARCH")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "x86_64" => "amd64".to_string(),
+        "aarch64" => "arm64".to_string(),
+        "x86" => "386".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// On `*-windows-gnu`, rustc links the unwinder with an explicit `-lgcc_s`,
+/// which resolves to an *import library* for `libgcc_s_seh-1.dll`. That would
+/// make the shipped vendor DLL depend on an MSYS2/MinGW runtime DLL that is not
+/// present on user machines, so `LoadLibrary` would fail at runtime.
+///
+/// `libgcc_eh.a` provides the same `_Unwind_*` symbols statically. Stage a copy
+/// of it named `libgcc_s.a` in a directory searched ahead of the toolchain's
+/// own, so the explicit `-lgcc_s` resolves statically and the DLL depends only
+/// on Windows system libraries.
+fn ensure_static_unwinder(out_dir: &Path) {
+    if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows"
+        || env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default() != "gnu"
+    {
+        return;
+    }
+
+    let compiler = env::var("CC").unwrap_or_else(|_| "gcc".to_string());
+    let output = Command::new(&compiler)
+        .arg("-print-file-name=libgcc_eh.a")
+        .output();
+
+    let static_unwinder = match output {
+        Ok(output) if output.status.success() => {
+            PathBuf::from(String::from_utf8_lossy(&output.stdout).trim())
+        }
+        _ => {
+            println!(
+                "cargo:warning=Could not locate libgcc_eh.a via `{compiler} -print-file-name`; \
+                 the vendor DLL may depend on libgcc_s_seh-1.dll and fail to load on \
+                 machines without MinGW."
+            );
+            return;
+        }
+    };
+
+    if !static_unwinder.is_file() {
+        println!(
+            "cargo:warning=libgcc_eh.a was not found at {}; the vendor DLL may depend on \
+             libgcc_s_seh-1.dll and fail to load on machines without MinGW.",
+            static_unwinder.display()
+        );
+        return;
+    }
+
+    let shim_dir = out_dir.join("libgcc-static-shim");
+    if let Err(error) = fs::create_dir_all(&shim_dir) {
+        println!(
+            "cargo:warning=Failed to create static-unwinder shim dir {}: {error}",
+            shim_dir.display()
+        );
+        return;
+    }
+
+    if let Err(error) = fs::copy(&static_unwinder, shim_dir.join("libgcc_s.a")) {
+        println!(
+            "cargo:warning=Failed to stage static unwinder from {}: {error}",
+            static_unwinder.display()
+        );
+        return;
+    }
+
+    println!("cargo:rustc-link-search=native={}", shim_dir.display());
+}
+
 fn emit_platform_link_libs() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "windows" {
@@ -312,7 +554,7 @@ fn emit_platform_link_libs() {
 }
 
 fn emit_stub_runtime(reason: &str) {
-    println!("cargo:warning={reason}");
+    warn_bridge_unavailable(reason);
     emit_stub_runtime_metadata();
 }
 

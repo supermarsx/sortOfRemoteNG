@@ -37,6 +37,8 @@
     "stage:opkssh-vendor": "node ./scripts/stage-opkssh-vendor.mjs",
     "stage:opkssh-vendor:enable": "node ./scripts/stage-opkssh-vendor.mjs --enable",
     "stage:opkssh-vendor:disable": "node ./scripts/stage-opkssh-vendor.mjs --disable",
+    "vendor:opkssh:checkout": "node ./scripts/build-opkssh-vendor-bridge.mjs --checkout",
+    "vendor:opkssh:build": "node ./scripts/build-opkssh-vendor-bridge.mjs",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit --pretty false",
