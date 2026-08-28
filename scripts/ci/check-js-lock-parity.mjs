@@ -20,53 +20,32 @@ const defineCompatibleHold = ({ spec, allowedVersions, reason, sources }) =>
     sources: Object.freeze([...sources]),
   });
 
+// `@wdio/tauri-service` is the only piece of the desktop E2E stack still
+// held. desktop-mobile#591 is open against 1.3.0 and reports that, on the
+// external-driver provider this repository uses, `setValue()`/`addValue()`/
+// `clearValue()` fail unconditionally with "Missing text parameter" — the
+// e2e specs make 385 `setValue()` calls across 78 files. The report is from
+// Ubuntu + WebKitWebDriver; a Windows + WebView2 run of
+// e2e/specs/03-connections/connection-create.spec.ts on 1.3.0 did NOT
+// reproduce it, so the fault looks specific to the WebKitGTK driver, which
+// is exactly the path a Linux contributor takes. Since nothing in the tree
+// imports `@wdio/tauri-service` at all (e2e/wdio.conf.ts registers the local
+// e2e/helpers/tauri-service.ts service instead), moving to 1.3.0 buys
+// nothing and risks that platform, so it stays on 1.2.0.
+//
+// The rest of the stack was unheld once webdriverio#15476 — the other issue
+// this hold used to cite — shipped fixed in 9.31.0 (PR #15477).
 const DESKTOP_E2E_HOLD = Object.freeze({
   reason: "desktop-e2e-required",
   sources: Object.freeze([
     "https://github.com/webdriverio/desktop-mobile/issues/591",
-    "https://github.com/webdriverio/webdriverio/issues/15476",
   ]),
 });
 
 export const JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS = Object.freeze({
-  "@wdio/cli": defineCompatibleHold({
-    spec: "^9.27.1",
-    allowedVersions: ["9.27.1"],
-    ...DESKTOP_E2E_HOLD,
-  }),
-  "@wdio/local-runner": defineCompatibleHold({
-    spec: "^9.27.1",
-    allowedVersions: ["9.27.1"],
-    ...DESKTOP_E2E_HOLD,
-  }),
-  "@wdio/mocha-framework": defineCompatibleHold({
-    spec: "^9.27.1",
-    allowedVersions: ["9.29.1"],
-    ...DESKTOP_E2E_HOLD,
-  }),
-  "@wdio/spec-reporter": defineCompatibleHold({
-    spec: "^9.27.1",
-    allowedVersions: ["9.27.1"],
-    ...DESKTOP_E2E_HOLD,
-  }),
   "@wdio/tauri-service": defineCompatibleHold({
     spec: "^1.0.0",
     allowedVersions: ["1.2.0"],
-    ...DESKTOP_E2E_HOLD,
-  }),
-  "@wdio/types": defineCompatibleHold({
-    spec: "^9.27.1",
-    allowedVersions: ["9.27.1"],
-    ...DESKTOP_E2E_HOLD,
-  }),
-  "expect-webdriverio": defineCompatibleHold({
-    spec: "^5.6.5",
-    allowedVersions: ["5.6.5"],
-    ...DESKTOP_E2E_HOLD,
-  }),
-  webdriverio: defineCompatibleHold({
-    spec: "^9.27.1",
-    allowedVersions: ["9.27.1"],
     ...DESKTOP_E2E_HOLD,
   }),
 });

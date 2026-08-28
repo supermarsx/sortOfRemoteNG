@@ -238,9 +238,16 @@ function createHermeticOperations({ escapeBoundary = false } = {}) {
     updateNpm({ repositoryRoot, eligible }) {
       assert.deepEqual(eligible, [
         "@types/react",
+        "@wdio/cli",
+        "@wdio/local-runner",
+        "@wdio/mocha-framework",
+        "@wdio/spec-reporter",
+        "@wdio/types",
         "@webgpu/types",
+        "expect-webdriverio",
         "prettier",
         "react",
+        "webdriverio",
       ]);
       const manifestFile = path.join(repositoryRoot, "package.json");
       const lockFile = path.join(repositoryRoot, "package-lock.json");
@@ -362,16 +369,24 @@ test("proves exact npm/Bun direct parity and all explicit holds", () => {
     false,
     "prettier is no longer held: 3.9.6 formats Markdown/Liquid identically to 3.8.3",
   );
+  // The wdio runner stack was unheld once webdriverio#15476 shipped fixed in
+  // 9.31.0; only @wdio/tauri-service still carries the desktop-e2e hold.
   for (const name of [
     "@wdio/cli",
     "@wdio/local-runner",
     "@wdio/mocha-framework",
     "@wdio/spec-reporter",
-    "@wdio/tauri-service",
     "@wdio/types",
     "expect-webdriverio",
     "webdriverio",
   ]) {
+    assert.equal(
+      Object.hasOwn(result.compatibleHolds, name),
+      false,
+      `${name} is no longer held`,
+    );
+  }
+  for (const name of ["@wdio/tauri-service"]) {
     assert.equal(result.compatibleHolds[name].reason, "desktop-e2e-required");
   }
 });
@@ -409,24 +424,24 @@ test("fails closed on npm/Bun drift and moved exact or compatible holds", () => 
     /vitest hold moved/,
   );
 
-  const expectWdioManifest = fixtureManifest();
-  expectWdioManifest.devDependencies["expect-webdriverio"] = "^5.7.0";
-  const expectWdioVersions = {
+  const tauriServiceManifest = fixtureManifest();
+  tauriServiceManifest.devDependencies["@wdio/tauri-service"] = "^1.3.0";
+  const tauriServiceVersions = {
     ...fixtureVersions(),
-    "expect-webdriverio": "5.7.0",
+    "@wdio/tauri-service": "1.3.0",
   };
   assert.throws(
     () =>
       inspectJsLockParity({
-        packageJson: expectWdioManifest,
-        packageLock: fixtureNpmLock(expectWdioManifest, expectWdioVersions),
-        bunLock: fixtureBunLock(expectWdioManifest, expectWdioVersions),
+        packageJson: tauriServiceManifest,
+        packageLock: fixtureNpmLock(tauriServiceManifest, tauriServiceVersions),
+        bunLock: fixtureBunLock(tauriServiceManifest, tauriServiceVersions),
         bunVersion: "1.3.11",
       }),
-    /expect-webdriverio compatible hold moved/,
+    /@wdio\/tauri-service compatible hold moved/,
   );
 
-  const wdioVersions = { ...fixtureVersions(), "@wdio/cli": "9.30.1" };
+  const wdioVersions = { ...fixtureVersions(), "@wdio/tauri-service": "1.3.0" };
   assert.throws(
     () =>
       inspectJsLockParity({
@@ -435,13 +450,25 @@ test("fails closed on npm/Bun drift and moved exact or compatible holds", () => 
         bunLock: fixtureBunLock(fixtureManifest(), wdioVersions),
         bunVersion: "1.3.11",
       }),
-    /@wdio\/cli compatible hold moved/,
+    /@wdio\/tauri-service compatible hold moved/,
   );
 });
 
 test("selects only compatible ranges and reports every explicit hold reason", () => {
   assert.deepEqual(buildCompatibleUpdatePolicy(fixtureManifest()), {
-    eligible: ["@types/react", "@webgpu/types", "prettier", "react"],
+    eligible: [
+      "@types/react",
+      "@wdio/cli",
+      "@wdio/local-runner",
+      "@wdio/mocha-framework",
+      "@wdio/spec-reporter",
+      "@wdio/types",
+      "@webgpu/types",
+      "expect-webdriverio",
+      "prettier",
+      "react",
+      "webdriverio",
+    ],
     exactHolds: ["@types/node", "@vitest/coverage-v8", "vitest"],
     crossGraphHolds: ["@tauri-apps/api"],
     explicitHolds: expectedCompatibleHolds(),
@@ -475,8 +502,8 @@ test("rejects majors, range-boundary crossings, every hold class, and metadata d
     ["exact", (value) => (value.devDependencies.vitest = "4.1.10"), /held/],
     [
       "explicit compatible",
-      (value) => (value.devDependencies["expect-webdriverio"] = "^5.7.0"),
-      /expect-webdriverio is held/,
+      (value) => (value.devDependencies["@wdio/tauri-service"] = "^1.3.0"),
+      /@wdio\/tauri-service is held/,
     ],
     [
       "tauri",
@@ -537,7 +564,7 @@ test("accepts compatible resolved movement but rejects held or major resolution 
 
   const explicitHeldVersions = {
     ...fixtureVersions(),
-    "expect-webdriverio": "5.7.0",
+    "@wdio/tauri-service": "1.3.0",
   };
   assert.throws(
     () =>
@@ -547,7 +574,7 @@ test("accepts compatible resolved movement but rejects held or major resolution 
         afterManifest: beforeManifest,
         afterLock: fixtureNpmLock(beforeManifest, explicitHeldVersions),
       }),
-    /expect-webdriverio explicit compatible hold resolution is not allowed/,
+    /@wdio\/tauri-service explicit compatible hold resolution is not allowed/,
   );
 
   const majorVersions = { ...fixtureVersions(), react: "20.0.0" };
