@@ -1,0 +1,8 @@
+{
+  "tab": "updater",
+  "missingFromIndex": ["updater.privateEndpointEnabled"],
+  "orphanEntries": ["updater.status"],
+  "wrongSection": [],
+  "missingOptionValues": [],
+  "tabHasNoEntries": false
+}

@@ -1,0 +1,17 @@
+{
+  "tab": "mcpServer",
+  "missingFromIndex": [],
+  "orphanEntries": [
+    "mcpServer.allow_remote",
+    "mcpServer.auto_start",
+    "mcpServer.enabled",
+    "mcpServer.expose_sensitive_data",
+    "mcpServer.host",
+    "mcpServer.port",
+    "mcpServer.require_auth",
+    "mcpServer.server_instructions"
+  ],
+  "wrongSection": [],
+  "missingOptionValues": [],
+  "tabHasNoEntries": false
+}

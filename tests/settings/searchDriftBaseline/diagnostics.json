@@ -1,0 +1,31 @@
+{
+  "tab": "diagnostics",
+  "missingFromIndex": [],
+  "orphanEntries": [
+    "diagnostics.asymmetricRoutingEnabled",
+    "diagnostics.asymmetricRoutingSamples",
+    "diagnostics.autoRunOnOpen",
+    "diagnostics.expandFailedSteps",
+    "diagnostics.icmpBlockadeEnabled",
+    "diagnostics.ipGeoEnabled",
+    "diagnostics.leakageDetectionEnabled",
+    "diagnostics.mtuCheckEnabled",
+    "diagnostics.pingCount",
+    "diagnostics.pingIntervalMs",
+    "diagnostics.pingTimeoutSecs",
+    "diagnostics.portCheckTimeoutSecs",
+    "diagnostics.protocolDiagEnabled",
+    "diagnostics.protocolDiagTimeoutSecs",
+    "diagnostics.serviceFingerprintEnabled",
+    "diagnostics.showDetailedResults",
+    "diagnostics.tcpTimingTimeoutSecs",
+    "diagnostics.tlsCheckEnabled",
+    "diagnostics.tracerouteMaxHops",
+    "diagnostics.tracerouteTimeoutSecs",
+    "diagnostics.udpProbeEnabled",
+    "diagnostics.udpProbeTimeoutMs"
+  ],
+  "wrongSection": [],
+  "missingOptionValues": [],
+  "tabHasNoEntries": false
+}

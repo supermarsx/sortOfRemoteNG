@@ -1,0 +1,23 @@
+{
+  "tab": "language",
+  "missingFromIndex": [],
+  "orphanEntries": [],
+  "wrongSection": [],
+  "missingOptionValues": [
+    "dateFormat: Locale default",
+    "dateFormat: Long",
+    "dateFormat: Medium",
+    "dateFormat: Short",
+    "dateFormat: auto",
+    "dateFormat: long",
+    "dateFormat: medium",
+    "dateFormat: short",
+    "timeFormat: 12-hour (1:30 PM)",
+    "timeFormat: 12h",
+    "timeFormat: 24-hour (13:30)",
+    "timeFormat: 24h",
+    "timeFormat: Locale default",
+    "timeFormat: auto"
+  ],
+  "tabHasNoEntries": false
+}

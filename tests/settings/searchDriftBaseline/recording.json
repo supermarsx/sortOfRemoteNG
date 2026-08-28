@@ -1,0 +1,24 @@
+{
+  "tab": "recording",
+  "missingFromIndex": [],
+  "orphanEntries": [],
+  "wrongSection": ["showRecordingManagerIcon declared in layout"],
+  "missingOptionValues": [
+    "rdpRecording.defaultVideoFormat: MP4 (H.264)",
+    "rdpRecording.defaultVideoFormat: WebM (VP8/VP9)",
+    "rdpRecording.defaultVideoFormat: gif",
+    "rdpRecording.defaultVideoFormat: mp4",
+    "rdpRecording.defaultVideoFormat: webm",
+    "recording.defaultExportFormat: Asciicast (asciinema)",
+    "recording.defaultExportFormat: JSON",
+    "recording.defaultExportFormat: asciicast",
+    "recording.defaultExportFormat: gif",
+    "recording.defaultExportFormat: json",
+    "recording.defaultExportFormat: script",
+    "webRecording.defaultExportFormat: HAR (HTTP Archive)",
+    "webRecording.defaultExportFormat: JSON",
+    "webRecording.defaultExportFormat: har",
+    "webRecording.defaultExportFormat: json"
+  ],
+  "tabHasNoEntries": false
+}

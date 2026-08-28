@@ -41,6 +41,12 @@ export interface SelectProps {
   searchable?: boolean;
   /** Placeholder for the search input (when `searchable`). */
   searchPlaceholder?: string;
+  /**
+   * Emits `data-setting-key` on the trigger, anchoring this control for the
+   * Settings search highlight (`useSettingHighlight`) and for the drift guard
+   * that joins the search index to the rendered controls.
+   */
+  settingKey?: string;
 }
 
 /**
@@ -63,6 +69,7 @@ export const Select: React.FC<SelectProps> = ({
   'data-testid': dataTestId,
   searchable = false,
   searchPlaceholder,
+  settingKey,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(-1);
@@ -260,6 +267,7 @@ export const Select: React.FC<SelectProps> = ({
         onClick={() => (isOpen ? close() : open())}
         onKeyDown={handleKeyDown}
         data-testid={dataTestId}
+        {...(settingKey ? { 'data-setting-key': settingKey } : {})}
         className={cx(
           VARIANT_CLASS[variant],
           'sor-select-trigger',

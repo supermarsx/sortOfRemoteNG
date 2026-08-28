@@ -1,0 +1,8 @@
+{
+  "tab": "general",
+  "missingFromIndex": [],
+  "orphanEntries": ["detectUnexpectedClose", "hostnameOverride"],
+  "wrongSection": [],
+  "missingOptionValues": [],
+  "tabHasNoEntries": false
+}

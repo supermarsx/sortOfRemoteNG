@@ -131,6 +131,8 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
                     {sectionResults.map((entry) => (
                       <button
                         key={entry.key}
+                        data-testid="settings-search-result"
+                        data-setting-result-key={entry.key}
                         onClick={() => {
                           mgr.setActiveTab(tab.id);
                           mgr.setHighlightKey(entry.key);

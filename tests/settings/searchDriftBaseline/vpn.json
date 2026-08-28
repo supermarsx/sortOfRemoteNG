@@ -1,0 +1,14 @@
+{
+  "tab": "vpn",
+  "missingFromIndex": [
+    "vpnSettings.defaultVpnType",
+    "vpnSettings.dnsHandling",
+    "vpnSettings.openvpnBinaryPath",
+    "vpnSettings.statusPollingIntervalMs",
+    "vpnSettings.wireguardBinaryPath"
+  ],
+  "orphanEntries": [],
+  "wrongSection": [],
+  "missingOptionValues": [],
+  "tabHasNoEntries": true
+}

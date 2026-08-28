@@ -30,7 +30,9 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
 
-  const searchResult = useSettingsSearch(searchQuery);
+  // `t` is threaded into search so entries carrying `labelKey`/`descriptionKey`
+  // also match on their translated text in the current UI language.
+  const searchResult = useSettingsSearch(searchQuery, t);
   useSettingHighlight(highlightKey);
 
   const contentScrollRef = useRef<HTMLDivElement>(null);

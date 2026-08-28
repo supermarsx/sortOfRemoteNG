@@ -1,0 +1,8 @@
+{
+  "tab": "startup",
+  "missingFromIndex": ["hideQuickStartButtons", "hideQuickStartMessage"],
+  "orphanEntries": ["welcomeScreenMessage", "welcomeScreenTitle"],
+  "wrongSection": [],
+  "missingOptionValues": [],
+  "tabHasNoEntries": false
+}
