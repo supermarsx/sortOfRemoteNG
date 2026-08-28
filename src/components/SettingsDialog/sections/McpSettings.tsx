@@ -42,7 +42,23 @@ export const McpSettings: React.FC<McpSettingsProps> = ({
         </div>
       )}
 
-      <ConfigTab mgr={mgr} />
+      {/*
+        Search anchor for the whole MCP configuration form.
+
+        Unlike every other settings tab, the MCP controls are not rendered here:
+        `ConfigTab` lives in `src/components/ssh/mcpServer/` because
+        `McpServerPanel` renders the same form outside the Settings dialog. That
+        directory is outside the drift guard's scan root
+        (`SettingsDialog/sections/`), so a per-field `settingKey` there would be
+        invisible to the guard and every index entry pointing at it would read as
+        an orphan. Until the shared form moves (or the guard learns about that
+        directory) the tab is anchored once, here, and the single index entry
+        carries the whole MCP vocabulary in its tags/synonyms so search still
+        finds it. See `.orchestration/logs/t75-e5.md`.
+      */}
+      <div data-setting-key="mcpServer.config">
+        <ConfigTab mgr={mgr} />
+      </div>
     </div>
   );
 };

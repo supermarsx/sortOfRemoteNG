@@ -240,6 +240,7 @@ const ProviderForm: React.FC<{
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Labeled label={t("integrations.llm.providerType", "Provider")}>
           <select
+            data-setting-key="llm.provider.type"
             className={field}
             value={form.providerType}
             onChange={(e) => {
@@ -261,6 +262,7 @@ const ProviderForm: React.FC<{
         <Labeled label={t("integrations.llm.displayName", "Display name")}>
           <input
             className={field}
+            data-setting-key="llm.provider.displayName"
             value={form.displayName}
             onChange={(e) => set("displayName", e.target.value)}
             placeholder={meta.displayName}
@@ -270,6 +272,7 @@ const ProviderForm: React.FC<{
           <Labeled label={t("integrations.llm.apiKey", "API key")}>
             <input
               className={field}
+              data-setting-key="llm.provider.apiKey"
               type="password"
               value={form.apiKey}
               onChange={(e) => set("apiKey", e.target.value)}
@@ -284,6 +287,7 @@ const ProviderForm: React.FC<{
         <Labeled label={t("integrations.llm.baseUrl", "Base URL")}>
           <input
             className={field}
+            data-setting-key="llm.provider.baseUrl"
             value={form.baseUrl}
             onChange={(e) => set("baseUrl", e.target.value)}
             placeholder={meta.defaultBaseUrl || "https://..."}
@@ -292,6 +296,7 @@ const ProviderForm: React.FC<{
         <Labeled label={t("integrations.llm.defaultModel", "Default model")}>
           <input
             className={field}
+            data-setting-key="llm.provider.defaultModel"
             value={form.defaultModel}
             onChange={(e) => set("defaultModel", e.target.value)}
             placeholder="gpt-4o"
@@ -301,6 +306,7 @@ const ProviderForm: React.FC<{
           <Labeled label={t("integrations.llm.region", "Region")}>
             <input
               className={field}
+              data-setting-key="llm.provider.region"
               value={form.region}
               onChange={(e) => set("region", e.target.value)}
               placeholder="us-east-1"
@@ -312,6 +318,7 @@ const ProviderForm: React.FC<{
           <Labeled label={t("integrations.llm.orgId", "Organization ID")}>
             <input
               className={field}
+              data-setting-key="llm.provider.orgId"
               value={form.orgId}
               onChange={(e) => set("orgId", e.target.value)}
             />
@@ -321,6 +328,7 @@ const ProviderForm: React.FC<{
           <input
             className={field}
             inputMode="numeric"
+            data-setting-key="llm.provider.priority"
             value={form.priority}
             onChange={(e) => set("priority", e.target.value)}
           />
@@ -329,6 +337,7 @@ const ProviderForm: React.FC<{
           <input
             className={field}
             inputMode="numeric"
+            data-setting-key="llm.provider.timeoutSeconds"
             value={form.timeoutSeconds}
             onChange={(e) => set("timeoutSeconds", e.target.value)}
           />
@@ -337,6 +346,7 @@ const ProviderForm: React.FC<{
           <input
             className={field}
             inputMode="numeric"
+            data-setting-key="llm.provider.maxRetries"
             value={form.maxRetries}
             onChange={(e) => set("maxRetries", e.target.value)}
           />
@@ -345,6 +355,7 @@ const ProviderForm: React.FC<{
       <div className="mt-3 flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
           <input
+            data-setting-key="llm.provider.enabled"
             type="checkbox"
             checked={form.enabled}
             onChange={(e) => set("enabled", e.target.checked)}
@@ -607,6 +618,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Labeled label={t("integrations.llm.balancerStrategy", "Balancer strategy")}>
           <select
+            data-setting-key="llm.router.balancerStrategy"
             className={field}
             value={cfg.balancer.strategy}
             onChange={(e) => void setStrategy(e.target.value as BalancerStrategy)}
@@ -621,6 +633,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <Labeled label={t("integrations.llm.defaultModel", "Default model")}>
           <input
             className={field}
+            data-setting-key="llm.router.defaultModel"
             value={cfg.default_model ?? ""}
             onChange={(e) =>
               void patch((c) => ({ ...c, default_model: e.target.value || null }))
@@ -634,6 +647,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
           <input
             type="checkbox"
+            data-setting-key="llm.router.failoverEnabled"
             checked={cfg.balancer.failover_enabled}
             onChange={(e) =>
               void patch((c) => ({
@@ -647,6 +661,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
           <input
             type="checkbox"
+            data-setting-key="llm.router.stickySessions"
             checked={cfg.balancer.sticky_sessions}
             onChange={(e) =>
               void patch((c) => ({
@@ -660,6 +675,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
           <input
             type="checkbox"
+            data-setting-key="llm.router.usageTracking"
             checked={cfg.usage_tracking_enabled}
             onChange={(e) =>
               void patch((c) => ({ ...c, usage_tracking_enabled: e.target.checked }))
@@ -677,6 +693,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
           <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
             <input
               type="checkbox"
+              data-setting-key="llm.cache.enabled"
               checked={cfg.cache.enabled}
               onChange={(e) =>
                 void patch((c) => ({
@@ -690,6 +707,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
           <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
             <input
               type="checkbox"
+              data-setting-key="llm.cache.embeddings"
               checked={cfg.cache.cache_embeddings}
               onChange={(e) =>
                 void patch((c) => ({
@@ -705,6 +723,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
               className={field}
               style={{ width: 120 }}
               inputMode="numeric"
+              data-setting-key="llm.cache.ttlSeconds"
               value={String(cfg.cache.ttl_seconds)}
               onChange={(e) =>
                 void patch((c) => ({
@@ -766,6 +785,7 @@ const ModelsPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
           <input
             className={field}
             style={{ width: 160 }}
+            data-setting-key="llm.models.providerFilter"
             value={providerFilter}
             onChange={(e) => setProviderFilter(e.target.value)}
             placeholder="openai"
@@ -819,6 +839,7 @@ const ModelsPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             <input
               className={field}
               style={{ width: 220 }}
+              data-setting-key="llm.models.modelId"
               value={modelId}
               onChange={(e) => setModelId(e.target.value)}
               placeholder="gpt-4o"
@@ -884,6 +905,7 @@ const UsagePanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             className={field}
             style={{ width: 100 }}
             inputMode="numeric"
+            data-setting-key="llm.usage.windowDays"
             value={days}
             onChange={(e) => setDays(e.target.value)}
           />
@@ -1006,6 +1028,7 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <Labeled label={t("integrations.llm.modelId", "Model")}>
           <input
             className={field}
+            data-setting-key="llm.playground.model"
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder="gpt-4o"
@@ -1014,6 +1037,7 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <Labeled label={t("integrations.llm.providerOverride", "Provider (optional)")}>
           <input
             className={field}
+            data-setting-key="llm.playground.providerOverride"
             value={providerId}
             onChange={(e) => setProviderId(e.target.value)}
             placeholder={t("integrations.llm.useDefault", "use default")}
@@ -1028,6 +1052,7 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <textarea
           className={`${field} font-mono`}
           rows={3}
+          data-setting-key="llm.playground.prompt"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={t("integrations.llm.promptPlaceholder", "Say hello...")}
@@ -1045,6 +1070,7 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <textarea
           className={`${field} font-mono`}
           rows={3}
+          data-setting-key="llm.playground.embedInput"
           value={embedInput}
           onChange={(e) => setEmbedInput(e.target.value)}
           placeholder={"hello world\nfoo bar"}
@@ -1061,6 +1087,7 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <textarea
           className={`${field} font-mono`}
           rows={2}
+          data-setting-key="llm.playground.tokenText"
           value={tokenText}
           onChange={(e) => setTokenText(e.target.value)}
         />

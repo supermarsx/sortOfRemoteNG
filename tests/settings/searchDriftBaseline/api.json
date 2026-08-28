@@ -1,26 +1,8 @@
 {
   "tab": "api",
-  "missingFromIndex": [
-    "restApi.allowRemoteConnections",
-    "restApi.apiKey",
-    "restApi.authentication",
-    "restApi.enabled",
-    "restApi.maxRequestsPerMinute",
-    "restApi.maxThreads",
-    "restApi.port",
-    "restApi.rateLimiting",
-    "restApi.requestTimeout",
-    "restApi.sslCertPath",
-    "restApi.sslDomain",
-    "restApi.sslEmail",
-    "restApi.sslEnabled",
-    "restApi.sslKeyPath",
-    "restApi.sslMode",
-    "restApi.startOnLaunch",
-    "restApi.useRandomPort"
-  ],
+  "missingFromIndex": [],
   "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],
-  "tabHasNoEntries": true
+  "tabHasNoEntries": false
 }

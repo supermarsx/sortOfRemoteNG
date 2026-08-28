@@ -6,14 +6,32 @@ import type { SettingSearchEntry } from "./types";
  * Every `key` must match a `settingKey` / `data-setting-key` rendered by that
  * tab's section components — `tests/settings/settingsSearchDrift.test.ts`
  * enforces the join in both directions.
+ *
+ * ── Why this tab has one entry and not eighteen ──────────────────
+ *
+ * The MCP settings form is `src/components/ssh/mcpServer/ConfigTab.tsx`, shared
+ * with `McpServerPanel` outside the Settings dialog. `sections/McpSettings.tsx`
+ * only wraps it. That directory sits outside the drift guard's scan root, so a
+ * per-field `settingKey` added there would be invisible to the guard and every
+ * entry pointing at one would be flagged as an orphan — a dead search result by
+ * the guard's definition.
+ *
+ * So the tab is anchored once, on the wrapper in `sections/McpSettings.tsx`, and
+ * this single entry carries the vocabulary of all eighteen MCP settings. Every
+ * MCP term the user might type resolves, and the result navigates to the MCP
+ * configuration rather than nowhere. Splitting it into per-field entries needs
+ * the shared form to move under `sections/` (or the guard to learn about
+ * `src/components/ssh/mcpServer/`) — recorded as a follow-up in
+ * `.orchestration/logs/t75-e5.md`.
  */
 export const MCP_SERVER_SEARCH_ENTRIES: SettingSearchEntry[] = [
-  // ─── MCP Server ─────────────────────────────────────────────────
   {
-    key: "mcpServer.enabled",
-    label: "Enable MCP Server",
+    key: "mcpServer.config",
+    label: "MCP server configuration",
+    labelKey: "mcpServer.title",
     description:
-      "Allow AI assistants to connect through Model Context Protocol",
+      "Model Context Protocol server that lets AI assistants connect to this application: enable and auto-start it, set the host, port and API key, require authentication, allow remote connections, expose or withhold sensitive data, cap concurrent sessions, session timeout and rate limit, pick a log level, turn CORS and SSE on or off, write the instructions sent to clients, and choose which tools, resources and prompts are exposed.",
+    descriptionKey: "settings.mcpServer.description",
     tags: [
       "mcp",
       "model context protocol",
@@ -21,64 +39,72 @@ export const MCP_SERVER_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "assistant",
       "server",
       "automation",
+      "integration",
+      "enable",
+      "auto start",
+      "start on launch",
+      "host",
+      "bind",
+      "localhost",
+      "port",
+      "network",
+      "api key",
+      "bearer",
+      "token",
+      "authentication",
+      "auth",
+      "require auth",
+      "security",
+      "remote",
+      "allow remote",
+      "expose sensitive data",
+      "secrets",
+      "passwords",
+      "sessions",
+      "max sessions",
+      "concurrent",
+      "session timeout",
+      "rate limit",
+      "throttle",
+      "log level",
+      "logging",
+      "cors",
+      "cross origin",
+      "sse",
+      "server sent events",
+      "streaming",
+      "notifications",
+      "instructions",
+      "server instructions",
+      "prompt",
+      "tools",
+      "toolset",
+      "resources",
+      "prompts",
+      "capabilities",
+      "client",
     ],
-    section: "mcpServer",
-    sectionLabel: "MCP Server",
-  },
-  {
-    key: "mcpServer.auto_start",
-    label: "MCP Auto-start",
-    description: "Start the MCP server automatically when the app launches",
-    tags: ["mcp", "startup", "auto start", "launch"],
-    section: "mcpServer",
-    sectionLabel: "MCP Server",
-  },
-  {
-    key: "mcpServer.host",
-    label: "MCP Host",
-    description: "Host address the MCP server binds to",
-    tags: ["mcp", "host", "bind", "localhost", "network"],
-    section: "mcpServer",
-    sectionLabel: "MCP Server",
-  },
-  {
-    key: "mcpServer.port",
-    label: "MCP Port",
-    description: "TCP port used by the MCP server",
-    tags: ["mcp", "port", "network", "http"],
-    section: "mcpServer",
-    sectionLabel: "MCP Server",
-  },
-  {
-    key: "mcpServer.require_auth",
-    label: "MCP Authentication",
-    description: "Require API key authentication for MCP requests",
-    tags: ["mcp", "auth", "api key", "security", "bearer"],
-    section: "mcpServer",
-    sectionLabel: "MCP Server",
-  },
-  {
-    key: "mcpServer.allow_remote",
-    label: "MCP Remote Access",
-    description: "Allow non-localhost clients to connect to the MCP server",
-    tags: ["mcp", "remote", "network", "security"],
-    section: "mcpServer",
-    sectionLabel: "MCP Server",
-  },
-  {
-    key: "mcpServer.expose_sensitive_data",
-    label: "MCP Sensitive Data",
-    description:
-      "Control whether MCP resources can include passwords and secrets",
-    tags: ["mcp", "secrets", "passwords", "privacy", "security"],
-    section: "mcpServer",
-    sectionLabel: "MCP Server",
-  },
-  {
-    key: "mcpServer.server_instructions",
-    label: "MCP Server Instructions",
-    description: "Instructions sent to MCP clients during initialization",
-    tags: ["mcp", "instructions", "prompt", "client"],
+    synonyms: [
+      "mcp server",
+      "modelcontextprotocol",
+      "context protocol",
+      "ai assistant server",
+      "claude integration",
+      "bearer token",
+      "cross-origin resource sharing",
+      "server-sent events",
+      "requests per minute",
+    ],
+    values: [
+      "debug",
+      "info",
+      "notice",
+      "warning",
+      "error",
+      "critical",
+      "127.0.0.1",
+      "0.0.0.0",
+    ],
     section: "mcpServer",
     sectionLabel: "MCP Server",
   },

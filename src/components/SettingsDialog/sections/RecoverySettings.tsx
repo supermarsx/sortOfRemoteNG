@@ -62,6 +62,12 @@ const ActionRow: React.FC<{
   buttonIcon: React.ReactNode;
   buttonLabel: string;
   disabled?: boolean;
+  /**
+   * Search-index join key. Emitted as `data-setting-key` so a Settings search
+   * result can scroll this row into view — see `useSettingHighlight`. Recovery
+   * is an action-only tab, so the "setting" a result anchors to is the action.
+   */
+  settingKey?: string;
 }> = ({
   icon,
   tone,
@@ -71,10 +77,14 @@ const ActionRow: React.FC<{
   buttonIcon,
   buttonLabel,
   disabled,
+  settingKey,
 }) => {
   const cls = toneClasses[tone];
   return (
-    <div className="flex items-start justify-between gap-4">
+    <div
+      className="flex items-start justify-between gap-4"
+      {...(settingKey ? { "data-setting-key": settingKey } : {})}
+    >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
           <span className={`flex-shrink-0 ${cls.iconText}`}>{icon}</span>
@@ -125,6 +135,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <ActionRow
             icon={<FolderX className="w-4 h-4" />}
             tone="warning"
+            settingKey="recovery.deleteAppData"
             label="Delete App Data"
             description="Delete settings, theme preferences, and cached data. Collections are preserved."
             onClick={() => mgr.setConfirmAction("deleteData")}
@@ -135,6 +146,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <ActionRow
             icon={<Trash2 className="w-4 h-4" />}
             tone="error"
+            settingKey="recovery.deleteAllData"
             label="Delete All Data & Collections"
             description="Permanently delete everything including collections and passwords. Cannot be undone!"
             onClick={() => mgr.setConfirmAction("deleteAll")}
@@ -154,6 +166,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <ActionRow
             icon={<RotateCcw className="w-4 h-4" />}
             tone="warning"
+            settingKey="recovery.resetSettings"
             label="Reset All Settings"
             description="Reset all settings to their default values. Your collections will not be affected."
             onClick={() => mgr.setConfirmAction("resetSettings")}
@@ -173,6 +186,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <ActionRow
             icon={<RefreshCw className="w-4 h-4" />}
             tone="primary"
+            settingKey="recovery.softRestart"
             label="Soft Restart"
             description="Reload the frontend without restarting the application. Quick way to apply changes."
             onClick={mgr.handleSoftRestart}
@@ -183,6 +197,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <ActionRow
             icon={<Power className="w-4 h-4" />}
             tone="success"
+            settingKey="recovery.hardRestart"
             label="Hard Restart"
             description="Completely restart the application including the backend."
             onClick={mgr.handleHardRestart}
