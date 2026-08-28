@@ -96,6 +96,18 @@ const EncryptionAtRestSection: React.FC = () => {
   const [lockBusy, setLockBusy] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
 
+  /* Audit rows whose JSON detail is expanded. Keyed by `${ts}-${index}` so the
+     identity survives the reverse()/slice() the table does on every render. */
+  const [expandedAudit, setExpandedAudit] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleAuditDetail = (key: string) =>
+    setExpandedAudit((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
   const [migrateBusy, setMigrateBusy] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
   const [migrateReport, setMigrateReport] = useState<MigrationReport | null>(
@@ -1209,22 +1221,48 @@ const EncryptionAtRestSection: React.FC = () => {
                     .map((entry, i) => {
                       const { ts, event, ...rest } = entry;
                       const label = AUDIT_EVENT_LABELS[event] ?? event;
-                      const detail = Object.keys(rest).length
-                        ? JSON.stringify(rest)
-                        : "";
+                      const hasDetail = Object.keys(rest).length > 0;
+                      const detail = hasDetail ? JSON.stringify(rest) : "";
+                      const rowKey = `${ts}-${i}`;
+                      const isExpanded = expandedAudit.has(rowKey);
                       return (
                         <tr
-                          key={`${ts}-${i}`}
-                          className="border-b border-[var(--color-border)]/20 last:border-0"
+                          key={rowKey}
+                          className="border-b border-[var(--color-border)]/20 last:border-0 align-top"
                         >
                           <td className="py-1.5 pr-3 font-mono text-[10px] text-[var(--color-textMuted)] whitespace-nowrap">
                             {ts}
                           </td>
-                          <td className="py-1.5 pr-3 text-[var(--color-text)]">
+                          <td className="py-1.5 pr-3 text-[var(--color-text)] whitespace-nowrap">
                             {label}
                           </td>
-                          <td className="py-1.5 font-mono text-[10px] text-[var(--color-textSecondary)] truncate">
-                            {detail}
+                          {/* `w-full max-w-0` lets the cell take the remaining
+                              width while still giving the child a definite
+                              basis to truncate against — without it an
+                              auto-layout table just grows to fit the JSON. */}
+                          <td className="w-full max-w-0 py-1.5 font-mono text-[10px] text-[var(--color-textSecondary)]">
+                            {hasDetail ? (
+                              <div className="flex items-start gap-2">
+                                {isExpanded ? (
+                                  <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[10px] m-0">
+                                    {JSON.stringify(rest, null, 2)}
+                                  </pre>
+                                ) : (
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {detail}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAuditDetail(rowKey)}
+                                  aria-expanded={isExpanded}
+                                  data-testid="audit-detail-toggle"
+                                  className="shrink-0 text-[10px] underline text-[var(--color-textMuted)] hover:text-[var(--color-text)]"
+                                >
+                                  {isExpanded ? "Show less" : "Show more"}
+                                </button>
+                              </div>
+                            ) : null}
                           </td>
                         </tr>
                       );
