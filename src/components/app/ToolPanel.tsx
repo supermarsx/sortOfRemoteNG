@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components */
 import React, { useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useTranslation } from "react-i18next";
@@ -8,6 +8,7 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { getToolKeyFromProtocol, ToolKey } from "./toolSession";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 
 const PerformanceMonitor = dynamic(
   () =>
@@ -165,6 +166,10 @@ interface ToolTabViewerProps {
   ) => Promise<void> | void;
   /** Close the currently-open database (and lock its cached password). */
   onDatabaseClose?: () => Promise<void> | void;
+  /** Settings tab to deep-link to when this is the `tool:settings` tab. */
+  settingsInitialTab?: SettingsTabId;
+  /** Bump to re-apply an unchanged `settingsInitialTab`. */
+  settingsInitialTabNonce?: number;
 }
 
 /**
@@ -181,6 +186,8 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   onEditConnection,
   onDatabaseSelect,
   onDatabaseClose,
+  settingsInitialTab,
+  settingsInitialTabNonce,
 }) => {
   const { t } = useTranslation();
   const { state } = useConnections();
@@ -252,7 +259,13 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
             <ConnectionDiagnostics connection={conn} onClose={onClose} />
           ) : null;
         })()}
-      {toolKey === "settings" && <SettingsTabContent onClose={onClose} />}
+      {toolKey === "settings" && (
+        <SettingsTabContent
+          onClose={onClose}
+          initialTab={settingsInitialTab}
+          initialTabNonce={settingsInitialTabNonce}
+        />
+      )}
       {toolKey === "importExport" && (
         <div className="h-full overflow-y-auto bg-[var(--color-surface)] p-6">
           <ImportExport isOpen embedded onClose={onClose} />

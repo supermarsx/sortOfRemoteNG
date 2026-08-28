@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { ErrorLogBar } from "./ErrorLogBar";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { ProtocolRepairNotice } from "../connection/ProtocolRepairDialog";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 
 const AutoLockManager = dynamic(
   () =>
@@ -55,6 +56,10 @@ interface AppDialogsProps {
   setShowDatabasePanel: (v: boolean) => void;
   setShowQuickConnect: (v: boolean) => void;
   setShowSettings: (v: boolean) => void;
+  /** Settings tab the last "open settings" affordance asked for. */
+  settingsInitialTab?: SettingsTabId;
+  /** Bump to re-apply an unchanged `settingsInitialTab`. */
+  settingsInitialTabNonce?: number;
   setShowDiagnostics: (v: boolean) => void;
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
   passwordDialogMode: "setup" | "unlock";
@@ -111,6 +116,8 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     setShowDatabasePanel,
     setShowQuickConnect,
     setShowSettings,
+    settingsInitialTab,
+    settingsInitialTabNonce,
     setShowDiagnostics,
     setShowErrorLog,
     passwordDialogMode,
@@ -221,6 +228,8 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         <SettingsDialog
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
+          initialTab={settingsInitialTab}
+          initialTabNonce={settingsInitialTabNonce}
         />
       </FeatureErrorBoundary>
 

@@ -11,18 +11,35 @@ import { useSettingHighlight } from "../../components/SettingsDialog/useSettingH
 import {
   TAB_DEFAULTS,
   DEFAULT_VALUES,
+  type SettingsTabId,
 } from "../../components/SettingsDialog/settingsConstants";
 
 /* ═══════════════════════════════════════════════════════════════
    Hook
    ═══════════════════════════════════════════════════════════════ */
 
-export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
+/**
+ * @param initialTab      Tab to land on. Applied every time the dialog opens
+ *                        (and whenever a *new* request arrives while it is
+ *                        already open), not just on first mount — so two
+ *                        different "Open … Settings" buttons each land on
+ *                        their own tab. Omit to keep the current/default tab.
+ * @param initialTabNonce Bump to re-apply `initialTab` when it is unchanged.
+ *                        Needed by the always-mounted settings *tab*, where
+ *                        clicking the same deep link twice must return to
+ *                        that tab even if the user navigated away in between.
+ */
+export function useSettingsDialog(
+  isOpen: boolean,
+  onClose: () => void,
+  initialTab?: SettingsTabId,
+  initialTabNonce?: number,
+) {
   const { t, i18n } = useTranslation();
   const { settings: contextSettings } = useSettings();
   const { toast } = useToastContext();
 
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState<string>(initialTab ?? "general");
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -74,6 +91,27 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
+
+  // ── Deep link: land on the requested tab ──────────────────────
+  // Re-applied on every open (and on every new request while open) rather
+  // than only on mount, so "Backup Settings" and "Configure Sync" each land
+  // on their own tab even when the dialog/tab is reused.
+  const appliedTabRequestRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen) {
+      // Closed: forget what was applied so the next open re-applies it.
+      appliedTabRequestRef.current = null;
+      return;
+    }
+    if (!initialTab) return;
+    const token = `${initialTab}:${initialTabNonce ?? 0}`;
+    if (appliedTabRequestRef.current === token) return;
+    appliedTabRequestRef.current = token;
+    setActiveTab(initialTab);
+    // An explicit deep link supersedes any in-progress search navigation.
+    setSearchQuery("");
+    setHighlightKey(null);
+  }, [isOpen, initialTab, initialTabNonce]);
 
   // ── Reset scroll-to-bottom on tab change ──────────────────────
   useEffect(() => {
@@ -235,7 +273,7 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
     } else {
       confirmResetImpl();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- settings object is the source of truth
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- settings object is the source of truth
   }, [settings]);
 
   const confirmResetImpl = useCallback(async () => {

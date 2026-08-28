@@ -123,6 +123,52 @@ export const SETTINGS_TABS: SettingsTab[] = [
 ];
 
 /* ═══════════════════════════════════════════════════════════════
+   Deep-link tab ids
+
+   `SETTINGS_TABS` stays `id: string` on purpose — the search index and
+   the drift guard join on plain strings. This parallel literal list is
+   the *typed* surface used to deep-link the dialog to a tab
+   (`initialTab`), so a caller cannot ask for a tab that does not exist.
+   `settingsDeepLink.test.ts` asserts the two lists stay identical.
+   ═══════════════════════════════════════════════════════════════ */
+
+export const SETTINGS_TAB_ID_LIST = [
+  "general",
+  "language",
+  "behavior",
+  "startup",
+  "layout",
+  "theme",
+  "updater",
+  "security",
+  "trust",
+  "performance",
+  "rdpDefaults",
+  "sshTerminal",
+  "webBrowser",
+  "proxy",
+  "vpn",
+  "backup",
+  "cloudSync",
+  "recording",
+  "macros",
+  "api",
+  "mcpServer",
+  "ai",
+  "backend",
+  "diagnostics",
+  "advanced",
+  "recovery",
+  "about",
+] as const;
+
+/** A tab the settings dialog can be deep-linked to. */
+export type SettingsTabId = (typeof SETTINGS_TAB_ID_LIST)[number];
+
+/** Widened view of {@link SETTINGS_TAB_ID_LIST} for plain-string checks. */
+export const SETTINGS_TAB_IDS: readonly string[] = SETTINGS_TAB_ID_LIST;
+
+/* ═══════════════════════════════════════════════════════════════
    Per-tab resettable keys
    ═══════════════════════════════════════════════════════════════ */
 

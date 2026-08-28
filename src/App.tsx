@@ -55,6 +55,7 @@ import { AutoLockController } from "./components/encryption/AutoLockController";
 import { Sidebar } from "./components/connection/Sidebar";
 import { SessionTabs } from "./components/session/SessionTabs";
 import { SessionViewer } from "./components/session/SessionViewer";
+import type { SettingsTabId } from "./components/SettingsDialog/settingsConstants";
 import { TabLayoutManager } from "./components/session/TabLayoutManager";
 import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import { SplashScreen } from "./components/app/SplashScreen";
@@ -108,6 +109,13 @@ const AppContent: React.FC = () => {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showDatabasePanel, setShowDatabasePanel] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
+  // Deep-link target for the settings tab/dialog. `nonce` distinguishes two
+  // requests for the same tab so re-clicking an "open settings" affordance
+  // returns to that tab even when the settings tab is already mounted.
+  const [settingsTabRequest, setSettingsTabRequest] = useState<{
+    tab?: SettingsTabId;
+    nonce: number;
+  }>({ nonce: 0 });
   const [databasePanelInitialTab, setDatabasePanelInitialTab] = useState<
     "collections" | undefined
   >(undefined);
@@ -476,7 +484,7 @@ const AppContent: React.FC = () => {
         // Backend may not be ready yet — not an error
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- appReady is the one meaningful trigger
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- appReady is the one meaningful trigger
   }, [appReady]);
 
   const handleQuickConnectWithHistory = useCallback(
@@ -962,30 +970,38 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleOpenSettings = useCallback(() => {
-    // Check if a settings tab already exists — reuse it
-    const existing = state.sessions.find((s) => s.protocol === "tool:settings");
-    if (existing) {
-      // If detached, focus the external window instead of the tab
-      if (existing.layout?.isDetached && existing.layout?.windowId) {
-        focusDetachedWindow(existing.layout.windowId);
+  const handleOpenSettings = useCallback(
+    (tab?: SettingsTabId) => {
+      // Record the requested tab before the tab is focused/created so the
+      // settings UI lands on it. A bumped nonce re-applies the same tab.
+      setSettingsTabRequest((prev) => ({ tab, nonce: prev.nonce + 1 }));
+      // Check if a settings tab already exists — reuse it
+      const existing = state.sessions.find(
+        (s) => s.protocol === "tool:settings",
+      );
+      if (existing) {
+        // If detached, focus the external window instead of the tab
+        if (existing.layout?.isDetached && existing.layout?.windowId) {
+          focusDetachedWindow(existing.layout.windowId);
+          return;
+        }
+        setActiveSessionId(existing.id);
         return;
       }
-      setActiveSessionId(existing.id);
-      return;
-    }
-    const settingsSession: ConnectionSession = {
-      id: generateId(),
-      connectionId: "tool-settings",
-      name: "Settings",
-      status: "connected",
-      startTime: new Date(),
-      protocol: "tool:settings",
-      hostname: "",
-    };
-    dispatch({ type: "ADD_SESSION", payload: settingsSession });
-    setActiveSessionId(settingsSession.id);
-  }, [dispatch, setActiveSessionId, state.sessions, focusDetachedWindow]);
+      const settingsSession: ConnectionSession = {
+        id: generateId(),
+        connectionId: "tool-settings",
+        name: "Settings",
+        status: "connected",
+        startTime: new Date(),
+        protocol: "tool:settings",
+        hostname: "",
+      };
+      dispatch({ type: "ADD_SESSION", payload: settingsSession });
+      setActiveSessionId(settingsSession.id);
+    },
+    [dispatch, setActiveSessionId, state.sessions, focusDetachedWindow],
+  );
 
   const handleDiagnostics = useCallback(
     (connection: Connection) => {
@@ -1636,7 +1652,7 @@ const AppContent: React.FC = () => {
           openImportExport={() => {
             toolShowSetters.current.importExport(true);
           }}
-          setShowSettings={handleOpenSettings}
+          openSettings={handleOpenSettings}
           setRdpPanelOpen={toolShowSetters.current.rdpSessions}
           setShowProxyMenu={toolShowSetters.current.proxyChain}
           setShowShortcutManager={toolShowSetters.current.shortcutManager}
@@ -1735,6 +1751,8 @@ const AppContent: React.FC = () => {
                     onDatabaseSelect={handleDatabaseSelect}
                     onDatabaseClose={handleDatabaseClose}
                     onIntegrationStateChange={handleIntegrationSessionState}
+                    settingsInitialTab={settingsTabRequest.tab}
+                    settingsInitialTabNonce={settingsTabRequest.nonce}
                   />
                 )}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
@@ -1843,7 +1861,9 @@ const AppContent: React.FC = () => {
         showErrorLog={showErrorLog}
         setShowDatabasePanel={setShowDatabasePanel}
         setShowQuickConnect={setShowQuickConnect}
-        setShowSettings={handleOpenSettings}
+        setShowSettings={setShowSettings}
+        settingsInitialTab={settingsTabRequest.tab}
+        settingsInitialTabNonce={settingsTabRequest.nonce}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
         passwordDialogMode={passwordDialogMode}

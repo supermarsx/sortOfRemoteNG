@@ -59,7 +59,7 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
   setShowQuickConnect: vi.fn(),
   setShowDatabasePanel: vi.fn(),
   openImportExport: vi.fn(),
-  setShowSettings: vi.fn(),
+  openSettings: vi.fn(),
   setRdpPanelOpen: vi.fn(),
   setShowInternalProxyManager: vi.fn(),
   setShowProxyMenu: vi.fn(),
@@ -107,13 +107,15 @@ describe("AppToolbar", () => {
     );
   });
 
-  it("shows the settings button when showSettingsIcon is true and clicking it calls setShowSettings", () => {
+  it("shows the settings button when showSettingsIcon is true and clicking it opens settings with no tab", () => {
     const props = makeProps();
     render(<AppToolbar {...(props as any)} />);
     const settingsBtn = screen.getByTitle("Settings");
     expect(settingsBtn).toBeTruthy();
     fireEvent.click(settingsBtn);
-    expect(props.setShowSettings).toHaveBeenCalledWith(true);
+    // The generic gear requests no particular tab, so the dialog keeps its
+    // default/last tab rather than being deep-linked.
+    expect(props.openSettings).toHaveBeenCalledWith();
   });
 
   it("opens Import / Export through the toolbar action", () => {

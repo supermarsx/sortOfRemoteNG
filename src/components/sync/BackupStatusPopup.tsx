@@ -17,6 +17,7 @@ import {
   ToolbarPopover,
   ToolbarPopoverHeader,
 } from "../ui/overlays/ToolbarPopover";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import {
   useBackupStatus,
   formatBytes,
@@ -53,7 +54,7 @@ const StatusIconButton: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
 const PopoverHeaderActions: React.FC<{
   mgr: Mgr;
-  onOpenSettings?: () => void;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
 }> = ({ mgr, onOpenSettings }) => (
   <>
     <button
@@ -64,9 +65,10 @@ const PopoverHeaderActions: React.FC<{
       <FolderOpen className="w-4 h-4" />
     </button>
     <button
-      onClick={onOpenSettings}
+      onClick={() => onOpenSettings?.("backup")}
       className="sor-toolbar-popover-action-btn"
       title={mgr.t("backup.settings", "Backup Settings")}
+      data-testid="backup-open-settings"
     >
       <Settings className="w-4 h-4" />
     </button>
@@ -262,7 +264,8 @@ const BackupList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
 interface BackupStatusPopupProps {
   onBackupNow?: (data: unknown) => Promise<void>;
-  onOpenSettings?: () => void;
+  /** Opens settings; receives the tab this popup owns (`backup`). */
+  onOpenSettings?: (tab?: SettingsTabId) => void;
 }
 
 export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({

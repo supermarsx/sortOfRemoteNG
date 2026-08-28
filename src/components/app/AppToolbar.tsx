@@ -38,6 +38,7 @@ import { Connection } from "../../types/connection/connection";
 import { BackupStatusPopup } from "../sync/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "../sync/CloudSyncStatusPopup";
 import { SyncBackupStatusBar } from "../sync/SyncBackupStatusBar";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { buildBackupPayload } from "../../utils/services/backupPayload";
 
@@ -51,7 +52,12 @@ interface AppToolbarProps {
   setShowQuickConnect: (v: boolean) => void;
   setShowDatabasePanel: (v: boolean) => void;
   openImportExport: () => void;
-  setShowSettings: (v: boolean) => void;
+  /**
+   * Open the settings surface, optionally deep-linked to a tab. Called with no
+   * argument by the generic gear icon, and with a tab id by the sync/backup
+   * affordances so each lands on its own settings section.
+   */
+  openSettings: (tab?: SettingsTabId) => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setShowProxyMenu: (v: boolean) => void;
   setShowShortcutManager: (v: boolean) => void;
@@ -90,7 +96,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowQuickConnect,
   setShowDatabasePanel,
   openImportExport,
-  setShowSettings,
+  openSettings,
   setRdpPanelOpen,
   setShowProxyMenu,
   setShowShortcutManager,
@@ -251,7 +257,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           )}
           {appSettings.showSettingsIcon && (
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => openSettings()}
               className="app-bar-button p-2"
               title={t("toolbar.settings", "Settings")}
               data-testid="toolbar-settings"
@@ -462,14 +468,14 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                   data,
                 });
               }}
-              onOpenSettings={() => setShowSettings(true)}
+              onOpenSettings={openSettings}
             />
           )}
           {appSettings.showCloudSyncStatusIcon && (
             <CloudSyncStatusPopup
               cloudSyncConfig={appSettings.cloudSync}
               onSyncNow={performCloudSync}
-              onOpenSettings={() => setShowSettings(true)}
+              onOpenSettings={openSettings}
             />
           )}
           {appSettings.showSyncBackupStatusIcon && (
@@ -497,7 +503,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                   console.error("Backup failed:", error);
                 }
               }}
-              onOpenSettings={() => setShowSettings(true)}
+              onOpenSettings={openSettings}
             />
           )}
         </div>

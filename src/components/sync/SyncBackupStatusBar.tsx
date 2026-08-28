@@ -12,12 +12,14 @@ import {
   Loader2,
   Archive,
   Timer,
+  Settings,
 } from "lucide-react";
 import { CloudSyncProvider } from "../../types/settings/settings";
 import {
   ToolbarPopover,
   ToolbarPopoverHeader,
 } from "../ui/overlays/ToolbarPopover";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import {
   useSyncBackupStatusBar,
   PROVIDER_NAMES,
@@ -107,7 +109,10 @@ const ProviderRow: React.FC<{ provider: CloudSyncProvider; mgr: Mgr }> = ({
   );
 };
 
-const CloudSyncSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+const CloudSyncSection: React.FC<{
+  mgr: Mgr;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
+}> = ({ mgr, onOpenSettings }) => (
   <div className="p-4 border-b border-[var(--color-border)]">
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
@@ -115,6 +120,14 @@ const CloudSyncSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <span className="text-sm font-medium text-[var(--color-textSecondary)]">
           {mgr.t("syncBackup.cloudSync", "Cloud Sync")}
         </span>
+        <button
+          onClick={() => onOpenSettings?.("cloudSync")}
+          className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)]"
+          title={mgr.t("syncBackup.cloudSyncSettings", "Cloud Sync Settings")}
+          data-testid="sync-bar-open-cloud-sync-settings"
+        >
+          <Settings className="w-3 h-3" />
+        </button>
       </div>
       {mgr.hasSync && (
         <button
@@ -154,10 +167,11 @@ const CloudSyncSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   </div>
 );
 
-const BackupSection: React.FC<{ mgr: Mgr; onBackupNow?: () => void }> = ({
-  mgr,
-  onBackupNow,
-}) => (
+const BackupSection: React.FC<{
+  mgr: Mgr;
+  onBackupNow?: () => void;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
+}> = ({ mgr, onBackupNow, onOpenSettings }) => (
   <div className="p-4">
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
@@ -165,6 +179,14 @@ const BackupSection: React.FC<{ mgr: Mgr; onBackupNow?: () => void }> = ({
         <span className="text-sm font-medium text-[var(--color-textSecondary)]">
           {mgr.t("syncBackup.localBackup", "Local Backup")}
         </span>
+        <button
+          onClick={() => onOpenSettings?.("backup")}
+          className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)]"
+          title={mgr.t("syncBackup.backupSettings", "Backup Settings")}
+          data-testid="sync-bar-open-backup-settings"
+        >
+          <Settings className="w-3 h-3" />
+        </button>
       </div>
       <button
         onClick={mgr.handleBackupNow}
@@ -254,7 +276,11 @@ interface SyncBackupStatusBarProps {
   };
   onSyncNow?: (provider?: CloudSyncProvider) => Promise<void>;
   onBackupNow?: () => void;
-  onOpenSettings?: () => void;
+  /**
+   * Opens settings. The two section headers pass their own tab (`cloudSync` /
+   * `backup`); the combined footer link stays generic because it covers both.
+   */
+  onOpenSettings?: (tab?: SettingsTabId) => void;
 }
 
 export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
@@ -297,12 +323,17 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
             titleClassName="text-sm"
             onClose={() => mgr.setIsExpanded(false)}
           />
-          <CloudSyncSection mgr={mgr} />
-          <BackupSection mgr={mgr} onBackupNow={onBackupNow} />
+          <CloudSyncSection mgr={mgr} onOpenSettings={onOpenSettings} />
+          <BackupSection
+            mgr={mgr}
+            onBackupNow={onBackupNow}
+            onOpenSettings={onOpenSettings}
+          />
           <div className="px-4 py-2 border-t border-[var(--color-border)]">
             <button
-              onClick={onOpenSettings}
+              onClick={() => onOpenSettings?.()}
               className="w-full text-center text-xs text-primary hover:text-primary"
+              data-testid="sync-bar-open-settings"
             >
               {mgr.t("syncBackup.openSettings", "Open Sync & Backup Settings")}
             </button>

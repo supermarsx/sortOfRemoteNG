@@ -17,6 +17,7 @@ import {
   ToolbarPopover,
   ToolbarPopoverHeader,
 } from "../ui/overlays/ToolbarPopover";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import {
   useCloudSyncStatus,
   PROVIDER_NAMES,
@@ -44,7 +45,8 @@ interface CloudSyncStatusPopupProps {
     frequency: string;
   };
   onSyncNow?: (provider?: CloudSyncProvider) => Promise<void>;
-  onOpenSettings?: () => void;
+  /** Opens settings; receives the tab this popup owns (`cloudSync`). */
+  onOpenSettings?: (tab?: SettingsTabId) => void;
 }
 
 type Mgr = ReturnType<typeof useCloudSyncStatus>;
@@ -93,18 +95,19 @@ const ProviderStatusIcon: React.FC<{
 
 /* ── Sub-components ──────────────────────────────────────────────── */
 
-const EmptyState: React.FC<{ mgr: Mgr; onOpenSettings?: () => void }> = ({
-  mgr,
-  onOpenSettings,
-}) => (
+const EmptyState: React.FC<{
+  mgr: Mgr;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
+}> = ({ mgr, onOpenSettings }) => (
   <div className="text-center py-6">
     <CloudOff className="w-12 h-12 text-[var(--color-textMuted)] mx-auto mb-3" />
     <p className="text-sm text-[var(--color-textSecondary)] mb-4">
       {mgr.t("sync.noProviders", "No sync providers configured")}
     </p>
     <button
-      onClick={onOpenSettings}
+      onClick={() => onOpenSettings?.("cloudSync")}
       className="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-medium transition-colors"
+      data-testid="cloud-sync-configure"
     >
       {mgr.t("sync.configure", "Configure Sync")}
     </button>
@@ -268,9 +271,10 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
             onClose={() => mgr.setIsOpen(false)}
             actions={
               <button
-                onClick={onOpenSettings}
+                onClick={() => onOpenSettings?.("cloudSync")}
                 className="sor-toolbar-popover-action-btn"
                 title={mgr.t("sync.settings", "Sync Settings")}
+                data-testid="cloud-sync-open-settings"
               >
                 <Settings className="w-4 h-4" />
               </button>

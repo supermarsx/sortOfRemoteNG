@@ -9,6 +9,7 @@ import {
 } from "../../types/connection/connection";
 import { isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol } from "../windows/WindowsToolPanel.helpers";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { FeatureErrorBoundary } from "../app/FeatureErrorBoundary";
 import { getDirectSessionUnavailableMessage } from "../../utils/session/protocolAvailability";
 import {
@@ -45,31 +46,20 @@ const IntegrationPanelHost = dynamic(
   { ssr: false },
 );
 const IdracSessionPanel = dynamic(
-  () =>
-    idracRuntimeDescriptor
-      .importPanel()
-      .then((module) => module.default),
+  () => idracRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const IloSessionPanel = dynamic(
-  () =>
-    iloRuntimeDescriptor
-      .importPanel()
-      .then((module) => module.default),
+  () => iloRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const LenovoSessionPanel = dynamic(
-  () =>
-    lenovoRuntimeDescriptor
-      .importPanel()
-      .then((module) => module.default),
+  () => lenovoRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const SupermicroSessionPanel = dynamic(
   () =>
-    supermicroRuntimeDescriptor
-      .importPanel()
-      .then((module) => module.default),
+    supermicroRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const VoipPhoneSessionPanel = dynamic(
@@ -78,17 +68,11 @@ const VoipPhoneSessionPanel = dynamic(
   { ssr: false },
 );
 const GcpSessionPanel = dynamic(
-  () =>
-    gcpRuntimeDescriptor
-      .importPanel()
-      .then((module) => module.default),
+  () => gcpRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const AzureSessionPanel = dynamic(
-  () =>
-    azureRuntimeDescriptor
-      .importPanel()
-      .then((module) => module.default),
+  () => azureRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const DigitalOceanSessionPanel = dynamic(
@@ -100,14 +84,11 @@ const DigitalOceanSessionPanel = dynamic(
 );
 const IbmCloudSessionPanel = dynamic(
   () =>
-    ibmCloudRuntimeDescriptor
-      .importPanel()
-      .then((module) => module.default),
+    ibmCloudRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const HerokuSessionPanel = dynamic(
-  () =>
-    herokuRuntimeDescriptor.importPanel().then((module) => module.default),
+  () => herokuRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const ScalewaySessionPanel = dynamic(
@@ -116,8 +97,7 @@ const ScalewaySessionPanel = dynamic(
   { ssr: false },
 );
 const LinodeSessionPanel = dynamic(
-  () =>
-    linodeRuntimeDescriptor.importPanel().then((module) => module.default),
+  () => linodeRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const OvhCloudSessionPanel = dynamic(
@@ -250,6 +230,10 @@ interface SessionViewerProps {
     sessionId: string,
     event: IntegrationSessionStateEvent,
   ) => void;
+  /** Settings tab requested by the last "open settings" affordance. */
+  settingsInitialTab?: SettingsTabId;
+  /** Bump to re-apply an unchanged `settingsInitialTab`. */
+  settingsInitialTabNonce?: number;
 }
 
 /** Generic themed error view for non-RDP protocols. */
@@ -303,6 +287,8 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
   onDatabaseSelect,
   onDatabaseClose,
   onIntegrationStateChange,
+  settingsInitialTab,
+  settingsInitialTabNonce,
 }) => {
   const renderContent = () => {
     // Tool tabs render their own component
@@ -318,6 +304,8 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
           onEditConnection={onEditConnection}
           onDatabaseSelect={onDatabaseSelect}
           onDatabaseClose={onDatabaseClose}
+          settingsInitialTab={settingsInitialTab}
+          settingsInitialTabNonce={settingsInitialTabNonce}
         />
       );
     }

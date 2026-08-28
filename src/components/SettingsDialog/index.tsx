@@ -38,7 +38,11 @@ import AboutSettings from "./sections/AboutSettings";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
-import { SETTINGS_TABS, TAB_DEFAULTS } from "./settingsConstants";
+import {
+  SETTINGS_TABS,
+  TAB_DEFAULTS,
+  type SettingsTabId,
+} from "./settingsConstants";
 import {
   useSettingsDialog,
   type SettingsDialogMgr,
@@ -51,6 +55,10 @@ import {
 interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Deep-link target; applied on every open, not only the first. */
+  initialTab?: SettingsTabId;
+  /** Bump to re-apply an unchanged `initialTab`. */
+  initialTabNonce?: number;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -343,8 +351,10 @@ const BenchmarkOverlay: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   isOpen,
   onClose,
+  initialTab,
+  initialTabNonce,
 }) => {
-  const mgr = useSettingsDialog(isOpen, onClose);
+  const mgr = useSettingsDialog(isOpen, onClose, initialTab, initialTabNonce);
 
   if (!isOpen || !mgr.settings) return null;
 
@@ -397,12 +407,20 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
 interface SettingsTabContentProps {
   onClose: () => void;
+  /**
+   * Deep-link target. This variant is always mounted once its tab exists, so
+   * a repeated request for the same tab is distinguished by `initialTabNonce`.
+   */
+  initialTab?: SettingsTabId;
+  initialTabNonce?: number;
 }
 
 export const SettingsTabContent: React.FC<SettingsTabContentProps> = ({
   onClose,
+  initialTab,
+  initialTabNonce,
 }) => {
-  const mgr = useSettingsDialog(true, onClose);
+  const mgr = useSettingsDialog(true, onClose, initialTab, initialTabNonce);
 
   if (!mgr.settings) return null;
 
