@@ -34,6 +34,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         </p>
 
         <Toggle
+          settingKey="codecsEnabled"
           checked={codecsOn}
           onChange={(v) => update({ codecsEnabled: v })}
           icon={<Sparkles size={16} />}
@@ -46,6 +47,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           className={!codecsOn ? "opacity-50 pointer-events-none space-y-3" : "space-y-3"}
         >
           <Toggle
+            settingKey="remoteFxEnabled"
             checked={remoteFxOn}
             onChange={(v) => update({ remoteFxEnabled: v })}
             icon={<Cpu size={16} />}
@@ -62,6 +64,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
               <InfoTooltip text="RLGR1 offers faster decoding; RLGR3 provides better compression at a slight CPU cost." />
             </span>
             <Select
+              settingKey="remoteFxEntropy"
               value={rdp.remoteFxEntropy ?? "rlgr3"}
               onChange={(v: string) =>
                 update({ remoteFxEntropy: v as "rlgr1" | "rlgr3" })
@@ -76,6 +79,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
           <div className="border-t border-[var(--color-border)] pt-3">
             <Toggle
+              settingKey="gfxEnabled"
               checked={gfxOn}
               onChange={(v) => update({ gfxEnabled: v })}
               icon={<FastForward size={16} />}
@@ -95,6 +99,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
                   <InfoTooltip text="Selects the backend H.264 decoder. Media Foundation uses GPU hardware; openh264 is a software fallback." />
                 </span>
                 <Select
+                  settingKey="h264Decoder"
                   value={rdp.h264Decoder ?? "auto"}
                   onChange={(v: string) =>
                     update({
@@ -116,6 +121,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
               <div className="pl-7">
                 <Toggle
+                  settingKey="nalPassthrough"
                   checked={nalPassthrough}
                   onChange={(v) => {
                     const updates: Record<string, any> = { nalPassthrough: v };

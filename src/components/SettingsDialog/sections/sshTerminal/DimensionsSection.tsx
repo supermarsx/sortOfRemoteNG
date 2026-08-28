@@ -16,6 +16,7 @@ const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
     <Card>
       <Toggle
+        settingKey="useCustomDimensions"
         checked={cfg.useCustomDimensions}
         onChange={(v) => up({ useCustomDimensions: v })}
         icon={<Maximize2 size={16} />}

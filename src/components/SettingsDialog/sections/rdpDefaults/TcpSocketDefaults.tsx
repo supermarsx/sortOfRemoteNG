@@ -48,6 +48,7 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         />
 
         <Toggle
+          settingKey="tcpNodelay"
           checked={rdp.tcpNodelay ?? true}
           onChange={(v) => update({ tcpNodelay: v })}
           icon={<Zap size={16} />}
@@ -56,25 +57,27 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           infoTooltip="Disables Nagle's algorithm to send packets immediately, reducing latency for interactive sessions."
         />
 
-        <SettingsTcpKeepAliveBlock
-          enabled={keepAliveOn}
-          onEnabledChange={(v) => update({ tcpKeepAlive: v })}
-          label="TCP keep-alive"
-          description="Send periodic probes to detect stale connections before they're dropped."
-          infoTooltip="Sends periodic keep-alive probes to detect and prevent stale connections from being dropped."
-          intervalSecs={{
-            settingKey: "tcpKeepAliveIntervalSecs",
-            value: rdp.tcpKeepAliveIntervalSecs ?? 60,
-            onChange: (v) => update({ tcpKeepAliveIntervalSecs: v }),
-            min: 5,
-            max: 300,
-            step: 5,
-            variant: "slider",
-            label: "Keep-alive interval",
-            infoTooltip:
-              "Time in seconds between TCP keep-alive probes sent to maintain the connection.",
-          }}
-        />
+        <div className="flex flex-col gap-2.5" data-setting-key="tcpKeepAlive">
+          <SettingsTcpKeepAliveBlock
+            enabled={keepAliveOn}
+            onEnabledChange={(v) => update({ tcpKeepAlive: v })}
+            label="TCP keep-alive"
+            description="Send periodic probes to detect stale connections before they're dropped."
+            infoTooltip="Sends periodic keep-alive probes to detect and prevent stale connections from being dropped."
+            intervalSecs={{
+              settingKey: "tcpKeepAliveIntervalSecs",
+              value: rdp.tcpKeepAliveIntervalSecs ?? 60,
+              onChange: (v) => update({ tcpKeepAliveIntervalSecs: v }),
+              min: 5,
+              max: 300,
+              step: 5,
+              variant: "slider",
+              label: "Keep-alive interval",
+              infoTooltip:
+                "Time in seconds between TCP keep-alive probes sent to maintain the connection.",
+            }}
+          />
+        </div>
 
         <SettingsSelectRow
           settingKey="tcpRecvBufferSize"

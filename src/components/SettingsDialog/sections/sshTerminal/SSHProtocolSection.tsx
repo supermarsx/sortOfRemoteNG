@@ -38,6 +38,7 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
 
       <Toggle
+        settingKey="enableCompression"
         checked={cfg.enableCompression}
         onChange={(v) => up({ enableCompression: v })}
         icon={<Archive size={16} />}

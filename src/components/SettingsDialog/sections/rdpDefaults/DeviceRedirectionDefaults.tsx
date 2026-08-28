@@ -1,4 +1,4 @@
-import type { SectionProps, Rdp } from "./selectClass";
+import type { SectionProps } from "./selectClass";
 import React from "react";
 import {
   HardDrive,
@@ -44,78 +44,6 @@ const PRINTER_OUTPUT_MODE_OPTIONS: Array<{
   { value: "native-print", label: "Send to OS printer (spool fallback)" },
 ];
 
-const devices: {
-  key: keyof Rdp;
-  label: string;
-  description: string;
-  defaultVal: boolean;
-  icon: React.ReactNode;
-}[] = [
-  {
-    key: "clipboardRedirection",
-    label: "Clipboard",
-    description: "Share clipboard between local and remote for copy/paste.",
-    defaultVal: true,
-    icon: <Copy size={16} />,
-  },
-  {
-    key: "printerRedirection",
-    label: "Printers",
-    description: "Redirect local printers to the remote session.",
-    defaultVal: false,
-    icon: <Printer size={16} />,
-  },
-  {
-    key: "portRedirection",
-    label: "Serial / COM ports",
-    description: "Redirect serial/COM ports for hardware devices.",
-    defaultVal: false,
-    icon: <Cable size={16} />,
-  },
-  {
-    key: "smartCardRedirection",
-    label: "Smart cards",
-    description: "Redirect smart card readers for authentication.",
-    defaultVal: false,
-    icon: <CreditCard size={16} />,
-  },
-  {
-    key: "webAuthnRedirection",
-    label: "WebAuthn / FIDO",
-    description: "Redirect security keys for passwordless auth.",
-    defaultVal: false,
-    icon: <ShieldCheck size={16} />,
-  },
-  {
-    key: "videoCaptureRedirection",
-    label: "Video capture",
-    description: "Redirect local cameras to the remote session.",
-    defaultVal: false,
-    icon: <Video size={16} />,
-  },
-  {
-    key: "audioInputRedirection",
-    label: "Audio input",
-    description: "Redirect microphone to the remote session.",
-    defaultVal: false,
-    icon: <Mic size={16} />,
-  },
-  {
-    key: "usbRedirection",
-    label: "USB devices",
-    description: "Redirect USB devices for direct hardware access.",
-    defaultVal: false,
-    icon: <Usb size={16} />,
-  },
-  {
-    key: "driveRedirection",
-    label: "Drive redirection",
-    description: "Share local drives and folders as mapped network drives.",
-    defaultVal: false,
-    icon: <HardDrive size={16} />,
-  },
-];
-
 const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="space-y-4">
     <SectionHeader
@@ -129,19 +57,81 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         Per-connection settings can override these.
       </p>
 
-      {devices.map((d) => (
-        <Toggle
-          key={d.key}
-          checked={(rdp[d.key] as boolean | undefined) ?? d.defaultVal}
-          onChange={(v: boolean) =>
-            update({ [d.key]: v } as Record<string, unknown>)
-          }
-          icon={d.icon}
-          label={d.label}
-          description={d.description}
-          settingKey={`rdpDefaults.${d.key}`}
-        />
-      ))}
+      {/* Written out one by one rather than mapped over a table: `settingKey`
+          has to be a literal for `settingsSearchDrift` to join these controls to
+          the search index. */}
+      <Toggle
+        settingKey="rdpDefaults.clipboardRedirection"
+        checked={rdp.clipboardRedirection ?? true}
+        onChange={(v: boolean) => update({ clipboardRedirection: v })}
+        icon={<Copy size={16} />}
+        label="Clipboard"
+        description="Share clipboard between local and remote for copy/paste."
+      />
+      <Toggle
+        settingKey="rdpDefaults.printerRedirection"
+        checked={rdp.printerRedirection ?? false}
+        onChange={(v: boolean) => update({ printerRedirection: v })}
+        icon={<Printer size={16} />}
+        label="Printers"
+        description="Redirect local printers to the remote session."
+      />
+      <Toggle
+        settingKey="rdpDefaults.portRedirection"
+        checked={rdp.portRedirection ?? false}
+        onChange={(v: boolean) => update({ portRedirection: v })}
+        icon={<Cable size={16} />}
+        label="Serial / COM ports"
+        description="Redirect serial/COM ports for hardware devices."
+      />
+      <Toggle
+        settingKey="rdpDefaults.smartCardRedirection"
+        checked={rdp.smartCardRedirection ?? false}
+        onChange={(v: boolean) => update({ smartCardRedirection: v })}
+        icon={<CreditCard size={16} />}
+        label="Smart cards"
+        description="Redirect smart card readers for authentication."
+      />
+      <Toggle
+        settingKey="rdpDefaults.webAuthnRedirection"
+        checked={rdp.webAuthnRedirection ?? false}
+        onChange={(v: boolean) => update({ webAuthnRedirection: v })}
+        icon={<ShieldCheck size={16} />}
+        label="WebAuthn / FIDO"
+        description="Redirect security keys for passwordless auth."
+      />
+      <Toggle
+        settingKey="rdpDefaults.videoCaptureRedirection"
+        checked={rdp.videoCaptureRedirection ?? false}
+        onChange={(v: boolean) => update({ videoCaptureRedirection: v })}
+        icon={<Video size={16} />}
+        label="Video capture"
+        description="Redirect local cameras to the remote session."
+      />
+      <Toggle
+        settingKey="rdpDefaults.audioInputRedirection"
+        checked={rdp.audioInputRedirection ?? false}
+        onChange={(v: boolean) => update({ audioInputRedirection: v })}
+        icon={<Mic size={16} />}
+        label="Audio input"
+        description="Redirect microphone to the remote session."
+      />
+      <Toggle
+        settingKey="rdpDefaults.usbRedirection"
+        checked={rdp.usbRedirection ?? false}
+        onChange={(v: boolean) => update({ usbRedirection: v })}
+        icon={<Usb size={16} />}
+        label="USB devices"
+        description="Redirect USB devices for direct hardware access."
+      />
+      <Toggle
+        settingKey="rdpDefaults.driveRedirection"
+        checked={rdp.driveRedirection ?? false}
+        onChange={(v: boolean) => update({ driveRedirection: v })}
+        icon={<HardDrive size={16} />}
+        label="Drive redirection"
+        description="Share local drives and folders as mapped network drives."
+      />
 
       <SettingsSelectRow
         settingKey="rdpDefaults.clipboardDirection"

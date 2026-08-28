@@ -321,6 +321,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
       />
       <Card>
         <Toggle
+          settingKey="bgEnabled"
           checked={bg.enabled}
           onChange={(v) => ubg({ enabled: v })}
           icon={<Layers size={16} />}
@@ -402,16 +403,18 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                 }))}
                 infoTooltip="The direction in which the gradient transitions between color stops."
               />
-              <GradientStopsEditor
-                stops={
-                  bg.gradientStops || [
-                    { color: "#0b1120", position: 0 },
-                    { color: "#1a1a2e", position: 100 },
-                  ]
-                }
-                onChange={(s) => ubg({ gradientStops: s })}
-                t={t}
-              />
+              <div data-setting-key="bgGradientStops">
+                <GradientStopsEditor
+                  stops={
+                    bg.gradientStops || [
+                      { color: "#0b1120", position: 0 },
+                      { color: "#1a1a2e", position: 100 },
+                    ]
+                  }
+                  onChange={(s) => ubg({ gradientStops: s })}
+                  t={t}
+                />
+              </div>
             </>
           )}
 
@@ -546,6 +549,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
             label={t("settings.sshTerminal.bg.fadingTitle", "Edge fading")}
           />
           <Toggle
+            settingKey="bgFadingEnabled"
             checked={fading.enabled}
             onChange={(v) => ubg({ fading: { ...fading, enabled: v } })}
             icon={<Sparkles size={16} />}
@@ -612,11 +616,13 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
             icon={<ImageIcon size={11} />}
             label={t("settings.sshTerminal.bg.overlaysTitle", "Overlays")}
           />
-          <OverlayEditor
-            overlays={bg.overlays || []}
-            onChange={(o) => ubg({ overlays: o })}
-            t={t}
-          />
+          <div data-setting-key="bgOverlays">
+            <OverlayEditor
+              overlays={bg.overlays || []}
+              onChange={(o) => ubg({ overlays: o })}
+              t={t}
+            />
+          </div>
         </div>
       </Card>
     </div>

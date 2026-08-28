@@ -63,6 +63,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         {selectedValue === "custom" && (
           <>
             <SettingsNumberRow
+              settingKey="defaultWidth"
               icon={<ArrowLeftRight size={16} />}
               label="Width"
               value={currentW}
@@ -73,6 +74,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
               infoTooltip="Custom horizontal resolution in pixels for the remote desktop."
             />
             <SettingsNumberRow
+              settingKey="defaultHeight"
               icon={<ArrowUpDown size={16} />}
               label="Height"
               value={currentH}
@@ -124,6 +126,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         />
 
         <Toggle
+          settingKey="lossyCompression"
           checked={rdp.lossyCompression ?? true}
           onChange={(v) => update({ lossyCompression: v })}
           icon={<Minimize2 size={16} />}

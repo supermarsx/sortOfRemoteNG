@@ -60,6 +60,7 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
 
       <Toggle
+        settingKey="bellOveruseProtection"
         checked={cfg.bellOveruseProtection.enabled}
         onChange={(v) =>
           up({
@@ -152,6 +153,7 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
 
       <Toggle
+        settingKey="blinkWindowOnActivity"
         checked={cfg.blinkWindowOnActivity}
         onChange={(v) => up({ blinkWindowOnActivity: v })}
         icon={<AppWindow size={16} />}

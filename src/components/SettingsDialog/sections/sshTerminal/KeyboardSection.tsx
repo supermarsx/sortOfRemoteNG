@@ -15,6 +15,7 @@ const KeyboardSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
     <Card>
       <Toggle
+        settingKey="disableKeypadMode"
         checked={cfg.disableKeypadMode}
         onChange={(v) => up({ disableKeypadMode: v })}
         icon={<Hash size={16} />}
@@ -29,6 +30,7 @@ const KeyboardSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Prevent the remote host from switching the numeric keypad into application mode. Keys will always send numeric values."
       />
       <Toggle
+        settingKey="disableApplicationCursorKeys"
         checked={cfg.disableApplicationCursorKeys}
         onChange={(v) => up({ disableApplicationCursorKeys: v })}
         icon={<ArrowUpDown size={16} />}

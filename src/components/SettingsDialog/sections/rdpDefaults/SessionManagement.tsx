@@ -63,6 +63,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
         />
 
         <Toggle
+          settingKey="rdpSessionThumbnailsEnabled"
           checked={thumbnailsOn}
           onChange={(v) => updateSettings({ rdpSessionThumbnailsEnabled: v })}
           icon={<Image size={16} />}

@@ -21,6 +21,7 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
     <Card>
       <Toggle
+        settingKey="tcpNoDelay"
         checked={cfg.tcpOptions.tcpNoDelay}
         onChange={(v) =>
           up({ tcpOptions: { ...cfg.tcpOptions, tcpNoDelay: v } })
@@ -37,64 +38,67 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Send data immediately without waiting to batch small packets. Reduces latency at the cost of slightly more network overhead."
       />
 
-      <SettingsTcpKeepAliveBlock
-        enabled={cfg.tcpOptions.tcpKeepAlive}
-        onEnabledChange={(v) =>
-          up({ tcpOptions: { ...cfg.tcpOptions, tcpKeepAlive: v } })
-        }
-        label={t(
-          "settings.sshTerminal.tcpKeepAlive",
-          "Enable TCP keepalive",
-        )}
-        description={t(
-          "settings.sshTerminal.tcpKeepAliveDesc",
-          "Send TCP keepalive probes to detect dead connections",
-        )}
-        infoTooltip="Send periodic TCP keepalive probes to detect and clean up dead connections before they time out."
-        soKeepAlive={{
-          value: cfg.tcpOptions.soKeepAlive,
-          onChange: (v) =>
-            up({ tcpOptions: { ...cfg.tcpOptions, soKeepAlive: v } }),
-          label: t(
-            "settings.sshTerminal.soKeepAlive",
-            "Enable SO_KEEPALIVE option",
-          ),
-          description: t(
-            "settings.sshTerminal.soKeepAliveDesc",
-            "Enable socket-level keepalive mechanism",
-          ),
-          infoTooltip:
-            "Enable the socket-level keepalive mechanism provided by the operating system.",
-        }}
-        intervalSecs={{
-          settingKey: "keepAliveInterval",
-          value: cfg.tcpOptions.keepAliveInterval,
-          onChange: (v) =>
-            up({ tcpOptions: { ...cfg.tcpOptions, keepAliveInterval: v } }),
-          min: 1,
-          max: 3600,
-          label: t(
-            "settings.sshTerminal.keepAliveInterval",
-            "Keepalive interval",
-          ),
-          infoTooltip:
-            "Time in seconds between TCP keepalive probes sent to the remote server.",
-        }}
-        probes={{
-          settingKey: "keepAliveProbes",
-          value: cfg.tcpOptions.keepAliveProbes,
-          onChange: (v) =>
-            up({ tcpOptions: { ...cfg.tcpOptions, keepAliveProbes: v } }),
-          min: 1,
-          max: 30,
-          label: t(
-            "settings.sshTerminal.keepAliveProbes",
-            "Keepalive probes",
-          ),
-          infoTooltip:
-            "Number of unacknowledged keepalive probes before the connection is considered dead.",
-        }}
-      />
+      {/* `SettingsTcpKeepAliveBlock` takes no `settingKey`, and the keys it
+          passes to its nested rows are object properties the settings-search
+          drift guard cannot read. Anchor the block itself; the wrapper
+          reproduces the card's own `flex flex-col gap-2.5` spacing. */}
+      <div className="flex flex-col gap-2.5" data-setting-key="sshTcpKeepAlive">
+        <SettingsTcpKeepAliveBlock
+          enabled={cfg.tcpOptions.tcpKeepAlive}
+          onEnabledChange={(v) =>
+            up({ tcpOptions: { ...cfg.tcpOptions, tcpKeepAlive: v } })
+          }
+          label={t("settings.sshTerminal.tcpKeepAlive", "Enable TCP keepalive")}
+          description={t(
+            "settings.sshTerminal.tcpKeepAliveDesc",
+            "Send TCP keepalive probes to detect dead connections",
+          )}
+          infoTooltip="Send periodic TCP keepalive probes to detect and clean up dead connections before they time out."
+          soKeepAlive={{
+            value: cfg.tcpOptions.soKeepAlive,
+            onChange: (v) =>
+              up({ tcpOptions: { ...cfg.tcpOptions, soKeepAlive: v } }),
+            label: t(
+              "settings.sshTerminal.soKeepAlive",
+              "Enable SO_KEEPALIVE option",
+            ),
+            description: t(
+              "settings.sshTerminal.soKeepAliveDesc",
+              "Enable socket-level keepalive mechanism",
+            ),
+            infoTooltip:
+              "Enable the socket-level keepalive mechanism provided by the operating system.",
+          }}
+          intervalSecs={{
+            settingKey: "keepAliveInterval",
+            value: cfg.tcpOptions.keepAliveInterval,
+            onChange: (v) =>
+              up({ tcpOptions: { ...cfg.tcpOptions, keepAliveInterval: v } }),
+            min: 1,
+            max: 3600,
+            label: t(
+              "settings.sshTerminal.keepAliveInterval",
+              "Keepalive interval",
+            ),
+            infoTooltip:
+              "Time in seconds between TCP keepalive probes sent to the remote server.",
+          }}
+          probes={{
+            settingKey: "keepAliveProbes",
+            value: cfg.tcpOptions.keepAliveProbes,
+            onChange: (v) =>
+              up({ tcpOptions: { ...cfg.tcpOptions, keepAliveProbes: v } }),
+            min: 1,
+            max: 30,
+            label: t(
+              "settings.sshTerminal.keepAliveProbes",
+              "Keepalive probes",
+            ),
+            infoTooltip:
+              "Number of unacknowledged keepalive probes before the connection is considered dead.",
+          }}
+        />
+      </div>
 
       <SettingsSelectRow
         settingKey="ipProtocol"

@@ -16,6 +16,7 @@ const HyperVDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <Card>
       <Toggle
+        settingKey="enhancedSessionMode"
         checked={rdp.enhancedSessionMode ?? false}
         onChange={(v) => update({ enhancedSessionMode: v })}
         icon={<Server size={16} />}

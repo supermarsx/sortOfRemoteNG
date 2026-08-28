@@ -24,6 +24,7 @@ const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
       <Card>
         <Toggle
+          settingKey="gatewayEnabled"
           checked={gwOn}
           onChange={(v) => update({ gatewayEnabled: v })}
           icon={<Network size={16} />}
@@ -96,6 +97,7 @@ const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           />
 
           <Toggle
+            settingKey="gatewayBypassLocal"
             checked={rdp.gatewayBypassLocal ?? true}
             onChange={(v) => update({ gatewayBypassLocal: v })}
             icon={<Shuffle size={16} />}

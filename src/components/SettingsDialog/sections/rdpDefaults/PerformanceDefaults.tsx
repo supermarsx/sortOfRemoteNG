@@ -96,71 +96,6 @@ const SPEED_PRESETS: Record<
   },
 };
 
-const VISUAL_TOGGLES: [
-  string,
-  boolean,
-  string,
-  string,
-  React.ReactNode,
-][] = [
-  [
-    "disableWallpaper",
-    true,
-    "Disable wallpaper",
-    "Prevents the desktop wallpaper from being rendered, reducing bandwidth usage.",
-    <Image key="i1" size={16} />,
-  ],
-  [
-    "disableFullWindowDrag",
-    true,
-    "Disable full-window drag",
-    "Shows only a window outline while dragging instead of rendering full window contents.",
-    <MoveHorizontal key="i2" size={16} />,
-  ],
-  [
-    "disableMenuAnimations",
-    true,
-    "Disable menu animations",
-    "Turns off menu fade and slide animations to improve responsiveness.",
-    <Sparkles key="i3" size={16} />,
-  ],
-  [
-    "disableTheming",
-    false,
-    "Disable visual themes",
-    "Disables Windows visual themes on the remote desktop to save bandwidth.",
-    <Palette key="i4" size={16} />,
-  ],
-  [
-    "disableCursorShadow",
-    true,
-    "Disable cursor shadow",
-    "Removes the shadow effect beneath the mouse cursor in the remote session.",
-    <MousePointer key="i5" size={16} />,
-  ],
-  [
-    "disableCursorSettings",
-    false,
-    "Disable cursor settings",
-    "Disables custom cursor rendering settings on the remote machine.",
-    <Settings key="i6" size={16} />,
-  ],
-  [
-    "enableFontSmoothing",
-    true,
-    "Enable font smoothing (ClearType)",
-    "Enables ClearType font smoothing for clearer text on the remote desktop.",
-    <Type key="i7" size={16} />,
-  ],
-  [
-    "enableDesktopComposition",
-    false,
-    "Enable desktop composition (Aero)",
-    "Enables Aero glass and transparency effects on the remote desktop. Uses more bandwidth.",
-    <Layers key="i8" size={16} />,
-  ],
-];
-
 const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const frameBatchOn = rdp.frameBatching ?? true;
   return (
@@ -201,22 +136,76 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
         <SubGroupHeader icon={<Eye size={11} />} label="Visual experience" />
 
-        {VISUAL_TOGGLES.map(([key, def, label, tooltip, icon]) => (
-          <Toggle
-            key={key}
-            checked={
-              (rdp[key as keyof typeof rdp] as boolean | undefined) ?? def
-            }
-            onChange={(v) =>
-              update({ [key]: v } as Record<string, unknown>)
-            }
-            icon={icon}
-            label={label}
-            infoTooltip={tooltip}
-          />
-        ))}
+        {/* Written out one by one rather than mapped over a table: `settingKey`
+            has to be a literal for `settingsSearchDrift` to join these controls
+            to the search index. */}
+        <Toggle
+          settingKey="disableWallpaper"
+          checked={rdp.disableWallpaper ?? true}
+          onChange={(v) => update({ disableWallpaper: v })}
+          icon={<Image size={16} />}
+          label="Disable wallpaper"
+          infoTooltip="Prevents the desktop wallpaper from being rendered, reducing bandwidth usage."
+        />
+        <Toggle
+          settingKey="disableFullWindowDrag"
+          checked={rdp.disableFullWindowDrag ?? true}
+          onChange={(v) => update({ disableFullWindowDrag: v })}
+          icon={<MoveHorizontal size={16} />}
+          label="Disable full-window drag"
+          infoTooltip="Shows only a window outline while dragging instead of rendering full window contents."
+        />
+        <Toggle
+          settingKey="disableMenuAnimations"
+          checked={rdp.disableMenuAnimations ?? true}
+          onChange={(v) => update({ disableMenuAnimations: v })}
+          icon={<Sparkles size={16} />}
+          label="Disable menu animations"
+          infoTooltip="Turns off menu fade and slide animations to improve responsiveness."
+        />
+        <Toggle
+          settingKey="disableTheming"
+          checked={rdp.disableTheming ?? false}
+          onChange={(v) => update({ disableTheming: v })}
+          icon={<Palette size={16} />}
+          label="Disable visual themes"
+          infoTooltip="Disables Windows visual themes on the remote desktop to save bandwidth."
+        />
+        <Toggle
+          settingKey="disableCursorShadow"
+          checked={rdp.disableCursorShadow ?? true}
+          onChange={(v) => update({ disableCursorShadow: v })}
+          icon={<MousePointer size={16} />}
+          label="Disable cursor shadow"
+          infoTooltip="Removes the shadow effect beneath the mouse cursor in the remote session."
+        />
+        <Toggle
+          settingKey="disableCursorSettings"
+          checked={rdp.disableCursorSettings ?? false}
+          onChange={(v) => update({ disableCursorSettings: v })}
+          icon={<Settings size={16} />}
+          label="Disable cursor settings"
+          infoTooltip="Disables custom cursor rendering settings on the remote machine."
+        />
+        <Toggle
+          settingKey="enableFontSmoothing"
+          checked={rdp.enableFontSmoothing ?? true}
+          onChange={(v) => update({ enableFontSmoothing: v })}
+          icon={<Type size={16} />}
+          label="Enable font smoothing (ClearType)"
+          infoTooltip="Enables ClearType font smoothing for clearer text on the remote desktop."
+        />
+        <Toggle
+          settingKey="enableDesktopComposition"
+          checked={rdp.enableDesktopComposition ?? false}
+          onChange={(v) => update({ enableDesktopComposition: v })}
+          icon={<Layers size={16} />}
+          label="Enable desktop composition (Aero)"
+          infoTooltip="Enables Aero glass and transparency effects on the remote desktop. Uses more bandwidth."
+        />
 
         <Toggle
+          settingKey="persistentBitmapCaching"
           checked={rdp.persistentBitmapCaching ?? false}
           onChange={(v) => update({ persistentBitmapCaching: v })}
           icon={<Database size={16} />}
@@ -241,6 +230,7 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         />
 
         <Toggle
+          settingKey="frameBatching"
           checked={frameBatchOn}
           onChange={(v) => update({ frameBatching: v })}
           icon={<Boxes size={16} />}

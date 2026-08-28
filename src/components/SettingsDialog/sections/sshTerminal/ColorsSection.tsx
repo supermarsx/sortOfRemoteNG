@@ -15,6 +15,7 @@ const ColorsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
     <Card>
       <Toggle
+        settingKey="allowTerminalAnsiColors"
         checked={cfg.allowTerminalAnsiColors}
         onChange={(v) => up({ allowTerminalAnsiColors: v })}
         icon={<Paintbrush size={16} />}
@@ -29,6 +30,7 @@ const ColorsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Let remote applications set the 16 standard ANSI colors used in the terminal palette."
       />
       <Toggle
+        settingKey="allowXterm256Colors"
         checked={cfg.allowXterm256Colors}
         onChange={(v) => up({ allowXterm256Colors: v })}
         icon={<Layers size={16} />}
@@ -43,6 +45,7 @@ const ColorsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Enable the extended 256-color palette for applications that support xterm color indexing."
       />
       <Toggle
+        settingKey="allow24BitColors"
         checked={cfg.allow24BitColors}
         onChange={(v) => up({ allow24BitColors: v })}
         icon={<Droplet size={16} />}

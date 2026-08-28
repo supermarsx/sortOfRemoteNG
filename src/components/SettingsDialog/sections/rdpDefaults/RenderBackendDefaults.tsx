@@ -147,6 +147,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         />
 
         <Toggle
+          settingKey="tripleBuffering"
           checked={rdp.tripleBuffering ?? true}
           onChange={(v) => update({ tripleBuffering: v })}
           icon={<Boxes size={16} />}

@@ -18,6 +18,7 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
       <Card>
         <Toggle
+          settingKey="useCredSsp"
           checked={credsspOn}
           onChange={(v) => update({ useCredSsp: v })}
           icon={<KeyRound size={16} />}
@@ -27,6 +28,7 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         />
 
         <Toggle
+          settingKey="enableTls"
           checked={rdp.enableTls ?? true}
           onChange={(v) => update({ enableTls: v })}
           icon={<Lock size={16} />}
@@ -37,6 +39,7 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
         <div className={!credsspOn ? "opacity-50 pointer-events-none" : undefined}>
           <Toggle
+            settingKey="enableNla"
             checked={rdp.enableNla ?? true}
             onChange={(v) => update({ enableNla: v })}
             disabled={!credsspOn}
@@ -48,6 +51,7 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         </div>
 
         <Toggle
+          settingKey="autoLogon"
           checked={rdp.autoLogon ?? false}
           onChange={(v) => update({ autoLogon: v })}
           icon={<LogIn size={16} />}

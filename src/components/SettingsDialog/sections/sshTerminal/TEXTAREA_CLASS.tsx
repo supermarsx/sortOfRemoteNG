@@ -155,53 +155,61 @@ const AddSuggestion: React.FC<{
 
 /* ── Section ─────────────────────────────────────────────────── */
 
-interface PreferredField {
-  field:
-    | "preferredCiphers"
-    | "preferredMACs"
-    | "preferredKeyExchanges"
-    | "preferredHostKeyAlgorithms";
-  tKey: string;
-  fallback: string;
+type PreferredFieldName =
+  | "preferredCiphers"
+  | "preferredMACs"
+  | "preferredKeyExchanges"
+  | "preferredHostKeyAlgorithms";
+
+/**
+ * One newline-separated algorithm preference list.
+ *
+ * `settingKey` is passed in as a literal by each call site rather than derived
+ * from `field`, because `tests/settings/settingsSearchDrift.test.ts` reads
+ * `settingKey` straight out of the JSX and can only see string literals.
+ */
+const PreferredAlgorithmField: React.FC<{
+  settingKey: string;
+  field: PreferredFieldName;
+  label: string;
   placeholder: string;
   rows: number;
   suggestions: SuggestionGroup[];
-}
-
-const FIELDS: PreferredField[] = [
-  {
-    field: "preferredCiphers",
-    tKey: "settings.sshTerminal.preferredCiphers",
-    fallback: "Preferred Ciphers",
-    placeholder: "One cipher per line",
-    rows: 4,
-    suggestions: CIPHER_SUGGESTIONS,
-  },
-  {
-    field: "preferredMACs",
-    tKey: "settings.sshTerminal.preferredMACs",
-    fallback: "Preferred MACs",
-    placeholder: "One MAC per line",
-    rows: 3,
-    suggestions: MAC_SUGGESTIONS,
-  },
-  {
-    field: "preferredKeyExchanges",
-    tKey: "settings.sshTerminal.preferredKEX",
-    fallback: "Preferred Key Exchanges",
-    placeholder: "One key exchange per line",
-    rows: 4,
-    suggestions: KEX_SUGGESTIONS,
-  },
-  {
-    field: "preferredHostKeyAlgorithms",
-    tKey: "settings.sshTerminal.preferredHostKeys",
-    fallback: "Preferred Host Key Algorithms",
-    placeholder: "One algorithm per line",
-    rows: 4,
-    suggestions: HOSTKEY_SUGGESTIONS,
-  },
-];
+  cfg: SectionProps["cfg"];
+  up: SectionProps["up"];
+}> = ({
+  settingKey,
+  field,
+  label,
+  placeholder,
+  rows,
+  suggestions,
+  cfg,
+  up,
+}) => {
+  const values = cfg[field] as string[];
+  return (
+    <div data-setting-key={settingKey}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <label className="text-sm text-[var(--color-textSecondary)]">
+          {label}
+        </label>
+        <AddSuggestion
+          groups={suggestions}
+          existing={values}
+          onAdd={(v) => up({ [field]: [...values, v] } as any)}
+        />
+      </div>
+      <Textarea
+        value={values.join("\n")}
+        onChange={(v) => up({ [field]: v.split("\n").filter(Boolean) } as any)}
+        rows={rows}
+        className={TEXTAREA_CLASS}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+};
 
 const AdvancedSSHSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <div className="space-y-4">
@@ -218,32 +226,55 @@ const AdvancedSSHSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       </p>
 
       <div className="space-y-4">
-        {FIELDS.map(({ field, tKey, fallback, placeholder, rows, suggestions }) => {
-          const values = cfg[field] as string[];
-          return (
-            <div key={field}>
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <label className="text-sm text-[var(--color-textSecondary)]">
-                  {t(tKey, fallback)}
-                </label>
-                <AddSuggestion
-                  groups={suggestions}
-                  existing={values}
-                  onAdd={(v) => up({ [field]: [...values, v] } as any)}
-                />
-              </div>
-              <Textarea
-                value={values.join("\n")}
-                onChange={(v) =>
-                  up({ [field]: v.split("\n").filter(Boolean) } as any)
-                }
-                rows={rows}
-                className={TEXTAREA_CLASS}
-                placeholder={placeholder}
-              />
-            </div>
-          );
-        })}
+        <PreferredAlgorithmField
+          settingKey="preferredCiphers"
+          field="preferredCiphers"
+          label={t(
+            "settings.sshTerminal.preferredCiphers",
+            "Preferred Ciphers",
+          )}
+          placeholder="One cipher per line"
+          rows={4}
+          suggestions={CIPHER_SUGGESTIONS}
+          cfg={cfg}
+          up={up}
+        />
+        <PreferredAlgorithmField
+          settingKey="preferredMACs"
+          field="preferredMACs"
+          label={t("settings.sshTerminal.preferredMACs", "Preferred MACs")}
+          placeholder="One MAC per line"
+          rows={3}
+          suggestions={MAC_SUGGESTIONS}
+          cfg={cfg}
+          up={up}
+        />
+        <PreferredAlgorithmField
+          settingKey="preferredKeyExchanges"
+          field="preferredKeyExchanges"
+          label={t(
+            "settings.sshTerminal.preferredKEX",
+            "Preferred Key Exchanges",
+          )}
+          placeholder="One key exchange per line"
+          rows={4}
+          suggestions={KEX_SUGGESTIONS}
+          cfg={cfg}
+          up={up}
+        />
+        <PreferredAlgorithmField
+          settingKey="preferredHostKeyAlgorithms"
+          field="preferredHostKeyAlgorithms"
+          label={t(
+            "settings.sshTerminal.preferredHostKeys",
+            "Preferred Host Key Algorithms",
+          )}
+          placeholder="One algorithm per line"
+          rows={4}
+          suggestions={HOSTKEY_SUGGESTIONS}
+          cfg={cfg}
+          up={up}
+        />
       </div>
     </Card>
   </div>

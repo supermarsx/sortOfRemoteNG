@@ -26,6 +26,7 @@ const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
     <Card>
       <Toggle
+        settingKey="useCustomFont"
         checked={cfg.useCustomFont}
         onChange={(v) => up({ useCustomFont: v })}
         icon={<CaseSensitive size={16} />}

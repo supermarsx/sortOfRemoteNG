@@ -19,6 +19,7 @@ const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <Card>
       <Toggle
+        settingKey="autoDetect"
         checked={rdp.autoDetect ?? false}
         onChange={(v) => update({ autoDetect: v })}
         icon={<Sparkles size={16} />}

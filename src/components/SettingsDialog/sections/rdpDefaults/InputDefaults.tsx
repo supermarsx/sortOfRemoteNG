@@ -30,6 +30,7 @@ const InputDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       />
 
       <Toggle
+        settingKey="autoDetectKeyboardLayout"
         checked={rdp.autoDetectKeyboardLayout ?? true}
         onChange={(v) => update({ autoDetectKeyboardLayout: v })}
         icon={<Keyboard size={16} />}
@@ -39,6 +40,7 @@ const InputDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       />
 
       <Toggle
+        settingKey="enableUnicodeInput"
         checked={rdp.enableUnicodeInput ?? true}
         onChange={(v) => update({ enableUnicodeInput: v })}
         icon={<Languages size={16} />}

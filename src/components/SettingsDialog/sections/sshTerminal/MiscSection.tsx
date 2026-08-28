@@ -26,6 +26,7 @@ const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
 
       <Toggle
+        settingKey="localPrinting"
         checked={cfg.localPrinting}
         onChange={(v) => up({ localPrinting: v })}
         icon={<Printer size={16} />}
@@ -41,6 +42,7 @@ const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
 
       <Toggle
+        settingKey="remoteControlledPrinting"
         checked={cfg.remoteControlledPrinting}
         onChange={(v) => up({ remoteControlledPrinting: v })}
         icon={<PrinterCheck size={16} />}

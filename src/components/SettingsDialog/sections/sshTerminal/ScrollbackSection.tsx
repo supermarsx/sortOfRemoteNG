@@ -38,6 +38,7 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Maximum number of lines kept in the scrollback buffer. Higher values use more memory."
       />
       <Toggle
+        settingKey="scrollOnOutput"
         checked={cfg.scrollOnOutput}
         onChange={(v) => up({ scrollOnOutput: v })}
         icon={<ArrowDownToLine size={16} />}
@@ -49,6 +50,7 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Automatically scroll the terminal to the bottom whenever new output is received from the remote host."
       />
       <Toggle
+        settingKey="scrollOnKeystroke"
         checked={cfg.scrollOnKeystroke}
         onChange={(v) => up({ scrollOnKeystroke: v })}
         icon={<Keyboard size={16} />}
@@ -66,6 +68,7 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       <SubGroupHeader icon={<MousePointer2 size={11} />} label="Selection" />
 
       <Toggle
+        settingKey="copyOnSelect"
         checked={cfg.copyOnSelect}
         onChange={(v) => up({ copyOnSelect: v })}
         icon={<Copy size={16} />}
@@ -77,6 +80,7 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Automatically copy text to the clipboard as soon as you select it in the terminal."
       />
       <Toggle
+        settingKey="pasteOnRightClick"
         checked={cfg.pasteOnRightClick}
         onChange={(v) => up({ pasteOnRightClick: v })}
         icon={<ClipboardPaste size={16} />}

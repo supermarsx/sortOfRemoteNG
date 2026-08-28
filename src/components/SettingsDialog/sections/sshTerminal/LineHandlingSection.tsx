@@ -15,6 +15,7 @@ const LineHandlingSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
     <Card>
       <Toggle
+        settingKey="implicitCrInLf"
         checked={cfg.implicitCrInLf}
         onChange={(v) => up({ implicitCrInLf: v })}
         icon={<CornerDownLeft size={16} />}
@@ -29,6 +30,7 @@ const LineHandlingSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Automatically insert a carriage return when a line feed is received. Needed for some legacy systems."
       />
       <Toggle
+        settingKey="implicitLfInCr"
         checked={cfg.implicitLfInCr}
         onChange={(v) => up({ implicitLfInCr: v })}
         icon={<CornerDownRight size={16} />}
@@ -43,6 +45,7 @@ const LineHandlingSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         infoTooltip="Automatically insert a line feed when a carriage return is received. Useful for certain mainframe protocols."
       />
       <Toggle
+        settingKey="autoWrap"
         checked={cfg.autoWrap}
         onChange={(v) => up({ autoWrap: v })}
         icon={<WrapText size={16} />}
