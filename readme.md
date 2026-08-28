@@ -6,6 +6,13 @@
 [![Stars](https://img.shields.io/github/stars/supermarsx/sortOfRemoteNG?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG)
 [![License](https://img.shields.io/github/license/supermarsx/sortOfRemoteNG?style=flat-square)](license.md)
 
+> [!WARNING]
+> **Experimental software.** sortOfRemoteNG is under active development and is not
+> considered production-ready. Expect breaking changes, incomplete features, and bugs,
+> including ones that can affect stored data. Keep independent backups of anything you
+> care about — connection databases, credentials, and recordings — and do not rely on
+> this as your only copy.
+
 A desktop workspace for remote connections, infrastructure tools, and day-to-day administration. sortOfRemoteNG combines a Tauri and Rust backend with a Next.js and React interface, so connections and supporting tools can live in one organized application.
 
 [![sortOfRemoteNG desktop app with a live SSH session open](docs/assets/readme-screenshot.png)](docs/assets/readme-screenshot.png)
