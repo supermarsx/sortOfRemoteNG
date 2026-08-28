@@ -83,6 +83,7 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
       </div>
 
       <SettingsSelectRow
+        settingKey="loadingElement.precomputed.outputSizePx"
         icon={<Maximize2 size={16} />}
         label="Output size"
         value={String(le.precomputed.outputSizePx)}
@@ -96,6 +97,7 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <SettingsSelectRow
+        settingKey="loadingElement.precomputed.frameRate"
         icon={<Gauge size={16} />}
         label="Frame rate"
         value={String(le.precomputed.frameRate)}
@@ -107,6 +109,7 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <SettingsNumberRow
+        settingKey="loadingElement.precomputed.durationSeconds"
         icon={<Timer size={16} />}
         label="Duration"
         value={le.precomputed.durationSeconds}
@@ -119,6 +122,7 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <SettingsSelectRow
+        settingKey="loadingElement.precomputed.mode"
         icon={<Layers size={16} />}
         label="Fallback mode"
         description={currentModeHelp}
@@ -128,7 +132,10 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
         infoTooltip="When precomputed assets should be used instead of the live loader."
       />
 
-      <div className="flex flex-wrap gap-2 pt-3 border-t border-[var(--color-border)]">
+      <div
+        className="flex flex-wrap gap-2 pt-3 border-t border-[var(--color-border)]"
+        data-setting-key="loadingElement.precomputed.generate"
+      >
         <button
           type="button"
           onClick={() => assets?.generateAll()}

@@ -1,11 +1,7 @@
 {
   "tab": "theme",
-  "missingFromIndex": [
-    "backgroundGlowFollowsColorScheme",
-    "enableTabGroupAnimations",
-    "showTransparencyToggle"
-  ],
-  "orphanEntries": ["colorScheme", "customCss", "primaryAccentColor", "theme"],
+  "missingFromIndex": [],
+  "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false

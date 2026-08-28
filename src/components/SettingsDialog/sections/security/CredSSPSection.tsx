@@ -51,6 +51,7 @@ function CredSSPSection({
         </p>
 
         <SettingsSelectRow
+          settingKey="credsspDefaults.oracleRemediation"
           icon={<ShieldAlert size={16} />}
           label="Encryption Oracle Remediation"
           description={
@@ -81,6 +82,7 @@ function CredSSPSection({
         />
 
         <SettingsSelectRow
+          settingKey="credsspDefaults.nlaMode"
           icon={<Network size={16} />}
           label="Default NLA mode"
           value={cred?.nlaMode ?? "required"}
@@ -101,6 +103,7 @@ function CredSSPSection({
         />
 
         <SettingsSelectRow
+          settingKey="credsspDefaults.tlsMinVersion"
           icon={<LockIcon size={16} />}
           label="Minimum TLS version"
           value={cred?.tlsMinVersion ?? "1.2"}
@@ -122,6 +125,7 @@ function CredSSPSection({
         />
 
         <SettingsSelectRow
+          settingKey="credsspDefaults.credsspVersion"
           icon={<KeyRound size={16} />}
           label="CredSSP TSRequest version"
           value={String(cred?.credsspVersion ?? 6)}
@@ -142,6 +146,7 @@ function CredSSPSection({
         />
 
         <SettingsSelectRow
+          settingKey="credsspDefaults.serverCertValidation"
           icon={<ShieldCheck size={16} />}
           label="Server certificate validation"
           value={cred?.serverCertValidation ?? "validate"}
@@ -161,67 +166,68 @@ function CredSSPSection({
           infoTooltip="How the client handles untrusted server certificates — Validate rejects them, Warn prompts you, Ignore accepts all."
         />
 
-        {/* Boolean toggles */}
-        {(
-          [
-            {
-              key: "allowHybridEx",
-              default: false,
-              label: "Allow HYBRID_EX protocol (Early User Auth Result)",
-              tooltip:
-                "Enable the HYBRID_EX extension that returns authentication results before full connection setup completes.",
-              icon: <Zap size={16} />,
-            },
-            {
-              key: "nlaFallbackToTls",
-              default: true,
-              label: "Allow NLA fallback to TLS on failure",
-              tooltip:
-                "Fall back to plain TLS authentication when Network Level Authentication negotiation fails.",
-              icon: <ArrowLeftRight size={16} />,
-            },
-            {
-              key: "enforceServerPublicKeyValidation",
-              default: true,
-              label: "Enforce server public key validation during CredSSP",
-              tooltip:
-                "Verify the server's public key during the CredSSP handshake to prevent man-in-the-middle attacks.",
-              icon: <KeyRound size={16} />,
-            },
-            {
-              key: "restrictedAdmin",
-              default: false,
-              label: "Restricted Admin mode (no credential delegation)",
-              tooltip:
-                "Connect without forwarding your credentials to the remote server — prevents credential theft on compromised hosts.",
-              icon: <UserMinus size={16} />,
-            },
-            {
-              key: "remoteCredentialGuard",
-              default: false,
-              label: "Remote Credential Guard (Kerberos delegation)",
-              tooltip:
-                "Use Kerberos-based credential delegation that keeps credentials on the local machine and never exposes them to the remote host.",
-              icon: <LockIcon size={16} />,
-            },
-          ] as const
-        ).map(({ key, default: def, label, tooltip, icon }) => (
-          <Toggle
-            key={key}
-            checked={cred?.[key] ?? def}
-            onChange={(v) =>
-              updateSettings({
-                credsspDefaults: {
-                  ...cred,
-                  [key]: v,
-                },
-              })
-            }
-            icon={icon}
-            label={label}
-            infoTooltip={tooltip}
-          />
-        ))}
+        {/* Boolean toggles — written out rather than mapped so each one
+            carries a literal `settingKey` the search index can join to. */}
+        <Toggle
+          settingKey="credsspDefaults.allowHybridEx"
+          checked={cred?.allowHybridEx ?? false}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, allowHybridEx: v },
+            })
+          }
+          icon={<Zap size={16} />}
+          label="Allow HYBRID_EX protocol (Early User Auth Result)"
+          infoTooltip="Enable the HYBRID_EX extension that returns authentication results before full connection setup completes."
+        />
+        <Toggle
+          settingKey="credsspDefaults.nlaFallbackToTls"
+          checked={cred?.nlaFallbackToTls ?? true}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, nlaFallbackToTls: v },
+            })
+          }
+          icon={<ArrowLeftRight size={16} />}
+          label="Allow NLA fallback to TLS on failure"
+          infoTooltip="Fall back to plain TLS authentication when Network Level Authentication negotiation fails."
+        />
+        <Toggle
+          settingKey="credsspDefaults.enforceServerPublicKeyValidation"
+          checked={cred?.enforceServerPublicKeyValidation ?? true}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, enforceServerPublicKeyValidation: v },
+            })
+          }
+          icon={<KeyRound size={16} />}
+          label="Enforce server public key validation during CredSSP"
+          infoTooltip="Verify the server's public key during the CredSSP handshake to prevent man-in-the-middle attacks."
+        />
+        <Toggle
+          settingKey="credsspDefaults.restrictedAdmin"
+          checked={cred?.restrictedAdmin ?? false}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, restrictedAdmin: v },
+            })
+          }
+          icon={<UserMinus size={16} />}
+          label="Restricted Admin mode (no credential delegation)"
+          infoTooltip="Connect without forwarding your credentials to the remote server — prevents credential theft on compromised hosts."
+        />
+        <Toggle
+          settingKey="credsspDefaults.remoteCredentialGuard"
+          checked={cred?.remoteCredentialGuard ?? false}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, remoteCredentialGuard: v },
+            })
+          }
+          icon={<LockIcon size={16} />}
+          label="Remote Credential Guard (Kerberos delegation)"
+          infoTooltip="Use Kerberos-based credential delegation that keeps credentials on the local machine and never exposes them to the remote host."
+        />
 
         {/* Authentication packages — same Toggle style under a sub-header. */}
         <div className="flex items-center gap-1.5 pt-3 mt-1 border-t border-[var(--color-border)]/40 text-[10px] uppercase tracking-wider text-[var(--color-textMuted)] font-medium">
@@ -230,52 +236,45 @@ function CredSSPSection({
           <InfoTooltip text="Select which authentication protocols are available for CredSSP negotiation." />
         </div>
 
-        {(
-          [
-            {
-              key: "ntlmEnabled",
-              default: true,
-              label: "NTLM",
-              tooltip:
-                "NT LAN Manager authentication — widely supported legacy protocol for Windows credential exchange.",
-              icon: <Network size={16} />,
-            },
-            {
-              key: "kerberosEnabled",
-              default: false,
-              label: "Kerberos",
-              tooltip:
-                "Kerberos ticket-based authentication — requires a domain controller and is more secure than NTLM.",
-              icon: <Globe size={16} />,
-            },
-            {
-              key: "pku2uEnabled",
-              default: false,
-              label: "PKU2U",
-              tooltip:
-                "Public Key User-to-User protocol — allows peer-to-peer authentication without a domain controller.",
-              icon: <Users size={16} />,
-            },
-          ] as const
-        ).map(({ key, default: def, label, tooltip, icon }) => (
-          <Toggle
-            key={key}
-            checked={cred?.[key] ?? def}
-            onChange={(v) =>
-              updateSettings({
-                credsspDefaults: {
-                  ...cred,
-                  [key]: v,
-                },
-              })
-            }
-            icon={icon}
-            label={label}
-            infoTooltip={tooltip}
-          />
-        ))}
+        <Toggle
+          settingKey="credsspDefaults.ntlmEnabled"
+          checked={cred?.ntlmEnabled ?? true}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, ntlmEnabled: v },
+            })
+          }
+          icon={<Network size={16} />}
+          label="NTLM"
+          infoTooltip="NT LAN Manager authentication — widely supported legacy protocol for Windows credential exchange."
+        />
+        <Toggle
+          settingKey="credsspDefaults.kerberosEnabled"
+          checked={cred?.kerberosEnabled ?? false}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, kerberosEnabled: v },
+            })
+          }
+          icon={<Globe size={16} />}
+          label="Kerberos"
+          infoTooltip="Kerberos ticket-based authentication — requires a domain controller and is more secure than NTLM."
+        />
+        <Toggle
+          settingKey="credsspDefaults.pku2uEnabled"
+          checked={cred?.pku2uEnabled ?? false}
+          onChange={(v) =>
+            updateSettings({
+              credsspDefaults: { ...cred, pku2uEnabled: v },
+            })
+          }
+          icon={<Users size={16} />}
+          label="PKU2U"
+          infoTooltip="Public Key User-to-User protocol — allows peer-to-peer authentication without a domain controller."
+        />
 
         <SettingsTextRow
+          settingKey="credsspDefaults.sspiPackageList"
           icon={<List size={16} />}
           label="SSPI package list override"
           description="Advanced: overrides the auth-package toggles above. Prefix with ! to exclude."

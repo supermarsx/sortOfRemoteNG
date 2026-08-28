@@ -399,7 +399,7 @@ const EncryptionAtRestSection: React.FC = () => {
   return (
     <>
       {/* ── Status badge card ─────────────────────────────────────── */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-setting-key="encryptionAtRest">
         <SectionHeader
           icon={<Shield className="w-4 h-4 text-primary" />}
           title={
@@ -492,7 +492,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Lock now (manual trigger, visible only when unlocked) ─── */}
       {status?.unlocked && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.lockNow">
           <SectionHeader
             icon={<Lock className="w-4 h-4 text-primary" />}
             title={
@@ -543,7 +543,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── First-run setup wizard ───────────────────────────────── */}
       {needsSetup && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.setup">
           <SectionHeader
             icon={<KeyRound className="w-4 h-4 text-primary" />}
             title="Set up encryption"
@@ -586,6 +586,7 @@ const EncryptionAtRestSection: React.FC = () => {
             {setupChoice === "password" && (
               <>
                 <SettingsPasswordRow
+                  settingKey="encryptionAtRest.masterPassword"
                   icon={<KeyRound size={16} />}
                   label="Master password"
                   value={setupPassword}
@@ -594,6 +595,7 @@ const EncryptionAtRestSection: React.FC = () => {
                   infoTooltip="Used to wrap the master DEK. Argon2id (OWASP) is the default; advanced settings let you tune memory/time/parallelism."
                 />
                 <SettingsNumberRow
+                  settingKey="encryptionAtRest.argon2MemoryKib"
                   icon={<Database size={16} />}
                   label="Argon2id memory"
                   value={setupArgon2.memoryKib}
@@ -607,6 +609,7 @@ const EncryptionAtRestSection: React.FC = () => {
                 />
                 <SettingsNumberRow
                   icon={<RefreshCw size={16} />}
+                  settingKey="encryptionAtRest.argon2TimeCost"
                   label="Argon2id iterations"
                   value={setupArgon2.timeCost}
                   min={1}
@@ -618,6 +621,7 @@ const EncryptionAtRestSection: React.FC = () => {
                 />
                 <SettingsNumberRow
                   icon={<RefreshCw size={16} />}
+                  settingKey="encryptionAtRest.argon2Parallelism"
                   label="Argon2id parallelism"
                   value={setupArgon2.parallelism}
                   min={1}
@@ -662,7 +666,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Migrate plaintext settings ───────────────────────────── */}
       {status?.settingsPlaintextPresent && status.unlocked && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.migratePlaintext">
           <SectionHeader
             icon={<FileWarning className="w-4 h-4 text-warning" />}
             title="Migrate plaintext settings"
@@ -836,7 +840,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Change password ──────────────────────────────────────── */}
       {passwordModeActive && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.changePassword">
           <SectionHeader
             icon={<KeyRound className="w-4 h-4 text-primary" />}
             title="Change master password"
@@ -898,7 +902,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Rotate master key ─────────────────────────────────────── */}
       {status?.unlocked && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.rotateMasterKey">
           <SectionHeader
             icon={<RefreshCw className="w-4 h-4 text-primary" />}
             title="Rotate master key"
@@ -957,7 +961,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Portable key export ──────────────────────────────────── */}
       {status?.unlocked && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.exportPortableKey">
           <SectionHeader
             icon={<Download className="w-4 h-4 text-primary" />}
             title="Export portable master key"
@@ -1023,7 +1027,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Portable key import ──────────────────────────────────── */}
       {!status?.unlocked && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.importPortableKey">
           <SectionHeader
             icon={<Upload className="w-4 h-4 text-primary" />}
             title="Import portable master key"
@@ -1081,7 +1085,7 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Disable settings encryption ──────────────────────────── */}
       {status?.settingsEncryptedOnDisk && status.unlocked && (
-        <div className="space-y-4">
+        <div className="space-y-4" data-setting-key="encryptionAtRest.disable">
           <SectionHeader
             icon={<Trash2 className="w-4 h-4 text-error" />}
             title="Disable settings encryption"
@@ -1128,7 +1132,7 @@ const EncryptionAtRestSection: React.FC = () => {
       )}
 
       {/* ── Encrypted artifacts (read-only listing) ──────────────── */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-setting-key="encryptionAtRest.artifacts">
         <SectionHeader
           icon={<Database className="w-4 h-4 text-primary" />}
           title="Encrypted artifacts"
@@ -1187,7 +1191,7 @@ const EncryptionAtRestSection: React.FC = () => {
       </div>
 
       {/* ── Audit log ────────────────────────────────────────────── */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-setting-key="encryptionAtRest.auditLog">
         <SectionHeader
           icon={<ClipboardList className="w-4 h-4 text-primary" />}
           title={

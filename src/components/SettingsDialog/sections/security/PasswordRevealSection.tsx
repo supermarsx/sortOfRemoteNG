@@ -38,6 +38,7 @@ function PasswordRevealSection({
         </p>
 
         <Toggle
+          settingKey="passwordReveal.enabled"
           checked={enabled}
           onChange={(v) =>
             updateSettings({
@@ -61,6 +62,7 @@ function PasswordRevealSection({
           }
         >
           <SettingsSelectRow
+            settingKey="passwordReveal.mode"
             icon={<MousePointerClick size={16} />}
             label="Reveal mode"
             value={settings.passwordReveal?.mode ?? "toggle"}
@@ -80,6 +82,7 @@ function PasswordRevealSection({
           />
 
           <SettingsSliderRow
+            settingKey="passwordReveal.autoHideSeconds"
             icon={<Timer size={16} />}
             label="Auto-hide after"
             description={
@@ -103,6 +106,7 @@ function PasswordRevealSection({
           />
 
           <Toggle
+            settingKey="passwordReveal.showByDefault"
             checked={settings.passwordReveal?.showByDefault ?? false}
             onChange={(v) =>
               updateSettings({
@@ -119,6 +123,7 @@ function PasswordRevealSection({
           />
 
           <Toggle
+            settingKey="passwordReveal.maskIcon"
             checked={settings.passwordReveal?.maskIcon ?? false}
             onChange={(v) =>
               updateSettings({

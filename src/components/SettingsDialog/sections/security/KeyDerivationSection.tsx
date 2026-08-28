@@ -103,6 +103,7 @@ function KeyDerivationSection({
         />
 
         <Toggle
+          settingKey="autoBenchmarkIterations"
           checked={settings.autoBenchmarkIterations}
           onChange={(v) => updateSettings({ autoBenchmarkIterations: v })}
           icon={<Gauge size={16} />}

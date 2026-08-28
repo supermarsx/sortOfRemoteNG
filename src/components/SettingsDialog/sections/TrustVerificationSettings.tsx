@@ -239,7 +239,11 @@ const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const blocked = !status.allDatabasesOpened;
 
   return (
-    <div className="sor-settings-card space-y-2" data-testid="trust-legacy">
+    <div
+      className="sor-settings-card space-y-2"
+      data-testid="trust-legacy"
+      data-setting-key="trustLegacyStores"
+    >
       <p className="flex items-center gap-2 text-xs font-medium text-[var(--color-text)]">
         <Archive size={14} className="text-[var(--color-textMuted)]" />
         {t("trustCenter.legacy.title", { defaultValue: "Legacy trust files" })}
@@ -363,12 +367,16 @@ const TrustDatabaseSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       <TrustDatabaseBanner mgr={mgr} />
 
-      <div className="sor-settings-card space-y-2">
+      <div
+        className="sor-settings-card space-y-2"
+        data-setting-key="trustDatabase"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => void mgr.handleExportJson()}
             disabled={busy || mgr.noActiveDatabase}
             data-testid="trust-export-json"
+            data-setting-key="trustExportJson"
             className={ACTION_BUTTON_CLASS}
             title={t("trustCenter.actions.exportJsonHint", {
               defaultValue:
@@ -384,6 +392,7 @@ const TrustDatabaseSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             onClick={() => void mgr.handleImportJson()}
             disabled={busy || mgr.noActiveDatabase}
             data-testid="trust-import-json"
+            data-setting-key="trustImportJson"
             className={ACTION_BUTTON_CLASS}
             title={t("trustCenter.actions.importJsonHint", {
               defaultValue:
@@ -399,6 +408,7 @@ const TrustDatabaseSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             onClick={() => void mgr.handleImportKnownHosts()}
             disabled={busy || mgr.noActiveDatabase}
             data-testid="trust-import-known-hosts"
+            data-setting-key="trustImportKnownHosts"
             className={ACTION_BUTTON_CLASS}
             title={t("trustCenter.actions.importKnownHostsHint", {
               defaultValue:
@@ -565,7 +575,7 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 };
 
 const PolicyExplanations: React.FC = () => (
-  <div className="space-y-4">
+  <div className="space-y-4" data-setting-key="trustPolicyGuide">
     <SettingsSectionHeader
       icon={<ShieldAlert className="w-4 h-4 text-primary" />}
       title="Policy Guide"
@@ -644,6 +654,7 @@ const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <Card>
       <Toggle
+        settingKey="showTrustIdentityInfo"
         checked={mgr.settings.showTrustIdentityInfo ?? true}
         onChange={(v) => mgr.updateSettings({ showTrustIdentityInfo: v })}
         icon={<Eye size={16} />}
@@ -652,7 +663,10 @@ const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         infoTooltip="Display the verified certificate or SSH host key information inline in the URL bar (web browser sessions) and the terminal toolbar (SSH sessions)."
       />
 
-      <div className="sor-settings-toggle-row !cursor-default pt-3 border-t border-[var(--color-border)] justify-between">
+      <div
+        className="sor-settings-toggle-row !cursor-default pt-3 border-t border-[var(--color-border)] justify-between"
+        data-setting-key="certExpiryWarningDays"
+      >
         <div className="sor-settings-toggle-icon">
           <Clock size={16} />
         </div>
@@ -855,7 +869,7 @@ function renderTrustRecordGroups(
 }
 
 const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="space-y-4">
+  <div className="space-y-4" data-setting-key="trustStoredIdentities">
     <div className="flex items-start justify-between gap-3">
       <SettingsSectionHeader
         className="flex-1"

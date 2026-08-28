@@ -1,16 +1,7 @@
 {
   "tab": "trust",
   "missingFromIndex": [],
-  "orphanEntries": [
-    "certExpiryWarningDays",
-    "showTrustIdentityInfo",
-    "tlsTrustPolicy",
-    "trustDatabase",
-    "trustExportJson",
-    "trustImportJson",
-    "trustImportKnownHosts",
-    "trustLegacyStores"
-  ],
+  "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false

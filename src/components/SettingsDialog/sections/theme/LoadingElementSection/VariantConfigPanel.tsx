@@ -30,7 +30,9 @@ export const VariantConfigPanel: React.FC<Props> = ({ mgr }) => {
       <h5 className="text-sm font-medium text-[var(--color-text)]">
         {currentDescriptor.label} parameters
       </h5>
-      <div className="space-y-4">
+      {/* Schema-driven rows: the field set changes with the selected loader,
+          so the anchor lives on the container rather than on each row. */}
+      <div className="space-y-4" data-setting-key="loadingElement.variantParameters">
         {currentDescriptor.paramSchema.fields.map((field) => (
           <FieldRow key={field.key} field={field} value={config[field.key]} onChange={(v) => update(field.key, v)} />
         ))}

@@ -44,6 +44,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
   return (
     <Card>
       <Toggle
+        settingKey="loadingElement.followsAccentColor"
         icon={<Palette size={16} />}
         label="Follow accent color"
         description="Use the active theme accent color for this loader"
@@ -58,6 +59,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
         }
       >
         <SettingsColorRow
+          settingKey="loadingElement.customColor"
           icon={<Droplets size={16} />}
           label="Custom color"
           value={le.customColor || '#00f0ff'}
@@ -68,6 +70,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
       </div>
 
       <SettingsSliderRow
+        settingKey="loadingElement.sizeScale"
         icon={<Maximize2 size={16} />}
         label="Size scale"
         value={le.sizeScale ?? 1}
@@ -79,6 +82,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <SettingsSliderRow
+        settingKey="loadingElement.glowIntensity"
         icon={<Sparkles size={16} />}
         label="Glow intensity"
         value={le.glowIntensity ?? 1}
@@ -90,6 +94,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <SettingsColorRow
+        settingKey="loadingElement.glowColor"
         icon={<Droplets size={16} />}
         label="Glow color"
         value={le.glowColor || ''}
@@ -110,6 +115,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <SettingsSelectRow
+        settingKey="loadingElement.renderMode"
         icon={<Layers size={16} />}
         label="Render mode"
         value={le.renderMode}
@@ -119,6 +125,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <SettingsSelectRow
+        settingKey="loadingElement.reducedMotionMode"
         icon={<Accessibility size={16} />}
         label="Reduced motion"
         value={le.reducedMotionMode}
@@ -130,6 +137,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <Toggle
+        settingKey="loadingElement.pauseWhenOffScreen"
         icon={<EyeOff size={16} />}
         label="Pause when off-screen"
         description="Suspend animation when the loader is scrolled out of view"
@@ -139,6 +147,7 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
       />
 
       <Toggle
+        settingKey="loadingElement.pauseWhenWindowHidden"
         icon={<Minimize2 size={16} />}
         label="Pause when window is hidden"
         description="Suspend animation when the application window is minimized or hidden"

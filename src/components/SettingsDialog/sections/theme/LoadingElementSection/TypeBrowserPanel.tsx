@@ -80,6 +80,7 @@ export const TypeBrowserPanel: React.FC<Props> = ({ mgr }) => {
             <ChevronLeft className="w-4 h-4" />
           </button>
           <Select
+            settingKey="loadingElement.defaultType"
             value={le.defaultType}
             onChange={(v: string) => setDefaultType(v as LoadingElementType)}
             options={typeOptions}
@@ -137,6 +138,7 @@ export const TypeBrowserPanel: React.FC<Props> = ({ mgr }) => {
             Preset
           </label>
           <Select
+            settingKey="loadingElement.preset"
             value={activePresetId}
             onChange={(v: string) => {
               if (v && v !== '__custom__') applyPreset(v);

@@ -55,6 +55,7 @@ const AppearanceSection: React.FC<{
     />
     <Card>
       <SettingsSelectRow
+        settingKey="theme"
         icon={<Palette size={16} />}
         label={mgr.t("settings.theme", "Theme")}
         value={settings.theme}
@@ -68,7 +69,9 @@ const AppearanceSection: React.FC<{
           "Select the base theme that controls the overall look and feel of the application.",
         )}
       />
-      <div className="space-y-2">
+      {/* Not a settings primitive — a swatch grid. The anchor is declared on
+          the wrapper so search results can still scroll it into view. */}
+      <div className="space-y-2" data-setting-key="colorScheme">
         <label className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
           {mgr.t("themeSettings.colorScheme", "Color Scheme")}
           <InfoTooltip
@@ -100,6 +103,7 @@ const AppearanceSection: React.FC<{
         </div>
       </div>
       <Toggle
+        settingKey="useCustomAccent"
         icon={<Palette size={16} />}
         label={mgr.t("themeSettings.customAccent", "Custom Accent")}
         description={mgr.t(
@@ -122,6 +126,7 @@ const AppearanceSection: React.FC<{
         }
       >
         <SettingsColorRow
+          settingKey="primaryAccentColor"
           icon={<Droplets size={16} />}
           label={mgr.t("themeSettings.accentColor", "Accent Color")}
           value={settings.primaryAccentColor || "#3b82f6"}
@@ -204,6 +209,7 @@ const GlowSection: React.FC<{
           }
         >
           <SettingsColorRow
+            settingKey="backgroundGlowColor"
             icon={<Droplets size={16} />}
             label={
               settings.backgroundGlowFollowsColorScheme
@@ -221,6 +227,7 @@ const GlowSection: React.FC<{
         </div>
 
         <SettingsSliderRow
+          settingKey="backgroundGlowOpacity"
           icon={<Eye size={16} />}
           label={mgr.t("themeSettings.glowOpacity", "Glow Opacity")}
           value={settings.backgroundGlowOpacity}
@@ -235,6 +242,7 @@ const GlowSection: React.FC<{
         />
 
         <SettingsSliderRow
+          settingKey="backgroundGlowRadius"
           icon={<Maximize2 size={16} />}
           label={mgr.t("themeSettings.glowRadius", "Glow Radius")}
           value={settings.backgroundGlowRadius}
@@ -250,6 +258,7 @@ const GlowSection: React.FC<{
         />
 
         <SettingsSliderRow
+          settingKey="backgroundGlowBlur"
           icon={<Brush size={16} />}
           label={mgr.t("themeSettings.glowBlur", "Glow Blur")}
           value={settings.backgroundGlowBlur}
@@ -457,6 +466,7 @@ const AnimationsSection: React.FC<{
         }
       >
         <SettingsSliderRow
+          settingKey="animationDuration"
           icon={<Timer size={16} />}
           label={mgr.t(
             "settings.theme.animationDuration",
@@ -511,6 +521,7 @@ const CustomCssSection: React.FC<{
           }}
         />
         <Textarea
+          data-setting-key="customCss"
           value={settings.customCss || ""}
           onChange={(v) => updateSettings({ customCss: v })}
           onScroll={mgr.handleCssScroll}

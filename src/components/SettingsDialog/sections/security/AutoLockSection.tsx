@@ -44,6 +44,7 @@ function AutoLockSection({
           }
         >
           <Toggle
+            settingKey="autoLock.enabled"
             checked={settings.autoLock.enabled && mgr.hasPassword}
             onChange={(v) =>
               updateSettings({
@@ -82,6 +83,7 @@ function AutoLockSection({
           />
 
           <Toggle
+            settingKey="autoLock.lockOnMinimize"
             checked={!!settings.autoLock.lockOnMinimize}
             onChange={(v) =>
               updateSettings({
@@ -96,6 +98,7 @@ function AutoLockSection({
           />
 
           <Toggle
+            settingKey="autoLock.lockOnBlur"
             checked={!!settings.autoLock.lockOnBlur}
             onChange={(v) =>
               updateSettings({
@@ -110,6 +113,7 @@ function AutoLockSection({
           />
 
           <Toggle
+            settingKey="autoLock.lockOnVisibilityHidden"
             checked={!!settings.autoLock.lockOnVisibilityHidden}
             onChange={(v) =>
               updateSettings({

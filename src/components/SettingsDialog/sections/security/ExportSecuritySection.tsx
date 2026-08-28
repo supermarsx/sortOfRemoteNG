@@ -80,6 +80,7 @@ function ExportSecuritySection({
         </p>
 
         <SettingsSelectRow
+          settingKey="exportSecurity.defaultFormat"
           icon={<FileBox size={16} />}
           label="Default export format"
           value={exportSecurity.defaultFormat}
@@ -100,6 +101,7 @@ function ExportSecuritySection({
         />
 
         <SettingsNumberRow
+          settingKey="exportSecurity.keyDerivationIterations"
           icon={<Gauge size={16} />}
           label="Export PBKDF2 iterations"
           value={exportSecurity.keyDerivationIterations}
@@ -118,6 +120,7 @@ function ExportSecuritySection({
         />
 
         <Toggle
+          settingKey="exportSecurity.includeConnectionsByDefault"
           checked={exportSecurity.includeConnectionsByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeConnectionsByDefault: v })
@@ -127,6 +130,7 @@ function ExportSecuritySection({
           description="Include saved connections by default"
         />
         <Toggle
+          settingKey="exportSecurity.encryptByDefault"
           checked={exportSecurity.encryptByDefault}
           onChange={(v) => updateExportSecurity({ encryptByDefault: v })}
           icon={<Lock size={16} />}
@@ -134,6 +138,7 @@ function ExportSecuritySection({
           description="Password-encrypt the exported file by default"
         />
         <Toggle
+          settingKey="exportSecurity.includePasswordsByDefault"
           checked={exportSecurity.includePasswordsByDefault}
           onChange={(v) =>
             updateExportSecurity({ includePasswordsByDefault: v })
@@ -143,6 +148,7 @@ function ExportSecuritySection({
           description="Include saved passwords in the export by default"
         />
         <Toggle
+          settingKey="exportSecurity.includeSettingsByDefault"
           checked={exportSecurity.includeSettingsByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeSettingsByDefault: v })
@@ -152,6 +158,7 @@ function ExportSecuritySection({
           description="Include global application preferences"
         />
         <Toggle
+          settingKey="exportSecurity.includeFolderItemsByDefault"
           checked={exportSecurity.includeFolderItemsByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeFolderItemsByDefault: v })
@@ -161,6 +168,7 @@ function ExportSecuritySection({
           description="Include the folder tree structure"
         />
         <Toggle
+          settingKey="exportSecurity.includeEmptyFoldersByDefault"
           checked={exportSecurity.includeEmptyFoldersByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeEmptyFoldersByDefault: v })
@@ -170,6 +178,7 @@ function ExportSecuritySection({
           description="Include folders that contain no connections"
         />
         <Toggle
+          settingKey="exportSecurity.includeTabGroupsByDefault"
           checked={exportSecurity.includeTabGroupsByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeTabGroupsByDefault: v })
@@ -179,6 +188,7 @@ function ExportSecuritySection({
           description="Include user-defined tab groups"
         />
         <Toggle
+          settingKey="exportSecurity.includeColorTagsByDefault"
           checked={exportSecurity.includeColorTagsByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeColorTagsByDefault: v })
@@ -188,6 +198,7 @@ function ExportSecuritySection({
           description="Include color tag definitions"
         />
         <Toggle
+          settingKey="exportSecurity.includeVpnDataByDefault"
           checked={exportSecurity.includeVpnDataByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeVpnDataByDefault: v })
@@ -197,6 +208,7 @@ function ExportSecuritySection({
           description="Include configured VPN profiles"
         />
         <Toggle
+          settingKey="exportSecurity.includeTunnelChainsByDefault"
           checked={exportSecurity.includeTunnelChainsByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeTunnelChainsByDefault: v })
@@ -206,6 +218,7 @@ function ExportSecuritySection({
           description="Include SSH tunnel chains"
         />
         <Toggle
+          settingKey="exportSecurity.includeExportMetadataByDefault"
           checked={exportSecurity.includeExportMetadataByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeExportMetadataByDefault: v })
@@ -215,6 +228,7 @@ function ExportSecuritySection({
           description="Embed metadata describing how the export was produced"
         />
         <Toggle
+          settingKey="exportSecurity.includeDatabaseMetadataByDefault"
           checked={exportSecurity.includeDatabaseMetadataByDefault}
           onChange={(v) =>
             updateExportSecurity({ includeDatabaseMetadataByDefault: v })
@@ -230,6 +244,7 @@ function ExportSecuritySection({
         />
 
         <Toggle
+          settingKey="exportSecurity.showPasswordStrength"
           checked={exportSecurity.showPasswordStrength}
           onChange={(v) =>
             updateExportSecurity({ showPasswordStrength: v })
@@ -239,6 +254,7 @@ function ExportSecuritySection({
           description="Render a visual strength meter as the export password is typed"
         />
         <Toggle
+          settingKey="exportSecurity.showEntropyBits"
           checked={exportSecurity.showEntropyBits}
           onChange={(v) => updateExportSecurity({ showEntropyBits: v })}
           icon={<Hash size={16} />}
@@ -246,6 +262,7 @@ function ExportSecuritySection({
           description="Display the rough entropy of the typed password alongside the meter"
         />
         <Toggle
+          settingKey="exportSecurity.enforceMinimumPasswordScore"
           checked={exportSecurity.enforceMinimumPasswordScore}
           onChange={(v) =>
             updateExportSecurity({ enforceMinimumPasswordScore: v })
@@ -255,6 +272,7 @@ function ExportSecuritySection({
           description="Refuse to export when the password is below the configured score"
         />
         <SettingsSelectRow
+          settingKey="exportSecurity.minimumPasswordScore"
           icon={<Gauge size={16} />}
           label="Minimum password score"
           value={String(exportSecurity.minimumPasswordScore)}
@@ -279,6 +297,7 @@ function ExportSecuritySection({
         />
 
         <Toggle
+          settingKey="exportSecurity.detectCommonPasswords"
           checked={exportSecurity.detectCommonPasswords}
           onChange={(v) =>
             updateExportSecurity({ detectCommonPasswords: v })
@@ -288,6 +307,7 @@ function ExportSecuritySection({
           description="Penalize passwords matching well-known dictionaries"
         />
         <Toggle
+          settingKey="exportSecurity.detectRepeatedCharacters"
           checked={exportSecurity.detectRepeatedCharacters}
           onChange={(v) =>
             updateExportSecurity({ detectRepeatedCharacters: v })
@@ -297,6 +317,7 @@ function ExportSecuritySection({
           description="Penalize runs like aaaa or 1111"
         />
         <Toggle
+          settingKey="exportSecurity.detectSequentialPatterns"
           checked={exportSecurity.detectSequentialPatterns}
           onChange={(v) =>
             updateExportSecurity({ detectSequentialPatterns: v })
@@ -306,6 +327,7 @@ function ExportSecuritySection({
           description="Penalize qwerty, 12345, abcdef, …"
         />
         <Toggle
+          settingKey="exportSecurity.rewardUncommonSymbols"
           checked={exportSecurity.rewardUncommonSymbols}
           onChange={(v) =>
             updateExportSecurity({ rewardUncommonSymbols: v })
@@ -315,7 +337,10 @@ function ExportSecuritySection({
           description="Give a small score bump for less-common punctuation"
         />
 
-        <div className="sor-settings-select-row !items-start">
+        <div
+          className="sor-settings-select-row !items-start"
+          data-setting-key="exportSecurity.customCommonPasswords"
+        >
           <span className="sor-settings-row-label flex items-center gap-1">
             <span className="text-[var(--color-textSecondary)] mr-1">
               <ListChecks size={16} />

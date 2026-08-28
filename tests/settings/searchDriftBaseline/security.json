@@ -1,34 +1,8 @@
 {
   "tab": "security",
-  "missingFromIndex": [
-    "autoLock.timeoutMinutes",
-    "benchmarkTimeSeconds",
-    "databaseKeyLength",
-    "sshKeyType"
-  ],
-  "orphanEntries": [
-    "exportSecurity",
-    "exportSecurity.keyDerivationIterations",
-    "exportSecurity.showPasswordStrength"
-  ],
+  "missingFromIndex": [],
+  "orphanEntries": [],
   "wrongSection": [],
-  "missingOptionValues": [
-    "totpAlgorithm: SHA-1",
-    "totpAlgorithm: SHA-256",
-    "totpAlgorithm: SHA-512",
-    "totpAlgorithm: sha1",
-    "totpAlgorithm: sha256",
-    "totpAlgorithm: sha512",
-    "totpDigits: 6",
-    "totpDigits: 6 digits",
-    "totpDigits: 8",
-    "totpDigits: 8 digits",
-    "totpPeriod: 15",
-    "totpPeriod: 15 seconds",
-    "totpPeriod: 30",
-    "totpPeriod: 30 seconds",
-    "totpPeriod: 60",
-    "totpPeriod: 60 seconds"
-  ],
+  "missingOptionValues": [],
   "tabHasNoEntries": false
 }
