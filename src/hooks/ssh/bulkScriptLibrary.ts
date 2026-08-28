@@ -108,6 +108,10 @@ const destructivePatterns = [
   // counters) without entering configuration mode, so nothing else here would
   // catch them and they must not be grouped with the read-only `show` scripts.
   /(?:^|\n)\s*[!#]?\s*clear\s+(?:mac\s+address-table|counters|arp|logging|ip\s+route|ip\s+bgp)\b/im,
+  // Network-CLI `copy` between a config and a file writes flash or rewrites the
+  // running configuration. Only the running-config -> startup-config form was
+  // matched above; snapshot and restore against flash: are equally mutating.
+  /(?:^|\n)\s*[!#]?\s*copy\s+[^\n]*\b(?:running-config|startup-config|flash:|bootflash:)/im,
   /\b(?:adb\s+shell\s+)?(?:pm|cmd\s+package)\s+(?:uninstall|disable-user|clear|trim-caches)\b/im,
   /\badb\s+shell\s+(?:rm|reboot\s+(?:bootloader|recovery))\b/im,
   /\bfastboot\s+(?:erase|wipe|delete|format)\b/im,

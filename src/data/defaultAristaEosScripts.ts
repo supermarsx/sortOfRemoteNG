@@ -127,6 +127,21 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
     ),
   ),
 
+  defineDefaultScript(
+    "default-arista-eos-config-search",
+    "Arista EOS — Search the Running Config for 303",
+    "Filter the running configuration down to every line mentioning 303. Read-only. The pipe is EOS's own output filter, evaluated by the switch CLI rather than a shell, and it matches anywhere in the configuration text — so this is a general config-search tool, not a VLAN-specific one. As shipped it answers 'everywhere VLAN 303 appears', which is the fastest way to audit one VLAN's whole footprint at once: its SVI, every access port assigned to it, and every trunk allowed list carrying it. The config-side counterpart to the operational lookups — show vlan tells you VLAN state, this tells you VLAN configuration.",
+    "Arista",
+    lines("enable", "", "show running-config | include 303"),
+  ),
+  defineDefaultScript(
+    "default-arista-eos-config-search-custom",
+    "Arista EOS — Search the Running Config (Custom)",
+    "Filter the running configuration to lines matching a pattern. Read-only. Replace <PATTERN> with any text to search for — an interface name, a VLAN number, a description, an IP — since the EOS include filter matches anywhere in the configuration, not just VLAN IDs. Keep the pipe intact: it is the switch's own filter, and removing it returns the entire configuration.",
+    "Arista",
+    lines("enable", "", "show running-config | include <PATTERN>"),
+  ),
+
   // ── Read-only: VLAN inspection ───────────────────────────────────────────
   defineDefaultScript(
     "default-arista-eos-show-vlans",
@@ -430,7 +445,7 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
   defineDefaultScript(
     "default-arista-eos-vlan-delete-guarded",
     "Arista EOS — Delete VLAN 101",
-    "Remove VLAN 101 and persist the change. Service-affecting: deleting a VLAN drops any port relying on it. Matched pair with the VLAN create script. Note the verification is a bare show vlan rather than show vlan 101 — after deletion the specific VLAN no longer exists, so querying it directly would error; the whole table shows it is gone.",
+    "Remove VLAN 101 and persist the change. Service-affecting: deleting a VLAN drops any port relying on it. Matched pair with the VLAN create script. Note the verification is a bare show vlan rather than show vlan 101 — after deletion the specific VLAN no longer exists, so querying it directly would error; the whole table shows it is gone. Snapshot the config to flash first.",
     "Arista",
     lines(
       "enable",
@@ -558,7 +573,7 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
   defineDefaultScript(
     "default-arista-eos-trunk-port-guarded",
     "Arista EOS — Configure Trunk Uplink Ethernet52",
-    "Configure Ethernet52 as a trunk uplink with native VLAN 1 and allowed VLANs 1,101,303,351. THE MOST DANGEROUS SCRIPT IN THE SET IN PRACTICE: a trunk described as UPLINK is very likely this switch's path to the rest of the network, so a wrong allowed-VLAN list or the wrong interface can cut the uplink and lock you out of the device you are configuring. Run the LLDP neighbours script first to confirm what is on the far end. Also note switchport trunk allowed vlan <list> REPLACES the allowed list rather than adding to it — to extend a trunk without dropping its existing VLANs, use the add-VLAN script instead.",
+    "Configure Ethernet52 as a trunk uplink with native VLAN 1 and allowed VLANs 1,101,303,351. THE MOST DANGEROUS SCRIPT IN THE SET IN PRACTICE: a trunk described as UPLINK is very likely this switch's path to the rest of the network, so a wrong allowed-VLAN list or the wrong interface can cut the uplink and lock you out of the device you are configuring. Run the LLDP neighbours script first to confirm what is on the far end. Also note switchport trunk allowed vlan <list> REPLACES the allowed list rather than adding to it — to extend a trunk without dropping its existing VLANs, use the add-VLAN script instead. Snapshot the config to flash first.",
     "Arista",
     lines(
       "enable",
@@ -714,7 +729,7 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
   defineDefaultScript(
     "default-arista-eos-port-range-shutdown-guarded",
     "Arista EOS — Shut Down Ports Ethernet29-48",
-    "Administratively disable a range of ports and persist it. This downs 20 ports (Ethernet29 through Ethernet48) in a single command — everything plugged into any of them goes dark. The most bluntly destructive script in the set alongside its single-port sibling: unlike the reconfiguration scripts, taking links down is the entire point. Verification is the whole-switch port status, the convention for range operations. The range bring-up script is the way back.",
+    "Administratively disable a range of ports and persist it. This downs 20 ports (Ethernet29 through Ethernet48) in a single command — everything plugged into any of them goes dark. The most bluntly destructive script in the set alongside its single-port sibling: unlike the reconfiguration scripts, taking links down is the entire point. Verification is the whole-switch port status, the convention for range operations. The range bring-up script is the way back. Snapshot the config to flash first.",
     "Arista",
     lines(
       "enable",
@@ -824,7 +839,7 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
   defineDefaultScript(
     "default-arista-eos-svi-static-guarded",
     "Arista EOS — Enable Routing and Create SVI Vlan303",
-    "Turn on IP routing and give VLAN 303 a static routed interface at 10.15.27.1/24. Two verifications because they check different things: interface addressing, then the connected route that results. Note ip routing is a GLOBAL, switch-wide setting, not scoped to this SVI — on a switch that has been operating purely at layer 2 this changes how the whole box forwards traffic, and write memory persists it. If routing is already enabled the line is a harmless no-op. Service-affecting at switch scope, so it belongs with the trunk and default-route scripts rather than the per-port ones. VLAN 303 matches the trunk allowed list, so the uplink already carries it.",
+    "Turn on IP routing and give VLAN 303 a static routed interface at 10.15.27.1/24. Two verifications because they check different things: interface addressing, then the connected route that results. Note ip routing is a GLOBAL, switch-wide setting, not scoped to this SVI — on a switch that has been operating purely at layer 2 this changes how the whole box forwards traffic, and write memory persists it. If routing is already enabled the line is a harmless no-op. Service-affecting at switch scope, so it belongs with the trunk and default-route scripts rather than the per-port ones. VLAN 303 matches the trunk allowed list, so the uplink already carries it. Snapshot the config to flash first.",
     "Arista",
     lines(
       "enable",
@@ -906,7 +921,7 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
   defineDefaultScript(
     "default-arista-eos-default-route-guarded",
     "Arista EOS — Add Default Route via 10.15.27.254",
-    "Point the switch's default route at 10.15.27.254 and persist it. Among the highest-risk scripts here: a default route is how the switch reaches everything not directly connected, very often including your own management path. A wrong next hop does not fail loudly — the command succeeds, write memory persists it, and connectivity dies afterwards with the bad route surviving a reboot. Verify the next hop is reachable on a connected subnet first; 10.15.27.254 sits inside the static SVI's 10.15.27.1/24, which is exactly the right relationship. Natural follow-on from creating the routed SVI.",
+    "Point the switch's default route at 10.15.27.254 and persist it. Among the highest-risk scripts here: a default route is how the switch reaches everything not directly connected, very often including your own management path. A wrong next hop does not fail loudly — the command succeeds, write memory persists it, and connectivity dies afterwards with the bad route surviving a reboot. Verify the next hop is reachable on a connected subnet first; 10.15.27.254 sits inside the static SVI's 10.15.27.1/24, which is exactly the right relationship. Natural follow-on from creating the routed SVI. Snapshot the config to flash first.",
     "Arista",
     lines(
       "enable",
@@ -940,7 +955,7 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
   defineDefaultScript(
     "default-arista-eos-management-dhcp-guarded",
     "Arista EOS — Switch Management1 to DHCP",
-    "Move the management interface from static addressing to DHCP and persist it. THE MOST DANGEROUS SCRIPT IN THIS LIBRARY — confirm out-of-band or console access before running it. Management1 is almost certainly the interface you are connected over, so this drops your live SSH session the moment it applies; unlike the other risky scripts the failure is immediate and lands on the very connection running it. The new address is not knowable in advance: the switch returns on whatever the DHCP server hands out, which may be an address you cannot guess. The two verification commands are the right ones but you may never see them, because the session can die first. write memory persists the change, so a reboot does not restore the old address either and recovery may need console access. Genuine counterpoint: with a DHCP reservation for the switch's management MAC this is routine and safe — the danger is running it without one.",
+    "Move the management interface from static addressing to DHCP and persist it. THE MOST DANGEROUS SCRIPT IN THIS LIBRARY — confirm out-of-band or console access before running it. Management1 is almost certainly the interface you are connected over, so this drops your live SSH session the moment it applies; unlike the other risky scripts the failure is immediate and lands on the very connection running it. The new address is not knowable in advance: the switch returns on whatever the DHCP server hands out, which may be an address you cannot guess. The two verification commands are the right ones but you may never see them, because the session can die first. write memory persists the change, so a reboot does not restore the old address either and recovery may need console access. Genuine counterpoint: with a DHCP reservation for the switch's management MAC this is routine and safe — the danger is running it without one. Snapshot the config to flash first.",
     "Arista",
     lines(
       "enable",
@@ -955,6 +970,96 @@ export const defaultAristaEosScripts: SavedBulkScript[] = [
       "",
       "show interfaces Management1",
       "show ip interface brief",
+    ),
+  ),
+
+  // ── Config: management access ────────────────────────────────────────────
+  defineDefaultScript(
+    "default-arista-eos-admin-user-ssh-guarded",
+    "Arista EOS — Create Admin User and Enable SSH",
+    "Enable the SSH management service and, once you supply a password, create a privilege-15 administrator. THE USER LINE SHIPS COMMENTED OUT ON PURPOSE. Every other value in this library is a real one from your environment, but a password cannot be: a ready-to-run script that creates a full-privilege account with a password stored in this application's source would be a backdoor on every switch it touched. Uncomment the username line and replace <PASSWORD> with your own before running it. As it stands the script only enables the SSH service; nothing is created until you edit it. Privilege 15 is full administrative access, so treat the account as you would a root login. This is the counterpart to the management-interface DHCP script: it is what gets you back in, provided the account exists before you need it. Snapshot the config first with the flash snapshot script.",
+    "Arista",
+    lines(
+      "enable",
+      "configure terminal",
+      "",
+      "! username admin privilege 15 secret <PASSWORD>",
+      "",
+      "management ssh",
+      "   no shutdown",
+      "",
+      "end",
+      "write memory",
+      "",
+      "show users",
+    ),
+  ),
+  defineDefaultScript(
+    "default-arista-eos-management-api-guarded",
+    "Arista EOS — Enable HTTPS Management API (eAPI)",
+    "Turn on the eAPI HTTPS listener so tooling can drive this switch programmatically. Enabling eAPI deliberately is entirely normal — it is how EOS is automated — but it is still a new listening service on a network device, so it should be an intentional act rather than a click-through. HTTPS is used on purpose: EOS also accepts plain http, which would put credentials on the wire in clear text, and this library does not ship that as a convenience. Belongs with the admin-user script in the management-access group: one creates the account, the other enables the API that account authenticates against. Snapshot the config first with the flash snapshot script.",
+    "Arista",
+    lines(
+      "enable",
+      "configure terminal",
+      "",
+      "management api http-commands",
+      "   protocol https",
+      "   no shutdown",
+      "",
+      "end",
+      "write memory",
+      "",
+      "show management api http-commands",
+    ),
+  ),
+
+  // ── Operational: config snapshot and restore ─────────────────────────────
+  defineDefaultScript(
+    "default-arista-eos-config-snapshot-guarded",
+    "Arista EOS — Snapshot Running Config to Flash",
+    "Write the running configuration to flash as before-change.cfg, then list flash to confirm it landed and show the space left. RUN THIS BEFORE THE HIGH-CONSEQUENCE SCRIPTS — the management-interface DHCP change, the default route, the trunk replace, the range shutdown, the VLAN delete and the global ip routing change all point back here. It writes a file, so it is not read-only and will ask for confirmation, but its risk profile is the inverse of the other mutating scripts: this one creates a safety net rather than discarding state. The only real hazards are overwriting an earlier snapshot of the same name and flash space. The snapshot lives on the switch's own flash, so it survives a bad configuration change and a reboot but not a dead switch — it complements an off-box backup rather than replacing one. Restore it with the flash restore script.",
+    "Arista",
+    lines(
+      "enable",
+      "",
+      "copy running-config flash:before-change.cfg",
+      "dir flash:",
+    ),
+  ),
+  defineDefaultScript(
+    "default-arista-eos-config-snapshot-custom-guarded",
+    "Arista EOS — Snapshot Running Config to Flash (Custom)",
+    "Write the running configuration to a named file on flash and list flash to confirm. Replace <FILENAME> with the snapshot name. Reusing the same name overwrites the previous snapshot, so a dated name is wise when taking several in a session. Use the same <FILENAME> in the restore script.",
+    "Arista",
+    lines("enable", "", "copy running-config flash:<FILENAME>", "dir flash:"),
+  ),
+  defineDefaultScript(
+    "default-arista-eos-config-restore-guarded",
+    "Arista EOS — Restore Config Snapshot from Flash",
+    "Apply the before-change.cfg snapshot back onto the running configuration, review the result, then persist it. THIS MERGES, IT DOES NOT REPLACE. EOS applies the saved lines on top of the current configuration, so anything added since the snapshot is NOT removed: take a snapshot, create VLAN 999, run this expecting a rollback, and VLAN 999 is still there — the restore looks like it succeeded and the configuration is now a hybrid of both. The true full-rollback command is configure replace flash:before-change.cfg, which this library does not ship. High consequence: it rewrites live configuration, and if the snapshot holds management or routing settings that no longer match reality it can cut your access. Note the deliberate order — show running-config comes before write memory, so you can spot a bad merge while it is still only in the running configuration.",
+    "Arista",
+    lines(
+      "enable",
+      "",
+      "copy flash:before-change.cfg running-config",
+      "",
+      "show running-config",
+      "write memory",
+    ),
+  ),
+  defineDefaultScript(
+    "default-arista-eos-config-restore-custom-guarded",
+    "Arista EOS — Restore Config Snapshot from Flash (Custom)",
+    "Apply a named flash snapshot back onto the running configuration, review it, then persist. Replace <FILENAME> with the snapshot name used when it was taken. This MERGES rather than replaces: anything configured since the snapshot survives, so this is not a rollback — configure replace <FILENAME> is the command for that. Review the output before the write memory line persists the merged result.",
+    "Arista",
+    lines(
+      "enable",
+      "",
+      "copy flash:<FILENAME> running-config",
+      "",
+      "show running-config",
+      "write memory",
     ),
   ),
 

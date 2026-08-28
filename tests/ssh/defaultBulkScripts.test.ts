@@ -25,7 +25,7 @@ const containsEmbeddedCredential = (value: string): boolean =>
 
 describe("default bulk SSH script catalog", () => {
   it("has stable, unique, complete catalog records", () => {
-    expect(defaultBulkScripts).toHaveLength(151);
+    expect(defaultBulkScripts).toHaveLength(159);
 
     const ids = defaultBulkScripts.map((script) => script.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -573,6 +573,31 @@ describe("default bulk SSH script catalog", () => {
       ["default-arista-eos-environment-cooling", ["show environment cooling"]],
       ["default-arista-eos-environment-power", ["show environment power"]],
       ["default-arista-eos-environment-all", ["show environment all"]],
+      [
+        "default-arista-eos-management-api-guarded",
+        [
+          "management api http-commands",
+          "   protocol https",
+          "   no shutdown",
+          "show management api http-commands",
+        ],
+      ],
+      [
+        "default-arista-eos-config-search",
+        ["show running-config | include 303"],
+      ],
+      [
+        "default-arista-eos-config-snapshot-guarded",
+        ["copy running-config flash:before-change.cfg", "dir flash:"],
+      ],
+      [
+        "default-arista-eos-config-restore-guarded",
+        [
+          "copy flash:before-change.cfg running-config",
+          "show running-config",
+          "write memory",
+        ],
+      ],
     ];
 
     for (const [id, commands] of verbatim) {
@@ -755,6 +780,17 @@ describe("default bulk SSH script catalog", () => {
         ["<PREFIX>", "<NEXT_HOP>"],
         ["10.15.27.254"],
       ],
+      ["default-arista-eos-config-search-custom", ["<PATTERN>"], ["303"]],
+      [
+        "default-arista-eos-config-snapshot-custom-guarded",
+        ["<FILENAME>"],
+        ["before-change.cfg"],
+      ],
+      [
+        "default-arista-eos-config-restore-custom-guarded",
+        ["<FILENAME>"],
+        ["before-change.cfg"],
+      ],
     ];
 
     for (const [id, placeholders, literals] of parameterised) {
@@ -806,6 +842,14 @@ describe("default bulk SSH script catalog", () => {
     expect(arp).toBe(byId("default-arista-eos-find-ip-arp").script);
     expect(arp).toContain("show arp | include 10.10.10.50");
 
+    // Third pipe script: the config search filter must survive substitution too.
+    const configSearch = substitute(
+      byId("default-arista-eos-config-search-custom").script,
+      { PATTERN: "303" },
+    );
+    expect(configSearch).toBe(byId("default-arista-eos-config-search").script);
+    expect(configSearch).toContain("show running-config | include 303");
+
     // The diagnostics bundle keeps the log filter separate from the interface:
     // syslog references the parent port, not the breakout lane.
     const diagnostics = byId(
@@ -842,6 +886,16 @@ describe("default bulk SSH script catalog", () => {
         "default-arista-eos-static-route-custom-guarded",
         "default-arista-eos-default-route-guarded",
         { PREFIX: "0.0.0.0/0", NEXT_HOP: "10.15.27.254" },
+      ],
+      [
+        "default-arista-eos-config-snapshot-custom-guarded",
+        "default-arista-eos-config-snapshot-guarded",
+        { FILENAME: "before-change.cfg" },
+      ],
+      [
+        "default-arista-eos-config-restore-custom-guarded",
+        "default-arista-eos-config-restore-guarded",
+        { FILENAME: "before-change.cfg" },
       ],
     ] as Array<[string, string, Record<string, string>]>) {
       expect(
@@ -895,6 +949,91 @@ describe("default bulk SSH script catalog", () => {
     expect(byId("default-arista-eos-svi-static-guarded").description).toContain(
       "GLOBAL, switch-wide",
     );
+  });
+
+  it("never ships a runnable privilege-15 account with a known password", () => {
+    const admin = byId("default-arista-eos-admin-user-ssh-guarded");
+
+    // The operator's own placeholder must not reach the catalog at all.
+    for (const script of defaultBulkScripts) {
+      expect(script.script, script.id).not.toContain("CHANGE-ME");
+    }
+
+    // The account line ships commented out. An angle-bracket placeholder is
+    // not on its own a safeguard: run as-is it would create the account with
+    // the literal password "<PASSWORD>", which is exactly the backdoor being
+    // avoided. Commenting the line is what makes it genuinely un-runnable.
+    expect(admin.script).toMatch(
+      /^! username admin privilege 15 secret <PASSWORD>$/m,
+    );
+    expect(admin.script).not.toMatch(/^username\s/m);
+    expect(admin.script).not.toMatch(/^\s+username\s/m);
+    // No runnable line anywhere carries a secret value.
+    for (const line of admin.script.split("\n")) {
+      if (line.startsWith("!")) continue;
+      expect(line, `runnable line must not set a secret: ${line}`).not.toMatch(
+        /\bsecret\b/,
+      );
+    }
+    // The description explains why the password is not pre-filled.
+    expect(admin.description).toContain("COMMENTED OUT ON PURPOSE");
+    expect(admin.description).toContain("<PASSWORD>");
+    // Enabling the SSH service is still what the script does when run as-is.
+    expect(admin.script).toMatch(/^management ssh$/m);
+    expect(decorateBulkScript(admin).risk).toBe("destructive");
+
+    // eAPI ships HTTPS only; the clear-text option is not offered anywhere.
+    const api = byId("default-arista-eos-management-api-guarded");
+    expect(api.script).toMatch(/^ {3}protocol https$/m);
+    expect(api.script).not.toMatch(/protocol http$/m);
+    for (const script of defaultBulkScripts.filter(
+      (candidate) => candidate.category === "Arista",
+    )) {
+      expect(script.script, script.id).not.toMatch(/^\s*protocol http$/m);
+    }
+  });
+
+  it("documents that restoring a flash snapshot merges rather than replaces", () => {
+    const snapshot = byId("default-arista-eos-config-snapshot-guarded");
+    const restore = byId("default-arista-eos-config-restore-guarded");
+
+    // Both write state, so neither may be classified as a read-only `show`.
+    for (const script of [snapshot, restore]) {
+      expect(decorateBulkScript(script).risk, script.id).toBe("destructive");
+    }
+    // ...but the snapshot's risk is the inverse of the others: it builds a
+    // safety net, and its description says so rather than just warning.
+    expect(snapshot.description).toContain("creates a safety net");
+    expect(snapshot.description).toContain(
+      "RUN THIS BEFORE THE HIGH-CONSEQUENCE SCRIPTS",
+    );
+    // It states the limit of an on-box snapshot rather than overselling it.
+    expect(snapshot.description).toContain("not a dead switch");
+
+    // The merge semantics are the whole point of the restore warning.
+    expect(restore.description).toContain("MERGES, IT DOES NOT REPLACE");
+    expect(restore.description).toContain("configure replace");
+    // `configure replace` is named as the real rollback but not shipped.
+    for (const script of defaultBulkScripts) {
+      expect(script.script, script.id).not.toContain("configure replace");
+    }
+    // Their deliberate order: review the merge before persisting it.
+    const body = restore.script.split("\n").filter((line) => line !== "");
+    expect(body.indexOf("show running-config")).toBeLessThan(
+      body.indexOf("write memory"),
+    );
+
+    // The high-consequence scripts point back at the snapshot.
+    for (const id of [
+      "default-arista-eos-management-dhcp-guarded",
+      "default-arista-eos-default-route-guarded",
+      "default-arista-eos-trunk-port-guarded",
+      "default-arista-eos-port-range-shutdown-guarded",
+      "default-arista-eos-vlan-delete-guarded",
+      "default-arista-eos-svi-static-guarded",
+    ]) {
+      expect(byId(id).description, id).toContain("Snapshot the config");
+    }
   });
 
   it("treats reboot-class commands as destructive behind privilege, keyword, and comment prefixes", () => {
