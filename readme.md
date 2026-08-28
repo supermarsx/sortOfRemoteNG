@@ -1,6 +1,7 @@
 # sortOfRemoteNG
 
 [![CI](https://img.shields.io/github/actions/workflow/status/supermarsx/sortOfRemoteNG/ci.yml?branch=main&label=CI&logo=github&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/actions/workflows/ci.yml)
+[![Documentation](https://img.shields.io/github/actions/workflow/status/supermarsx/sortOfRemoteNG/docs-pages.yml?branch=main&label=Docs&logo=readthedocs&logoColor=white&style=flat-square)](https://supermarsx.github.io/sortOfRemoteNG/)
 [![Latest release](https://img.shields.io/github/v/release/supermarsx/sortOfRemoteNG?display_name=tag&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/supermarsx/sortOfRemoteNG/total?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/releases)
 [![Stars](https://img.shields.io/github/stars/supermarsx/sortOfRemoteNG?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG)
