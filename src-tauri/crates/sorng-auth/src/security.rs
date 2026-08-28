@@ -5,12 +5,12 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use totp_rs::{Algorithm, TOTP};
+use totp_rs::{Algorithm, Builder, Totp};
 
 pub type SecurityServiceState = Arc<Mutex<SecurityService>>;
 
 pub struct SecurityService {
-    totp: Option<TOTP>,
+    totp: Option<Totp>,
 }
 
 impl SecurityService {
@@ -25,14 +25,14 @@ impl SecurityService {
         // Encode as base32 (standard for authenticator apps like Google Authenticator)
         let secret_b32 = data_encoding::BASE32_NOPAD.encode(&secret);
 
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,
-            1,
-            30,
-            secret.to_vec(), // raw secret bytes, NOT the encoded string
-        )
-        .map_err(|e| e.to_string())?;
+        let totp = Builder::new()
+            .with_algorithm(Algorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(secret.to_vec()) // raw secret bytes, NOT the encoded string
+            .build()
+            .map_err(|e| e.to_string())?;
         self.totp = Some(totp);
         Ok(secret_b32)
     }

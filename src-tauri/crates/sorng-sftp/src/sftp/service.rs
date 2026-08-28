@@ -849,8 +849,6 @@ impl SftpService {
             }
 
             // Keyboard-interactive fallback
-            let pw = password.clone();
-
             struct SimpleKbdHandler {
                 password: String,
             }
@@ -869,7 +867,7 @@ impl SftpService {
             // secrecy 0.10's expose_secret yields &str, so own it for the
             // handler's String field.
             let mut handler = SimpleKbdHandler {
-                password: pw.to_string(),
+                password: password.to_string(),
             };
             if session
                 .userauth_keyboard_interactive(&config.username, &mut handler)

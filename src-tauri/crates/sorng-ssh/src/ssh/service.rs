@@ -710,7 +710,7 @@ pub fn import_known_hosts(path: Option<String>) -> Result<KnownHostsImportOutcom
 
 /// Generate a TOTP code from a secret
 pub fn generate_totp_code(secret: &str) -> Result<String, String> {
-    use totp_rs::{Algorithm, TOTP};
+    use totp_rs::{Algorithm, Builder};
 
     // Try to decode the secret (it might be base32 encoded)
     let secret_bytes = if secret.chars().all(|c| c.is_ascii_alphanumeric()) {
@@ -722,14 +722,14 @@ pub fn generate_totp_code(secret: &str) -> Result<String, String> {
         secret.as_bytes().to_vec()
     };
 
-    let totp = TOTP::new(
-        Algorithm::SHA1,
-        6,  // 6 digits
-        1,  // 1 step
-        30, // 30 second period
-        secret_bytes,
-    )
-    .map_err(|e| format!("Failed to create TOTP: {}", e))?;
+    let totp = Builder::new()
+        .with_algorithm(Algorithm::SHA1)
+        .with_digits(6) // 6 digits
+        .with_skew(1) // 1 step
+        .with_step_duration(30) // 30 second period
+        .with_secret(secret_bytes)
+        .build()
+        .map_err(|e| format!("Failed to create TOTP: {}", e))?;
 
     // totp-rs 6 returns a Token directly; Display zero-pads it to the
     // configured digit count, matching the old String return.

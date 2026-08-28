@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use totp_rs::{Algorithm, TOTP};
+use totp_rs::{Algorithm, Builder, Totp};
 
 /// Supported 2FA methods
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -81,7 +81,7 @@ pub struct TwoFactorService {
     /// Map of usernames to their 2FA configurations
     configs: HashMap<String, TwoFactorConfig>,
     /// TOTP instances for verification
-    totp_instances: HashMap<String, TOTP>,
+    totp_instances: HashMap<String, Totp>,
     /// Pending SMS/Email challenges keyed by username
     pending_challenges: HashMap<String, PendingChallenge>,
 }
@@ -282,14 +282,14 @@ impl TwoFactorService {
             .map_err(|e| format!("Invalid BASE32 secret: {}", e))?;
 
         // Create TOTP instance
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,  // 6 digits
-            1,  // 1 digit step (30 seconds)
-            30, // 30 second period
-            secret_bytes,
-        )
-        .map_err(|e| format!("Failed to create TOTP: {}", e))?;
+        let totp = Builder::new()
+            .with_algorithm(Algorithm::SHA1)
+            .with_digits(6) // 6 digits
+            .with_skew(1) // 1 digit step (30 seconds)
+            .with_step_duration(30) // 30 second period
+            .with_secret(secret_bytes)
+            .build()
+            .map_err(|e| format!("Failed to create TOTP: {}", e))?;
 
         // Generate QR code URL
         let url = format!(
