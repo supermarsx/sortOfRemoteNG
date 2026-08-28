@@ -140,7 +140,7 @@ const NginxProxyMgrPanel: React.FC<IntegrationPanelProps> = ({
           : { ...f, password: secret },
       );
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = useCallback(

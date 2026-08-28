@@ -17,7 +17,7 @@ export const PortainerStacksTab: React.FC<PortainerTabProps> = ({ mgr }) => {
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const endpointName = (id?: number | null) =>

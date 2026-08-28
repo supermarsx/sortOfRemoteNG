@@ -169,7 +169,7 @@ const ConnectForm: React.FC<{ mgr: GrafanaManager; instanceId?: string }> = ({
           : { ...f, apiKey: secret },
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
@@ -408,7 +408,7 @@ const DashboardsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   useEffect(() => {
     void search();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [cid]);
 
   const view = useCallback(
@@ -1301,7 +1301,7 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [cid]);
 
   const create = useCallback(async () => {
@@ -1567,7 +1567,7 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [cid]);
 
   const view = useCallback(

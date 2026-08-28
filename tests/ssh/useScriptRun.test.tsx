@@ -357,7 +357,7 @@ describe("useScriptRun", () => {
       api = run;
       useEffect(() => {
         run.start("sess-1", "echo", "bash").catch(() => undefined);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
       }, []);
       return null;
     }

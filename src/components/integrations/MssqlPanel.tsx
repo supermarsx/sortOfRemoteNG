@@ -241,7 +241,7 @@ const ConnectForm: React.FC<{
     store.readSecret(inst).then((secret) => {
       if (secret) setForm((f) => ({ ...f, password: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
@@ -1440,7 +1440,7 @@ const MssqlPanel: React.FC<IntegrationPanelProps> = ({
   // Adopt any pre-existing backend session on mount.
   useEffect(() => {
     void mgr.refreshConnection();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const headerLabel = useMemo(() => {

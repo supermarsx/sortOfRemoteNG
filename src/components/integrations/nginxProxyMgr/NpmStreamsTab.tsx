@@ -11,7 +11,7 @@ const NpmStreamsTab: React.FC<{ mgr: NginxProxyMgrManager }> = ({ mgr }) => {
 
   useEffect(() => {
     if (mgr.isConnected) void mgr.loadStreams().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr.isConnected]);
 
   return (

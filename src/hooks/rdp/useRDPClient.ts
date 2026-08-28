@@ -1705,7 +1705,7 @@ export function useRDPClient(session: ConnectionSession) {
       }
       finishSessionLifecycleActorAttempt(lifecycleAttempt);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- all mutable values read from refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- all mutable values read from refs
   }, []);
 
   const handleReconnect = useCallback(async () => {
@@ -2627,7 +2627,7 @@ export function useRDPClient(session: ConnectionSession) {
       cleanup(mountedSessionId);
       resetFrameBackpressure();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- session.id is the only meaningful trigger
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- session.id is the only meaningful trigger
   }, [
     session.id,
     clearH264RecoveryTimers,

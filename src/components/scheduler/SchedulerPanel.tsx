@@ -184,7 +184,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
 
   useEffect(() => {
     if (isOpen) void refresh();
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps
 
   useEffect(() => {
     if (!showEditor || !form.cron.trim()) {
@@ -206,7 +206,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [form.cron, showEditor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form.cron, showEditor]); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps
 
   const tasks = useMemo(
     () =>

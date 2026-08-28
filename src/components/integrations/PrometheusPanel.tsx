@@ -137,7 +137,7 @@ const ConnectForm: React.FC<{
           : { ...f, password: secret },
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
@@ -408,7 +408,7 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
     } catch {
       /* surfaced */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr, cid, selectors]);
 
   const runLabelNames = useCallback(async () => {
@@ -417,7 +417,7 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
     } catch {
       /* surfaced */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr, cid, selectors]);
 
   const runLabelValues = useCallback(async () => {
@@ -428,7 +428,7 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
     } catch {
       /* surfaced */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr, cid, labelName, selectors]);
 
   const runFederate = useCallback(async () => {
@@ -438,7 +438,7 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
     } catch {
       /* surfaced */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr, cid, selectors]);
 
   return (

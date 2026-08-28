@@ -21,7 +21,7 @@ export const PortainerEndpointsTab: React.FC<
 
   useEffect(() => {
     if (mgr.endpoints.length === 0) void quiet(() => mgr.loadEndpoints());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   return (

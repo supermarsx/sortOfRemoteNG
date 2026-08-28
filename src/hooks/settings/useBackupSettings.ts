@@ -148,7 +148,7 @@ export function useBackupSettings(
       }
     };
     loadPaths();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: load preset paths once
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: load preset paths once
   }, []);
 
   const updateBackup = (updates: Partial<BackupConfig>) => {

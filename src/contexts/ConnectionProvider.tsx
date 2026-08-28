@@ -80,7 +80,7 @@ export interface SessionSnapshotReconciliationDiagnostics {
  * preserving the incoming snapshot's ordering and lifecycle merge semantics.
  */
 // Exported for deterministic reducer scalability coverage.
-// eslint-disable-next-line react-refresh/only-export-components
+// eslint-disable-next-line react-refresh/only-export-components, react/only-export-components
 export const reconcileSessionSnapshot = (
   currentSessions: readonly ConnectionSession[],
   incomingSessions: readonly ConnectionSession[],
@@ -114,7 +114,7 @@ export const reconcileSessionSnapshot = (
 };
 
 // Exported for deterministic reducer regression coverage.
-// eslint-disable-next-line react-refresh/only-export-components
+// eslint-disable-next-line react-refresh/only-export-components, react/only-export-components
 export const connectionReducer = (
   state: ConnectionState,
   action: ConnectionAction,
@@ -793,7 +793,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     tabGroupSavePendingRef.current = false;
     // debouncedSave is stable (depends only on the database manager) — safe to omit from lint
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [state.connections, state.tabGroups, databaseManager]);
 
   const contextValue = useMemo(

@@ -132,7 +132,7 @@ const ConnectForm: React.FC<{ mgr: CaddyManager; instanceId?: string }> = ({
           : { ...f, apiKey: secret },
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
@@ -343,7 +343,7 @@ const ConfigTab: React.FC<{ mgr: CaddyManager; cid: string }> = ({
         /* surfaced */
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
     [mgr, cid, path, pathValue, t],
   );
 
@@ -749,7 +749,7 @@ const RoutesTab: React.FC<{ mgr: CaddyManager; cid: string }> = ({
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [cid]);
 
   const view = useCallback(
@@ -1031,7 +1031,7 @@ const TlsTab: React.FC<{ mgr: CaddyManager; cid: string }> = ({ mgr, cid }) => {
   useEffect(() => {
     void loadDomains();
     void loadCerts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [cid]);
 
   const saveDomains = useCallback(async () => {

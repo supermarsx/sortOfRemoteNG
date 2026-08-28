@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-// eslint-disable-next-line react-refresh/only-export-components
+// eslint-disable-next-line react-refresh/only-export-components, react/only-export-components
 export const metadata: Metadata = {
   title: "sortOfRemoteNG",
   description: "A remote management tool",

@@ -173,7 +173,7 @@ const BotManager: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
   useEffect(() => {
     void mgr.refreshBots();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const set = <K extends keyof BotForm>(k: K, v: BotForm[K]) =>

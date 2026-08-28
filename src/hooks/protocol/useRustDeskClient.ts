@@ -274,7 +274,7 @@ export function useRustDeskClient(session: ConnectionSession) {
     // array: it closes over `settings`, and we do not want mid-session
     // setting tweaks to force a full reconnect. Settings changes are pushed
     // through `rustdesk_update_session_settings` in `setSettings`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [session.id]);
 
   const getStatusColor = useCallback(() => {

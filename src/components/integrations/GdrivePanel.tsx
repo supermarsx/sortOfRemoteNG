@@ -173,7 +173,7 @@ const ConnectFlow: React.FC<{
         }
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof CredState>(k: K, v: CredState[K]) =>
@@ -225,7 +225,7 @@ const ConnectFlow: React.FC<{
       setAuthUrl(url);
       openExternal(url);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr, form, persist]);
 
   const doExchange = useCallback(async () => {
@@ -389,7 +389,7 @@ const FilesTab: React.FC<{
 
   useEffect(() => {
     void list();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const createFolder = useCallback(async () => {

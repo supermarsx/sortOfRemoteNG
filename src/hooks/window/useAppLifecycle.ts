@@ -400,7 +400,7 @@ export const useAppLifecycle = ({
       mountedRef.current = false;
       clearTimeout(timeout);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: one-time initialization
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: one-time initialization
   }, []);
 
   useEffect(() => {

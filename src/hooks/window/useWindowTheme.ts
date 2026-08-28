@@ -113,7 +113,7 @@ export function useWindowTheme(
         },
       );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setBackgroundColor is a stable Tauri API
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- setBackgroundColor is a stable Tauri API
   }, [
     appSettings?.windowTransparencyEnabled,
     appSettings?.windowTransparencyOpacity,

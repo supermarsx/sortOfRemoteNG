@@ -4633,7 +4633,7 @@ ${tableRows}
     // cloneSidecarsForConnections closes over the same manager singletons and
     // current operation state consumed here; listing the inline helper would
     // recreate this action on every render without making the inputs safer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [
     isCloning,
     getEffectiveCloneSourceIds,

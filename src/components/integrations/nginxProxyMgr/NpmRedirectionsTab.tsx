@@ -13,7 +13,7 @@ const NpmRedirectionsTab: React.FC<{ mgr: NginxProxyMgrManager }> = ({
 
   useEffect(() => {
     if (mgr.isConnected) void mgr.loadRedirectionHosts().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr.isConnected]);
 
   return (

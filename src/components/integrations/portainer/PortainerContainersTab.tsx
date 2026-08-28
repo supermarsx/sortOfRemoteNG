@@ -39,7 +39,7 @@ export const PortainerContainersTab: React.FC<
     } else if (endpointId == null) {
       onEndpointChange(mgr.endpoints[0].id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const refresh = useCallback(async () => {
@@ -49,7 +49,7 @@ export const PortainerContainersTab: React.FC<
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [endpointId, all]);
 
   const act = useCallback(

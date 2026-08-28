@@ -317,7 +317,7 @@ const ConnectForm: React.FC<{
       tls_skip_verify: form.tlsSkipVerify,
     });
     // `validate` is intentionally local to the current form snapshot.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [form, manager, savedId]);
 
   const doSave = useCallback(async () => {

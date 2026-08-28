@@ -97,7 +97,7 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
     setPosition((current) => ({ ...current, visible: false }));
     const raf = requestAnimationFrame(updatePosition);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- updatePosition is defined inside effect
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- updatePosition is defined inside effect
   }, [isOpen, align, offset, viewportPadding]);
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reposition is stable within effect scope
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- reposition is stable within effect scope
   }, [isOpen, align, offset, viewportPadding]);
 
   useEffect(() => {

@@ -137,7 +137,7 @@ const ConnectForm: React.FC<{
     store.readSecret(inst).then((secret) => {
       if (secret) setForm((f) => ({ ...f, password: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
@@ -1580,7 +1580,7 @@ const VmwarePanel: React.FC<IntegrationPanelProps> = ({
   // Reflect any pre-existing backend session on mount.
   useEffect(() => {
     void mgr.refreshConnection();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   if (!isOpen) return null;

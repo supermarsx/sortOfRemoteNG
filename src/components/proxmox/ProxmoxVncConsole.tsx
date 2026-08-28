@@ -233,13 +233,13 @@ export const ProxmoxVncConsole: React.FC<ProxmoxVncConsoleProps> = ({
     // `target` is only read to name the connection; the identity that matters
     // is the primitive triple, so a fresh object from the parent must not
     // re-open the bridge.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [node, vmid, vmType, attempt]);
 
   const session = useMemo(() => {
     if (!bridge) return null;
     return buildProxmoxVncSession(buildProxmoxVncConnection(bridge, target));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [bridge]);
 
   const handleClose = useCallback(() => {

@@ -62,7 +62,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
         editor.loadChain(chain);
       }
     }
-  }, [isOpen, editingChainId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, editingChainId]); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps
 
   const handleAddLayer = useCallback(
     (type: TunnelType) => {

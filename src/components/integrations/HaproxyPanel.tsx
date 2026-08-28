@@ -195,7 +195,7 @@ const ConnectForm: React.FC<{ mgr: HaproxyManager; instanceId?: string }> = ({
         setForm((f) => ({ ...f, sshPassword: raw }));
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>

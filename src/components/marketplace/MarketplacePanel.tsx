@@ -92,7 +92,7 @@ export default function MarketplacePanel() {
     mkt.loadConfig();
     mkt.getFeatured().then(setFeatured);
     mkt.search("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: bootstrap marketplace data
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: bootstrap marketplace data
   }, []);
 
   /* ---- derived ---- */

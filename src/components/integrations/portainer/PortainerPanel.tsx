@@ -117,7 +117,7 @@ const ConnectForm: React.FC<{
           : { ...prev, password: secret },
       );
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof PortainerFormState>(

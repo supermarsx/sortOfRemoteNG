@@ -142,7 +142,7 @@ const ConnectForm: React.FC<{ mgr: BudibaseManager; instanceId?: string }> = ({
     store.readSecret(inst).then((secret) => {
       if (secret) setForm((f) => ({ ...f, apiKey: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
