@@ -28,6 +28,7 @@ function ConflictResolutionSection({ mgr }: { mgr: Mgr }) {
       />
       <Card>
         <SettingsSelectRow
+          settingKey="cloudSync.conflictResolution"
           icon={<GitMerge size={16} />}
           label="Strategy"
           value={mgr.cloudSync.conflictResolution}

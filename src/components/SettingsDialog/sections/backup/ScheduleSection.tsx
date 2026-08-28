@@ -48,6 +48,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       <Card>
         <SettingsSelectRow
+          settingKey="backup.frequency"
           icon={<Repeat size={16} />}
           label="Frequency"
           value={mgr.backup.frequency}
@@ -63,7 +64,10 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             showTime ? "" : "opacity-50 pointer-events-none"
           }`}
         >
-          <div className="sor-settings-select-row">
+          <div
+            className="sor-settings-select-row"
+            data-setting-key="backup.scheduledTime"
+          >
             <span className="sor-settings-row-label flex items-center gap-1">
               <span className="text-[var(--color-textSecondary)] mr-1">
                 <Clock size={16} />
@@ -90,6 +94,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           }`}
         >
           <SettingsSelectRow
+            settingKey="backup.weeklyDay"
             icon={<Calendar size={16} />}
             label="Day of Week"
             value={mgr.backup.weeklyDay}
@@ -107,6 +112,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           }`}
         >
           <SettingsSelectRow
+            settingKey="backup.monthlyDay"
             icon={<CalendarDays size={16} />}
             label="Day of Month"
             value={String(mgr.backup.monthlyDay)}

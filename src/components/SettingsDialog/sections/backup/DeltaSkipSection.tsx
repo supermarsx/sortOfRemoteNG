@@ -32,6 +32,7 @@ const DeltaSkipSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       <Card>
         <Toggle
+          settingKey="backup.deltaSkipEnabled"
           icon={<FileCheck size={16} />}
           label="Skip emitting unchanged backups"
           description="Compares a SHA-256 hash of the pre-encryption payload to the previous successful run's hash, per destination."
@@ -46,6 +47,7 @@ const DeltaSkipSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           }`}
         >
           <SettingsNumberRow
+            settingKey="backup.forceEmitEveryNSkippedTicks"
             icon={<Hash size={16} />}
             label="Force backup after N skips"
             value={forceN}

@@ -213,6 +213,7 @@ const SyncTargetsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </label>
         <div style={{ width: "14rem" }}>
           <Select
+            settingKey="cloudSync.syncTargets"
             value="add"
             onChange={(value: string) => {
               if (value === "add") return;

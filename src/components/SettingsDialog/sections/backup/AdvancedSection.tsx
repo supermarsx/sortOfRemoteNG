@@ -16,6 +16,7 @@ const AdvancedSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <Card>
       <Toggle
+        settingKey="backup.backupOnClose"
         icon={<LogOut size={16} />}
         label="Backup on App Close"
         description="Create a backup when closing the application"
@@ -25,6 +26,7 @@ const AdvancedSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       />
 
       <Toggle
+        settingKey="backup.notifyOnBackup"
         icon={<Bell size={16} />}
         label="Show Notifications"
         description="Display a notification after successful backup"

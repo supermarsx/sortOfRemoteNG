@@ -9,6 +9,7 @@ import {
 const EnableBackup: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <Card>
     <Toggle
+      settingKey="backup.enabled"
       checked={mgr.backup.enabled}
       onChange={(v: boolean) => mgr.updateBackup({ enabled: v })}
       icon={<Archive size={16} />}

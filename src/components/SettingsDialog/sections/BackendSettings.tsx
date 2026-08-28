@@ -69,6 +69,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         />
         <Card>
           <SettingsSelectRow
+            settingKey="backendConfig.logLevel"
             icon={<FileText size={16} />}
             label="Log Level"
             description="Verbosity of backend log output"
@@ -87,6 +88,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           />
 
           <SettingsNumberRow
+            settingKey="backendConfig.maxConcurrentRdpSessions"
             icon={<Layers size={16} />}
             label="Max Concurrent RDP Sessions"
             value={cfg.maxConcurrentRdpSessions}
@@ -106,6 +108,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         />
         <Card>
           <SettingsSelectRow
+            settingKey="backendConfig.rdpServerRenderer"
             icon={<Monitor size={16} />}
             label="Server-Side Renderer"
             description="Rendering backend for server-side frame compositing"
@@ -125,6 +128,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           />
 
           <SettingsSelectRow
+            settingKey="backendConfig.rdpCodecPreference"
             icon={<Film size={16} />}
             label="Codec Preference"
             description="Preferred codec for RDP frame encoding"
@@ -154,6 +158,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         />
         <Card>
           <SettingsNumberRow
+            settingKey="backendConfig.tcpDefaultBufferSize"
             icon={<Database size={16} />}
             label="TCP Buffer Size"
             value={cfg.tcpDefaultBufferSize}
@@ -166,6 +171,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           />
 
           <SettingsNumberRow
+            settingKey="backendConfig.tcpKeepAliveSeconds"
             icon={<Activity size={16} />}
             label="Keep-Alive"
             value={cfg.tcpKeepAliveSeconds}
@@ -177,6 +183,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           />
 
           <SettingsNumberRow
+            settingKey="backendConfig.connectionTimeoutSeconds"
             icon={<Timer size={16} />}
             label="Connection Timeout"
             value={cfg.connectionTimeoutSeconds}
@@ -197,6 +204,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         />
         <Card>
           <SettingsNumberRow
+            settingKey="backendConfig.cacheSizeMb"
             icon={<HardDrive size={16} />}
             label="Cache Size"
             description="Maximum memory for frame and bitmap caching"
@@ -209,6 +217,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="backendConfig.tempFileCleanupEnabled"
             icon={<Trash2 size={16} />}
             label="Temp File Cleanup"
             description="Auto-delete temporary files (screenshots, recordings)"
@@ -225,6 +234,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             }`}
           >
             <SettingsNumberRow
+              settingKey="backendConfig.tempFileCleanupIntervalMinutes"
               icon={<Timer size={16} />}
               label="Cleanup Interval"
               value={cfg.tempFileCleanupIntervalMinutes}

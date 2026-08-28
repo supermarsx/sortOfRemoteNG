@@ -29,6 +29,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         description="Synchronize connections and settings across devices using cloud storage providers."
       />
       <button
+        data-setting-key="cloudSync.syncNow"
         onClick={() => mgr.handleSyncNow()}
         disabled={
           !mgr.cloudSync.enabled ||

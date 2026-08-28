@@ -19,6 +19,7 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
 
       <Card>
         <Toggle
+          settingKey="cloudSync.encryptBeforeSync"
           icon={<ShieldCheck size={16} />}
           label="Encrypt Before Sync"
           description="End-to-end encrypt data before uploading to cloud"
@@ -33,6 +34,7 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
           }`}
         >
           <SettingsPasswordRow
+            settingKey="cloudSync.syncEncryptionPassword"
             icon={<Lock size={16} />}
             label="Encryption password"
             value={mgr.cloudSync.syncEncryptionPassword || ""}

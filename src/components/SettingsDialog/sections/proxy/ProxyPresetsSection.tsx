@@ -112,7 +112,7 @@ const ProxyPresetsSection: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-setting-key="globalProxyPresets">
       <SectionHeader
         icon={<Bookmark className="w-4 h-4 text-primary" />}
         title={

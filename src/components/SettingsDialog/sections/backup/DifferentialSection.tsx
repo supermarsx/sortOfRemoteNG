@@ -17,6 +17,7 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <Card>
       <Toggle
+        settingKey="backup.differentialEnabled"
         icon={<Layers size={16} />}
         label="Enable Differential Backups"
         description="Only backup changes since the last full backup (saves space)"
@@ -33,6 +34,7 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         }`}
       >
         <SettingsNumberRow
+          settingKey="backup.fullBackupInterval"
           icon={<Hash size={16} />}
           label="Full backup interval"
           value={mgr.backup.fullBackupInterval}

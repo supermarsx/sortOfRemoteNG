@@ -40,6 +40,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
         description="Automatic and manual backup scheduling, encryption, destination, and retention settings."
       />
       <button
+        data-setting-key="backup.runNow"
         onClick={mgr.handleRunBackupNow}
         disabled={!hasAnyDestination || mgr.isRunningBackup}
         className="absolute top-0 right-0 !mt-0 flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"

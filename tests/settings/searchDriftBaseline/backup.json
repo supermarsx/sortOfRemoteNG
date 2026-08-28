@@ -1,7 +1,7 @@
 {
   "tab": "backup",
   "missingFromIndex": [],
-  "orphanEntries": ["backup"],
+  "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false

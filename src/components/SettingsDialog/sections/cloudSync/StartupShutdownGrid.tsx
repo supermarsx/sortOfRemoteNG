@@ -15,6 +15,7 @@ function StartupShutdownGrid({ mgr }: { mgr: Mgr }) {
       />
       <Card>
         <Toggle
+          settingKey="cloudSync.syncOnStartup"
           icon={<LogIn size={16} />}
           label="Sync on Startup"
           description="Pull the latest data from the cloud when the app launches"
@@ -24,6 +25,7 @@ function StartupShutdownGrid({ mgr }: { mgr: Mgr }) {
         />
 
         <Toggle
+          settingKey="cloudSync.syncOnShutdown"
           icon={<LogOut size={16} />}
           label="Sync on Shutdown"
           description="Push pending local changes when the app closes"

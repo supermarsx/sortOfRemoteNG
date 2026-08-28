@@ -34,6 +34,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       <Card>
         <Toggle
+          settingKey="backup.encryptBackups"
           icon={<ShieldCheck size={16} />}
           label="Encrypt Backups"
           description="Password-protect backup files"
@@ -48,6 +49,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           }`}
         >
           <SettingsSelectRow
+            settingKey="backup.encryptionAlgorithm"
             icon={<Shield size={16} />}
             label="Encryption Algorithm"
             value={mgr.backup.encryptionAlgorithm}
@@ -64,6 +66,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </p>
 
           <SettingsPasswordRow
+            settingKey="backup.encryptionPassword"
             icon={<Key size={16} />}
             label="Encryption password"
             value={mgr.backup.encryptionPassword || ""}

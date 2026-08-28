@@ -254,6 +254,7 @@ const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </label>
         <div style={{ width: "14rem" }}>
           <Select
+            settingKey="backup.destinations"
             value="add"
             onChange={(value: string) => {
               if (value === "add") return;

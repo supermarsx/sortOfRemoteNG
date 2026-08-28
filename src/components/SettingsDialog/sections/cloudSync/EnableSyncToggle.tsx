@@ -9,6 +9,7 @@ function EnableSyncToggle({ mgr }: { mgr: Mgr }) {
   return (
     <Card>
       <Toggle
+        settingKey="cloudSync.enabled"
         checked={mgr.cloudSync.enabled}
         onChange={(v: boolean) => mgr.updateCloudSync({ enabled: v })}
         icon={<Cloud size={16} />}

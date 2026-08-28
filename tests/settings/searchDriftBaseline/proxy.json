@@ -1,13 +1,7 @@
 {
   "tab": "proxy",
-  "missingFromIndex": [
-    "proxyHost",
-    "proxyPassword",
-    "proxyPort",
-    "proxyType",
-    "proxyUsername"
-  ],
-  "orphanEntries": ["globalProxy"],
+  "missingFromIndex": [],
+  "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false

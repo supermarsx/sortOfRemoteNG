@@ -15,6 +15,7 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
       />
       <Card>
         <Toggle
+          settingKey="cloudSync.notifyOnSync"
           icon={<Bell size={16} />}
           label="Notify on Sync"
           description="Show a desktop notification when a sync completes"
@@ -24,6 +25,7 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
         />
 
         <Toggle
+          settingKey="cloudSync.notifyOnConflict"
           icon={<AlertTriangle size={16} />}
           label="Notify on Conflict"
           description="Show a notification when a sync conflict needs attention"

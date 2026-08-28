@@ -62,6 +62,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
 
         <Card>
           <Toggle
+            settingKey="proxyEnabled"
             checked={enabled}
             onChange={(v) => updateProxy({ enabled: v })}
             icon={<Power size={16} />}

@@ -37,6 +37,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <Card>
       <SettingsSelectRow
+        settingKey="backup.format"
         icon={<FileCode2 size={16} />}
         label="Backup Format"
         value={mgr.backup.format}
@@ -45,7 +46,10 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         infoTooltip="The file format used for backup archives. JSON is human-readable; binary formats are more compact."
       />
 
-      <div className="sor-settings-select-row">
+      <div
+        className="sor-settings-select-row"
+        data-setting-key="backup.maxBackupsToKeep"
+      >
         <span className="sor-settings-row-label flex items-center gap-1">
           <span className="text-[var(--color-textSecondary)] mr-1">
             <Archive size={16} />
@@ -87,6 +91,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <Card>
       <Toggle
+        settingKey="backup.includePasswords"
         icon={<KeyRound size={16} />}
         label="Include Passwords"
         description="Include saved connection passwords in backups (encrypted)"
@@ -96,6 +101,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       />
 
       <Toggle
+        settingKey="backup.includeSettings"
         icon={<SlidersHorizontal size={16} />}
         label="Include Settings"
         description="Include application preferences and global settings"
@@ -105,6 +111,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       />
 
       <Toggle
+        settingKey="backup.includeSSHKeys"
         icon={<KeySquare size={16} />}
         label="Include SSH Keys"
         description="Include SSH private keys (handle with care — grants server access)"
@@ -114,6 +121,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       />
 
       <Toggle
+        settingKey="backup.compressBackups"
         icon={<FileDown size={16} />}
         label="Compress Backups"
         description="Compress backup files to reduce disk space usage"

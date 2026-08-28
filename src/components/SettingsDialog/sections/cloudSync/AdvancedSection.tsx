@@ -96,6 +96,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
       />
       <Card>
         <Toggle
+          settingKey="cloudSync.compressionEnabled"
           icon={<FileArchive size={16} />}
           label="Enable Compression"
           description="Compress payloads before uploading to save bandwidth"
@@ -105,6 +106,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
         />
 
         <SettingsNumberRow
+          settingKey="cloudSync.maxFileSizeMB"
           icon={<FileBox size={16} />}
           label="Max File Size"
           value={mgr.cloudSync.maxFileSizeMB}
@@ -116,6 +118,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
         />
 
         <SettingsNumberRow
+          settingKey="cloudSync.uploadLimitKBs"
           icon={<Upload size={16} />}
           label="Upload Limit"
           value={mgr.cloudSync.uploadLimitKBs}
@@ -126,6 +129,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
         />
 
         <SettingsNumberRow
+          settingKey="cloudSync.downloadLimitKBs"
           icon={<Download size={16} />}
           label="Download Limit"
           value={mgr.cloudSync.downloadLimitKBs}
@@ -135,7 +139,10 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
           infoTooltip="Throttle download bandwidth in kilobytes per second. 0 means unlimited."
         />
 
-        <div className="sor-settings-select-row !items-start">
+        <div
+          className="sor-settings-select-row !items-start"
+          data-setting-key="cloudSync.excludePatterns"
+        >
           <span className="sor-settings-row-label flex items-center gap-1">
             <span className="text-[var(--color-textSecondary)] mr-1">
               <Filter size={16} />

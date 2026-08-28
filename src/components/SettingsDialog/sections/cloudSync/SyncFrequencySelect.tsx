@@ -25,6 +25,7 @@ function SyncFrequencySelect({ mgr }: { mgr: Mgr }) {
       />
       <Card>
         <SettingsSelectRow
+          settingKey="cloudSync.frequency"
           icon={<Repeat size={16} />}
           label="Frequency"
           value={mgr.cloudSync.frequency}
