@@ -252,7 +252,7 @@ url = "2.5"
 rustls = "0.23"
 tokio-rustls = "0.26"
 rustls-native-certs = "0.8"
-tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 bytes = "1"
 # On Windows, let libssh2 use its native WinCNG backend. Enabling
 # `openssl-on-win32`/`vendored-openssl` forces openssl-sys to compile OpenSSL
@@ -286,7 +286,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 tracing-test = "0.2"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.21"
+base64 = "0.23"
 cpal = "0.15"
 # rand stays at 0.8 because aes-gcm 0.10 re-exports rand_core 0.6;
 # bumping rand to 0.9 unifies one alias but breaks every aes-gcm

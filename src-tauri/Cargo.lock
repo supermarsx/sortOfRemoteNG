@@ -4328,11 +4328,11 @@ dependencies = [
 
 [[package]]
 name = "inotify"
-version = "0.10.2"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdd168d97690d0b8c412d6b6c10360277f4d7ee495c5d0d5d5fe0854923255cc"
+checksum = "4cc00ea907cab49550b7da656f80ebb97be1b997d931fbcd28d39734e17ce592"
 dependencies = [
- "bitflags 1.3.2",
+ "bitflags 2.13.1",
  "inotify-sys",
  "libc",
 ]
@@ -4364,15 +4364,6 @@ checksum = "4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7"
 dependencies = [
  "block-padding 0.4.2",
  "hybrid-array",
-]
-
-[[package]]
-name = "instant"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
-dependencies = [
- "cfg-if 1.0.4",
 ]
 
 [[package]]
@@ -5873,12 +5864,11 @@ dependencies = [
 
 [[package]]
 name = "notify"
-version = "7.0.0"
+version = "8.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c533b4c39709f9ba5005d8002048266593c1cfaf3c5f0739d5b8ab0c6c504009"
+checksum = "4d3d07927151ff8575b7087f245456e549fea62edf0ec4e565a5ee50c8402bc3"
 dependencies = [
  "bitflags 2.13.1",
- "filetime",
  "fsevent-sys",
  "inotify",
  "kqueue",
@@ -5887,14 +5877,14 @@ dependencies = [
  "mio",
  "notify-types",
  "walkdir",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
 name = "notify-debouncer-mini"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaa5a66d07ed97dce782be94dcf5ab4d1b457f4243f7566c7557f15cabc8c799"
+checksum = "17849edfaabd9a5fef1c606d99cfc615a8e99f7ac4366406d86c7942a3184cf2"
 dependencies = [
  "log",
  "notify",
@@ -5904,11 +5894,11 @@ dependencies = [
 
 [[package]]
 name = "notify-types"
-version = "1.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "585d3cb5e12e01aed9e8a1f70d5c6b5e86fe2a6e48fc8cd0b3e0b8df6f6eb174"
+checksum = "42b8cfee0e339a0337359f3c88165702ac6e600dc01c0cc9579a92d62b08477a"
 dependencies = [
- "instant",
+ "bitflags 2.13.1",
 ]
 
 [[package]]
@@ -9270,7 +9260,7 @@ dependencies = [
 name = "sorng-1password"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hmac 0.12.1",
  "log",
@@ -9303,7 +9293,7 @@ name = "sorng-ai-agent"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "futures",
@@ -9675,7 +9665,7 @@ name = "sorng-ard"
 version = "26.28.0"
 dependencies = [
  "aes 0.8.4",
- "base64 0.22.1",
+ "base64 0.23.1",
  "byteorder",
  "cbc 0.1.2",
  "chrono",
@@ -9705,7 +9695,7 @@ dependencies = [
  "aes 0.8.4",
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
- "base64 0.21.7",
+ "base64 0.23.1",
  "bcrypt",
  "cbc 0.1.2",
  "chrono",
@@ -9755,7 +9745,7 @@ dependencies = [
 name = "sorng-aws"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "log",
@@ -9784,7 +9774,7 @@ dependencies = [
 name = "sorng-azure"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -9817,7 +9807,7 @@ dependencies = [
 name = "sorng-biometrics"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "core-foundation 0.10.1",
  "core-foundation-sys",
@@ -9842,7 +9832,7 @@ name = "sorng-bitwarden"
 version = "26.28.0"
 dependencies = [
  "aes 0.8.4",
- "base64 0.21.7",
+ "base64 0.23.1",
  "cbc 0.1.2",
  "chrono",
  "hkdf 0.12.4",
@@ -9867,7 +9857,7 @@ name = "sorng-bmc-common"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -9924,7 +9914,7 @@ dependencies = [
 name = "sorng-ceph"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -9971,7 +9961,7 @@ dependencies = [
 name = "sorng-cloud"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "jsonwebtoken",
@@ -9988,7 +9978,7 @@ dependencies = [
 name = "sorng-collaboration"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -10052,7 +10042,7 @@ dependencies = [
 name = "sorng-commands-collab"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10066,7 +10056,7 @@ name = "sorng-commands-core"
 version = "26.28.0"
 dependencies = [
  "axum",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "log",
@@ -10104,7 +10094,7 @@ dependencies = [
 name = "sorng-commands-infra"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10128,7 +10118,7 @@ dependencies = [
 name = "sorng-commands-mail"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10152,7 +10142,7 @@ dependencies = [
 name = "sorng-commands-ops"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10199,7 +10189,7 @@ dependencies = [
 name = "sorng-commands-platform"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10215,7 +10205,7 @@ dependencies = [
 name = "sorng-commands-services"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10251,7 +10241,7 @@ dependencies = [
 name = "sorng-commands-tools"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10280,7 +10270,7 @@ dependencies = [
 name = "sorng-commands-webservers"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -10333,7 +10323,7 @@ dependencies = [
 name = "sorng-cpanel"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -10375,7 +10365,7 @@ dependencies = [
 name = "sorng-cups"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -10419,7 +10409,7 @@ dependencies = [
 name = "sorng-dashlane"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "hmac 0.12.1",
@@ -10441,7 +10431,7 @@ dependencies = [
 name = "sorng-ddns"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -10485,7 +10475,7 @@ dependencies = [
 name = "sorng-dns"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -10505,7 +10495,7 @@ name = "sorng-docker"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "futures",
@@ -10523,7 +10513,7 @@ name = "sorng-docker-compose"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "futures",
@@ -10564,7 +10554,7 @@ dependencies = [
 name = "sorng-draytek"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "regex",
@@ -10580,7 +10570,7 @@ dependencies = [
 name = "sorng-dropbox"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",
@@ -10602,7 +10592,7 @@ version = "26.28.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
- "base64 0.21.7",
+ "base64 0.23.1",
  "hkdf 0.12.4",
  "log",
  "rand 0.8.8",
@@ -10623,7 +10613,7 @@ dependencies = [
 name = "sorng-etcd"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -10637,7 +10627,7 @@ dependencies = [
 name = "sorng-exchange"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -10751,7 +10741,7 @@ dependencies = [
 name = "sorng-gateway"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "log",
@@ -10768,7 +10758,7 @@ dependencies = [
 name = "sorng-gcp"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "jsonwebtoken",
  "log",
@@ -10787,7 +10777,7 @@ dependencies = [
 name = "sorng-gdrive"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "mime_guess",
@@ -10803,7 +10793,7 @@ dependencies = [
 name = "sorng-google-passwords"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -10822,7 +10812,7 @@ dependencies = [
 name = "sorng-gpg-agent"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -10877,7 +10867,7 @@ dependencies = [
 name = "sorng-hashicorp-vault"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -10954,7 +10944,7 @@ name = "sorng-idrac"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "log",
@@ -10972,7 +10962,7 @@ name = "sorng-ilo"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "log",
@@ -11012,7 +11002,7 @@ dependencies = [
 name = "sorng-jira"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -11027,7 +11017,7 @@ name = "sorng-k8s"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "futures",
@@ -11050,7 +11040,7 @@ dependencies = [
 name = "sorng-kafka"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "libloading 0.8.9",
  "log",
@@ -11070,7 +11060,7 @@ dependencies = [
 name = "sorng-keepass"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "csv",
  "dirs 6.0.0",
@@ -11113,7 +11103,7 @@ name = "sorng-lastpass"
 version = "26.28.0"
 dependencies = [
  "aes 0.8.4",
- "base64 0.21.7",
+ "base64 0.23.1",
  "cbc 0.1.2",
  "chrono",
  "hex",
@@ -11153,7 +11143,7 @@ name = "sorng-lenovo"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "log",
@@ -11170,7 +11160,7 @@ dependencies = [
 name = "sorng-letsencrypt"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hickory-resolver",
  "log",
@@ -11190,7 +11180,7 @@ name = "sorng-llm"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "futures",
@@ -11212,7 +11202,7 @@ dependencies = [
 name = "sorng-lxd"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -11280,7 +11270,7 @@ dependencies = [
 name = "sorng-meshcentral"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -11312,7 +11302,7 @@ name = "sorng-mremoteng"
 version = "26.28.0"
 dependencies = [
  "aes-gcm 0.10.3",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "csv",
  "hmac 0.12.1",
@@ -11380,7 +11370,7 @@ dependencies = [
 name = "sorng-netbird"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -11434,7 +11424,7 @@ dependencies = [
 name = "sorng-network"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dns-lookup",
  "futures",
@@ -11454,7 +11444,7 @@ dependencies = [
 name = "sorng-nextcloud"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",
@@ -11524,7 +11514,7 @@ dependencies = [
 name = "sorng-nx"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "byteorder",
  "bytes",
  "chrono",
@@ -11544,7 +11534,7 @@ dependencies = [
 name = "sorng-onedrive"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures-util",
  "log",
@@ -11580,7 +11570,7 @@ name = "sorng-openvpn"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "log",
@@ -11665,7 +11655,7 @@ dependencies = [
 name = "sorng-p2p"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chacha20poly1305",
  "chrono",
  "get_if_addrs",
@@ -11716,7 +11706,7 @@ dependencies = [
 name = "sorng-passbolt"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "pgp",
@@ -11739,7 +11729,7 @@ dependencies = [
 name = "sorng-pfsense"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -11797,7 +11787,7 @@ dependencies = [
 name = "sorng-portainer"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -11825,7 +11815,7 @@ dependencies = [
 name = "sorng-postgres"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "bigdecimal",
  "chrono",
  "log",
@@ -11858,7 +11848,7 @@ name = "sorng-powershell"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",
@@ -11951,7 +11941,7 @@ name = "sorng-protocols"
 version = "26.28.0"
 dependencies = [
  "axum",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "flate2",
  "futures-util",
@@ -11987,7 +11977,7 @@ name = "sorng-proxmox"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",
@@ -12013,7 +12003,7 @@ dependencies = [
 name = "sorng-rabbitmq"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -12030,7 +12020,7 @@ dependencies = [
 name = "sorng-rdp"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "cpal",
@@ -12091,7 +12081,7 @@ dependencies = [
 name = "sorng-recording"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "lazy_static",
  "log",
@@ -12164,7 +12154,7 @@ dependencies = [
 name = "sorng-replay"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "regex",
@@ -12204,7 +12194,7 @@ dependencies = [
 name = "sorng-rustdesk"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "lazy_static",
@@ -12236,7 +12226,7 @@ name = "sorng-scp"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "filetime",
@@ -12279,7 +12269,7 @@ name = "sorng-serial"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "crc",
@@ -12299,7 +12289,7 @@ name = "sorng-sftp"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "filetime",
@@ -12348,7 +12338,7 @@ dependencies = [
 name = "sorng-smtp"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "hickory-resolver",
@@ -12376,7 +12366,7 @@ dependencies = [
 name = "sorng-snmp"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -12417,7 +12407,7 @@ dependencies = [
 name = "sorng-spice"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "byteorder",
  "bytes",
  "chrono",
@@ -12454,7 +12444,7 @@ name = "sorng-ssh"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "data-encoding",
@@ -12500,7 +12490,7 @@ dependencies = [
 name = "sorng-ssh-agent"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -12534,7 +12524,7 @@ name = "sorng-storage"
 version = "26.28.0"
 dependencies = [
  "aes-gcm 0.10.3",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "flate2",
@@ -12557,7 +12547,7 @@ name = "sorng-supermicro"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "log",
@@ -12579,7 +12569,7 @@ name = "sorng-synology"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "log",
@@ -12637,7 +12627,7 @@ name = "sorng-telegram"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",
@@ -12658,7 +12648,7 @@ dependencies = [
 name = "sorng-teleport"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "serde",
@@ -12741,7 +12731,7 @@ dependencies = [
 name = "sorng-tls-trust"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "log",
@@ -12772,7 +12762,7 @@ version = "26.28.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "base32",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "hmac 0.12.1",
@@ -12822,7 +12812,7 @@ dependencies = [
 name = "sorng-updater-signature-verifier"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "minisign-verify",
 ]
 
@@ -12859,7 +12849,7 @@ version = "26.28.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "dirs 6.0.0",
  "libc",
@@ -12892,7 +12882,7 @@ name = "sorng-vmware"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "log",
@@ -12911,7 +12901,7 @@ dependencies = [
 name = "sorng-vmware-desktop"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "reqwest 0.12.28",
@@ -12954,7 +12944,7 @@ name = "sorng-voip-phone"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "log",
  "rand 0.8.8",
  "regex",
@@ -12976,7 +12966,7 @@ version = "26.28.0"
 dependencies = [
  "aes 0.8.4",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "cbc 0.1.2",
  "chacha20poly1305",
  "chrono",
@@ -13034,7 +13024,7 @@ name = "sorng-whatsapp"
 version = "26.28.0"
 dependencies = [
  "aes-gcm 0.10.3",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "curve25519-dalek 4.1.3",
  "futures-util",
@@ -13061,7 +13051,7 @@ name = "sorng-winmgmt"
 version = "26.28.0"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "hex",
@@ -13088,7 +13078,7 @@ dependencies = [
 name = "sorng-wireguard"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -13104,7 +13094,7 @@ dependencies = [
 name = "sorng-x2go"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -13139,7 +13129,7 @@ dependencies = [
 name = "sorng-yubikey"
 version = "26.28.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.23.1",
  "chrono",
  "log",
  "rand 0.8.8",
@@ -14521,9 +14511,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.28.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
+checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
 dependencies = [
  "futures-util",
  "log",
@@ -14894,21 +14884,20 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.28.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
 dependencies = [
  "bytes",
  "data-encoding",
  "http",
  "httparse",
  "log",
- "rand 0.9.5",
+ "rand 0.10.2",
  "rustls",
  "rustls-pki-types",
- "sha1 0.10.7",
+ "sha1 0.11.0",
  "thiserror 2.0.20",
- "utf-8",
 ]
 
 [[package]]
@@ -15135,12 +15124,6 @@ dependencies = [
  "unic-ucd-ident",
  "url",
 ]
-
-[[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8_iter"
