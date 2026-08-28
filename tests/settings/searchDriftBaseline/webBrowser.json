@@ -1,6 +1,6 @@
 {
   "tab": "webBrowser",
-  "missingFromIndex": ["proxyAutoRestart", "proxyMaxAutoRestarts"],
+  "missingFromIndex": [],
   "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],

@@ -38,8 +38,17 @@ interface CreditItem {
   license?: string;
 }
 
+type CreditGroupId =
+  | "project"
+  | "frontend"
+  | "desktop-runtime"
+  | "backend"
+  | "protocols"
+  | "security"
+  | "tooling";
+
 interface CreditGroup {
-  id: string;
+  id: CreditGroupId;
   title: string;
   icon: LucideIcon;
   items: CreditItem[];
@@ -497,6 +506,81 @@ interface PathsAndPermissionsProps {
   appDataPath: string | null;
 }
 
+const CREDIT_GROUP_BY_ID = Object.fromEntries(
+  CREDIT_GROUPS.map((group) => [group.id, group]),
+) as Record<CreditGroupId, CreditGroup>;
+
+/**
+ * One credit group card.
+ *
+ * `settingKey` is a prop rather than being derived from `group.id` so each call
+ * site spells the anchor out as a string literal — `settingsSearchDrift.test.ts`
+ * parses the TSX and cannot see a template-literal anchor, which would make
+ * every `about.*` search result look like a dead link.
+ */
+const CreditGroupSection: React.FC<{
+  group: CreditGroup;
+  settingKey: string;
+}> = ({ group, settingKey }) => {
+  const Icon = group.icon;
+  return (
+    <div className="space-y-4" data-setting-key={settingKey}>
+      <SectionHeader
+        icon={<Icon className="w-4 h-4 text-primary" />}
+        title={`${group.title} (${group.items.length})`}
+      />
+      <Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {group.items.map((item) => {
+            const repositoryUrl = CREDIT_REPOSITORY_URLS[item.name];
+            return (
+              <div
+                key={`${group.id}-${item.name}`}
+                className="rounded-lg border border-[var(--color-border)]/60 bg-[var(--color-background)]/70 p-3"
+              >
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-[var(--color-text)] break-words">
+                      {item.name}
+                    </div>
+                    <div className="text-xs text-[var(--color-textSecondary)] break-words">
+                      {item.author}
+                    </div>
+                  </div>
+                  {item.license && (
+                    <span className="max-w-full break-words rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      {item.license}
+                    </span>
+                  )}
+                  {repositoryUrl && (
+                    <a
+                      href={repositoryUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        openRepositoryUrl(repositoryUrl);
+                      }}
+                      aria-label={`Open ${item.name} repository`}
+                      title={`Open ${item.name} repository`}
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] transition-colors hover:border-primary/60 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    </a>
+                  )}
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-[var(--color-textMuted)]">
+                  {item.detail}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 const PathsAndPermissions: React.FC<PathsAndPermissionsProps> = ({
   appDataPath,
 }) => {
@@ -773,65 +857,36 @@ const AboutSettings: React.FC = () => {
 
     <PathsAndPermissions appDataPath={appDataPath} />
 
-    {CREDIT_GROUPS.map((group) => {
-      const Icon = group.icon;
-      return (
-        <div key={group.id} className="space-y-4" data-setting-key={`about.${group.id}`}>
-          <SectionHeader
-            icon={<Icon className="w-4 h-4 text-primary" />}
-            title={`${group.title} (${group.items.length})`}
-          />
-          <Card>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {group.items.map((item) => {
-                const repositoryUrl = CREDIT_REPOSITORY_URLS[item.name];
-                return (
-                  <div
-                    key={`${group.id}-${item.name}`}
-                    className="rounded-lg border border-[var(--color-border)]/60 bg-[var(--color-background)]/70 p-3"
-                  >
-                    <div className="flex flex-wrap items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-[var(--color-text)] break-words">
-                          {item.name}
-                        </div>
-                        <div className="text-xs text-[var(--color-textSecondary)] break-words">
-                          {item.author}
-                        </div>
-                      </div>
-                      {item.license && (
-                        <span className="max-w-full break-words rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                          {item.license}
-                        </span>
-                      )}
-                      {repositoryUrl && (
-                        <a
-                          href={repositoryUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            openRepositoryUrl(repositoryUrl);
-                          }}
-                          aria-label={`Open ${item.name} repository`}
-                          title={`Open ${item.name} repository`}
-                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] transition-colors hover:border-primary/60 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                        </a>
-                      )}
-                    </div>
-                    <p className="mt-2 text-xs leading-relaxed text-[var(--color-textMuted)]">
-                      {item.detail}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </div>
-      );
-    })}
+    {/* Rendered one call per group so every `about.*` anchor is a string
+        literal the settings-search drift guard can parse. */}
+    <CreditGroupSection
+      group={CREDIT_GROUP_BY_ID.project}
+      settingKey="about.project"
+    />
+    <CreditGroupSection
+      group={CREDIT_GROUP_BY_ID.frontend}
+      settingKey="about.frontend"
+    />
+    <CreditGroupSection
+      group={CREDIT_GROUP_BY_ID["desktop-runtime"]}
+      settingKey="about.desktop-runtime"
+    />
+    <CreditGroupSection
+      group={CREDIT_GROUP_BY_ID.backend}
+      settingKey="about.backend"
+    />
+    <CreditGroupSection
+      group={CREDIT_GROUP_BY_ID.protocols}
+      settingKey="about.protocols"
+    />
+    <CreditGroupSection
+      group={CREDIT_GROUP_BY_ID.security}
+      settingKey="about.security"
+    />
+    <CreditGroupSection
+      group={CREDIT_GROUP_BY_ID.tooling}
+      settingKey="about.tooling"
+    />
 
     <Card className="border-primary/30 bg-primary/5">
       <div className="flex items-start gap-3">

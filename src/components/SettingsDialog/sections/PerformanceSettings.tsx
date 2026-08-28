@@ -1,5 +1,8 @@
 import React from "react";
-import { GlobalSettings, StatusCheckMethod } from "../../../types/settings/settings";
+import {
+  GlobalSettings,
+  StatusCheckMethod,
+} from "../../../types/settings/settings";
 import {
   Activity,
   RefreshCw,
@@ -89,6 +92,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
         />
         <Card>
           <Toggle
+            settingKey="enablePerformanceTracking"
             checked={settings.enablePerformanceTracking}
             onChange={(v) => updateSettings({ enablePerformanceTracking: v })}
             icon={<Activity size={16} />}
@@ -145,6 +149,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
         />
         <Card>
           <Toggle
+            settingKey="enableStatusChecking"
             checked={settings.enableStatusChecking}
             onChange={(v) => updateSettings({ enableStatusChecking: v })}
             icon={<Zap size={16} />}
@@ -197,6 +202,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
         />
         <Card>
           <Toggle
+            settingKey="enableActionLog"
             checked={settings.enableActionLog}
             onChange={(v) => updateSettings({ enableActionLog: v })}
             icon={<History size={16} />}

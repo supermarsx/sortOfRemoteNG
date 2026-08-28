@@ -1,15 +1,7 @@
 {
   "tab": "about",
-  "missingFromIndex": ["about.data-locations", "about.permissions"],
-  "orphanEntries": [
-    "about.backend",
-    "about.desktop-runtime",
-    "about.frontend",
-    "about.project",
-    "about.protocols",
-    "about.security",
-    "about.tooling"
-  ],
+  "missingFromIndex": [],
+  "orphanEntries": [],
   "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false

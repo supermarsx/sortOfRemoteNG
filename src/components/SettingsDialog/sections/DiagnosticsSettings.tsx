@@ -65,6 +65,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
         />
         <Card>
           <SettingsSliderRow
+            settingKey="diagnostics.pingCount"
             icon={<Radio size={16} />}
             label="Ping Count"
             value={diag.pingCount}
@@ -75,6 +76,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             infoTooltip="Number of ICMP echo requests to send during the sequential ping test. Higher values give more accurate latency and jitter statistics."
           />
           <SettingsNumberRow
+            settingKey="diagnostics.pingTimeoutSecs"
             icon={<Timer size={16} />}
             label="Ping Timeout"
             value={diag.pingTimeoutSecs}
@@ -85,6 +87,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             infoTooltip="Maximum time in seconds to wait for each ping reply before marking it as timed out."
           />
           <SettingsSliderRow
+            settingKey="diagnostics.pingIntervalMs"
             icon={<Timer size={16} />}
             label="Ping Interval"
             value={diag.pingIntervalMs}
@@ -96,6 +99,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             infoTooltip="Delay in milliseconds between consecutive pings. Lower values complete faster but may be rate-limited by firewalls."
           />
           <SettingsSliderRow
+            settingKey="diagnostics.tracerouteMaxHops"
             icon={<Route size={16} />}
             label="Traceroute Max Hops"
             value={diag.tracerouteMaxHops}
@@ -106,6 +110,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             infoTooltip="Maximum number of network hops (routers) to traverse before stopping the traceroute. Increase for distant hosts."
           />
           <SettingsNumberRow
+            settingKey="diagnostics.tracerouteTimeoutSecs"
             icon={<Timer size={16} />}
             label="Traceroute Timeout"
             value={diag.tracerouteTimeoutSecs}
@@ -116,6 +121,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             infoTooltip="Per-hop timeout in seconds. Hops that don't respond within this window are shown as timeouts."
           />
           <SettingsNumberRow
+            settingKey="diagnostics.portCheckTimeoutSecs"
             icon={<Zap size={16} />}
             label="Port Check Timeout"
             value={diag.portCheckTimeoutSecs}
@@ -136,6 +142,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
         />
         <Card>
           <SettingsNumberRow
+            settingKey="diagnostics.tcpTimingTimeoutSecs"
             icon={<Timer size={16} />}
             label="TCP Timing Timeout"
             value={diag.tcpTimingTimeoutSecs}
@@ -147,6 +154,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="diagnostics.mtuCheckEnabled"
             icon={<Network size={16} />}
             label="MTU Path Discovery"
             description="Detect the maximum transmission unit along the network path"
@@ -156,6 +164,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="diagnostics.icmpBlockadeEnabled"
             icon={<Shield size={16} />}
             label="ICMP Blockade Detection"
             description="Compare ICMP vs TCP reachability to detect firewall filtering"
@@ -165,6 +174,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="diagnostics.serviceFingerprintEnabled"
             icon={<Fingerprint size={16} />}
             label="Service Fingerprinting"
             description="Identify the service and version on the target port"
@@ -174,6 +184,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="diagnostics.asymmetricRoutingEnabled"
             icon={<ArrowLeftRight size={16} />}
             label="Asymmetric Routing Detection"
             description="Detect when packets take different paths to and from the target"
@@ -190,6 +201,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             }
           >
             <SettingsSliderRow
+              settingKey="diagnostics.asymmetricRoutingSamples"
               icon={<Hash size={16} />}
               label="Sample Count"
               value={diag.asymmetricRoutingSamples}
@@ -211,6 +223,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
         />
         <Card>
           <Toggle
+            settingKey="diagnostics.tlsCheckEnabled"
             icon={<Lock size={16} />}
             label="TLS Certificate Check"
             description="Verify server certificate, TLS version, cipher, and expiry"
@@ -229,6 +242,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
         />
         <Card>
           <Toggle
+            settingKey="diagnostics.ipGeoEnabled"
             icon={<Globe size={16} />}
             label="IP Geolocation Lookup"
             description="Look up location, ISP, and ASN for the target IP"
@@ -238,6 +252,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="diagnostics.udpProbeEnabled"
             icon={<Radio size={16} />}
             label="UDP Port Probing"
             description="Probe UDP services like DNS, NTP, SNMP, and TFTP"
@@ -254,6 +269,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             }
           >
             <SettingsNumberRow
+              settingKey="diagnostics.udpProbeTimeoutMs"
               icon={<Timer size={16} />}
               label="UDP Probe Timeout"
               value={diag.udpProbeTimeoutMs}
@@ -267,6 +283,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           </div>
 
           <Toggle
+            settingKey="diagnostics.leakageDetectionEnabled"
             icon={<AlertTriangle size={16} />}
             label="Proxy/VPN Leakage Detection"
             description="Check for DNS leaks and IP mismatches when a proxy/VPN is active"
@@ -285,6 +302,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
         />
         <Card>
           <Toggle
+            settingKey="diagnostics.protocolDiagEnabled"
             icon={<Search size={16} />}
             label="Protocol-Specific Deep Diagnostics"
             description="Detailed SSH / HTTP(S) / RDP handshake and version probes"
@@ -301,6 +319,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
             }
           >
             <SettingsNumberRow
+              settingKey="diagnostics.protocolDiagTimeoutSecs"
               icon={<Timer size={16} />}
               label="Protocol Diagnostic Timeout"
               value={diag.protocolDiagTimeoutSecs}
@@ -322,6 +341,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
         />
         <Card>
           <Toggle
+            settingKey="diagnostics.autoRunOnOpen"
             icon={<Play size={16} />}
             label="Auto-Run on Open"
             description="Start all diagnostic checks automatically when the panel opens"
@@ -331,6 +351,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="diagnostics.showDetailedResults"
             icon={<Eye size={16} />}
             label="Show Detailed Results"
             description="Display verbose output, raw values, and timing breakdowns"
@@ -340,6 +361,7 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           />
 
           <Toggle
+            settingKey="diagnostics.expandFailedSteps"
             icon={<AlertTriangle size={16} />}
             label="Auto-Expand Failed Steps"
             description="Expand the detail panel for steps that failed"

@@ -1,18 +1,8 @@
 {
   "tab": "advanced",
   "missingFromIndex": [],
-  "orphanEntries": [
-    "enableActionLog",
-    "enableStatusChecking",
-    "enableTabDetachment",
-    "enableZoom",
-    "exportEncryption",
-    "logLevel",
-    "networkDiscovery",
-    "protocolRepair",
-    "wolEnabled"
-  ],
-  "wrongSection": ["statusCheckInterval declared in performance"],
+  "orphanEntries": [],
+  "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false
 }

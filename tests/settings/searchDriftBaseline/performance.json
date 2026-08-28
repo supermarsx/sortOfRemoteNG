@@ -1,13 +1,8 @@
 {
   "tab": "performance",
-  "missingFromIndex": [
-    "maxLogEntries",
-    "performanceLatencyTarget",
-    "performancePollIntervalMs",
-    "statusCheckMethod"
-  ],
-  "orphanEntries": ["maxConcurrentConnections"],
-  "wrongSection": ["connectionTimeout declared in general, sshTerminal"],
+  "missingFromIndex": [],
+  "orphanEntries": [],
+  "wrongSection": [],
   "missingOptionValues": [],
   "tabHasNoEntries": false
 }

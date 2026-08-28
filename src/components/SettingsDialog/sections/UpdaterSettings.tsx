@@ -256,7 +256,7 @@ export const UpdaterSettings: React.FC = () => {
         )}
       />
 
-      <div className="space-y-4">
+      <div className="space-y-4" data-setting-key="updater.status">
         <SectionHeader
           icon={<ShieldCheck className="w-4 h-4 text-primary" />}
           title={t("updater.updateStatus", "Update status")}

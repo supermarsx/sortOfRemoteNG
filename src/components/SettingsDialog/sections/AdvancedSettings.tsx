@@ -87,7 +87,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       />
 
       {/* Logging */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-setting-key="logLevel">
         <SectionHeader
           icon={<FileText className="w-4 h-4 text-primary" />}
           title="Logging"
@@ -147,7 +147,7 @@ const ConnectionMaintenanceSection: React.FC = () => {
   const count = suggestions.length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-setting-key="protocolRepair">
       <SectionHeader
         icon={<Wrench className="w-4 h-4 text-primary" />}
         title={t("protocolRepair.sectionTitle", "Connection maintenance")}
@@ -227,6 +227,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
 
       <Card>
         <Toggle
+          settingKey="memoryWatchdog.enabled"
           icon={<Cpu size={16} />}
           label="Enable memory watchdog"
           description="Monitor JS heap and system RAM and alert when pressure thresholds are exceeded."
@@ -239,6 +240,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           className={`flex flex-col gap-2.5 pt-3 border-t border-[var(--color-border)] ${!mw.enabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           <SettingsNumberRow
+            settingKey="memoryWatchdog.intervalMs"
             icon={<RotateCcw size={16} />}
             label="Poll Interval"
             value={mw.intervalMs}
@@ -256,6 +258,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           />
 
           <SettingsNumberRow
+            settingKey="memoryWatchdog.heapWarningMb"
             icon={<AlertTriangle size={16} />}
             label="Main heap — Warning"
             value={mw.heapWarningMb}
@@ -266,6 +269,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="Main-window JS heap usage that triggers a warning log."
           />
           <SettingsNumberRow
+            settingKey="memoryWatchdog.heapCriticalMb"
             icon={<AlertCircle size={16} />}
             label="Main heap — Critical"
             value={mw.heapCriticalMb}
@@ -276,6 +280,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="Main-window JS heap usage that surfaces an in-app overlay."
           />
           <SettingsNumberRow
+            settingKey="memoryWatchdog.heapKillMb"
             icon={<Power size={16} />}
             label="Main heap — Pressure"
             value={mw.heapKillMb}
@@ -292,6 +297,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           />
 
           <SettingsNumberRow
+            settingKey="memoryWatchdog.detached.heapWarningMb"
             icon={<AlertTriangle size={16} />}
             label="Detached heap — Warning"
             value={mw.detached.heapWarningMb}
@@ -302,6 +308,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="Detached-window JS heap warning threshold (usually lower than the main window)."
           />
           <SettingsNumberRow
+            settingKey="memoryWatchdog.detached.heapCriticalMb"
             icon={<AlertCircle size={16} />}
             label="Detached heap — Critical"
             value={mw.detached.heapCriticalMb}
@@ -312,6 +319,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="Detached-window JS heap critical threshold."
           />
           <SettingsNumberRow
+            settingKey="memoryWatchdog.detached.heapKillMb"
             icon={<Power size={16} />}
             label="Detached heap — Pressure"
             value={mw.detached.heapKillMb}
@@ -325,6 +333,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           <SubGroupHeader icon={<HardDrive size={11} />} label="System RAM" />
 
           <SettingsNumberRow
+            settingKey="memoryWatchdog.systemWarningPct"
             icon={<AlertTriangle size={16} />}
             label="System RAM — Warning"
             value={mw.systemWarningPct}
@@ -335,6 +344,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="OS-level physical RAM usage that triggers a warning log."
           />
           <SettingsNumberRow
+            settingKey="memoryWatchdog.systemKillPct"
             icon={<Power size={16} />}
             label="System RAM — Pressure"
             value={mw.systemKillPct}
