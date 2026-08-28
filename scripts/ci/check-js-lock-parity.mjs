@@ -8,8 +8,8 @@ const DEFAULT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 export const JAVASCRIPT_UPDATE_HOLDS = Object.freeze({
   "@types/node": "24.13.3",
-  "@vitest/coverage-v8": "4.1.6",
-  vitest: "4.1.6",
+  "@vitest/coverage-v8": "4.1.11",
+  vitest: "4.1.11",
 });
 
 const defineCompatibleHold = ({ spec, allowedVersions, reason, sources }) =>

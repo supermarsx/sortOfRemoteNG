@@ -44,7 +44,7 @@ function fixtureManifest() {
     devDependencies: {
       "@types/node": "24.13.3",
       "@types/react": "^19.2.18",
-      "@vitest/coverage-v8": "4.1.6",
+      "@vitest/coverage-v8": "4.1.11",
       "@wdio/cli": "^9.27.1",
       "@wdio/local-runner": "^9.27.1",
       "@wdio/mocha-framework": "^9.27.1",
@@ -54,7 +54,7 @@ function fixtureManifest() {
       "@webgpu/types": "^0.1.71",
       "expect-webdriverio": "^5.6.5",
       prettier: "^3.8.3",
-      vitest: "4.1.6",
+      vitest: "4.1.11",
       webdriverio: "^9.27.1",
     },
     overrides: { nanoid: "3.3.17" },
@@ -67,7 +67,7 @@ function fixtureVersions() {
     react: "19.2.8",
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
-    "@vitest/coverage-v8": "4.1.6",
+    "@vitest/coverage-v8": "4.1.11",
     "@wdio/cli": "9.27.1",
     "@wdio/local-runner": "9.27.1",
     "@wdio/mocha-framework": "9.29.1",
@@ -77,7 +77,7 @@ function fixtureVersions() {
     "@webgpu/types": "0.1.71",
     "expect-webdriverio": "5.6.5",
     prettier: "3.8.3",
-    vitest: "4.1.6",
+    vitest: "4.1.11",
     webdriverio: "9.27.1",
   };
 }
@@ -348,8 +348,8 @@ test("proves exact npm/Bun direct parity and all explicit holds", () => {
   );
   assert.deepEqual(result.holds, {
     "@types/node": "24.13.3",
-    "@vitest/coverage-v8": "4.1.6",
-    vitest: "4.1.6",
+    "@vitest/coverage-v8": "4.1.11",
+    vitest: "4.1.11",
   });
   assert.deepEqual(
     Object.entries(result.compatibleHolds)
