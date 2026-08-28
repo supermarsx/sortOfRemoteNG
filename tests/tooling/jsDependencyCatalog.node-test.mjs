@@ -14,6 +14,11 @@ test("categorizes direct Next.js lint tooling with the framework", () => {
   assert.equal(categorizeJsDependency("@next/eslint-plugin-next"), "Next.js");
 });
 
+test("groups the brand icon source with the rest of the UI icon tooling", () => {
+  assert.equal(categorizeJsDependency("simple-icons"), "React & UI");
+  assert.equal(categorizeJsDependency("lucide-react"), "React & UI");
+});
+
 async function readJson(relativePath) {
   return JSON.parse(
     await readFile(new URL(`../../${relativePath}`, import.meta.url), "utf8"),
@@ -60,7 +65,7 @@ test("generated About catalog exactly covers every direct package", async () => 
     Object.keys(packageJson.dependencies).length +
       Object.keys(packageJson.devDependencies).length,
   );
-  assert.equal(new Set(generatedEntries.map(({ name }) => name)).size, 56);
+  assert.equal(new Set(generatedEntries.map(({ name }) => name)).size, 57);
 });
 
 test("catalog generation fails closed on lock drift or missing metadata", async () => {

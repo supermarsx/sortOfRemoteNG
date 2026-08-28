@@ -43,7 +43,12 @@ export function categorizeJsDependency(name) {
   if (name.startsWith("@tauri-apps/")) return "Tauri Integration";
   if (
     name.startsWith("react") ||
-    ["lucide-react", "react-dom", "react-i18next"].includes(name)
+    // `simple-icons` sits beside `lucide-react`: it is the build-time source for
+    // the brand marks in the connection icon catalog, vendored by
+    // scripts/sync-brand-icons.mjs and never imported at runtime.
+    ["lucide-react", "react-dom", "react-i18next", "simple-icons"].includes(
+      name,
+    )
   ) {
     return "React & UI";
   }

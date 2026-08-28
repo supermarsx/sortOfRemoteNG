@@ -59,6 +59,7 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("jsdom", "29.1.1", "MIT", "Testing"),
     ("postcss", "8.5.26", "MIT", "CSS & Styling"),
     ("prettier", "3.9.6", "MIT", "Formatting"),
+    ("simple-icons", "16.28.0", "CC0-1.0", "React & UI"),
     ("tailwindcss", "4.3.3", "MIT", "CSS & Styling"),
     ("turbo", "2.10.12", "MIT", "Monorepo"),
     ("typescript", "6.0.3", "Apache-2.0", "TypeScript"),
