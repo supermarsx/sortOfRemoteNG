@@ -20,7 +20,7 @@ md-5 = "0.10"
 blake2 = "0.10"
 hex = { workspace = true }
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
-cron = "0.12"
+cron = "0.17"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "fs", "io-util"] }

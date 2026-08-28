@@ -13,4 +13,4 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
-cron = "0.12"
+cron = "0.17"

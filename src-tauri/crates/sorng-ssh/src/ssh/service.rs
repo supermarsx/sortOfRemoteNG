@@ -731,8 +731,9 @@ pub fn generate_totp_code(secret: &str) -> Result<String, String> {
     )
     .map_err(|e| format!("Failed to create TOTP: {}", e))?;
 
-    totp.generate_current()
-        .map_err(|e| format!("Failed to generate TOTP: {}", e))
+    // totp-rs 6 returns a Token directly; Display zero-pads it to the
+    // configured digit count, matching the old String return.
+    Ok(totp.generate_current().to_string())
 }
 
 fn shebang_path_for_interpreter(interpreter: &str) -> &str {

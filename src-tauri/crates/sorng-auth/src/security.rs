@@ -39,8 +39,9 @@ impl SecurityService {
 
     pub async fn verify_totp(&self, code: String) -> Result<bool, String> {
         if let Some(totp) = &self.totp {
-            let result = totp.check_current(&code).map_err(|e| e.to_string())?;
-            Ok(result)
+            // totp-rs 6 returns Some(matched_step) for a valid code and None
+            // otherwise, replacing the old Result<bool>.
+            Ok(totp.check_current(&code).is_some())
         } else {
             Err("TOTP not initialized".to_string())
         }

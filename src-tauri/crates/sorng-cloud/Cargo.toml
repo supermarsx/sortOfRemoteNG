@@ -12,7 +12,7 @@ tokio = { workspace = true }
 reqwest = { workspace = true, features = ["cookies"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
-jsonwebtoken = "9"
+jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 sha1 = "0.10"
 hex = { workspace = true }
 log = { workspace = true }

@@ -346,10 +346,7 @@ impl TwoFactorService {
         match config.method {
             TwoFactorMethod::TOTP => {
                 if let Some(totp) = self.totp_instances.get(username) {
-                    let is_valid = totp
-                        .check_current(token)
-                        .map_err(|e| format!("TOTP verification failed: {}", e))?;
-                    Ok(is_valid)
+                    Ok(totp.check_current(token).is_some())
                 } else {
                     Err("TOTP instance not found".to_string())
                 }
@@ -414,9 +411,7 @@ impl TwoFactorService {
                     .totp_instances
                     .get(&username)
                     .ok_or_else(|| "TOTP instance not found".to_string())?;
-                let is_valid = totp
-                    .check_current(&token)
-                    .map_err(|e| format!("TOTP verification failed: {}", e))?;
+                let is_valid = totp.check_current(&token).is_some();
                 if is_valid {
                     if let Some(config) = self.configs.get_mut(&username) {
                         config.enabled = true;
