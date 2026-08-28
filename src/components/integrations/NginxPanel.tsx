@@ -74,13 +74,7 @@ const JsonView: React.FC<{ value: unknown }> = ({ value }) =>
   );
 
 type TabKey =
-  | "status"
-  | "sites"
-  | "upstreams"
-  | "ssl"
-  | "logs"
-  | "config"
-  | "snippets";
+  "status" | "sites" | "upstreams" | "ssl" | "logs" | "config" | "snippets";
 
 // ─── Connect form ────────────────────────────────────────────────────────────
 
@@ -148,7 +142,7 @@ const ConnectForm: React.FC<{ mgr: NginxManager; instanceId?: string }> = ({
     store.readSecret(inst).then((secret) => {
       if (secret) setForm((f) => ({ ...f, sshPassword: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
@@ -1175,7 +1169,7 @@ const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({
 
   useEffect(() => {
     void listFiles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [cid]);
 
   const queryObj = useCallback(

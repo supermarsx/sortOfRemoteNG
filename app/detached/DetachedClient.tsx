@@ -142,9 +142,7 @@ const focusFirstSubmenuItem = (panel: HTMLElement | null) => {
 };
 
 type DetachedCloseAttemptFailure =
-  | "vetoed"
-  | "before-close-error"
-  | "final-close-error";
+  "vetoed" | "before-close-error" | "final-close-error";
 
 interface DetachedWindowCloseRegistration {
   onBeforeClose: () => Promise<boolean>;
@@ -430,7 +428,7 @@ export const DetachedSessionContent: React.FC<{
       if (fallbackTimer) clearTimeout(fallbackTimer);
       unlisten?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [sessionId]);
 
   // 30-second loading timeout — if session never loads, show recovery options

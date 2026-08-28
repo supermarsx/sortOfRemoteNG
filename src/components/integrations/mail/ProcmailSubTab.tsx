@@ -92,12 +92,7 @@ const csvLines = (s: string): string[] =>
     .filter(Boolean);
 
 type SectionKey =
-  | "recipes"
-  | "rules"
-  | "variables"
-  | "includes"
-  | "config"
-  | "logs";
+  "recipes" | "rules" | "variables" | "includes" | "config" | "logs";
 
 // ─── Connect form ────────────────────────────────────────────────────────────
 
@@ -1266,7 +1261,7 @@ const ConfigSection: React.FC<{
     } catch {
       /* surfaced */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [mgr, cid, user, configBody]);
 
   const getRaw = useCallback(async () => {
@@ -1462,7 +1457,7 @@ const LogsSection: React.FC<{
 
   useEffect(() => {
     void query();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [cid, user]);
 
   const loadFiles = useCallback(async () => {

@@ -166,7 +166,7 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
     } else {
       void loadList(() => api.listUsers(connectionId, 1, 100));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [section, connectionId]);
 
   const rows = items as Row[];
@@ -188,7 +188,10 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
       const n = Number(raw.trim());
       if (!Number.isFinite(n)) {
         window.alert(
-          t("integrations.osticket.ticketing.notANumber", "Not a valid number."),
+          t(
+            "integrations.osticket.ticketing.notANumber",
+            "Not a valid number.",
+          ),
         );
         return null;
       }
@@ -260,7 +263,10 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
         title:
           kind === "reply"
             ? t("integrations.osticket.ticketing.postReply", "Post reply")
-            : t("integrations.osticket.ticketing.postNote", "Post internal note"),
+            : t(
+                "integrations.osticket.ticketing.postNote",
+                "Post internal note",
+              ),
         json: JSON.stringify({ body: "" }, null, 2),
         submit: (b) =>
           kind === "reply"
@@ -491,8 +497,7 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
       const id = rowNumericId(row);
       if (id == null) return;
       void openInspect(
-        t("integrations.osticket.ticketing.user", "User") +
-          ` #${id}`,
+        t("integrations.osticket.ticketing.user", "User") + ` #${id}`,
         () => api.getUser(connectionId, id),
       );
     },
@@ -524,7 +529,8 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
       };
       setEditor({
         title:
-          t("integrations.osticket.ticketing.editUser", "Edit user") + ` #${id}`,
+          t("integrations.osticket.ticketing.editUser", "Edit user") +
+          ` #${id}`,
         json: JSON.stringify(seed, null, 2),
         submit: (b) => api.updateUser(connectionId, id, b as never),
         reloadAfter: true,
@@ -565,19 +571,18 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
   // ── Section tabs meta ────────────────────────────────────────────────────────
 
   const sections = useMemo(
-    () =>
-      [
-        {
-          key: "tickets" as const,
-          label: t("integrations.osticket.ticketing.tickets", "Tickets"),
-          icon: Ticket,
-        },
-        {
-          key: "users" as const,
-          label: t("integrations.osticket.ticketing.users", "Users"),
-          icon: Users,
-        },
-      ],
+    () => [
+      {
+        key: "tickets" as const,
+        label: t("integrations.osticket.ticketing.tickets", "Tickets"),
+        icon: Ticket,
+      },
+      {
+        key: "users" as const,
+        label: t("integrations.osticket.ticketing.users", "Users"),
+        icon: Users,
+      },
+    ],
     [t],
   );
 
@@ -607,7 +612,11 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
-        <button onClick={() => void reload()} className={btn} disabled={loading}>
+        <button
+          onClick={() => void reload()}
+          className={btn}
+          disabled={loading}
+        >
           {loading ? (
             <Loader2 size={12} className="animate-spin" />
           ) : (
@@ -730,11 +739,20 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
                     <div className="flex flex-wrap items-center justify-end gap-1">
                       {section === "tickets" ? (
                         <>
-                          <button onClick={() => onViewTicket(row)} className={btn}>
+                          <button
+                            onClick={() => onViewTicket(row)}
+                            className={btn}
+                          >
                             {t("integrations.osticket.ticketing.view", "View")}
                           </button>
-                          <button onClick={() => onThreads(row)} className={btn}>
-                            {t("integrations.osticket.ticketing.threads", "Threads")}
+                          <button
+                            onClick={() => onThreads(row)}
+                            className={btn}
+                          >
+                            {t(
+                              "integrations.osticket.ticketing.threads",
+                              "Threads",
+                            )}
                           </button>
                           <button
                             onClick={() => openThreadEditor(row, "reply")}
@@ -745,7 +763,10 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
                             )}
                           >
                             <MessageSquare size={12} />
-                            {t("integrations.osticket.ticketing.reply", "Reply")}
+                            {t(
+                              "integrations.osticket.ticketing.reply",
+                              "Reply",
+                            )}
                           </button>
                           <button
                             onClick={() => openThreadEditor(row, "note")}
@@ -756,21 +777,39 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
                           <button
                             onClick={() => openTicketEdit(row)}
                             className={btn}
-                            title={t("integrations.osticket.ticketing.edit", "Edit")}
+                            title={t(
+                              "integrations.osticket.ticketing.edit",
+                              "Edit",
+                            )}
                           >
                             <Pencil size={12} />
                           </button>
-                          <button onClick={() => void onAssign(row)} className={btn}>
-                            {t("integrations.osticket.ticketing.assign", "Assign")}
+                          <button
+                            onClick={() => void onAssign(row)}
+                            className={btn}
+                          >
+                            {t(
+                              "integrations.osticket.ticketing.assign",
+                              "Assign",
+                            )}
                           </button>
                           <button
                             onClick={() => void onTransfer(row)}
                             className={btn}
                           >
-                            {t("integrations.osticket.ticketing.transfer", "Transfer")}
+                            {t(
+                              "integrations.osticket.ticketing.transfer",
+                              "Transfer",
+                            )}
                           </button>
-                          <button onClick={() => void onMerge(row)} className={btn}>
-                            {t("integrations.osticket.ticketing.merge", "Merge")}
+                          <button
+                            onClick={() => void onMerge(row)}
+                            className={btn}
+                          >
+                            {t(
+                              "integrations.osticket.ticketing.merge",
+                              "Merge",
+                            )}
                           </button>
                           <button
                             onClick={() => onCollaborators(row)}
@@ -785,37 +824,55 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
                             onClick={() => void onAddCollaborator(row)}
                             className={btn}
                           >
-                            {t("integrations.osticket.ticketing.collabAdd", "+CC")}
+                            {t(
+                              "integrations.osticket.ticketing.collabAdd",
+                              "+CC",
+                            )}
                           </button>
                           <button
                             onClick={() => void onRemoveCollaborator(row)}
                             className={btn}
                           >
-                            {t("integrations.osticket.ticketing.collabRemove", "-CC")}
+                            {t(
+                              "integrations.osticket.ticketing.collabRemove",
+                              "-CC",
+                            )}
                           </button>
                           <button
                             onClick={() => void onCloseTicket(row)}
                             className={btn}
                           >
-                            {t("integrations.osticket.ticketing.close", "Close")}
+                            {t(
+                              "integrations.osticket.ticketing.close",
+                              "Close",
+                            )}
                           </button>
                           <button
                             onClick={() => void onReopenTicket(row)}
                             className={btn}
                           >
-                            {t("integrations.osticket.ticketing.reopen", "Reopen")}
+                            {t(
+                              "integrations.osticket.ticketing.reopen",
+                              "Reopen",
+                            )}
                           </button>
                           <button
                             onClick={() => void onDeleteTicket(row)}
                             className={btn}
-                            title={t("integrations.osticket.ticketing.delete", "Delete")}
+                            title={t(
+                              "integrations.osticket.ticketing.delete",
+                              "Delete",
+                            )}
                           >
                             <Trash2 size={12} />
                           </button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => onViewUser(row)} className={btn}>
+                          <button
+                            onClick={() => onViewUser(row)}
+                            className={btn}
+                          >
                             {t("integrations.osticket.ticketing.view", "View")}
                           </button>
                           <button
@@ -830,14 +887,20 @@ const OsticketTicketingTab: React.FC<OsticketTabProps> = ({ connectionId }) => {
                           <button
                             onClick={() => openUserEdit(row)}
                             className={btn}
-                            title={t("integrations.osticket.ticketing.edit", "Edit")}
+                            title={t(
+                              "integrations.osticket.ticketing.edit",
+                              "Edit",
+                            )}
                           >
                             <Pencil size={12} />
                           </button>
                           <button
                             onClick={() => void onDeleteUser(row)}
                             className={btn}
-                            title={t("integrations.osticket.ticketing.delete", "Delete")}
+                            title={t(
+                              "integrations.osticket.ticketing.delete",
+                              "Delete",
+                            )}
                           >
                             <Trash2 size={12} />
                           </button>

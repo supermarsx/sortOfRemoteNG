@@ -94,7 +94,9 @@ const JsonView: React.FC<{ value: unknown }> = ({ value }) =>
 const LLM_KEY = "llm";
 
 /** The non-secret ProviderConfig persisted in an instance's `fields.config`. */
-function providerFromInstance(inst: IntegrationInstance): ProviderConfig | null {
+function providerFromInstance(
+  inst: IntegrationInstance,
+): ProviderConfig | null {
   const raw = inst.fields?.config;
   if (!raw) return null;
   try {
@@ -109,7 +111,9 @@ function instanceForProvider(
   providerId: string,
 ): IntegrationInstance | undefined {
   return store.instances.find(
-    (i) => i.integrationKey === LLM_KEY && providerFromInstance(i)?.id === providerId,
+    (i) =>
+      i.integrationKey === LLM_KEY &&
+      providerFromInstance(i)?.id === providerId,
   );
 }
 
@@ -155,7 +159,9 @@ const ProviderForm: React.FC<{
   onDone: () => void;
 }> = ({ mgr, store, editing, onDone }) => {
   const { t } = useTranslation();
-  const [form, setForm] = useState<ProviderFormState>(() => toFormState(editing));
+  const [form, setForm] = useState<ProviderFormState>(() =>
+    toFormState(editing),
+  );
   const [saving, setSaving] = useState(false);
 
   // Prefill the api key from the vault when editing an existing provider.
@@ -166,7 +172,7 @@ const ProviderForm: React.FC<{
     void store.readSecret(inst).then((secret) => {
       if (secret) setForm((f) => ({ ...f, apiKey: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [editing?.id, store.isLoading]);
 
   const set = <K extends keyof ProviderFormState>(
@@ -367,7 +373,11 @@ const ProviderForm: React.FC<{
         <button
           className={btn}
           onClick={save}
-          disabled={saving || !form.displayName && !providerTypeMeta(form.providerType).displayName}
+          disabled={
+            saving ||
+            (!form.displayName &&
+              !providerTypeMeta(form.providerType).displayName)
+          }
         >
           {saving ? (
             <Loader2 size={12} className="animate-spin" />
@@ -465,7 +475,11 @@ const ProvidersPanel: React.FC<{
           <Plus size={12} />
           {t("integrations.llm.addProvider", "Add provider")}
         </button>
-        <button className={btn} onClick={() => void mgr.refreshProviders()} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void mgr.refreshProviders()}
+          disabled={mgr.isLoading}
+        >
           <RefreshCw size={12} />
           {t("integrations.llm.refresh", "Refresh")}
         </button>
@@ -491,10 +505,18 @@ const ProvidersPanel: React.FC<{
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.llm.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.llm.providerType", "Provider")}</th>
-              <th className="px-2 py-1">{t("integrations.llm.priority", "Priority")}</th>
-              <th className="px-2 py-1">{t("integrations.llm.status", "Status")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.providerType", "Provider")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.priority", "Priority")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.status", "Status")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
@@ -503,7 +525,10 @@ const ProvidersPanel: React.FC<{
               const h = health[p.id];
               const isDefault = defaultProvider === p.id;
               return (
-                <tr key={p.id} className="border-t border-[var(--color-border)]">
+                <tr
+                  key={p.id}
+                  className="border-t border-[var(--color-border)]"
+                >
                   <td className="px-2 py-1 text-[var(--color-text)]">
                     {p.display_name || p.id}
                     {isDefault && (
@@ -520,10 +545,16 @@ const ProvidersPanel: React.FC<{
                   <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                     {providerTypeMeta(p.provider_type).displayName}
                   </td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{p.priority}</td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {p.priority}
+                  </td>
                   <td className="px-2 py-1">
                     {h ? (
-                      <span className={h.healthy ? "text-green-500" : "text-red-500"}>
+                      <span
+                        className={
+                          h.healthy ? "text-green-500" : "text-red-500"
+                        }
+                      >
                         {h.healthy
                           ? `${t("integrations.llm.healthy", "healthy")}${h.latency_ms != null ? ` · ${h.latency_ms}ms` : ""}`
                           : t("integrations.llm.unhealthy", "unhealthy")}
@@ -538,7 +569,10 @@ const ProvidersPanel: React.FC<{
                         {t("integrations.llm.check", "Check")}
                       </button>
                       {!isDefault && (
-                        <button className={btn} onClick={() => void setDefault(p)}>
+                        <button
+                          className={btn}
+                          onClick={() => void setDefault(p)}
+                        >
                           {t("integrations.llm.makeDefault", "Set default")}
                         </button>
                       )}
@@ -561,7 +595,10 @@ const ProvidersPanel: React.FC<{
             })}
             {mgr.providers.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
                   {t("integrations.llm.noProviders", "No providers configured")}
                 </td>
               </tr>
@@ -616,12 +653,16 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
   return (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Labeled label={t("integrations.llm.balancerStrategy", "Balancer strategy")}>
+        <Labeled
+          label={t("integrations.llm.balancerStrategy", "Balancer strategy")}
+        >
           <select
             data-setting-key="llm.router.balancerStrategy"
             className={field}
             value={cfg.balancer.strategy}
-            onChange={(e) => void setStrategy(e.target.value as BalancerStrategy)}
+            onChange={(e) =>
+              void setStrategy(e.target.value as BalancerStrategy)
+            }
           >
             {BALANCER_STRATEGIES.map((s) => (
               <option key={s} value={s}>
@@ -636,7 +677,10 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             data-setting-key="llm.router.defaultModel"
             value={cfg.default_model ?? ""}
             onChange={(e) =>
-              void patch((c) => ({ ...c, default_model: e.target.value || null }))
+              void patch((c) => ({
+                ...c,
+                default_model: e.target.value || null,
+              }))
             }
             placeholder="gpt-4o"
           />
@@ -678,7 +722,10 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             data-setting-key="llm.router.usageTracking"
             checked={cfg.usage_tracking_enabled}
             onChange={(e) =>
-              void patch((c) => ({ ...c, usage_tracking_enabled: e.target.checked }))
+              void patch((c) => ({
+                ...c,
+                usage_tracking_enabled: e.target.checked,
+              }))
             }
           />
           {t("integrations.llm.usageTracking", "Usage tracking")}
@@ -728,7 +775,10 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
               onChange={(e) =>
                 void patch((c) => ({
                   ...c,
-                  cache: { ...c.cache, ttl_seconds: Number(e.target.value) || 0 },
+                  cache: {
+                    ...c.cache,
+                    ttl_seconds: Number(e.target.value) || 0,
+                  },
                 }))
               }
             />
@@ -791,7 +841,11 @@ const ModelsPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             placeholder="openai"
           />
         </Labeled>
-        <button className={`${btn} self-end`} onClick={loadForProvider} disabled={mgr.isLoading}>
+        <button
+          className={`${btn} self-end`}
+          onClick={loadForProvider}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.llm.modelsForProvider", "By provider")}
         </button>
       </div>
@@ -800,17 +854,27 @@ const ModelsPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.llm.modelId", "Model")}</th>
-              <th className="px-2 py-1">{t("integrations.llm.providerType", "Provider")}</th>
-              <th className="px-2 py-1">{t("integrations.llm.context", "Context")}</th>
-              <th className="px-2 py-1">{t("integrations.llm.cost", "In / Out ($/M)")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.modelId", "Model")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.providerType", "Provider")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.context", "Context")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.llm.cost", "In / Out ($/M)")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {models.map((m) => (
               <tr key={m.id} className="border-t border-[var(--color-border)]">
                 <td className="px-2 py-1 text-[var(--color-text)]">{m.name}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{m.provider}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {m.provider}
+                </td>
                 <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                   {m.context_window.toLocaleString()}
                 </td>
@@ -821,7 +885,10 @@ const ModelsPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             ))}
             {models.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.llm.noModels", "No models loaded")}
                 </td>
               </tr>
@@ -845,7 +912,11 @@ const ModelsPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
               placeholder="gpt-4o"
             />
           </Labeled>
-          <button className={`${btn} self-end`} onClick={lookup} disabled={mgr.isLoading || !modelId}>
+          <button
+            className={`${btn} self-end`}
+            onClick={lookup}
+            disabled={mgr.isLoading || !modelId}
+          >
             {t("integrations.llm.lookup", "Look up")}
           </button>
         </div>
@@ -866,7 +937,9 @@ const UsagePanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
 
   const loadUsage = useCallback(async () => {
     try {
-      setUsage(await mgr.run(() => mgr.api.usageSummary(Number(days) || undefined)));
+      setUsage(
+        await mgr.run(() => mgr.api.usageSummary(Number(days) || undefined)),
+      );
     } catch {
       /* surfaced */
     }
@@ -910,17 +983,33 @@ const UsagePanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             onChange={(e) => setDays(e.target.value)}
           />
         </Labeled>
-        <button className={`${btn} self-end`} onClick={loadUsage} disabled={mgr.isLoading}>
+        <button
+          className={`${btn} self-end`}
+          onClick={loadUsage}
+          disabled={mgr.isLoading}
+        >
           <RefreshCw size={12} />
           {t("integrations.llm.usageSummary", "Usage summary")}
         </button>
-        <button className={`${btn} self-end`} onClick={loadStatus} disabled={mgr.isLoading}>
+        <button
+          className={`${btn} self-end`}
+          onClick={loadStatus}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.llm.routerStatus", "Router status")}
         </button>
-        <button className={`${btn} self-end`} onClick={loadCache} disabled={mgr.isLoading}>
+        <button
+          className={`${btn} self-end`}
+          onClick={loadCache}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.llm.cacheStats", "Cache stats")}
         </button>
-        <button className={`${btn} self-end text-red-500`} onClick={clearCache} disabled={mgr.isLoading}>
+        <button
+          className={`${btn} self-end text-red-500`}
+          onClick={clearCache}
+          disabled={mgr.isLoading}
+        >
           <Trash2 size={12} />
           {t("integrations.llm.clearCache", "Clear cache")}
         </button>
@@ -929,10 +1018,22 @@ const UsagePanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
       {status && (
         <div className={card}>
           <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <Stat label={t("integrations.llm.providersCount", "Providers")} value={`${status.healthy_providers}/${status.total_providers}`} />
-            <Stat label={t("integrations.llm.modelsCount", "Models")} value={status.total_models} />
-            <Stat label={t("integrations.llm.requests", "Requests")} value={status.total_requests} />
-            <Stat label={t("integrations.llm.cost", "Cost ($)")} value={status.total_cost_usd.toFixed(4)} />
+            <Stat
+              label={t("integrations.llm.providersCount", "Providers")}
+              value={`${status.healthy_providers}/${status.total_providers}`}
+            />
+            <Stat
+              label={t("integrations.llm.modelsCount", "Models")}
+              value={status.total_models}
+            />
+            <Stat
+              label={t("integrations.llm.requests", "Requests")}
+              value={status.total_requests}
+            />
+            <Stat
+              label={t("integrations.llm.cost", "Cost ($)")}
+              value={status.total_cost_usd.toFixed(4)}
+            />
           </div>
         </div>
       )}
@@ -940,10 +1041,22 @@ const UsagePanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
       {cache && (
         <div className={card}>
           <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <Stat label={t("integrations.llm.entries", "Entries")} value={cache.entries} />
-            <Stat label={t("integrations.llm.hits", "Hits")} value={cache.hits} />
-            <Stat label={t("integrations.llm.misses", "Misses")} value={cache.misses} />
-            <Stat label={t("integrations.llm.hitRate", "Hit rate")} value={`${(cache.hit_rate * 100).toFixed(1)}%`} />
+            <Stat
+              label={t("integrations.llm.entries", "Entries")}
+              value={cache.entries}
+            />
+            <Stat
+              label={t("integrations.llm.hits", "Hits")}
+              value={cache.hits}
+            />
+            <Stat
+              label={t("integrations.llm.misses", "Misses")}
+              value={cache.misses}
+            />
+            <Stat
+              label={t("integrations.llm.hitRate", "Hit rate")}
+              value={`${(cache.hit_rate * 100).toFixed(1)}%`}
+            />
           </div>
         </div>
       )}
@@ -953,10 +1066,17 @@ const UsagePanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
   );
 };
 
-const Stat: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+const Stat: React.FC<{ label: string; value: React.ReactNode }> = ({
+  label,
+  value,
+}) => (
   <div className="rounded bg-[var(--color-surface)] p-2">
-    <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">{label}</div>
-    <div className="text-sm font-semibold text-[var(--color-text)]">{value}</div>
+    <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
+      {label}
+    </div>
+    <div className="text-sm font-semibold text-[var(--color-text)]">
+      {value}
+    </div>
   </div>
 );
 
@@ -994,7 +1114,10 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
       const res = await mgr.run(() =>
         mgr.api.createEmbedding({
           model,
-          input: embedInput.split("\n").map((s) => s.trim()).filter(Boolean),
+          input: embedInput
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean),
           provider_id: providerId || undefined,
         }),
       );
@@ -1015,7 +1138,9 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
   const estimate = useCallback(async () => {
     try {
       setTokenCount(
-        await mgr.run(() => mgr.api.estimateTokens(tokenText, model || undefined)),
+        await mgr.run(() =>
+          mgr.api.estimateTokens(tokenText, model || undefined),
+        ),
       );
     } catch {
       /* surfaced */
@@ -1034,7 +1159,9 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
             placeholder="gpt-4o"
           />
         </Labeled>
-        <Labeled label={t("integrations.llm.providerOverride", "Provider (optional)")}>
+        <Labeled
+          label={t("integrations.llm.providerOverride", "Provider (optional)")}
+        >
           <input
             className={field}
             data-setting-key="llm.playground.providerOverride"
@@ -1057,8 +1184,16 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={t("integrations.llm.promptPlaceholder", "Say hello...")}
         />
-        <button className={`${btn} mt-2`} onClick={runChat} disabled={mgr.isLoading || !model || !prompt}>
-          {mgr.isLoading ? <Loader2 size={12} className="animate-spin" /> : <Cpu size={12} />}
+        <button
+          className={`${btn} mt-2`}
+          onClick={runChat}
+          disabled={mgr.isLoading || !model || !prompt}
+        >
+          {mgr.isLoading ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Cpu size={12} />
+          )}
           {t("integrations.llm.send", "Send")}
         </button>
       </div>
@@ -1075,7 +1210,11 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
           onChange={(e) => setEmbedInput(e.target.value)}
           placeholder={"hello world\nfoo bar"}
         />
-        <button className={`${btn} mt-2`} onClick={runEmbedding} disabled={mgr.isLoading || !model || !embedInput}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={runEmbedding}
+          disabled={mgr.isLoading || !model || !embedInput}
+        >
           {t("integrations.llm.embed", "Embed")}
         </button>
       </div>
@@ -1092,7 +1231,11 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
           onChange={(e) => setTokenText(e.target.value)}
         />
         <div className="mt-2 flex items-center gap-3">
-          <button className={btn} onClick={estimate} disabled={mgr.isLoading || !tokenText}>
+          <button
+            className={btn}
+            onClick={estimate}
+            disabled={mgr.isLoading || !tokenText}
+          >
             {t("integrations.llm.estimate", "Estimate")}
           </button>
           {tokenCount != null && (
@@ -1126,7 +1269,9 @@ const AiSettings: React.FC = () => {
       const live = await mgr.refreshProviders();
       await mgr.refreshConfig();
       const liveIds = new Set(live.map((p) => p.id));
-      const persisted = store.instances.filter((i) => i.integrationKey === LLM_KEY);
+      const persisted = store.instances.filter(
+        (i) => i.integrationKey === LLM_KEY,
+      );
       let added = false;
       for (const inst of persisted) {
         const cfg = providerFromInstance(inst);
@@ -1141,7 +1286,7 @@ const AiSettings: React.FC = () => {
       }
       if (added) await mgr.refreshProviders();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [store.isLoading]);
 
   return (

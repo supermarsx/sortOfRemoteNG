@@ -81,11 +81,7 @@ export interface BackupJobInfo {
 }
 
 export type BackupTab =
-  | "overview"
-  | "shadowCopies"
-  | "versions"
-  | "policy"
-  | "volumes";
+  "overview" | "shadowCopies" | "versions" | "policy" | "volumes";
 
 // ─── Hook ──────────────────────────────────────────────────────────
 
@@ -337,7 +333,7 @@ export function useWindowsBackup(isOpen: boolean) {
     if (isOpen && sessionId) {
       refreshAll();
     }
-  }, [isOpen, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps -- refreshAll is stable, only run when dialog opens
+  }, [isOpen, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- refreshAll is stable, only run when dialog opens
 
   // ── Cleanup on close ───────────────────────────────────
 

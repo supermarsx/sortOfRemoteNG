@@ -1,4 +1,10 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import React, {
+  useRef,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Select } from "../ui/forms";
 import { useTopology } from "../../hooks/network/useTopology";
@@ -16,7 +22,9 @@ const MINIMAP_H = 110;
 /** Read a CSS variable from the document root, with a fallback */
 function cssVar(name: string, fallback: string): string {
   if (typeof document === "undefined") return fallback;
-  return getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
+  return (
+    getComputedStyle(document.body).getPropertyValue(name).trim() || fallback
+  );
 }
 
 /** Build canvas-friendly theme color maps from CSS variables */
@@ -91,9 +99,7 @@ export interface TopologyVisualizerProps {
   onClose?: () => void;
 }
 
-const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
-  isOpen,
-}) => {
+const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({ isOpen }) => {
   const { t } = useTranslation();
   const topo = useTopology();
 
@@ -103,7 +109,9 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
 
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const [dragging, setDragging] = useState(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [pathSource, setPathSource] = useState<string | null>(null);
   const [pathTarget, setPathTarget] = useState<string | null>(null);
@@ -116,7 +124,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
     if (!isOpen) return;
     topo.fetchGraph();
     topo.fetchStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- topo methods are stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- topo methods are stable
   }, [isOpen]);
 
   /* ---- derived lookups ---- */
@@ -129,9 +137,15 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
     nodeMap.current = m;
   }, [nodes]);
 
-  const blastSet = useMemo(() => new Set(topo.blastRadius?.affectedNodes ?? []), [topo.blastRadius]);
+  const blastSet = useMemo(
+    () => new Set(topo.blastRadius?.affectedNodes ?? []),
+    [topo.blastRadius],
+  );
   const pathSet = useMemo(() => new Set(topo.path?.path ?? []), [topo.path]);
-  const bottleneckSet = useMemo(() => new Set(topo.bottlenecks.map((b) => b.nodeId)), [topo.bottlenecks]);
+  const bottleneckSet = useMemo(
+    () => new Set(topo.bottlenecks.map((b) => b.nodeId)),
+    [topo.bottlenecks],
+  );
 
   /* ---- hit-test ---- */
   const hitTest = useCallback(
@@ -203,8 +217,14 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
   /* ---- toolbar actions ---- */
   const handleLayoutChange = (alg: LayoutAlgorithm) => topo.applyLayout(alg);
 
-  const zoomIn = useCallback(() => setCamera((c) => ({ ...c, zoom: Math.min(5, c.zoom * 1.25) })), []);
-  const zoomOut = useCallback(() => setCamera((c) => ({ ...c, zoom: Math.max(0.1, c.zoom * 0.8) })), []);
+  const zoomIn = useCallback(
+    () => setCamera((c) => ({ ...c, zoom: Math.min(5, c.zoom * 1.25) })),
+    [],
+  );
+  const zoomOut = useCallback(
+    () => setCamera((c) => ({ ...c, zoom: Math.max(0.1, c.zoom * 0.8) })),
+    [],
+  );
 
   /* ---- keyboard handler ---- */
   const handleKeyDown = useCallback(
@@ -241,7 +261,9 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
           e.preventDefault();
           setFocusedNodeIndex((prev) => {
             const next = e.shiftKey
-              ? (prev <= 0 ? nodes.length - 1 : prev - 1)
+              ? prev <= 0
+                ? nodes.length - 1
+                : prev - 1
               : (prev + 1) % nodes.length;
             const node = nodes[next];
             topo.setSelectedNode(node.id);
@@ -495,15 +517,21 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
   }, [nodes, edges, camera]);
 
   /* ---- selected node details ---- */
-  const selected = topo.selectedNode ? nodeMap.current.get(topo.selectedNode) : null;
+  const selected = topo.selectedNode
+    ? nodeMap.current.get(topo.selectedNode)
+    : null;
   const connectionCount = selected
-    ? edges.filter((e) => e.source === selected.id || e.target === selected.id).length
+    ? edges.filter((e) => e.source === selected.id || e.target === selected.id)
+        .length
     : 0;
 
   if (!isOpen) return null;
 
   return (
-    <div className="sor-topology-root flex flex-col h-full bg-[var(--color-surface)] text-[var(--color-text)]" data-testid="topology-view">
+    <div
+      className="sor-topology-root flex flex-col h-full bg-[var(--color-surface)] text-[var(--color-text)]"
+      data-testid="topology-view"
+    >
       {/* ---- Toolbar ---- */}
       <div className="sor-topology-toolbar flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
         <label className="sor-topology-layout-label text-xs font-medium mr-1">
@@ -519,23 +547,55 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
           }))}
         />
 
-        <span className="sor-topology-sep mx-1 text-[var(--color-border)]">|</span>
+        <span className="sor-topology-sep mx-1 text-[var(--color-border)]">
+          |
+        </span>
 
-        <button className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]" onClick={zoomIn} title={t("topology.zoomIn", "Zoom In")}>+</button>
-        <button className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]" onClick={zoomOut} title={t("topology.zoomOut", "Zoom Out")}>−</button>
-        <button className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]" onClick={fitToView}>{t("topology.fit", "Fit")}</button>
-        <button className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]" onClick={exportImage}>{t("topology.export", "Export PNG")}</button>
+        <button
+          className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]"
+          onClick={zoomIn}
+          title={t("topology.zoomIn", "Zoom In")}
+        >
+          +
+        </button>
+        <button
+          className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]"
+          onClick={zoomOut}
+          title={t("topology.zoomOut", "Zoom Out")}
+        >
+          −
+        </button>
+        <button
+          className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]"
+          onClick={fitToView}
+        >
+          {t("topology.fit", "Fit")}
+        </button>
+        <button
+          className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]"
+          onClick={exportImage}
+        >
+          {t("topology.export", "Export PNG")}
+        </button>
 
-        <span className="sor-topology-sep mx-1 text-[var(--color-border)]">|</span>
+        <span className="sor-topology-sep mx-1 text-[var(--color-border)]">
+          |
+        </span>
 
-        <button className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]" onClick={handleDetectBottlenecks}>
+        <button
+          className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]"
+          onClick={handleDetectBottlenecks}
+        >
           {t("topology.bottlenecks", "Bottlenecks")}
         </button>
         <button
           className="sor-topology-btn text-xs px-2 py-1 rounded hover:bg-[var(--color-hover)]"
           onClick={startPathFind}
           disabled={!topo.selectedNode}
-          title={t("topology.pathHint", "Select a node first, then click target")}
+          title={t(
+            "topology.pathHint",
+            "Select a node first, then click target",
+          )}
         >
           {t("topology.findPath", "Find Path")}
         </button>
@@ -546,7 +606,9 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
           </span>
         )}
         {topo.error && (
-          <span className="sor-topology-error ml-2 text-xs text-error">{topo.error}</span>
+          <span className="sor-topology-error ml-2 text-xs text-error">
+            {topo.error}
+          </span>
         )}
       </div>
 
@@ -584,25 +646,48 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
 
           {/* Legend */}
           <div className="sor-topology-legend absolute top-2 left-2 bg-[var(--color-surfaceHover)]/90 backdrop-blur rounded p-2 text-[10px] leading-relaxed border border-[var(--color-border)]">
-            {(Object.entries(NODE_COLORS) as [NodeKind, string][]).map(([kind, color]) => (
-              <div key={kind} className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-                <span className="capitalize">{t(`topology.kind.${kind}`, kind)}</span>
-              </div>
-            ))}
+            {(Object.entries(NODE_COLORS) as [NodeKind, string][]).map(
+              ([kind, color]) => (
+                <div key={kind} className="flex items-center gap-1">
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-full"
+                    style={{ background: color }}
+                  />
+                  <span className="capitalize">
+                    {t(`topology.kind.${kind}`, kind)}
+                  </span>
+                </div>
+              ),
+            )}
           </div>
 
           {/* Stats */}
           {topo.stats && (
             <div className="sor-topology-stats absolute bottom-2 right-2 bg-[var(--color-surfaceHover)]/90 backdrop-blur rounded p-2 text-[10px] border border-[var(--color-border)] grid grid-cols-2 gap-x-3 gap-y-0.5">
-              <span className="text-[var(--color-muted)]">{t("topology.statNodes", "Nodes")}</span>
-              <span className="font-mono text-right">{topo.stats.nodeCount}</span>
-              <span className="text-[var(--color-muted)]">{t("topology.statEdges", "Edges")}</span>
-              <span className="font-mono text-right">{topo.stats.edgeCount}</span>
-              <span className="text-[var(--color-muted)]">{t("topology.statComponents", "Components")}</span>
-              <span className="font-mono text-right">{topo.stats.connectedComponents}</span>
-              <span className="text-[var(--color-muted)]">{t("topology.statDensity", "Density")}</span>
-              <span className="font-mono text-right">{topo.stats.density.toFixed(3)}</span>
+              <span className="text-[var(--color-muted)]">
+                {t("topology.statNodes", "Nodes")}
+              </span>
+              <span className="font-mono text-right">
+                {topo.stats.nodeCount}
+              </span>
+              <span className="text-[var(--color-muted)]">
+                {t("topology.statEdges", "Edges")}
+              </span>
+              <span className="font-mono text-right">
+                {topo.stats.edgeCount}
+              </span>
+              <span className="text-[var(--color-muted)]">
+                {t("topology.statComponents", "Components")}
+              </span>
+              <span className="font-mono text-right">
+                {topo.stats.connectedComponents}
+              </span>
+              <span className="text-[var(--color-muted)]">
+                {t("topology.statDensity", "Density")}
+              </span>
+              <span className="font-mono text-right">
+                {topo.stats.density.toFixed(3)}
+              </span>
             </div>
           )}
         </div>
@@ -614,15 +699,23 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
 
             <dl className="sor-topology-dl space-y-2">
               <div>
-                <dt className="text-[var(--color-muted)] text-xs">{t("topology.type", "Type")}</dt>
+                <dt className="text-[var(--color-muted)] text-xs">
+                  {t("topology.type", "Type")}
+                </dt>
                 <dd className="capitalize">{selected.kind}</dd>
               </div>
               <div>
-                <dt className="text-[var(--color-muted)] text-xs">{t("topology.hostname", "Hostname / IP")}</dt>
-                <dd className="font-mono text-xs">{selected.hostname ?? "—"}</dd>
+                <dt className="text-[var(--color-muted)] text-xs">
+                  {t("topology.hostname", "Hostname / IP")}
+                </dt>
+                <dd className="font-mono text-xs">
+                  {selected.hostname ?? "—"}
+                </dd>
               </div>
               <div>
-                <dt className="text-[var(--color-muted)] text-xs">{t("topology.status", "Status")}</dt>
+                <dt className="text-[var(--color-muted)] text-xs">
+                  {t("topology.status", "Status")}
+                </dt>
                 <dd className="flex items-center gap-1.5">
                   <span
                     className="inline-block w-2 h-2 rounded-full"
@@ -632,12 +725,16 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
                 </dd>
               </div>
               <div>
-                <dt className="text-[var(--color-muted)] text-xs">{t("topology.connections", "Connections")}</dt>
+                <dt className="text-[var(--color-muted)] text-xs">
+                  {t("topology.connections", "Connections")}
+                </dt>
                 <dd>{connectionCount}</dd>
               </div>
               {selected.protocol && (
                 <div>
-                  <dt className="text-[var(--color-muted)] text-xs">{t("topology.protocol", "Protocol")}</dt>
+                  <dt className="text-[var(--color-muted)] text-xs">
+                    {t("topology.protocol", "Protocol")}
+                  </dt>
                   <dd className="uppercase text-xs">{selected.protocol}</dd>
                 </div>
               )}
@@ -646,7 +743,9 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
             {/* Blast radius info */}
             {topo.blastRadius && (
               <div className="sor-topology-blast mt-4 p-2 rounded bg-error/10 border border-error/30 text-xs">
-                <p className="font-medium text-error mb-1">{t("topology.blastRadius", "Blast Radius")}</p>
+                <p className="font-medium text-error mb-1">
+                  {t("topology.blastRadius", "Blast Radius")}
+                </p>
                 <p>
                   {t("topology.blastAffected", "Affected nodes: {{count}}", {
                     count: topo.blastRadius.affectedNodes.length,
@@ -663,9 +762,19 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
             {/* Path info */}
             {topo.path && topo.path.path.length > 0 && (
               <div className="sor-topology-path mt-4 p-2 rounded bg-warning/10 border border-warning/30 text-xs">
-                <p className="font-medium text-warning mb-1">{t("topology.shortestPath", "Shortest Path")}</p>
-                <p>{t("topology.pathHops", "Hops: {{hops}}", { hops: topo.path.hops })}</p>
-                <p>{t("topology.pathWeight", "Weight: {{w}}", { w: topo.path.totalWeight.toFixed(2) })}</p>
+                <p className="font-medium text-warning mb-1">
+                  {t("topology.shortestPath", "Shortest Path")}
+                </p>
+                <p>
+                  {t("topology.pathHops", "Hops: {{hops}}", {
+                    hops: topo.path.hops,
+                  })}
+                </p>
+                <p>
+                  {t("topology.pathWeight", "Weight: {{w}}", {
+                    w: topo.path.totalWeight.toFixed(2),
+                  })}
+                </p>
                 <ol className="list-decimal list-inside mt-1 space-y-0.5">
                   {topo.path.path.map((nid) => {
                     const pn = nodeMap.current.get(nid);
@@ -677,7 +786,10 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
 
             {pathSource && !pathTarget && (
               <p className="mt-3 text-xs text-[var(--color-muted)] italic">
-                {t("topology.selectTarget", "Click a second node to complete the path.")}
+                {t(
+                  "topology.selectTarget",
+                  "Click a second node to complete the path.",
+                )}
               </p>
             )}
           </aside>

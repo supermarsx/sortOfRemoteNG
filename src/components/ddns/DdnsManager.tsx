@@ -197,10 +197,7 @@ const UpdateStatusBadge: React.FC<{ status: UpdateStatus }> = ({ status }) => {
 /*  Tab: Profiles                                                      */
 /* ------------------------------------------------------------------ */
 
-const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
-  mgr,
-  t,
-}) => {
+const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({ mgr, t }) => {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { toast } = useToastContext();
@@ -214,7 +211,8 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
     });
   };
 
-  const selectAll = () => setSelectedIds(new Set(mgr.profiles.map((p: DdnsProfile) => p.id)));
+  const selectAll = () =>
+    setSelectedIds(new Set(mgr.profiles.map((p: DdnsProfile) => p.id)));
   const deselectAll = () => setSelectedIds(new Set());
 
   const bulkEnable = async () => {
@@ -253,14 +251,17 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 
   useEffect(() => {
     mgr.listProfiles();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: load profiles once
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: load profiles once
 
   if (!mgr.profiles.length) {
     return (
       <EmptyState
         icon={Globe}
         message={t("ddns.profiles.empty", "No DDNS profiles")}
-        hint={t("ddns.profiles.emptyHint", "Create a profile to start managing dynamic DNS records")}
+        hint={t(
+          "ddns.profiles.emptyHint",
+          "Create a profile to start managing dynamic DNS records",
+        )}
       />
     );
   }
@@ -268,18 +269,30 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 mb-2">
-        <button onClick={selectAll} className="px-2 py-1 rounded bg-surfaceHover hover:bg-[var(--color-border)] text-xs">
+        <button
+          onClick={selectAll}
+          className="px-2 py-1 rounded bg-surfaceHover hover:bg-[var(--color-border)] text-xs"
+        >
           {t("ddns.profiles.selectAll", "Select All")}
         </button>
-        <button onClick={deselectAll} className="px-2 py-1 rounded bg-surfaceHover hover:bg-[var(--color-border)] text-xs">
+        <button
+          onClick={deselectAll}
+          className="px-2 py-1 rounded bg-surfaceHover hover:bg-[var(--color-border)] text-xs"
+        >
           {t("ddns.profiles.deselectAll", "Deselect All")}
         </button>
         {selectedIds.size > 0 && (
           <>
-            <button onClick={bulkEnable} className="px-2 py-1 rounded bg-success/20 hover:bg-success/30 text-success text-xs">
+            <button
+              onClick={bulkEnable}
+              className="px-2 py-1 rounded bg-success/20 hover:bg-success/30 text-success text-xs"
+            >
               {t("ddns.profiles.enableSelected", "Enable Selected")}
             </button>
-            <button onClick={bulkDisable} className="px-2 py-1 rounded bg-error/20 hover:bg-error/30 text-error text-xs">
+            <button
+              onClick={bulkDisable}
+              className="px-2 py-1 rounded bg-error/20 hover:bg-error/30 text-error text-xs"
+            >
               {t("ddns.profiles.disableSelected", "Disable Selected")}
             </button>
           </>
@@ -292,11 +305,9 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         >
           <input
             type="checkbox"
-            aria-label={t(
-              "ddns.profiles.selectProfile",
-              "Select {{name}}",
-              { name: p.name },
-            )}
+            aria-label={t("ddns.profiles.selectProfile", "Select {{name}}", {
+              name: p.name,
+            })}
             checked={selectedIds.has(p.id)}
             onChange={() => toggleSelected(p.id)}
             className="accent-primary w-4 h-4 flex-shrink-0"
@@ -375,14 +386,11 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 /*  Tab: Health                                                        */
 /* ------------------------------------------------------------------ */
 
-const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
-  mgr,
-  t,
-}) => {
+const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({ mgr, t }) => {
   useEffect(() => {
     mgr.getAllHealth();
     mgr.getSystemStatus();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: load health data once
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: load health data once
 
   return (
     <div className="space-y-4">
@@ -390,10 +398,26 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
       {mgr.systemStatus && (
         <div className="grid grid-cols-4 gap-3">
           {[
-            { label: t("ddns.health.total", "Total"), value: mgr.systemStatus.total_profiles, icon: Server },
-            { label: t("ddns.health.enabled", "Enabled"), value: mgr.systemStatus.enabled_profiles, icon: Power },
-            { label: t("ddns.health.healthy", "Healthy"), value: mgr.systemStatus.healthy_profiles, icon: CheckCircle2 },
-            { label: t("ddns.health.errors", "Errors"), value: mgr.systemStatus.error_profiles, icon: XCircle },
+            {
+              label: t("ddns.health.total", "Total"),
+              value: mgr.systemStatus.total_profiles,
+              icon: Server,
+            },
+            {
+              label: t("ddns.health.enabled", "Enabled"),
+              value: mgr.systemStatus.enabled_profiles,
+              icon: Power,
+            },
+            {
+              label: t("ddns.health.healthy", "Healthy"),
+              value: mgr.systemStatus.healthy_profiles,
+              icon: CheckCircle2,
+            },
+            {
+              label: t("ddns.health.errors", "Errors"),
+              value: mgr.systemStatus.error_profiles,
+              icon: XCircle,
+            },
           ].map((s) => (
             <div
               key={s.label}
@@ -413,7 +437,9 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           <div className="flex items-center gap-2">
             <Wifi size={14} className="text-text-muted" />
             <span className="text-text-secondary">IPv4:</span>
-            <span className="font-mono">{mgr.systemStatus.current_ipv4 ?? "—"}</span>
+            <span className="font-mono">
+              {mgr.systemStatus.current_ipv4 ?? "—"}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <Globe size={14} className="text-text-muted" />
@@ -430,7 +456,10 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         <EmptyState
           icon={Activity}
           message={t("ddns.health.empty", "No health data")}
-          hint={t("ddns.health.emptyHint", "Run an update to generate health data")}
+          hint={t(
+            "ddns.health.emptyHint",
+            "Run an update to generate health data",
+          )}
         />
       ) : (
         <div className="space-y-2">
@@ -450,9 +479,8 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                   <ProviderBadge provider={h.provider} />
                 </div>
                 <div className="text-xs text-text-muted truncate">
-                  {h.fqdn} ·{" "}
-                  {h.current_ipv4 ?? t("ddns.health.noIp", "no IP")} ·{" "}
-                  {h.success_count} {t("ddns.health.ok", "ok")} /{" "}
+                  {h.fqdn} · {h.current_ipv4 ?? t("ddns.health.noIp", "no IP")}{" "}
+                  · {h.success_count} {t("ddns.health.ok", "ok")} /{" "}
                   {h.failure_count} {t("ddns.health.fail", "fail")}
                 </div>
               </div>
@@ -473,10 +501,7 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 /*  Tab: Cloudflare                                                    */
 /* ------------------------------------------------------------------ */
 
-const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
-  mgr,
-  t,
-}) => {
+const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({ mgr, t }) => {
   const cfProfiles = mgr.profiles.filter(
     (p: DdnsProfile) => p.provider === "Cloudflare",
   );
@@ -506,7 +531,10 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           variant="form-sm"
           className="flex-1"
           options={[
-            { value: "", label: t("ddns.cloudflare.selectProfile", "Select profile...") },
+            {
+              value: "",
+              label: t("ddns.cloudflare.selectProfile", "Select profile..."),
+            },
             ...cfProfiles.map((p: DdnsProfile) => ({
               value: p.id,
               label: `${p.name} (${p.domain})`,
@@ -640,10 +668,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 /*  Tab: IP Detection                                                  */
 /* ------------------------------------------------------------------ */
 
-const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
-  mgr,
-  t,
-}) => (
+const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({ mgr, t }) => (
   <div className="space-y-4">
     <div className="flex items-center gap-3">
       <button
@@ -724,13 +749,10 @@ const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 /*  Tab: Scheduler                                                     */
 /* ------------------------------------------------------------------ */
 
-const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
-  mgr,
-  t,
-}) => {
+const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({ mgr, t }) => {
   useEffect(() => {
     mgr.getSchedulerStatus();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: load scheduler status once
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: load scheduler status once
 
   return (
     <div className="space-y-4">
@@ -839,14 +861,11 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 /*  Tab: Config                                                        */
 /* ------------------------------------------------------------------ */
 
-const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
-  mgr,
-  t,
-}) => {
+const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({ mgr, t }) => {
   useEffect(() => {
     mgr.getConfig();
     mgr.listProviders();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: load config once
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: load config once
 
   return (
     <div className="space-y-4">
@@ -912,7 +931,8 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         <div className="p-4 rounded bg-surface/50 space-y-3">
           <h4 className="text-sm font-semibold flex items-center gap-2">
             <Server size={14} />
-            {t("ddns.config.providers", "Supported providers")} ({mgr.providers.length})
+            {t("ddns.config.providers", "Supported providers")} (
+            {mgr.providers.length})
           </h4>
           <div className="grid grid-cols-2 gap-2">
             {mgr.providers.map((p: ProviderCapabilities) => (
@@ -955,15 +975,12 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 /*  Tab: Audit                                                         */
 /* ------------------------------------------------------------------ */
 
-const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
-  mgr,
-  t,
-}) => {
+const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({ mgr, t }) => {
   const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     mgr.getAuditLog();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: load audit log once
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: load audit log once
 
   return (
     <div className="space-y-3">
@@ -989,10 +1006,7 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         </button>
         {confirmClear ? (
           <DangerConfirm
-            action={t(
-              "ddns.confirm.clearAuditAction",
-              "clear the audit log",
-            )}
+            action={t("ddns.confirm.clearAuditAction", "clear the audit log")}
             onConfirm={() => {
               mgr.clearAudit();
               setConfirmClear(false);
@@ -1024,9 +1038,15 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               className="flex items-start gap-2 p-2 rounded bg-surface/50 text-xs"
             >
               {e.success ? (
-                <CheckCircle2 size={12} className="text-success mt-0.5 flex-shrink-0" />
+                <CheckCircle2
+                  size={12}
+                  className="text-success mt-0.5 flex-shrink-0"
+                />
               ) : (
-                <XCircle size={12} className="text-error mt-0.5 flex-shrink-0" />
+                <XCircle
+                  size={12}
+                  className="text-error mt-0.5 flex-shrink-0"
+                />
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -1139,7 +1159,8 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
             <button
               onClick={async () => {
                 const data = await mgr.exportProfiles();
-                if (data) navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+                if (data)
+                  navigator.clipboard.writeText(JSON.stringify(data, null, 2));
               }}
               className="px-3 py-1.5 rounded bg-surfaceHover hover:bg-surfaceHover text-xs"
             >

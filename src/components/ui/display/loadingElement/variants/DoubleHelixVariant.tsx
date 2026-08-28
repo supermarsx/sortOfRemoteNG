@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Double helix variant — two interleaved spirals on a sphere, offset by π.
  * Strand 1 uses the resolved `color`, strand 2 uses a `secondaryColor`
@@ -10,29 +10,41 @@
  * with a sharp k² falloff and a 0.06 floor so dots never go fully dark.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import type { CSSProperties } from 'react';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
-import { DEFAULT_DOUBLE_HELIX } from '../defaults';
-import { subscribeTicker } from '../runtime/rafCoordinator';
+import React, { useEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
+import { DEFAULT_DOUBLE_HELIX } from "../defaults";
+import { subscribeTicker } from "../runtime/rafCoordinator";
 
 const TAU = Math.PI * 2;
-const KEYFRAMES_FLAG = '__sorngHelixKfInjected';
+const KEYFRAMES_FLAG = "__sorngHelixKfInjected";
 
 function ensureKeyframes(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
   const w = window as unknown as Record<string, boolean | undefined>;
   if (w[KEYFRAMES_FLAG]) return;
-  const style = document.createElement('style');
-  style.textContent = '@keyframes sorng-helix-spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}';
+  const style = document.createElement("style");
+  style.textContent =
+    "@keyframes sorng-helix-spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}";
   document.head.appendChild(style);
   w[KEYFRAMES_FLAG] = true;
 }
 
-interface Item { el: HTMLSpanElement; f: number; strand: 0 | 1; }
+interface Item {
+  el: HTMLSpanElement;
+  f: number;
+  strand: 0 | 1;
+}
 
-const DoubleHelixVariant: React.FC<VariantRenderProps<'doubleHelix'>> = ({
-  size, color, config, paused, reducedMotion, className, style, ariaLabel,
+const DoubleHelixVariant: React.FC<VariantRenderProps<"doubleHelix">> = ({
+  size,
+  color,
+  config,
+  paused,
+  reducedMotion,
+  className,
+  style,
+  ariaLabel,
 }) => {
   ensureKeyframes();
 
@@ -40,8 +52,9 @@ const DoubleHelixVariant: React.FC<VariantRenderProps<'doubleHelix'>> = ({
   const itemsRef = useRef<Item[]>([]);
 
   const secondaryColor = useMemo<string>(() => {
-    const maybe = (config as unknown as { secondaryColor?: unknown }).secondaryColor;
-    return typeof maybe === 'string' && maybe.length > 0 ? maybe : '#ff2bd6';
+    const maybe = (config as unknown as { secondaryColor?: unknown })
+      .secondaryColor;
+    return typeof maybe === "string" && maybe.length > 0 ? maybe : "#ff2bd6";
   }, [config]);
 
   // (Re)build dots when size, turns, or perStrand change.
@@ -63,28 +76,31 @@ const DoubleHelixVariant: React.FC<VariantRenderProps<'doubleHelix'>> = ({
         const x = radius * Math.sin(phi) * Math.cos(theta);
         const y = radius * Math.sin(phi) * Math.sin(theta);
         const z = radius * Math.cos(phi);
-        const dot = document.createElement('span');
+        const dot = document.createElement("span");
         const s = dot.style;
-        s.position = 'absolute';
-        s.top = '50%';
-        s.left = '50%';
-        s.borderRadius = '50%';
+        s.position = "absolute";
+        s.top = "50%";
+        s.left = "50%";
+        s.borderRadius = "50%";
         s.background = c;
-        s.transformStyle = 'preserve-3d';
-        s.willChange = 'opacity, width, height';
+        s.transformStyle = "preserve-3d";
+        s.willChange = "opacity, width, height";
         s.transform = `translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,${z.toFixed(2)}px)`;
         s.width = `${dotPx}px`;
         s.height = `${dotPx}px`;
         s.marginLeft = `${-dotPx / 2}px`;
         s.marginTop = `${-dotPx / 2}px`;
-        s.opacity = '0.06';
+        s.opacity = "0.06";
         sphere.appendChild(dot);
         items.push({ el: dot, f, strand });
       }
       if (strand === 1) break;
     }
     itemsRef.current = items;
-    return () => { sphere.replaceChildren(); itemsRef.current = []; };
+    return () => {
+      sphere.replaceChildren();
+      itemsRef.current = [];
+    };
   }, [size, color, secondaryColor, config.turns, config.perStrand]);
 
   // Frame loop.
@@ -107,41 +123,55 @@ const DoubleHelixVariant: React.FC<VariantRenderProps<'doubleHelix'>> = ({
     width: size,
     height: size,
     perspective: Math.max(600, size * 3),
-    transform: 'rotateZ(28deg)',
+    transform: "rotateZ(28deg)",
     color,
-    display: 'inline-block',
+    display: "inline-block",
     ...style,
   };
   const sphereStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-    transformStyle: 'preserve-3d',
-    animation: reducedMotion ? undefined : `sorng-helix-spin ${config.spinSeconds}s linear infinite`,
-    animationPlayState: paused ? 'paused' : 'running',
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    transformStyle: "preserve-3d",
+    animation: reducedMotion
+      ? undefined
+      : `sorng-helix-spin ${config.spinSeconds}s linear infinite`,
+    animationPlayState: paused ? "paused" : "running",
   };
 
   return (
-    <div role="status" aria-label={ariaLabel} className={className} style={sceneStyle}>
+    <div
+      role="status"
+      aria-label={ariaLabel}
+      className={className}
+      style={sceneStyle}
+    >
       <div ref={sphereRef} style={sphereStyle} />
     </div>
   );
 };
 
-function paint(items: Item[], t: number, trailW: number, speed: number, size: number): void {
+function paint(
+  items: Item[],
+  t: number,
+  trailW: number,
+  speed: number,
+  size: number,
+): void {
   const dotPx = size / 100;
   const tw = Math.max(0.001, trailW);
   for (const it of items) {
     const dir = it.strand === 0 ? 1 : -1;
     const offset = it.strand === 0 ? 0 : 0.5;
-    const cursor = ((dir * t * speed * 0.1 + offset) % 1 + 1) % 1;
-    let d = Math.abs(it.f - cursor); if (d > 0.5) d = 1 - d;
+    const cursor = (((dir * t * speed * 0.1 + offset) % 1) + 1) % 1;
+    let d = Math.abs(it.f - cursor);
+    if (d > 0.5) d = 1 - d;
     const k = Math.max(0, 1 - d / tw);
     const peak = k * k;
     const opacity = 0.06 + 0.94 * peak;
     const scale = 1 + 1.8 * peak;
     const glow = 0.4 + 5 * peak;
-    const c = it.el.style.background || 'currentColor';
+    const c = it.el.style.background || "currentColor";
     const s = it.el.style;
     s.opacity = opacity.toFixed(3);
     const w = dotPx * scale;
@@ -156,23 +186,51 @@ function paint(items: Item[], t: number, trailW: number, speed: number, size: nu
   }
 }
 
-export const descriptor: VariantDescriptor<'doubleHelix'> = {
-  type: 'doubleHelix',
-  label: 'Double helix',
-  description: 'Two interleaved spirals on a sphere — counter-traveling brightness wavefronts.',
+export const descriptor: VariantDescriptor<"doubleHelix"> = {
+  type: "doubleHelix",
+  label: "Double helix",
+  description:
+    "Two interleaved spirals on a sphere — counter-traveling brightness wavefronts.",
   minRecommendedSize: 32,
   supportsCanvas: true,
   hasRaf: true,
   defaultConfig: DEFAULT_DOUBLE_HELIX,
-  presets: [{ id: 'classic', label: 'Classic', config: {} }],
+  presets: [{ id: "classic", label: "Classic", config: {} }],
   paramSchema: {
     fields: [
-      { key: 'turns', label: 'Turns', kind: 'integer', min: 3, max: 40 },
-      { key: 'perStrand', label: 'Per strand', kind: 'integer', min: 60, max: 500 },
-      { key: 'trail', label: 'Trail', kind: 'percent', min: 0.03, max: 0.5, step: 0.01 },
-      { key: 'speed', label: 'Speed', kind: 'number', min: 0, max: 4, step: 0.1 },
-      { key: 'spinSeconds', label: 'Spin period', kind: 'seconds', min: 3, max: 40, step: 1 },
-      { key: 'secondaryColor', label: 'Strand 2 color', kind: 'color' },
+      { key: "turns", label: "Turns", kind: "integer", min: 3, max: 40 },
+      {
+        key: "perStrand",
+        label: "Per strand",
+        kind: "integer",
+        min: 60,
+        max: 500,
+      },
+      {
+        key: "trail",
+        label: "Trail",
+        kind: "percent",
+        min: 0.03,
+        max: 0.5,
+        step: 0.01,
+      },
+      {
+        key: "speed",
+        label: "Speed",
+        kind: "number",
+        min: 0,
+        max: 4,
+        step: 0.1,
+      },
+      {
+        key: "spinSeconds",
+        label: "Spin period",
+        kind: "seconds",
+        min: 3,
+        max: 40,
+        step: 1,
+      },
+      { key: "secondaryColor", label: "Strand 2 color", kind: "color" },
     ],
   },
   component: DoubleHelixVariant,

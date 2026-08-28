@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * TV-static variant — Fibonacci sphere where every dot is independently
  * flickering on a fast random schedule, with a slow signal "band" sweeping
@@ -8,21 +8,22 @@
  * Ported from `prototypes/orb-previews/X4-tv-static.html`.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import type { CSSProperties } from 'react';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
-import { DEFAULT_TV_STATIC } from '../defaults';
-import { subscribeTicker } from '../runtime/rafCoordinator';
-import { goldenSphere } from '../runtime/fibonacciSphere';
+import React, { useEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
+import { DEFAULT_TV_STATIC } from "../defaults";
+import { subscribeTicker } from "../runtime/rafCoordinator";
+import { goldenSphere } from "../runtime/fibonacciSphere";
 
-const SPIN_KEYFRAMES_FLAG = '__sorngTvStaticKeyframes';
+const SPIN_KEYFRAMES_FLAG = "__sorngTvStaticKeyframes";
 
 function ensureKeyframes(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
   const w = window as unknown as Record<string, boolean | undefined>;
   if (w[SPIN_KEYFRAMES_FLAG]) return;
-  const style = document.createElement('style');
-  style.textContent = '@keyframes sorng-tvstatic-spin { to { transform: rotateY(360deg); } }';
+  const style = document.createElement("style");
+  style.textContent =
+    "@keyframes sorng-tvstatic-spin { to { transform: rotateY(360deg); } }";
   document.head.appendChild(style);
   w[SPIN_KEYFRAMES_FLAG] = true;
 }
@@ -32,7 +33,7 @@ interface Dot {
   lat: number;
 }
 
-const TvStaticVariant: React.FC<VariantRenderProps<'tvStatic'>> = ({
+const TvStaticVariant: React.FC<VariantRenderProps<"tvStatic">> = ({
   size,
   color,
   config,
@@ -54,31 +55,34 @@ const TvStaticVariant: React.FC<VariantRenderProps<'tvStatic'>> = ({
   useEffect(() => {
     const sphere = sphereRef.current;
     if (!sphere) return;
-    sphere.innerHTML = '';
+    sphere.innerHTML = "";
     const n = Math.max(1, Math.floor(config.dots));
     const pts = goldenSphere(n);
     const items: Dot[] = [];
     for (let i = 0; i < n; i++) {
       const p = pts[i];
-      const dot = document.createElement('span');
+      const dot = document.createElement("span");
       const s = dot.style;
-      s.position = 'absolute';
-      s.top = '50%';
-      s.left = '50%';
+      s.position = "absolute";
+      s.top = "50%";
+      s.left = "50%";
       s.width = `${baseDot.toFixed(2)}px`;
       s.height = `${baseDot.toFixed(2)}px`;
       s.marginLeft = `${(-baseDot / 2).toFixed(2)}px`;
       s.marginTop = `${(-baseDot / 2).toFixed(2)}px`;
-      s.borderRadius = '50%';
-      s.background = 'currentColor';
-      s.transformStyle = 'preserve-3d';
-      s.willChange = 'transform, opacity';
+      s.borderRadius = "50%";
+      s.background = "currentColor";
+      s.transformStyle = "preserve-3d";
+      s.willChange = "transform, opacity";
       s.transform = `translate3d(${(p.x * radius).toFixed(2)}px, ${(p.y * radius).toFixed(2)}px, ${(p.z * radius).toFixed(2)}px)`;
       sphere.appendChild(dot);
       items.push({ el: dot, lat: (p.y + 1) / 2 });
     }
     dotsRef.current = items;
-    return () => { sphere.innerHTML = ''; dotsRef.current = []; };
+    return () => {
+      sphere.innerHTML = "";
+      dotsRef.current = [];
+    };
   }, [size, config.dots, baseDot, radius]);
 
   // Static render for reduced motion.
@@ -95,33 +99,54 @@ const TvStaticVariant: React.FC<VariantRenderProps<'tvStatic'>> = ({
       renderFrame(dotsRef.current, t, baseDot, config.noise, config.band);
     });
     return unsub;
-  }, [reducedMotion, paused, baseDot, config.noise, config.band, config.dots, size]);
+  }, [
+    reducedMotion,
+    paused,
+    baseDot,
+    config.noise,
+    config.band,
+    config.dots,
+    size,
+  ]);
 
   const rootStyle: CSSProperties = {
     width: size,
     height: size,
     perspective: `${size * 3}px`,
     color,
-    display: 'inline-block',
+    display: "inline-block",
     ...style,
   };
   const sphereStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-    transformStyle: 'preserve-3d',
-    animation: reducedMotion ? undefined : 'sorng-tvstatic-spin 18s linear infinite',
-    animationPlayState: paused ? 'paused' : 'running',
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    transformStyle: "preserve-3d",
+    animation: reducedMotion
+      ? undefined
+      : "sorng-tvstatic-spin 18s linear infinite",
+    animationPlayState: paused ? "paused" : "running",
   };
 
   return (
-    <div role="status" aria-label={ariaLabel} className={className} style={rootStyle}>
+    <div
+      role="status"
+      aria-label={ariaLabel}
+      className={className}
+      style={rootStyle}
+    >
       <div ref={sphereRef} style={sphereStyle} />
     </div>
   );
 };
 
-function renderFrame(items: Dot[], t: number, baseDot: number, noise: number, band: number): void {
+function renderFrame(
+  items: Dot[],
+  t: number,
+  baseDot: number,
+  noise: number,
+  band: number,
+): void {
   const cursor = (t * 0.1) % 1;
   const w = Math.max(0.001, band);
   for (let i = 0; i < items.length; i++) {
@@ -146,25 +171,55 @@ function renderFrame(items: Dot[], t: number, baseDot: number, noise: number, ba
   }
 }
 
-export const descriptor: VariantDescriptor<'tvStatic'> = {
-  type: 'tvStatic',
-  label: 'TV static',
-  description: 'Globe of flickering dots with a slow signal band sweeping latitude.',
+export const descriptor: VariantDescriptor<"tvStatic"> = {
+  type: "tvStatic",
+  label: "TV static",
+  description:
+    "Globe of flickering dots with a slow signal band sweeping latitude.",
   minRecommendedSize: 32,
   supportsCanvas: true,
   hasRaf: true,
   boundsBleed: 0.1,
   defaultConfig: DEFAULT_TV_STATIC,
   presets: [
-    { id: 'classic', label: 'Classic', config: {} },
-    { id: 'soft-snow', label: 'Soft snow', config: { dots: 600, noise: 0.3, band: 0.3 } },
-    { id: 'sharp-band', label: 'Sharp band', config: { dots: 1500, noise: 0.2, band: 0.06 } },
+    { id: "classic", label: "Classic", config: {} },
+    {
+      id: "soft-snow",
+      label: "Soft snow",
+      config: { dots: 600, noise: 0.3, band: 0.3 },
+    },
+    {
+      id: "sharp-band",
+      label: "Sharp band",
+      config: { dots: 1500, noise: 0.2, band: 0.06 },
+    },
   ],
   paramSchema: {
     fields: [
-      { key: 'dots', label: 'Dots', kind: 'integer', min: 200, max: 2000, step: 100 },
-      { key: 'noise', label: 'Noise', kind: 'percent', min: 0, max: 1, step: 0.05 },
-      { key: 'band', label: 'Band width', kind: 'percent', min: 0.02, max: 0.5, step: 0.01 },
+      {
+        key: "dots",
+        label: "Dots",
+        kind: "integer",
+        min: 200,
+        max: 2000,
+        step: 100,
+      },
+      {
+        key: "noise",
+        label: "Noise",
+        kind: "percent",
+        min: 0,
+        max: 1,
+        step: 0.05,
+      },
+      {
+        key: "band",
+        label: "Band width",
+        kind: "percent",
+        min: 0.02,
+        max: 0.5,
+        step: 0.01,
+      },
     ],
   },
   component: TvStaticVariant,

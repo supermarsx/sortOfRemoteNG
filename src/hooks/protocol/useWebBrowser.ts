@@ -744,7 +744,7 @@ export function useWebBrowser(session: ConnectionSession) {
   // Initial load
   useEffect(() => {
     navigateToUrl(currentUrl);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: initial navigation
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: initial navigation
 
   // Cleanup proxy and timeout on unmount
   useEffect(() => {
@@ -1320,8 +1320,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const handleSaveHarRecording = useCallback(
     async (name: string) => {
       const recording = pendingRecordingRef.current as
-        | import("../../types/recording/macroTypes").WebRecording
-        | null;
+        import("../../types/recording/macroTypes").WebRecording | null;
       if (!recording) return;
       await macroService.saveWebRecording({
         id: crypto.randomUUID(),

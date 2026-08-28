@@ -4,9 +4,7 @@ import LoadingSpinner from "./LoadingSpinner";
 import React, { useEffect, useState } from "react";
 import { LayoutTemplate, RefreshCw, Trash2 } from "lucide-react";
 
-const TemplatesTab: React.FC<{ wa: WaMgr }> = ({
-  wa,
-}) => {
+const TemplatesTab: React.FC<{ wa: WaMgr }> = ({ wa }) => {
   const [templates, setTemplates] = useState<WaTemplateInfo[]>([]);
 
   const loadTemplates = async () => {
@@ -16,7 +14,7 @@ const TemplatesTab: React.FC<{ wa: WaMgr }> = ({
 
   useEffect(() => {
     loadTemplates();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only: initial template load
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: initial template load
 
   const handleDelete = async (name: string) => {
     await wa.deleteTemplate.execute(name);
@@ -30,8 +28,16 @@ const TemplatesTab: React.FC<{ wa: WaMgr }> = ({
           <LayoutTemplate size={16} />
           <span>Message Templates</span>
         </h3>
-        <button onClick={loadTemplates} className="sor-icon-btn-sm" title="Refresh">
-          {wa.listTemplates.loading ? <LoadingSpinner /> : <RefreshCw size={14} />}
+        <button
+          onClick={loadTemplates}
+          className="sor-icon-btn-sm"
+          title="Refresh"
+        >
+          {wa.listTemplates.loading ? (
+            <LoadingSpinner />
+          ) : (
+            <RefreshCw size={14} />
+          )}
         </button>
       </div>
       <ErrorMsg msg={wa.listTemplates.error} />
@@ -39,7 +45,8 @@ const TemplatesTab: React.FC<{ wa: WaMgr }> = ({
       <div className="space-y-2">
         {templates.length === 0 && (
           <p className="text-xs text-[var(--color-textSecondary)]">
-            No templates found. Create them in Meta Business Manager or via the API.
+            No templates found. Create them in Meta Business Manager or via the
+            API.
           </p>
         )}
         {templates.map((t) => (

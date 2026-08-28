@@ -76,10 +76,7 @@ export type IdracTab =
   | "racadm";
 
 export type ConnectionState =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "error";
+  "disconnected" | "connecting" | "connected" | "error";
 
 export interface IdracInitialConnection {
   host: string;
@@ -783,7 +780,7 @@ export function useIdracManager(
     if (connectionState === "connected") {
       loadTabData(activeTab);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load tab data when connection established
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- load tab data when connection established
   }, [connectionState]);
 
   // ── Power Actions ────────────────────────────────

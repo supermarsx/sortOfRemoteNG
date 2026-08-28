@@ -34,8 +34,9 @@ export function useConnectionDiagnostics(connection: Connection) {
   const diag = settings.diagnostics;
 
   /* ── state ── */
-  const [results, setResults] =
-    useState<DiagnosticResults>(initialDiagnosticResults);
+  const [results, setResults] = useState<DiagnosticResults>(
+    initialDiagnosticResults,
+  );
   const [isRunning, setIsRunning] = useState(false);
   const [currentStep, setCurrentStep] = useState("");
   const [protocolReport, setProtocolReport] =
@@ -98,9 +99,7 @@ export function useConnectionDiagnostics(connection: Connection) {
 
     if (results.dnsResult) {
       lines.push(`--- DNS Resolution ---`);
-      lines.push(
-        `Status: ${results.dnsResult.success ? "Success" : "Failed"}`,
-      );
+      lines.push(`Status: ${results.dnsResult.success ? "Success" : "Failed"}`);
       if (results.dnsResult.success) {
         lines.push(
           `Resolved IPs: ${results.dnsResult.resolved_ips.join(", ")}`,
@@ -255,9 +254,7 @@ export function useConnectionDiagnostics(connection: Connection) {
         `Asymmetry Detected: ${results.asymmetricRouting.asymmetry_detected ? "Yes" : "No"}`,
       );
       lines.push(`Confidence: ${results.asymmetricRouting.confidence}`);
-      lines.push(
-        `Path Stability: ${results.asymmetricRouting.path_stability}`,
-      );
+      lines.push(`Path Stability: ${results.asymmetricRouting.path_stability}`);
       if (results.asymmetricRouting.latency_variance != null)
         lines.push(
           `Latency Variance: ${results.asymmetricRouting.latency_variance.toFixed(2)}ms`,
@@ -309,9 +306,7 @@ export function useConnectionDiagnostics(connection: Connection) {
 
     if (results.leakageDetection) {
       lines.push(`--- Proxy/VPN Leakage Detection ---`);
-      lines.push(
-        `Overall Status: ${results.leakageDetection.overall_status}`,
-      );
+      lines.push(`Overall Status: ${results.leakageDetection.overall_status}`);
       lines.push(
         `DNS Leak Detected: ${results.leakageDetection.dns_leak_detected ? "Yes" : "No"}`,
       );
@@ -319,9 +314,7 @@ export function useConnectionDiagnostics(connection: Connection) {
         `IP Mismatch: ${results.leakageDetection.ip_mismatch_detected ? "Yes" : "No"}`,
       );
       if (results.leakageDetection.detected_public_ip)
-        lines.push(
-          `Public IP: ${results.leakageDetection.detected_public_ip}`,
-        );
+        lines.push(`Public IP: ${results.leakageDetection.detected_public_ip}`);
       if (results.leakageDetection.dns_servers_detected.length > 0)
         lines.push(
           `DNS Servers: ${results.leakageDetection.dns_servers_detected.join(", ")}`,
@@ -357,16 +350,11 @@ export function useConnectionDiagnostics(connection: Connection) {
       .writeText(lines.join("\n"))
       .then(() => {
         toast.success(
-          t(
-            "diagnostics.copiedToClipboard",
-            "Diagnostics copied to clipboard",
-          ),
+          t("diagnostics.copiedToClipboard", "Diagnostics copied to clipboard"),
         );
       })
       .catch(() => {
-        toast.error(
-          t("diagnostics.copyFailed", "Failed to copy to clipboard"),
-        );
+        toast.error(t("diagnostics.copyFailed", "Failed to copy to clipboard"));
       });
   }, [connection, results, protocolReport, t, toast]);
 
@@ -381,9 +369,7 @@ export function useConnectionDiagnostics(connection: Connection) {
 
     const isTauri =
       typeof window !== "undefined" &&
-      Boolean(
-        (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-      );
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
 
     if (!isTauri) {
       setResults({
@@ -411,22 +397,43 @@ export function useConnectionDiagnostics(connection: Connection) {
       /* Thread 1: Internet & Gateway connectivity */
       const networkChecksPromise = Promise.allSettled([
         invoke<PingResult>("ping_host_detailed", {
-          host: "8.8.8.8", count: 1, timeoutSecs: diag.pingTimeoutSecs,
+          host: "8.8.8.8",
+          count: 1,
+          timeoutSecs: diag.pingTimeoutSecs,
         }),
-        invoke<PingResult>("ping_gateway", { timeout_secs: diag.pingTimeoutSecs }),
+        invoke<PingResult>("ping_gateway", {
+          timeout_secs: diag.pingTimeoutSecs,
+        }),
       ]).then(([internetRes, gatewayRes]) => {
         setResults((prev) => ({
           ...prev,
-          internetCheck: internetRes.status === "fulfilled" && internetRes.value.success ? "success" : "failed",
-          gatewayCheck: gatewayRes.status === "fulfilled" && gatewayRes.value.success ? "success" : "failed",
+          internetCheck:
+            internetRes.status === "fulfilled" && internetRes.value.success
+              ? "success"
+              : "failed",
+          gatewayCheck:
+            gatewayRes.status === "fulfilled" && gatewayRes.value.success
+              ? "success"
+              : "failed",
         }));
       });
 
       /* Thread 2: DNS + target ping + port check + IP classification */
       const targetChecksPromise = Promise.allSettled([
-        invoke<DnsResult>("dns_lookup", { host: connection.hostname, timeoutSecs: diag.pingTimeoutSecs }),
-        invoke<PingResult>("ping_host_detailed", { host: connection.hostname, count: 1, timeoutSecs: diag.pingTimeoutSecs }),
-        invoke<PortCheckResult>("check_port", { host: connection.hostname, port, timeoutSecs: diag.portCheckTimeoutSecs }),
+        invoke<DnsResult>("dns_lookup", {
+          host: connection.hostname,
+          timeoutSecs: diag.pingTimeoutSecs,
+        }),
+        invoke<PingResult>("ping_host_detailed", {
+          host: connection.hostname,
+          count: 1,
+          timeoutSecs: diag.pingTimeoutSecs,
+        }),
+        invoke<PortCheckResult>("check_port", {
+          host: connection.hostname,
+          port,
+          timeoutSecs: diag.portCheckTimeoutSecs,
+        }),
       ]).then(async ([dnsRes, subnetRes, portRes]) => {
         if (dnsRes.status === "fulfilled") {
           const dnsResult = dnsRes.value;
@@ -434,43 +441,84 @@ export function useConnectionDiagnostics(connection: Connection) {
           resolvedDnsIp = dnsResult.resolved_ips[0];
           if (dnsResult.success && dnsResult.resolved_ips.length > 0) {
             try {
-              const classification = await invoke<IpClassification>("classify_ip", { ip: dnsResult.resolved_ips[0] });
-              setResults((prev) => ({ ...prev, ipClassification: classification }));
-            } catch { /* optional */ }
+              const classification = await invoke<IpClassification>(
+                "classify_ip",
+                { ip: dnsResult.resolved_ips[0] },
+              );
+              setResults((prev) => ({
+                ...prev,
+                ipClassification: classification,
+              }));
+            } catch {
+              /* optional */
+            }
           }
         } else {
           try {
-            const classification = await invoke<IpClassification>("classify_ip", { ip: connection.hostname });
-            setResults((prev) => ({ ...prev, ipClassification: classification }));
-          } catch { /* not a valid IP */ }
+            const classification = await invoke<IpClassification>(
+              "classify_ip",
+              { ip: connection.hostname },
+            );
+            setResults((prev) => ({
+              ...prev,
+              ipClassification: classification,
+            }));
+          } catch {
+            /* not a valid IP */
+          }
         }
         setResults((prev) => ({
           ...prev,
-          subnetCheck: subnetRes.status === "fulfilled" && subnetRes.value.success ? "success" : "failed",
+          subnetCheck:
+            subnetRes.status === "fulfilled" && subnetRes.value.success
+              ? "success"
+              : "failed",
         }));
         if (portRes.status === "fulfilled") {
           setResults((prev) => ({ ...prev, portCheck: portRes.value }));
         } else {
-          setResults((prev) => ({ ...prev, portCheck: { port, open: false, time_ms: undefined } }));
+          setResults((prev) => ({
+            ...prev,
+            portCheck: { port, open: false, time_ms: undefined },
+          }));
         }
       });
 
       /* Thread 3: Traceroute (long-running, independent) */
       const traceroutePromise = invoke<TracerouteHop[]>("traceroute", {
-        host: connection.hostname, maxHops: diag.tracerouteMaxHops, timeoutSecs: diag.tracerouteTimeoutSecs,
-      }).then((r) => setResults((prev) => ({ ...prev, traceroute: r }))).catch((e) => console.error("Traceroute failed:", e));
+        host: connection.hostname,
+        maxHops: diag.tracerouteMaxHops,
+        timeoutSecs: diag.tracerouteTimeoutSecs,
+      })
+        .then((r) => setResults((prev) => ({ ...prev, traceroute: r })))
+        .catch((e) => console.error("Traceroute failed:", e));
 
       /* Thread 4: Advanced diagnostics — TCP timing, ICMP, fingerprint, TLS, MTU */
       const advancedChecksPromise = Promise.allSettled([
-        invoke<TcpTimingResult>("tcp_connection_timing", { host: connection.hostname, port, timeoutSecs: diag.tcpTimingTimeoutSecs }),
+        invoke<TcpTimingResult>("tcp_connection_timing", {
+          host: connection.hostname,
+          port,
+          timeoutSecs: diag.tcpTimingTimeoutSecs,
+        }),
         diag.icmpBlockadeEnabled
-          ? invoke<IcmpBlockadeResult>("detect_icmp_blockade", { host: connection.hostname, port })
+          ? invoke<IcmpBlockadeResult>("detect_icmp_blockade", {
+              host: connection.hostname,
+              port,
+            })
           : Promise.resolve(null),
         diag.serviceFingerprintEnabled
-          ? invoke<ServiceFingerprint>("fingerprint_service", { host: connection.hostname, port })
+          ? invoke<ServiceFingerprint>("fingerprint_service", {
+              host: connection.hostname,
+              port,
+            })
           : Promise.resolve(null),
-        diag.tlsCheckEnabled && ([443, 8443, 993, 995, 465, 636].includes(port) || connection.protocol === "https")
-          ? invoke<TlsCheckResult>("check_tls", { host: connection.hostname, port })
+        diag.tlsCheckEnabled &&
+        ([443, 8443, 993, 995, 465, 636].includes(port) ||
+          connection.protocol === "https")
+          ? invoke<TlsCheckResult>("check_tls", {
+              host: connection.hostname,
+              port,
+            })
           : Promise.resolve(null),
         diag.mtuCheckEnabled
           ? invoke<MtuCheckResult>("check_mtu", { host: connection.hostname })
@@ -480,7 +528,8 @@ export function useConnectionDiagnostics(connection: Connection) {
           ...prev,
           tcpTiming: tcpRes.status === "fulfilled" ? tcpRes.value : null,
           icmpBlockade: icmpRes.status === "fulfilled" ? icmpRes.value : null,
-          serviceFingerprint: fingerprintRes.status === "fulfilled" ? fingerprintRes.value : null,
+          serviceFingerprint:
+            fingerprintRes.status === "fulfilled" ? fingerprintRes.value : null,
           tlsCheck: tlsRes.status === "fulfilled" ? tlsRes.value : null,
           mtuCheck: mtuRes.status === "fulfilled" ? mtuRes.value : null,
         }));
@@ -488,31 +537,54 @@ export function useConnectionDiagnostics(connection: Connection) {
 
       /* Thread 5: Extended diagnostics — routing, geo, UDP, leakage */
       const targetIp = connection.hostname; // best-effort, DNS might not have resolved yet
-      const udpPorts: Record<string, number> = { dns: 53, ntp: 123, snmp: 161, tftp: 69, dhcp: 67 };
-      const udpPort = udpPorts[connection.protocol.toLowerCase()] || ([53, 123, 161, 162, 69, 67, 68, 500].includes(port) ? port : null);
+      const udpPorts: Record<string, number> = {
+        dns: 53,
+        ntp: 123,
+        snmp: 161,
+        tftp: 69,
+        dhcp: 67,
+      };
+      const udpPort =
+        udpPorts[connection.protocol.toLowerCase()] ||
+        ([53, 123, 161, 162, 69, 67, 68, 500].includes(port) ? port : null);
       const configuredProxyHost = connection.security?.proxy?.host;
-      const usesProxyPath = Boolean(connection.security?.proxy?.enabled || connection.proxyChainId || connection.connectionChainId);
+      const usesProxyPath = Boolean(
+        connection.security?.proxy?.enabled ||
+        connection.proxyChainId ||
+        connection.connectionChainId,
+      );
 
       const extendedChecksPromise = Promise.allSettled([
         diag.asymmetricRoutingEnabled
-          ? invoke<AsymmetricRoutingResult>("detect_asymmetric_routing", { host: connection.hostname, sampleCount: diag.asymmetricRoutingSamples })
+          ? invoke<AsymmetricRoutingResult>("detect_asymmetric_routing", {
+              host: connection.hostname,
+              sampleCount: diag.asymmetricRoutingSamples,
+            })
           : Promise.resolve(null),
         diag.ipGeoEnabled
           ? invoke<IpGeoInfo>("lookup_ip_geo", { ip: targetIp })
           : Promise.resolve(null),
         diag.udpProbeEnabled && udpPort
-          ? invoke<UdpProbeResult>("probe_udp_port", { host: connection.hostname, port: udpPort, timeoutMs: diag.udpProbeTimeoutMs })
+          ? invoke<UdpProbeResult>("probe_udp_port", {
+              host: connection.hostname,
+              port: udpPort,
+              timeoutMs: diag.udpProbeTimeoutMs,
+            })
           : Promise.resolve(null),
         diag.leakageDetectionEnabled && usesProxyPath
-          ? invoke<LeakageDetectionResult>("detect_proxy_leakage", { expectedExitIp: configuredProxyHost })
+          ? invoke<LeakageDetectionResult>("detect_proxy_leakage", {
+              expectedExitIp: configuredProxyHost,
+            })
           : Promise.resolve(null),
       ]).then(([asymmetricRes, geoRes, udpRes, leakageRes]) => {
         setResults((prev) => ({
           ...prev,
-          asymmetricRouting: asymmetricRes.status === "fulfilled" ? asymmetricRes.value : null,
+          asymmetricRouting:
+            asymmetricRes.status === "fulfilled" ? asymmetricRes.value : null,
           ipGeoInfo: geoRes.status === "fulfilled" ? geoRes.value : null,
           udpProbe: udpRes.status === "fulfilled" ? udpRes.value : null,
-          leakageDetection: leakageRes.status === "fulfilled" ? leakageRes.value : null,
+          leakageDetection:
+            leakageRes.status === "fulfilled" ? leakageRes.value : null,
         }));
       });
 
@@ -526,16 +598,32 @@ export function useConnectionDiagnostics(connection: Connection) {
         try {
           let report: ProtocolDiagnosticReport | null = null;
           if (proto === "ssh") {
-            report = await invoke<ProtocolDiagnosticReport>("diagnose_ssh_connection", {
-              host: connection.hostname, port, username: connection.username || "",
-              password: connection.password || null, privateKeyPath: connection.privateKey || null,
-              privateKeyPassphrase: null, connectTimeoutSecs: diag.protocolDiagTimeoutSecs,
-            });
+            report = await invoke<ProtocolDiagnosticReport>(
+              "diagnose_ssh_connection",
+              {
+                host: connection.hostname,
+                port,
+                username: connection.username || "",
+                password: connection.password || null,
+                privateKeyPath: connection.privateKey || null,
+                privateKeyPassphrase: null,
+                connectTimeoutSecs: diag.protocolDiagTimeoutSecs,
+              },
+            );
           } else if (proto === "http" || proto === "https") {
-            report = await invoke<ProtocolDiagnosticReport>("diagnose_http_connection", {
-              host: connection.hostname, port, useTls: proto === "https",
-              path: "/", method: "GET", expectedStatus: null, connectTimeoutSecs: diag.protocolDiagTimeoutSecs, verifySsl: true,
-            });
+            report = await invoke<ProtocolDiagnosticReport>(
+              "diagnose_http_connection",
+              {
+                host: connection.hostname,
+                port,
+                useTls: proto === "https",
+                path: "/",
+                method: "GET",
+                expectedStatus: null,
+                connectTimeoutSecs: diag.protocolDiagTimeoutSecs,
+                verifySsl: true,
+              },
+            );
           } else if (proto === "rdp") {
             // Pass the connection's REAL RDP settings under the `rdpSettings` key.
             // The backend command param is `rdp_settings` (no serde rename_all on the
@@ -547,11 +635,17 @@ export function useConnectionDiagnostics(connection: Connection) {
             // mirroring how `connect_rdp` is invoked. When the connection has no RDP
             // settings, send an empty object so the backend applies its own defaults
             // rather than receiving a dropped/absent arg.
-            report = await invoke<ProtocolDiagnosticReport>("diagnose_rdp_connection", {
-              host: connection.hostname, port, username: connection.username || "",
-              password: connection.password || "", domain: connection.domain || null,
-              rdpSettings: connection.rdpSettings ?? {},
-            });
+            report = await invoke<ProtocolDiagnosticReport>(
+              "diagnose_rdp_connection",
+              {
+                host: connection.hostname,
+                port,
+                username: connection.username || "",
+                password: connection.password || "",
+                domain: connection.domain || null,
+                rdpSettings: connection.rdpSettings ?? {},
+              },
+            );
           }
           setProtocolReport(report);
         } catch (err) {
@@ -577,7 +671,9 @@ export function useConnectionDiagnostics(connection: Connection) {
       for (let i = 0; i < diag.pingCount; i++) {
         try {
           const pingResult = await invoke<PingResult>("ping_host_detailed", {
-            host: connection.hostname, count: 1, timeoutSecs: diag.pingTimeoutSecs,
+            host: connection.hostname,
+            count: 1,
+            timeoutSecs: diag.pingTimeoutSecs,
           });
           pings.push(pingResult);
           setResults((prev) => ({ ...prev, pings: [...pings] }));
@@ -585,7 +681,9 @@ export function useConnectionDiagnostics(connection: Connection) {
           pings.push({ success: false, error: String(error) });
           setResults((prev) => ({ ...prev, pings: [...pings] }));
         }
-        await new Promise((resolve) => setTimeout(resolve, diag.pingIntervalMs));
+        await new Promise((resolve) =>
+          setTimeout(resolve, diag.pingIntervalMs),
+        );
       }
 
       // Protocol diagnostics already ran in parallel above (Thread 6)
@@ -602,7 +700,7 @@ export function useConnectionDiagnostics(connection: Connection) {
     if (diag.autoRunOnOpen) {
       runDiagnostics();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: auto-run diagnostics once
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: auto-run diagnostics once
   }, []);
 
   return {

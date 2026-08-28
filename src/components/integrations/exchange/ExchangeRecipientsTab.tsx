@@ -87,12 +87,7 @@ const col = (
 ): Column => ({ key, labelDefault, get });
 
 type SectionKey =
-  | "mailboxes"
-  | "groups"
-  | "contacts"
-  | "users"
-  | "shared"
-  | "archive";
+  "mailboxes" | "groups" | "contacts" | "users" | "shared" | "archive";
 
 interface SectionDef {
   key: SectionKey;
@@ -306,20 +301,12 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         clearItems();
         return Promise.resolve();
     }
-  }, [
-    activeKey,
-    groupMode,
-    sharedMode,
-    filter,
-    rsNum,
-    loadList,
-    clearItems,
-  ]);
+  }, [activeKey, groupMode, sharedMode, filter, rsNum, loadList, clearItems]);
 
   // Reset filters and load defaults on section / mode change.
   useEffect(() => {
     if (activeKey !== "archive") void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [activeKey, groupMode, sharedMode]);
 
   const rows = items as Row[];
@@ -362,9 +349,13 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
   const confirmDelete = useCallback(
     (item: string) =>
       window.confirm(
-        t("integrations.exchange.recipients.confirmDelete", "Delete {{item}}?", {
-          item,
-        }),
+        t(
+          "integrations.exchange.recipients.confirmDelete",
+          "Delete {{item}}?",
+          {
+            item,
+          },
+        ),
       ),
     [t],
   );
@@ -409,34 +400,77 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         case "mailboxes":
           return (
             <>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getMailbox(id))}>
+              <button
+                className={btn}
+                onClick={() => void openInspect(id, () => exApi.getMailbox(id))}
+              >
                 {t("integrations.exchange.recipients.view", "View")}
               </button>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getMailboxStatistics(id))}>
-                {t("integrations.exchange.recipients.stats", "Stats")}
-              </button>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getMailboxPermissions(id))}>
-                {t("integrations.exchange.recipients.perms", "Perms")}
-              </button>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getForwarding(id))}>
-                {t("integrations.exchange.recipients.forwarding", "Fwd")}
-              </button>
-              <button className={btn} onClick={() => openMailboxPermission(id, true)}>+perm</button>
-              <button className={btn} onClick={() => openMailboxPermission(id, false)}>-perm</button>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getOoo(id))}>
-                {t("integrations.exchange.recipients.ooo", "OOO")}
-              </button>
-              <button className={btn} onClick={() => openSetOoo(id)}>set-OOO</button>
-              <button className={btn} onClick={() => openUpdateMailbox(id)}>
-                {t("integrations.exchange.recipients.edit", "Edit")}
-              </button>
-              <button className={btn} onClick={() => openConvert(id)}>convert</button>
-              <button className={btn} onClick={() => openEnable(id)}>enable</button>
-              <button className={btn} onClick={() => void afterMutate(() => exApi.disableMailbox(id))}>disable</button>
               <button
                 className={btn}
                 onClick={() =>
-                  confirmDelete(id) && void afterMutate(() => exApi.removeMailbox(id))
+                  void openInspect(id, () => exApi.getMailboxStatistics(id))
+                }
+              >
+                {t("integrations.exchange.recipients.stats", "Stats")}
+              </button>
+              <button
+                className={btn}
+                onClick={() =>
+                  void openInspect(id, () => exApi.getMailboxPermissions(id))
+                }
+              >
+                {t("integrations.exchange.recipients.perms", "Perms")}
+              </button>
+              <button
+                className={btn}
+                onClick={() =>
+                  void openInspect(id, () => exApi.getForwarding(id))
+                }
+              >
+                {t("integrations.exchange.recipients.forwarding", "Fwd")}
+              </button>
+              <button
+                className={btn}
+                onClick={() => openMailboxPermission(id, true)}
+              >
+                +perm
+              </button>
+              <button
+                className={btn}
+                onClick={() => openMailboxPermission(id, false)}
+              >
+                -perm
+              </button>
+              <button
+                className={btn}
+                onClick={() => void openInspect(id, () => exApi.getOoo(id))}
+              >
+                {t("integrations.exchange.recipients.ooo", "OOO")}
+              </button>
+              <button className={btn} onClick={() => openSetOoo(id)}>
+                set-OOO
+              </button>
+              <button className={btn} onClick={() => openUpdateMailbox(id)}>
+                {t("integrations.exchange.recipients.edit", "Edit")}
+              </button>
+              <button className={btn} onClick={() => openConvert(id)}>
+                convert
+              </button>
+              <button className={btn} onClick={() => openEnable(id)}>
+                enable
+              </button>
+              <button
+                className={btn}
+                onClick={() => void afterMutate(() => exApi.disableMailbox(id))}
+              >
+                disable
+              </button>
+              <button
+                className={btn}
+                onClick={() =>
+                  confirmDelete(id) &&
+                  void afterMutate(() => exApi.removeMailbox(id))
                 }
               >
                 <Trash2 size={12} />
@@ -446,21 +480,37 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         case "groups":
           return (
             <>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getGroup(id))}>
+              <button
+                className={btn}
+                onClick={() => void openInspect(id, () => exApi.getGroup(id))}
+              >
                 {t("integrations.exchange.recipients.view", "View")}
               </button>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.listGroupMembers(id))}>
+              <button
+                className={btn}
+                onClick={() =>
+                  void openInspect(id, () => exApi.listGroupMembers(id))
+                }
+              >
                 {t("integrations.exchange.recipients.members", "Members")}
               </button>
-              <button className={btn} onClick={() => openGroupMember(id, true)}>+member</button>
-              <button className={btn} onClick={() => openGroupMember(id, false)}>-member</button>
+              <button className={btn} onClick={() => openGroupMember(id, true)}>
+                +member
+              </button>
+              <button
+                className={btn}
+                onClick={() => openGroupMember(id, false)}
+              >
+                -member
+              </button>
               <button className={btn} onClick={() => openUpdateGroup(id)}>
                 {t("integrations.exchange.recipients.edit", "Edit")}
               </button>
               <button
                 className={btn}
                 onClick={() =>
-                  confirmDelete(id) && void afterMutate(() => exApi.removeGroup(id))
+                  confirmDelete(id) &&
+                  void afterMutate(() => exApi.removeGroup(id))
                 }
               >
                 <Trash2 size={12} />
@@ -470,7 +520,12 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         case "contacts":
           return (
             <>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getMailContact(id))}>
+              <button
+                className={btn}
+                onClick={() =>
+                  void openInspect(id, () => exApi.getMailContact(id))
+                }
+              >
                 {t("integrations.exchange.recipients.view", "View")}
               </button>
               <button className={btn} onClick={() => openUpdateContact(id)}>
@@ -479,7 +534,8 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
               <button
                 className={btn}
                 onClick={() =>
-                  confirmDelete(id) && void afterMutate(() => exApi.removeMailContact(id))
+                  confirmDelete(id) &&
+                  void afterMutate(() => exApi.removeMailContact(id))
                 }
               >
                 <Trash2 size={12} />
@@ -489,13 +545,19 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         case "users":
           return (
             <>
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getMailUser(id))}>
+              <button
+                className={btn}
+                onClick={() =>
+                  void openInspect(id, () => exApi.getMailUser(id))
+                }
+              >
                 {t("integrations.exchange.recipients.view", "View")}
               </button>
               <button
                 className={btn}
                 onClick={() =>
-                  confirmDelete(id) && void afterMutate(() => exApi.removeMailUser(id))
+                  confirmDelete(id) &&
+                  void afterMutate(() => exApi.removeMailUser(id))
                 }
               >
                 <Trash2 size={12} />
@@ -505,19 +567,52 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         case "shared":
           if (sharedMode === "roomLists") {
             return (
-              <button className={btn} onClick={() => void openInspect(id, () => exApi.getGroup(id))}>
+              <button
+                className={btn}
+                onClick={() => void openInspect(id, () => exApi.getGroup(id))}
+              >
                 {t("integrations.exchange.recipients.view", "View")}
               </button>
             );
           }
           return (
             <>
-              <button className={btn} onClick={() => openTrustee(id, "automap", true)}>+automap</button>
-              <button className={btn} onClick={() => openTrustee(id, "automap", false)}>-automap</button>
-              <button className={btn} onClick={() => openTrustee(id, "sendAs", true)}>+sendAs</button>
-              <button className={btn} onClick={() => openTrustee(id, "sendAs", false)}>-sendAs</button>
-              <button className={btn} onClick={() => openTrustee(id, "sob", true)}>+onBehalf</button>
-              <button className={btn} onClick={() => openTrustee(id, "sob", false)}>-onBehalf</button>
+              <button
+                className={btn}
+                onClick={() => openTrustee(id, "automap", true)}
+              >
+                +automap
+              </button>
+              <button
+                className={btn}
+                onClick={() => openTrustee(id, "automap", false)}
+              >
+                -automap
+              </button>
+              <button
+                className={btn}
+                onClick={() => openTrustee(id, "sendAs", true)}
+              >
+                +sendAs
+              </button>
+              <button
+                className={btn}
+                onClick={() => openTrustee(id, "sendAs", false)}
+              >
+                -sendAs
+              </button>
+              <button
+                className={btn}
+                onClick={() => openTrustee(id, "sob", true)}
+              >
+                +onBehalf
+              </button>
+              <button
+                className={btn}
+                onClick={() => openTrustee(id, "sob", false)}
+              >
+                -onBehalf
+              </button>
             </>
           );
         default:
@@ -525,7 +620,7 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
       }
     },
     // handlers are stable closures defined below; deps kept minimal on purpose
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
     [activeKey, sharedMode, t, openInspect, afterMutate, confirmDelete],
   );
 
@@ -534,28 +629,40 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
     switch (activeKey) {
       case "mailboxes":
         setEditor({
-          title: t("integrations.exchange.recipients.editor.createMailbox", "Create mailbox"),
+          title: t(
+            "integrations.exchange.recipients.editor.createMailbox",
+            "Create mailbox",
+          ),
           json: CREATE_MAILBOX_SKELETON,
           submit: (body) => exApi.createMailbox(body as never),
         });
         break;
       case "groups":
         setEditor({
-          title: t("integrations.exchange.recipients.editor.createGroup", "Create group"),
+          title: t(
+            "integrations.exchange.recipients.editor.createGroup",
+            "Create group",
+          ),
           json: CREATE_GROUP_SKELETON,
           submit: (body) => exApi.createGroup(body as never),
         });
         break;
       case "contacts":
         setEditor({
-          title: t("integrations.exchange.recipients.editor.createContact", "Create mail contact"),
+          title: t(
+            "integrations.exchange.recipients.editor.createContact",
+            "Create mail contact",
+          ),
           json: CREATE_CONTACT_SKELETON,
           submit: (body) => exApi.createMailContact(body as never),
         });
         break;
       case "users":
         setEditor({
-          title: t("integrations.exchange.recipients.editor.createUser", "Create mail user"),
+          title: t(
+            "integrations.exchange.recipients.editor.createUser",
+            "Create mail user",
+          ),
           json: CREATE_USER_SKELETON,
           submit: (body) => exApi.createMailUser(body as never),
         });
@@ -566,18 +673,37 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
   const openUpdateMailbox = useCallback(
     (id: string) =>
       setEditor({
-        title: t("integrations.exchange.recipients.editor.updateMailbox", "Update mailbox {{id}}", { id }),
-        json: JSON.stringify({ identity: id, displayName: null, alias: null }, null, 2),
+        title: t(
+          "integrations.exchange.recipients.editor.updateMailbox",
+          "Update mailbox {{id}}",
+          { id },
+        ),
+        json: JSON.stringify(
+          { identity: id, displayName: null, alias: null },
+          null,
+          2,
+        ),
         submit: (body) =>
-          exApi.updateMailbox({ ...body, identity: id } as UpdateMailboxRequest),
+          exApi.updateMailbox({
+            ...body,
+            identity: id,
+          } as UpdateMailboxRequest),
       }),
     [t],
   );
   const openUpdateGroup = useCallback(
     (id: string) =>
       setEditor({
-        title: t("integrations.exchange.recipients.editor.updateGroup", "Update group {{id}}", { id }),
-        json: JSON.stringify({ identity: id, displayName: null, description: null }, null, 2),
+        title: t(
+          "integrations.exchange.recipients.editor.updateGroup",
+          "Update group {{id}}",
+          { id },
+        ),
+        json: JSON.stringify(
+          { identity: id, displayName: null, description: null },
+          null,
+          2,
+        ),
         submit: (body) =>
           exApi.updateGroup({ ...body, identity: id } as UpdateGroupRequest),
       }),
@@ -586,7 +712,11 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
   const openUpdateContact = useCallback(
     (id: string) =>
       setEditor({
-        title: t("integrations.exchange.recipients.editor.updateContact", "Update contact {{id}}", { id }),
+        title: t(
+          "integrations.exchange.recipients.editor.updateContact",
+          "Update contact {{id}}",
+          { id },
+        ),
         json: JSON.stringify({ DisplayName: "" }, null, 2),
         hint: t(
           "integrations.exchange.recipients.editor.paramsHint",
@@ -600,7 +730,11 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
     (id: string) => {
       void run(() => exApi.getOoo(id)).then((current) => {
         setEditor({
-          title: t("integrations.exchange.recipients.editor.setOoo", "Set Out-of-Office {{id}}", { id }),
+          title: t(
+            "integrations.exchange.recipients.editor.setOoo",
+            "Set Out-of-Office {{id}}",
+            { id },
+          ),
           json: JSON.stringify(
             current ?? {
               identity: id,
@@ -624,11 +758,32 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
     (id: string, add: boolean) =>
       setPrompt({
         title: add
-          ? t("integrations.exchange.recipients.prompt.addPerm", "Add mailbox permission — {{id}}", { id })
-          : t("integrations.exchange.recipients.prompt.removePerm", "Remove mailbox permission — {{id}}", { id }),
+          ? t(
+              "integrations.exchange.recipients.prompt.addPerm",
+              "Add mailbox permission — {{id}}",
+              { id },
+            )
+          : t(
+              "integrations.exchange.recipients.prompt.removePerm",
+              "Remove mailbox permission — {{id}}",
+              { id },
+            ),
         fields: [
-          { key: "user", label: t("integrations.exchange.recipients.prompt.user", "User"), value: "", placeholder: "user@contoso.com" },
-          { key: "accessRights", label: t("integrations.exchange.recipients.prompt.accessRights", "Access rights"), value: "FullAccess", placeholder: "FullAccess" },
+          {
+            key: "user",
+            label: t("integrations.exchange.recipients.prompt.user", "User"),
+            value: "",
+            placeholder: "user@contoso.com",
+          },
+          {
+            key: "accessRights",
+            label: t(
+              "integrations.exchange.recipients.prompt.accessRights",
+              "Access rights",
+            ),
+            value: "FullAccess",
+            placeholder: "FullAccess",
+          },
         ],
         submit: (v) =>
           add
@@ -641,33 +796,69 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
     (id: string, add: boolean) =>
       setPrompt({
         title: add
-          ? t("integrations.exchange.recipients.prompt.addMember", "Add group member — {{id}}", { id })
-          : t("integrations.exchange.recipients.prompt.removeMember", "Remove group member — {{id}}", { id }),
+          ? t(
+              "integrations.exchange.recipients.prompt.addMember",
+              "Add group member — {{id}}",
+              { id },
+            )
+          : t(
+              "integrations.exchange.recipients.prompt.removeMember",
+              "Remove group member — {{id}}",
+              { id },
+            ),
         fields: [
-          { key: "member", label: t("integrations.exchange.recipients.prompt.member", "Member"), value: "", placeholder: "user@contoso.com" },
+          {
+            key: "member",
+            label: t(
+              "integrations.exchange.recipients.prompt.member",
+              "Member",
+            ),
+            value: "",
+            placeholder: "user@contoso.com",
+          },
         ],
         submit: (v) =>
-          add ? exApi.addGroupMember(id, v.member) : exApi.removeGroupMember(id, v.member),
+          add
+            ? exApi.addGroupMember(id, v.member)
+            : exApi.removeGroupMember(id, v.member),
       }),
     [t],
   );
   const openTrustee = useCallback(
     (mailbox: string, kind: "automap" | "sendAs" | "sob", add: boolean) =>
       setPrompt({
-        title: t("integrations.exchange.recipients.prompt.trustee", "{{kind}} — {{id}}", {
-          kind: `${add ? "+" : "-"}${kind}`,
-          id: mailbox,
-        }),
+        title: t(
+          "integrations.exchange.recipients.prompt.trustee",
+          "{{kind}} — {{id}}",
+          {
+            kind: `${add ? "+" : "-"}${kind}`,
+            id: mailbox,
+          },
+        ),
         fields: [
-          { key: "who", label: t("integrations.exchange.recipients.prompt.who", "User / trustee"), value: "", placeholder: "user@contoso.com" },
+          {
+            key: "who",
+            label: t(
+              "integrations.exchange.recipients.prompt.who",
+              "User / trustee",
+            ),
+            value: "",
+            placeholder: "user@contoso.com",
+          },
         ],
         submit: (v) => {
           const who = v.who;
           if (kind === "automap")
-            return add ? exApi.addAutomapping(mailbox, who) : exApi.removeAutomapping(mailbox, who);
+            return add
+              ? exApi.addAutomapping(mailbox, who)
+              : exApi.removeAutomapping(mailbox, who);
           if (kind === "sendAs")
-            return add ? exApi.addSendAs(mailbox, who) : exApi.removeSendAs(mailbox, who);
-          return add ? exApi.addSendOnBehalf(mailbox, who) : exApi.removeSendOnBehalf(mailbox, who);
+            return add
+              ? exApi.addSendAs(mailbox, who)
+              : exApi.removeSendAs(mailbox, who);
+          return add
+            ? exApi.addSendOnBehalf(mailbox, who)
+            : exApi.removeSendOnBehalf(mailbox, who);
         },
       }),
     [t],
@@ -675,9 +866,21 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
   const openEnable = useCallback(
     (id: string) =>
       setPrompt({
-        title: t("integrations.exchange.recipients.prompt.enable", "Enable mailbox — {{id}}", { id }),
+        title: t(
+          "integrations.exchange.recipients.prompt.enable",
+          "Enable mailbox — {{id}}",
+          { id },
+        ),
         fields: [
-          { key: "database", label: t("integrations.exchange.recipients.prompt.database", "Database (optional)"), value: "", placeholder: "DB01" },
+          {
+            key: "database",
+            label: t(
+              "integrations.exchange.recipients.prompt.database",
+              "Database (optional)",
+            ),
+            value: "",
+            placeholder: "DB01",
+          },
         ],
         submit: (v) => exApi.enableMailbox(id, v.database.trim() || undefined),
       }),
@@ -686,17 +889,27 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
   const openConvert = useCallback(
     (id: string) =>
       setPrompt({
-        title: t("integrations.exchange.recipients.prompt.convert", "Convert mailbox — {{id}}", { id }),
+        title: t(
+          "integrations.exchange.recipients.prompt.convert",
+          "Convert mailbox — {{id}}",
+          { id },
+        ),
         fields: [
           {
             key: "targetType",
-            label: t("integrations.exchange.recipients.prompt.targetType", "Target type"),
+            label: t(
+              "integrations.exchange.recipients.prompt.targetType",
+              "Target type",
+            ),
             value: "sharedMailbox",
             options: MAILBOX_TYPES,
           },
         ],
         submit: (v) =>
-          exApi.convertMailbox({ identity: id, targetType: v.targetType as MailboxType }),
+          exApi.convertMailbox({
+            identity: id,
+            targetType: v.targetType as MailboxType,
+          }),
       }),
     [t],
   );
@@ -706,7 +919,10 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
     activeKey === "groups" ||
     activeKey === "contacts" ||
     activeKey === "users";
-  const showResultSize = activeKey !== "archive" && !(activeKey === "shared" && sharedMode !== "shared") && !(activeKey === "groups" && groupMode === "dynamic");
+  const showResultSize =
+    activeKey !== "archive" &&
+    !(activeKey === "shared" && sharedMode !== "shared") &&
+    !(activeKey === "groups" && groupMode === "dynamic");
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -735,19 +951,36 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
       {/* Toolbar */}
       {activeKey !== "archive" && (
         <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
-          <button onClick={() => void reload()} className={btn} disabled={loading}>
-            {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          <button
+            onClick={() => void reload()}
+            className={btn}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <RefreshCw size={12} />
+            )}
             {t("integrations.exchange.recipients.refresh", "Refresh")}
           </button>
 
           {activeKey === "groups" && (
             <select
               value={groupMode}
-              onChange={(e) => setGroupMode(e.target.value as "all" | "dynamic")}
+              onChange={(e) =>
+                setGroupMode(e.target.value as "all" | "dynamic")
+              }
               className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-1.5 py-1 text-xs text-[var(--color-text)]"
             >
-              <option value="all">{t("integrations.exchange.recipients.groups.all", "All groups")}</option>
-              <option value="dynamic">{t("integrations.exchange.recipients.groups.dynamic", "Dynamic")}</option>
+              <option value="all">
+                {t("integrations.exchange.recipients.groups.all", "All groups")}
+              </option>
+              <option value="dynamic">
+                {t(
+                  "integrations.exchange.recipients.groups.dynamic",
+                  "Dynamic",
+                )}
+              </option>
             </select>
           )}
 
@@ -755,14 +988,31 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
             <select
               value={sharedMode}
               onChange={(e) =>
-                setSharedMode(e.target.value as "shared" | "room" | "equipment" | "roomLists")
+                setSharedMode(
+                  e.target.value as
+                    "shared" | "room" | "equipment" | "roomLists",
+                )
               }
               className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-1.5 py-1 text-xs text-[var(--color-text)]"
             >
-              <option value="shared">{t("integrations.exchange.recipients.shared.shared", "Shared")}</option>
-              <option value="room">{t("integrations.exchange.recipients.shared.room", "Rooms")}</option>
-              <option value="equipment">{t("integrations.exchange.recipients.shared.equipment", "Equipment")}</option>
-              <option value="roomLists">{t("integrations.exchange.recipients.shared.roomLists", "Room lists")}</option>
+              <option value="shared">
+                {t("integrations.exchange.recipients.shared.shared", "Shared")}
+              </option>
+              <option value="room">
+                {t("integrations.exchange.recipients.shared.room", "Rooms")}
+              </option>
+              <option value="equipment">
+                {t(
+                  "integrations.exchange.recipients.shared.equipment",
+                  "Equipment",
+                )}
+              </option>
+              <option value="roomLists">
+                {t(
+                  "integrations.exchange.recipients.shared.roomLists",
+                  "Room lists",
+                )}
+              </option>
             </select>
           )}
 
@@ -771,7 +1021,10 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && void reload()}
-              placeholder={t("integrations.exchange.recipients.filterPlaceholder", "OPATH filter…")}
+              placeholder={t(
+                "integrations.exchange.recipients.filterPlaceholder",
+                "OPATH filter…",
+              )}
               className="w-44 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-xs text-[var(--color-text)]"
             />
           )}
@@ -791,7 +1044,9 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
 
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-[var(--color-textMuted)]">
-              {t("integrations.exchange.recipients.count", "{{n}} items", { n: rows.length })}
+              {t("integrations.exchange.recipients.count", "{{n}} items", {
+                n: rows.length,
+              })}
             </span>
             {canCreate && (
               <button
@@ -840,7 +1095,10 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
               <tr className="border-b border-[var(--color-border)]">
                 {columns.map((c) => (
                   <th key={c.key} className="px-3 py-2 font-medium">
-                    {t(`integrations.exchange.recipients.col.${c.key}`, c.labelDefault)}
+                    {t(
+                      `integrations.exchange.recipients.col.${c.key}`,
+                      c.labelDefault,
+                    )}
                   </th>
                 ))}
                 <th className="px-3 py-2 text-right font-medium">
@@ -855,7 +1113,10 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
                   className="border-b border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]"
                 >
                   {columns.map((c) => (
-                    <td key={c.key} className="px-3 py-1.5 text-[var(--color-text)]">
+                    <td
+                      key={c.key}
+                      className="px-3 py-1.5 text-[var(--color-text)]"
+                    >
                       {c.get(row)}
                     </td>
                   ))}
@@ -876,8 +1137,13 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-6">
           <div className="flex max-h-full w-full max-w-lg flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
             <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2.5">
-              <h3 className="text-sm font-semibold text-[var(--color-text)]">{editor.title}</h3>
-              <button onClick={() => setEditor(null)} className="text-[var(--color-textSecondary)]">
+              <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                {editor.title}
+              </h3>
+              <button
+                onClick={() => setEditor(null)}
+                className="text-[var(--color-textSecondary)]"
+              >
                 <X size={16} />
               </button>
             </div>
@@ -918,15 +1184,22 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-6">
           <div className="flex w-full max-w-sm flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
             <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2.5">
-              <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">{prompt.title}</h3>
-              <button onClick={() => setPrompt(null)} className="text-[var(--color-textSecondary)]">
+              <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">
+                {prompt.title}
+              </h3>
+              <button
+                onClick={() => setPrompt(null)}
+                className="text-[var(--color-textSecondary)]"
+              >
                 <X size={16} />
               </button>
             </div>
             <div className="flex flex-col gap-3 p-4">
               {prompt.fields.map((f, idx) => (
                 <label key={f.key} className="flex flex-col gap-1 text-sm">
-                  <span className="text-[var(--color-textSecondary)]">{f.label}</span>
+                  <span className="text-[var(--color-textSecondary)]">
+                    {f.label}
+                  </span>
                   {f.options ? (
                     <select
                       value={f.value}
@@ -979,8 +1252,13 @@ const ExchangeRecipientsTab: React.FC<ExchangeTabProps> = () => {
       {inspector && (
         <div className="absolute inset-y-0 right-0 z-10 flex w-full max-w-md flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2.5">
-            <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">{inspector.title}</h3>
-            <button onClick={() => setInspector(null)} className="text-[var(--color-textSecondary)]">
+            <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">
+              {inspector.title}
+            </h3>
+            <button
+              onClick={() => setInspector(null)}
+              className="text-[var(--color-textSecondary)]"
+            >
               <X size={16} />
             </button>
           </div>
@@ -1025,7 +1303,10 @@ const ArchivePanel: React.FC<ArchivePanelProps> = ({
     <div className="mx-auto flex max-w-xl flex-col gap-4 p-6">
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-[var(--color-textSecondary)]">
-          {t("integrations.exchange.recipients.archive.identity", "Mailbox identity")}
+          {t(
+            "integrations.exchange.recipients.archive.identity",
+            "Mailbox identity",
+          )}
         </span>
         <input
           value={identity}
@@ -1042,7 +1323,14 @@ const ArchivePanel: React.FC<ArchivePanelProps> = ({
           onClick={() =>
             guarded(async () => {
               const d = await run(() => exApi.getArchiveInfo(id));
-              if (d !== null) inspect(t("integrations.exchange.recipients.archive.info", "Archive info"), d);
+              if (d !== null)
+                inspect(
+                  t(
+                    "integrations.exchange.recipients.archive.info",
+                    "Archive info",
+                  ),
+                  d,
+                );
             })
           }
         >
@@ -1054,7 +1342,14 @@ const ArchivePanel: React.FC<ArchivePanelProps> = ({
           onClick={() =>
             guarded(async () => {
               const d = await run(() => exApi.getArchiveStatistics(id));
-              if (d !== null) inspect(t("integrations.exchange.recipients.archive.stats", "Archive stats"), d);
+              if (d !== null)
+                inspect(
+                  t(
+                    "integrations.exchange.recipients.archive.stats",
+                    "Archive stats",
+                  ),
+                  d,
+                );
             })
           }
         >
@@ -1065,11 +1360,24 @@ const ArchivePanel: React.FC<ArchivePanelProps> = ({
           disabled={!id || busy}
           onClick={() =>
             prompt({
-              title: t("integrations.exchange.recipients.archive.enable", "Enable archive — {{id}}", { id }),
+              title: t(
+                "integrations.exchange.recipients.archive.enable",
+                "Enable archive — {{id}}",
+                { id },
+              ),
               fields: [
-                { key: "database", label: t("integrations.exchange.recipients.prompt.database", "Database (optional)"), value: "", placeholder: "ArchiveDB01" },
+                {
+                  key: "database",
+                  label: t(
+                    "integrations.exchange.recipients.prompt.database",
+                    "Database (optional)",
+                  ),
+                  value: "",
+                  placeholder: "ArchiveDB01",
+                },
               ],
-              submit: (v) => exApi.enableArchive(id, v.database.trim() || undefined),
+              submit: (v) =>
+                exApi.enableArchive(id, v.database.trim() || undefined),
             })
           }
         >
@@ -1085,19 +1393,44 @@ const ArchivePanel: React.FC<ArchivePanelProps> = ({
         <button
           className={act}
           disabled={!id || busy}
-          onClick={() => guarded(() => run(() => exApi.enableAutoExpandingArchive(id)))}
+          onClick={() =>
+            guarded(() => run(() => exApi.enableAutoExpandingArchive(id)))
+          }
         >
-          {t("integrations.exchange.recipients.archive.autoExpand", "Auto-expanding")}
+          {t(
+            "integrations.exchange.recipients.archive.autoExpand",
+            "Auto-expanding",
+          )}
         </button>
         <button
           className={act}
           disabled={!id || busy}
           onClick={() =>
             prompt({
-              title: t("integrations.exchange.recipients.archive.setQuota", "Set archive quota — {{id}}", { id }),
+              title: t(
+                "integrations.exchange.recipients.archive.setQuota",
+                "Set archive quota — {{id}}",
+                { id },
+              ),
               fields: [
-                { key: "quota", label: t("integrations.exchange.recipients.archive.quota", "Quota"), value: "100GB", placeholder: "100GB" },
-                { key: "warningQuota", label: t("integrations.exchange.recipients.archive.warningQuota", "Warning quota"), value: "90GB", placeholder: "90GB" },
+                {
+                  key: "quota",
+                  label: t(
+                    "integrations.exchange.recipients.archive.quota",
+                    "Quota",
+                  ),
+                  value: "100GB",
+                  placeholder: "100GB",
+                },
+                {
+                  key: "warningQuota",
+                  label: t(
+                    "integrations.exchange.recipients.archive.warningQuota",
+                    "Warning quota",
+                  ),
+                  value: "90GB",
+                  placeholder: "90GB",
+                },
               ],
               submit: (v) => exApi.setArchiveQuota(id, v.quota, v.warningQuota),
             })

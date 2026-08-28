@@ -259,7 +259,11 @@ const DataTable: React.FC<{ columns: string[]; rows: TableRow[] }> = ({
               <td className="px-3 py-1.5">
                 <div className="flex items-center justify-end gap-1">
                   {r.extra?.map((x) => (
-                    <button key={x.label} onClick={x.onClick} className={btnCls}>
+                    <button
+                      key={x.label}
+                      onClick={x.onClick}
+                      className={btnCls}
+                    >
                       {x.label}
                     </button>
                   ))}
@@ -371,11 +375,17 @@ const RetentionSection: React.FC<{ os: OrgSec }> = ({ os }) => {
     const res = await run(() => {
       switch (sub) {
         case "tags":
-          return api.listRetentionTags() as unknown as Promise<Array<Record<string, unknown>>>;
+          return api.listRetentionTags() as unknown as Promise<
+            Array<Record<string, unknown>>
+          >;
         case "dlp":
-          return api.listDlpPolicies() as unknown as Promise<Array<Record<string, unknown>>>;
+          return api.listDlpPolicies() as unknown as Promise<
+            Array<Record<string, unknown>>
+          >;
         default:
-          return api.listRetentionPolicies() as unknown as Promise<Array<Record<string, unknown>>>;
+          return api.listRetentionPolicies() as unknown as Promise<
+            Array<Record<string, unknown>>
+          >;
       }
     });
     if (res) setRows(res);
@@ -384,7 +394,7 @@ const RetentionSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   useEffect(() => {
     if (sub !== "holds") void loadList();
     else setRows([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [sub]);
 
   const view = useCallback(
@@ -403,7 +413,10 @@ const RetentionSection: React.FC<{ os: OrgSec }> = ({ os }) => {
     if (!holdIdentity.trim()) return;
     const res = await run(() => api.getMailboxHold(holdIdentity.trim()));
     if (res)
-      setUi((s) => ({ ...s, drawer: { title: holdIdentity.trim(), data: res } }));
+      setUi((s) => ({
+        ...s,
+        drawer: { title: holdIdentity.trim(), data: res },
+      }));
   }, [run, api, holdIdentity]);
 
   const enableLitigation = useCallback(() => {
@@ -463,7 +476,10 @@ const RetentionSection: React.FC<{ os: OrgSec }> = ({ os }) => {
     },
     {
       key: "dlp",
-      label: t("integrations.exchange.orgsecurity.retention.dlp", "DLP policies"),
+      label: t(
+        "integrations.exchange.orgsecurity.retention.dlp",
+        "DLP policies",
+      ),
     },
     {
       key: "holds",
@@ -521,7 +537,10 @@ const RetentionSection: React.FC<{ os: OrgSec }> = ({ os }) => {
             columns={[
               t("integrations.exchange.orgsecurity.fields.name", "Name"),
               t("integrations.exchange.orgsecurity.fields.type", "Type"),
-              t("integrations.exchange.orgsecurity.fields.ageDays", "Age (days)"),
+              t(
+                "integrations.exchange.orgsecurity.fields.ageDays",
+                "Age (days)",
+              ),
               t("integrations.exchange.orgsecurity.fields.action", "Action"),
               t("integrations.exchange.orgsecurity.fields.enabled", "Enabled"),
             ]}
@@ -569,7 +588,10 @@ const RetentionSection: React.FC<{ os: OrgSec }> = ({ os }) => {
             columns={[
               t("integrations.exchange.orgsecurity.fields.name", "Name"),
               t("integrations.exchange.orgsecurity.fields.default", "Default"),
-              t("integrations.exchange.orgsecurity.fields.tagLinks", "Tag links"),
+              t(
+                "integrations.exchange.orgsecurity.fields.tagLinks",
+                "Tag links",
+              ),
             ]}
             rows={rows.map((r, i) => ({
               id: String(r.id ?? r.name ?? i),
@@ -577,8 +599,8 @@ const RetentionSection: React.FC<{ os: OrgSec }> = ({ os }) => {
                 txt(r.name),
                 txt(r.isDefault),
                 String(
-                  (r.retentionPolicyTagLinks as unknown[] | undefined)?.length ??
-                    0,
+                  (r.retentionPolicyTagLinks as unknown[] | undefined)
+                    ?.length ?? 0,
                 ),
               ],
               onView: () => view("policies", String(r.name ?? r.id ?? "")),
@@ -601,7 +623,9 @@ const JournalSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const load = useCallback(async () => {
     const res = await run(
       () =>
-        api.listJournalRules() as unknown as Promise<Array<Record<string, unknown>>>,
+        api.listJournalRules() as unknown as Promise<
+          Array<Record<string, unknown>>
+        >,
     );
     if (res) setRows(res);
   }, [run, api]);
@@ -613,8 +637,7 @@ const JournalSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const view = useCallback(
     async (identity: string) => {
       const res = await run(() => api.getJournalRule(identity));
-      if (res)
-        setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
+      if (res) setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
     },
     [run, api],
   );
@@ -687,7 +710,10 @@ const JournalSection: React.FC<{ os: OrgSec }> = ({ os }) => {
       <DataTable
         columns={[
           t("integrations.exchange.orgsecurity.fields.name", "Name"),
-          t("integrations.exchange.orgsecurity.fields.journalEmail", "Journal to"),
+          t(
+            "integrations.exchange.orgsecurity.fields.journalEmail",
+            "Journal to",
+          ),
           t("integrations.exchange.orgsecurity.fields.scope", "Scope"),
           t("integrations.exchange.orgsecurity.fields.enabled", "Enabled"),
         ]}
@@ -730,11 +756,7 @@ const JournalSection: React.FC<{ os: OrgSec }> = ({ os }) => {
 // ─── RBAC & Audit ──────────────────────────────────────────────────────────────
 
 type RbacSub =
-  | "roleGroups"
-  | "roles"
-  | "assignments"
-  | "adminAudit"
-  | "mailboxAudit";
+  "roleGroups" | "roles" | "assignments" | "adminAudit" | "mailboxAudit";
 
 const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const { t } = useTranslation();
@@ -750,7 +772,10 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
 
   const loadRoleGroups = useCallback(async () => {
     const res = await run(
-      () => api.listRoleGroups() as unknown as Promise<Array<Record<string, unknown>>>,
+      () =>
+        api.listRoleGroups() as unknown as Promise<
+          Array<Record<string, unknown>>
+        >,
     );
     if (res) setRows(res);
   }, [run, api]);
@@ -758,7 +783,9 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const loadRoles = useCallback(async () => {
     const res = await run(
       () =>
-        api.listManagementRoles() as unknown as Promise<Array<Record<string, unknown>>>,
+        api.listManagementRoles() as unknown as Promise<
+          Array<Record<string, unknown>>
+        >,
     );
     if (res) setRows(res);
   }, [run, api]);
@@ -780,14 +807,13 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
     else if (sub === "roles") void loadRoles();
     else if (sub === "assignments") void loadAssignments();
     // adminAudit / mailboxAudit load on explicit search.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [sub]);
 
   const viewRoleGroup = useCallback(
     async (identity: string) => {
       const res = await run(() => api.getRoleGroup(identity));
-      if (res)
-        setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
+      if (res) setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
     },
     [run, api],
   );
@@ -795,8 +821,7 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const viewRole = useCallback(
     async (identity: string) => {
       const res = await run(() => api.getManagementRole(identity));
-      if (res)
-        setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
+      if (res) setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
     },
     [run, api],
   );
@@ -894,9 +919,7 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
 
   const searchMailboxAudit = useCallback(async () => {
     if (!auditMailbox.trim()) return;
-    const res = await run(() =>
-      api.searchMailboxAuditLog(auditMailbox.trim()),
-    );
+    const res = await run(() => api.searchMailboxAuditLog(auditMailbox.trim()));
     if (res) setRows(res as unknown as Array<Record<string, unknown>>);
   }, [run, api, auditMailbox]);
 
@@ -915,7 +938,10 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const subTabs: Array<{ key: RbacSub; label: string }> = [
     {
       key: "roleGroups",
-      label: t("integrations.exchange.orgsecurity.rbac.roleGroups", "Role groups"),
+      label: t(
+        "integrations.exchange.orgsecurity.rbac.roleGroups",
+        "Role groups",
+      ),
     },
     {
       key: "roles",
@@ -1055,7 +1081,10 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
             columns={[
               t("integrations.exchange.orgsecurity.fields.name", "Name"),
               t("integrations.exchange.orgsecurity.fields.role", "Role"),
-              t("integrations.exchange.orgsecurity.fields.assignee", "Assignee"),
+              t(
+                "integrations.exchange.orgsecurity.fields.assignee",
+                "Assignee",
+              ),
               t("integrations.exchange.orgsecurity.fields.enabled", "Enabled"),
             ]}
             rows={rows.map((r, i) => ({
@@ -1139,7 +1168,10 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
               {t("integrations.exchange.orgsecurity.actions.search", "Search")}
             </button>
             <button onClick={() => setMailboxAudit(true)} className={btnCls}>
-              {t("integrations.exchange.orgsecurity.rbac.enableAudit", "Enable audit")}
+              {t(
+                "integrations.exchange.orgsecurity.rbac.enableAudit",
+                "Enable audit",
+              )}
             </button>
             <button onClick={() => setMailboxAudit(false)} className={btnCls}>
               {t(
@@ -1150,9 +1182,15 @@ const RbacSection: React.FC<{ os: OrgSec }> = ({ os }) => {
           </SectionBar>
           <DataTable
             columns={[
-              t("integrations.exchange.orgsecurity.fields.operation", "Operation"),
+              t(
+                "integrations.exchange.orgsecurity.fields.operation",
+                "Operation",
+              ),
               t("integrations.exchange.orgsecurity.fields.owner", "Owner"),
-              t("integrations.exchange.orgsecurity.fields.loggedBy", "Logged by"),
+              t(
+                "integrations.exchange.orgsecurity.fields.loggedBy",
+                "Logged by",
+              ),
               t("integrations.exchange.orgsecurity.fields.subject", "Subject"),
             ]}
             rows={rows.map((r, i) => ({
@@ -1187,7 +1225,9 @@ const OrganizationSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const load = useCallback(async () => {
     const res = await run(
       () =>
-        api.getOrganizationConfig() as unknown as Promise<Record<string, unknown>>,
+        api.getOrganizationConfig() as unknown as Promise<
+          Record<string, unknown>
+        >,
     );
     if (res) setConfig(res);
   }, [run, api]);
@@ -1208,7 +1248,10 @@ const OrganizationSection: React.FC<{ os: OrgSec }> = ({ os }) => {
           "integrations.exchange.orgsecurity.org.editHint",
           "Provide only the parameters to change (camelCase keys).",
         ),
-        submitLabel: t("integrations.exchange.orgsecurity.actions.save", "Save"),
+        submitLabel: t(
+          "integrations.exchange.orgsecurity.actions.save",
+          "Save",
+        ),
         initial: {},
         submit: async (data) => {
           await run(() => api.setOrganizationConfig(data));
@@ -1278,8 +1321,12 @@ const HygieneSection: React.FC<{ os: OrgSec }> = ({ os }) => {
           Record<string, unknown>
         >;
       if (sub === "sender")
-        return api.getSenderFilterConfig() as unknown as Promise<Record<string, unknown>>;
-      return api.getContentFilterConfig() as unknown as Promise<Record<string, unknown>>;
+        return api.getSenderFilterConfig() as unknown as Promise<
+          Record<string, unknown>
+        >;
+      return api.getContentFilterConfig() as unknown as Promise<
+        Record<string, unknown>
+      >;
     });
     if (res) setConfig(res);
   }, [run, api, sub]);
@@ -1301,7 +1348,7 @@ const HygieneSection: React.FC<{ os: OrgSec }> = ({ os }) => {
     setRows([]);
     if (sub === "quarantine") void loadQuarantine();
     else void loadFilter();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [sub]);
 
   const openSetFilter = useCallback(() => {
@@ -1317,7 +1364,10 @@ const HygieneSection: React.FC<{ os: OrgSec }> = ({ os }) => {
           "integrations.exchange.orgsecurity.hygiene.setFilterHint",
           "Provide only the parameters to change (camelCase keys).",
         ),
-        submitLabel: t("integrations.exchange.orgsecurity.actions.save", "Save"),
+        submitLabel: t(
+          "integrations.exchange.orgsecurity.actions.save",
+          "Save",
+        ),
         initial: {},
         submit: async (data) => {
           await run(() => {
@@ -1336,8 +1386,7 @@ const HygieneSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const viewQuarantine = useCallback(
     async (identity: string) => {
       const res = await run(() => api.getQuarantineMessage(identity));
-      if (res)
-        setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
+      if (res) setUi((s) => ({ ...s, drawer: { title: identity, data: res } }));
     },
     [run, api],
   );
@@ -1451,7 +1500,10 @@ const HygieneSection: React.FC<{ os: OrgSec }> = ({ os }) => {
               t("integrations.exchange.orgsecurity.fields.subject", "Subject"),
               t("integrations.exchange.orgsecurity.fields.sender", "Sender"),
               t("integrations.exchange.orgsecurity.fields.reason", "Reason"),
-              t("integrations.exchange.orgsecurity.fields.direction", "Direction"),
+              t(
+                "integrations.exchange.orgsecurity.fields.direction",
+                "Direction",
+              ),
             ]}
             rows={rows.map((r, i) => {
               const identity = String(r.identity ?? "");
@@ -1535,14 +1587,16 @@ const CertificatesSection: React.FC<{ os: OrgSec }> = ({ os }) => {
   const load = useCallback(async () => {
     const res = await run(
       () =>
-        api.listCertificates(server.trim() || null) as unknown as Promise<Array<Record<string, unknown>>>,
+        api.listCertificates(server.trim() || null) as unknown as Promise<
+          Array<Record<string, unknown>>
+        >,
     );
     if (res) setRows(res);
   }, [run, api, server]);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const view = useCallback(
@@ -1573,7 +1627,11 @@ const CertificatesSection: React.FC<{ os: OrgSec }> = ({ os }) => {
             "integrations.exchange.orgsecurity.actions.enable",
             "Enable",
           ),
-          initial: { thumbprint, services: "IIS,SMTP", server: server.trim() || null },
+          initial: {
+            thumbprint,
+            services: "IIS,SMTP",
+            server: server.trim() || null,
+          },
           submit: async (data) => {
             await run(() =>
               api.enableCertificate(
@@ -1611,7 +1669,11 @@ const CertificatesSection: React.FC<{ os: OrgSec }> = ({ os }) => {
           "integrations.exchange.orgsecurity.certs.import",
           "Import",
         ),
-        initial: { filePath: "", password: null, server: server.trim() || null },
+        initial: {
+          filePath: "",
+          password: null,
+          server: server.trim() || null,
+        },
         submit: async (data) => {
           await run(() =>
             api.importCertificate(
@@ -1704,7 +1766,10 @@ const CertificatesSection: React.FC<{ os: OrgSec }> = ({ os }) => {
       </SectionBar>
       <DataTable
         columns={[
-          t("integrations.exchange.orgsecurity.fields.thumbprint", "Thumbprint"),
+          t(
+            "integrations.exchange.orgsecurity.fields.thumbprint",
+            "Thumbprint",
+          ),
           t("integrations.exchange.orgsecurity.fields.subject", "Subject"),
           t("integrations.exchange.orgsecurity.fields.services", "Services"),
           t("integrations.exchange.orgsecurity.fields.valid", "Valid"),

@@ -62,7 +62,11 @@ const JsonDrawer: React.FC<{
         <span className="truncate text-sm font-medium text-[var(--color-text)]">
           {title}
         </span>
-        <button onClick={onClose} className={btnCls} title={t(tk("close"), "Close")}>
+        <button
+          onClick={onClose}
+          className={btnCls}
+          title={t(tk("close"), "Close")}
+        >
           <X size={14} />
         </button>
       </div>
@@ -75,7 +79,8 @@ const JsonDrawer: React.FC<{
 
 // ─── Form modal ─────────────────────────────────────────────────────────────────
 
-type FieldType = "text" | "password" | "number" | "checkbox" | "select" | "textarea";
+type FieldType =
+  "text" | "password" | "number" | "checkbox" | "select" | "textarea";
 
 interface FieldSpec {
   key: string;
@@ -306,7 +311,11 @@ const DataTable: React.FC<{ columns: string[]; rows: TableRow[] }> = ({
               <td className="px-3 py-1.5">
                 <div className="flex items-center justify-end gap-1">
                   {r.extra?.map((x) => (
-                    <button key={x.label} onClick={x.onClick} className={btnCls}>
+                    <button
+                      key={x.label}
+                      onClick={x.onClick}
+                      className={btnCls}
+                    >
                       {x.label}
                     </button>
                   ))}
@@ -362,7 +371,10 @@ const SectionLayout: React.FC<{
 );
 
 function useOverlay() {
-  const [overlay, setOverlay] = useState<Overlay>({ drawer: null, modal: null });
+  const [overlay, setOverlay] = useState<Overlay>({
+    drawer: null,
+    modal: null,
+  });
   const closeModal = useCallback(
     () => setOverlay((s) => ({ ...s, modal: null })),
     [],
@@ -418,12 +430,40 @@ const DomainsSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("domains.new"), "New domain")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "domain", label: t(tk("domains.domain"), "Domain"), required: true, placeholder: "example.com" },
-            { key: "description", label: t(tk("domains.description"), "Description") },
-            { key: "mailboxes", label: t(tk("domains.maxMailboxes"), "Max mailboxes"), type: "number", defaultValue: "10" },
-            { key: "aliases", label: t(tk("domains.maxAliases"), "Max aliases"), type: "number", defaultValue: "400" },
-            { key: "max_quota", label: t(tk("domains.maxQuotaBytes"), "Max quota (bytes)"), type: "number", defaultValue: "1073741824" },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: true },
+            {
+              key: "domain",
+              label: t(tk("domains.domain"), "Domain"),
+              required: true,
+              placeholder: "example.com",
+            },
+            {
+              key: "description",
+              label: t(tk("domains.description"), "Description"),
+            },
+            {
+              key: "mailboxes",
+              label: t(tk("domains.maxMailboxes"), "Max mailboxes"),
+              type: "number",
+              defaultValue: "10",
+            },
+            {
+              key: "aliases",
+              label: t(tk("domains.maxAliases"), "Max aliases"),
+              type: "number",
+              defaultValue: "400",
+            },
+            {
+              key: "max_quota",
+              label: t(tk("domains.maxQuotaBytes"), "Max quota (bytes)"),
+              type: "number",
+              defaultValue: "1073741824",
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: true,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -452,11 +492,35 @@ const DomainsSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("domains.edit"), "Edit domain")}
           submitLabel={t(tk("save"), "Save")}
           fields={[
-            { key: "description", label: t(tk("domains.description"), "Description"), defaultValue: d.description },
-            { key: "mailboxes", label: t(tk("domains.maxMailboxes"), "Max mailboxes"), type: "number", defaultValue: String(d.max_mailboxes) },
-            { key: "aliases", label: t(tk("domains.maxAliases"), "Max aliases"), type: "number", defaultValue: String(d.max_aliases) },
-            { key: "max_quota", label: t(tk("domains.maxQuotaBytes"), "Max quota (bytes)"), type: "number", defaultValue: String(d.max_quota) },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: d.active },
+            {
+              key: "description",
+              label: t(tk("domains.description"), "Description"),
+              defaultValue: d.description,
+            },
+            {
+              key: "mailboxes",
+              label: t(tk("domains.maxMailboxes"), "Max mailboxes"),
+              type: "number",
+              defaultValue: String(d.max_mailboxes),
+            },
+            {
+              key: "aliases",
+              label: t(tk("domains.maxAliases"), "Max aliases"),
+              type: "number",
+              defaultValue: String(d.max_aliases),
+            },
+            {
+              key: "max_quota",
+              label: t(tk("domains.maxQuotaBytes"), "Max quota (bytes)"),
+              type: "number",
+              defaultValue: String(d.max_quota),
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: d.active,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -510,7 +574,10 @@ const DomainsSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           ],
           onDelete: () => remove(r.domain_name),
           extra: [
-            { label: t(tk("view"), "View"), onClick: () => detail(r.domain_name) },
+            {
+              label: t(tk("view"), "View"),
+              onClick: () => detail(r.domain_name),
+            },
             { label: t(tk("edit"), "Edit"), onClick: () => edit(r) },
           ],
         }))}
@@ -538,7 +605,7 @@ const MailboxesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const detail = useCallback(
@@ -557,15 +624,60 @@ const MailboxesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("mailboxes.new"), "New mailbox")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "local_part", label: t(tk("mailboxes.localPart"), "Local part"), required: true, placeholder: "john" },
-            { key: "domain", label: t(tk("mailboxes.domain"), "Domain"), required: true, defaultValue: domain, placeholder: "example.com" },
-            { key: "name", label: t(tk("mailboxes.name"), "Full name"), required: true },
-            { key: "password", label: t(tk("mailboxes.password"), "Password"), type: "password", required: true },
-            { key: "quota", label: t(tk("mailboxes.quotaBytes"), "Quota (bytes)"), type: "number", defaultValue: "1073741824" },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: true },
-            { key: "force_pw_update", label: t(tk("mailboxes.forcePwUpdate"), "Force password change at next login"), type: "checkbox" },
-            { key: "tls_enforce_in", label: t(tk("mailboxes.tlsIn"), "Enforce TLS inbound"), type: "checkbox" },
-            { key: "tls_enforce_out", label: t(tk("mailboxes.tlsOut"), "Enforce TLS outbound"), type: "checkbox" },
+            {
+              key: "local_part",
+              label: t(tk("mailboxes.localPart"), "Local part"),
+              required: true,
+              placeholder: "john",
+            },
+            {
+              key: "domain",
+              label: t(tk("mailboxes.domain"), "Domain"),
+              required: true,
+              defaultValue: domain,
+              placeholder: "example.com",
+            },
+            {
+              key: "name",
+              label: t(tk("mailboxes.name"), "Full name"),
+              required: true,
+            },
+            {
+              key: "password",
+              label: t(tk("mailboxes.password"), "Password"),
+              type: "password",
+              required: true,
+            },
+            {
+              key: "quota",
+              label: t(tk("mailboxes.quotaBytes"), "Quota (bytes)"),
+              type: "number",
+              defaultValue: "1073741824",
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: true,
+            },
+            {
+              key: "force_pw_update",
+              label: t(
+                tk("mailboxes.forcePwUpdate"),
+                "Force password change at next login",
+              ),
+              type: "checkbox",
+            },
+            {
+              key: "tls_enforce_in",
+              label: t(tk("mailboxes.tlsIn"), "Enforce TLS inbound"),
+              type: "checkbox",
+            },
+            {
+              key: "tls_enforce_out",
+              label: t(tk("mailboxes.tlsOut"), "Enforce TLS outbound"),
+              type: "checkbox",
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -597,13 +709,52 @@ const MailboxesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("mailboxes.edit"), "Edit mailbox")}
           submitLabel={t(tk("save"), "Save")}
           fields={[
-            { key: "name", label: t(tk("mailboxes.name"), "Full name"), defaultValue: m.name },
-            { key: "password", label: t(tk("mailboxes.newPassword"), "New password (leave blank to keep)"), type: "password" },
-            { key: "quota", label: t(tk("mailboxes.quotaBytes"), "Quota (bytes)"), type: "number", defaultValue: String(m.quota) },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: m.active },
-            { key: "force_pw_update", label: t(tk("mailboxes.forcePwUpdate"), "Force password change at next login"), type: "checkbox", defaultValue: false },
-            { key: "tls_enforce_in", label: t(tk("mailboxes.tlsIn"), "Enforce TLS inbound"), type: "checkbox", defaultValue: m.tls_enforce_in },
-            { key: "tls_enforce_out", label: t(tk("mailboxes.tlsOut"), "Enforce TLS outbound"), type: "checkbox", defaultValue: m.tls_enforce_out },
+            {
+              key: "name",
+              label: t(tk("mailboxes.name"), "Full name"),
+              defaultValue: m.name,
+            },
+            {
+              key: "password",
+              label: t(
+                tk("mailboxes.newPassword"),
+                "New password (leave blank to keep)",
+              ),
+              type: "password",
+            },
+            {
+              key: "quota",
+              label: t(tk("mailboxes.quotaBytes"), "Quota (bytes)"),
+              type: "number",
+              defaultValue: String(m.quota),
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: m.active,
+            },
+            {
+              key: "force_pw_update",
+              label: t(
+                tk("mailboxes.forcePwUpdate"),
+                "Force password change at next login",
+              ),
+              type: "checkbox",
+              defaultValue: false,
+            },
+            {
+              key: "tls_enforce_in",
+              label: t(tk("mailboxes.tlsIn"), "Enforce TLS inbound"),
+              type: "checkbox",
+              defaultValue: m.tls_enforce_in,
+            },
+            {
+              key: "tls_enforce_out",
+              label: t(tk("mailboxes.tlsOut"), "Enforce TLS outbound"),
+              type: "checkbox",
+              defaultValue: m.tls_enforce_out,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -645,7 +796,12 @@ const MailboxesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
             try {
               parsed = JSON.parse(str(v.config));
             } catch {
-              obj.setError(t(tk("mailboxes.pushoverBadJson"), "Pushover config is not valid JSON."));
+              obj.setError(
+                t(
+                  tk("mailboxes.pushoverBadJson"),
+                  "Pushover config is not valid JSON.",
+                ),
+              );
               return;
             }
             await run((id) => api.pushoverSetup(id, username, parsed));
@@ -682,7 +838,10 @@ const MailboxesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
       >
         <input
           className={`${inputCls} w-52`}
-          placeholder={t(tk("mailboxes.filterDomain"), "Filter by domain (blank = all)")}
+          placeholder={t(
+            tk("mailboxes.filterDomain"),
+            "Filter by domain (blank = all)",
+          )}
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && load()}
@@ -718,7 +877,10 @@ const MailboxesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
               label: t(tk("mailboxes.notifyOff"), "Notify off"),
               onClick: () => toggleNotifications(r.username, false),
             },
-            { label: t(tk("mailboxes.pushover"), "Pushover"), onClick: () => pushover(r.username) },
+            {
+              label: t(tk("mailboxes.pushover"), "Pushover"),
+              onClick: () => pushover(r.username),
+            },
           ],
         }))}
       />
@@ -759,9 +921,24 @@ const AliasesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("aliases.new"), "New alias")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "address", label: t(tk("aliases.address"), "Address"), required: true, placeholder: "info@example.com" },
-            { key: "goto", label: t(tk("aliases.goto"), "Goto (comma-separated)"), required: true, placeholder: "john@example.com" },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: true },
+            {
+              key: "address",
+              label: t(tk("aliases.address"), "Address"),
+              required: true,
+              placeholder: "info@example.com",
+            },
+            {
+              key: "goto",
+              label: t(tk("aliases.goto"), "Goto (comma-separated)"),
+              required: true,
+              placeholder: "john@example.com",
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: true,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -787,9 +964,22 @@ const AliasesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("aliases.edit"), "Edit alias")}
           submitLabel={t(tk("save"), "Save")}
           fields={[
-            { key: "address", label: t(tk("aliases.address"), "Address"), defaultValue: a.address },
-            { key: "goto", label: t(tk("aliases.goto"), "Goto (comma-separated)"), defaultValue: a.goto },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: a.active },
+            {
+              key: "address",
+              label: t(tk("aliases.address"), "Address"),
+              defaultValue: a.address,
+            },
+            {
+              key: "goto",
+              label: t(tk("aliases.goto"), "Goto (comma-separated)"),
+              defaultValue: a.goto,
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: a.active,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -835,7 +1025,10 @@ const AliasesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           cells: [r.address, r.goto, yn(r.active)],
           onDelete: () => remove(r.id),
           extra: [
-            { label: t(tk("view"), "View"), onClick: () => detail(r.id, r.address) },
+            {
+              label: t(tk("view"), "View"),
+              onClick: () => detail(r.id, r.address),
+            },
             { label: t(tk("edit"), "Edit"), onClick: () => edit(r) },
           ],
         }))}
@@ -877,9 +1070,24 @@ const DomainAliasesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("domainAliases.new"), "New domain alias")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "alias_domain", label: t(tk("domainAliases.aliasDomain"), "Alias domain"), required: true, placeholder: "alias.example.com" },
-            { key: "target_domain", label: t(tk("domainAliases.targetDomain"), "Target domain"), required: true, placeholder: "example.com" },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: true },
+            {
+              key: "alias_domain",
+              label: t(tk("domainAliases.aliasDomain"), "Alias domain"),
+              required: true,
+              placeholder: "alias.example.com",
+            },
+            {
+              key: "target_domain",
+              label: t(tk("domainAliases.targetDomain"), "Target domain"),
+              required: true,
+              placeholder: "example.com",
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: true,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -933,9 +1141,14 @@ const DomainAliasesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           cells: [r.alias_domain, r.target_domain, yn(r.active)],
           onDelete: () => remove(r.alias_domain),
           extra: [
-            { label: t(tk("view"), "View"), onClick: () => detail(r.alias_domain) },
             {
-              label: r.active ? t(tk("disable"), "Disable") : t(tk("enable"), "Enable"),
+              label: t(tk("view"), "View"),
+              onClick: () => detail(r.alias_domain),
+            },
+            {
+              label: r.active
+                ? t(tk("disable"), "Disable")
+                : t(tk("enable"), "Enable"),
               onClick: () => toggle(r.alias_domain, !r.active),
             },
           ],
@@ -957,7 +1170,11 @@ const DkimSection: React.FC<{ obj: Obj }> = ({ obj }) => {
     const d = domain.trim();
     if (!d) return;
     const res = await run((id) => api.getDkim(id, d));
-    if (res) openDrawer(t(tk("dkim.keyFor"), "DKIM key — {{domain}}", { domain: d }), res);
+    if (res)
+      openDrawer(
+        t(tk("dkim.keyFor"), "DKIM key — {{domain}}", { domain: d }),
+        res,
+      );
   }, [run, api, domain, openDrawer, t]);
 
   const generate = () =>
@@ -968,13 +1185,27 @@ const DkimSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("dkim.generate"), "Generate DKIM key")}
           submitLabel={t(tk("dkim.generateBtn"), "Generate")}
           fields={[
-            { key: "domains", label: t(tk("dkim.domains"), "Domains (comma-separated)"), required: true, defaultValue: domain },
-            { key: "dkim_selector", label: t(tk("dkim.selector"), "Selector"), defaultValue: "dkim" },
-            { key: "key_size", label: t(tk("dkim.keySize"), "Key size"), type: "select", options: [
-              { value: "1024", label: "1024" },
-              { value: "2048", label: "2048" },
-              { value: "4096", label: "4096" },
-            ] },
+            {
+              key: "domains",
+              label: t(tk("dkim.domains"), "Domains (comma-separated)"),
+              required: true,
+              defaultValue: domain,
+            },
+            {
+              key: "dkim_selector",
+              label: t(tk("dkim.selector"), "Selector"),
+              defaultValue: "dkim",
+            },
+            {
+              key: "key_size",
+              label: t(tk("dkim.keySize"), "Key size"),
+              type: "select",
+              options: [
+                { value: "1024", label: "1024" },
+                { value: "2048", label: "2048" },
+                { value: "4096", label: "4096" },
+              ],
+            },
           ]}
           onSubmit={async (v) => {
             const domains = str(v.domains)
@@ -1003,8 +1234,17 @@ const DkimSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("dkim.duplicate"), "Duplicate DKIM key")}
           submitLabel={t(tk("dkim.duplicateBtn"), "Duplicate")}
           fields={[
-            { key: "src_domain", label: t(tk("dkim.srcDomain"), "Source domain"), required: true, defaultValue: domain },
-            { key: "dst_domain", label: t(tk("dkim.dstDomain"), "Destination domain"), required: true },
+            {
+              key: "src_domain",
+              label: t(tk("dkim.srcDomain"), "Source domain"),
+              required: true,
+              defaultValue: domain,
+            },
+            {
+              key: "dst_domain",
+              label: t(tk("dkim.dstDomain"), "Destination domain"),
+              required: true,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -1095,12 +1335,40 @@ const ResourcesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("resources.new"), "New resource")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "name", label: t(tk("resources.name"), "Name"), required: true },
-            { key: "domain", label: t(tk("resources.domain"), "Domain"), required: true },
-            { key: "kind", label: t(tk("resources.kind"), "Kind"), type: "select", options: kindOptions },
-            { key: "description", label: t(tk("resources.description"), "Description") },
-            { key: "multiple_bookings", label: t(tk("resources.multipleBookings"), "Allow multiple bookings"), type: "checkbox" },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: true },
+            {
+              key: "name",
+              label: t(tk("resources.name"), "Name"),
+              required: true,
+            },
+            {
+              key: "domain",
+              label: t(tk("resources.domain"), "Domain"),
+              required: true,
+            },
+            {
+              key: "kind",
+              label: t(tk("resources.kind"), "Kind"),
+              type: "select",
+              options: kindOptions,
+            },
+            {
+              key: "description",
+              label: t(tk("resources.description"), "Description"),
+            },
+            {
+              key: "multiple_bookings",
+              label: t(
+                tk("resources.multipleBookings"),
+                "Allow multiple bookings",
+              ),
+              type: "checkbox",
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: true,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -1129,11 +1397,39 @@ const ResourcesSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("resources.edit"), "Edit resource")}
           submitLabel={t(tk("save"), "Save")}
           fields={[
-            { key: "domain", label: t(tk("resources.domain"), "Domain"), required: true, defaultValue: r.domain },
-            { key: "kind", label: t(tk("resources.kind"), "Kind"), type: "select", options: kindOptions, defaultValue: r.kind },
-            { key: "description", label: t(tk("resources.description"), "Description"), defaultValue: r.description },
-            { key: "multiple_bookings", label: t(tk("resources.multipleBookings"), "Allow multiple bookings"), type: "checkbox", defaultValue: r.multiple_bookings },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: r.active },
+            {
+              key: "domain",
+              label: t(tk("resources.domain"), "Domain"),
+              required: true,
+              defaultValue: r.domain,
+            },
+            {
+              key: "kind",
+              label: t(tk("resources.kind"), "Kind"),
+              type: "select",
+              options: kindOptions,
+              defaultValue: r.kind,
+            },
+            {
+              key: "description",
+              label: t(tk("resources.description"), "Description"),
+              defaultValue: r.description,
+            },
+            {
+              key: "multiple_bookings",
+              label: t(
+                tk("resources.multipleBookings"),
+                "Allow multiple bookings",
+              ),
+              type: "checkbox",
+              defaultValue: r.multiple_bookings,
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: r.active,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -1216,10 +1512,30 @@ const AppPasswordsSection: React.FC<{ obj: Obj }> = ({ obj }) => {
           title={t(tk("appPasswords.new"), "New app password")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "username", label: t(tk("appPasswords.mailbox"), "Mailbox"), required: true, defaultValue: username },
-            { key: "name", label: t(tk("appPasswords.name"), "Name"), required: true, placeholder: "Thunderbird" },
-            { key: "password", label: t(tk("appPasswords.password"), "Password"), type: "password", required: true },
-            { key: "active", label: t(tk("active"), "Active"), type: "checkbox", defaultValue: true },
+            {
+              key: "username",
+              label: t(tk("appPasswords.mailbox"), "Mailbox"),
+              required: true,
+              defaultValue: username,
+            },
+            {
+              key: "name",
+              label: t(tk("appPasswords.name"), "Name"),
+              required: true,
+              placeholder: "Thunderbird",
+            },
+            {
+              key: "password",
+              label: t(tk("appPasswords.password"), "Password"),
+              type: "password",
+              required: true,
+            },
+            {
+              key: "active",
+              label: t(tk("active"), "Active"),
+              type: "checkbox",
+              defaultValue: true,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -1257,7 +1573,10 @@ const AppPasswordsSection: React.FC<{ obj: Obj }> = ({ obj }) => {
       >
         <input
           className={`${inputCls} w-52`}
-          placeholder={t(tk("appPasswords.mailbox"), "Mailbox (user@example.com)")}
+          placeholder={t(
+            tk("appPasswords.mailbox"),
+            "Mailbox (user@example.com)",
+          )}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && load()}
@@ -1268,7 +1587,10 @@ const AppPasswordsSection: React.FC<{ obj: Obj }> = ({ obj }) => {
       </SectionBar>
       {!username.trim() ? (
         <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-[var(--color-textSecondary)]">
-          {t(tk("appPasswords.hint"), "Enter a mailbox to list its app passwords.")}
+          {t(
+            tk("appPasswords.hint"),
+            "Enter a mailbox to list its app passwords.",
+          )}
         </div>
       ) : (
         <DataTable

@@ -1,28 +1,29 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Ring variant — pure CSS spinner. Mirrors the legacy ConnectingSpinner ring:
  * a transparent circle with one colored bottom border, rotated by a CSS
  * keyframe animation. No rAF, no canvas.
  */
 
-import React from 'react';
-import type { CSSProperties } from 'react';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
-import { DEFAULT_RING } from '../defaults';
+import React from "react";
+import type { CSSProperties } from "react";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
+import { DEFAULT_RING } from "../defaults";
 
-const KEYFRAMES_INJECTED_FLAG = '__sorngRingKeyframesInjected';
+const KEYFRAMES_INJECTED_FLAG = "__sorngRingKeyframesInjected";
 
 function ensureKeyframes() {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
   const w = window as unknown as Record<string, boolean | undefined>;
   if (w[KEYFRAMES_INJECTED_FLAG]) return;
-  const style = document.createElement('style');
-  style.textContent = '@keyframes sorng-ring-spin { to { transform: rotate(360deg); } }';
+  const style = document.createElement("style");
+  style.textContent =
+    "@keyframes sorng-ring-spin { to { transform: rotate(360deg); } }";
   document.head.appendChild(style);
   w[KEYFRAMES_INJECTED_FLAG] = true;
 }
 
-const RingVariant: React.FC<VariantRenderProps<'ring'>> = ({
+const RingVariant: React.FC<VariantRenderProps<"ring">> = ({
   size,
   color,
   config,
@@ -41,15 +42,15 @@ const RingVariant: React.FC<VariantRenderProps<'ring'>> = ({
   const rootStyle: CSSProperties = {
     width: size,
     height: size,
-    borderRadius: '50%',
-    borderStyle: 'solid',
-    borderColor: 'transparent',
+    borderRadius: "50%",
+    borderStyle: "solid",
+    borderColor: "transparent",
     borderBottomColor: color,
     borderWidth: config.thicknessPx,
     animation,
-    animationPlayState: paused ? 'paused' : 'running',
-    boxSizing: 'border-box',
-    display: 'inline-block',
+    animationPlayState: paused ? "paused" : "running",
+    boxSizing: "border-box",
+    display: "inline-block",
     ...style,
   };
 
@@ -63,21 +64,34 @@ const RingVariant: React.FC<VariantRenderProps<'ring'>> = ({
   );
 };
 
-export const descriptor: VariantDescriptor<'ring'> = {
-  type: 'ring',
-  label: 'Ring',
-  description: 'Classic spinning ring — minimal, fast, accessible.',
+export const descriptor: VariantDescriptor<"ring"> = {
+  type: "ring",
+  label: "Ring",
+  description: "Classic spinning ring — minimal, fast, accessible.",
   minRecommendedSize: 12,
   supportsCanvas: false,
   hasRaf: false,
   boundsBleed: 0,
-  recommendedRenderMode: 'dom',
+  recommendedRenderMode: "dom",
   defaultConfig: DEFAULT_RING,
-  presets: [{ id: 'classic', label: 'Classic', config: {} }],
+  presets: [{ id: "classic", label: "Classic", config: {} }],
   paramSchema: {
     fields: [
-      { key: 'thicknessPx', label: 'Thickness', kind: 'integer', min: 1, max: 6 },
-      { key: 'speedSeconds', label: 'Spin period', kind: 'seconds', min: 0.3, max: 3, step: 0.1 },
+      {
+        key: "thicknessPx",
+        label: "Thickness",
+        kind: "integer",
+        min: 1,
+        max: 6,
+      },
+      {
+        key: "speedSeconds",
+        label: "Spin period",
+        kind: "seconds",
+        min: 0.3,
+        max: 3,
+        step: 0.1,
+      },
     ],
   },
   component: RingVariant,

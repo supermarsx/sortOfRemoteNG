@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Icosahedron variant — wireframe of 12 vertices and 30 edges, each edge
  * sampled with dots projected back onto the unit sphere. Vertices pulse on
@@ -8,43 +8,75 @@
  * Ported from `prototypes/orb-previews/X6-icosahedron.html`.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import type { CSSProperties } from 'react';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
-import { DEFAULT_ICOSAHEDRON } from '../defaults';
-import { subscribeTicker } from '../runtime/rafCoordinator';
+import React, { useEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
+import { DEFAULT_ICOSAHEDRON } from "../defaults";
+import { subscribeTicker } from "../runtime/rafCoordinator";
 
-const SPIN_KEYFRAMES_FLAG = '__sorngIcosahedronKeyframes';
+const SPIN_KEYFRAMES_FLAG = "__sorngIcosahedronKeyframes";
 const PHI = (1 + Math.sqrt(5)) / 2;
 
 const RAW_VERTS: ReadonlyArray<readonly [number, number, number]> = [
-  [-1, PHI, 0], [1, PHI, 0], [-1, -PHI, 0], [1, -PHI, 0],
-  [0, -1, PHI], [0, 1, PHI], [0, -1, -PHI], [0, 1, -PHI],
-  [PHI, 0, -1], [PHI, 0, 1], [-PHI, 0, -1], [-PHI, 0, 1],
+  [-1, PHI, 0],
+  [1, PHI, 0],
+  [-1, -PHI, 0],
+  [1, -PHI, 0],
+  [0, -1, PHI],
+  [0, 1, PHI],
+  [0, -1, -PHI],
+  [0, 1, -PHI],
+  [PHI, 0, -1],
+  [PHI, 0, 1],
+  [-PHI, 0, -1],
+  [-PHI, 0, 1],
 ];
-const VERTS: ReadonlyArray<readonly [number, number, number]> = RAW_VERTS.map(([a, b, c]) => {
-  const m = Math.sqrt(a * a + b * b + c * c);
-  return [a / m, b / m, c / m] as const;
-});
+const VERTS: ReadonlyArray<readonly [number, number, number]> = RAW_VERTS.map(
+  ([a, b, c]) => {
+    const m = Math.sqrt(a * a + b * b + c * c);
+    return [a / m, b / m, c / m] as const;
+  },
+);
 const EDGES: ReadonlyArray<readonly [number, number]> = [
-  [0, 1], [0, 5], [0, 7], [0, 10], [0, 11],
-  [1, 5], [1, 7], [1, 8], [1, 9],
-  [2, 3], [2, 4], [2, 6], [2, 10], [2, 11],
-  [3, 4], [3, 6], [3, 8], [3, 9],
-  [4, 5], [4, 9], [4, 11],
-  [5, 9], [5, 11],
-  [6, 7], [6, 8], [6, 10],
-  [7, 8], [7, 10],
+  [0, 1],
+  [0, 5],
+  [0, 7],
+  [0, 10],
+  [0, 11],
+  [1, 5],
+  [1, 7],
+  [1, 8],
+  [1, 9],
+  [2, 3],
+  [2, 4],
+  [2, 6],
+  [2, 10],
+  [2, 11],
+  [3, 4],
+  [3, 6],
+  [3, 8],
+  [3, 9],
+  [4, 5],
+  [4, 9],
+  [4, 11],
+  [5, 9],
+  [5, 11],
+  [6, 7],
+  [6, 8],
+  [6, 10],
+  [7, 8],
+  [7, 10],
   [8, 9],
   [10, 11],
 ];
 
 function ensureKeyframes(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
   const w = window as unknown as Record<string, boolean | undefined>;
   if (w[SPIN_KEYFRAMES_FLAG]) return;
-  const style = document.createElement('style');
-  style.textContent = '@keyframes sorng-icosa-spin { to { transform: rotateY(360deg); } }';
+  const style = document.createElement("style");
+  style.textContent =
+    "@keyframes sorng-icosa-spin { to { transform: rotateY(360deg); } }";
   document.head.appendChild(style);
   w[SPIN_KEYFRAMES_FLAG] = true;
 }
@@ -55,7 +87,7 @@ interface Item {
   vert: boolean;
 }
 
-const IcosahedronVariant: React.FC<VariantRenderProps<'icosahedron'>> = ({
+const IcosahedronVariant: React.FC<VariantRenderProps<"icosahedron">> = ({
   size,
   color,
   config,
@@ -77,25 +109,30 @@ const IcosahedronVariant: React.FC<VariantRenderProps<'icosahedron'>> = ({
   useEffect(() => {
     const sphere = sphereRef.current;
     if (!sphere) return;
-    sphere.innerHTML = '';
+    sphere.innerHTML = "";
     const radius = (size / 2) * 0.92;
     const items: Item[] = [];
     const perEdge = Math.max(2, Math.floor(config.perEdge));
 
-    const makeDot = (x: number, y: number, z: number, baseD: number): HTMLSpanElement => {
-      const dot = document.createElement('span');
+    const makeDot = (
+      x: number,
+      y: number,
+      z: number,
+      baseD: number,
+    ): HTMLSpanElement => {
+      const dot = document.createElement("span");
       const s = dot.style;
-      s.position = 'absolute';
-      s.top = '50%';
-      s.left = '50%';
+      s.position = "absolute";
+      s.top = "50%";
+      s.left = "50%";
       s.width = `${baseD.toFixed(2)}px`;
       s.height = `${baseD.toFixed(2)}px`;
       s.marginLeft = `${(-baseD / 2).toFixed(2)}px`;
       s.marginTop = `${(-baseD / 2).toFixed(2)}px`;
-      s.borderRadius = '50%';
-      s.background = 'currentColor';
-      s.transformStyle = 'preserve-3d';
-      s.willChange = 'transform, opacity';
+      s.borderRadius = "50%";
+      s.background = "currentColor";
+      s.transformStyle = "preserve-3d";
+      s.willChange = "transform, opacity";
       s.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, ${z.toFixed(2)}px)`;
       sphere.appendChild(dot);
       return dot;
@@ -119,49 +156,95 @@ const IcosahedronVariant: React.FC<VariantRenderProps<'icosahedron'>> = ({
         const y = A[1] * (1 - u) + B[1] * u;
         const z = A[2] * (1 - u) + B[2] * u;
         const m = Math.sqrt(x * x + y * y + z * z) || 1;
-        const dot = makeDot((x / m) * radius, (y / m) * radius, (z / m) * radius, sampleDot);
+        const dot = makeDot(
+          (x / m) * radius,
+          (y / m) * radius,
+          (z / m) * radius,
+          sampleDot,
+        );
         items.push({ el: dot, f: (e + u) / EDGES.length, vert: false });
       }
     }
     itemsRef.current = items;
-    return () => { sphere.innerHTML = ''; itemsRef.current = []; };
+    return () => {
+      sphere.innerHTML = "";
+      itemsRef.current = [];
+    };
   }, [size, config.perEdge, sampleDot, vertDot]);
 
   useEffect(() => {
     if (!reducedMotion) return;
-    renderFrame(itemsRef.current, 0, sampleDot, vertDot, config.trail, config.speed);
-  }, [reducedMotion, sampleDot, vertDot, config.trail, config.speed, config.perEdge, size]);
+    renderFrame(
+      itemsRef.current,
+      0,
+      sampleDot,
+      vertDot,
+      config.trail,
+      config.speed,
+    );
+  }, [
+    reducedMotion,
+    sampleDot,
+    vertDot,
+    config.trail,
+    config.speed,
+    config.perEdge,
+    size,
+  ]);
 
   useEffect(() => {
     if (reducedMotion || paused) return;
     startRef.current = performance.now();
     const unsub = subscribeTicker((now) => {
       const t = (now - startRef.current) / 1000;
-      renderFrame(itemsRef.current, t, sampleDot, vertDot, config.trail, config.speed);
+      renderFrame(
+        itemsRef.current,
+        t,
+        sampleDot,
+        vertDot,
+        config.trail,
+        config.speed,
+      );
     });
     return unsub;
-  }, [reducedMotion, paused, sampleDot, vertDot, config.trail, config.speed, config.perEdge, size]);
+  }, [
+    reducedMotion,
+    paused,
+    sampleDot,
+    vertDot,
+    config.trail,
+    config.speed,
+    config.perEdge,
+    size,
+  ]);
 
   const rootStyle: CSSProperties = {
     width: size,
     height: size,
     perspective: `${size * 3.4}px`,
-    transform: 'rotateX(20deg)',
+    transform: "rotateX(20deg)",
     color,
-    display: 'inline-block',
+    display: "inline-block",
     ...style,
   };
   const sphereStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-    transformStyle: 'preserve-3d',
-    animation: reducedMotion ? undefined : 'sorng-icosa-spin 18s linear infinite',
-    animationPlayState: paused ? 'paused' : 'running',
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    transformStyle: "preserve-3d",
+    animation: reducedMotion
+      ? undefined
+      : "sorng-icosa-spin 18s linear infinite",
+    animationPlayState: paused ? "paused" : "running",
   };
 
   return (
-    <div role="status" aria-label={ariaLabel} className={className} style={rootStyle}>
+    <div
+      role="status"
+      aria-label={ariaLabel}
+      className={className}
+      style={rootStyle}
+    >
       <div ref={sphereRef} style={sphereStyle} />
     </div>
   );
@@ -209,24 +292,54 @@ function renderFrame(
   }
 }
 
-export const descriptor: VariantDescriptor<'icosahedron'> = {
-  type: 'icosahedron',
-  label: 'Icosahedron',
-  description: 'Wireframe icosahedron — vertices pulse, a cursor lights edges in sequence.',
+export const descriptor: VariantDescriptor<"icosahedron"> = {
+  type: "icosahedron",
+  label: "Icosahedron",
+  description:
+    "Wireframe icosahedron — vertices pulse, a cursor lights edges in sequence.",
   minRecommendedSize: 48,
   supportsCanvas: false,
   hasRaf: true,
   defaultConfig: DEFAULT_ICOSAHEDRON,
   presets: [
-    { id: 'classic', label: 'Classic', config: {} },
-    { id: 'sparse', label: 'Sparse', config: { perEdge: 8, trail: 0.2, speed: 1.0 } },
-    { id: 'fast-circuit', label: 'Fast circuit', config: { perEdge: 30, trail: 0.08, speed: 2.4 } },
+    { id: "classic", label: "Classic", config: {} },
+    {
+      id: "sparse",
+      label: "Sparse",
+      config: { perEdge: 8, trail: 0.2, speed: 1.0 },
+    },
+    {
+      id: "fast-circuit",
+      label: "Fast circuit",
+      config: { perEdge: 30, trail: 0.08, speed: 2.4 },
+    },
   ],
   paramSchema: {
     fields: [
-      { key: 'perEdge', label: 'Per edge', kind: 'integer', min: 6, max: 40, step: 2 },
-      { key: 'trail', label: 'Trail', kind: 'percent', min: 0.03, max: 0.4, step: 0.01 },
-      { key: 'speed', label: 'Speed', kind: 'number', min: 0, max: 3, step: 0.1 },
+      {
+        key: "perEdge",
+        label: "Per edge",
+        kind: "integer",
+        min: 6,
+        max: 40,
+        step: 2,
+      },
+      {
+        key: "trail",
+        label: "Trail",
+        kind: "percent",
+        min: 0.03,
+        max: 0.4,
+        step: 0.01,
+      },
+      {
+        key: "speed",
+        label: "Speed",
+        kind: "number",
+        min: 0,
+        max: 3,
+        step: 0.1,
+      },
     ],
   },
   component: IcosahedronVariant,

@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Rippling spiral variant — a Milleus-style dot spiral wrapped on a sphere
  * whose radial distance is modulated by a sine wave traveling along the
@@ -6,29 +6,43 @@
  * envelope. The whole sphere sits inside a rotateZ(28deg) tilted scene.
  */
 
-import React, { useEffect, useRef } from 'react';
-import type { CSSProperties } from 'react';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
-import { DEFAULT_RIPPLING_SPIRAL } from '../defaults';
-import { subscribeTicker } from '../runtime/rafCoordinator';
+import React, { useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
+import { DEFAULT_RIPPLING_SPIRAL } from "../defaults";
+import { subscribeTicker } from "../runtime/rafCoordinator";
 
 const TAU = Math.PI * 2;
-const KEYFRAMES_FLAG = '__sorngRippleSpiralKfInjected';
+const KEYFRAMES_FLAG = "__sorngRippleSpiralKfInjected";
 
 function ensureKeyframes(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
   const w = window as unknown as Record<string, boolean | undefined>;
   if (w[KEYFRAMES_FLAG]) return;
-  const style = document.createElement('style');
-  style.textContent = '@keyframes sorng-ripspiral-spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}';
+  const style = document.createElement("style");
+  style.textContent =
+    "@keyframes sorng-ripspiral-spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}";
   document.head.appendChild(style);
   w[KEYFRAMES_FLAG] = true;
 }
 
-interface Item { el: HTMLSpanElement; f: number; ux: number; uy: number; uz: number; }
+interface Item {
+  el: HTMLSpanElement;
+  f: number;
+  ux: number;
+  uy: number;
+  uz: number;
+}
 
-const RipplingSpiralVariant: React.FC<VariantRenderProps<'ripplingSpiral'>> = ({
-  size, color, config, paused, reducedMotion, className, style, ariaLabel,
+const RipplingSpiralVariant: React.FC<VariantRenderProps<"ripplingSpiral">> = ({
+  size,
+  color,
+  config,
+  paused,
+  reducedMotion,
+  className,
+  style,
+  ariaLabel,
 }) => {
   ensureKeyframes();
 
@@ -50,25 +64,28 @@ const RipplingSpiralVariant: React.FC<VariantRenderProps<'ripplingSpiral'>> = ({
       const ux = Math.sin(phi) * Math.cos(theta);
       const uy = Math.sin(phi) * Math.sin(theta);
       const uz = Math.cos(phi);
-      const dot = document.createElement('span');
+      const dot = document.createElement("span");
       const s = dot.style;
-      s.position = 'absolute';
-      s.top = '50%';
-      s.left = '50%';
-      s.borderRadius = '50%';
+      s.position = "absolute";
+      s.top = "50%";
+      s.left = "50%";
+      s.borderRadius = "50%";
       s.background = color;
-      s.transformStyle = 'preserve-3d';
-      s.willChange = 'transform, opacity, width, height';
+      s.transformStyle = "preserve-3d";
+      s.willChange = "transform, opacity, width, height";
       s.width = `${dotPx}px`;
       s.height = `${dotPx}px`;
       s.marginLeft = `${-dotPx / 2}px`;
       s.marginTop = `${-dotPx / 2}px`;
-      s.opacity = '0.08';
+      s.opacity = "0.08";
       sphere.appendChild(dot);
       items.push({ el: dot, f, ux, uy, uz });
     }
     itemsRef.current = items;
-    return () => { sphere.replaceChildren(); itemsRef.current = []; };
+    return () => {
+      sphere.replaceChildren();
+      itemsRef.current = [];
+    };
   }, [size, color, config.dots, config.density]);
 
   useEffect(() => {
@@ -89,28 +106,42 @@ const RipplingSpiralVariant: React.FC<VariantRenderProps<'ripplingSpiral'>> = ({
     width: size,
     height: size,
     perspective: Math.max(600, size * 3.3),
-    transform: 'rotateZ(28deg)',
+    transform: "rotateZ(28deg)",
     color,
-    display: 'inline-block',
+    display: "inline-block",
     ...style,
   };
   const sphereStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-    transformStyle: 'preserve-3d',
-    animation: reducedMotion ? undefined : `sorng-ripspiral-spin ${config.spinSeconds}s linear infinite`,
-    animationPlayState: paused ? 'paused' : 'running',
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    transformStyle: "preserve-3d",
+    animation: reducedMotion
+      ? undefined
+      : `sorng-ripspiral-spin ${config.spinSeconds}s linear infinite`,
+    animationPlayState: paused ? "paused" : "running",
   };
 
   return (
-    <div role="status" aria-label={ariaLabel} className={className} style={sceneStyle}>
+    <div
+      role="status"
+      aria-label={ariaLabel}
+      className={className}
+      style={sceneStyle}
+    >
       <div ref={sphereRef} style={sphereStyle} />
     </div>
   );
 };
 
-function paint(items: Item[], t: number, size: number, amp: number, k: number, speed: number): void {
+function paint(
+  items: Item[],
+  t: number,
+  size: number,
+  amp: number,
+  k: number,
+  speed: number,
+): void {
   const radius = size / 2;
   const dotPx = size / 110;
   for (const it of items) {
@@ -131,7 +162,7 @@ function paint(items: Item[], t: number, size: number, amp: number, k: number, s
     s.height = `${w}px`;
     s.marginLeft = `${-w / 2}px`;
     s.marginTop = `${-w / 2}px`;
-    const c = s.background || 'currentColor';
+    const c = s.background || "currentColor";
     s.boxShadow =
       `0 0 ${(dotPx * glow).toFixed(2)}px ${c},` +
       `0 0 ${(dotPx * glow * 2.6).toFixed(2)}px color-mix(in srgb, ${c} 70%, transparent),` +
@@ -139,23 +170,45 @@ function paint(items: Item[], t: number, size: number, amp: number, k: number, s
   }
 }
 
-export const descriptor: VariantDescriptor<'ripplingSpiral'> = {
-  type: 'ripplingSpiral',
-  label: 'Rippling spiral',
-  description: 'Dot spiral whose radial distance pulses with a sine wave — bands inflate and deflate.',
+export const descriptor: VariantDescriptor<"ripplingSpiral"> = {
+  type: "ripplingSpiral",
+  label: "Rippling spiral",
+  description:
+    "Dot spiral whose radial distance pulses with a sine wave — bands inflate and deflate.",
   minRecommendedSize: 32,
   supportsCanvas: true,
   hasRaf: true,
   defaultConfig: DEFAULT_RIPPLING_SPIRAL,
-  presets: [{ id: 'classic', label: 'Classic', config: {} }],
+  presets: [{ id: "classic", label: "Classic", config: {} }],
   paramSchema: {
     fields: [
-      { key: 'dots', label: 'Dots', kind: 'integer', min: 100, max: 700 },
-      { key: 'density', label: 'Density', kind: 'integer', min: 3, max: 60 },
-      { key: 'amp', label: 'Amplitude', kind: 'percent', min: 0, max: 0.6, step: 0.01 },
-      { key: 'k', label: 'Wave count', kind: 'integer', min: 1, max: 10 },
-      { key: 'speed', label: 'Speed', kind: 'number', min: 0, max: 4, step: 0.1 },
-      { key: 'spinSeconds', label: 'Spin period', kind: 'seconds', min: 3, max: 30, step: 1 },
+      { key: "dots", label: "Dots", kind: "integer", min: 100, max: 700 },
+      { key: "density", label: "Density", kind: "integer", min: 3, max: 60 },
+      {
+        key: "amp",
+        label: "Amplitude",
+        kind: "percent",
+        min: 0,
+        max: 0.6,
+        step: 0.01,
+      },
+      { key: "k", label: "Wave count", kind: "integer", min: 1, max: 10 },
+      {
+        key: "speed",
+        label: "Speed",
+        kind: "number",
+        min: 0,
+        max: 4,
+        step: 0.1,
+      },
+      {
+        key: "spinSeconds",
+        label: "Spin period",
+        kind: "seconds",
+        min: 3,
+        max: 30,
+        step: 1,
+      },
     ],
   },
   component: RipplingSpiralVariant,

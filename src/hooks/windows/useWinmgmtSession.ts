@@ -52,9 +52,7 @@ export function useWinmgmtSession(config: Record<string, unknown>) {
   const isTauri = useMemo(
     () =>
       typeof window !== "undefined" &&
-      Boolean(
-        (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-      ),
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__),
     [],
   );
 
@@ -78,7 +76,7 @@ export function useWinmgmtSession(config: Record<string, unknown>) {
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconnect when config key changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- reconnect when config key changes
   }, [isTauri, configKey]);
 
   const disconnect = useCallback(async () => {
@@ -132,7 +130,9 @@ export function useWinmgmtSession(config: Record<string, unknown>) {
   useEffect(() => {
     return () => {
       if (sessionId) {
-        invoke("winmgmt_disconnect", { sessionId }).catch((e) => console.error("winmgmt disconnect failed:", e));
+        invoke("winmgmt_disconnect", { sessionId }).catch((e) =>
+          console.error("winmgmt disconnect failed:", e),
+        );
       }
     };
   }, [sessionId]);

@@ -68,7 +68,11 @@ const JsonDrawer: React.FC<{
         <span className="truncate text-sm font-medium text-[var(--color-text)]">
           {title}
         </span>
-        <button onClick={onClose} className={btnCls} title={t(tk("close"), "Close")}>
+        <button
+          onClick={onClose}
+          className={btnCls}
+          title={t(tk("close"), "Close")}
+        >
           <X size={14} />
         </button>
       </div>
@@ -304,7 +308,11 @@ const DataTable: React.FC<{ columns: string[]; rows: TableRow[] }> = ({
               <td className="px-3 py-1.5">
                 <div className="flex items-center justify-end gap-1">
                   {r.extra?.map((x) => (
-                    <button key={x.label} onClick={x.onClick} className={btnCls}>
+                    <button
+                      key={x.label}
+                      onClick={x.onClick}
+                      className={btnCls}
+                    >
                       {x.label}
                     </button>
                   ))}
@@ -370,7 +378,10 @@ const NoUser: React.FC = () => {
 };
 
 function useOverlay() {
-  const [overlay, setOverlay] = useState<Overlay>({ drawer: null, modal: null });
+  const [overlay, setOverlay] = useState<Overlay>({
+    drawer: null,
+    modal: null,
+  });
   const closeModal = useCallback(
     () => setOverlay((s) => ({ ...s, modal: null })),
     [],
@@ -423,7 +434,11 @@ const DomainsSection: React.FC<{ acct: Acct; user: string }> = ({
           title={t(tk("domains.newAddon"), "New addon domain")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "domain", label: t(tk("domains.domain"), "Domain"), required: true },
+            {
+              key: "domain",
+              label: t(tk("domains.domain"), "Domain"),
+              required: true,
+            },
             {
               key: "subdomain",
               label: t(tk("domains.subdomain"), "Subdomain"),
@@ -505,7 +520,11 @@ const DomainsSection: React.FC<{ acct: Acct; user: string }> = ({
           title={t(tk("domains.parkDomain"), "Park a domain")}
           submitLabel={t(tk("domains.park"), "Park")}
           fields={[
-            { key: "domain", label: t(tk("domains.domain"), "Domain"), required: true },
+            {
+              key: "domain",
+              label: t(tk("domains.domain"), "Domain"),
+              required: true,
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) => api.parkDomain(id, user, str(v.domain)));
@@ -597,8 +616,7 @@ const DomainsSection: React.FC<{ acct: Acct; user: string }> = ({
             r.documentroot ?? "—",
             r.php_version ?? "—",
           ],
-          onDelete:
-            r.domain_type !== "main" ? () => removeRow(r) : undefined,
+          onDelete: r.domain_type !== "main" ? () => removeRow(r) : undefined,
           deleteTitle:
             r.domain_type === "parked"
               ? t(tk("domains.unpark"), "Unpark")
@@ -789,8 +807,14 @@ const EmailSection: React.FC<{ acct: Acct; user: string }> = ({
               label: t(tk("email.fwdopt"), "Action"),
               type: "select",
               options: [
-                { value: "fwd", label: t(tk("email.optForward"), "Forward to address") },
-                { value: "fail", label: t(tk("email.optFail"), "Discard (fail)") },
+                {
+                  value: "fwd",
+                  label: t(tk("email.optForward"), "Forward to address"),
+                },
+                {
+                  value: "fail",
+                  label: t(tk("email.optFail"), "Discard (fail)"),
+                },
               ],
             },
             {
@@ -834,7 +858,10 @@ const EmailSection: React.FC<{ acct: Acct; user: string }> = ({
   const subTabs: Array<{ key: EmailSub; label: string }> = [
     { key: "accounts", label: t(tk("email.accounts"), "Accounts") },
     { key: "forwarders", label: t(tk("email.forwarders"), "Forwarders") },
-    { key: "autoresponders", label: t(tk("email.autoresponders"), "Autoresponders") },
+    {
+      key: "autoresponders",
+      label: t(tk("email.autoresponders"), "Autoresponders"),
+    },
     { key: "lists", label: t(tk("email.mailingLists"), "Mailing lists") },
     { key: "mx", label: t(tk("email.mx"), "MX records") },
   ];
@@ -935,12 +962,18 @@ const EmailSection: React.FC<{ acct: Acct; user: string }> = ({
                 id: `${String(r.dest)}-${i}`,
                 cells: [String(r.dest ?? "—"), String(r.forward ?? "—")],
                 onDelete: () =>
-                  deleteForwarder(String(r.dest ?? ""), String(r.forward ?? "")),
+                  deleteForwarder(
+                    String(r.dest ?? ""),
+                    String(r.forward ?? ""),
+                  ),
               }))}
             />
           ) : (
             <DataTable
-              columns={[t(tk("email.entry"), "Entry"), t(tk("email.detail"), "Detail")]}
+              columns={[
+                t(tk("email.entry"), "Entry"),
+                t(tk("email.detail"), "Detail"),
+              ]}
               rows={rows.map((r, i) => ({
                 id: `row-${i}`,
                 cells: [
@@ -1022,7 +1055,11 @@ const DatabasesSection: React.FC<{ acct: Acct; user: string }> = ({
           title={t(tk("db.newUser"), "New database user")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "dbUser", label: t(tk("db.username"), "Username"), required: true },
+            {
+              key: "dbUser",
+              label: t(tk("db.username"), "Username"),
+              required: true,
+            },
             {
               key: "password",
               label: t(tk("db.password"), "Password"),
@@ -1050,7 +1087,11 @@ const DatabasesSection: React.FC<{ acct: Acct; user: string }> = ({
           title={t(tk("db.grant"), "Grant privileges")}
           submitLabel={t(tk("db.grant"), "Grant")}
           fields={[
-            { key: "db", label: t(tk("db.database"), "Database"), required: true },
+            {
+              key: "db",
+              label: t(tk("db.database"), "Database"),
+              required: true,
+            },
             {
               key: "privileges",
               label: t(tk("db.privileges"), "Privileges"),
@@ -1203,7 +1244,7 @@ const FilesSection: React.FC<{ acct: Acct; user: string }> = ({
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [user]);
 
   const newDir = () =>
@@ -1331,10 +1372,25 @@ const SslSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => {
           title={t(tk("ssl.install"), "Install certificate")}
           submitLabel={t(tk("ssl.install"), "Install")}
           fields={[
-            { key: "domain", label: t(tk("ssl.domain"), "Domain"), required: true },
-            { key: "cert", label: t(tk("ssl.cert"), "Certificate (PEM)"), required: true },
-            { key: "key", label: t(tk("ssl.key"), "Private key (PEM)"), required: true },
-            { key: "cabundle", label: t(tk("ssl.cabundle"), "CA bundle (optional)") },
+            {
+              key: "domain",
+              label: t(tk("ssl.domain"), "Domain"),
+              required: true,
+            },
+            {
+              key: "cert",
+              label: t(tk("ssl.cert"), "Certificate (PEM)"),
+              required: true,
+            },
+            {
+              key: "key",
+              label: t(tk("ssl.key"), "Private key (PEM)"),
+              required: true,
+            },
+            {
+              key: "cabundle",
+              label: t(tk("ssl.cabundle"), "CA bundle (optional)"),
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -1361,13 +1417,24 @@ const SslSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => {
           title={t(tk("ssl.generateCsr"), "Generate CSR")}
           submitLabel={t(tk("ssl.generate"), "Generate")}
           fields={[
-            { key: "domain", label: t(tk("ssl.domain"), "Domain"), required: true },
-            { key: "country", label: t(tk("ssl.country"), "Country (2-letter)") },
+            {
+              key: "domain",
+              label: t(tk("ssl.domain"), "Domain"),
+              required: true,
+            },
+            {
+              key: "country",
+              label: t(tk("ssl.country"), "Country (2-letter)"),
+            },
             { key: "state", label: t(tk("ssl.state"), "State") },
             { key: "city", label: t(tk("ssl.city"), "City") },
             { key: "company", label: t(tk("ssl.company"), "Company") },
             { key: "email", label: t(tk("ssl.email"), "Email") },
-            { key: "key_size", label: t(tk("ssl.keySize"), "Key size"), type: "number" },
+            {
+              key: "key_size",
+              label: t(tk("ssl.keySize"), "Key size"),
+              type: "number",
+            },
           ]}
           onSubmit={async (v) => {
             const res = await run((id) =>
@@ -1514,7 +1581,11 @@ const FtpSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => {
           title={t(tk("ftp.newAccount"), "New FTP account")}
           submitLabel={t(tk("create"), "Create")}
           fields={[
-            { key: "user", label: t(tk("ftp.username"), "Username"), required: true },
+            {
+              key: "user",
+              label: t(tk("ftp.username"), "Username"),
+              required: true,
+            },
             {
               key: "password",
               label: t(tk("ftp.password"), "Password"),
@@ -1526,7 +1597,10 @@ const FtpSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => {
               label: t(tk("ftp.quotaMb"), "Quota (MB, 0 = unlimited)"),
               type: "number",
             },
-            { key: "homedir", label: t(tk("ftp.homedir"), "Home directory (optional)") },
+            {
+              key: "homedir",
+              label: t(tk("ftp.homedir"), "Home directory (optional)"),
+            },
           ]}
           onSubmit={async (v) => {
             await run((id) =>
@@ -1599,7 +1673,12 @@ const FtpSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => {
 // ─── Cron ────────────────────────────────────────────────────────────────────────
 
 const CRON_FIELDS: FieldSpec[] = [
-  { key: "command", label: "Command", required: true, placeholder: "/usr/bin/php cron.php" },
+  {
+    key: "command",
+    label: "Command",
+    required: true,
+    placeholder: "/usr/bin/php cron.php",
+  },
   { key: "minute", label: "Minute", defaultValue: "*", required: true },
   { key: "hour", label: "Hour", defaultValue: "*", required: true },
   { key: "day", label: "Day", defaultValue: "*", required: true },
@@ -1607,7 +1686,10 @@ const CRON_FIELDS: FieldSpec[] = [
   { key: "weekday", label: "Weekday", defaultValue: "*", required: true },
 ];
 
-const CronSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => {
+const CronSection: React.FC<{ acct: Acct; user: string }> = ({
+  acct,
+  user,
+}) => {
   const { t } = useTranslation();
   const { api, run, isLoading, error } = acct;
   const [rows, setRows] = useState<CronJob[]>([]);
@@ -1628,7 +1710,8 @@ const CronSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => 
       ...f,
       label: t(tk(`cron.${f.key}`), f.label),
       defaultValue: job
-        ? (job[f.key as keyof CronJob] as string | undefined) ?? f.defaultValue
+        ? ((job[f.key as keyof CronJob] as string | undefined) ??
+          f.defaultValue)
         : f.defaultValue,
     }));
 
@@ -1727,7 +1810,8 @@ const CronSection: React.FC<{ acct: Acct; user: string }> = ({ acct, user }) => 
 
 // ─── Root tab ────────────────────────────────────────────────────────────────────
 
-type GroupKey = "domains" | "email" | "databases" | "files" | "ssl" | "ftp" | "cron";
+type GroupKey =
+  "domains" | "email" | "databases" | "files" | "ssl" | "ftp" | "cron";
 
 const GROUPS: Array<{ key: GroupKey; icon: typeof Globe; label: string }> = [
   { key: "domains", icon: Globe, label: "Domains" },
@@ -1760,7 +1844,7 @@ const CpanelAccountTab: React.FC<CpanelTabProps> = ({ connectionId }) => {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [connectionId]);
 
   const groupLabel = useMemo(

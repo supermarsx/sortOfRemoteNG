@@ -273,7 +273,11 @@ const DataTable: React.FC<{ columns: string[]; rows: TableRow[] }> = ({
               <td className="px-3 py-1.5">
                 <div className="flex items-center justify-end gap-1">
                   {r.extra?.map((x) => (
-                    <button key={x.label} onClick={x.onClick} className={btnCls}>
+                    <button
+                      key={x.label}
+                      onClick={x.onClick}
+                      className={btnCls}
+                    >
                       {x.label}
                     </button>
                   ))}
@@ -384,7 +388,10 @@ const DepartmentsSection: React.FC<{ admin: Admin }> = ({ admin }) => {
       if (res)
         setUi((s) => ({
           ...s,
-          drawer: { title: t(`${T}.dept.agents`, "Department agents"), data: res },
+          drawer: {
+            title: t(`${T}.dept.agents`, "Department agents"),
+            data: res,
+          },
         }));
     },
     [run, api, t],
@@ -414,7 +421,10 @@ const DepartmentsSection: React.FC<{ admin: Admin }> = ({ admin }) => {
           submit: async (data) => {
             if (isNew)
               await run((id) =>
-                api.createDepartment(id, data as unknown as CreateDepartmentRequest),
+                api.createDepartment(
+                  id,
+                  data as unknown as CreateDepartmentRequest,
+                ),
               );
             else
               await run((id) =>
@@ -629,7 +639,9 @@ const AgentsSection: React.FC<{ admin: Admin }> = ({ admin }) => {
   const toggleVacation = useCallback(
     async (agent: OsticketAgent) => {
       if (agent.id == null) return;
-      await run((id) => api.setAgentVacation(id, agent.id!, !agent.on_vacation));
+      await run((id) =>
+        api.setAgentVacation(id, agent.id!, !agent.on_vacation),
+      );
       void load();
     },
     [run, api, load],
@@ -1013,7 +1025,11 @@ const SlaSection: React.FC<{ admin: Admin }> = ({ admin }) => {
               );
             else
               await run((id) =>
-                api.updateSla(id, sla!.id!, data as unknown as UpdateSlaRequest),
+                api.updateSla(
+                  id,
+                  sla!.id!,
+                  data as unknown as UpdateSlaRequest,
+                ),
               );
             setUi((x) => ({ ...x, editor: null }));
             void load();
@@ -1206,7 +1222,7 @@ const FieldsSection: React.FC<{ admin: Admin }> = ({ admin }) => {
 
   useEffect(() => {
     if (sub === "forms") void loadForms();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [sub]);
 
   const viewForm = useCallback(
@@ -1386,13 +1402,7 @@ const FieldsSection: React.FC<{ admin: Admin }> = ({ admin }) => {
 // ─── Root tab ──────────────────────────────────────────────────────────────────
 
 type GroupKey =
-  | "departments"
-  | "topics"
-  | "agents"
-  | "teams"
-  | "sla"
-  | "canned"
-  | "fields";
+  "departments" | "topics" | "agents" | "teams" | "sla" | "canned" | "fields";
 
 const GROUPS: Array<{ key: GroupKey; icon: typeof Building2 }> = [
   { key: "departments", icon: Building2 },

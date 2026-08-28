@@ -1,8 +1,8 @@
-/* eslint-disable react-refresh/only-export-components */
-import React, { useEffect, useState, useRef } from 'react';
-import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
+/* eslint-disable react-refresh/only-export-components, react/only-export-components */
+import React, { useEffect, useState, useRef } from "react";
+import { CheckCircle, XCircle, AlertTriangle, Info, X } from "lucide-react";
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
+export type ToastType = "success" | "error" | "warning" | "info";
 
 export interface ToastMessage {
   id: string;
@@ -16,30 +16,33 @@ interface ToastProps {
   onRemove: (id: string) => void;
 }
 
-const TOAST_CONFIG: Record<ToastType, {
-  icon: React.ReactNode;
-  barColor: string;
-  iconBg: string;
-}> = {
+const TOAST_CONFIG: Record<
+  ToastType,
+  {
+    icon: React.ReactNode;
+    barColor: string;
+    iconBg: string;
+  }
+> = {
   success: {
     icon: <CheckCircle size={16} />,
-    barColor: 'var(--color-success)',
-    iconBg: 'rgb(var(--color-success-rgb) / 0.15)',
+    barColor: "var(--color-success)",
+    iconBg: "rgb(var(--color-success-rgb) / 0.15)",
   },
   error: {
     icon: <XCircle size={16} />,
-    barColor: 'var(--color-error)',
-    iconBg: 'rgb(var(--color-error-rgb) / 0.15)',
+    barColor: "var(--color-error)",
+    iconBg: "rgb(var(--color-error-rgb) / 0.15)",
   },
   warning: {
     icon: <AlertTriangle size={16} />,
-    barColor: 'var(--color-warning)',
-    iconBg: 'rgb(var(--color-warning-rgb) / 0.15)',
+    barColor: "var(--color-warning)",
+    iconBg: "rgb(var(--color-warning-rgb) / 0.15)",
   },
   info: {
     icon: <Info size={16} />,
-    barColor: 'var(--color-primary)',
-    iconBg: 'rgb(var(--color-primary-rgb) / 0.15)',
+    barColor: "var(--color-primary)",
+    iconBg: "rgb(var(--color-primary-rgb) / 0.15)",
   },
 };
 
@@ -100,7 +103,7 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
       cancelAnimationFrame(rafRef.current);
       removedRef.current = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally stable: all state in refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- intentionally stable: all state in refs
   }, []);
 
   // When pausing/resuming, snapshot remaining time
@@ -126,8 +129,8 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
       onMouseLeave={handleMouseLeave}
       className={`toast-item group relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl shadow-black/20 backdrop-blur-sm transition-all duration-250 ${
         isExiting
-          ? 'opacity-0 translate-x-8 scale-95'
-          : 'opacity-100 translate-x-0 scale-100'
+          ? "opacity-0 translate-x-8 scale-95"
+          : "opacity-100 translate-x-0 scale-100"
       }`}
       style={{ minWidth: 280, maxWidth: 380 }}
     >
@@ -157,8 +160,8 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
           className="h-full origin-left"
           style={{
             background: config.barColor,
-            transform: 'scaleX(1)',
-            willChange: 'transform',
+            transform: "scaleX(1)",
+            willChange: "transform",
           }}
         />
       </div>
@@ -171,11 +174,19 @@ interface ToastContainerProps {
   onRemove: (id: string) => void;
 }
 
-export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onRemove }) => {
+export const ToastContainer: React.FC<ToastContainerProps> = ({
+  toasts,
+  onRemove,
+}) => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2" role="status" aria-live="polite" style={{ maxWidth: 380 }}>
+    <div
+      className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2"
+      role="status"
+      aria-live="polite"
+      style={{ maxWidth: 380 }}
+    >
       {toasts.map((t) => (
         <Toast key={t.id} toast={t} onRemove={onRemove} />
       ))}
@@ -198,10 +209,14 @@ export const useToast = () => {
   };
 
   const toast = {
-    success: (message: string, duration?: number) => addToast('success', message, duration),
-    error: (message: string, duration?: number) => addToast('error', message, duration),
-    warning: (message: string, duration?: number) => addToast('warning', message, duration),
-    info: (message: string, duration?: number) => addToast('info', message, duration),
+    success: (message: string, duration?: number) =>
+      addToast("success", message, duration),
+    error: (message: string, duration?: number) =>
+      addToast("error", message, duration),
+    warning: (message: string, duration?: number) =>
+      addToast("warning", message, duration),
+    info: (message: string, duration?: number) =>
+      addToast("info", message, duration),
   };
 
   return { toasts, toast, removeToast };

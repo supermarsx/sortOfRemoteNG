@@ -121,10 +121,14 @@ const Toolbar: React.FC<{
   const { t } = useTranslation();
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
-      <span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
+      <span className="text-sm font-medium text-[var(--color-text)]">
+        {title}
+      </span>
       {count != null && (
         <span className="text-xs text-[var(--color-textMuted)]">
-          {t("integrations.exchange.mailflow.count", "{{count}} items", { count })}
+          {t("integrations.exchange.mailflow.count", "{{count}} items", {
+            count,
+          })}
         </span>
       )}
       <div className="ml-auto flex items-center gap-1">
@@ -172,7 +176,9 @@ const DetailCard: React.FC<{
 }> = ({ title, record, onClose }) => (
   <div className="border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4">
     <div className="mb-2 flex items-center justify-between">
-      <span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
+      <span className="text-sm font-medium text-[var(--color-text)]">
+        {title}
+      </span>
       <button
         onClick={onClose}
         className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
@@ -233,7 +239,10 @@ const TransportRulesView: React.FC<{
   const submitCreate = useCallback(async () => {
     if (!form.name.trim()) {
       setLocalError(
-        t("integrations.exchange.mailflow.transportRules.nameRequired", "Name is required"),
+        t(
+          "integrations.exchange.mailflow.transportRules.nameRequired",
+          "Name is required",
+        ),
       );
       return;
     }
@@ -262,7 +271,10 @@ const TransportRulesView: React.FC<{
   return (
     <div className="flex h-full flex-col">
       <Toolbar
-        title={t("integrations.exchange.mailflow.transportRules.title", "Transport Rules")}
+        title={t(
+          "integrations.exchange.mailflow.transportRules.title",
+          "Transport Rules",
+        )}
         count={transportRules.length}
         onRefresh={() => void loadTransportRules()}
       >
@@ -291,7 +303,10 @@ const TransportRulesView: React.FC<{
             <thead className="sticky top-0 bg-[var(--color-surface)]">
               <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-textSecondary)]">
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.field.priority", "Priority")}
+                  {t(
+                    "integrations.exchange.mailflow.field.priority",
+                    "Priority",
+                  )}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
                   {t("integrations.exchange.mailflow.field.name", "Name")}
@@ -300,7 +315,10 @@ const TransportRulesView: React.FC<{
                   {t("integrations.exchange.mailflow.field.state", "State")}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.field.description", "Description")}
+                  {t(
+                    "integrations.exchange.mailflow.field.description",
+                    "Description",
+                  )}
                 </th>
                 <th className="px-4 py-1.5" />
               </tr>
@@ -325,7 +343,9 @@ const TransportRulesView: React.FC<{
                       <button
                         onClick={() =>
                           void act(() =>
-                            api.getTransportRule(r.id || r.name).then(setDetail),
+                            api
+                              .getTransportRule(r.id || r.name)
+                              .then(setDetail),
                           )
                         }
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
@@ -340,40 +360,58 @@ const TransportRulesView: React.FC<{
                           setLocalError(null);
                         }}
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title={t("integrations.exchange.mailflow.editParams", "Edit (params)")}
+                        title={t(
+                          "integrations.exchange.mailflow.editParams",
+                          "Edit (params)",
+                        )}
                       >
                         <Settings2 size={13} />
                       </button>
                       {r.state === "disabled" ? (
                         <button
                           onClick={() =>
-                            void act(() => api.enableTransportRule(r.id || r.name))
+                            void act(() =>
+                              api.enableTransportRule(r.id || r.name),
+                            )
                           }
                           disabled={busy}
                           className="text-[var(--color-textSecondary)] hover:text-[var(--color-success,#22c55e)]"
-                          title={t("integrations.exchange.mailflow.enable", "Enable")}
+                          title={t(
+                            "integrations.exchange.mailflow.enable",
+                            "Enable",
+                          )}
                         >
                           <CheckCircle2 size={13} />
                         </button>
                       ) : (
                         <button
                           onClick={() =>
-                            void act(() => api.disableTransportRule(r.id || r.name))
+                            void act(() =>
+                              api.disableTransportRule(r.id || r.name),
+                            )
                           }
                           disabled={busy}
                           className="text-[var(--color-textSecondary)] hover:text-[var(--color-warning,#f59e0b)]"
-                          title={t("integrations.exchange.mailflow.disable", "Disable")}
+                          title={t(
+                            "integrations.exchange.mailflow.disable",
+                            "Disable",
+                          )}
                         >
                           <Ban size={13} />
                         </button>
                       )}
                       <button
                         onClick={() =>
-                          void act(() => api.removeTransportRule(r.id || r.name))
+                          void act(() =>
+                            api.removeTransportRule(r.id || r.name),
+                          )
                         }
                         disabled={busy}
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-error,#ef4444)]"
-                        title={t("integrations.exchange.mailflow.delete", "Delete")}
+                        title={t(
+                          "integrations.exchange.mailflow.delete",
+                          "Delete",
+                        )}
                       >
                         <Trash2 size={13} />
                       </button>
@@ -398,8 +436,11 @@ const TransportRulesView: React.FC<{
         <div className="border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--color-text)]">
-              {t("integrations.exchange.mailflow.transportRules.updateTitle", "Update rule")}:{" "}
-              {editParamsFor}
+              {t(
+                "integrations.exchange.mailflow.transportRules.updateTitle",
+                "Update rule",
+              )}
+              : {editParamsFor}
             </span>
             <button
               onClick={() => setEditParamsFor(null)}
@@ -421,11 +462,22 @@ const TransportRulesView: React.FC<{
             onChange={(e) => setParamsRaw(e.target.value)}
           />
           <div className="mt-2 flex items-center gap-2">
-            <button onClick={() => void submitParams()} disabled={busy} className={BTN_PRIMARY}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+            <button
+              onClick={() => void submitParams()}
+              disabled={busy}
+              className={BTN_PRIMARY}
+            >
+              {busy ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Save size={12} />
+              )}
               {t("integrations.exchange.mailflow.apply", "Apply")}
             </button>
-            <button onClick={() => setEditParamsFor(null)} className="app-bar-button px-3 py-1.5 text-xs">
+            <button
+              onClick={() => setEditParamsFor(null)}
+              className="app-bar-button px-3 py-1.5 text-xs"
+            >
               {t("integrations.exchange.mailflow.cancel", "Cancel")}
             </button>
           </div>
@@ -436,7 +488,10 @@ const TransportRulesView: React.FC<{
         <div className="border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--color-text)]">
-              {t("integrations.exchange.mailflow.transportRules.createTitle", "Create transport rule")}
+              {t(
+                "integrations.exchange.mailflow.transportRules.createTitle",
+                "Create transport rule",
+              )}
             </span>
             <button
               onClick={() => setCreating(false)}
@@ -453,7 +508,9 @@ const TransportRulesView: React.FC<{
               <input
                 className={INPUT_CLS}
                 value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, name: e.target.value }))
+                }
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
@@ -474,47 +531,76 @@ const TransportRulesView: React.FC<{
             </label>
             <label className="col-span-2 flex flex-col gap-1 text-xs">
               <span className="text-[var(--color-textSecondary)]">
-                {t("integrations.exchange.mailflow.field.description", "Description")}
+                {t(
+                  "integrations.exchange.mailflow.field.description",
+                  "Description",
+                )}
               </span>
               <input
                 className={INPUT_CLS}
                 value={form.description ?? ""}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, description: e.target.value || null }))
+                  setForm((p) => ({
+                    ...p,
+                    description: e.target.value || null,
+                  }))
                 }
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-[var(--color-textSecondary)]">
-                {t("integrations.exchange.mailflow.transportRules.prependSubject", "Prepend subject")}
+                {t(
+                  "integrations.exchange.mailflow.transportRules.prependSubject",
+                  "Prepend subject",
+                )}
               </span>
               <input
                 className={INPUT_CLS}
                 value={form.prependSubject ?? ""}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, prependSubject: e.target.value || null }))
+                  setForm((p) => ({
+                    ...p,
+                    prependSubject: e.target.value || null,
+                  }))
                 }
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-[var(--color-textSecondary)]">
-                {t("integrations.exchange.mailflow.transportRules.rejectReason", "Reject reason")}
+                {t(
+                  "integrations.exchange.mailflow.transportRules.rejectReason",
+                  "Reject reason",
+                )}
               </span>
               <input
                 className={INPUT_CLS}
                 value={form.rejectMessageReason ?? ""}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, rejectMessageReason: e.target.value || null }))
+                  setForm((p) => ({
+                    ...p,
+                    rejectMessageReason: e.target.value || null,
+                  }))
                 }
               />
             </label>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <button onClick={() => void submitCreate()} disabled={busy} className={BTN_PRIMARY}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+            <button
+              onClick={() => void submitCreate()}
+              disabled={busy}
+              className={BTN_PRIMARY}
+            >
+              {busy ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Plus size={12} />
+              )}
               {t("integrations.exchange.mailflow.create", "Create")}
             </button>
-            <button onClick={() => setCreating(false)} className="app-bar-button px-3 py-1.5 text-xs">
+            <button
+              onClick={() => setCreating(false)}
+              className="app-bar-button px-3 py-1.5 text-xs"
+            >
               {t("integrations.exchange.mailflow.cancel", "Cancel")}
             </button>
           </div>
@@ -528,11 +614,31 @@ const TransportRulesView: React.FC<{
 // Connectors view
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const CONNECTOR_SCOPES: Array<{ key: ConnectorScope; labelKey: string; labelDefault: string }> = [
-  { key: "send", labelKey: "integrations.exchange.mailflow.connectors.send", labelDefault: "Send" },
-  { key: "receive", labelKey: "integrations.exchange.mailflow.connectors.receive", labelDefault: "Receive" },
-  { key: "inbound", labelKey: "integrations.exchange.mailflow.connectors.inbound", labelDefault: "Inbound" },
-  { key: "outbound", labelKey: "integrations.exchange.mailflow.connectors.outbound", labelDefault: "Outbound" },
+const CONNECTOR_SCOPES: Array<{
+  key: ConnectorScope;
+  labelKey: string;
+  labelDefault: string;
+}> = [
+  {
+    key: "send",
+    labelKey: "integrations.exchange.mailflow.connectors.send",
+    labelDefault: "Send",
+  },
+  {
+    key: "receive",
+    labelKey: "integrations.exchange.mailflow.connectors.receive",
+    labelDefault: "Receive",
+  },
+  {
+    key: "inbound",
+    labelKey: "integrations.exchange.mailflow.connectors.inbound",
+    labelDefault: "Inbound",
+  },
+  {
+    key: "outbound",
+    labelKey: "integrations.exchange.mailflow.connectors.outbound",
+    labelDefault: "Outbound",
+  },
 ];
 
 const ConnectorsView: React.FC<{
@@ -546,8 +652,11 @@ const ConnectorsView: React.FC<{
 
   useEffect(() => {
     setDetail(null);
-    void loadConnectors(scope, scope === "receive" ? server.trim() || null : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void loadConnectors(
+      scope,
+      scope === "receive" ? server.trim() || null : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [scope, loadConnectors]);
 
   const canDetail = scope === "send" || scope === "receive";
@@ -581,23 +690,27 @@ const ConnectorsView: React.FC<{
       </div>
 
       <Toolbar
-        title={t(
-          `integrations.exchange.mailflow.connectors.${scope}`,
-          scope,
-        )}
+        title={t(`integrations.exchange.mailflow.connectors.${scope}`, scope)}
         count={connectors.length}
         onRefresh={() =>
-          void loadConnectors(scope, scope === "receive" ? server.trim() || null : null)
+          void loadConnectors(
+            scope,
+            scope === "receive" ? server.trim() || null : null,
+          )
         }
       >
         {scope === "receive" && (
           <input
             className="exchange-input w-40 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-xs text-[var(--color-text)]"
-            placeholder={t("integrations.exchange.mailflow.serverFilter", "Server (optional)")}
+            placeholder={t(
+              "integrations.exchange.mailflow.serverFilter",
+              "Server (optional)",
+            )}
             value={server}
             onChange={(e) => setServer(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void loadConnectors("receive", server.trim() || null);
+              if (e.key === "Enter")
+                void loadConnectors("receive", server.trim() || null);
             }}
           />
         )}
@@ -618,7 +731,10 @@ const ConnectorsView: React.FC<{
                   {t("integrations.exchange.mailflow.field.type", "Type")}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.connectors.smartHosts", "Smart hosts")}
+                  {t(
+                    "integrations.exchange.mailflow.connectors.smartHosts",
+                    "Smart hosts",
+                  )}
                 </th>
                 {canDetail && <th className="px-4 py-1.5" />}
               </tr>
@@ -732,7 +848,9 @@ const MessageFlowView: React.FC<{
         start: track.start || null,
         end: track.end || null,
         server: track.server.trim() || null,
-        resultSize: track.resultSize.trim() ? Number(track.resultSize.trim()) : null,
+        resultSize: track.resultSize.trim()
+          ? Number(track.resultSize.trim())
+          : null,
       });
     }
   }, [mode, runMessageTrace, runTrackingLog, trace, track]);
@@ -753,8 +871,14 @@ const MessageFlowView: React.FC<{
               }`}
             >
               {m === "trace"
-                ? t("integrations.exchange.mailflow.messageFlow.traceTab", "Message trace")
-                : t("integrations.exchange.mailflow.messageFlow.trackingTab", "Tracking log")}
+                ? t(
+                    "integrations.exchange.mailflow.messageFlow.traceTab",
+                    "Message trace",
+                  )
+                : t(
+                    "integrations.exchange.mailflow.messageFlow.trackingTab",
+                    "Tracking log",
+                  )}
             </button>
           ))}
         </div>
@@ -763,60 +887,96 @@ const MessageFlowView: React.FC<{
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <input
               className={INPUT_CLS}
-              placeholder={t("integrations.exchange.mailflow.messageFlow.sender", "Sender")}
+              placeholder={t(
+                "integrations.exchange.mailflow.messageFlow.sender",
+                "Sender",
+              )}
               value={trace.senderAddress ?? ""}
-              onChange={(e) => setTrace((p) => ({ ...p, senderAddress: e.target.value }))}
+              onChange={(e) =>
+                setTrace((p) => ({ ...p, senderAddress: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
-              placeholder={t("integrations.exchange.mailflow.messageFlow.recipient", "Recipient")}
+              placeholder={t(
+                "integrations.exchange.mailflow.messageFlow.recipient",
+                "Recipient",
+              )}
               value={trace.recipientAddress ?? ""}
-              onChange={(e) => setTrace((p) => ({ ...p, recipientAddress: e.target.value }))}
+              onChange={(e) =>
+                setTrace((p) => ({ ...p, recipientAddress: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
-              placeholder={t("integrations.exchange.mailflow.messageFlow.messageId", "Message ID")}
+              placeholder={t(
+                "integrations.exchange.mailflow.messageFlow.messageId",
+                "Message ID",
+              )}
               value={trace.messageId ?? ""}
-              onChange={(e) => setTrace((p) => ({ ...p, messageId: e.target.value }))}
+              onChange={(e) =>
+                setTrace((p) => ({ ...p, messageId: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
               type="datetime-local"
               value={trace.startDate ?? ""}
-              onChange={(e) => setTrace((p) => ({ ...p, startDate: e.target.value }))}
+              onChange={(e) =>
+                setTrace((p) => ({ ...p, startDate: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
               type="datetime-local"
               value={trace.endDate ?? ""}
-              onChange={(e) => setTrace((p) => ({ ...p, endDate: e.target.value }))}
+              onChange={(e) =>
+                setTrace((p) => ({ ...p, endDate: e.target.value }))
+              }
             />
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <input
               className={INPUT_CLS}
-              placeholder={t("integrations.exchange.mailflow.messageFlow.sender", "Sender")}
+              placeholder={t(
+                "integrations.exchange.mailflow.messageFlow.sender",
+                "Sender",
+              )}
               value={track.sender}
-              onChange={(e) => setTrack((p) => ({ ...p, sender: e.target.value }))}
+              onChange={(e) =>
+                setTrack((p) => ({ ...p, sender: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
-              placeholder={t("integrations.exchange.mailflow.messageFlow.recipient", "Recipient")}
+              placeholder={t(
+                "integrations.exchange.mailflow.messageFlow.recipient",
+                "Recipient",
+              )}
               value={track.recipient}
-              onChange={(e) => setTrack((p) => ({ ...p, recipient: e.target.value }))}
+              onChange={(e) =>
+                setTrack((p) => ({ ...p, recipient: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
-              placeholder={t("integrations.exchange.mailflow.serverFilter", "Server (optional)")}
+              placeholder={t(
+                "integrations.exchange.mailflow.serverFilter",
+                "Server (optional)",
+              )}
               value={track.server}
-              onChange={(e) => setTrack((p) => ({ ...p, server: e.target.value }))}
+              onChange={(e) =>
+                setTrack((p) => ({ ...p, server: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
               type="datetime-local"
               value={track.start}
-              onChange={(e) => setTrack((p) => ({ ...p, start: e.target.value }))}
+              onChange={(e) =>
+                setTrack((p) => ({ ...p, start: e.target.value }))
+              }
             />
             <input
               className={INPUT_CLS}
@@ -827,16 +987,29 @@ const MessageFlowView: React.FC<{
             <input
               className={INPUT_CLS}
               inputMode="numeric"
-              placeholder={t("integrations.exchange.mailflow.resultSize", "Result size")}
+              placeholder={t(
+                "integrations.exchange.mailflow.resultSize",
+                "Result size",
+              )}
               value={track.resultSize}
-              onChange={(e) => setTrack((p) => ({ ...p, resultSize: e.target.value }))}
+              onChange={(e) =>
+                setTrack((p) => ({ ...p, resultSize: e.target.value }))
+              }
             />
           </div>
         )}
 
         <div className="mt-3 flex items-center gap-2">
-          <button onClick={submitSearch} disabled={loading} className={BTN_PRIMARY}>
-            {loading ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+          <button
+            onClick={submitSearch}
+            disabled={loading}
+            className={BTN_PRIMARY}
+          >
+            {loading ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Search size={12} />
+            )}
             {t("integrations.exchange.mailflow.messageFlow.search", "Search")}
           </button>
         </div>
@@ -846,26 +1019,38 @@ const MessageFlowView: React.FC<{
       {traceResults.length > 0 && (
         <div className="border-b border-[var(--color-border)]">
           <div className="px-4 py-1.5 text-xs font-medium text-[var(--color-textSecondary)]">
-            {t("integrations.exchange.mailflow.messageFlow.results", "Results")} (
-            {traceResults.length})
+            {t("integrations.exchange.mailflow.messageFlow.results", "Results")}{" "}
+            ({traceResults.length})
           </div>
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-textSecondary)]">
                 <th className="px-4 py-1 font-medium">
-                  {t("integrations.exchange.mailflow.messageFlow.sender", "Sender")}
+                  {t(
+                    "integrations.exchange.mailflow.messageFlow.sender",
+                    "Sender",
+                  )}
                 </th>
                 <th className="px-4 py-1 font-medium">
-                  {t("integrations.exchange.mailflow.messageFlow.recipient", "Recipient")}
+                  {t(
+                    "integrations.exchange.mailflow.messageFlow.recipient",
+                    "Recipient",
+                  )}
                 </th>
                 <th className="px-4 py-1 font-medium">
-                  {t("integrations.exchange.mailflow.messageFlow.subject", "Subject")}
+                  {t(
+                    "integrations.exchange.mailflow.messageFlow.subject",
+                    "Subject",
+                  )}
                 </th>
                 <th className="px-4 py-1 font-medium">
                   {t("integrations.exchange.mailflow.field.status", "Status")}
                 </th>
                 <th className="px-4 py-1 font-medium">
-                  {t("integrations.exchange.mailflow.messageFlow.received", "Received")}
+                  {t(
+                    "integrations.exchange.mailflow.messageFlow.received",
+                    "Received",
+                  )}
                 </th>
               </tr>
             </thead>
@@ -879,7 +1064,10 @@ const MessageFlowView: React.FC<{
                   <td className="px-4 py-1">{r.recipientAddress}</td>
                   <td className="px-4 py-1">{cellText(r.subject)}</td>
                   <td className="px-4 py-1">
-                    {t(`integrations.exchange.mailflow.deliveryStatus.${r.status}`, r.status)}
+                    {t(
+                      `integrations.exchange.mailflow.deliveryStatus.${r.status}`,
+                      r.status,
+                    )}
                   </td>
                   <td className="px-4 py-1">{cellText(r.received)}</td>
                 </tr>
@@ -897,7 +1085,10 @@ const MessageFlowView: React.FC<{
       >
         <input
           className="exchange-input w-40 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-xs text-[var(--color-text)]"
-          placeholder={t("integrations.exchange.mailflow.serverFilter", "Server (optional)")}
+          placeholder={t(
+            "integrations.exchange.mailflow.serverFilter",
+            "Server (optional)",
+          )}
           value={queueServer}
           onChange={(e) => setQueueServer(e.target.value)}
           onKeyDown={(e) => {
@@ -910,7 +1101,9 @@ const MessageFlowView: React.FC<{
       </Toolbar>
 
       {localError && (
-        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">{localError}</p>
+        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">
+          {localError}
+        </p>
       )}
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -919,16 +1112,25 @@ const MessageFlowView: React.FC<{
             <thead className="sticky top-0 bg-[var(--color-surface)]">
               <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-textSecondary)]">
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.field.identity", "Identity")}
+                  {t(
+                    "integrations.exchange.mailflow.field.identity",
+                    "Identity",
+                  )}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
                   {t("integrations.exchange.mailflow.field.status", "Status")}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.messageFlow.messageCount", "Messages")}
+                  {t(
+                    "integrations.exchange.mailflow.messageFlow.messageCount",
+                    "Messages",
+                  )}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.messageFlow.nextHop", "Next hop")}
+                  {t(
+                    "integrations.exchange.mailflow.messageFlow.nextHop",
+                    "Next hop",
+                  )}
                 </th>
                 <th className="px-4 py-1.5" />
               </tr>
@@ -947,7 +1149,10 @@ const MessageFlowView: React.FC<{
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() =>
-                          void api.getQueue(q.identity).then(setQueueDetail).catch(() => {})
+                          void api
+                            .getQueue(q.identity)
+                            .then(setQueueDetail)
+                            .catch(() => {})
                         }
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                         title={t("integrations.exchange.mailflow.view", "View")}
@@ -955,26 +1160,41 @@ const MessageFlowView: React.FC<{
                         <Search size={13} />
                       </button>
                       <button
-                        onClick={() => void queueAct(() => api.retryQueue(q.identity))}
+                        onClick={() =>
+                          void queueAct(() => api.retryQueue(q.identity))
+                        }
                         disabled={busy}
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title={t("integrations.exchange.mailflow.messageFlow.retry", "Retry")}
+                        title={t(
+                          "integrations.exchange.mailflow.messageFlow.retry",
+                          "Retry",
+                        )}
                       >
                         <RefreshCw size={13} />
                       </button>
                       <button
-                        onClick={() => void queueAct(() => api.suspendQueue(q.identity))}
+                        onClick={() =>
+                          void queueAct(() => api.suspendQueue(q.identity))
+                        }
                         disabled={busy}
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-warning,#f59e0b)]"
-                        title={t("integrations.exchange.mailflow.messageFlow.suspend", "Suspend")}
+                        title={t(
+                          "integrations.exchange.mailflow.messageFlow.suspend",
+                          "Suspend",
+                        )}
                       >
                         <Ban size={13} />
                       </button>
                       <button
-                        onClick={() => void queueAct(() => api.resumeQueue(q.identity))}
+                        onClick={() =>
+                          void queueAct(() => api.resumeQueue(q.identity))
+                        }
                         disabled={busy}
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-success,#22c55e)]"
-                        title={t("integrations.exchange.mailflow.messageFlow.resume", "Resume")}
+                        title={t(
+                          "integrations.exchange.mailflow.messageFlow.resume",
+                          "Resume",
+                        )}
                       >
                         <Play size={13} />
                       </button>
@@ -1006,8 +1226,14 @@ const AddressingView: React.FC<{
   state: ReturnType<typeof useExchangeMailflow>;
 }> = ({ state }) => {
   const { t } = useTranslation();
-  const { addressPolicies, acceptedDomains, addressLists, loading, loadAddressing, api } =
-    state;
+  const {
+    addressPolicies,
+    acceptedDomains,
+    addressLists,
+    loading,
+    loadAddressing,
+    api,
+  } = state;
   const [detail, setDetail] = useState<EmailAddressPolicy | null>(null);
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -1035,11 +1261,16 @@ const AddressingView: React.FC<{
   return (
     <div className="flex h-full flex-col overflow-auto">
       <Toolbar
-        title={t("integrations.exchange.mailflow.addressing.title", "Address Policies & Lists")}
+        title={t(
+          "integrations.exchange.mailflow.addressing.title",
+          "Address Policies & Lists",
+        )}
         onRefresh={() => void loadAddressing()}
       />
       {localError && (
-        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">{localError}</p>
+        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">
+          {localError}
+        </p>
       )}
 
       <EmptyOr
@@ -1054,26 +1285,38 @@ const AddressingView: React.FC<{
           {/* Email address policies */}
           <section>
             <h3 className="mb-1 text-xs font-semibold uppercase text-[var(--color-textSecondary)]">
-              {t("integrations.exchange.mailflow.addressing.policies", "Email address policies")}
+              {t(
+                "integrations.exchange.mailflow.addressing.policies",
+                "Email address policies",
+              )}
             </h3>
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-textSecondary)]">
                   <th className="px-2 py-1 font-medium">
-                    {t("integrations.exchange.mailflow.field.priority", "Priority")}
+                    {t(
+                      "integrations.exchange.mailflow.field.priority",
+                      "Priority",
+                    )}
                   </th>
                   <th className="px-2 py-1 font-medium">
                     {t("integrations.exchange.mailflow.field.name", "Name")}
                   </th>
                   <th className="px-2 py-1 font-medium">
-                    {t("integrations.exchange.mailflow.field.enabled", "Enabled")}
+                    {t(
+                      "integrations.exchange.mailflow.field.enabled",
+                      "Enabled",
+                    )}
                   </th>
                   <th className="px-2 py-1" />
                 </tr>
               </thead>
               <tbody>
                 {addressPolicies.map((p) => (
-                  <tr key={p.id || p.name} className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]">
+                  <tr
+                    key={p.id || p.name}
+                    className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]"
+                  >
                     <td className="px-2 py-1">{p.priority}</td>
                     <td className="px-2 py-1">{p.name}</td>
                     <td className="px-2 py-1">{p.enabled ? "✓" : "✗"}</td>
@@ -1081,10 +1324,16 @@ const AddressingView: React.FC<{
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() =>
-                            void api.getAddressPolicy(p.id || p.name).then(setDetail).catch(() => {})
+                            void api
+                              .getAddressPolicy(p.id || p.name)
+                              .then(setDetail)
+                              .catch(() => {})
                           }
                           className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                          title={t("integrations.exchange.mailflow.view", "View")}
+                          title={t(
+                            "integrations.exchange.mailflow.view",
+                            "View",
+                          )}
                         >
                           <Search size={13} />
                         </button>
@@ -1092,7 +1341,10 @@ const AddressingView: React.FC<{
                           onClick={() => void apply(p.id || p.name)}
                           disabled={busy}
                           className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                          title={t("integrations.exchange.mailflow.addressing.apply", "Apply")}
+                          title={t(
+                            "integrations.exchange.mailflow.addressing.apply",
+                            "Apply",
+                          )}
                         >
                           <Play size={13} />
                         </button>
@@ -1107,7 +1359,10 @@ const AddressingView: React.FC<{
           {/* Accepted domains */}
           <section>
             <h3 className="mb-1 text-xs font-semibold uppercase text-[var(--color-textSecondary)]">
-              {t("integrations.exchange.mailflow.addressing.acceptedDomains", "Accepted domains")}
+              {t(
+                "integrations.exchange.mailflow.addressing.acceptedDomains",
+                "Accepted domains",
+              )}
             </h3>
             <table className="w-full border-collapse text-xs">
               <thead>
@@ -1116,19 +1371,31 @@ const AddressingView: React.FC<{
                     {t("integrations.exchange.mailflow.field.name", "Name")}
                   </th>
                   <th className="px-2 py-1 font-medium">
-                    {t("integrations.exchange.mailflow.addressing.domainName", "Domain")}
+                    {t(
+                      "integrations.exchange.mailflow.addressing.domainName",
+                      "Domain",
+                    )}
                   </th>
                   <th className="px-2 py-1 font-medium">
-                    {t("integrations.exchange.mailflow.addressing.domainType", "Type")}
+                    {t(
+                      "integrations.exchange.mailflow.addressing.domainType",
+                      "Type",
+                    )}
                   </th>
                   <th className="px-2 py-1 font-medium">
-                    {t("integrations.exchange.mailflow.addressing.default", "Default")}
+                    {t(
+                      "integrations.exchange.mailflow.addressing.default",
+                      "Default",
+                    )}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {acceptedDomains.map((d) => (
-                  <tr key={d.name} className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]">
+                  <tr
+                    key={d.name}
+                    className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]"
+                  >
                     <td className="px-2 py-1">{d.name}</td>
                     <td className="px-2 py-1">{d.domainName}</td>
                     <td className="px-2 py-1">
@@ -1147,7 +1414,10 @@ const AddressingView: React.FC<{
           {/* Address lists */}
           <section>
             <h3 className="mb-1 text-xs font-semibold uppercase text-[var(--color-textSecondary)]">
-              {t("integrations.exchange.mailflow.addressing.addressLists", "Address lists")}
+              {t(
+                "integrations.exchange.mailflow.addressing.addressLists",
+                "Address lists",
+              )}
             </h3>
             <table className="w-full border-collapse text-xs">
               <thead>
@@ -1156,16 +1426,25 @@ const AddressingView: React.FC<{
                     {t("integrations.exchange.mailflow.field.name", "Name")}
                   </th>
                   <th className="px-2 py-1 font-medium">
-                    {t("integrations.exchange.mailflow.addressing.path", "Path")}
+                    {t(
+                      "integrations.exchange.mailflow.addressing.path",
+                      "Path",
+                    )}
                   </th>
                   <th className="px-2 py-1 font-medium">
-                    {t("integrations.exchange.mailflow.addressing.recipientFilter", "Recipient filter")}
+                    {t(
+                      "integrations.exchange.mailflow.addressing.recipientFilter",
+                      "Recipient filter",
+                    )}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {addressLists.map((l) => (
-                  <tr key={l.path || l.name} className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]">
+                  <tr
+                    key={l.path || l.name}
+                    className="border-b border-[var(--color-border)]/50 text-[var(--color-text)]"
+                  >
                     <td className="px-2 py-1">{l.name}</td>
                     <td className="px-2 py-1">{l.path}</td>
                     <td className="px-2 py-1">{cellText(l.recipientFilter)}</td>
@@ -1199,7 +1478,10 @@ const RemoteDomainsView: React.FC<{
   const { remoteDomains, loading, loadRemoteDomains, api } = state;
   const [detail, setDetail] = useState<RemoteDomain | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState<CreateRemoteDomainRequest>({ name: "", domainName: "" });
+  const [form, setForm] = useState<CreateRemoteDomainRequest>({
+    name: "",
+    domainName: "",
+  });
   const [editParamsFor, setEditParamsFor] = useState<string | null>(null);
   const [paramsRaw, setParamsRaw] = useState("{\n  \n}");
   const [busy, setBusy] = useState(false);
@@ -1260,7 +1542,10 @@ const RemoteDomainsView: React.FC<{
   return (
     <div className="flex h-full flex-col">
       <Toolbar
-        title={t("integrations.exchange.mailflow.remoteDomains.title", "Remote Domains")}
+        title={t(
+          "integrations.exchange.mailflow.remoteDomains.title",
+          "Remote Domains",
+        )}
         count={remoteDomains.length}
         onRefresh={() => void loadRemoteDomains()}
       >
@@ -1278,7 +1563,9 @@ const RemoteDomainsView: React.FC<{
       </Toolbar>
 
       {localError && (
-        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">{localError}</p>
+        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">
+          {localError}
+        </p>
       )}
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -1290,13 +1577,22 @@ const RemoteDomainsView: React.FC<{
                   {t("integrations.exchange.mailflow.field.name", "Name")}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.addressing.domainName", "Domain")}
+                  {t(
+                    "integrations.exchange.mailflow.addressing.domainName",
+                    "Domain",
+                  )}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.remoteDomains.autoReply", "Auto-reply")}
+                  {t(
+                    "integrations.exchange.mailflow.remoteDomains.autoReply",
+                    "Auto-reply",
+                  )}
                 </th>
                 <th className="px-4 py-1.5 font-medium">
-                  {t("integrations.exchange.mailflow.remoteDomains.tnef", "TNEF")}
+                  {t(
+                    "integrations.exchange.mailflow.remoteDomains.tnef",
+                    "TNEF",
+                  )}
                 </th>
                 <th className="px-4 py-1.5" />
               </tr>
@@ -1309,13 +1605,18 @@ const RemoteDomainsView: React.FC<{
                 >
                   <td className="px-4 py-1.5">{d.name}</td>
                   <td className="px-4 py-1.5">{d.domainName}</td>
-                  <td className="px-4 py-1.5">{d.autoReplyEnabled ? "✓" : "✗"}</td>
+                  <td className="px-4 py-1.5">
+                    {d.autoReplyEnabled ? "✓" : "✗"}
+                  </td>
                   <td className="px-4 py-1.5">{d.tnefEnabled ? "✓" : "✗"}</td>
                   <td className="px-4 py-1.5">
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() =>
-                          void api.getRemoteDomain(d.name).then(setDetail).catch(() => {})
+                          void api
+                            .getRemoteDomain(d.name)
+                            .then(setDetail)
+                            .catch(() => {})
                         }
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                         title={t("integrations.exchange.mailflow.view", "View")}
@@ -1329,15 +1630,23 @@ const RemoteDomainsView: React.FC<{
                           setLocalError(null);
                         }}
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title={t("integrations.exchange.mailflow.editParams", "Edit (params)")}
+                        title={t(
+                          "integrations.exchange.mailflow.editParams",
+                          "Edit (params)",
+                        )}
                       >
                         <Settings2 size={13} />
                       </button>
                       <button
-                        onClick={() => void act(() => api.removeRemoteDomain(d.name))}
+                        onClick={() =>
+                          void act(() => api.removeRemoteDomain(d.name))
+                        }
                         disabled={busy}
                         className="text-[var(--color-textSecondary)] hover:text-[var(--color-error,#ef4444)]"
-                        title={t("integrations.exchange.mailflow.delete", "Delete")}
+                        title={t(
+                          "integrations.exchange.mailflow.delete",
+                          "Delete",
+                        )}
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1362,8 +1671,11 @@ const RemoteDomainsView: React.FC<{
         <div className="border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--color-text)]">
-              {t("integrations.exchange.mailflow.remoteDomains.updateTitle", "Update remote domain")}:{" "}
-              {editParamsFor}
+              {t(
+                "integrations.exchange.mailflow.remoteDomains.updateTitle",
+                "Update remote domain",
+              )}
+              : {editParamsFor}
             </span>
             <button
               onClick={() => setEditParamsFor(null)}
@@ -1379,11 +1691,22 @@ const RemoteDomainsView: React.FC<{
             onChange={(e) => setParamsRaw(e.target.value)}
           />
           <div className="mt-2 flex items-center gap-2">
-            <button onClick={() => void submitParams()} disabled={busy} className={BTN_PRIMARY}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+            <button
+              onClick={() => void submitParams()}
+              disabled={busy}
+              className={BTN_PRIMARY}
+            >
+              {busy ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Save size={12} />
+              )}
               {t("integrations.exchange.mailflow.apply", "Apply")}
             </button>
-            <button onClick={() => setEditParamsFor(null)} className="app-bar-button px-3 py-1.5 text-xs">
+            <button
+              onClick={() => setEditParamsFor(null)}
+              className="app-bar-button px-3 py-1.5 text-xs"
+            >
               {t("integrations.exchange.mailflow.cancel", "Cancel")}
             </button>
           </div>
@@ -1394,7 +1717,10 @@ const RemoteDomainsView: React.FC<{
         <div className="border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--color-text)]">
-              {t("integrations.exchange.mailflow.remoteDomains.createTitle", "Create remote domain")}
+              {t(
+                "integrations.exchange.mailflow.remoteDomains.createTitle",
+                "Create remote domain",
+              )}
             </span>
             <button
               onClick={() => setCreating(false)}
@@ -1411,17 +1737,24 @@ const RemoteDomainsView: React.FC<{
               <input
                 className={INPUT_CLS}
                 value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, name: e.target.value }))
+                }
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-[var(--color-textSecondary)]">
-                {t("integrations.exchange.mailflow.addressing.domainName", "Domain")}
+                {t(
+                  "integrations.exchange.mailflow.addressing.domainName",
+                  "Domain",
+                )}
               </span>
               <input
                 className={INPUT_CLS}
                 value={form.domainName}
-                onChange={(e) => setForm((p) => ({ ...p, domainName: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, domainName: e.target.value }))
+                }
                 placeholder="contoso.com"
               />
             </label>
@@ -1429,25 +1762,49 @@ const RemoteDomainsView: React.FC<{
               <input
                 type="checkbox"
                 checked={form.autoReplyEnabled ?? false}
-                onChange={(e) => setForm((p) => ({ ...p, autoReplyEnabled: e.target.checked }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, autoReplyEnabled: e.target.checked }))
+                }
               />
-              {t("integrations.exchange.mailflow.remoteDomains.autoReply", "Auto-reply")}
+              {t(
+                "integrations.exchange.mailflow.remoteDomains.autoReply",
+                "Auto-reply",
+              )}
             </label>
             <label className="flex items-center gap-2 text-xs text-[var(--color-text)]">
               <input
                 type="checkbox"
                 checked={form.autoForwardEnabled ?? false}
-                onChange={(e) => setForm((p) => ({ ...p, autoForwardEnabled: e.target.checked }))}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    autoForwardEnabled: e.target.checked,
+                  }))
+                }
               />
-              {t("integrations.exchange.mailflow.remoteDomains.autoForward", "Auto-forward")}
+              {t(
+                "integrations.exchange.mailflow.remoteDomains.autoForward",
+                "Auto-forward",
+              )}
             </label>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <button onClick={() => void submitCreate()} disabled={busy} className={BTN_PRIMARY}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+            <button
+              onClick={() => void submitCreate()}
+              disabled={busy}
+              className={BTN_PRIMARY}
+            >
+              {busy ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Plus size={12} />
+              )}
               {t("integrations.exchange.mailflow.create", "Create")}
             </button>
-            <button onClick={() => setCreating(false)} className="app-bar-button px-3 py-1.5 text-xs">
+            <button
+              onClick={() => setCreating(false)}
+              className="app-bar-button px-3 py-1.5 text-xs"
+            >
               {t("integrations.exchange.mailflow.cancel", "Cancel")}
             </button>
           </div>
@@ -1502,7 +1859,10 @@ const TransportConfigView: React.FC<{
   return (
     <div className="flex h-full flex-col overflow-auto">
       <Toolbar
-        title={t("integrations.exchange.mailflow.transportConfig.title", "Transport Config")}
+        title={t(
+          "integrations.exchange.mailflow.transportConfig.title",
+          "Transport Config",
+        )}
         onRefresh={() => void loadTransportConfig()}
       >
         <button
@@ -1520,10 +1880,14 @@ const TransportConfigView: React.FC<{
       </Toolbar>
 
       {okMsg && (
-        <p className="px-4 py-1.5 text-xs text-[var(--color-success,#22c55e)]">{okMsg}</p>
+        <p className="px-4 py-1.5 text-xs text-[var(--color-success,#22c55e)]">
+          {okMsg}
+        </p>
       )}
       {localError && (
-        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">{localError}</p>
+        <p className="px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">
+          {localError}
+        </p>
       )}
 
       {editing && (
@@ -1541,11 +1905,22 @@ const TransportConfigView: React.FC<{
             onChange={(e) => setParamsRaw(e.target.value)}
           />
           <div className="mt-2 flex items-center gap-2">
-            <button onClick={() => void submit()} disabled={busy} className={BTN_PRIMARY}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+            <button
+              onClick={() => void submit()}
+              disabled={busy}
+              className={BTN_PRIMARY}
+            >
+              {busy ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Save size={12} />
+              )}
               {t("integrations.exchange.mailflow.apply", "Apply")}
             </button>
-            <button onClick={() => setEditing(false)} className="app-bar-button px-3 py-1.5 text-xs">
+            <button
+              onClick={() => setEditing(false)}
+              className="app-bar-button px-3 py-1.5 text-xs"
+            >
               {t("integrations.exchange.mailflow.cancel", "Cancel")}
             </button>
           </div>
@@ -1556,14 +1931,16 @@ const TransportConfigView: React.FC<{
         <EmptyOr loading={loading} empty={!transportConfig}>
           {transportConfig && (
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs md:grid-cols-3">
-              {Object.entries(transportConfig as unknown as Record<string, unknown>).map(
-                ([k, v]) => (
-                  <div key={k} className="flex flex-col">
-                    <span className="text-[var(--color-textSecondary)]">{k}</span>
-                    <span className="break-words text-[var(--color-text)]">{cellText(v)}</span>
-                  </div>
-                ),
-              )}
+              {Object.entries(
+                transportConfig as unknown as Record<string, unknown>,
+              ).map(([k, v]) => (
+                <div key={k} className="flex flex-col">
+                  <span className="text-[var(--color-textSecondary)]">{k}</span>
+                  <span className="break-words text-[var(--color-text)]">
+                    {cellText(v)}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </EmptyOr>
@@ -1634,7 +2011,10 @@ const ExchangeMailflowTab: React.FC<ExchangeTabProps> = () => {
       {state.error && (
         <div className="flex items-center justify-between gap-2 bg-[var(--color-error,#ef4444)]/10 px-4 py-1.5 text-xs text-[var(--color-error,#ef4444)]">
           <span>{state.error}</span>
-          <button onClick={state.clearError} className="opacity-70 hover:opacity-100">
+          <button
+            onClick={state.clearError}
+            className="opacity-70 hover:opacity-100"
+          >
             <X size={12} />
           </button>
         </div>

@@ -397,7 +397,7 @@ const RacksSection: React.FC<{ dcim: ReturnType<typeof useNetboxDcim> }> = ({
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const view = useCallback(
@@ -605,7 +605,7 @@ const DevicesSection: React.FC<{ dcim: ReturnType<typeof useNetboxDcim> }> = ({
   useEffect(() => {
     if (sub === "devices") void loadDevices();
     else void loadRefs(sub);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [sub]);
 
   const viewDevice = useCallback(
@@ -660,7 +660,8 @@ const DevicesSection: React.FC<{ dcim: ReturnType<typeof useNetboxDcim> }> = ({
             ? { name: "", device_type: null, role: null, site: null }
             : (device as unknown as NbPayload),
           submit: async (mode, data) => {
-            if (mode === "create") await run((id) => api.createDevice(id, data));
+            if (mode === "create")
+              await run((id) => api.createDevice(id, data));
             else if (mode === "patch")
               await run((id) => api.partialUpdateDevice(id, device!.id!, data));
             else await run((id) => api.updateDevice(id, device!.id!, data));
@@ -699,7 +700,10 @@ const DevicesSection: React.FC<{ dcim: ReturnType<typeof useNetboxDcim> }> = ({
   );
 
   const subTabs: Array<{ key: DeviceSub; label: string }> = [
-    { key: "devices", label: t("integrations.netbox.dcim.groups.devices", "Devices") },
+    {
+      key: "devices",
+      label: t("integrations.netbox.dcim.groups.devices", "Devices"),
+    },
     {
       key: "types",
       label: t("integrations.netbox.dcim.refs.types", "Device types"),
@@ -746,7 +750,10 @@ const DevicesSection: React.FC<{ dcim: ReturnType<typeof useNetboxDcim> }> = ({
           >
             <input
               className={inputCls}
-              placeholder={t("integrations.netbox.dcim.filters.search", "Search")}
+              placeholder={t(
+                "integrations.netbox.dcim.filters.search",
+                "Search",
+              )}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && loadDevices()}
@@ -862,7 +869,7 @@ const InterfacesSection: React.FC<{
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const view = useCallback(
@@ -1005,7 +1012,7 @@ const CablesSection: React.FC<{ dcim: ReturnType<typeof useNetboxDcim> }> = ({
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const view = useCallback(

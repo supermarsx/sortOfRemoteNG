@@ -1,19 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { ConnectionSession } from '../../types/connection/connection';
-import { useConnections } from '../../contexts/useConnections';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ConnectionSession } from "../../types/connection/connection";
+import { useConnections } from "../../contexts/useConnections";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types (mirror Rust-side `sorng_smb::smb::types`)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type SmbShareType =
-  | 'disk'
-  | 'printer'
-  | 'ipc'
-  | 'device'
-  | 'special'
-  | 'unknown';
+  "disk" | "printer" | "ipc" | "device" | "special" | "unknown";
 
 export interface SmbShareInfo {
   name: string;
@@ -22,7 +17,7 @@ export interface SmbShareInfo {
   isAdmin: boolean;
 }
 
-export type SmbEntryType = 'file' | 'directory' | 'symlink' | 'unknown';
+export type SmbEntryType = "file" | "directory" | "symlink" | "unknown";
 
 export interface SmbDirEntry {
   name: string;
@@ -78,7 +73,7 @@ export interface SmbConnectionConfig {
 // working. New code should use `SmbDirEntry` directly.
 export interface SMBFile {
   name: string;
-  type: 'file' | 'directory' | 'share';
+  type: "file" | "directory" | "share";
   size: number;
   modified: Date;
   permissions?: string;
@@ -101,15 +96,17 @@ export interface SMBFile {
  */
 export function useSMBClient(session: ConnectionSession) {
   const { state, dispatch } = useConnections();
-  const connection = state.connections.find(item => item.id === session.connectionId);
+  const connection = state.connections.find(
+    (item) => item.id === session.connectionId,
+  );
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  const [currentPath, setCurrentPath] = useState<string>('/');
+  const [currentPath, setCurrentPath] = useState<string>("/");
   const [files, setFiles] = useState<SmbDirEntry[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [shares, setShares] = useState<SmbShareInfo[]>([]);
-  const [currentShare, setCurrentShare] = useState<string>('');
+  const [currentShare, setCurrentShare] = useState<string>("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,7 +116,7 @@ export function useSMBClient(session: ConnectionSession) {
   const updateSession = useCallback(
     (patch: Partial<ConnectionSession>) => {
       dispatch?.({
-        type: 'UPDATE_SESSION',
+        type: "UPDATE_SESSION",
         payload: { ...sessionRef.current, ...patch },
       });
     },
@@ -131,7 +128,7 @@ export function useSMBClient(session: ConnectionSession) {
   const connect = useCallback(
     async (configOverride?: Partial<SmbConnectionConfig>): Promise<string> => {
       if (connectingRef.current) {
-        throw new Error('SMB connect already in progress');
+        throw new Error("SMB connect already in progress");
       }
       connectingRef.current = true;
       setIsLoading(true);
@@ -149,20 +146,21 @@ export function useSMBClient(session: ConnectionSession) {
           label: connection?.name ?? session.name,
           ...configOverride,
         };
-        const info = await invoke<SmbSessionInfo>('smb_connect', { config });
+        const info = await invoke<SmbSessionInfo>("smb_connect", { config });
         setSessionId(info.id);
         connectedSessionRef.current = info.id;
         updateSession({
           backendSessionId: info.id,
-          status: 'connected',
+          status: "connected",
           errorMessage: undefined,
         });
         return info.id;
       } catch (e) {
-        const msg = typeof e === 'string' ? e : (e as Error)?.message ?? String(e);
+        const msg =
+          typeof e === "string" ? e : ((e as Error)?.message ?? String(e));
         const message = `SMB connect failed: ${msg}`;
         setError(message);
-        updateSession({ status: 'error', errorMessage: message });
+        updateSession({ status: "error", errorMessage: message });
         throw e;
       } finally {
         connectingRef.current = false;
@@ -175,19 +173,19 @@ export function useSMBClient(session: ConnectionSession) {
   const disconnect = useCallback(async () => {
     if (!sessionId) return;
     try {
-      await invoke<void>('smb_disconnect', { sessionId });
+      await invoke<void>("smb_disconnect", { sessionId });
     } catch (e) {
       // Non-fatal — log and clear local state anyway.
-      console.warn('SMB disconnect failed:', e);
+      console.warn("SMB disconnect failed:", e);
     } finally {
       setSessionId(null);
       connectedSessionRef.current = null;
       setShares([]);
-      setCurrentShare('');
+      setCurrentShare("");
       setFiles([]);
       updateSession({
         backendSessionId: undefined,
-        status: 'disconnected',
+        status: "disconnected",
         errorMessage: undefined,
       });
     }
@@ -207,27 +205,28 @@ export function useSMBClient(session: ConnectionSession) {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await invoke<SmbShareInfo[]>('smb_list_shares', {
+      const result = await invoke<SmbShareInfo[]>("smb_list_shares", {
         sessionId: sid,
       });
       setShares(result);
       if (result.length > 0 && !currentShare) {
         const configuredShare = connection?.shareName?.trim();
         const preferredShare = configuredShare
-          ? result.find(s => s.name === configuredShare)
+          ? result.find((s) => s.name === configuredShare)
           : undefined;
         // Pick the first non-IPC share as the default; fall back to first.
         const firstUsable =
           preferredShare ??
-          result.find(s => s.shareType !== 'ipc' && !s.isAdmin) ??
-          result.find(s => s.shareType !== 'ipc') ??
+          result.find((s) => s.shareType !== "ipc" && !s.isAdmin) ??
+          result.find((s) => s.shareType !== "ipc") ??
           result[0];
         setCurrentShare(firstUsable.name);
       }
     } catch (e) {
-      const msg = typeof e === 'string' ? e : (e as Error)?.message ?? String(e);
+      const msg =
+        typeof e === "string" ? e : ((e as Error)?.message ?? String(e));
       setError(`Failed to load SMB shares: ${msg}`);
-      console.error('Failed to load SMB shares:', e);
+      console.error("Failed to load SMB shares:", e);
     } finally {
       setIsLoading(false);
     }
@@ -241,17 +240,18 @@ export function useSMBClient(session: ConnectionSession) {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await invoke<SmbDirEntry[]>('smb_list_directory', {
+        const result = await invoke<SmbDirEntry[]>("smb_list_directory", {
           sessionId,
           share: currentShare,
           path,
         });
         // Filter out the synthetic "." / ".." entries that smbclient may emit.
-        setFiles(result.filter(e => e.name !== '.' && e.name !== '..'));
+        setFiles(result.filter((e) => e.name !== "." && e.name !== ".."));
       } catch (e) {
-        const msg = typeof e === 'string' ? e : (e as Error)?.message ?? String(e);
+        const msg =
+          typeof e === "string" ? e : ((e as Error)?.message ?? String(e));
         setError(`Failed to load directory: ${msg}`);
-        console.error('Failed to load directory:', e);
+        console.error("Failed to load directory:", e);
         setFiles([]);
       } finally {
         setIsLoading(false);
@@ -269,12 +269,12 @@ export function useSMBClient(session: ConnectionSession) {
     return () => {
       const sid = connectedSessionRef.current;
       if (sid) {
-        void invoke('smb_disconnect', { sessionId: sid }).catch(() => {
+        void invoke("smb_disconnect", { sessionId: sid }).catch(() => {
           // Ignore — session may already be gone.
         });
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -291,15 +291,15 @@ export function useSMBClient(session: ConnectionSession) {
   }, []);
 
   const navigateUp = useCallback(() => {
-    const parts = currentPath.split('/').filter(p => p);
+    const parts = currentPath.split("/").filter((p) => p);
     if (parts.length > 0) {
       parts.pop();
-      navigateToPath(parts.length ? '/' + parts.join('/') : '/');
+      navigateToPath(parts.length ? "/" + parts.join("/") : "/");
     }
   }, [currentPath, navigateToPath]);
 
   const handleFileSelect = useCallback((fileName: string) => {
-    setSelectedFiles(prev => {
+    setSelectedFiles((prev) => {
       const next = new Set(prev);
       if (next.has(fileName)) next.delete(fileName);
       else next.add(fileName);
@@ -309,15 +309,15 @@ export function useSMBClient(session: ConnectionSession) {
 
   const handleDoubleClick = useCallback(
     (file: SmbDirEntry) => {
-      if (file.entryType === 'directory') {
-        navigateToPath(file.path.startsWith('/') ? file.path : `/${file.path}`);
+      if (file.entryType === "directory") {
+        navigateToPath(file.path.startsWith("/") ? file.path : `/${file.path}`);
       }
     },
     [navigateToPath],
   );
 
   const selectAll = useCallback(() => {
-    setSelectedFiles(new Set(files.map(f => f.name)));
+    setSelectedFiles(new Set(files.map((f) => f.name)));
   }, [files]);
 
   const deselectAll = useCallback(() => {
@@ -326,7 +326,7 @@ export function useSMBClient(session: ConnectionSession) {
 
   const handleShareChange = useCallback((share: string) => {
     setCurrentShare(share);
-    setCurrentPath('/');
+    setCurrentPath("/");
     setSelectedFiles(new Set());
   }, []);
 
@@ -338,8 +338,8 @@ export function useSMBClient(session: ConnectionSession) {
 
   const downloadFile = useCallback(
     async (remotePath: string, localPath: string) => {
-      if (!sessionId || !currentShare) throw new Error('not connected');
-      return invoke<unknown>('smb_download_file', {
+      if (!sessionId || !currentShare) throw new Error("not connected");
+      return invoke<unknown>("smb_download_file", {
         sessionId,
         share: currentShare,
         remotePath,
@@ -351,8 +351,8 @@ export function useSMBClient(session: ConnectionSession) {
 
   const uploadFile = useCallback(
     async (localPath: string, remotePath: string) => {
-      if (!sessionId || !currentShare) throw new Error('not connected');
-      return invoke<unknown>('smb_upload_file', {
+      if (!sessionId || !currentShare) throw new Error("not connected");
+      return invoke<unknown>("smb_upload_file", {
         sessionId,
         share: currentShare,
         localPath,
@@ -364,8 +364,8 @@ export function useSMBClient(session: ConnectionSession) {
 
   const deleteFile = useCallback(
     async (path: string) => {
-      if (!sessionId || !currentShare) throw new Error('not connected');
-      await invoke<void>('smb_delete_file', {
+      if (!sessionId || !currentShare) throw new Error("not connected");
+      await invoke<void>("smb_delete_file", {
         sessionId,
         share: currentShare,
         path,
@@ -378,18 +378,18 @@ export function useSMBClient(session: ConnectionSession) {
   const deleteSelected = useCallback(async () => {
     if (!sessionId || !currentShare) return;
     for (const name of selectedFiles) {
-      const file = files.find(f => f.name === name);
+      const file = files.find((f) => f.name === name);
       if (!file) continue;
       try {
-        if (file.entryType === 'directory') {
-          await invoke<void>('smb_rmdir', {
+        if (file.entryType === "directory") {
+          await invoke<void>("smb_rmdir", {
             sessionId,
             share: currentShare,
             path: file.path,
             recursive: true,
           });
         } else {
-          await invoke<void>('smb_delete_file', {
+          await invoke<void>("smb_delete_file", {
             sessionId,
             share: currentShare,
             path: file.path,
@@ -405,8 +405,8 @@ export function useSMBClient(session: ConnectionSession) {
 
   const mkdir = useCallback(
     async (path: string) => {
-      if (!sessionId || !currentShare) throw new Error('not connected');
-      await invoke<void>('smb_mkdir', {
+      if (!sessionId || !currentShare) throw new Error("not connected");
+      await invoke<void>("smb_mkdir", {
         sessionId,
         share: currentShare,
         path,
@@ -418,8 +418,8 @@ export function useSMBClient(session: ConnectionSession) {
 
   const rename = useCallback(
     async (from: string, to: string) => {
-      if (!sessionId || !currentShare) throw new Error('not connected');
-      await invoke<void>('smb_rename', {
+      if (!sessionId || !currentShare) throw new Error("not connected");
+      await invoke<void>("smb_rename", {
         sessionId,
         share: currentShare,
         from,
@@ -432,8 +432,8 @@ export function useSMBClient(session: ConnectionSession) {
 
   const stat = useCallback(
     async (path: string): Promise<SmbStat> => {
-      if (!sessionId || !currentShare) throw new Error('not connected');
-      return invoke<SmbStat>('smb_stat', {
+      if (!sessionId || !currentShare) throw new Error("not connected");
+      return invoke<SmbStat>("smb_stat", {
         sessionId,
         share: currentShare,
         path,
@@ -445,11 +445,11 @@ export function useSMBClient(session: ConnectionSession) {
   // ── Formatters ─────────────────────────────────────────────────────
 
   const formatFileSize = useCallback((bytes: number): string => {
-    if (bytes === 0) return '0 B';
+    if (bytes === 0) return "0 B";
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   }, []);
 
   return {

@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Vortex variant — a tilted disc of particles spiralling inward toward a
  * bright singularity at the center. Each particle lives on its own phase;
@@ -7,11 +7,11 @@
  * Ported from `prototypes/orb-previews/X3-vortex.html`.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import type { CSSProperties } from 'react';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
-import { DEFAULT_VORTEX } from '../defaults';
-import { subscribeTicker } from '../runtime/rafCoordinator';
+import React, { useEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
+import { DEFAULT_VORTEX } from "../defaults";
+import { subscribeTicker } from "../runtime/rafCoordinator";
 
 const TAU = Math.PI * 2;
 
@@ -21,7 +21,7 @@ interface Particle {
   theta0: number;
 }
 
-const VortexVariant: React.FC<VariantRenderProps<'vortex'>> = ({
+const VortexVariant: React.FC<VariantRenderProps<"vortex">> = ({
   size,
   color,
   config,
@@ -42,20 +42,20 @@ const VortexVariant: React.FC<VariantRenderProps<'vortex'>> = ({
   useEffect(() => {
     const sphere = sphereRef.current;
     if (!sphere) return;
-    sphere.innerHTML = '';
+    sphere.innerHTML = "";
     const items: Particle[] = [];
     const n = Math.max(1, Math.floor(config.particles));
     for (let i = 0; i < n; i++) {
-      const dot = document.createElement('span');
+      const dot = document.createElement("span");
       const s = dot.style;
-      s.position = 'absolute';
-      s.top = '50%';
-      s.left = '50%';
-      s.borderRadius = '50%';
-      s.background = 'currentColor';
-      s.transformStyle = 'preserve-3d';
-      s.willChange = 'transform, opacity';
-      s.opacity = '0.6';
+      s.position = "absolute";
+      s.top = "50%";
+      s.left = "50%";
+      s.borderRadius = "50%";
+      s.background = "currentColor";
+      s.transformStyle = "preserve-3d";
+      s.willChange = "transform, opacity";
+      s.opacity = "0.6";
       sphere.appendChild(dot);
       items.push({
         el: dot,
@@ -64,14 +64,32 @@ const VortexVariant: React.FC<VariantRenderProps<'vortex'>> = ({
       });
     }
     particlesRef.current = items;
-    return () => { sphere.innerHTML = ''; particlesRef.current = []; };
+    return () => {
+      sphere.innerHTML = "";
+      particlesRef.current = [];
+    };
   }, [size, config.particles]);
 
   // Static render for reduced-motion: render a single still frame.
   useEffect(() => {
     if (!reducedMotion) return;
-    renderFrame(particlesRef.current, 0, radius, baseDot, config.swirl, config.fall);
-  }, [reducedMotion, radius, baseDot, config.swirl, config.fall, config.particles, size]);
+    renderFrame(
+      particlesRef.current,
+      0,
+      radius,
+      baseDot,
+      config.swirl,
+      config.fall,
+    );
+  }, [
+    reducedMotion,
+    radius,
+    baseDot,
+    config.swirl,
+    config.fall,
+    config.particles,
+    size,
+  ]);
 
   // Animation subscription.
   useEffect(() => {
@@ -79,29 +97,50 @@ const VortexVariant: React.FC<VariantRenderProps<'vortex'>> = ({
     startRef.current = performance.now();
     const unsub = subscribeTicker((now) => {
       const t = (now - startRef.current) / 1000;
-      renderFrame(particlesRef.current, t, radius, baseDot, config.swirl, config.fall);
+      renderFrame(
+        particlesRef.current,
+        t,
+        radius,
+        baseDot,
+        config.swirl,
+        config.fall,
+      );
     });
     return unsub;
-  }, [reducedMotion, paused, radius, baseDot, config.swirl, config.fall, config.particles, size]);
+  }, [
+    reducedMotion,
+    paused,
+    radius,
+    baseDot,
+    config.swirl,
+    config.fall,
+    config.particles,
+    size,
+  ]);
 
   const rootStyle: CSSProperties = {
     width: size,
     height: size,
     perspective: `${size * 3}px`,
-    transform: 'rotateX(60deg)',
+    transform: "rotateX(60deg)",
     color,
-    display: 'inline-block',
+    display: "inline-block",
     ...style,
   };
   const sphereStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-    transformStyle: 'preserve-3d',
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    transformStyle: "preserve-3d",
   };
 
   return (
-    <div role="status" aria-label={ariaLabel} className={className} style={rootStyle}>
+    <div
+      role="status"
+      aria-label={ariaLabel}
+      className={className}
+      style={rootStyle}
+    >
       <div ref={sphereRef} style={sphereStyle} />
     </div>
   );
@@ -138,24 +177,53 @@ function renderFrame(
   }
 }
 
-export const descriptor: VariantDescriptor<'vortex'> = {
-  type: 'vortex',
-  label: 'Vortex',
-  description: 'Tilted disc of particles spiralling inward into a bright singularity.',
+export const descriptor: VariantDescriptor<"vortex"> = {
+  type: "vortex",
+  label: "Vortex",
+  description:
+    "Tilted disc of particles spiralling inward into a bright singularity.",
   minRecommendedSize: 40,
   supportsCanvas: true,
   hasRaf: true,
   defaultConfig: DEFAULT_VORTEX,
   presets: [
-    { id: 'classic', label: 'Classic', config: {} },
-    { id: 'whirlpool', label: 'Whirlpool', config: { particles: 800, swirl: 2.2, fall: 1.4 } },
-    { id: 'lazy-drift', label: 'Lazy drift', config: { particles: 300, swirl: 0.6, fall: 0.5 } },
+    { id: "classic", label: "Classic", config: {} },
+    {
+      id: "whirlpool",
+      label: "Whirlpool",
+      config: { particles: 800, swirl: 2.2, fall: 1.4 },
+    },
+    {
+      id: "lazy-drift",
+      label: "Lazy drift",
+      config: { particles: 300, swirl: 0.6, fall: 0.5 },
+    },
   ],
   paramSchema: {
     fields: [
-      { key: 'particles', label: 'Particles', kind: 'integer', min: 100, max: 1200 },
-      { key: 'swirl', label: 'Swirl', kind: 'number', min: 0.1, max: 3, step: 0.1 },
-      { key: 'fall', label: 'Fall', kind: 'number', min: 0.1, max: 3, step: 0.1 },
+      {
+        key: "particles",
+        label: "Particles",
+        kind: "integer",
+        min: 100,
+        max: 1200,
+      },
+      {
+        key: "swirl",
+        label: "Swirl",
+        kind: "number",
+        min: 0.1,
+        max: 3,
+        step: 0.1,
+      },
+      {
+        key: "fall",
+        label: "Fall",
+        kind: "number",
+        min: 0.1,
+        max: 3,
+        step: 0.1,
+      },
     ],
   },
   component: VortexVariant,

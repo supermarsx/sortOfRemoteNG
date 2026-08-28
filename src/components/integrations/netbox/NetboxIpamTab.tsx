@@ -296,17 +296,8 @@ const btn =
 
 const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
   const { t } = useTranslation();
-  const {
-    api,
-    items,
-    total,
-    loading,
-    busy,
-    error,
-    loadList,
-    run,
-    clearError,
-  } = useNetboxIpam();
+  const { api, items, total, loading, busy, error, loadList, run, clearError } =
+    useNetboxIpam();
 
   const [activeKey, setActiveKey] = useState<string>(SECTIONS[0].key);
   const section = useMemo(
@@ -339,7 +330,15 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
       );
     }
     return loadList(() => section.list(connectionId, buildParams()));
-  }, [section, vlanMode, vlanFilterId, api, connectionId, buildParams, loadList]);
+  }, [
+    section,
+    vlanMode,
+    vlanFilterId,
+    api,
+    connectionId,
+    buildParams,
+    loadList,
+  ]);
 
   // On section change (or reconnect) reset filters and load defaults.
   useEffect(() => {
@@ -347,7 +346,7 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
     setVlanMode("all");
     setVlanFilterId("");
     loadList(() => section.list(connectionId, [["limit", "100"]]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [activeKey, connectionId]);
 
   const rows = items as Row[];
@@ -364,12 +363,14 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
     (row: Row) => {
       const rowId = Number(row.id);
       if (section.get && Number.isFinite(rowId)) {
-        void openInspect(
-          `${section.labelDefault} #${rowId}`,
-          () => section.get!(connectionId, rowId),
+        void openInspect(`${section.labelDefault} #${rowId}`, () =>
+          section.get!(connectionId, rowId),
         );
       } else {
-        setInspector({ title: t("integrations.netbox.ipam.inspector.row", "Row"), data: row });
+        setInspector({
+          title: t("integrations.netbox.ipam.inspector.row", "Row"),
+          data: row,
+        });
       }
     },
     [section, connectionId, openInspect, t],
@@ -379,7 +380,9 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
     async (row: Row) => {
       const rowId = Number(row.id);
       if (!section.del || !Number.isFinite(rowId)) return;
-      const label = netboxLabel(row.name ?? row.address ?? row.prefix ?? row.id);
+      const label = netboxLabel(
+        row.name ?? row.address ?? row.prefix ?? row.id,
+      );
       if (
         !window.confirm(
           t("integrations.netbox.ipam.confirmDelete", "Delete {{item}}?", {
@@ -403,7 +406,10 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
       body = JSON.parse(editor.json) as NetboxBody;
     } catch {
       window.alert(
-        t("integrations.netbox.ipam.invalidJson", "Request body is not valid JSON."),
+        t(
+          "integrations.netbox.ipam.invalidJson",
+          "Request body is not valid JSON.",
+        ),
       );
       return;
     }
@@ -417,9 +423,13 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
   const openCreate = useCallback(() => {
     if (!section.create) return;
     setEditor({
-      title: t("integrations.netbox.ipam.editor.createTitle", "Create {{section}}", {
-        section: t(section.labelKey, section.labelDefault),
-      }),
+      title: t(
+        "integrations.netbox.ipam.editor.createTitle",
+        "Create {{section}}",
+        {
+          section: t(section.labelKey, section.labelDefault),
+        },
+      ),
       json: "{\n  \n}",
       submit: (body) => section.create!(connectionId, body),
     });
@@ -434,8 +444,12 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
       setEditor({
         title:
           mode === "patch"
-            ? t("integrations.netbox.ipam.editor.patchTitle", "Patch #{{id}}", { id: rowId })
-            : t("integrations.netbox.ipam.editor.editTitle", "Edit #{{id}}", { id: rowId }),
+            ? t("integrations.netbox.ipam.editor.patchTitle", "Patch #{{id}}", {
+                id: rowId,
+              })
+            : t("integrations.netbox.ipam.editor.editTitle", "Edit #{{id}}", {
+                id: rowId,
+              }),
         json: JSON.stringify(row, null, 2),
         submit: (body) => fn(connectionId, rowId, body),
       });
@@ -461,7 +475,10 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
       const pid = Number(row.id);
       if (!Number.isFinite(pid)) return;
       void openInspect(
-        t("integrations.netbox.ipam.prefix.availablePrefixes", "Available prefixes"),
+        t(
+          "integrations.netbox.ipam.prefix.availablePrefixes",
+          "Available prefixes",
+        ),
         () => api.getAvailablePrefixes(connectionId, pid),
       );
     },
@@ -511,7 +528,11 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
-        <button onClick={() => void reload()} className={btn} disabled={loading}>
+        <button
+          onClick={() => void reload()}
+          className={btn}
+          disabled={loading}
+        >
           {loading ? (
             <Loader2 size={12} className="animate-spin" />
           ) : (
@@ -526,7 +547,10 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && void reload()}
-              placeholder={t("integrations.netbox.ipam.searchPlaceholder", "Search…")}
+              placeholder={t(
+                "integrations.netbox.ipam.searchPlaceholder",
+                "Search…",
+              )}
               className="w-40 rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-xs text-[var(--color-text)]"
             />
           </div>
@@ -539,9 +563,15 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
               onChange={(e) => setVlanMode(e.target.value as VlanFilterMode)}
               className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-1.5 py-1 text-xs text-[var(--color-text)]"
             >
-              <option value="all">{t("integrations.netbox.ipam.vlan.all", "All")}</option>
-              <option value="site">{t("integrations.netbox.ipam.vlan.bySite", "By site id")}</option>
-              <option value="group">{t("integrations.netbox.ipam.vlan.byGroup", "By group id")}</option>
+              <option value="all">
+                {t("integrations.netbox.ipam.vlan.all", "All")}
+              </option>
+              <option value="site">
+                {t("integrations.netbox.ipam.vlan.bySite", "By site id")}
+              </option>
+              <option value="group">
+                {t("integrations.netbox.ipam.vlan.byGroup", "By group id")}
+              </option>
             </select>
             {vlanMode !== "all" && (
               <>
@@ -619,7 +649,10 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
                   className="border-b border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]"
                 >
                   {section.columns.map((c) => (
-                    <td key={c.key} className="px-3 py-1.5 text-[var(--color-text)]">
+                    <td
+                      key={c.key}
+                      className="px-3 py-1.5 text-[var(--color-text)]"
+                    >
                       {c.get(row)}
                     </td>
                   ))}
@@ -634,14 +667,26 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
                       </button>
                       {section.prefixHelpers && (
                         <>
-                          <button onClick={() => onAvailableIps(row)} className={btn}>
+                          <button
+                            onClick={() => onAvailableIps(row)}
+                            className={btn}
+                          >
                             {t("integrations.netbox.ipam.prefix.ips", "IPs")}
                           </button>
-                          <button onClick={() => onCreateAvailableIp(row)} className={btn}>
+                          <button
+                            onClick={() => onCreateAvailableIp(row)}
+                            className={btn}
+                          >
                             {t("integrations.netbox.ipam.prefix.newIp", "+IP")}
                           </button>
-                          <button onClick={() => onAvailablePrefixes(row)} className={btn}>
-                            {t("integrations.netbox.ipam.prefix.subnets", "Subnets")}
+                          <button
+                            onClick={() => onAvailablePrefixes(row)}
+                            className={btn}
+                          >
+                            {t(
+                              "integrations.netbox.ipam.prefix.subnets",
+                              "Subnets",
+                            )}
                           </button>
                         </>
                       )}
@@ -689,7 +734,10 @@ const NetboxIpamTab: React.FC<NetboxTabProps> = ({ connectionId }) => {
               <h3 className="text-sm font-semibold text-[var(--color-text)]">
                 {editor.title}
               </h3>
-              <button onClick={closeEditor} className="text-[var(--color-textSecondary)]">
+              <button
+                onClick={closeEditor}
+                className="text-[var(--color-textSecondary)]"
+              >
                 <X size={16} />
               </button>
             </div>

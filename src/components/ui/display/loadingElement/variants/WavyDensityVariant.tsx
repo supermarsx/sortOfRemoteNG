@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * WavyDensity — variant ported from prototypes/orb-previews/E-wavy-density.html.
  *
@@ -11,11 +11,11 @@
  * mutate the DOM directly rather than re-render through React state.
  */
 
-import { type CSSProperties, type FC, useEffect, useRef } from 'react';
+import { type CSSProperties, type FC, useEffect, useRef } from "react";
 
-import { DEFAULT_WAVY_DENSITY } from '../defaults';
-import { subscribeTicker } from '../runtime/rafCoordinator';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
+import { DEFAULT_WAVY_DENSITY } from "../defaults";
+import { subscribeTicker } from "../runtime/rafCoordinator";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
 
 type CSSVars = CSSProperties & Record<`--${string}`, string | number>;
 
@@ -63,7 +63,7 @@ const KEYFRAMES = `
 }
 `;
 
-const WavyDensityVariant: FC<VariantRenderProps<'wavyDensity'>> = ({
+const WavyDensityVariant: FC<VariantRenderProps<"wavyDensity">> = ({
   size,
   color,
   config,
@@ -98,26 +98,26 @@ const WavyDensityVariant: FC<VariantRenderProps<'wavyDensity'>> = ({
       const y = radius * Math.sin(phi) * Math.sin(theta);
       const z = radius * Math.cos(phi);
 
-      const dot = document.createElement('span');
+      const dot = document.createElement("span");
       const t = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, ${z.toFixed(2)}px)`;
       const scale = rand(0.6, 1.6);
       const dur = rand(1.0, 2.4);
       const life = rand(1.6, 4.2);
 
-      dot.style.setProperty('--t', t);
-      dot.style.setProperty('--scale', scale.toFixed(2));
-      dot.style.setProperty('--dur', `${dur.toFixed(2)}s`);
-      dot.style.setProperty('--life', `${life.toFixed(2)}s`);
+      dot.style.setProperty("--t", t);
+      dot.style.setProperty("--scale", scale.toFixed(2));
+      dot.style.setProperty("--dur", `${dur.toFixed(2)}s`);
+      dot.style.setProperty("--life", `${life.toFixed(2)}s`);
       dot.style.animationDelay = `${(-Math.random() * 2.4).toFixed(2)}s, 0s`;
 
       const onEnd = (e: AnimationEvent) => {
-        if (e.animationName === 'wd-life') {
+        if (e.animationName === "wd-life") {
           aliveRef.current.delete(dot);
-          dot.removeEventListener('animationend', onEnd);
+          dot.removeEventListener("animationend", onEnd);
           dot.remove();
         }
       };
-      dot.addEventListener('animationend', onEnd);
+      dot.addEventListener("animationend", onEnd);
 
       sphere.appendChild(dot);
       aliveRef.current.add(dot);
@@ -130,8 +130,8 @@ const WavyDensityVariant: FC<VariantRenderProps<'wavyDensity'>> = ({
       let i = 0;
       for (const d of alive) {
         if (i === pick) {
-          d.style.transition = 'opacity .35s ease-out';
-          d.style.opacity = '0';
+          d.style.transition = "opacity .35s ease-out";
+          d.style.opacity = "0";
           window.setTimeout(() => {
             alive.delete(d);
             d.remove();
@@ -181,12 +181,15 @@ const WavyDensityVariant: FC<VariantRenderProps<'wavyDensity'>> = ({
       const x = radius * Math.sin(phi) * Math.cos(theta);
       const y = radius * Math.sin(phi) * Math.sin(theta);
       const z = radius * Math.cos(phi);
-      const dot = document.createElement('span');
-      dot.style.setProperty('--t', `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, ${z.toFixed(2)}px)`);
-      dot.style.setProperty('--scale', '1');
-      dot.style.animation = 'none';
+      const dot = document.createElement("span");
+      dot.style.setProperty(
+        "--t",
+        `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, ${z.toFixed(2)}px)`,
+      );
+      dot.style.setProperty("--scale", "1");
+      dot.style.animation = "none";
       dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, ${z.toFixed(2)}px)`;
-      dot.style.opacity = '1';
+      dot.style.opacity = "1";
       sphere.appendChild(dot);
     }
     return () => {
@@ -197,26 +200,33 @@ const WavyDensityVariant: FC<VariantRenderProps<'wavyDensity'>> = ({
   const sceneStyle: CSSVars = {
     width: size,
     height: size,
-    perspective: '1000px',
-    transform: 'rotateZ(28deg)',
+    perspective: "1000px",
+    transform: "rotateZ(28deg)",
     color,
-    display: 'inline-block',
+    display: "inline-block",
     ...(style ?? {}),
   };
 
   const sphereStyle: CSSVars = {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-    transformStyle: 'preserve-3d',
-    animation: reducedMotion ? 'none' : `wd-spin ${spinSeconds}s linear infinite`,
-    animationPlayState: paused ? 'paused' : 'running',
-    '--s': `${size}px`,
-    '--d': `${dotBase}px`,
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    transformStyle: "preserve-3d",
+    animation: reducedMotion
+      ? "none"
+      : `wd-spin ${spinSeconds}s linear infinite`,
+    animationPlayState: paused ? "paused" : "running",
+    "--s": `${size}px`,
+    "--d": `${dotBase}px`,
   };
 
   return (
-    <div className={className} role="status" aria-label={ariaLabel ?? 'Loading'} style={sceneStyle}>
+    <div
+      className={className}
+      role="status"
+      aria-label={ariaLabel ?? "Loading"}
+      style={sceneStyle}
+    >
       <style>{`${KEYFRAMES}
         .wd-sphere > span {
           --d: ${dotBase}px;
@@ -246,27 +256,60 @@ const WavyDensityVariant: FC<VariantRenderProps<'wavyDensity'>> = ({
 
 export default WavyDensityVariant;
 
-export const descriptor: VariantDescriptor<'wavyDensity'> = {
-  type: 'wavyDensity',
-  label: 'Wavy density',
+export const descriptor: VariantDescriptor<"wavyDensity"> = {
+  type: "wavyDensity",
+  label: "Wavy density",
   description:
-    'Particles spawn at random points on a sphere with random lifetimes and sweep phases. Total count breathes on a sine wave.',
+    "Particles spawn at random points on a sphere with random lifetimes and sweep phases. Total count breathes on a sine wave.",
   minRecommendedSize: 40,
   supportsCanvas: true,
   hasRaf: true,
   defaultConfig: DEFAULT_WAVY_DENSITY,
   presets: [
-    { id: 'default', label: 'Default', config: DEFAULT_WAVY_DENSITY },
-    { id: 'sparse',  label: 'Sparse',  config: { baseDots: 100, swingDots: 60,  chaos: 0.7, spinSeconds: 12 } },
-    { id: 'dense',   label: 'Dense',   config: { baseDots: 380, swingDots: 160, chaos: 0.85, spinSeconds: 6 } },
-    { id: 'spiral',  label: 'Spiral',  config: { baseDots: 220, swingDots: 60,  chaos: 0.15, spinSeconds: 10 } },
+    { id: "default", label: "Default", config: DEFAULT_WAVY_DENSITY },
+    {
+      id: "sparse",
+      label: "Sparse",
+      config: { baseDots: 100, swingDots: 60, chaos: 0.7, spinSeconds: 12 },
+    },
+    {
+      id: "dense",
+      label: "Dense",
+      config: { baseDots: 380, swingDots: 160, chaos: 0.85, spinSeconds: 6 },
+    },
+    {
+      id: "spiral",
+      label: "Spiral",
+      config: { baseDots: 220, swingDots: 60, chaos: 0.15, spinSeconds: 10 },
+    },
   ],
   paramSchema: {
     fields: [
-      { key: 'baseDots',    label: 'Base dots',   kind: 'integer', min: 50, max: 500 },
-      { key: 'swingDots',   label: 'Swing ±',     kind: 'integer', min: 0,  max: 200 },
-      { key: 'chaos',       label: 'Chaos',       kind: 'percent', min: 0,  max: 1, step: 0.05, help: '0 = pure spiral, 1 = pure random.' },
-      { key: 'spinSeconds', label: 'Spin period', kind: 'seconds', min: 3,  max: 30, step: 1 },
+      {
+        key: "baseDots",
+        label: "Base dots",
+        kind: "integer",
+        min: 50,
+        max: 500,
+      },
+      { key: "swingDots", label: "Swing ±", kind: "integer", min: 0, max: 200 },
+      {
+        key: "chaos",
+        label: "Chaos",
+        kind: "percent",
+        min: 0,
+        max: 1,
+        step: 0.05,
+        help: "0 = pure spiral, 1 = pure random.",
+      },
+      {
+        key: "spinSeconds",
+        label: "Spin period",
+        kind: "seconds",
+        min: 3,
+        max: 30,
+        step: 1,
+      },
     ],
   },
   component: WavyDensityVariant,

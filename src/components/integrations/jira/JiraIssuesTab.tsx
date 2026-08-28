@@ -25,11 +25,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { JiraTabProps } from "./registry";
-import type {
-  JiraIssue,
-  JiraTransition,
-  JiraUser,
-} from "../../../types/jira";
+import type { JiraIssue, JiraTransition, JiraUser } from "../../../types/jira";
 import type {
   JiraAttachment,
   JiraComment,
@@ -65,7 +61,11 @@ const JsonDrawer: React.FC<{
         <span className="truncate text-sm font-medium text-[var(--color-text)]">
           {title}
         </span>
-        <button onClick={onClose} className={btnCls} title={t(tk("close"), "Close")}>
+        <button
+          onClick={onClose}
+          className={btnCls}
+          title={t(tk("close"), "Close")}
+        >
           <X size={14} />
         </button>
       </div>
@@ -78,7 +78,8 @@ const JsonDrawer: React.FC<{
 
 // ─── Form modal ─────────────────────────────────────────────────────────────────
 
-type FieldType = "text" | "textarea" | "password" | "number" | "checkbox" | "select";
+type FieldType =
+  "text" | "textarea" | "password" | "number" | "checkbox" | "select";
 
 interface FieldSpec {
   key: string;
@@ -308,7 +309,11 @@ const DataTable: React.FC<{ columns: string[]; rows: TableRow[] }> = ({
               <td className="px-3 py-1.5">
                 <div className="flex items-center justify-end gap-1">
                   {r.extra?.map((x) => (
-                    <button key={x.label} onClick={x.onClick} className={btnCls}>
+                    <button
+                      key={x.label}
+                      onClick={x.onClick}
+                      className={btnCls}
+                    >
                       {x.label}
                     </button>
                   ))}
@@ -373,7 +378,10 @@ const NoIssue: React.FC = () => {
 };
 
 function useOverlay() {
-  const [overlay, setOverlay] = useState<Overlay>({ drawer: null, modal: null });
+  const [overlay, setOverlay] = useState<Overlay>({
+    drawer: null,
+    modal: null,
+  });
   const closeModal = useCallback(
     () => setOverlay((s) => ({ ...s, modal: null })),
     [],
@@ -395,7 +403,9 @@ const num = (v: string | boolean): number | undefined => {
 };
 
 /** Parse an optional JSON blob from a textarea into a field/update map. */
-const parseJson = (v: string | boolean): Record<string, unknown> | undefined => {
+const parseJson = (
+  v: string | boolean,
+): Record<string, unknown> | undefined => {
   const s = str(v);
   if (s === "") return undefined;
   try {
@@ -433,7 +443,7 @@ const IssuesSection: React.FC<{
 
   useEffect(() => {
     void search();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const newIssue = () =>
@@ -522,7 +532,8 @@ const IssuesSection: React.FC<{
               api.bulkCreateIssues(id, { issueUpdates: list }),
             );
             closeModal();
-            if (res) openDrawer(t(tk("issues.bulkResult"), "Bulk create result"), res);
+            if (res)
+              openDrawer(t(tk("issues.bulkResult"), "Bulk create result"), res);
             void search();
           }}
           onClose={closeModal}
@@ -784,15 +795,24 @@ const IssuesSection: React.FC<{
             ],
             onDelete: () => deleteIssue(r.key),
             extra: [
-              { label: t(tk("issues.select"), "Select"), onClick: () => setIssueKey(r.key) },
+              {
+                label: t(tk("issues.select"), "Select"),
+                onClick: () => setIssueKey(r.key),
+              },
               { label: t(tk("view"), "View"), onClick: () => view(r.key) },
               { label: t(tk("edit"), "Edit"), onClick: () => editIssue(r.key) },
               {
                 label: t(tk("issues.transition"), "Transition"),
                 onClick: () => transitions(r.key),
               },
-              { label: t(tk("issues.assign"), "Assign"), onClick: () => assign(r.key) },
-              { label: t(tk("issues.link"), "Link"), onClick: () => link(r.key) },
+              {
+                label: t(tk("issues.assign"), "Assign"),
+                onClick: () => assign(r.key),
+              },
+              {
+                label: t(tk("issues.link"), "Link"),
+                onClick: () => link(r.key),
+              },
               {
                 label: t(tk("issues.changelog"), "Changelog"),
                 onClick: () => changelog(r.key),
@@ -855,7 +875,9 @@ const CommentsSection: React.FC<{ ctx: Ctx; issueKey: string }> = ({
             },
           ]}
           onSubmit={async (v) => {
-            await run((id) => api.addComment(id, issueKey, { body: str(v.body) }));
+            await run((id) =>
+              api.addComment(id, issueKey, { body: str(v.body) }),
+            );
             closeModal();
             void load();
           }}
@@ -894,7 +916,8 @@ const CommentsSection: React.FC<{ ctx: Ctx; issueKey: string }> = ({
   const view = useCallback(
     async (commentId: string) => {
       const res = await run((id) => api.getComment(id, issueKey, commentId));
-      if (res) openDrawer(`${t(tk("comments.title"), "Comment")} ${commentId}`, res);
+      if (res)
+        openDrawer(`${t(tk("comments.title"), "Comment")} ${commentId}`, res);
     },
     [run, api, issueKey, openDrawer, t],
   );
@@ -986,9 +1009,7 @@ const AttachmentsSection: React.FC<{ ctx: Ctx; issueKey: string }> = ({
         };
         reader.readAsDataURL(file);
       });
-      await run((id) =>
-        api.addAttachment(id, issueKey, file.name, dataBase64),
-      );
+      await run((id) => api.addAttachment(id, issueKey, file.name, dataBase64));
       void load();
     },
     [run, api, issueKey, load],
@@ -1219,7 +1240,13 @@ const UsersSection: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
 
   const load = useCallback(async () => {
     const res = assignable
-      ? await run((id) => api.findAssignableUsers(id, project.trim(), query.trim() || undefined))
+      ? await run((id) =>
+          api.findAssignableUsers(
+            id,
+            project.trim(),
+            query.trim() || undefined,
+          ),
+        )
       : await run((id) => api.searchUsers(id, query.trim()));
     if (res) setRows(res);
   }, [run, api, query, project, assignable]);
@@ -1286,7 +1313,12 @@ const UsersSection: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
             r.active ? "✓" : "✗",
           ],
           extra: r.accountId
-            ? [{ label: t(tk("view"), "View"), onClick: () => view(r.accountId!) }]
+            ? [
+                {
+                  label: t(tk("view"), "View"),
+                  onClick: () => view(r.accountId!),
+                },
+              ]
             : undefined,
         }))}
       />
@@ -1296,7 +1328,8 @@ const UsersSection: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
 
 // ─── Fields ──────────────────────────────────────────────────────────────────────
 
-type FieldSub = "fields" | "issueTypes" | "priorities" | "statuses" | "resolutions";
+type FieldSub =
+  "fields" | "issueTypes" | "priorities" | "statuses" | "resolutions";
 
 const FieldsSection: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
   const { t } = useTranslation();
@@ -1338,8 +1371,17 @@ const FieldsSection: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
 
   const columns =
     sub === "fields"
-      ? [t(tk("fields.id"), "Id"), t(tk("fields.name"), "Name"), t(tk("fields.custom"), "Custom"), t(tk("fields.schemaType"), "Type")]
-      : [t(tk("fields.id"), "Id"), t(tk("fields.name"), "Name"), t(tk("fields.description"), "Description")];
+      ? [
+          t(tk("fields.id"), "Id"),
+          t(tk("fields.name"), "Name"),
+          t(tk("fields.custom"), "Custom"),
+          t(tk("fields.schemaType"), "Type"),
+        ]
+      : [
+          t(tk("fields.id"), "Id"),
+          t(tk("fields.name"), "Name"),
+          t(tk("fields.description"), "Description"),
+        ];
 
   return (
     <SectionLayout overlay={overlay} setOverlay={setOverlay} error={error}>
@@ -1391,7 +1433,8 @@ const FieldsSection: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
 
 // ─── Root tab ────────────────────────────────────────────────────────────────────
 
-type GroupKey = "issues" | "comments" | "attachments" | "worklogs" | "users" | "fields";
+type GroupKey =
+  "issues" | "comments" | "attachments" | "worklogs" | "users" | "fields";
 
 const GROUPS: Array<{ key: GroupKey; icon: typeof Hash; label: string }> = [
   { key: "issues", icon: Hash, label: "Issues" },
@@ -1446,7 +1489,8 @@ const JiraIssuesTab: React.FC<JiraTabProps> = ({ connectionId }) => {
         />
         <button
           onClick={() =>
-            issueKeyDraft.trim() && setIssueKey(issueKeyDraft.trim().toUpperCase())
+            issueKeyDraft.trim() &&
+            setIssueKey(issueKeyDraft.trim().toUpperCase())
           }
           className={btnCls}
           disabled={!issueKeyDraft.trim()}
@@ -1483,13 +1527,21 @@ const JiraIssuesTab: React.FC<JiraTabProps> = ({ connectionId }) => {
 
       <div className="flex min-h-0 flex-1">
         {group === "issues" && (
-          <IssuesSection ctx={ctx} issueKey={issueKey} setIssueKey={setIssueKey} />
+          <IssuesSection
+            ctx={ctx}
+            issueKey={issueKey}
+            setIssueKey={setIssueKey}
+          />
         )}
-        {group === "comments" && <CommentsSection ctx={ctx} issueKey={issueKey} />}
+        {group === "comments" && (
+          <CommentsSection ctx={ctx} issueKey={issueKey} />
+        )}
         {group === "attachments" && (
           <AttachmentsSection ctx={ctx} issueKey={issueKey} />
         )}
-        {group === "worklogs" && <WorklogsSection ctx={ctx} issueKey={issueKey} />}
+        {group === "worklogs" && (
+          <WorklogsSection ctx={ctx} issueKey={issueKey} />
+        )}
         {group === "users" && <UsersSection ctx={ctx} />}
         {group === "fields" && <FieldsSection ctx={ctx} />}
       </div>

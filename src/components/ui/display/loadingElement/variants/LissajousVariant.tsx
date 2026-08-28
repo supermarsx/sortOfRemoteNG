@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Lissajous knot — dots traced along the 3D parametric curve
  *   x = sin(a·t + φx)
@@ -11,29 +11,43 @@
  * Faithful port of prototypes/orb-previews/E3-lissajous-knot.html.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import type { CSSProperties } from 'react';
-import type { VariantDescriptor, VariantRenderProps } from '../types';
-import { DEFAULT_LISSAJOUS } from '../defaults';
-import { subscribeTicker } from '../runtime/rafCoordinator';
+import React, { useEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
+import type { VariantDescriptor, VariantRenderProps } from "../types";
+import { DEFAULT_LISSAJOUS } from "../defaults";
+import { subscribeTicker } from "../runtime/rafCoordinator";
 
 const TAU = Math.PI * 2;
-const SPIN_KEYFRAME_FLAG = '__sorngLissajousSpinInjected';
+const SPIN_KEYFRAME_FLAG = "__sorngLissajousSpinInjected";
 
 function ensureSpinKeyframes() {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
   const w = window as unknown as Record<string, boolean | undefined>;
   if (w[SPIN_KEYFRAME_FLAG]) return;
-  const style = document.createElement('style');
-  style.textContent = '@keyframes sorng-lissajous-spin { to { transform: rotateY(360deg); } }';
+  const style = document.createElement("style");
+  style.textContent =
+    "@keyframes sorng-lissajous-spin { to { transform: rotateY(360deg); } }";
   document.head.appendChild(style);
   w[SPIN_KEYFRAME_FLAG] = true;
 }
 
-interface DotData { f: number; x: number; y: number; z: number; }
+interface DotData {
+  f: number;
+  x: number;
+  y: number;
+  z: number;
+}
 
-const LissajousVariant: React.FC<VariantRenderProps<'lissajous'>> = ({
-  size, color, config, renderMode, paused, reducedMotion, className, style, ariaLabel,
+const LissajousVariant: React.FC<VariantRenderProps<"lissajous">> = ({
+  size,
+  color,
+  config,
+  renderMode,
+  paused,
+  reducedMotion,
+  className,
+  style,
+  ariaLabel,
 }) => {
   ensureSpinKeyframes();
   const sphereRef = useRef<HTMLDivElement | null>(null);
@@ -63,18 +77,26 @@ const LissajousVariant: React.FC<VariantRenderProps<'lissajous'>> = ({
       };
     }
     return out;
-  }, [size, config.a, config.b, config.c, config.phaseX, config.phaseZ, config.dots]);
+  }, [
+    size,
+    config.a,
+    config.b,
+    config.c,
+    config.phaseX,
+    config.phaseZ,
+    config.dots,
+  ]);
 
   // Build DOM dots when in DOM mode.
   useEffect(() => {
     dotsRef.current = dots;
-    if (renderMode !== 'dom') return;
+    if (renderMode !== "dom") return;
     const sphere = sphereRef.current;
     if (!sphere) return;
-    sphere.innerHTML = '';
+    sphere.innerHTML = "";
     const arr: HTMLSpanElement[] = new Array(dots.length);
     for (let i = 0; i < dots.length; i++) {
-      const span = document.createElement('span');
+      const span = document.createElement("span");
       const d = dots[i];
       span.style.cssText =
         `position:absolute;top:50%;left:50%;width:${baseDotPx}px;height:${baseDotPx}px;` +
@@ -85,7 +107,10 @@ const LissajousVariant: React.FC<VariantRenderProps<'lissajous'>> = ({
       arr[i] = span;
     }
     dotElsRef.current = arr;
-    return () => { sphere.innerHTML = ''; dotElsRef.current = []; };
+    return () => {
+      sphere.innerHTML = "";
+      dotElsRef.current = [];
+    };
   }, [dots, renderMode, color, baseDotPx]);
 
   // rAF tick.
@@ -96,29 +121,33 @@ const LissajousVariant: React.FC<VariantRenderProps<'lissajous'>> = ({
     const glowMul = config.glow;
     const t0 = t0Ref.current;
 
-    if (renderMode === 'canvas') {
+    if (renderMode === "canvas") {
       const cvs = canvasRef.current;
       if (!cvs) return;
-      const ctx = cvs.getContext('2d');
+      const ctx = cvs.getContext("2d");
       if (!ctx) return;
       const dpr = window.devicePixelRatio || 1;
-      cvs.width = size * dpr; cvs.height = size * dpr;
-      cvs.style.width = `${size}px`; cvs.style.height = `${size}px`;
+      cvs.width = size * dpr;
+      cvs.height = size * dpr;
+      cvs.style.width = `${size}px`;
+      cvs.style.height = `${size}px`;
       const half = size / 2;
 
       const tick = (now: number) => {
         const t = (now - t0) / 1000;
         const cursor = (t * speed * 0.1) % 1;
         const yaw = (t * (TAU / 12)) % TAU; // matches 12s spin period
-        const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+        const cosY = Math.cos(yaw),
+          sinY = Math.sin(yaw);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, size, size);
-        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalCompositeOperation = "lighter";
         ctx.fillStyle = color;
         const arr = dotsRef.current;
         for (let i = 0; i < arr.length; i++) {
           const p = arr[i];
-          let dC = Math.abs(p.f - cursor); if (dC > 0.5) dC = 1 - dC;
+          let dC = Math.abs(p.f - cursor);
+          if (dC > 0.5) dC = 1 - dC;
           const k = 1 - dC / trailW;
           if (k <= 0) continue;
           const peak = k * k;
@@ -157,8 +186,10 @@ const LissajousVariant: React.FC<VariantRenderProps<'lissajous'>> = ({
       const els = dotElsRef.current;
       const arr = dotsRef.current;
       for (let i = 0; i < arr.length; i++) {
-        const el = els[i]; if (!el) continue;
-        let dC = Math.abs(arr[i].f - cursor); if (dC > 0.5) dC = 1 - dC;
+        const el = els[i];
+        if (!el) continue;
+        let dC = Math.abs(arr[i].f - cursor);
+        if (dC > 0.5) dC = 1 - dC;
         const k = 1 - dC / trailW;
         const peak = k > 0 ? k * k : 0;
         const opacity = 0.06 + 0.94 * peak;
@@ -167,66 +198,131 @@ const LissajousVariant: React.FC<VariantRenderProps<'lissajous'>> = ({
         const dpx = baseDotPx * scale;
         const s = el.style;
         s.opacity = opacity.toFixed(3);
-        s.width = `${dpx}px`; s.height = `${dpx}px`;
+        s.width = `${dpx}px`;
+        s.height = `${dpx}px`;
         s.margin = `${-dpx / 2}px 0 0 ${-dpx / 2}px`;
         s.boxShadow = `0 0 ${(baseDotPx * glow).toFixed(2)}px ${color}`;
       }
     };
     return subscribeTicker(tick);
-  }, [renderMode, paused, reducedMotion, size, color, baseDotPx, config.trail, config.speed, config.glow]);
+  }, [
+    renderMode,
+    paused,
+    reducedMotion,
+    size,
+    color,
+    baseDotPx,
+    config.trail,
+    config.speed,
+    config.glow,
+  ]);
 
   const wrapperStyle: CSSProperties = {
-    width: size, height: size, position: 'relative',
-    perspective: '1200px', transform: 'rotateX(20deg)',
-    color, ...style,
+    width: size,
+    height: size,
+    position: "relative",
+    perspective: "1200px",
+    transform: "rotateX(20deg)",
+    color,
+    ...style,
   };
   const sphereStyle: CSSProperties = {
-    width: '100%', height: '100%', position: 'relative',
-    transformStyle: 'preserve-3d',
-    animation: reducedMotion ? undefined : 'sorng-lissajous-spin 12s linear infinite',
-    animationPlayState: paused ? 'paused' : 'running',
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    transformStyle: "preserve-3d",
+    animation: reducedMotion
+      ? undefined
+      : "sorng-lissajous-spin 12s linear infinite",
+    animationPlayState: paused ? "paused" : "running",
   };
 
-  if (renderMode === 'canvas') {
+  if (renderMode === "canvas") {
     return (
-      <div role="status" aria-label={ariaLabel} className={className} style={wrapperStyle}>
-        <canvas ref={canvasRef} style={{ width: size, height: size, display: 'block' }} />
+      <div
+        role="status"
+        aria-label={ariaLabel}
+        className={className}
+        style={wrapperStyle}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{ width: size, height: size, display: "block" }}
+        />
       </div>
     );
   }
   return (
-    <div role="status" aria-label={ariaLabel} className={className} style={wrapperStyle}>
+    <div
+      role="status"
+      aria-label={ariaLabel}
+      className={className}
+      style={wrapperStyle}
+    >
       <div ref={sphereRef} style={sphereStyle} />
     </div>
   );
 };
 
-export const descriptor: VariantDescriptor<'lissajous'> = {
-  type: 'lissajous',
-  label: 'Lissajous knot',
-  description: '3D Lissajous curve traced by glowing dots; integer (a,b,c) yields closed knots.',
+export const descriptor: VariantDescriptor<"lissajous"> = {
+  type: "lissajous",
+  label: "Lissajous knot",
+  description:
+    "3D Lissajous curve traced by glowing dots; integer (a,b,c) yields closed knots.",
   minRecommendedSize: 24,
   supportsCanvas: true,
   hasRaf: true,
   defaultConfig: DEFAULT_LISSAJOUS,
   presets: [
-    { id: 'classic', label: 'Classic Knot (3,4,5)', config: { a: 3, b: 4, c: 5 } },
-    { id: 'trefoil', label: 'Trefoil (2,3,5)', config: { a: 2, b: 3, c: 5 } },
-    { id: 'granny', label: 'Granny (2,3,7)', config: { a: 2, b: 3, c: 7 } },
-    { id: 'tight', label: 'Tight Coil (1,2,3)', config: { a: 1, b: 2, c: 3 } },
-    { id: 'chaotic', label: 'Chaotic (5,7,11)', config: { a: 5, b: 7, c: 11 } },
+    {
+      id: "classic",
+      label: "Classic Knot (3,4,5)",
+      config: { a: 3, b: 4, c: 5 },
+    },
+    { id: "trefoil", label: "Trefoil (2,3,5)", config: { a: 2, b: 3, c: 5 } },
+    { id: "granny", label: "Granny (2,3,7)", config: { a: 2, b: 3, c: 7 } },
+    { id: "tight", label: "Tight Coil (1,2,3)", config: { a: 1, b: 2, c: 3 } },
+    { id: "chaotic", label: "Chaotic (5,7,11)", config: { a: 5, b: 7, c: 11 } },
   ],
   paramSchema: {
     fields: [
-      { key: 'a', label: 'a', kind: 'integer', min: 1, max: 9 },
-      { key: 'b', label: 'b', kind: 'integer', min: 1, max: 9 },
-      { key: 'c', label: 'c', kind: 'integer', min: 1, max: 9 },
-      { key: 'phaseX', label: 'φx (×π)', kind: 'number', min: 0, max: 2, step: 0.05 },
-      { key: 'phaseZ', label: 'φz (×π)', kind: 'number', min: 0, max: 2, step: 0.05 },
-      { key: 'dots', label: 'Dots', kind: 'integer', min: 80, max: 1500 },
-      { key: 'trail', label: 'Trail', kind: 'percent', min: 0.02, max: 0.5, step: 0.01 },
-      { key: 'speed', label: 'Speed', kind: 'number', min: 0, max: 4, step: 0.1 },
-      { key: 'glow', label: 'Glow', kind: 'number', min: 0, max: 3, step: 0.1 },
+      { key: "a", label: "a", kind: "integer", min: 1, max: 9 },
+      { key: "b", label: "b", kind: "integer", min: 1, max: 9 },
+      { key: "c", label: "c", kind: "integer", min: 1, max: 9 },
+      {
+        key: "phaseX",
+        label: "φx (×π)",
+        kind: "number",
+        min: 0,
+        max: 2,
+        step: 0.05,
+      },
+      {
+        key: "phaseZ",
+        label: "φz (×π)",
+        kind: "number",
+        min: 0,
+        max: 2,
+        step: 0.05,
+      },
+      { key: "dots", label: "Dots", kind: "integer", min: 80, max: 1500 },
+      {
+        key: "trail",
+        label: "Trail",
+        kind: "percent",
+        min: 0.02,
+        max: 0.5,
+        step: 0.01,
+      },
+      {
+        key: "speed",
+        label: "Speed",
+        kind: "number",
+        min: 0,
+        max: 4,
+        step: 0.1,
+      },
+      { key: "glow", label: "Glow", kind: "number", min: 0, max: 3, step: 0.1 },
     ],
   },
   component: LissajousVariant,

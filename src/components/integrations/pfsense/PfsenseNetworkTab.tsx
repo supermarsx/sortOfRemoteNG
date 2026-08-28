@@ -136,7 +136,7 @@ function ResourceList<T>({
 
   useEffect(() => {
     if (autoLoad) void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, []);
 
   const actionCol = Boolean(onView || onEdit || onDelete);
@@ -158,7 +158,11 @@ function ResourceList<T>({
               {t("integrations.pfsense.network.add", "Add")}
             </button>
           )}
-          <button className={BTN} onClick={() => void reload()} disabled={loading}>
+          <button
+            className={BTN}
+            onClick={() => void reload()}
+            disabled={loading}
+          >
             {loading ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
@@ -475,10 +479,22 @@ function InterfacesSection({ net }: { net: UsePfsenseNetwork }) {
         onReady={(fn) => (reloadRef.current = fn)}
         extraActions={applyBtns}
         columns={[
-          { header: t("integrations.pfsense.network.col.name", "Name"), render: (r) => r.name },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr || r.if_descr },
-          { header: t("integrations.pfsense.network.col.ip", "IPv4"), render: (r) => (r.ipaddr ? `${r.ipaddr}/${r.subnet}` : "—") },
-          { header: t("integrations.pfsense.network.col.enabled", "On"), render: (r) => yn(r.enabled) },
+          {
+            header: t("integrations.pfsense.network.col.name", "Name"),
+            render: (r) => r.name,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr || r.if_descr,
+          },
+          {
+            header: t("integrations.pfsense.network.col.ip", "IPv4"),
+            render: (r) => (r.ipaddr ? `${r.ipaddr}/${r.subnet}` : "—"),
+          },
+          {
+            header: t("integrations.pfsense.network.col.enabled", "On"),
+            render: (r) => yn(r.enabled),
+          },
         ]}
         onView={(r) =>
           void view(
@@ -516,7 +532,10 @@ function InterfacesSection({ net }: { net: UsePfsenseNetwork }) {
         onDelete={(r) => run((id) => api.deleteInterface(id, r.name))}
         onCreate={() =>
           openEditor<InterfaceConfig>({
-            title: t("integrations.pfsense.network.newInterface", "New interface"),
+            title: t(
+              "integrations.pfsense.network.newInterface",
+              "New interface",
+            ),
             initial: { ...NEW_INTERFACE_CONFIG },
             save: async (v) => {
               await run((id) => api.createInterface(id, v));
@@ -527,7 +546,10 @@ function InterfacesSection({ net }: { net: UsePfsenseNetwork }) {
       />
 
       <ResourceList<IfStats>
-        title={t("integrations.pfsense.network.interfaceStats", "Interface statistics")}
+        title={t(
+          "integrations.pfsense.network.interfaceStats",
+          "Interface statistics",
+        )}
         rowKey={(r) => r.interface}
         load={() => run((id) => api.listInterfaceStats(id))}
         extraActions={
@@ -535,7 +557,10 @@ function InterfacesSection({ net }: { net: UsePfsenseNetwork }) {
             className={BTN}
             onClick={() =>
               void view(
-                t("integrations.pfsense.network.interfaceStats", "Interface statistics"),
+                t(
+                  "integrations.pfsense.network.interfaceStats",
+                  "Interface statistics",
+                ),
                 (id) => api.getInterfaceStats(id),
               )
             }
@@ -545,10 +570,25 @@ function InterfacesSection({ net }: { net: UsePfsenseNetwork }) {
           </button>
         }
         columns={[
-          { header: t("integrations.pfsense.network.col.interface", "Interface"), render: (r) => r.interface },
-          { header: t("integrations.pfsense.network.col.bytesIn", "Bytes in"), render: (r) => r.bytes_in },
-          { header: t("integrations.pfsense.network.col.bytesOut", "Bytes out"), render: (r) => r.bytes_out },
-          { header: t("integrations.pfsense.network.col.status", "Status"), render: (r) => r.status },
+          {
+            header: t(
+              "integrations.pfsense.network.col.interface",
+              "Interface",
+            ),
+            render: (r) => r.interface,
+          },
+          {
+            header: t("integrations.pfsense.network.col.bytesIn", "Bytes in"),
+            render: (r) => r.bytes_in,
+          },
+          {
+            header: t("integrations.pfsense.network.col.bytesOut", "Bytes out"),
+            render: (r) => r.bytes_out,
+          },
+          {
+            header: t("integrations.pfsense.network.col.status", "Status"),
+            render: (r) => r.status,
+          },
         ]}
       />
       {node}
@@ -567,7 +607,10 @@ function FirewallSection({ net }: { net: UsePfsenseNetwork }) {
   return (
     <div>
       <ResourceList<FirewallRule>
-        title={t("integrations.pfsense.network.firewallRules", "Firewall rules")}
+        title={t(
+          "integrations.pfsense.network.firewallRules",
+          "Firewall rules",
+        )}
         rowKey={(r, i) => r.tracker || `rule-${i}`}
         load={() => run((id) => api.listFirewallRules(id))}
         onReady={(fn) => (rulesReload.current = fn)}
@@ -581,12 +624,35 @@ function FirewallSection({ net }: { net: UsePfsenseNetwork }) {
           </button>
         }
         columns={[
-          { header: t("integrations.pfsense.network.col.type", "Action"), render: (r) => r.type },
-          { header: t("integrations.pfsense.network.col.interface", "Interface"), render: (r) => r.interface },
-          { header: t("integrations.pfsense.network.col.proto", "Proto"), render: (r) => r.protocol },
-          { header: t("integrations.pfsense.network.col.source", "Source"), render: (r) => `${r.source}${r.source_port ? ":" + r.source_port : ""}` },
-          { header: t("integrations.pfsense.network.col.dest", "Destination"), render: (r) => `${r.destination}${r.destination_port ? ":" + r.destination_port : ""}` },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t("integrations.pfsense.network.col.type", "Action"),
+            render: (r) => r.type,
+          },
+          {
+            header: t(
+              "integrations.pfsense.network.col.interface",
+              "Interface",
+            ),
+            render: (r) => r.interface,
+          },
+          {
+            header: t("integrations.pfsense.network.col.proto", "Proto"),
+            render: (r) => r.protocol,
+          },
+          {
+            header: t("integrations.pfsense.network.col.source", "Source"),
+            render: (r) =>
+              `${r.source}${r.source_port ? ":" + r.source_port : ""}`,
+          },
+          {
+            header: t("integrations.pfsense.network.col.dest", "Destination"),
+            render: (r) =>
+              `${r.destination}${r.destination_port ? ":" + r.destination_port : ""}`,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
         onView={(r) =>
           void view(
@@ -607,7 +673,10 @@ function FirewallSection({ net }: { net: UsePfsenseNetwork }) {
         onDelete={(r) => run((id) => api.deleteFirewallRule(id, r.tracker))}
         onCreate={() =>
           openEditor<FirewallRule>({
-            title: t("integrations.pfsense.network.newRule", "New firewall rule"),
+            title: t(
+              "integrations.pfsense.network.newRule",
+              "New firewall rule",
+            ),
             initial: { ...NEW_FIREWALL_RULE },
             save: async (v) => {
               await run((id) => api.createFirewallRule(id, v));
@@ -623,15 +692,26 @@ function FirewallSection({ net }: { net: UsePfsenseNetwork }) {
         load={() => run((id) => api.listFirewallAliases(id))}
         onReady={(fn) => (aliasReload.current = fn)}
         columns={[
-          { header: t("integrations.pfsense.network.col.name", "Name"), render: (r) => r.name },
-          { header: t("integrations.pfsense.network.col.type", "Type"), render: (r) => r.type },
-          { header: t("integrations.pfsense.network.col.entries", "Entries"), render: (r) => r.address.join(", ") },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t("integrations.pfsense.network.col.name", "Name"),
+            render: (r) => r.name,
+          },
+          {
+            header: t("integrations.pfsense.network.col.type", "Type"),
+            render: (r) => r.type,
+          },
+          {
+            header: t("integrations.pfsense.network.col.entries", "Entries"),
+            render: (r) => r.address.join(", "),
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
         onView={(r) =>
-          void view(
-            t("integrations.pfsense.network.alias", "Alias"),
-            (id) => api.getFirewallAlias(id, r.name),
+          void view(t("integrations.pfsense.network.alias", "Alias"), (id) =>
+            api.getFirewallAlias(id, r.name),
           )
         }
         onEdit={(r) =>
@@ -721,11 +801,31 @@ function NatSection({ net }: { net: UsePfsenseNetwork }) {
         onReady={(fn) => (pfReload.current = fn)}
         extraActions={applyBtn}
         columns={[
-          { header: t("integrations.pfsense.network.col.interface", "Interface"), render: (r) => r.interface },
-          { header: t("integrations.pfsense.network.col.proto", "Proto"), render: (r) => r.protocol },
-          { header: t("integrations.pfsense.network.col.dest", "Destination"), render: (r) => `${r.destination}${r.destination_port ? ":" + r.destination_port : ""}` },
-          { header: t("integrations.pfsense.network.col.target", "Target"), render: (r) => `${r.target}${r.local_port ? ":" + r.local_port : ""}` },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t(
+              "integrations.pfsense.network.col.interface",
+              "Interface",
+            ),
+            render: (r) => r.interface,
+          },
+          {
+            header: t("integrations.pfsense.network.col.proto", "Proto"),
+            render: (r) => r.protocol,
+          },
+          {
+            header: t("integrations.pfsense.network.col.dest", "Destination"),
+            render: (r) =>
+              `${r.destination}${r.destination_port ? ":" + r.destination_port : ""}`,
+          },
+          {
+            header: t("integrations.pfsense.network.col.target", "Target"),
+            render: (r) =>
+              `${r.target}${r.local_port ? ":" + r.local_port : ""}`,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
         onEdit={(r) =>
           openEditor<NatPortForward>({
@@ -740,7 +840,10 @@ function NatSection({ net }: { net: UsePfsenseNetwork }) {
         onDelete={(r) => run((id) => api.deleteNatPortForward(id, r.id))}
         onCreate={() =>
           openEditor<NatPortForward>({
-            title: t("integrations.pfsense.network.newForward", "New port forward"),
+            title: t(
+              "integrations.pfsense.network.newForward",
+              "New port forward",
+            ),
             initial: { ...NEW_NAT_PORT_FORWARD },
             save: async (v) => {
               await run((id) => api.createNatPortForward(id, v));
@@ -756,11 +859,32 @@ function NatSection({ net }: { net: UsePfsenseNetwork }) {
         load={() => run((id) => api.listNatOutbound(id))}
         onReady={(fn) => (obReload.current = fn)}
         columns={[
-          { header: t("integrations.pfsense.network.col.interface", "Interface"), render: (r) => r.interface },
-          { header: t("integrations.pfsense.network.col.source", "Source"), render: (r) => r.source },
-          { header: t("integrations.pfsense.network.col.dest", "Destination"), render: (r) => r.destination },
-          { header: t("integrations.pfsense.network.col.translation", "Translation"), render: (r) => r.translation_address },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t(
+              "integrations.pfsense.network.col.interface",
+              "Interface",
+            ),
+            render: (r) => r.interface,
+          },
+          {
+            header: t("integrations.pfsense.network.col.source", "Source"),
+            render: (r) => r.source,
+          },
+          {
+            header: t("integrations.pfsense.network.col.dest", "Destination"),
+            render: (r) => r.destination,
+          },
+          {
+            header: t(
+              "integrations.pfsense.network.col.translation",
+              "Translation",
+            ),
+            render: (r) => r.translation_address,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
         onEdit={(r) =>
           openEditor<NatOutbound>({
@@ -775,7 +899,10 @@ function NatSection({ net }: { net: UsePfsenseNetwork }) {
         onDelete={(r) => run((id) => api.deleteNatOutbound(id, r.id))}
         onCreate={() =>
           openEditor<NatOutbound>({
-            title: t("integrations.pfsense.network.newOutbound", "New outbound NAT"),
+            title: t(
+              "integrations.pfsense.network.newOutbound",
+              "New outbound NAT",
+            ),
             initial: { ...NEW_NAT_OUTBOUND },
             save: async (v) => {
               await run((id) => api.createNatOutbound(id, v));
@@ -791,11 +918,29 @@ function NatSection({ net }: { net: UsePfsenseNetwork }) {
         load={() => run((id) => api.listNat1to1(id))}
         onReady={(fn) => (oneReload.current = fn)}
         columns={[
-          { header: t("integrations.pfsense.network.col.interface", "Interface"), render: (r) => r.interface },
-          { header: t("integrations.pfsense.network.col.external", "External"), render: (r) => r.external },
-          { header: t("integrations.pfsense.network.col.source", "Internal"), render: (r) => r.source },
-          { header: t("integrations.pfsense.network.col.dest", "Destination"), render: (r) => r.destination },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t(
+              "integrations.pfsense.network.col.interface",
+              "Interface",
+            ),
+            render: (r) => r.interface,
+          },
+          {
+            header: t("integrations.pfsense.network.col.external", "External"),
+            render: (r) => r.external,
+          },
+          {
+            header: t("integrations.pfsense.network.col.source", "Internal"),
+            render: (r) => r.source,
+          },
+          {
+            header: t("integrations.pfsense.network.col.dest", "Destination"),
+            render: (r) => r.destination,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
         onEdit={(r) =>
           openEditor<Nat1to1>({
@@ -839,15 +984,30 @@ function RoutingSection({ net }: { net: UsePfsenseNetwork }) {
         load={() => run((id) => api.listRoutes(id))}
         onReady={(fn) => (routeReload.current = fn)}
         columns={[
-          { header: t("integrations.pfsense.network.col.network", "Network"), render: (r) => r.network },
-          { header: t("integrations.pfsense.network.col.gateway", "Gateway"), render: (r) => r.gateway },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
-          { header: t("integrations.pfsense.network.col.disabled", "Disabled"), render: (r) => yn(r.disabled) },
+          {
+            header: t("integrations.pfsense.network.col.network", "Network"),
+            render: (r) => r.network,
+          },
+          {
+            header: t("integrations.pfsense.network.col.gateway", "Gateway"),
+            render: (r) => r.gateway,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
+          {
+            header: t("integrations.pfsense.network.col.disabled", "Disabled"),
+            render: (r) => yn(r.disabled),
+          },
         ]}
         onDelete={(r) => run((id) => api.deleteRoute(id, r.id))}
         onCreate={() =>
           openEditor<StaticRoute>({
-            title: t("integrations.pfsense.network.newRoute", "New static route"),
+            title: t(
+              "integrations.pfsense.network.newRoute",
+              "New static route",
+            ),
             initial: { ...NEW_STATIC_ROUTE },
             save: async (v) => {
               await run((id) => api.createRoute(id, v));
@@ -866,7 +1026,10 @@ function RoutingSection({ net }: { net: UsePfsenseNetwork }) {
             className={BTN}
             onClick={() =>
               void view(
-                t("integrations.pfsense.network.gatewayStatus", "Gateway status"),
+                t(
+                  "integrations.pfsense.network.gatewayStatus",
+                  "Gateway status",
+                ),
                 (id) => api.getGatewayStatus(id),
               )
             }
@@ -876,11 +1039,29 @@ function RoutingSection({ net }: { net: UsePfsenseNetwork }) {
           </button>
         }
         columns={[
-          { header: t("integrations.pfsense.network.col.name", "Name"), render: (r) => r.name },
-          { header: t("integrations.pfsense.network.col.interface", "Interface"), render: (r) => r.interface },
-          { header: t("integrations.pfsense.network.col.gateway", "Gateway"), render: (r) => r.gateway },
-          { header: t("integrations.pfsense.network.col.monitor", "Monitor"), render: (r) => r.monitor },
-          { header: t("integrations.pfsense.network.col.default", "Default"), render: (r) => yn(r.default_gw) },
+          {
+            header: t("integrations.pfsense.network.col.name", "Name"),
+            render: (r) => r.name,
+          },
+          {
+            header: t(
+              "integrations.pfsense.network.col.interface",
+              "Interface",
+            ),
+            render: (r) => r.interface,
+          },
+          {
+            header: t("integrations.pfsense.network.col.gateway", "Gateway"),
+            render: (r) => r.gateway,
+          },
+          {
+            header: t("integrations.pfsense.network.col.monitor", "Monitor"),
+            render: (r) => r.monitor,
+          },
+          {
+            header: t("integrations.pfsense.network.col.default", "Default"),
+            render: (r) => yn(r.default_gw),
+          },
         ]}
       />
 
@@ -890,10 +1071,22 @@ function RoutingSection({ net }: { net: UsePfsenseNetwork }) {
         load={() => run((id) => api.getRoutingTable(id))}
         autoLoad={false}
         columns={[
-          { header: t("integrations.pfsense.network.col.dest", "Destination"), render: (r) => r.destination },
-          { header: t("integrations.pfsense.network.col.gateway", "Gateway"), render: (r) => r.gateway },
-          { header: t("integrations.pfsense.network.col.flags", "Flags"), render: (r) => r.flags },
-          { header: t("integrations.pfsense.network.col.netif", "Interface"), render: (r) => r.netif },
+          {
+            header: t("integrations.pfsense.network.col.dest", "Destination"),
+            render: (r) => r.destination,
+          },
+          {
+            header: t("integrations.pfsense.network.col.gateway", "Gateway"),
+            render: (r) => r.gateway,
+          },
+          {
+            header: t("integrations.pfsense.network.col.flags", "Flags"),
+            render: (r) => r.flags,
+          },
+          {
+            header: t("integrations.pfsense.network.col.netif", "Interface"),
+            render: (r) => r.netif,
+          },
         ]}
       />
       {node}
@@ -911,16 +1104,34 @@ function VpnSection({ net }: { net: UsePfsenseNetwork }) {
   return (
     <div>
       <ResourceList<OpenVpnServer>
-        title={t("integrations.pfsense.network.openvpnServers", "OpenVPN servers")}
+        title={t(
+          "integrations.pfsense.network.openvpnServers",
+          "OpenVPN servers",
+        )}
         rowKey={(r, i) => String(r.vpnid) || `ovpn-${i}`}
         load={() => run((id) => api.listOpenvpnServers(id))}
         onReady={(fn) => (ovpnReload.current = fn)}
         columns={[
-          { header: t("integrations.pfsense.network.col.vpnid", "ID"), render: (r) => r.vpnid },
-          { header: t("integrations.pfsense.network.col.mode", "Mode"), render: (r) => r.mode },
-          { header: t("integrations.pfsense.network.col.proto", "Proto"), render: (r) => r.protocol },
-          { header: t("integrations.pfsense.network.col.port", "Port"), render: (r) => r.local_port },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t("integrations.pfsense.network.col.vpnid", "ID"),
+            render: (r) => r.vpnid,
+          },
+          {
+            header: t("integrations.pfsense.network.col.mode", "Mode"),
+            render: (r) => r.mode,
+          },
+          {
+            header: t("integrations.pfsense.network.col.proto", "Proto"),
+            render: (r) => r.protocol,
+          },
+          {
+            header: t("integrations.pfsense.network.col.port", "Port"),
+            render: (r) => r.local_port,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
         onView={(r) =>
           void view(
@@ -931,7 +1142,10 @@ function VpnSection({ net }: { net: UsePfsenseNetwork }) {
         onDelete={(r) => run((id) => api.deleteOpenvpnServer(id, r.vpnid))}
         onCreate={() =>
           openEditor<OpenVpnServer>({
-            title: t("integrations.pfsense.network.newOpenvpnServer", "New OpenVPN server"),
+            title: t(
+              "integrations.pfsense.network.newOpenvpnServer",
+              "New OpenVPN server",
+            ),
             initial: { ...NEW_OPENVPN_SERVER },
             save: async (v) => {
               await run((id) => api.createOpenvpnServer(id, v));
@@ -942,14 +1156,29 @@ function VpnSection({ net }: { net: UsePfsenseNetwork }) {
       />
 
       <ResourceList<OpenVpnClient>
-        title={t("integrations.pfsense.network.openvpnClients", "OpenVPN clients")}
+        title={t(
+          "integrations.pfsense.network.openvpnClients",
+          "OpenVPN clients",
+        )}
         rowKey={(r, i) => String(r.vpnid) || `ovpnc-${i}`}
         load={() => run((id) => api.listOpenvpnClients(id))}
         columns={[
-          { header: t("integrations.pfsense.network.col.vpnid", "ID"), render: (r) => r.vpnid },
-          { header: t("integrations.pfsense.network.col.server", "Server"), render: (r) => `${r.server_addr}:${r.server_port}` },
-          { header: t("integrations.pfsense.network.col.proto", "Proto"), render: (r) => r.protocol },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t("integrations.pfsense.network.col.vpnid", "ID"),
+            render: (r) => r.vpnid,
+          },
+          {
+            header: t("integrations.pfsense.network.col.server", "Server"),
+            render: (r) => `${r.server_addr}:${r.server_port}`,
+          },
+          {
+            header: t("integrations.pfsense.network.col.proto", "Proto"),
+            render: (r) => r.protocol,
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
       />
 
@@ -958,14 +1187,35 @@ function VpnSection({ net }: { net: UsePfsenseNetwork }) {
         rowKey={(r, i) => String(r.ikeid) || `ipsec-${i}`}
         load={() => run((id) => api.listIpsecTunnels(id))}
         onView={(r) =>
-          showDetail(t("integrations.pfsense.network.ipsecTunnel", "IPsec tunnel"), r)
+          showDetail(
+            t("integrations.pfsense.network.ipsecTunnel", "IPsec tunnel"),
+            r,
+          )
         }
         columns={[
-          { header: t("integrations.pfsense.network.col.ikeid", "IKE ID"), render: (r) => r.ikeid },
-          { header: t("integrations.pfsense.network.col.remote", "Remote gateway"), render: (r) => r.phase1.remote_gateway },
-          { header: t("integrations.pfsense.network.col.p2", "Phase 2"), render: (r) => r.phase2.length },
-          { header: t("integrations.pfsense.network.col.enabled", "On"), render: (r) => yn(r.enabled) },
-          { header: t("integrations.pfsense.network.col.descr", "Description"), render: (r) => r.descr },
+          {
+            header: t("integrations.pfsense.network.col.ikeid", "IKE ID"),
+            render: (r) => r.ikeid,
+          },
+          {
+            header: t(
+              "integrations.pfsense.network.col.remote",
+              "Remote gateway",
+            ),
+            render: (r) => r.phase1.remote_gateway,
+          },
+          {
+            header: t("integrations.pfsense.network.col.p2", "Phase 2"),
+            render: (r) => r.phase2.length,
+          },
+          {
+            header: t("integrations.pfsense.network.col.enabled", "On"),
+            render: (r) => yn(r.enabled),
+          },
+          {
+            header: t("integrations.pfsense.network.col.descr", "Description"),
+            render: (r) => r.descr,
+          },
         ]}
       />
 
@@ -980,10 +1230,25 @@ function VpnSection({ net }: { net: UsePfsenseNetwork }) {
           )
         }
         columns={[
-          { header: t("integrations.pfsense.network.col.name", "Name"), render: (r) => r.name },
-          { header: t("integrations.pfsense.network.col.port", "Listen port"), render: (r) => r.listen_port },
-          { header: t("integrations.pfsense.network.col.addresses", "Addresses"), render: (r) => r.addresses.join(", ") },
-          { header: t("integrations.pfsense.network.col.enabled", "On"), render: (r) => yn(r.enabled) },
+          {
+            header: t("integrations.pfsense.network.col.name", "Name"),
+            render: (r) => r.name,
+          },
+          {
+            header: t("integrations.pfsense.network.col.port", "Listen port"),
+            render: (r) => r.listen_port,
+          },
+          {
+            header: t(
+              "integrations.pfsense.network.col.addresses",
+              "Addresses",
+            ),
+            render: (r) => r.addresses.join(", "),
+          },
+          {
+            header: t("integrations.pfsense.network.col.enabled", "On"),
+            render: (r) => yn(r.enabled),
+          },
         ]}
       />
       {node}
@@ -1002,10 +1267,19 @@ const PfsenseNetworkTab: React.FC<PfsenseTabProps> = ({ connectionId }) => {
 
   const sections: { key: SectionKey; label: string }[] = useMemo(
     () => [
-      { key: "interfaces", label: t("integrations.pfsense.network.interfaces", "Interfaces") },
-      { key: "firewall", label: t("integrations.pfsense.network.firewall", "Firewall") },
+      {
+        key: "interfaces",
+        label: t("integrations.pfsense.network.interfaces", "Interfaces"),
+      },
+      {
+        key: "firewall",
+        label: t("integrations.pfsense.network.firewall", "Firewall"),
+      },
       { key: "nat", label: t("integrations.pfsense.network.nat", "NAT") },
-      { key: "routing", label: t("integrations.pfsense.network.routing", "Routing") },
+      {
+        key: "routing",
+        label: t("integrations.pfsense.network.routing", "Routing"),
+      },
       { key: "vpn", label: t("integrations.pfsense.network.vpn", "VPN") },
     ],
     [t],

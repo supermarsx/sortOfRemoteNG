@@ -1,12 +1,18 @@
-/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
-import React, { useContext, useMemo, useRef } from 'react';
-import SettingsContext from '../../../../contexts/SettingsContext';
-import type { GlobalSettings } from '../../../../types/settings/settings';
-import { REGISTRY } from './registry';
-import { SIZE_PX, type LoadingElementType, type LoadingElementSize, type FallbackMode, type VariantConfig } from './types';
-import { DEFAULT_LOADING_ELEMENT_SETTINGS } from './defaults';
-import { useAccentColor } from './runtime/colorResolver';
-import { useElementVisibility } from './runtime/useElementVisibility';
+/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
+import React, { useContext, useMemo, useRef } from "react";
+import SettingsContext from "../../../../contexts/SettingsContext";
+import type { GlobalSettings } from "../../../../types/settings/settings";
+import { REGISTRY } from "./registry";
+import {
+  SIZE_PX,
+  type LoadingElementType,
+  type LoadingElementSize,
+  type FallbackMode,
+  type VariantConfig,
+} from "./types";
+import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "./defaults";
+import { useAccentColor } from "./runtime/colorResolver";
+import { useElementVisibility } from "./runtime/useElementVisibility";
 
 export interface LoadingElementProps {
   type?: LoadingElementType;
@@ -23,16 +29,19 @@ export interface LoadingElementProps {
    * the recorder needs a canvas pixel surface to capture from, so it forces
    * `'canvas'` even if settings would otherwise pick DOM.
    */
-  forceRenderMode?: 'dom' | 'canvas';
+  forceRenderMode?: "dom" | "canvas";
 }
 
-function resolveSize(size: LoadingElementProps['size']): number {
-  if (typeof size === 'number') return size;
+function resolveSize(size: LoadingElementProps["size"]): number {
+  if (typeof size === "number") return size;
   if (size && size in SIZE_PX) return SIZE_PX[size];
   return SIZE_PX.md;
 }
 
-function deepMerge<T extends Record<string, unknown>>(base: T, over: Partial<T>): T {
+function deepMerge<T extends Record<string, unknown>>(
+  base: T,
+  over: Partial<T>,
+): T {
   return { ...base, ...over };
 }
 
@@ -61,7 +70,7 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   paused,
   fallbackMode,
   className,
-  ariaLabel = 'Loading',
+  ariaLabel = "Loading",
   forceRenderMode,
 }) => {
   // Use context directly with a defensive fallback. The loading element may
@@ -72,7 +81,9 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   const le = settings?.loadingElement ?? DEFAULT_LOADING_ELEMENT_SETTINGS;
 
   // Resolve type — prop wins, then settings default, then lissajous
-  const effectiveType: LoadingElementType = (type ?? le?.defaultType ?? 'lissajous') as LoadingElementType;
+  const effectiveType: LoadingElementType = (type ??
+    le?.defaultType ??
+    "lissajous") as LoadingElementType;
   const requestedSizePx = resolveSize(size);
   const sizeScale = Math.max(0.25, le?.sizeScale ?? 1);
   const effectiveSizePx = Math.max(8, Math.round(requestedSizePx * sizeScale));
@@ -80,13 +91,16 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   // Auto-fallback to ring when below the variant's recommended size (e.g. a
   // particle storm rendered at 16px just becomes a fuzzy dot — useless).
   const variantDesc = REGISTRY[effectiveType] ?? REGISTRY.ring;
-  const finalDesc = effectiveSizePx < variantDesc.minRecommendedSize ? REGISTRY.ring : variantDesc;
+  const finalDesc =
+    effectiveSizePx < variantDesc.minRecommendedSize
+      ? REGISTRY.ring
+      : variantDesc;
 
   // Resolve color — explicit prop, else accent (if user opted in), else stored
-  const accentFallback = le?.customColor ?? '#00f0ff';
+  const accentFallback = le?.customColor ?? "#00f0ff";
   const accent = useAccentColor(accentFallback);
-  const resolvedColor = color
-    ?? (le?.followsAccentColor ? accent : (le?.customColor ?? accent));
+  const resolvedColor =
+    color ?? (le?.followsAccentColor ? accent : (le?.customColor ?? accent));
 
   // Merge config: variant default ← settings.perType[type] ← per-call override.
   // The cast chain is isolated here on purpose — VariantConfig is a non-
@@ -94,52 +108,61 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   // Refactoring to a discriminated union is a larger change; this single
   // helper keeps the unsafe casts contained.
   const mergedConfig = useMemo(
-    () => mergeVariantConfig(finalDesc.defaultConfig, le?.perType?.[finalDesc.type], config),
+    () =>
+      mergeVariantConfig(
+        finalDesc.defaultConfig,
+        le?.perType?.[finalDesc.type],
+        config,
+      ),
     [finalDesc, le?.perType, config],
   );
 
   // Auto / dom / canvas — variants that don't support canvas always go DOM
-  const requestedRender = le?.renderMode ?? 'auto';
-  const renderMode: 'dom' | 'canvas' = (() => {
-    if (forceRenderMode) return finalDesc.supportsCanvas ? forceRenderMode : 'dom';
-    if (!finalDesc.supportsCanvas) return 'dom';
-    if (requestedRender === 'dom') return 'dom';
-    if (requestedRender === 'canvas') return 'canvas';
+  const requestedRender = le?.renderMode ?? "auto";
+  const renderMode: "dom" | "canvas" = (() => {
+    if (forceRenderMode)
+      return finalDesc.supportsCanvas ? forceRenderMode : "dom";
+    if (!finalDesc.supportsCanvas) return "dom";
+    if (requestedRender === "dom") return "dom";
+    if (requestedRender === "canvas") return "canvas";
     // auto: variant-declared preference wins, then dot-count heuristic
     if (finalDesc.recommendedRenderMode) return finalDesc.recommendedRenderMode;
     const effectiveDots = (mergedConfig as { dots?: number }).dots ?? 0;
-    return effectiveDots > 250 ? 'canvas' : 'dom';
+    return effectiveDots > 250 ? "canvas" : "dom";
   })();
 
   // Visibility / window-hidden pause
   const ref = useRef<HTMLDivElement | null>(null);
   const visible = useElementVisibility(ref, !!le?.pauseWhenOffScreen);
-  const externallyPaused = paused === true || (settings ? !settings.animationsEnabled : false);
+  const externallyPaused =
+    paused === true || (settings ? !settings.animationsEnabled : false);
   const effectivePaused = externallyPaused || !visible;
 
   // Reduced motion
   const userReduceMotion = !!settings?.reduceMotion;
   const prefersReduce =
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
       : false;
-  const rmMode = le?.reducedMotionMode ?? 'auto';
+  const rmMode = le?.reducedMotionMode ?? "auto";
   // Default ('auto') ignores OS-level prefers-reduced-motion — many users have
   // it enabled by default on Windows 11 / macOS without thinking of it as
   // "freeze every animation in every app". Only respect the explicit
   // settings.reduceMotion toggle in auto mode. The 'static' / 'pause' modes
   // still honor the OS hint for users who explicitly opt into that behavior.
   const reducedMotion = (() => {
-    if (rmMode === 'pause') return false; // handled via paused below
-    if (rmMode === 'static') return userReduceMotion || prefersReduce;
+    if (rmMode === "pause") return false; // handled via paused below
+    if (rmMode === "static") return userReduceMotion || prefersReduce;
     return userReduceMotion;
   })();
-  const finalPaused = effectivePaused || (rmMode === 'pause' && (userReduceMotion || prefersReduce));
+  const finalPaused =
+    effectivePaused ||
+    (rmMode === "pause" && (userReduceMotion || prefersReduce));
 
   // Precomputed-asset fallback
-  const mode: FallbackMode = fallbackMode ?? le?.precomputed?.mode ?? 'never';
+  const mode: FallbackMode = fallbackMode ?? le?.precomputed?.mode ?? "never";
   const asset = le?.precomputed?.assets?.[finalDesc.type];
-  const useAsset = mode === 'always' && !!asset;
+  const useAsset = mode === "always" && !!asset;
   // 'whenUnavailable' is reserved for runtime-detected failure; not used here.
 
   if (useAsset && asset) {
@@ -149,22 +172,32 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
         className={className}
         role="status"
         aria-label={ariaLabel}
-        style={{ width: effectiveSizePx, height: effectiveSizePx, display: 'inline-block' }}
+        style={{
+          width: effectiveSizePx,
+          height: effectiveSizePx,
+          display: "inline-block",
+        }}
       >
         <img
-          src={asset.path.startsWith('/') ? asset.path : `/${asset.path}`}
+          src={asset.path.startsWith("/") ? asset.path : `/${asset.path}`}
           width={effectiveSizePx}
           height={effectiveSizePx}
           alt={ariaLabel}
-          style={{ display: 'block', width: '100%', height: '100%' }}
+          style={{ display: "block", width: "100%", height: "100%" }}
         />
       </div>
     );
   }
 
   const Variant = finalDesc.component as React.FC<{
-    size: number; color: string; config: VariantConfig; renderMode: 'dom' | 'canvas';
-    paused: boolean; reducedMotion: boolean; className?: string; ariaLabel?: string;
+    size: number;
+    color: string;
+    config: VariantConfig;
+    renderMode: "dom" | "canvas";
+    paused: boolean;
+    reducedMotion: boolean;
+    className?: string;
+    ariaLabel?: string;
   }>;
 
   // Per-variant safe scale — each variant declares how much its geometry
@@ -184,35 +217,36 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   // heavy bloom — same shape, different magnitude.
   const glowI = Math.max(0, le?.glowIntensity ?? 1);
   const glowColor = (le?.glowColor && le.glowColor.trim()) || resolvedColor;
-  const glowFilter = glowI > 0
-    ? `drop-shadow(0 0 ${(glowI * 3).toFixed(1)}px ${glowColor})`
-    + ` drop-shadow(0 0 ${(glowI * 8).toFixed(1)}px ${glowColor})`
-    + ` drop-shadow(0 0 ${(glowI * 16).toFixed(1)}px ${glowColor})`
-    : undefined;
+  const glowFilter =
+    glowI > 0
+      ? `drop-shadow(0 0 ${(glowI * 3).toFixed(1)}px ${glowColor})` +
+        ` drop-shadow(0 0 ${(glowI * 8).toFixed(1)}px ${glowColor})` +
+        ` drop-shadow(0 0 ${(glowI * 16).toFixed(1)}px ${glowColor})`
+      : undefined;
 
   return (
     <div
       ref={ref}
       className={className}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         width: effectiveSizePx,
         height: effectiveSizePx,
-        position: 'relative',
-        overflow: 'visible',
+        position: "relative",
+        overflow: "visible",
       }}
     >
       <div
         style={{
-          position: 'absolute',
+          position: "absolute",
           inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          pointerEvents: 'none',
-          overflow: 'visible',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+          overflow: "visible",
           filter: glowFilter,
         }}
       >
@@ -232,22 +266,34 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
 
 /* ── Sugar / convenience exports ────────────────────────── */
 
-const Inline: React.FC<Omit<LoadingElementProps, 'size'>> = (props) => (
-  <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}>
+const Inline: React.FC<Omit<LoadingElementProps, "size">> = (props) => (
+  <span style={{ display: "inline-flex", verticalAlign: "middle" }}>
     <InternalLoadingElement size="xs" {...props} />
   </span>
 );
 
-const Overlay: React.FC<LoadingElementProps & { message?: string; detail?: string; statusMessage?: string }> = ({
-  message = 'Connecting…', detail, statusMessage, ...rest
-}) => (
+const Overlay: React.FC<
+  LoadingElementProps & {
+    message?: string;
+    detail?: string;
+    statusMessage?: string;
+  }
+> = ({ message = "Connecting…", detail, statusMessage, ...rest }) => (
   <div className="text-center">
-    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+    <div
+      style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}
+    >
       <InternalLoadingElement size="md" {...rest} />
     </div>
     <p className="text-[var(--color-textSecondary)]">{message}</p>
-    {detail && <p className="text-[var(--color-textMuted)] text-sm mt-2">{detail}</p>}
-    {statusMessage && <p className="text-[var(--color-textMuted)] text-xs mt-1">{statusMessage}</p>}
+    {detail && (
+      <p className="text-[var(--color-textMuted)] text-sm mt-2">{detail}</p>
+    )}
+    {statusMessage && (
+      <p className="text-[var(--color-textMuted)] text-xs mt-1">
+        {statusMessage}
+      </p>
+    )}
   </div>
 );
 

@@ -92,12 +92,7 @@ const DetailView: React.FC<{
 };
 
 type TabKey =
-  | "overview"
-  | "routers"
-  | "services"
-  | "middlewares"
-  | "entrypoints"
-  | "tls";
+  "overview" | "routers" | "services" | "middlewares" | "entrypoints" | "tls";
 
 type L47Proto = "http" | "tcp" | "udp";
 
@@ -156,7 +151,7 @@ const ConnectForm: React.FC<{ mgr: TraefikManager; instanceId?: string }> = ({
           : { ...f, password: secret },
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [instanceId, store.isLoading]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>

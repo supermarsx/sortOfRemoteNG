@@ -96,7 +96,9 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
   );
   const [log, setLog] = useState<string[]>([]);
   const note = useCallback((msg: string) => {
-    setLog((l) => [`${new Date().toLocaleTimeString()}  ${msg}`, ...l].slice(0, 30));
+    setLog((l) =>
+      [`${new Date().toLocaleTimeString()}  ${msg}`, ...l].slice(0, 30),
+    );
   }, []);
   const show = useCallback((label: string, body: unknown) => {
     setDetail({ label, body });
@@ -131,7 +133,11 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
   const [bucketKeys, setBucketKeys] = useState<StorageBucketKey[]>([]);
 
   // ── Form state ────────────────────────────────────────────────────────────────
-  const [poolForm, setPoolForm] = useState({ name: "", driver: "dir", description: "" });
+  const [poolForm, setPoolForm] = useState({
+    name: "",
+    driver: "dir",
+    description: "",
+  });
   const [poolDesc, setPoolDesc] = useState("");
   const [volForm, setVolForm] = useState({
     name: "",
@@ -140,7 +146,7 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
     description: "",
   });
   const [renameTo, setRenameTo] = useState("");
-  const [patchText, setPatchText] = useState("{\n  \"description\": \"\"\n}");
+  const [patchText, setPatchText] = useState('{\n  "description": ""\n}');
   const [snapForm, setSnapForm] = useState({ name: "", expiresAt: "" });
   const [bucketForm, setBucketForm] = useState({ name: "", description: "" });
   const [cfgForm, setCfgForm] = useState({ key: "", value: "" });
@@ -152,7 +158,7 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
     if (!connected) return;
     void act("list pools", () => s.refreshPools());
     void act("get server / cluster", () => s.refreshServerCluster());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [connected]);
 
   const selectedPoolConfig = useMemo(
@@ -164,9 +170,7 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
   const loadVolumes = useCallback(
     async (pool: string, custom: boolean) => {
       const list = await act(`list volumes (${pool})`, () =>
-        custom
-          ? s.api.listCustomVolumes(pool)
-          : s.api.listStorageVolumes(pool),
+        custom ? s.api.listCustomVolumes(pool) : s.api.listStorageVolumes(pool),
       );
       setVolumes(list ?? []);
       setSelectedVolume(null);
@@ -232,7 +236,9 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
           <button
             className={btnClass}
             disabled={gated}
-            onClick={() => act("get server / cluster", () => s.refreshServerCluster())}
+            onClick={() =>
+              act("get server / cluster", () => s.refreshServerCluster())
+            }
           >
             <RefreshCw size={12} />
             {t("integrations.lxd.storage.refresh", "Refresh")}
@@ -253,13 +259,16 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
             className={btnClass}
             disabled={gated}
             onClick={() =>
-              act("get server resources", () => s.api.getServerResources()).then(
-                (r) => r && show("serverResources", r),
-              )
+              act("get server resources", () =>
+                s.api.getServerResources(),
+              ).then((r) => r && show("serverResources", r))
             }
           >
             <HardDrive size={12} />
-            {t("integrations.lxd.storage.getServerResources", "Hardware resources")}
+            {t(
+              "integrations.lxd.storage.getServerResources",
+              "Hardware resources",
+            )}
           </button>
           <button
             className={btnClass}
@@ -285,7 +294,9 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
               className={inputClass}
               value={cfgForm.key}
               placeholder="core.https_address"
-              onChange={(e) => setCfgForm((f) => ({ ...f, key: e.target.value }))}
+              onChange={(e) =>
+                setCfgForm((f) => ({ ...f, key: e.target.value }))
+              }
             />
           </div>
           <div>
@@ -295,7 +306,9 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
             <input
               className={inputClass}
               value={cfgForm.value}
-              onChange={(e) => setCfgForm((f) => ({ ...f, value: e.target.value }))}
+              onChange={(e) =>
+                setCfgForm((f) => ({ ...f, value: e.target.value }))
+              }
             />
           </div>
           <div className="flex items-end">
@@ -331,7 +344,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
           </div>
           {s.members.length === 0 ? (
             <p className="text-xs text-[var(--color-textSecondary)]">
-              {t("integrations.lxd.storage.noMembers", "No cluster members (standalone server).")}
+              {t(
+                "integrations.lxd.storage.noMembers",
+                "No cluster members (standalone server).",
+              )}
             </p>
           ) : (
             <ul className="divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)]">
@@ -350,7 +366,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                     <button
                       className={btnClass}
                       disabled={gated || !m.serverName}
-                      title={t("integrations.lxd.storage.memberInfo", "Member info")}
+                      title={t(
+                        "integrations.lxd.storage.memberInfo",
+                        "Member info",
+                      )}
                       onClick={() =>
                         act("get member", () =>
                           s.api.getClusterMember(m.serverName as string),
@@ -386,7 +405,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                     <button
                       className={dangerBtnClass}
                       disabled={gated || !m.serverName}
-                      title={t("integrations.lxd.storage.removeMember", "Remove member")}
+                      title={t(
+                        "integrations.lxd.storage.removeMember",
+                        "Remove member",
+                      )}
                       onClick={() =>
                         act("remove member", () =>
                           s.api.removeClusterMember(
@@ -429,17 +451,27 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
             className={inputClass}
             placeholder={t("integrations.lxd.storage.poolName", "Pool name")}
             value={poolForm.name}
-            onChange={(e) => setPoolForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) =>
+              setPoolForm((f) => ({ ...f, name: e.target.value }))
+            }
           />
           <input
             className={inputClass}
-            placeholder={t("integrations.lxd.storage.driver", "Driver (dir/zfs/btrfs…)")}
+            placeholder={t(
+              "integrations.lxd.storage.driver",
+              "Driver (dir/zfs/btrfs…)",
+            )}
             value={poolForm.driver}
-            onChange={(e) => setPoolForm((f) => ({ ...f, driver: e.target.value }))}
+            onChange={(e) =>
+              setPoolForm((f) => ({ ...f, driver: e.target.value }))
+            }
           />
           <input
             className={inputClass}
-            placeholder={t("integrations.lxd.storage.description", "Description")}
+            placeholder={t(
+              "integrations.lxd.storage.description",
+              "Description",
+            )}
             value={poolForm.description}
             onChange={(e) =>
               setPoolForm((f) => ({ ...f, description: e.target.value }))
@@ -470,7 +502,9 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                 <div className="flex items-center justify-between gap-2">
                   <button
                     className={`truncate text-left text-xs ${
-                      selectedPool === p.name ? "font-semibold text-primary" : ""
+                      selectedPool === p.name
+                        ? "font-semibold text-primary"
+                        : ""
                     }`}
                     onClick={() => selectPool(p.name)}
                   >
@@ -483,11 +517,14 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                     <button
                       className={btnClass}
                       disabled={gated}
-                      title={t("integrations.lxd.storage.poolInfo", "Pool info")}
+                      title={t(
+                        "integrations.lxd.storage.poolInfo",
+                        "Pool info",
+                      )}
                       onClick={() =>
-                        act("get pool", () => s.api.getStoragePool(p.name)).then(
-                          (r) => r && show(`pool:${p.name}`, r),
-                        )
+                        act("get pool", () =>
+                          s.api.getStoragePool(p.name),
+                        ).then((r) => r && show(`pool:${p.name}`, r))
                       }
                     >
                       <Database size={12} />
@@ -566,13 +603,17 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
       >
         {!selectedPool ? (
           <p className="text-xs text-[var(--color-textSecondary)]">
-            {t("integrations.lxd.storage.selectPool", "Select a storage pool above.")}
+            {t(
+              "integrations.lxd.storage.selectPool",
+              "Select a storage pool above.",
+            )}
           </p>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-[var(--color-textSecondary)]">
-                {t("integrations.lxd.storage.pool", "Pool")}: <b>{selectedPool}</b>
+                {t("integrations.lxd.storage.pool", "Pool")}:{" "}
+                <b>{selectedPool}</b>
               </span>
               <label className="flex items-center gap-1 text-xs text-[var(--color-textSecondary)]">
                 <input
@@ -583,7 +624,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                     void loadVolumes(selectedPool, e.target.checked);
                   }}
                 />
-                {t("integrations.lxd.storage.customOnly", "Custom volumes only")}
+                {t(
+                  "integrations.lxd.storage.customOnly",
+                  "Custom volumes only",
+                )}
               </label>
               <button
                 className={btnClass}
@@ -599,9 +643,14 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <input
                 className={inputClass}
-                placeholder={t("integrations.lxd.storage.volumeName", "Volume name")}
+                placeholder={t(
+                  "integrations.lxd.storage.volumeName",
+                  "Volume name",
+                )}
                 value={volForm.name}
-                onChange={(e) => setVolForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setVolForm((f) => ({ ...f, name: e.target.value }))
+                }
               />
               <input
                 className={inputClass}
@@ -613,7 +662,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
               />
               <input
                 className={inputClass}
-                placeholder={t("integrations.lxd.storage.contentType", "Content type")}
+                placeholder={t(
+                  "integrations.lxd.storage.contentType",
+                  "Content type",
+                )}
                 value={volForm.contentType}
                 onChange={(e) =>
                   setVolForm((f) => ({ ...f, contentType: e.target.value }))
@@ -666,7 +718,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                         <button
                           className={btnClass}
                           disabled={gated}
-                          title={t("integrations.lxd.storage.volumeInfo", "Volume info")}
+                          title={t(
+                            "integrations.lxd.storage.volumeInfo",
+                            "Volume info",
+                          )}
                           onClick={() =>
                             act("get volume", () =>
                               s.api.getStorageVolume(
@@ -710,7 +765,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
                   <input
                     className={inputClass}
-                    placeholder={t("integrations.lxd.storage.newName", "New name")}
+                    placeholder={t(
+                      "integrations.lxd.storage.newName",
+                      "New name",
+                    )}
                     value={renameTo}
                     onChange={(e) => setRenameTo(e.target.value)}
                   />
@@ -773,7 +831,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                 {/* Volume snapshots */}
                 <div>
                   <div className="mb-1 flex items-center gap-2">
-                    <Camera size={12} className="text-[var(--color-textSecondary)]" />
+                    <Camera
+                      size={12}
+                      className="text-[var(--color-textSecondary)]"
+                    />
                     <span className="text-xs font-medium text-[var(--color-textSecondary)]">
                       {t("integrations.lxd.storage.snapshots", "Snapshots")}
                     </span>
@@ -790,7 +851,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_auto]">
                     <input
                       className={inputClass}
-                      placeholder={t("integrations.lxd.storage.snapshotName", "Snapshot name")}
+                      placeholder={t(
+                        "integrations.lxd.storage.snapshotName",
+                        "Snapshot name",
+                      )}
                       value={snapForm.name}
                       onChange={(e) =>
                         setSnapForm((f) => ({ ...f, name: e.target.value }))
@@ -798,10 +862,16 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                     />
                     <input
                       className={inputClass}
-                      placeholder={t("integrations.lxd.storage.expiresAt", "Expires (ISO 8601)")}
+                      placeholder={t(
+                        "integrations.lxd.storage.expiresAt",
+                        "Expires (ISO 8601)",
+                      )}
                       value={snapForm.expiresAt}
                       onChange={(e) =>
-                        setSnapForm((f) => ({ ...f, expiresAt: e.target.value }))
+                        setSnapForm((f) => ({
+                          ...f,
+                          expiresAt: e.target.value,
+                        }))
                       }
                     />
                     <button
@@ -817,7 +887,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                           ),
                         ).then((r) => {
                           if (r) show("operation", r);
-                          return loadSnapshots(selectedPool, selectedVolume.name);
+                          return loadSnapshots(
+                            selectedPool,
+                            selectedVolume.name,
+                          );
                         })
                       }
                     >
@@ -875,7 +948,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
       >
         {!selectedPool ? (
           <p className="text-xs text-[var(--color-textSecondary)]">
-            {t("integrations.lxd.storage.selectPool", "Select a storage pool above.")}
+            {t(
+              "integrations.lxd.storage.selectPool",
+              "Select a storage pool above.",
+            )}
           </p>
         ) : (
           <>
@@ -891,7 +967,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
               <input
                 className={inputClass}
-                placeholder={t("integrations.lxd.storage.bucketName", "Bucket name")}
+                placeholder={t(
+                  "integrations.lxd.storage.bucketName",
+                  "Bucket name",
+                )}
                 value={bucketForm.name}
                 onChange={(e) =>
                   setBucketForm((f) => ({ ...f, name: e.target.value }))
@@ -899,7 +978,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
               />
               <input
                 className={inputClass}
-                placeholder={t("integrations.lxd.storage.description", "Description")}
+                placeholder={t(
+                  "integrations.lxd.storage.description",
+                  "Description",
+                )}
                 value={bucketForm.description}
                 onChange={(e) =>
                   setBucketForm((f) => ({ ...f, description: e.target.value }))
@@ -935,7 +1017,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                       <button
                         className={btnClass}
                         disabled={gated}
-                        title={t("integrations.lxd.storage.bucketInfo", "Bucket info")}
+                        title={t(
+                          "integrations.lxd.storage.bucketInfo",
+                          "Bucket info",
+                        )}
                         onClick={() =>
                           act("get bucket", () =>
                             s.api.getStorageBucket(selectedPool, b.name),
@@ -947,7 +1032,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                       <button
                         className={btnClass}
                         disabled={gated}
-                        title={t("integrations.lxd.storage.keys", "Access keys")}
+                        title={t(
+                          "integrations.lxd.storage.keys",
+                          "Access keys",
+                        )}
                         onClick={() =>
                           act("list bucket keys", () =>
                             s.api.listBucketKeys(selectedPool, b.name),
@@ -978,9 +1066,13 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
             )}
             {bucketKeys.length > 0 && (
               <p className="text-xs text-[var(--color-textSecondary)]">
-                {t("integrations.lxd.storage.keyCount", "{{count}} access key(s) — see Inspector.", {
-                  count: bucketKeys.length,
-                })}
+                {t(
+                  "integrations.lxd.storage.keyCount",
+                  "{{count}} access key(s) — see Inspector.",
+                  {
+                    count: bucketKeys.length,
+                  },
+                )}
               </p>
             )}
           </>
@@ -1016,7 +1108,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
         </div>
         {s.operations.length === 0 ? (
           <p className="text-xs text-[var(--color-textSecondary)]">
-            {t("integrations.lxd.storage.noOperations", "No active operations.")}
+            {t(
+              "integrations.lxd.storage.noOperations",
+              "No active operations.",
+            )}
           </p>
         ) : (
           <ul className="divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)]">
@@ -1035,7 +1130,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                   <button
                     className={btnClass}
                     disabled={gated || !op.id}
-                    title={t("integrations.lxd.storage.operationInfo", "Operation info")}
+                    title={t(
+                      "integrations.lxd.storage.operationInfo",
+                      "Operation info",
+                    )}
                     onClick={() =>
                       act("get operation", () =>
                         s.api.getOperation(op.id as string),
@@ -1115,7 +1213,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                   <button
                     className={btnClass}
                     disabled={gated || !w.uuid}
-                    title={t("integrations.lxd.storage.warningInfo", "Warning info")}
+                    title={t(
+                      "integrations.lxd.storage.warningInfo",
+                      "Warning info",
+                    )}
                     onClick={() =>
                       act("get warning", () =>
                         s.api.getWarning(w.uuid as string),
@@ -1127,7 +1228,10 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
                   <button
                     className={btnClass}
                     disabled={gated || !w.uuid}
-                    title={t("integrations.lxd.storage.acknowledge", "Acknowledge")}
+                    title={t(
+                      "integrations.lxd.storage.acknowledge",
+                      "Acknowledge",
+                    )}
                     onClick={() =>
                       act("acknowledge warning", () =>
                         s.api.acknowledgeWarning(w.uuid as string),
@@ -1158,14 +1262,13 @@ const LxdStorageTab: React.FC<LxdTabProps> = ({ connected }) => {
       {/* ── Inspector + activity log ──────────────────────────────────────────── */}
       {(detail || s.error) && (
         <div className="border-t border-[var(--color-border)] p-4">
-          {s.error && (
-            <p className="mb-2 text-xs text-red-500">{s.error}</p>
-          )}
+          {s.error && <p className="mb-2 text-xs text-red-500">{s.error}</p>}
           {detail && (
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <span className="text-xs font-medium text-[var(--color-textSecondary)]">
-                  {t("integrations.lxd.storage.inspector", "Inspector")}: {detail.label}
+                  {t("integrations.lxd.storage.inspector", "Inspector")}:{" "}
+                  {detail.label}
                 </span>
                 <button
                   className="text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"

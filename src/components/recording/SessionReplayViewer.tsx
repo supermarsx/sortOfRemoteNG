@@ -88,16 +88,23 @@ function Header({
   return (
     <div className="sor-replay-header flex items-center justify-between px-4 py-2 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
       <div className="flex items-center gap-3">
-        {s?.replayType === "terminal" && <Monitor size={16} className="text-success" />}
-        {s?.replayType === "video" && <Video size={16} className="text-primary" />}
-        {s?.replayType === "har" && <Globe size={16} className="text-primary" />}
+        {s?.replayType === "terminal" && (
+          <Monitor size={16} className="text-success" />
+        )}
+        {s?.replayType === "video" && (
+          <Video size={16} className="text-primary" />
+        )}
+        {s?.replayType === "har" && (
+          <Globe size={16} className="text-primary" />
+        )}
         <span className="text-sm font-medium text-[var(--color-text)]">
           {s?.title ?? t("replay.untitled")}
         </span>
         {s && (
           <span className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
             <Clock size={12} />
-            {fmtMs(s.durationMs)} &middot; {new Date(s.startTime).toLocaleDateString()}
+            {fmtMs(s.durationMs)} &middot;{" "}
+            {new Date(s.startTime).toLocaleDateString()}
           </span>
         )}
       </div>
@@ -127,13 +134,7 @@ function Header({
 
 /* ---------- Playback controls ---------- */
 
-function PlaybackControls({
-  r,
-  t,
-}: {
-  r: Replay;
-  t: (k: string) => string;
-}) {
+function PlaybackControls({ r, t }: { r: Replay; t: (k: string) => string }) {
   const playing = r.playbackState === "playing";
   const canPlay = r.playbackState === "paused" || r.playbackState === "stopped";
 
@@ -183,7 +184,9 @@ function PlaybackControls({
 
       {/* Position label */}
       <span className="text-xs tabular-nums text-[var(--color-textSecondary)] min-w-[72px] text-right">
-        {r.position ? `${fmtMs(r.position.currentTimeMs)} / ${fmtMs(r.position.totalTimeMs)}` : "--:-- / --:--"}
+        {r.position
+          ? `${fmtMs(r.position.currentTimeMs)} / ${fmtMs(r.position.totalTimeMs)}`
+          : "--:-- / --:--"}
       </span>
 
       {/* Speed selector */}
@@ -234,7 +237,10 @@ function Timeline({
           key={mk.id}
           onClick={() => onMarkerClick(mk)}
           className="absolute top-0 w-1.5 h-full hover:w-2.5 transition-all z-10 cursor-pointer"
-          style={{ left: `${(mk.timeMs / total) * 100}%`, backgroundColor: mk.color }}
+          style={{
+            left: `${(mk.timeMs / total) * 100}%`,
+            backgroundColor: mk.color,
+          }}
           title={mk.label}
         />
       ))}
@@ -323,18 +329,31 @@ function HarPane({ r }: { r: Replay }) {
             const barWidth = Math.max((entry.durationMs / total) * 100, 0.5);
             return (
               <tr key={entry.index} className="hover:bg-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-textMuted)]">{entry.index + 1}</td>
-                <td className="px-2 py-1 font-medium text-[var(--color-text)]">{entry.method}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)] truncate max-w-[300px]" title={entry.url}>
+                <td className="px-2 py-1 text-[var(--color-textMuted)]">
+                  {entry.index + 1}
+                </td>
+                <td className="px-2 py-1 font-medium text-[var(--color-text)]">
+                  {entry.method}
+                </td>
+                <td
+                  className="px-2 py-1 text-[var(--color-textSecondary)] truncate max-w-[300px]"
+                  title={entry.url}
+                >
                   {entry.url}
                 </td>
                 <td className="px-2 py-1">
-                  <span className={`inline-block px-1.5 py-0.5 rounded text-[var(--color-text)] text-[10px] ${statusColor(entry.statusCode)}`}>
+                  <span
+                    className={`inline-block px-1.5 py-0.5 rounded text-[var(--color-text)] text-[10px] ${statusColor(entry.statusCode)}`}
+                  >
                     {entry.statusCode}
                   </span>
                 </td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{fmtBytes(entry.responseSize)}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{entry.durationMs}ms</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {fmtBytes(entry.responseSize)}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {entry.durationMs}ms
+                </td>
                 <td className="px-2 py-1">
                   <div className="relative h-3 bg-[var(--color-border)] rounded-full overflow-hidden">
                     <div
@@ -365,11 +384,15 @@ function HarStatsPanel({ r, t }: { r: Replay; t: (k: string) => string }) {
         {t("replay.totalRequests")}
       </span>
       <span>
-        <strong className="text-[var(--color-text)]">{fmtBytes(hs.totalTransferSize)}</strong>{" "}
+        <strong className="text-[var(--color-text)]">
+          {fmtBytes(hs.totalTransferSize)}
+        </strong>{" "}
         {t("replay.transferred")}
       </span>
       <span>
-        <strong className="text-[var(--color-text)]">{hs.avgDurationMs.toFixed(0)}ms</strong>{" "}
+        <strong className="text-[var(--color-text)]">
+          {hs.avgDurationMs.toFixed(0)}ms
+        </strong>{" "}
         {t("replay.avgLoadTime")}
       </span>
       <span className="flex items-center gap-1">
@@ -438,7 +461,11 @@ function SidePanel({
               placeholder={t("replay.searchPlaceholder")}
               className="flex-1 px-2 py-1 text-xs bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
-            <button onClick={onSearch} className="sor-option-chip p-1" title={t("replay.search")}>
+            <button
+              onClick={onSearch}
+              className="sor-option-chip p-1"
+              title={t("replay.search")}
+            >
               <Search size={14} />
             </button>
           </div>
@@ -504,7 +531,9 @@ function SidePanel({
                 >
                   {fmtMs(a.timeMs)}
                 </button>
-                <p className="text-[var(--color-textSecondary)] truncate">{a.text}</p>
+                <p className="text-[var(--color-textSecondary)] truncate">
+                  {a.text}
+                </p>
               </div>
               <button
                 onClick={() => r.removeAnnotation(a.id)}
@@ -550,14 +579,19 @@ function SidePanel({
               key={b.id}
               className="flex items-center gap-1 px-1.5 py-1 rounded bg-[var(--color-border)]/50 group"
             >
-              <ChevronRight size={10} className="text-[var(--color-textMuted)]" />
+              <ChevronRight
+                size={10}
+                className="text-[var(--color-textMuted)]"
+              />
               <button
                 onClick={() => r.seek(b.timeMs)}
                 className="text-primary hover:underline tabular-nums"
               >
                 {fmtMs(b.timeMs)}
               </button>
-              <span className="flex-1 truncate text-[var(--color-textSecondary)]">{b.label}</span>
+              <span className="flex-1 truncate text-[var(--color-textSecondary)]">
+                {b.label}
+              </span>
               <button
                 onClick={() => r.removeBookmark(b.id)}
                 className="opacity-0 group-hover:opacity-100 text-[var(--color-textMuted)] hover:text-error transition-opacity"
@@ -599,7 +633,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
         r.loadHar(recordingId);
         break;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recordingId and replayType are the only needed triggers
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- recordingId and replayType are the only needed triggers
   }, [recordingId, replayType]);
 
   /* ---------- Load annotations & bookmarks after session ready ---------- */
@@ -608,7 +642,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
       r.loadAnnotations();
       r.loadBookmarks();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- r.session?.id is the stable trigger
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- r.session?.id is the stable trigger
   }, [r.session?.id]);
 
   /* ---------- Keyboard shortcuts ---------- */
@@ -621,7 +655,11 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
         case " ":
           e.preventDefault();
           if (r.playbackState === "playing") r.pause();
-          else if (r.playbackState === "paused" || r.playbackState === "stopped") r.play();
+          else if (
+            r.playbackState === "paused" ||
+            r.playbackState === "stopped"
+          )
+            r.play();
           break;
         case "ArrowLeft":
           e.preventDefault();
@@ -630,7 +668,9 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
         case "ArrowRight":
           e.preventDefault();
           if (r.position)
-            r.seek(Math.min(r.position.totalTimeMs, r.position.currentTimeMs + 5000));
+            r.seek(
+              Math.min(r.position.totalTimeMs, r.position.currentTimeMs + 5000),
+            );
           break;
       }
     }
@@ -645,7 +685,12 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
 
   /* ---------- Export handler ---------- */
   const handleExport = useCallback(() => {
-    const defaultFmt = replayType === "terminal" ? "asciicast" : replayType === "video" ? "mp4" : "har";
+    const defaultFmt =
+      replayType === "terminal"
+        ? "asciicast"
+        : replayType === "video"
+          ? "mp4"
+          : "har";
     r.exportRecording(defaultFmt, "");
   }, [r, replayType]);
 
@@ -715,7 +760,10 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
 
   /* ---- Main layout ---- */
   return (
-    <div className="sor-replay-viewer flex flex-col h-full bg-[var(--color-surface)] text-[var(--color-text)]" data-testid="replay-viewer">
+    <div
+      className="sor-replay-viewer flex flex-col h-full bg-[var(--color-surface)] text-[var(--color-text)]"
+      data-testid="replay-viewer"
+    >
       <Header r={r} t={t} onExport={handleExport} onClose={onClose} />
       <PlaybackControls r={r} t={t} />
       <Timeline r={r} onMarkerClick={handleMarkerClick} />

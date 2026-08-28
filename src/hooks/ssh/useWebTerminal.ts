@@ -105,11 +105,7 @@ const PROXY_COMMAND_CONFIRMATION_REQUIRED =
   "PROXY_COMMAND_CONFIRMATION_REQUIRED";
 
 type ConnectionStatus =
-  | "idle"
-  | "connecting"
-  | "reconnecting"
-  | "connected"
-  | "error";
+  "idle" | "connecting" | "reconnecting" | "connected" | "error";
 type SshConnectMode = "connect" | "reconnect";
 type SshDisconnectIntent = "none" | "user" | "replace";
 const SSH_ATTEMPT_WATCHDOG_GRACE_MS = 15_000;
@@ -1426,11 +1422,9 @@ export function useWebTerminal(
       let attemptWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
       let attemptPromptActive = false;
       let attemptHostKeyResolve:
-        | ((decision: HostKeyPromptDecision) => void)
-        | null = null;
+        ((decision: HostKeyPromptDecision) => void) | null = null;
       const takeAttemptHostKeyResolve = ():
-        | ((decision: HostKeyPromptDecision) => void)
-        | null => {
+        ((decision: HostKeyPromptDecision) => void) | null => {
         const resolve = attemptHostKeyResolve;
         attemptHostKeyResolve = null;
         return resolve;
@@ -2337,7 +2331,7 @@ export function useWebTerminal(
         unlistenHostKeyPrompt?.();
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- all used functions are listed; refs read at call time
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- all used functions are listed; refs read at call time
     [
       classifySshError,
       disconnectCurrentSsh,
@@ -3271,7 +3265,7 @@ export function useWebTerminal(
     return () => {
       // Supersede in-flight connection attempts. Their own continuation owns
       // cleanup of attempt-local SSH and VPN resources.
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally invalidate the latest shared generation
+      // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- intentionally invalidate the latest shared generation
       sshInitGenRef.current++;
       isConnecting.current = false;
       const pendingSshTrustResolve = sshTrustResolveRef.current;
@@ -3322,7 +3316,7 @@ export function useWebTerminal(
       termRef.current = null;
       fitRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-init terminal when session changes; callbacks are memoized
+    // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- re-init terminal when session changes; callbacks are memoized
   }, [
     classifySshError,
     clearReconnectTimer,
