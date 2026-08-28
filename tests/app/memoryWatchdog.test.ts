@@ -6,6 +6,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 
 import {
   getMemoryWatchdog,
+  isHeapMemoryAvailable,
   normalizeMemoryWatchdogConfig,
   startMemoryWatchdog,
   stopMemoryWatchdog,
@@ -308,5 +309,86 @@ describe("MemoryWatchdog lifecycle", () => {
     expect(document.getElementById("application-root")).toBe(appRoot);
     expect(appRoot.textContent).toBe("active session");
     appRoot.remove();
+  });
+
+  it("exposes a read-only snapshot of live values, thresholds, and severity", async () => {
+    tauri.invoke.mockResolvedValue(systemMemory(96));
+    const watchdog = startMemoryWatchdog({
+      intervalMs: 1000,
+      warningMb: 512,
+      criticalMb: 1024,
+      killMb: 1800,
+      systemWarningPct: 85,
+      systemKillPct: 95,
+      windowLabel: "main",
+    });
+    await flushImmediateWork();
+
+    const snapshot = watchdog.getSnapshot();
+    expect(snapshot.running).toBe(true);
+    expect(snapshot.heapAvailable).toBe(true);
+    expect(snapshot.severity).toBe("pressure");
+    expect(snapshot.source).toBe("system");
+    expect(snapshot.stats.usedMb).toBe(32);
+    expect(snapshot.stats.limitMb).toBe(2048);
+    expect(snapshot.stats.system?.usedPct).toBe(96);
+    expect(snapshot.thresholds).toEqual({
+      intervalMs: 1000,
+      warningMb: 512,
+      criticalMb: 1024,
+      killMb: 1800,
+      systemWarningPct: 85,
+      systemKillPct: 95,
+      windowLabel: "main",
+    });
+    expect(watchdog.isRunning()).toBe(true);
+
+    watchdog.stop();
+    expect(watchdog.isRunning()).toBe(false);
+    expect(watchdog.getSnapshot().running).toBe(false);
+    expect(watchdog.getSnapshot().severity).toBe("normal");
+  });
+
+  it("keeps snapshot reads out of the growth-rate history", async () => {
+    const watchdog = startMemoryWatchdog({ intervalMs: 5000 });
+    await flushImmediateWork();
+
+    heap.usedJSHeapSize = 100 * MB;
+    for (let index = 0; index < 5; index += 1) {
+      await vi.advanceTimersByTimeAsync(200);
+      heap.usedJSHeapSize += 10 * MB;
+      watchdog.getSnapshot();
+    }
+    // Only one real probe has run, so there is still no trend to report.
+    expect(watchdog.getSnapshot().stats.growthRateMbPerSec).toBe(0);
+    expect(watchdog.getSnapshot().stats.trend).toBe("stable");
+
+    // getStats does record history, which is what makes the contrast visible.
+    for (let index = 0; index < 5; index += 1) {
+      await vi.advanceTimersByTimeAsync(200);
+      heap.usedJSHeapSize += 10 * MB;
+      await watchdog.getStats();
+    }
+    expect(watchdog.getSnapshot().stats.growthRateMbPerSec).toBeGreaterThan(0);
+    expect(watchdog.getSnapshot().stats.trend).toBe("rising");
+  });
+
+  it("reports heap metrics as unavailable when performance.memory is missing", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(performance, "memory");
+    Object.defineProperty(performance, "memory", {
+      configurable: true,
+      value: undefined,
+    });
+    try {
+      expect(isHeapMemoryAvailable()).toBe(false);
+      const watchdog = startMemoryWatchdog({ intervalMs: 1000 });
+      const snapshot = watchdog.getSnapshot();
+      expect(snapshot.heapAvailable).toBe(false);
+      expect(snapshot.stats.usedMb).toBe(0);
+      expect(snapshot.stats.limitMb).toBe(0);
+    } finally {
+      if (descriptor) Object.defineProperty(performance, "memory", descriptor);
+    }
+    expect(isHeapMemoryAvailable()).toBe(true);
   });
 });

@@ -7,10 +7,7 @@
  */
 
 export type MemoryPressureSeverity =
-  | "warning"
-  | "critical"
-  | "pressure"
-  | "recovered";
+  "warning" | "critical" | "pressure" | "recovered";
 
 export type MemoryPressureSource = "heap" | "system" | "both";
 export type MemoryWatchdogOwner = symbol;
@@ -65,6 +62,34 @@ export interface MemoryWatchdogStatus {
   windowLabel: string;
 }
 
+/** Severity as last evaluated; "normal" means no threshold is exceeded. */
+export type MemoryWatchdogActiveSeverity =
+  Exclude<MemoryPressureSeverity, "recovered"> | "normal";
+
+/** The normalized thresholds actually in force for the monitored window. */
+export type MemoryWatchdogThresholds = Pick<
+  Required<MemoryWatchdogConfig>,
+  | "intervalMs"
+  | "warningMb"
+  | "criticalMb"
+  | "killMb"
+  | "systemWarningPct"
+  | "systemKillPct"
+  | "windowLabel"
+>;
+
+/** Read-only view of the watchdog for diagnostics UI. */
+export interface MemoryWatchdogSnapshot {
+  /** False when the watchdog exists but is stopped. */
+  running: boolean;
+  /** False when `performance.memory` is missing (heap numbers are meaningless). */
+  heapAvailable: boolean;
+  severity: MemoryWatchdogActiveSeverity;
+  source: MemoryPressureSource;
+  stats: MemoryStats;
+  thresholds: MemoryWatchdogThresholds;
+}
+
 interface PerformanceMemory {
   usedJSHeapSize: number;
   totalJSHeapSize: number;
@@ -89,7 +114,7 @@ interface SystemProbeDelivery {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
-type ActiveSeverity = Exclude<MemoryPressureSeverity, "recovered"> | "normal";
+type ActiveSeverity = MemoryWatchdogActiveSeverity;
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -238,6 +263,11 @@ function getHeapMemory(): PerformanceMemory | null {
   return memory;
 }
 
+/** True when this runtime exposes usable `performance.memory` heap counters. */
+export function isHeapMemoryAvailable(): boolean {
+  return getHeapMemory() !== null;
+}
+
 function normalizeSystemMemoryInfo(value: unknown): SystemMemoryInfo | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<SystemMemoryInfo>;
@@ -361,6 +391,45 @@ export class MemoryWatchdog {
   async getStats(signal?: AbortSignal): Promise<MemoryStats | null> {
     if (signal?.aborted) return null;
     return this.sampleStats();
+  }
+
+  /** True while heap sampling is scheduled for the monitored window. */
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  /**
+   * Normalized thresholds actually in force. These can differ from the stored
+   * settings: detached windows get their own values, and invalid groups fall
+   * back to defaults in `normalizeMemoryWatchdogConfig`.
+   */
+  getThresholds(): MemoryWatchdogThresholds {
+    return {
+      intervalMs: this.config.intervalMs,
+      warningMb: this.config.warningMb,
+      criticalMb: this.config.criticalMb,
+      killMb: this.config.killMb,
+      systemWarningPct: this.config.systemWarningPct,
+      systemKillPct: this.config.systemKillPct,
+      windowLabel: this.config.windowLabel,
+    };
+  }
+
+  /**
+   * Read-only view for diagnostics UI. Deliberately does not record heap
+   * history, so a UI that polls this cannot skew the growth-rate/trend signal
+   * the watchdog evaluates thresholds against. It also never launches a native
+   * system probe; `stats.system` is whatever the watchdog last delivered.
+   */
+  getSnapshot(): MemoryWatchdogSnapshot {
+    return {
+      running: this.running,
+      heapAvailable: isHeapMemoryAvailable(),
+      severity: this.currentSeverity,
+      source: this.currentSource,
+      stats: this.sampleStats(false),
+      thresholds: this.getThresholds(),
+    };
   }
 
   private sampleStats(recordHeapHistory = true): MemoryStats {

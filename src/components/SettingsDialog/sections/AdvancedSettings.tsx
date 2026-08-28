@@ -31,6 +31,7 @@ import {
 } from "../../../types/settings/settings";
 import { useProtocolRepair } from "../../../hooks/connection/useProtocolRepair";
 import { ProtocolRepairDialog } from "../../connection/ProtocolRepairDialog";
+import { MemoryWatchdogStats } from "./MemoryWatchdogStats";
 
 interface AdvancedSettingsProps {
   settings: GlobalSettings;
@@ -345,6 +346,9 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
           />
         </div>
       </Card>
+
+      {/* Live readout so the thresholds above can be judged against reality. */}
+      <MemoryWatchdogStats />
     </div>
   );
 };
