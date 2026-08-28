@@ -38,9 +38,13 @@ use sorng_encryption::artifacts::{
 };
 use sorng_encryption::audit::{self, AuditEvent};
 use sorng_encryption::dek::MasterDek;
-use sorng_encryption::envelope::{MasterKeyStorage, SALT_LEN};
+use sorng_encryption::envelope::{
+    self as enc_envelope, EnvelopeHeader, MasterKeyStorage, MAGIC as SORNG_ENVELOPE_MAGIC,
+    NONCE_LEN, SALT_LEN,
+};
+use sorng_encryption::key_ring::{self, RetiredKeyRing};
 use sorng_encryption::password_wrap::{self, Argon2Params};
-use sorng_encryption::EncryptionState;
+use sorng_encryption::{ArtifactKind, EncryptionState};
 use sorng_recording::service::RecordingServiceState;
 use sorng_recording::storage as rec_storage;
 use sorng_storage::backup::BackupServiceState;
@@ -48,10 +52,20 @@ use sorng_storage::storage::SecureStorageState;
 
 const DEK_ENC_FILENAME: &str = "dek.enc";
 const SETTINGS_ENC_FILENAME: &str = "settings.enc";
+/// `<app_data>/databases/` — the per-user connection databases, their
+/// index, and their per-database trust stores. Every file under here is
+/// wrapped in a master-DEK envelope, so every file under here has to be
+/// re-keyed by a rotation. Omitting this directory is exactly the bug
+/// t74 exists to fix.
+const DATABASES_DIRNAME: &str = "databases";
 /// Tauri event name. Must mirror the constant in `sorng-encryption`.
 const EVENT_UNLOCKED: &str = "encryption:unlocked";
 
-type RotationFailureInjector<'a> = dyn Fn(&str, &Path) -> Option<String> + Sync + 'a;
+/// Injected fault point used by the abort/rollback tests. Called with
+/// the artifact tag and canonical path just before that artifact is
+/// staged; returning `Some(reason)` fails the stage as if the
+/// filesystem had refused it.
+pub type RotationFailureInjector<'a> = dyn Fn(&str, &Path) -> Option<String> + Sync + 'a;
 type VaultReceiptWriter<'a> = dyn Fn(&[u8; 32]) -> Result<(), String> + Sync + 'a;
 type BeforeSettingsLockHook<'a> = dyn Fn() + Sync + 'a;
 
@@ -97,6 +111,26 @@ pub struct FullRotateReport {
     pub media_sidecars_rewritten: u32,
     /// Count of macro envelopes re-encrypted.
     pub macros_rewritten: u32,
+    /// Was `databases/index.json` (the current generation) re-encrypted?
+    pub database_index_rewritten: bool,
+    /// Count of current-generation per-database payloads
+    /// (`databases/<id>.json`) re-encrypted.
+    pub databases_rewritten: u32,
+    /// Count of current-generation per-database trust stores
+    /// (`databases/<id>.trust.json`) re-encrypted.
+    pub trust_stores_rewritten: u32,
+    /// Count of recovery generations (`.bak` / `.v0.bak`) of any
+    /// `databases/**` file re-encrypted. These are not optional: the
+    /// SDBF read ladder will happily serve a `.bak`, so a rotation that
+    /// skipped them would turn permanent data loss into intermittent
+    /// data loss.
+    pub database_generations_rewritten: u32,
+    /// Was the retained key ring (`dek-ring.enc`) re-wrapped under the
+    /// new DEK with the outgoing DEK pushed onto it?
+    pub key_ring_updated: bool,
+    /// How many superseded DEKs the ring holds after this rotation.
+    /// Bounded by `key_ring::KEY_RING_CAPACITY`.
+    pub key_ring_retained: u32,
     /// Total v2-envelope bytes written across all artifacts.
     pub bytes_rewritten: u64,
     /// Was the OS vault entry updated with the new DEK?
@@ -211,6 +245,38 @@ pub async fn rotate_master_key_full_inner(
         password,
         vault_present,
         None,
+        None,
+        None,
+    )
+    .await
+}
+
+/// Test-only rotation entry point that exposes the fault injector.
+///
+/// The abort/rollback ladder is the part of this module that protects
+/// user data, so it has to be provable from an integration test rather
+/// than by reading the code. `#[doc(hidden)]` — not a supported API.
+#[doc(hidden)]
+#[allow(dead_code, clippy::too_many_arguments)]
+pub async fn rotate_master_key_full_inner_with_injector(
+    app_data_dir: &Path,
+    enc_state: &EncryptionState,
+    storage_state: &SecureStorageState,
+    backup_state: &BackupServiceState,
+    recording_state: &RecordingServiceState,
+    password: Option<String>,
+    vault_present: bool,
+    failure_injector: &RotationFailureInjector<'_>,
+) -> Result<FullRotateReport, String> {
+    rotate_master_key_full_inner_impl(
+        app_data_dir,
+        enc_state,
+        storage_state,
+        backup_state,
+        recording_state,
+        password,
+        vault_present,
+        Some(failure_injector),
         None,
         None,
     )
@@ -483,6 +549,107 @@ async fn rotate_master_key_full_inner_impl(
         }
     }
 
+    // ── Step 3e: databases/** (index, payloads, trust stores) ─────
+    //
+    // Historically absent, which is the whole reason t74 exists: a
+    // rotation re-keyed settings + storage.json, reported success, and
+    // left every connection database wrapped under a DEK that no longer
+    // existed anywhere. Every generation is covered, not just the
+    // current one — `safe_read_raw` falls back to `.bak` and
+    // `.v0.bak`, so a skipped generation is a live landmine.
+    let databases_dir = app_data_dir.join(DATABASES_DIRNAME);
+    let mut database_tmp_files: Vec<PathBuf> = Vec::new();
+    match collect_database_files(&databases_dir) {
+        Ok(walk) => {
+            database_tmp_files = walk.transient;
+            for file in walk.files {
+                match prepare_stage(
+                    &transaction_id,
+                    file.kind.artifact_tag(),
+                    &file.path,
+                    failure_injector,
+                ) {
+                    Ok(item) => {
+                        let result = rewrite_database_file(
+                            &item.staged,
+                            file.kind.artifact_kind(),
+                            &old_state,
+                            &new_state,
+                        )
+                        .await;
+                        keep_or_record_stage(
+                            &mut report,
+                            &mut staged,
+                            item,
+                            result,
+                            |report, n| {
+                                match (file.kind, file.is_generation) {
+                                    (_, true) => report.database_generations_rewritten += 1,
+                                    (DatabaseFileKind::Index, false) => {
+                                        report.database_index_rewritten = true
+                                    }
+                                    (DatabaseFileKind::Payload, false) => {
+                                        report.databases_rewritten += 1
+                                    }
+                                    (DatabaseFileKind::Trust, false) => {
+                                        report.trust_stores_rewritten += 1
+                                    }
+                                }
+                                report.bytes_rewritten += n;
+                            },
+                        );
+                    }
+                    Err(reason) => {
+                        push_failure(&mut report, file.kind.artifact_tag(), &file.path, reason)
+                    }
+                }
+            }
+        }
+        Err(reason) => push_failure(&mut report, "databases", &databases_dir, reason),
+    }
+
+    // ── Step 3f: the retained key ring ────────────────────────────
+    //
+    // Push the outgoing DEK onto the ring and re-wrap the whole ring
+    // under the incoming DEK. Defence in depth for step 3e, never a
+    // substitute for it: if some future artifact family is added
+    // without being added to this walk, the ring keeps its files
+    // openable instead of turning them into unreadable ciphertext.
+    // See `sorng_encryption::key_ring` for the forward-secrecy
+    // trade-off (bounded, user-directed).
+    let ring_path = key_ring::ring_path(app_data_dir);
+    if report.failures.is_empty() && !ring_path.exists() {
+        // The staging ladder copies a canonical file, so one has to
+        // exist. Seeding an *empty* ring under the still-live old key
+        // is safe in both outcomes: if this rotation commits, step 3f
+        // replaces it; if it aborts, a valid empty ring under the
+        // unchanged live key is a no-op.
+        match key_ring::encode(&old_state, &RetiredKeyRing::empty()).await {
+            Ok(blob) => {
+                if let Err(reason) = atomic_write(&ring_path, &blob) {
+                    push_failure(&mut report, "key-ring", &ring_path, reason);
+                }
+            }
+            Err(error) => push_failure(&mut report, "key-ring", &ring_path, error.to_string()),
+        }
+    }
+    if report.failures.is_empty() {
+        match prepare_stage(&transaction_id, "key-ring", &ring_path, failure_injector) {
+            Ok(item) => {
+                let outcome =
+                    rewrite_key_ring(&item.staged, &old_state, &new_state, &old_bytes_raw).await;
+                let retained = outcome.as_ref().map(|(_, r)| *r).unwrap_or(0);
+                let result = outcome.map(|(bytes, _)| bytes);
+                keep_or_record_stage(&mut report, &mut staged, item, result, move |report, n| {
+                    report.key_ring_updated = true;
+                    report.key_ring_retained = retained;
+                    report.bytes_rewritten += n;
+                });
+            }
+            Err(reason) => push_failure(&mut report, "key-ring", &ring_path, reason),
+        }
+    }
+
     // A required rewrite failure aborts before any canonical path,
     // live key, vault entry, or password receipt can change.
     if !report.failures.is_empty() {
@@ -583,6 +750,14 @@ async fn rotate_master_key_full_inner_impl(
     report.dek_enc_updated = new_dek_enc_blob.is_some();
     discard_rotation_files(&staged);
 
+    // Abandoned `databases/**` write-in-progress files are still on the
+    // old key and no reader ever consults them (`safe_read_raw` only
+    // walks canonical/.bak/.v0.bak). Removing them is deferred until
+    // after the commit so an aborted rotation mutates nothing at all.
+    for path in &database_tmp_files {
+        let _ = std::fs::remove_file(path);
+    }
+
     // Lockout bookkeeping and audit persistence do not participate in the
     // canonical settings/key transaction and must not delay queued writers.
     drop(settings_guard);
@@ -602,6 +777,12 @@ async fn rotate_master_key_full_inner_impl(
             "recordingEnvelopesRewritten": report.recording_envelopes_rewritten,
             "mediaSidecarsRewritten": report.media_sidecars_rewritten,
             "macrosRewritten": report.macros_rewritten,
+            "databaseIndexRewritten": report.database_index_rewritten,
+            "databasesRewritten": report.databases_rewritten,
+            "trustStoresRewritten": report.trust_stores_rewritten,
+            "databaseGenerationsRewritten": report.database_generations_rewritten,
+            "keyRingUpdated": report.key_ring_updated,
+            "keyRingRetained": report.key_ring_retained,
             "bytesRewritten": report.bytes_rewritten,
             "vaultUpdated": report.vault_updated,
             "dekEncUpdated": report.dek_enc_updated,
@@ -610,6 +791,238 @@ async fn rotate_master_key_full_inner_impl(
     );
 
     Ok(report)
+}
+
+// ══════════════════════════════════════════════════════════════════
+// databases/** walk
+// ══════════════════════════════════════════════════════════════════
+
+/// Which master sub-key protects a file under `<app_data>/databases/`.
+/// The three kinds use *different* HKDF labels by design, so a payload
+/// re-encrypted under the wrong kind would fail authentication on the
+/// next read — getting this classification right is load-bearing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabaseFileKind {
+    /// `index.json` — the database metadata list.
+    Index,
+    /// `<id>.json` — one database's connections payload.
+    Payload,
+    /// `<id>.trust.json` — one database's trust store.
+    Trust,
+}
+
+impl DatabaseFileKind {
+    fn artifact_kind(self) -> ArtifactKind {
+        match self {
+            DatabaseFileKind::Index => ArtifactKind::DatabasesIndex,
+            DatabaseFileKind::Payload => ArtifactKind::Connections,
+            DatabaseFileKind::Trust => ArtifactKind::TrustStore,
+        }
+    }
+
+    /// Tag used in `FullRotateReport::failures` and the staging ladder.
+    fn artifact_tag(self) -> &'static str {
+        match self {
+            DatabaseFileKind::Index => "databases-index",
+            DatabaseFileKind::Payload => "database",
+            DatabaseFileKind::Trust => "database-trust",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DatabaseFile {
+    path: PathBuf,
+    kind: DatabaseFileKind,
+    /// `true` for a `.bak` / `.v0.bak` recovery generation.
+    is_generation: bool,
+}
+
+#[derive(Debug, Default)]
+struct DatabaseWalk {
+    files: Vec<DatabaseFile>,
+    /// Abandoned `.tmp` write-in-progress files. Never re-encrypted (no
+    /// reader consults them); removed only after a successful commit.
+    transient: Vec<PathBuf>,
+}
+
+/// Classify one file name inside `databases/`.
+///
+/// Returns `None` for anything that is not a database artifact — `.tmp`
+/// files, and any stray file the app did not write (rotation sidecars
+/// from an earlier crashed attempt included, since those carry a
+/// `.sorng-rotation-<id>.staged` / `.backup` extension).
+fn classify_database_file(file_name: &str) -> Option<(DatabaseFileKind, bool)> {
+    if file_name.ends_with(".tmp") {
+        return None;
+    }
+    let (base, is_generation) = if let Some(base) = file_name.strip_suffix(".v0.bak") {
+        (base, true)
+    } else if let Some(base) = file_name.strip_suffix(".bak") {
+        (base, true)
+    } else {
+        (file_name, false)
+    };
+    if !base.ends_with(".json") {
+        return None;
+    }
+    let kind = if base == "index.json" {
+        DatabaseFileKind::Index
+    } else if base.ends_with(".trust.json") {
+        DatabaseFileKind::Trust
+    } else {
+        DatabaseFileKind::Payload
+    };
+    Some((kind, is_generation))
+}
+
+/// Enumerate every re-keyable file under `databases/`. A missing
+/// directory is not an error — a profile that has never created a
+/// database simply has nothing here.
+///
+/// Ordering is deterministic (sorted by path) so a rotation stages, and
+/// therefore rolls back, in a reproducible order.
+fn collect_database_files(dir: &Path) -> Result<DatabaseWalk, String> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(DatabaseWalk::default())
+        }
+        Err(error) => return Err(format!("read {}: {error}", dir.display())),
+    };
+
+    let mut walk = DatabaseWalk::default();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("read {}: {error}", dir.display()))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("stat {}: {error}", entry.path().display()))?;
+        if !file_type.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.ends_with(".tmp") {
+            walk.transient.push(entry.path());
+            continue;
+        }
+        if let Some((kind, is_generation)) = classify_database_file(&name) {
+            walk.files.push(DatabaseFile {
+                path: entry.path(),
+                kind,
+                is_generation,
+            });
+        }
+    }
+    walk.files.sort_by(|a, b| a.path.cmp(&b.path));
+    walk.transient.sort();
+    Ok(walk)
+}
+
+/// Re-key one `databases/**` file in place (the caller points this at a
+/// *staged sidecar*, never a canonical path).
+///
+/// The on-disk shape is `SDBF preamble (32 B) || SORNG v2 envelope`, so
+/// this unwraps the outer codec by hand rather than going through
+/// `safe_write`: `safe_write` rotates the `.bak` generation, which would
+/// clobber the very generations this walk is trying to preserve.
+///
+/// A payload without the envelope magic is legacy plaintext from before
+/// P4. It is **promoted** to an envelope under the new key rather than
+/// skipped, matching the "tolerant read, encrypt on write" policy the
+/// normal save path already follows.
+async fn rewrite_database_file(
+    path: &Path,
+    artifact: ArtifactKind,
+    from: &EncryptionState,
+    to: &EncryptionState,
+) -> Result<u64, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("read: {e}"))?;
+    let payload = sorng_storage::sdbf::parse_and_verify(&bytes)
+        .map_err(|e| format!("verify database file: {e}"))?;
+
+    let is_envelope = payload.len() >= SORNG_ENVELOPE_MAGIC.len()
+        && &payload[..SORNG_ENVELOPE_MAGIC.len()] == SORNG_ENVELOPE_MAGIC;
+
+    let plain = if is_envelope {
+        let sub_key = from
+            .sub_key(artifact)
+            .await
+            .ok_or_else(|| "decrypt: previous key unavailable".to_string())?;
+        let (_header, plain) =
+            enc_envelope::read_envelope(&sub_key, payload).map_err(|e| format!("decrypt: {e}"))?;
+        plain
+    } else {
+        // Legacy plaintext. Verify it really is JSON before promoting —
+        // encrypting unverified bytes would bake corruption in behind a
+        // key, where it can never be diagnosed again.
+        serde_json::from_slice::<serde_json::Value>(payload)
+            .map_err(|e| format!("legacy plaintext JSON: {e}"))?;
+        payload.to_vec()
+    };
+
+    let sub_key = to
+        .sub_key(artifact)
+        .await
+        .ok_or_else(|| "encrypt: new key unavailable".to_string())?;
+    let mut nonce = [0u8; NONCE_LEN];
+    {
+        use rand::rngs::OsRng;
+        use rand::RngCore;
+        OsRng.fill_bytes(&mut nonce);
+    }
+    let envelope =
+        enc_envelope::write_envelope(&sub_key, &EnvelopeHeader::new_vault(nonce), &plain)
+            .map_err(|e| format!("encrypt: {e}"))?;
+
+    // Verify the freshly written envelope opens under the new key before
+    // it is allowed anywhere near a commit. Staging is worthless if the
+    // staged bytes are not provably readable.
+    enc_envelope::read_envelope(&sub_key, &envelope)
+        .map_err(|e| format!("verify re-encrypted database file: {e}"))?;
+
+    let mut out = Vec::with_capacity(sorng_storage::sdbf::PREAMBLE_LEN + envelope.len());
+    out.extend_from_slice(&sorng_storage::sdbf::encode_preamble(&envelope));
+    out.extend_from_slice(&envelope);
+    sorng_storage::sdbf::parse_and_verify(&out)
+        .map_err(|e| format!("verify re-encrypted database container: {e}"))?;
+
+    let n = out.len() as u64;
+    atomic_write(path, &out)?;
+    Ok(n)
+}
+
+/// Re-wrap the retained key ring: decrypt under the outgoing DEK, push
+/// the outgoing DEK onto the front, re-encrypt the whole ring under the
+/// incoming DEK. Returns `(bytes_written, retained_count)`.
+///
+/// The ring is *always* encrypted — there is no code path that writes
+/// retired DEKs in the clear. It is keyed by `ArtifactKind::KeyRing`, a
+/// sub-key of the current master, so possessing the ring file without
+/// the current master reveals nothing.
+async fn rewrite_key_ring(
+    path: &Path,
+    from: &EncryptionState,
+    to: &EncryptionState,
+    outgoing_dek: &[u8; 32],
+) -> Result<(u64, u32), String> {
+    let mut ring = key_ring::load(path, from)
+        .await
+        .map_err(|e| format!("read key ring: {e}"))?;
+    ring.retire(outgoing_dek, key_ring::now_unix());
+    let retained = ring.len() as u32;
+
+    let blob = key_ring::encode(to, &ring)
+        .await
+        .map_err(|e| format!("encrypt key ring: {e}"))?;
+    // Prove the staged ring opens under the new key before commit.
+    key_ring::decode(to, &blob)
+        .await
+        .map_err(|e| format!("verify key ring: {e}"))?;
+
+    let n = blob.len() as u64;
+    atomic_write(path, &blob)?;
+    Ok((n, retained))
 }
 
 fn rotation_sidecar_path(path: &Path, transaction_id: &str, suffix: &str) -> PathBuf {
@@ -815,6 +1228,12 @@ fn reset_rewrite_tallies(report: &mut FullRotateReport) {
     report.recording_envelopes_rewritten = 0;
     report.media_sidecars_rewritten = 0;
     report.macros_rewritten = 0;
+    report.database_index_rewritten = false;
+    report.databases_rewritten = 0;
+    report.trust_stores_rewritten = 0;
+    report.database_generations_rewritten = 0;
+    report.key_ring_updated = false;
+    report.key_ring_retained = 0;
     report.bytes_rewritten = 0;
     report.vault_updated = false;
     report.dek_enc_updated = false;

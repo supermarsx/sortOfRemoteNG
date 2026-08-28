@@ -289,6 +289,11 @@ pub fn register_infrastructure_prefix(
     let app_dir = app.path().app_data_dir()?;
     let _ = std::fs::create_dir_all(&app_dir);
 
+    // Record where the retained key ring lives so artifact read paths can
+    // fall back to a superseded DEK without threading the app data dir
+    // through every decrypt seam (t74). Set once; later calls are no-ops.
+    sorng_encryption::key_ring::set_app_data_dir(app_dir.clone());
+
     let enc_state = sorng_encryption::EncryptionState::new();
     let dek_wrapper_probe = probe_dek_wrapper(&app_dir);
     if dek_wrapper_probe == DekWrapperProbe::ProbeFailed {

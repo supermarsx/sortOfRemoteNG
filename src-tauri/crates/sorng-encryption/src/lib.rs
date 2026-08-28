@@ -44,6 +44,7 @@ pub mod audit;
 pub mod commands;
 pub mod dek;
 pub mod envelope;
+pub mod key_ring;
 pub mod lockout;
 pub mod log_adapter;
 pub mod log_sink;

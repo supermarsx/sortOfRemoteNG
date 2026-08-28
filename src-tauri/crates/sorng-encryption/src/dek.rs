@@ -66,6 +66,12 @@ pub enum ArtifactKind {
     /// versa) fails authentication instead of decoding under the
     /// wrong slot.
     TrustStore,
+    /// `dek-ring.enc` — the bounded ring of superseded master DEKs
+    /// retained across rotations (t74). Encrypted under the *current*
+    /// master so the retained keys are never at rest in the clear.
+    /// See `crate::key_ring` for the format and the forward-secrecy
+    /// trade-off this represents.
+    KeyRing,
 }
 
 impl ArtifactKind {
@@ -82,6 +88,7 @@ impl ArtifactKind {
             ArtifactKind::Macros => "sorng-v1::macros",
             ArtifactKind::DatabasesIndex => "sorng-v1::databases-index",
             ArtifactKind::TrustStore => "sorng-v1::trust-store",
+            ArtifactKind::KeyRing => "sorng-v1::key-ring",
         }
     }
 
@@ -98,6 +105,7 @@ impl ArtifactKind {
             ArtifactKind::Macros,
             ArtifactKind::DatabasesIndex,
             ArtifactKind::TrustStore,
+            ArtifactKind::KeyRing,
         ]
     }
 }
