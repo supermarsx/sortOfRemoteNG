@@ -56,6 +56,11 @@
           "/usr/share/icons/hicolor/512x512/apps/com.sortofremote.ng.png": "icons/icon.png"
         }
       }
+    },
+    "windows": {
+      "wix": {
+        "upgradeCode": "85ab83c0-18b0-5da3-b253-08141a06eaec"
+      }
     }
   },
   "plugins": {
