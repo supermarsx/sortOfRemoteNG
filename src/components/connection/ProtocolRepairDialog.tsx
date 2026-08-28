@@ -80,7 +80,7 @@ export const ProtocolRepairDialog: React.FC<ProtocolRepairDialogProps> = ({
         }
         onClose={onClose}
       />
-      <ModalBody>
+      <ModalBody className="p-6">
         <p className="text-sm text-[var(--color-textSecondary)] mb-3">
           {t(
             "protocolRepair.description",
@@ -205,7 +205,7 @@ export const ProtocolRepairDialog: React.FC<ProtocolRepairDialogProps> = ({
           </div>
         )}
       </ModalBody>
-      <ModalFooter>
+      <ModalFooter className="flex justify-end gap-2 px-6 py-4">
         <button
           type="button"
           className="px-3 py-1.5 rounded text-sm bg-[var(--color-border)] hover:bg-[var(--color-borderHover)]"
