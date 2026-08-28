@@ -7,6 +7,26 @@ import { fileURLToPath } from "node:url";
 import { validateReleaseArtifactNames } from "./validate-release-artifacts.mjs";
 import { validateUpdaterFeed } from "./validate-updater-feed.mjs";
 
+// Build targets drive the per-build provenance files ("one provenance document per
+// compiled artifact"). They are NOT the updater manifest key set: per-installer keys
+// such as `windows-x86_64-msi` are additional payloads of the *same* build and have no
+// provenance document of their own.
+export const BUILD_TARGETS = [
+  "darwin-aarch64",
+  "darwin-x86_64",
+  "linux-aarch64",
+  "linux-x86_64",
+  "windows-aarch64",
+  "windows-x86_64",
+].sort();
+
+// Updater manifest platform keys -> the release asset each one must point at.
+//
+// `tauri-plugin-updater` resolves `{os}-{arch}-{installer}` before falling back to
+// `{os}-{arch}`, so an MSI install takes `windows-<arch>-msi` while an NSIS install
+// keeps resolving `windows-<arch>` exactly as it always has. The bare `windows-<arch>`
+// keys must therefore keep pointing at the NSIS `-setup.exe`: clients already in the
+// field depend on it, and pointing them at the `.msi` would break them.
 export const UPDATER_ARTIFACTS = {
   "darwin-aarch64": (version) =>
     `sortOfRemoteNG_${version}_darwin-aarch64.app.tar.gz`,
@@ -18,11 +38,15 @@ export const UPDATER_ARTIFACTS = {
     `sortOfRemoteNG_${version}_linux-x86_64.AppImage`,
   "windows-aarch64": (version) =>
     `sortOfRemoteNG_${version}_windows-aarch64-setup.exe`,
+  "windows-aarch64-msi": (version) =>
+    `sortOfRemoteNG_${version}_windows-aarch64.msi`,
   "windows-x86_64": (version) =>
     `sortOfRemoteNG_${version}_windows-x86_64-setup.exe`,
+  "windows-x86_64-msi": (version) =>
+    `sortOfRemoteNG_${version}_windows-x86_64.msi`,
 };
 
-const TARGETS = Object.keys(UPDATER_ARTIFACTS).sort();
+export const UPDATER_PLATFORMS = Object.keys(UPDATER_ARTIFACTS).sort();
 
 export function expectedAssetNames(version, updaterMode) {
   const names = [
@@ -42,13 +66,16 @@ export function expectedAssetNames(version, updaterMode) {
     `sortOfRemoteNG_${version}_windows-x86_64.msi`,
     `sortOfRemoteNG_${version}_windows-x86_64-setup.exe`,
     `sortOfRemoteNG_${version}_windows-x86_64-portable.zip`,
-    ...TARGETS.map(
+    ...BUILD_TARGETS.map(
       (target) => `sortOfRemoteNG_${version}_${target}.provenance.json`,
     ),
   ];
   if (updaterMode === "signed") {
-    const updaterArtifacts = TARGETS.map((target) =>
-      UPDATER_ARTIFACTS[target](version),
+    // Every updater manifest key contributes a detached `.sig`, including the
+    // per-installer `.msi` keys. The `.msi`/`-setup.exe` payloads themselves are
+    // already listed above; only the macOS `.app.tar.gz` updater payload is extra.
+    const updaterArtifacts = UPDATER_PLATFORMS.map((platform) =>
+      UPDATER_ARTIFACTS[platform](version),
     );
     names.push(
       ...updaterArtifacts.filter((name) => name.endsWith(".app.tar.gz")),
@@ -69,7 +96,7 @@ function readJson(filePath, errors, label) {
 }
 
 function validateProvenance(assetDir, version, updaterMode, errors) {
-  for (const target of TARGETS) {
+  for (const target of BUILD_TARGETS) {
     const fileName = `sortOfRemoteNG_${version}_${target}.provenance.json`;
     const provenance = readJson(
       path.join(assetDir, fileName),
@@ -178,6 +205,16 @@ export function validatePublishedReleaseAssets({
   errors.push(...validateReleaseArtifactNames(actualNames, expectedVersion));
   validateProvenance(assetDir, expectedVersion, updaterMode, errors);
 
+  if (updaterMode === "signed") {
+    // Fail closed: a signed release whose caller forgot the minisign verifier would
+    // otherwise publish an unverified updater payload without a single error.
+    if (typeof verifySignature !== "function") {
+      errors.push(
+        "Signed validation requires a signature verifier for every updater payload.",
+      );
+    }
+  }
+
   if (updaterMode === "signed" && missing.length === 0) {
     const feedPath = path.join(assetDir, "latest.json");
     const feed = readJson(feedPath, errors, "latest.json");
@@ -186,32 +223,32 @@ export function validatePublishedReleaseAssets({
         ...validateUpdaterFeed(feed, {
           distDir: assetDir,
           expectedVersion,
-          requiredPlatforms: TARGETS,
+          requiredPlatforms: UPDATER_PLATFORMS,
           requireSignatureFiles: true,
         }),
       );
-      const feedTargets = Object.keys(feed.platforms ?? {}).sort();
-      if (feedTargets.join("\n") !== TARGETS.join("\n")) {
+      const feedPlatforms = Object.keys(feed.platforms ?? {}).sort();
+      if (feedPlatforms.join("\n") !== UPDATER_PLATFORMS.join("\n")) {
         errors.push("latest.json must contain exactly the supported targets.");
       }
-      for (const target of TARGETS) {
-        const expectedArtifact = UPDATER_ARTIFACTS[target](expectedVersion);
+      for (const platform of UPDATER_PLATFORMS) {
+        const expectedArtifact = UPDATER_ARTIFACTS[platform](expectedVersion);
         try {
           const actualArtifact = path.posix.basename(
-            new URL(feed.platforms?.[target]?.url).pathname,
+            new URL(feed.platforms?.[platform]?.url).pathname,
           );
           if (decodeURIComponent(actualArtifact) !== expectedArtifact) {
             errors.push(
-              `latest.json platform ${target} must reference ${expectedArtifact}.`,
+              `latest.json platform ${platform} must reference ${expectedArtifact}.`,
             );
           }
         } catch {
           // validateUpdaterFeed already reports missing or malformed URLs.
         }
       }
-      if (verifySignature) {
-        for (const target of TARGETS) {
-          const artifactName = UPDATER_ARTIFACTS[target](expectedVersion);
+      if (typeof verifySignature === "function") {
+        for (const platform of UPDATER_PLATFORMS) {
+          const artifactName = UPDATER_ARTIFACTS[platform](expectedVersion);
           try {
             verifySignature(
               path.join(assetDir, artifactName),

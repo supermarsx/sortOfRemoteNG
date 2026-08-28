@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  BUILD_TARGETS,
   expectedAssetNames,
   UPDATER_ARTIFACTS,
+  UPDATER_PLATFORMS,
   validatePublishedReleaseAssets,
 } from "../../scripts/ci/verify-published-release-assets.mjs";
 
@@ -16,7 +18,7 @@ function makeAssets(updaterMode) {
   for (const name of expectedAssetNames(VERSION, updaterMode)) {
     writeFileSync(path.join(directory, name), "fixture\n");
   }
-  for (const target of Object.keys(UPDATER_ARTIFACTS)) {
+  for (const target of BUILD_TARGETS) {
     const osSigning = target.startsWith("darwin-")
       ? "developer-id-verified"
       : target.startsWith("windows-")
@@ -60,13 +62,11 @@ function makeAssets(updaterMode) {
   }
   if (updaterMode === "signed") {
     const platforms = {};
-    for (const [target, artifactForVersion] of Object.entries(
-      UPDATER_ARTIFACTS,
-    )) {
-      const artifact = artifactForVersion(VERSION);
-      const signature = `signature-${target}`;
+    for (const platform of UPDATER_PLATFORMS) {
+      const artifact = UPDATER_ARTIFACTS[platform](VERSION);
+      const signature = `signature-${platform}`;
       writeFileSync(path.join(directory, `${artifact}.sig`), `${signature}\n`);
-      platforms[target] = {
+      platforms[platform] = {
         signature,
         url: `https://example.invalid/releases/${artifact}`,
       };
@@ -109,7 +109,7 @@ test("enumerates ARM, RPM, Flatpak, and portable assets in the exact public set"
     `sortOfRemoteNG_${VERSION}_windows-x86_64.msi`,
     `sortOfRemoteNG_${VERSION}_windows-x86_64.provenance.json`,
   ]);
-  assert.deepEqual(Object.keys(UPDATER_ARTIFACTS).sort(), [
+  assert.deepEqual(BUILD_TARGETS, [
     "darwin-aarch64",
     "darwin-x86_64",
     "linux-aarch64",
@@ -118,10 +118,56 @@ test("enumerates ARM, RPM, Flatpak, and portable assets in the exact public set"
     "windows-x86_64",
   ]);
   assert.equal(expectedAssetNames(VERSION, "unsigned").length, 22);
-  assert.equal(expectedAssetNames(VERSION, "signed").length, 31);
+  assert.equal(expectedAssetNames(VERSION, "signed").length, 33);
   for (const artifactForVersion of Object.values(UPDATER_ARTIFACTS)) {
     assert.doesNotMatch(artifactForVersion(VERSION), /-portable\.zip$/u);
   }
+});
+
+test("separates build targets from per-installer updater platform keys", () => {
+  // The MSI is an extra payload of the Windows build, not an extra build: it must
+  // gain a manifest key without demanding a provenance document of its own.
+  assert.deepEqual(UPDATER_PLATFORMS, [
+    "darwin-aarch64",
+    "darwin-x86_64",
+    "linux-aarch64",
+    "linux-x86_64",
+    "windows-aarch64",
+    "windows-aarch64-msi",
+    "windows-x86_64",
+    "windows-x86_64-msi",
+  ]);
+  const signed = expectedAssetNames(VERSION, "signed");
+  for (const arch of ["x86_64", "aarch64"]) {
+    // The bare key stays on NSIS so already-installed clients keep updating.
+    assert.equal(
+      UPDATER_ARTIFACTS[`windows-${arch}`](VERSION),
+      `sortOfRemoteNG_${VERSION}_windows-${arch}-setup.exe`,
+    );
+    assert.equal(
+      UPDATER_ARTIFACTS[`windows-${arch}-msi`](VERSION),
+      `sortOfRemoteNG_${VERSION}_windows-${arch}.msi`,
+    );
+    assert.ok(signed.includes(`sortOfRemoteNG_${VERSION}_windows-${arch}.msi`));
+    assert.ok(
+      signed.includes(`sortOfRemoteNG_${VERSION}_windows-${arch}.msi.sig`),
+    );
+    // No `-nsis` counterpart: the NSIS fallback to `windows-<arch>` is deliberate.
+    assert.ok(!UPDATER_PLATFORMS.includes(`windows-${arch}-nsis`));
+    // No provenance document is expected for a per-installer key.
+    assert.ok(
+      !signed.includes(
+        `sortOfRemoteNG_${VERSION}_windows-${arch}-msi.provenance.json`,
+      ),
+    );
+  }
+  // Requirement (iii): the unsigned set must carry no `.sig` at all.
+  assert.deepEqual(
+    expectedAssetNames(VERSION, "unsigned").filter((name) =>
+      name.endsWith(".sig"),
+    ),
+    [],
+  );
 });
 
 test("accepts the exact unsigned installer and provenance set", () => {
@@ -222,12 +268,172 @@ test("requires cryptographic verification of every signed payload", () => {
       },
     });
     assert.deepEqual(errors, []);
-    assert.equal(verified.length, Object.keys(UPDATER_ARTIFACTS).length);
+    assert.equal(verified.length, UPDATER_PLATFORMS.length);
     assert.deepEqual(
       verified.map(([artifact]) => artifact).sort(),
-      Object.values(UPDATER_ARTIFACTS)
-        .map((artifactForVersion) => artifactForVersion(VERSION))
-        .sort(),
+      UPDATER_PLATFORMS.map((platform) =>
+        UPDATER_ARTIFACTS[platform](VERSION),
+      ).sort(),
+    );
+    // Requirement (ii): both MSI payloads go through the minisign verifier.
+    assert.deepEqual(
+      verified.filter(([artifact]) => artifact.endsWith(".msi")),
+      [
+        [
+          `sortOfRemoteNG_${VERSION}_windows-aarch64.msi`,
+          `sortOfRemoteNG_${VERSION}_windows-aarch64.msi.sig`,
+        ],
+        [
+          `sortOfRemoteNG_${VERSION}_windows-x86_64.msi`,
+          `sortOfRemoteNG_${VERSION}_windows-x86_64.msi.sig`,
+        ],
+      ],
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("refuses to pass a signed release when no signature verifier is supplied", () => {
+  const assetDir = makeAssets("signed");
+  try {
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "signed",
+    });
+    assert.ok(
+      errors.includes(
+        "Signed validation requires a signature verifier for every updater payload.",
+      ),
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects a signed release missing an MSI updater signature", () => {
+  const assetDir = makeAssets("signed");
+  try {
+    const signatureName = `sortOfRemoteNG_${VERSION}_windows-x86_64.msi.sig`;
+    rmSync(path.join(assetDir, signatureName));
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "signed",
+      verifySignature() {},
+    });
+    assert.ok(
+      errors.some(
+        (error) =>
+          error.startsWith("Missing assets:") && error.includes(signatureName),
+      ),
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects a feed that omits the MSI platform key", () => {
+  const assetDir = makeAssets("signed");
+  try {
+    const feedPath = path.join(assetDir, "latest.json");
+    const feed = JSON.parse(readFileSync(feedPath, "utf8"));
+    delete feed.platforms["windows-x86_64-msi"];
+    writeFileSync(feedPath, `${JSON.stringify(feed)}\n`);
+
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "signed",
+      verifySignature() {},
+    });
+    assert.ok(errors.includes("platforms.windows-x86_64-msi is required."));
+    assert.ok(
+      errors.includes(
+        "latest.json must contain exactly the supported targets.",
+      ),
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects an MSI platform key pointing at the NSIS installer", () => {
+  const assetDir = makeAssets("signed");
+  try {
+    const feedPath = path.join(assetDir, "latest.json");
+    const feed = JSON.parse(readFileSync(feedPath, "utf8"));
+    // The parallel-install hazard: an MSI install that resolves this key would
+    // download the NSIS setup.exe and install a second copy beside itself.
+    feed.platforms["windows-x86_64-msi"] = {
+      ...feed.platforms["windows-x86_64"],
+    };
+    writeFileSync(feedPath, `${JSON.stringify(feed)}\n`);
+
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "signed",
+      verifySignature() {},
+    });
+    assert.ok(
+      errors.includes(
+        `latest.json platform windows-x86_64-msi must reference sortOfRemoteNG_${VERSION}_windows-x86_64.msi.`,
+      ),
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects a bare Windows platform key pointing at the MSI", () => {
+  const assetDir = makeAssets("signed");
+  try {
+    const feedPath = path.join(assetDir, "latest.json");
+    const feed = JSON.parse(readFileSync(feedPath, "utf8"));
+    // Requirement (i): old clients resolve `windows-x86_64` and must keep getting
+    // the NSIS payload they were installed from.
+    feed.platforms["windows-x86_64"] = {
+      ...feed.platforms["windows-x86_64-msi"],
+    };
+    writeFileSync(feedPath, `${JSON.stringify(feed)}\n`);
+
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "signed",
+      verifySignature() {},
+    });
+    assert.ok(
+      errors.includes(
+        `latest.json platform windows-x86_64 must reference sortOfRemoteNG_${VERSION}_windows-x86_64-setup.exe.`,
+      ),
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects a provenance document invented for a per-installer key", () => {
+  const assetDir = makeAssets("signed");
+  try {
+    const strayName = `sortOfRemoteNG_${VERSION}_windows-x86_64-msi.provenance.json`;
+    writeFileSync(
+      path.join(assetDir, strayName),
+      '{"target":"windows-x86_64-msi","os_signing":"authenticode-verified","updater_signing":true}\n',
+    );
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "signed",
+      verifySignature() {},
+    });
+    assert.ok(
+      errors.some(
+        (error) =>
+          error.startsWith("Unexpected assets:") && error.includes(strayName),
+      ),
     );
   } finally {
     rmSync(assetDir, { recursive: true, force: true });
