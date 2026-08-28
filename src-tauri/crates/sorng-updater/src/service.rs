@@ -12,7 +12,7 @@ use tauri::{
     utils::{config::BundleType, platform::bundle_type},
     AppHandle, Runtime,
 };
-use tauri_plugin_updater::{Update, UpdaterExt};
+use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 use url::Url;
 
 use crate::{
@@ -214,12 +214,7 @@ impl UpdaterService {
         let resolution = self.resolve_endpoints(&settings)?;
         self.set_validation_error(resolution.validation_error.clone())?;
 
-        let update_result = app
-            .updater_builder()
-            .endpoints(resolution.urls)?
-            .build()?
-            .check()
-            .await;
+        let update_result = self.build_updater(app, resolution.urls)?.check().await;
 
         match update_result {
             Ok(Some(update)) => {
@@ -233,7 +228,7 @@ impl UpdaterService {
                 self.check_result(false, None)
             }
             Err(error) => {
-                let error = UpdateError::from(error);
+                let error = map_plugin_error(error);
                 self.record_error(error.to_string())?;
                 Err(error)
             }
@@ -252,12 +247,14 @@ impl UpdaterService {
         let resolution = self.resolve_endpoints(&settings)?;
         self.set_validation_error(resolution.validation_error.clone())?;
 
-        let update = app
-            .updater_builder()
-            .endpoints(resolution.urls)?
-            .build()?
-            .check()
-            .await?;
+        let update = match self.build_updater(app, resolution.urls)?.check().await {
+            Ok(update) => update,
+            Err(error) => {
+                let error = map_plugin_error(error);
+                self.record_error(error.to_string())?;
+                return Err(error);
+            }
+        };
 
         let Some(update) = update else {
             self.record_no_update()?;
@@ -321,7 +318,7 @@ impl UpdaterService {
                 self.status_snapshot(&state)
             }
             Err(error) => {
-                let error = UpdateError::from(error);
+                let error = map_plugin_error(error);
                 self.record_error(error.to_string())?;
                 Err(error)
             }
@@ -330,6 +327,37 @@ impl UpdaterService {
 
     pub fn relaunch<R: Runtime>(&self, app: &AppHandle<R>) {
         app.request_restart();
+    }
+
+    /// Builds the plugin updater for this install, pinning the per-installer manifest
+    /// target when the install mode demands one.
+    ///
+    /// Both `check()` and `download_and_install()` go through here so the pin can never
+    /// apply to one and not the other.
+    fn build_updater<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        urls: Vec<Url>,
+    ) -> Result<Updater, UpdateError> {
+        let mut builder = app.updater_builder().endpoints(urls)?;
+        if let Some(target) = self.pinned_updater_target() {
+            debug!("pinning the updater manifest target to {target}");
+            builder = builder.target(target);
+        }
+        Ok(builder.build()?)
+    }
+
+    /// The per-installer manifest key this install must use, or `None` to leave the
+    /// plugin's default `{os}-{arch}-{installer}` then `{os}-{arch}` resolution in place.
+    ///
+    /// An MSI install pins `windows-<arch>-msi`. Without the pin the plugin silently falls
+    /// back to `windows-<arch>`, which carries the NSIS setup — installing a second,
+    /// parallel copy of the app instead of upgrading the MSI one.
+    fn pinned_updater_target(&self) -> Option<String> {
+        pin_target(
+            tauri_plugin_updater::target(),
+            self.install_mode.updater_target_suffix(),
+        )
     }
 
     fn lock_state(&self) -> Result<MutexGuard<'_, UpdaterState>, UpdateError> {
@@ -595,6 +623,31 @@ fn classify_install_mode(
         Some(BundleType::Rpm) => UpdaterInstallMode::Rpm,
         Some(BundleType::Msi) => UpdaterInstallMode::Msi,
         None => UpdaterInstallMode::Unknown,
+    }
+}
+
+/// Joins the plugin's base updater target to a per-installer suffix.
+///
+/// Pure so the pin can be tested exhaustively without depending on the host platform
+/// that `tauri_plugin_updater::target()` reports.
+fn pin_target(base: Option<String>, suffix: Option<&str>) -> Option<String> {
+    let suffix = suffix?;
+    let base = base?;
+    Some(format!("{base}-{suffix}"))
+}
+
+/// Converts a plugin error, keeping the pinned-target failure legible.
+///
+/// A pinned target disables the plugin's silent `{os}-{arch}` fallback, so a feed with no
+/// entry for the pinned key raises [`tauri_plugin_updater::Error::TargetNotFound`]. That is
+/// the whole point of the pin, so it must not collapse into an opaque
+/// [`UpdateError::Plugin`] string on its way to the user.
+fn map_plugin_error(error: tauri_plugin_updater::Error) -> UpdateError {
+    match error {
+        tauri_plugin_updater::Error::TargetNotFound(target) => {
+            UpdateError::UpdaterTargetMissing { target }
+        }
+        other => UpdateError::from(other),
     }
 }
 
@@ -880,6 +933,7 @@ mod tests {
             UpdaterInstallMode::AppImage,
             UpdaterInstallMode::Nsis,
             UpdaterInstallMode::MacOsApp,
+            UpdaterInstallMode::Msi,
         ] {
             assert!(mode.self_update_supported(), "{mode:?} should self-update");
             assert_eq!(mode.self_update_message(), None);
@@ -888,7 +942,6 @@ mod tests {
         for mode in [
             UpdaterInstallMode::Deb,
             UpdaterInstallMode::Rpm,
-            UpdaterInstallMode::Msi,
             UpdaterInstallMode::Flatpak,
             UpdaterInstallMode::Portable,
             UpdaterInstallMode::Unknown,
@@ -989,5 +1042,203 @@ mod tests {
             .last_error
             .as_deref()
             .is_some_and(|message| message.contains("newer Flatpak")));
+    }
+
+    const NSIS_PAYLOAD_URL: &str =
+        "https://example.invalid/releases/download/26.2.0/sortOfRemoteNG_26.2.0_windows-x86_64-setup.exe";
+    const MSI_PAYLOAD_URL: &str =
+        "https://example.invalid/releases/download/26.2.0/sortOfRemoteNG_26.2.0_windows-x86_64.msi";
+
+    /// Parses a `latest.json` slice with the plugin's own `RemoteRelease` type, so the
+    /// lookups below exercise the exact code `get_urls` runs for an explicit target
+    /// (`release.download_url(target)` / `release.signature(target)`).
+    fn remote_release(platforms: Value) -> tauri_plugin_updater::RemoteRelease {
+        serde_json::from_value(json!({
+            "version": "26.2.0",
+            "pub_date": "2026-08-28T00:00:00Z",
+            "platforms": platforms,
+        }))
+        .expect("deserialize signed updater feed")
+    }
+
+    #[test]
+    fn pin_target_joins_the_base_target_only_when_both_halves_exist() {
+        assert_eq!(
+            pin_target(Some("windows-x86_64".to_string()), Some("msi")).as_deref(),
+            Some("windows-x86_64-msi")
+        );
+        assert_eq!(
+            pin_target(Some("windows-aarch64".to_string()), Some("msi")).as_deref(),
+            Some("windows-aarch64-msi")
+        );
+        assert_eq!(pin_target(Some("windows-x86_64".to_string()), None), None);
+        assert_eq!(pin_target(None, Some("msi")), None);
+        assert_eq!(pin_target(None, None), None);
+    }
+
+    #[test]
+    fn only_msi_installs_pin_a_per_installer_manifest_target() {
+        let base = Some("windows-x86_64".to_string());
+
+        for mode in [
+            UpdaterInstallMode::AppImage,
+            UpdaterInstallMode::Nsis,
+            UpdaterInstallMode::MacOsApp,
+            UpdaterInstallMode::Deb,
+            UpdaterInstallMode::Rpm,
+            UpdaterInstallMode::Flatpak,
+            UpdaterInstallMode::Portable,
+            UpdaterInstallMode::Unknown,
+        ] {
+            assert_eq!(
+                pin_target(base.clone(), mode.updater_target_suffix()),
+                None,
+                "{mode:?} must keep the plugin's default target resolution"
+            );
+        }
+
+        assert_eq!(
+            pin_target(base, UpdaterInstallMode::Msi.updater_target_suffix()).as_deref(),
+            Some("windows-x86_64-msi")
+        );
+    }
+
+    #[test]
+    fn the_service_pins_the_runtime_msi_target_and_leaves_the_nsis_fallback_alone() {
+        let msi = UpdaterService::new_with_install_mode(
+            "26.1.0",
+            unique_temp_dir("pinned-target-msi"),
+            UpdaterInstallMode::Msi,
+        );
+        let nsis = UpdaterService::new_with_install_mode(
+            "26.1.0",
+            unique_temp_dir("pinned-target-nsis"),
+            UpdaterInstallMode::Nsis,
+        );
+
+        assert_eq!(
+            nsis.pinned_updater_target(),
+            None,
+            "the NSIS fallback to windows-<arch> must keep working against published feeds"
+        );
+
+        match tauri_plugin_updater::target() {
+            Some(base) => {
+                let pinned = msi
+                    .pinned_updater_target()
+                    .expect("an MSI install pins a manifest target on every supported platform");
+                assert_eq!(pinned, format!("{base}-msi"));
+                assert!(
+                    pinned.ends_with("-msi"),
+                    "unexpected pinned target {pinned}"
+                );
+            }
+            None => assert_eq!(msi.pinned_updater_target(), None),
+        }
+    }
+
+    #[test]
+    fn msi_installs_resolve_the_msi_payload_rather_than_the_nsis_setup() {
+        let target = pin_target(
+            Some("windows-x86_64".to_string()),
+            UpdaterInstallMode::Msi.updater_target_suffix(),
+        )
+        .expect("MSI installs pin a manifest target");
+        assert_eq!(target, "windows-x86_64-msi");
+
+        let release = remote_release(json!({
+            "windows-x86_64": { "url": NSIS_PAYLOAD_URL, "signature": "nsis-signature" },
+            "windows-x86_64-msi": { "url": MSI_PAYLOAD_URL, "signature": "msi-signature" },
+        }));
+
+        let url = release
+            .download_url(&target)
+            .expect("the feed carries the pinned MSI target");
+        assert_eq!(url.as_str(), MSI_PAYLOAD_URL);
+        assert!(
+            url.as_str().ends_with(".msi"),
+            "an MSI install must never be handed the NSIS setup: {url}"
+        );
+        assert_eq!(
+            release
+                .signature(&target)
+                .expect("the pinned MSI target carries its own minisign signature"),
+            "msi-signature"
+        );
+    }
+
+    #[test]
+    fn a_feed_without_the_msi_key_errors_instead_of_installing_the_nsis_payload_beside_it() {
+        let target = "windows-x86_64-msi";
+        let release = remote_release(json!({
+            "windows-x86_64": { "url": NSIS_PAYLOAD_URL, "signature": "nsis-signature" },
+        }));
+
+        let plugin_error = release
+            .download_url(target)
+            .expect_err("a pinned target must not fall back to the NSIS payload");
+        let error = map_plugin_error(plugin_error);
+
+        match &error {
+            UpdateError::UpdaterTargetMissing { target: reported } => assert_eq!(reported, target),
+            other => panic!("expected UpdaterTargetMissing, got {other:?}"),
+        }
+
+        let message = error.to_string();
+        assert!(
+            message.contains(target),
+            "the missing target must reach the user: {message}"
+        );
+        assert!(
+            message.contains("GitHub Releases"),
+            "the manual-install fallback must reach the user: {message}"
+        );
+    }
+
+    #[test]
+    fn plugin_errors_other_than_the_missing_target_keep_the_generic_conversion() {
+        assert!(matches!(
+            map_plugin_error(tauri_plugin_updater::Error::EmptyEndpoints),
+            UpdateError::Plugin(_)
+        ));
+        assert!(matches!(
+            map_plugin_error(tauri_plugin_updater::Error::TargetsNotFound(vec![
+                "windows-x86_64".to_string()
+            ])),
+            UpdateError::Plugin(_)
+        ));
+        assert!(matches!(
+            map_plugin_error(tauri_plugin_updater::Error::ReleaseNotFound),
+            UpdateError::Plugin(_)
+        ));
+    }
+
+    #[test]
+    fn msi_installs_are_feed_managed_and_never_poison_updater_state() {
+        let service = UpdaterService::new_with_install_mode(
+            "26.1.0",
+            unique_temp_dir("msi-self-update"),
+            UpdaterInstallMode::Msi,
+        );
+
+        let settings = service.get_settings().expect("settings snapshot");
+        assert_eq!(settings.install_mode, UpdaterInstallMode::Msi);
+        assert!(settings.self_update_supported);
+        assert_eq!(settings.self_update_message, None);
+
+        service
+            .ensure_self_update_supported()
+            .expect("MSI installs may run in-app updates");
+
+        let status = service.get_status().expect("status snapshot");
+        assert_eq!(status.install_mode, UpdaterInstallMode::Msi);
+        assert!(status.self_update_supported);
+        assert_eq!(status.self_update_message, None);
+        assert_eq!(
+            status.status,
+            UpdaterStatusValue::Idle,
+            "the support guard must not move an MSI install into the error state"
+        );
+        assert!(status.last_error.is_none());
     }
 }
