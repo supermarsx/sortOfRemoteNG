@@ -65,11 +65,46 @@
   content: "";
   position: absolute;
   inset: -15%;
+  /* NO `filter: blur()` here — see the note below. `--app-glow-blur` is folded
+     into the gradient geometry instead. A radial gradient is already a smooth
+     falloff, so one intermediate stop is enough to shape it into the curve the
+     Gaussian used to produce: 25% alpha at 0.55 × radius sets the near field,
+     and the transparent stop is pushed out to radius + blur. Raising
+     `--app-glow-blur` therefore still widens the glow and stretches the
+     falloff into a gentler, softer tail — the meaning of the setting is
+     preserved, at zero raster cost. The stop was fitted against screenshots of
+     the old blurred version (t73), with the pseudo-element rendered in
+     isolation at full strength: mean channel error vs the previous look is
+     0.7/255 at blur 40, 0.3/255 at the default 140 and 1.2/255 at the maximum
+     320. A second intermediate stop was tried: same per-tile raster cost, but
+     under 1/255 of extra fidelity, so it is not worth carrying. */
   background:
-    radial-gradient(circle at 15% -10%, var(--app-glow-color) 0, transparent var(--app-glow-radius)),
-    radial-gradient(circle at 85% 0%, var(--app-glow-color) 0, transparent var(--app-glow-radius));
+    radial-gradient(
+      circle at 15% -10%,
+      var(--app-glow-color) 0,
+      color-mix(in srgb, var(--app-glow-color) 25%, transparent)
+        calc(var(--app-glow-radius, 520px) * 0.55),
+      transparent
+        calc(var(--app-glow-radius, 520px) + var(--app-glow-blur, 140px))
+    ),
+    radial-gradient(
+      circle at 85% 0%,
+      var(--app-glow-color) 0,
+      color-mix(in srgb, var(--app-glow-color) 25%, transparent)
+        calc(var(--app-glow-radius, 520px) * 0.55),
+      transparent
+        calc(var(--app-glow-radius, 520px) + var(--app-glow-blur, 140px))
+    );
   opacity: var(--app-glow-opacity);
-  filter: blur(var(--app-glow-blur));
+  /* Do NOT reintroduce `filter: blur(var(--app-glow-blur))`, and do NOT add
+     `will-change`, `transform: translateZ(0)`, `contain` or `isolation` as an
+     "optimization". Measured (t73): this pseudo-element is 130% of the viewport
+     and paints into the same compositing layer as all app content, so a filter
+     here forces a full Gaussian blur on every tile the compositor re-rasters
+     during a scroll — 46.9 ms per tile and 96% of all frame work. Layer
+     promotion is worse still (presented fps 21 → 3.2 on a software compositor);
+     `contain`/`isolation` change nothing. Guarded by
+     tests/styles/glowPaintGuards.test.ts. */
   pointer-events: none;
   /* Negative so the glow stays behind ordinary content without requiring
      isolation on .app-shell. */
@@ -109,14 +144,42 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: 
-    radial-gradient(ellipse 30% 200% at 0% 50%, color-mix(in srgb, var(--app-glow-color) 30%, transparent) 0%, transparent 70%),
-    radial-gradient(ellipse 25% 180% at 15% 60%, color-mix(in srgb, var(--app-glow-color) 22%, transparent) 0%, transparent 60%),
-    radial-gradient(ellipse 20% 150% at 35% 40%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%),
-    radial-gradient(ellipse 18% 140% at 55% 55%, color-mix(in srgb, var(--app-glow-color) 10%, transparent) 0%, transparent 45%),
-    radial-gradient(ellipse 22% 160% at 75% 45%, color-mix(in srgb, var(--app-glow-color) 14%, transparent) 0%, transparent 55%),
-    radial-gradient(ellipse 28% 190% at 90% 50%, color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%, transparent 65%),
-    radial-gradient(ellipse 35% 220% at 100% 50%, color-mix(in srgb, var(--app-glow-color) 32%, transparent) 0%, transparent 70%);
+  background:
+    radial-gradient(
+      ellipse 30% 200% at 0% 50%,
+      color-mix(in srgb, var(--app-glow-color) 30%, transparent) 0%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 25% 180% at 15% 60%,
+      color-mix(in srgb, var(--app-glow-color) 22%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 20% 150% at 35% 40%,
+      color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 18% 140% at 55% 55%,
+      color-mix(in srgb, var(--app-glow-color) 10%, transparent) 0%,
+      transparent 45%
+    ),
+    radial-gradient(
+      ellipse 22% 160% at 75% 45%,
+      color-mix(in srgb, var(--app-glow-color) 14%, transparent) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 28% 190% at 90% 50%,
+      color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%,
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse 35% 220% at 100% 50%,
+      color-mix(in srgb, var(--app-glow-color) 32%, transparent) 0%,
+      transparent 70%
+    );
   pointer-events: none;
   z-index: 0;
   opacity: var(--app-glow-opacity);
@@ -146,13 +209,21 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
-    radial-gradient(ellipse 120% 40% at 50% 0%, color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%, transparent 70%),
-    radial-gradient(circle at 10% 20%, color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%, transparent 35%),
-    radial-gradient(circle at 90% 35%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 30%),
-    radial-gradient(circle at 20% 60%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 25%),
-    radial-gradient(circle at 80% 75%, color-mix(in srgb, var(--app-glow-color) 10%, transparent) 0%, transparent 28%),
-    radial-gradient(ellipse 80% 30% at 50% 100%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%);
+  /* Two gradients only. This sits directly behind the connection tree, so every
+     gradient in the stack is re-rastered per tile on every scroll (t73: ~700-800 ms
+     of raster per gradient per 6 s scroll). The four 8-15%-alpha accents that used
+     to follow were not visible at the shipped 0.25 glow opacity and were pure cost. */
+  background:
+    radial-gradient(
+      ellipse 120% 40% at 50% 0%,
+      color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%,
+      transparent 70%
+    ),
+    radial-gradient(
+      circle at 10% 20%,
+      color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%,
+      transparent 35%
+    );
   pointer-events: none;
   z-index: 0;
   opacity: var(--app-glow-opacity);
@@ -176,13 +247,19 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
-    radial-gradient(ellipse 100% 50% at 50% 0%, color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%, transparent 60%),
-    radial-gradient(circle at 0% 30%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 40%),
-    radial-gradient(circle at 100% 40%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 40%),
-    radial-gradient(circle at 20% 70%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 30%),
-    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 30%),
-    radial-gradient(ellipse 90% 40% at 50% 100%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%);
+  /* Two gradients only — same reasoning as .sidebar-glow::before above: this is
+     behind the scrollable settings body, so the stack is re-rastered per tile. */
+  background:
+    radial-gradient(
+      ellipse 100% 50% at 50% 0%,
+      color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      circle at 0% 30%,
+      color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%,
+      transparent 40%
+    );
   pointer-events: none;
   z-index: 0;
   opacity: var(--app-glow-opacity);
@@ -196,16 +273,30 @@
 /* Welcome screen accent gradient — always follows the color scheme */
 .welcome-glow {
   background:
-    radial-gradient(ellipse 60% 50% at 50% 45%, rgb(var(--color-primary-rgb) / 0.12) 0%, transparent 70%),
-    radial-gradient(circle at 30% 30%, rgb(var(--color-primary-rgb) / 0.08) 0%, transparent 45%),
-    radial-gradient(circle at 70% 65%, rgb(var(--color-primary-rgb) / 0.06) 0%, transparent 40%);
+    radial-gradient(
+      ellipse 60% 50% at 50% 45%,
+      rgb(var(--color-primary-rgb) / 0.12) 0%,
+      transparent 70%
+    ),
+    radial-gradient(
+      circle at 30% 30%,
+      rgb(var(--color-primary-rgb) / 0.08) 0%,
+      transparent 45%
+    ),
+    radial-gradient(
+      circle at 70% 65%,
+      rgb(var(--color-primary-rgb) / 0.06) 0%,
+      transparent 40%
+    );
   filter: blur(80px);
 }
 
 .app-bar-button {
   border-radius: 0.375rem;
   color: var(--color-textSecondary);
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .app-bar-button:hover:not(:disabled) {
@@ -278,7 +369,11 @@
   font-size: 0.6875rem;
   line-height: 1;
   color: var(--color-textSecondary);
-  background: color-mix(in srgb, var(--color-surface) 70%, var(--color-background));
+  background: color-mix(
+    in srgb,
+    var(--color-surface) 70%,
+    var(--color-background)
+  );
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
   user-select: none;
