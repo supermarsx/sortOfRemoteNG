@@ -239,12 +239,18 @@ describe("settings search — backup / cloud / network tabs", () => {
       }
     });
 
-    it("indexes possible values for all 20 option sets on these tabs", () => {
-      // The audit counted 20 option sets across these five tabs, and 0 of them
-      // had any value indexed. Enumerated explicitly so deleting a `values`
-      // array fails here rather than silently shrinking search coverage — the
-      // AST guard only sees the *literal* option arrays (backend + proxyType),
-      // so the other 18 have no other backstop.
+    it("indexes the possible values behind every option set on these tabs", () => {
+      // The audit counted 20 rendered option sets across these five tabs, none
+      // with a single value indexed. They land on **17** entries, because three
+      // pickers are rendered twice over the same list and share one entry: the
+      // per-row and "Add" destination presets (`backup.destinations`), the
+      // per-row and "Add" sync providers, and ProviderConfig's WebDAV/SFTP auth
+      // methods (both folded into `cloudSync.syncTargets`).
+      //
+      // Enumerated explicitly so deleting a `values` array fails here rather
+      // than silently shrinking search coverage — the AST guard only sees the
+      // *literal* option arrays (backend + proxyType), so the other 14 entries
+      // have no other backstop.
       const OPTION_SET_KEYS = [
         "backup.destinations",
         "backup.frequency",
