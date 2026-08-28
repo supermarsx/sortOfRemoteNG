@@ -30,6 +30,11 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
   files: "Files & storage",
   communication: "Communication",
   "generic-shapes": "Markers & shapes",
+  "operating-systems": "Operating systems",
+  virtualization: "Virtualization & containers",
+  "vendors-hardware": "Vendors & hardware",
+  "voice-telephony": "Voice & telephony",
+  "web-applications": "Web & applications",
 });
 
 export type ConnectionIconPickerConnection = Pick<
