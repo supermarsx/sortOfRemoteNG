@@ -29,9 +29,7 @@ export interface BulkScript extends SavedBulkScript {
 export type BulkScriptRunConfirmation = "destructive-only" | "always" | "never";
 
 export type BulkScriptDeleteConfirmation =
-  | "permanent-only"
-  | "always"
-  | "never";
+  "permanent-only" | "always" | "never";
 
 export interface BulkScriptLibraryConfig {
   runConfirmation: BulkScriptRunConfirmation;
@@ -91,6 +89,10 @@ const destructivePatterns = [
   /(?:^|[;&|]\s*)(?:mkfs(?:\.[a-z0-9]+)?|wipefs|fdisk|parted)\b/im,
   /(?:^|[;&|]\s*)dd\b[^\n]*\bof=\/dev\//im,
   /(?:^|[;&|]\s*)(?:shutdown|reboot|poweroff|halt)\b/im,
+  // Reboot-class commands still count when the verb sits behind a privilege
+  // prefix (`sudo reboot`), a shell keyword (`...; then sudo shutdown -r now`),
+  // or a network-CLI comment marker in a template that ships disabled.
+  /(?:^|\n|[;&|]|\bthen\b|\belse\b|\bdo\b)\s*(?:[!#]\s*)?(?:(?:sudo|doas)(?:\s+-\S+)*\s+)?(?:(?:reboot|poweroff|halt)\b|shutdown\s+-[rhH]\b)/im,
   /(?:^|[;&|]\s*)systemctl\s+(?:stop|restart|disable|mask)\b/im,
   /(?:^|[;&|]\s*)(?:apt(?:-get)?|dnf|yum|pacman|zypper)\s+[^\n]*(?:remove|purge|autoremove|erase|-R\b)/im,
   /(?:^|[;&|]\s*)(?:userdel|groupdel|deluser|delgroup)\b/im,

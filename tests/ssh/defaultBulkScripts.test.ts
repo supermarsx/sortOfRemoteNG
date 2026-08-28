@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { defaultBulkScripts } from "../../src/data/defaultBulkScripts";
+import {
+  decorateBulkScript,
+  isDestructiveBulkScript,
+} from "../../src/hooks/ssh/bulkScriptLibrary";
 import { containsLikelySecretText } from "../../src/utils/storage/appDataJsonStore";
 
 const byId = (id: string) => {
@@ -21,7 +25,7 @@ const containsEmbeddedCredential = (value: string): boolean =>
 
 describe("default bulk SSH script catalog", () => {
   it("has stable, unique, complete catalog records", () => {
-    expect(defaultBulkScripts).toHaveLength(91);
+    expect(defaultBulkScripts).toHaveLength(94);
 
     const ids = defaultBulkScripts.map((script) => script.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -395,6 +399,89 @@ describe("default bulk SSH script catalog", () => {
     expect(ciscoConfig).toContain("CONFIRM_CONFIG_REQUIRED");
     expect(ciscoConfig).not.toMatch(/^configure terminal$/m);
     expect(ciscoConfig).toMatch(/^! configure terminal$/m);
+  });
+
+  it("ships both Arista third-party transceiver methods disabled, contextualised, and verifiable", () => {
+    const inventory = byId("default-arista-eos-transceiver-inventory");
+    // The verification step both methods point at must stay read-only.
+    expect(decorateBulkScript(inventory)).toMatchObject({
+      type: "arista",
+      risk: "standard",
+    });
+    expect(inventory.script).toContain("show interfaces transceiver");
+    expect(inventory.script).toContain(
+      "show running-config all | include unsupported-transceiver",
+    );
+
+    const config = byId("default-arista-eos-third-party-transceiver-guarded");
+    const flash = byId(
+      "default-arista-eos-third-party-transceiver-flash-guarded",
+    );
+
+    for (const script of [config, flash]) {
+      // Every state-changing line ships commented out.
+      for (const command of script.script.split("\n")) {
+        expect(command, `${script.id}: ${command}`).toMatch(/^(?:show\s|! )/);
+      }
+      // Each method must name the shell it runs in and how to confirm success.
+      expect(script.script).toContain("! CONTEXT:");
+      expect(script.script).toContain("! VERIFY:");
+      expect(decorateBulkScript(script)).toMatchObject({
+        type: "arista",
+        risk: "destructive",
+      });
+    }
+
+    // Method B stays in the EOS CLI, persists with write memory, and treats the
+    // service key as label-specific rather than a constant.
+    expect(config.script).toMatch(/^! configure terminal$/m);
+    expect(config.script).toMatch(
+      /^! service unsupported-transceiver <LABEL> <KEY>$/m,
+    );
+    expect(config.script).toMatch(/^! write memory$/m);
+    expect(config.script).toContain("not a universal value");
+    expect(config.script).toContain("is rejected for any other label");
+    expect(config.script).not.toMatch(/^service unsupported-transceiver/m);
+    // The example pair must never be presented as the value to use verbatim.
+    expect(config.script).not.toMatch(
+      /^! service unsupported-transceiver EMC 677096c7$/m,
+    );
+    // No reboot for the config-service method.
+    expect(config.script).not.toMatch(/reboot/i);
+
+    // Method A drops to bash, needs the flash flag, and reboots the switch.
+    expect(flash.script).toMatch(/^! bash$/m);
+    expect(flash.script).toMatch(/^! touch \/mnt\/flash\/enable3px$/m);
+    expect(flash.script).toMatch(/^! sudo reboot$/m);
+    expect(flash.name).toContain("Reboot");
+    expect(flash.script).toContain("SERVICE AFFECTING");
+    expect(flash.script).toContain("maintenance window");
+  });
+
+  it("treats reboot-class commands as destructive behind privilege, keyword, and comment prefixes", () => {
+    // A shipped reboot script must never be classified like a read-only one.
+    expect(isDestructiveBulkScript(byId("default-reboot-posix").script)).toBe(
+      true,
+    );
+    for (const command of [
+      "sudo reboot",
+      "doas reboot",
+      "sudo -n poweroff",
+      "! sudo reboot",
+      "# sudo halt",
+      'if [ "$(id -u)" -eq 0 ]; then shutdown -r now; fi',
+      "for host in a b; do reboot; done",
+    ]) {
+      expect(isDestructiveBulkScript(command), command).toBe(true);
+    }
+    // Merely naming a reboot in prose or a guard variable is not a reboot.
+    for (const command of [
+      "show version",
+      "# no reboot is required for this change",
+      'if [ "${CONFIRM_REBOOT:-}" != "REBOOT" ]; then exit 2; fi',
+    ]) {
+      expect(isDestructiveBulkScript(command), command).toBe(false);
+    }
   });
 
   it("covers Android read-only audits and guarded reversible maintenance", () => {

@@ -101,6 +101,48 @@ describe("useBulkSSHCommander script-library lifecycle", () => {
       .__TAURI_INTERNALS__;
   });
 
+  it("seeds built-in scripts alongside user-created ones without overwriting them", async () => {
+    const shadowing: BulkScript = {
+      ...customScript,
+      id: "custom-arista-transceivers",
+      // Same display name as a built-in; the user's copy must still survive.
+      name: "Arista EOS — Transceiver Inventory and Third-Party Status",
+      script: "show interfaces status",
+      category: "Arista",
+      type: "arista",
+    };
+    durableSnapshot = initialSnapshot([customScript, shadowing]);
+
+    const { result } = renderHook(() => useBulkSSHCommander(true));
+    await waitFor(() => expect(result.current.scriptLibraryLoaded).toBe(true));
+
+    const byScriptId = (id: string) =>
+      result.current.savedScripts.filter((script) => script.id === id);
+
+    // Built-ins are present...
+    for (const id of [
+      "default-arista-eos-transceiver-inventory",
+      "default-arista-eos-third-party-transceiver-guarded",
+      "default-arista-eos-third-party-transceiver-flash-guarded",
+    ]) {
+      expect(byScriptId(id), id).toHaveLength(1);
+    }
+    // ...and so is every persisted user script, unmodified.
+    expect(byScriptId(customScript.id)).toHaveLength(1);
+    expect(byScriptId(shadowing.id)).toEqual([
+      expect.objectContaining({
+        name: shadowing.name,
+        script: shadowing.script,
+      }),
+    ]);
+    expect(durableSnapshot.active).toEqual([customScript, shadowing]);
+
+    // Built-ins are never written into the user's durable library.
+    for (const script of durableSnapshot.active) {
+      expect(script.id.startsWith("default-")).toBe(false);
+    }
+  });
+
   it("soft-deletes, restores, and permanently deletes custom scripts", async () => {
     const { result } = renderHook(() => useBulkSSHCommander(true));
     await waitFor(() =>
