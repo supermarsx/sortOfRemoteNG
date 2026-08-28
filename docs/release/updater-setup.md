@@ -23,9 +23,9 @@ application exposes it through the backend-owned `updater_*` commands in
 The old custom downloader, copy installer, scheduler, channel, history, and
 rollback paths are not production update mechanisms. Automatic P1 installs are
 signed Tauri updater installs only, and only package types compatible with the
-feed payload may use them: Linux AppImage, Windows NSIS, and the macOS app
-bundle. Private feed configuration is managed by Settings > Updater and
-documented in
+feed payload may use them: Linux AppImage, Windows NSIS, Windows MSI, and the
+macOS app bundle. Private feed configuration is managed by Settings > Updater
+and documented in
 [private updater endpoint guide]({{ '/release/private-updater-endpoint/' | relative_url }}).
 
 Public OS installers and updater delivery are separate release outputs. Every
@@ -34,9 +34,11 @@ OS-signing certificates. The workflow publishes updater archives, signatures,
 and `latest.json` only when `TAURI_SIGNING_PRIVATE_KEY` is configured; it never
 advertises an unsigned artifact to the updater.
 
-The feed's Linux payload is the architecture-matched AppImage, and its Windows
-payload is the architecture-matched NSIS `setup.exe`. A different package type
-must never install those bytes over itself. Debian, RPM, Flatpak, MSI, and the
+The feed's Linux payload is the architecture-matched AppImage. Windows carries
+two payloads per architecture, selected by how the running app was installed:
+the NSIS `setup.exe` under the bare `windows-<arch>` key, and the `.msi` under
+the per-installer `windows-<arch>-msi` key (see §4.1). A different package type
+must never install those bytes over itself. Debian, RPM, Flatpak, and the
 architecture-matched Windows x64 and ARM64 portable ZIP builds therefore use
 externally managed updates: download and reinstall or replace the newer
 matching public asset from GitHub Releases.
@@ -135,8 +137,12 @@ jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and
 and runs the version checks against the prepared snapshot. A rerun for the same
 source SHA reuses its tag and GitHub Release rather than incrementing `N`.
 
-The six updater targets are `windows-x86_64`, `windows-aarch64`,
-`linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`. If the
+The eight updater platform keys are `windows-x86_64`, `windows-aarch64`,
+`windows-x86_64-msi`, `windows-aarch64-msi`, `linux-x86_64`, `linux-aarch64`,
+`darwin-x86_64`, and `darwin-aarch64`. They are published from six build
+targets: the two Windows targets each contribute both an NSIS and an MSI
+platform key, so the per-installer keys have no build target and no
+`*.provenance.json` record of their own. If the
 Tauri private key is absent, the workflow omits their updater signatures and
 `latest.json` but may still publish the corresponding public OS installers,
 recording that intentional optional-off state in the job summary rather than a
@@ -196,6 +202,14 @@ release URL and human-facing notes retain the bare public tag/version (`YY.N`).
       "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_windows-aarch64-setup.exe>",
       "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_windows-aarch64-setup.exe",
     },
+    "windows-x86_64-msi": {
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_windows-x86_64.msi>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_windows-x86_64.msi",
+    },
+    "windows-aarch64-msi": {
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_windows-aarch64.msi>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_windows-aarch64.msi",
+    },
     "darwin-x86_64": {
       "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_darwin-x86_64.app.tar.gz>",
       "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_darwin-x86_64.app.tar.gz",
@@ -219,7 +233,8 @@ release URL and human-facing notes retain the bare public tag/version (`YY.N`).
 Platform identifier rules (per Tauri v2):
 
 - `<os>-<arch>` where `os ∈ {windows, darwin, linux}` and
-  `arch ∈ {x86_64, aarch64, i686, armv7}`.
+  `arch ∈ {x86_64, aarch64, i686, armv7}`, optionally suffixed with
+  `-<installer>` to address one installer format specifically.
 - The `signature` field is the base64 contents of the `.sig` file that
   `tauri build` emits next to the bundle (NOT the bundle hash).
 - The `url` MUST resolve over HTTPS to the same artifact that was signed.
@@ -231,6 +246,75 @@ The release workflow owns the generator that emits this file from the
 schema, platform entries, artifact URLs, and signatures before a feed can be
 published. It also requires valid SemVer transport metadata and the exact
 expected machine projection supplied by the release workflow.
+
+### 4.1 Per-installer Windows platform keys
+
+`tauri-plugin-updater` resolves `{os}-{arch}-{installer}` before falling back
+to `{os}-{arch}`, so one `latest.json` carries both Windows payloads:
+
+| Install mode     | Platform key resolved | Payload                        |
+| ---------------- | --------------------- | ------------------------------ |
+| NSIS `setup.exe` | `windows-<arch>`      | `..._windows-<arch>-setup.exe` |
+| MSI              | `windows-<arch>-msi`  | `..._windows-<arch>.msi`       |
+| Portable ZIP     | none                  | externally managed             |
+
+The bare `windows-<arch>` keys keep their existing meaning — the NSIS
+`setup.exe` — so already-installed NSIS clients and clients built before the
+MSI keys existed are unaffected. There is deliberately **no** `windows-<arch>-nsis`
+key: adding one would change nothing for current clients and risks regressing
+the fallback they rely on.
+
+MSI installs do **not** rely on that fallback. `sorng-updater` passes an
+explicit `.target("windows-<arch>-msi")` for `installMode = msi`, which
+disables fallback entirely. A feed without the `-msi` key therefore produces a
+legible `UpdaterTargetMissing` error telling the user to install the newer
+`.msi` from GitHub Releases, rather than silently downloading the NSIS
+`setup.exe` and installing a second, parallel copy of the app beside the MSI
+one. Operators of a
+[private updater endpoint]({{ '/release/private-updater-endpoint/' | relative_url }})
+must publish the `-msi` keys for MSI clients to update. Note that the explicit
+target also changes `{{target}}` expansion in a templated endpoint URL for MSI
+installs — it expands to `windows-x86_64-msi`, not `windows-x86_64`. No
+endpoint in this repository uses templating.
+
+### 4.2 What an MSI in-app update actually does
+
+Tauri's WiX template is `InstallScope="perMachine"`, so:
+
+1. The plugin verifies the downloaded `.msi` against the embedded pubkey
+   **before** anything is executed. A bad signature aborts here; `msiexec` is
+   never launched.
+2. It then runs
+   `msiexec /i <temp>.msi /passive /promptrestart AUTOLAUNCHAPP=True` via
+   `ShellExecuteW`, which **always raises a UAC administrator consent prompt**.
+3. The app process exits immediately and unconditionally — before the outcome
+   of that prompt is known. Declining UAC therefore cancels the update and
+   leaves the app closed at its current version; reopening it is all that is
+   needed. This is why Settings > Updater warns about it before the install
+   starts.
+4. `msiexec` performs an in-place major upgrade and `AUTOLAUNCHAPP=True`
+   relaunches the app.
+
+The in-place upgrade depends on the new MSI carrying the **same UpgradeCode**
+as the installed one. `bundle.windows.wix.upgradeCode` in
+`src-tauri/tauri.conf.json` is pinned to exactly the value Tauri derives today
+from `productName`, and `tests/release/wix-upgrade-code.test.mjs` fails if the
+two ever diverge. Without that pin, renaming `productName` would silently start
+installing every future MSI **beside** the installed one instead of upgrading
+it. Upstream Tauri derives that string with a hardcoded `x64`, so the x64 and
+ARM64 MSIs share an UpgradeCode; that is pre-existing behaviour and is not
+changed here.
+
+`bundle.windows.wix.enableElevatedUpdateTask` is deliberately **not** enabled.
+It would suppress the UAC prompt by installing a permanently elevated Scheduled
+Task, which is a standing local privilege-escalation surface; a per-update
+consent prompt is the correct trade.
+
+CI proves the MSI artifact, its `.sig`, and the manifest entry are correct and
+cryptographically verifiable, but no CI job installs an MSI. On the first
+release carrying this change, smoke-test manually: install release _N_'s
+`.msi`, update in-app to _N+1_, and confirm a single entry in Apps & Features
+and a single install directory.
 
 ---
 

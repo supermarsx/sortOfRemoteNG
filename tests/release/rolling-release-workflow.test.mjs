@@ -1187,10 +1187,194 @@ test("Windows signing is architecture-aware and both portable archives are compl
     ),
   );
   assert.doesNotMatch(updaterFeed, /portable\.zip/);
+  for (const arch of ["x86_64", "aarch64"]) {
+    assert.match(
+      updaterFeed,
+      new RegExp(
+        `^\\s+add windows-${arch}-msi "sortOfRemoteNG_\\$\\{MACHINE_VERSION\\}_windows-${arch}\\.msi"$`,
+        "m",
+      ),
+      `the updater feed must publish a windows-${arch}-msi platform key pointing at the .msi`,
+    );
+    assert.match(
+      updaterFeed,
+      new RegExp(
+        `^\\s+add windows-${arch} "sortOfRemoteNG_\\$\\{MACHINE_VERSION\\}_windows-${arch}-setup\\.exe"$`,
+        "m",
+      ),
+      `windows-${arch} must keep pointing at the NSIS setup.exe for existing installs`,
+    );
+    assert.match(
+      updaterFeed,
+      new RegExp(`--require-platform windows-${arch}-msi`),
+      `the feed validator must require the windows-${arch}-msi platform key`,
+    );
+  }
+  assert.doesNotMatch(updaterFeed, /windows-(?:x86_64|aarch64)-nsis/);
   assert.match(
     releaseWorkflow,
     /Native Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles are included, together with Windows x64 and ARM64 installers and portable archives\./,
   );
+});
+
+function windowsStagingFragment() {
+  const stageStart = releaseWorkflow.indexOf(
+    "- name: Stage architecture-specific release assets",
+  );
+  const stageEnd = releaseWorkflow.indexOf(
+    "- name: Validate staged version metadata",
+    stageStart,
+  );
+  assert.ok(stageStart >= 0 && stageEnd > stageStart);
+  const stageScript = extractLiteralRunScript(
+    releaseWorkflow.slice(stageStart, stageEnd),
+  );
+  const start = stageScript.indexOf("one() {");
+  const end = stageScript.indexOf('OS_SIGNING="$os_signing" node');
+  assert.ok(start >= 0 && end > start);
+  return stageScript.slice(start, end);
+}
+
+function runWindowsStaging({ updaterEnabled, msiSignature = true }) {
+  const emitMsiSignature = msiSignature
+    ? "printf 'msi-signature' > \"$bundle/msi/sortOfRemoteNG_26.1.0_x64_en-US.msi.sig\""
+    : ": # the bundler produced no .msi.sig";
+  const result = runBashSnippet(`
+set -euo pipefail
+workdir=$(mktemp -d)
+cd "$workdir"
+export bundle="$workdir/bundle"
+mkdir -p "$bundle/msi" "$bundle/nsis" "$bundle/portable" artifacts
+printf 'msi-payload' > "$bundle/msi/sortOfRemoteNG_26.1.0_x64_en-US.msi"
+printf 'nsis-payload' > "$bundle/nsis/sortOfRemoteNG_26.1.0_x64-setup.exe"
+printf 'nsis-signature' > "$bundle/nsis/sortOfRemoteNG_26.1.0_x64-setup.exe.sig"
+printf 'portable-payload' > "$bundle/portable/sortOfRemoteNG_26.1.0-portable.zip"
+${emitMsiSignature}
+export ARTIFACT_ID=windows-x86_64
+export MACHINE_VERSION=26.1.0
+export PLATFORM=windows
+export UPDATER_ENABLED=${updaterEnabled}
+export WINDOWS_SIGNED=false
+export MACOS_SIGNED=false
+cat > staging.sh <<'STAGING_FRAGMENT'
+set -euo pipefail
+${windowsStagingFragment()}
+STAGING_FRAGMENT
+staging_status=0
+bash ./staging.sh || staging_status=$?
+echo "---STATUS---"
+echo "$staging_status"
+echo "---ARTIFACTS---"
+find artifacts -maxdepth 1 -type f -printf '%f\\n' | LC_ALL=C sort
+`);
+  const stdout = result.stdout ?? "";
+  const status = Number(
+    stdout.split("---STATUS---")[1]?.split("---ARTIFACTS---")[0]?.trim(),
+  );
+  const artifacts = (stdout.split("---ARTIFACTS---")[1] ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return { status, artifacts, stdout, stderr: result.stderr ?? "" };
+}
+
+test("Windows staging emits an MSI updater signature only alongside a signing key", () => {
+  const signed = runWindowsStaging({ updaterEnabled: true });
+  assert.equal(
+    signed.status,
+    0,
+    `signed Windows staging must succeed: ${signed.stderr}`,
+  );
+  assert.deepEqual(
+    signed.artifacts.filter((name) => name.endsWith(".sig")),
+    [
+      "sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe.sig",
+      "sortOfRemoteNG_26.1.0_windows-x86_64.msi.sig",
+    ],
+  );
+  assert.ok(
+    signed.artifacts.includes("sortOfRemoteNG_26.1.0_windows-x86_64.msi"),
+    "the MSI payload itself must still be staged",
+  );
+
+  const unsigned = runWindowsStaging({
+    updaterEnabled: false,
+    msiSignature: false,
+  });
+  assert.equal(
+    unsigned.status,
+    0,
+    `unsigned Windows staging must succeed: ${unsigned.stderr}`,
+  );
+  assert.deepEqual(
+    unsigned.artifacts.filter((name) => name.endsWith(".sig")),
+    [],
+    "no updater signature may be staged without a signing key",
+  );
+  assert.ok(
+    unsigned.artifacts.includes("sortOfRemoteNG_26.1.0_windows-x86_64.msi"),
+    "the unsigned release still publishes the MSI installer",
+  );
+
+  const missingSignature = runWindowsStaging({
+    updaterEnabled: true,
+    msiSignature: false,
+  });
+  assert.notEqual(
+    missingSignature.status,
+    0,
+    "a signed release whose bundler emitted no .msi.sig must fail staging",
+  );
+  assert.ok(
+    !missingSignature.artifacts.includes(
+      "sortOfRemoteNG_26.1.0_windows-x86_64.msi.sig",
+    ),
+    "no MSI signature may be invented when the bundler produced none",
+  );
+});
+
+test("the Windows MSI updater signature travels from staging to the signed release", () => {
+  const validateSet = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Validate complete public installer set"),
+    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+  );
+  const unsignedUpload = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Upload exact unsigned assets"),
+    releaseWorkflow.indexOf(
+      "- name: Upload exact signed assets and root updater feed",
+    ),
+  );
+  const signedUpload = releaseWorkflow.slice(
+    releaseWorkflow.indexOf(
+      "- name: Upload exact signed assets and root updater feed",
+    ),
+    releaseWorkflow.indexOf(
+      "- name: Resolve immutable staged release identity",
+    ),
+  );
+  const updaterOnlyRequirements = validateSet.slice(
+    validateSet.indexOf('if [ "$UPDATER_ENABLED" = true ]; then'),
+  );
+
+  for (const arch of ["x86_64", "aarch64"]) {
+    assert.match(
+      updaterOnlyRequirements,
+      new RegExp(
+        `"sortOfRemoteNG_\\$\\{MACHINE_VERSION\\}_windows-${arch}\\.msi\\.sig"`,
+      ),
+      `the ${arch} MSI signature must be required only when the updater key is present`,
+    );
+    assert.match(
+      signedUpload,
+      new RegExp(
+        `^\\s+dist/sortOfRemoteNG_\\$\\{\\{ needs\\.metadata\\.outputs\\.machine_version \\}\\}_windows-${arch}\\.msi\\.sig$`,
+        "m",
+      ),
+      `the ${arch} MSI signature must be uploaded with the signed asset set`,
+    );
+  }
+  assert.doesNotMatch(unsignedUpload, /\.msi\.sig/);
+  assert.doesNotMatch(unsignedUpload, /\.sig/);
 });
 
 test("custom locale package layouts match the native runtime fallback", () => {
@@ -1705,7 +1889,8 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     assert.match(stageStep, new RegExp(`${field}:`));
   }
   assert.match(releaseWorkflow, /expected_asset_count=22/);
-  assert.match(releaseWorkflow, /expected_asset_count=31/);
+  assert.match(releaseWorkflow, /expected_asset_count=33/);
+  assert.doesNotMatch(releaseWorkflow, /expected_asset_count=31/);
   assert.doesNotMatch(updaterFeed, /\.(?:rpm|flatpak)/);
 });
 
@@ -2311,10 +2496,12 @@ test("signed and unsigned release sets are validated before any release mutation
   assert.doesNotMatch(releaseWorkflow, /gh release delete-asset/);
 });
 
-test("updater setup documents the six canonical updater payload names", () => {
+test("updater setup documents the eight canonical updater payload names", () => {
   for (const filename of [
     "sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe",
     "sortOfRemoteNG_26.1.0_windows-aarch64-setup.exe",
+    "sortOfRemoteNG_26.1.0_windows-x86_64.msi",
+    "sortOfRemoteNG_26.1.0_windows-aarch64.msi",
     "sortOfRemoteNG_26.1.0_darwin-x86_64.app.tar.gz",
     "sortOfRemoteNG_26.1.0_darwin-aarch64.app.tar.gz",
     "sortOfRemoteNG_26.1.0_linux-x86_64.AppImage",
@@ -2335,18 +2522,86 @@ test("updater setup documents the six canonical updater payload names", () => {
     updaterSetupDocumentation,
     /sortOfRemoteNG_(?:26\.1\.0_x64_en-US\.msi|x64\.app\.tar\.gz|aarch64\.app\.tar\.gz|26\.1\.0_amd64\.AppImage)/,
   );
+  for (const arch of ["x86_64", "aarch64"]) {
+    assert.ok(
+      updaterSetupDocumentation.includes(`"windows-${arch}-msi": {`),
+      `the sample feed must carry the windows-${arch}-msi platform key`,
+    );
+  }
+  assert.doesNotMatch(updaterSetupDocumentation, /"windows-[a-z0-9_]+-nsis"/);
   assert.match(
     updaterSetupDocumentation,
-    /only package types compatible with the\s+feed payload may use them: Linux AppImage, Windows NSIS, and the macOS app\s+bundle/,
+    /only package types compatible with the\s+feed payload may use them: Linux AppImage, Windows NSIS, Windows MSI, and the\s+macOS app bundle/,
   );
   assert.match(
     updaterSetupDocumentation,
-    /Debian, RPM, Flatpak, MSI, and the\s+architecture-matched Windows x64 and ARM64 portable ZIP builds therefore use\s+externally managed updates/,
+    /Debian, RPM, Flatpak, and the\s+architecture-matched Windows x64 and ARM64 portable ZIP builds therefore use\s+externally managed updates/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /The eight updater platform keys are `windows-x86_64`, `windows-aarch64`,\s+`windows-x86_64-msi`, `windows-aarch64-msi`/,
   );
   assert.match(
     updaterSetupDocumentation,
     /flatpak install --user --reinstall \.\/sortOfRemoteNG_<version>_linux-<arch>\.flatpak/,
   );
+});
+
+test("updater setup documents the MSI elevation, exit, and upgrade contract", () => {
+  assert.match(
+    updaterSetupDocumentation,
+    /explicit `\.target\("windows-<arch>-msi"\)`[\s\S]{0,400}?disables fallback entirely/,
+    "the target pin and its purpose must be documented",
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /msiexec \/i <temp>\.msi \/passive/,
+    "the exact msiexec invocation must be documented",
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /always raises a UAC administrator consent prompt/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /Declining UAC therefore cancels the update and\s+leaves the app closed at its current version/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /verifies the downloaded `\.msi` against the embedded pubkey\s+\*\*before\*\* anything is executed/,
+    "signature verification must be documented as preceding msiexec",
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /`bundle\.windows\.wix\.upgradeCode`[\s\S]{0,200}?is pinned/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /`bundle\.windows\.wix\.enableElevatedUpdateTask` is deliberately \*\*not\*\* enabled/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /no CI job installs an MSI[\s\S]{0,400}?smoke-test manually/,
+    "the untested-on-CI caveat and its manual smoke test must be documented",
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /it expands to `windows-x86_64-msi`, not `windows-x86_64`/,
+    "the {{target}} expansion change for MSI installs must be documented",
+  );
+  assert.match(
+    releaseDocumentation,
+    /Linux\s+AppImage, Windows NSIS, Windows MSI, and macOS app-bundle installations/,
+  );
+  assert.match(
+    releaseDocumentation,
+    /Debian, RPM, Flatpak, and portable ZIP installations must\s+download and reinstall/,
+  );
+  assert.match(
+    releaseDocumentation,
+    /always prompts for administrator approval/,
+  );
+  assert.doesNotMatch(releaseDocumentation, /Flatpak, MSI, and portable ZIP/);
 });
 
 test("recovery distinguishes 404, no-ops valid releases, and blocks signing downgrade", () => {
@@ -2651,7 +2906,7 @@ test("publication stays draft until remote validation and a final live guard", (
   assert.doesNotMatch(releaseWorkflow, /gh release download "\$PUBLIC_TAG"/);
   assert.match(
     releaseWorkflow.slice(validateIndex, promoteIndex),
-    /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=22[\s\S]*?expected_asset_count=31[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
+    /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=22[\s\S]*?expected_asset_count=33[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
   );
   const promotion = releaseWorkflow.slice(promoteIndex);
   assertOrdered(

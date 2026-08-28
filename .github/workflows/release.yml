@@ -1740,11 +1740,16 @@ jobs:
               fi
               ;;
             windows)
-              one "$bundle/msi" '*.msi' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.msi" >/dev/null
+              msi_source=$(one "$bundle/msi" '*.msi' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.msi")
               updater_source=$(one "$bundle/nsis" '*-setup.exe' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-setup.exe")
               updater_name="sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-setup.exe"
               one "$bundle/portable" '*-portable.zip' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-portable.zip" >/dev/null
               os_signing=$([ "$WINDOWS_SIGNED" = true ] && echo authenticode-verified || echo unsigned)
+              if [ "$UPDATER_ENABLED" = true ]; then
+                test -n "$msi_source"
+                test -s "${msi_source}.sig"
+                cp "${msi_source}.sig" "artifacts/sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.msi.sig"
+              fi
               ;;
           esac
           if [ "$UPDATER_ENABLED" = true ]; then
@@ -1910,6 +1915,8 @@ jobs:
               "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz.sig"
               "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe.sig"
               "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64-setup.exe.sig"
+              "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64.msi.sig"
+              "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64.msi.sig"
             )
           fi
           for asset in "${required[@]}"; do
@@ -1959,6 +1966,8 @@ jobs:
           add darwin-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz"
           add windows-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe"
           add windows-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64-setup.exe"
+          add windows-x86_64-msi "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64.msi"
+          add windows-aarch64-msi "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64.msi"
           jq -n \
             --arg version "$MACHINE_VERSION" \
             --arg pub_date "$pub_date" \
@@ -1975,7 +1984,9 @@ jobs:
             --require-platform darwin-aarch64 \
             --require-platform darwin-x86_64 \
             --require-platform windows-x86_64 \
-            --require-platform windows-aarch64
+            --require-platform windows-aarch64 \
+            --require-platform windows-x86_64-msi \
+            --require-platform windows-aarch64-msi
 
       - name: Cryptographically verify every updater payload
         if: needs.metadata.outputs.updater_enabled == 'true'
@@ -2616,10 +2627,12 @@ jobs:
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.app.tar.gz
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.app.tar.gz.sig
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.msi
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.msi.sig
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe.sig
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-portable.zip
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64.msi
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64.msi.sig
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-setup.exe
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-setup.exe.sig
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-portable.zip
@@ -2743,7 +2756,7 @@ jobs:
           list_release_assets "$RELEASE_ID" "$asset_manifest"
           expected_asset_count=22
           if [ "$UPDATER_MODE" = signed ]; then
-            expected_asset_count=31
+            expected_asset_count=33
           fi
           actual_asset_count=$(jq 'length' "$asset_manifest")
           [ "$actual_asset_count" -eq "$expected_asset_count" ] || {

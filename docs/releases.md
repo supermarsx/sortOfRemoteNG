@@ -62,11 +62,18 @@ manually, for example with
 `flatpak install --user --reinstall ./sortOfRemoteNG_<version>_linux-<arch>.flatpak`.
 
 In-app self-update is package-type specific. It is supported only by Linux
-AppImage, Windows NSIS, and macOS app-bundle installations because those are the
-payloads named in `latest.json`. Debian, RPM, Flatpak, MSI, and portable ZIP
-installations must download and reinstall or replace the newer matching public
-asset from GitHub Releases; they do not install an AppImage or NSIS payload over
-their current package layout.
+AppImage, Windows NSIS, Windows MSI, and macOS app-bundle installations because
+those are the payloads named in `latest.json`. Windows carries two payloads per
+architecture: NSIS installs resolve the `windows-<arch>` platform key and MSI
+installs resolve `windows-<arch>-msi`, so neither ever installs the other's
+bytes beside itself. An MSI update runs `msiexec /passive` against a
+per-machine install and therefore always prompts for administrator approval;
+the app closes when the install starts and relaunches itself when it finishes,
+and declining the prompt cancels the update and leaves the app closed at its
+current version. Debian, RPM, Flatpak, and portable ZIP installations must
+download and reinstall or replace the newer matching public asset from GitHub
+Releases; they do not install an AppImage, NSIS, or MSI payload over their
+current package layout.
 
 <div class="callout callout--danger">
   <strong>Never commit the updater private key.</strong>
