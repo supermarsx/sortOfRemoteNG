@@ -549,6 +549,13 @@ export const S = {
   npmRedirectionRow: '[data-testid="npm-redirection-row"]',
   npmStreamRow: '[data-testid="npm-stream-row"]',
   npmCertificateRow: '[data-testid="npm-certificate-row"]',
+
+  // Settings search (t75; src/components/SettingsDialog/index.tsx +
+  // useSettingHighlight.ts)
+  settingsSearchResult: '[data-testid="settings-search-result"]',
+  settingsSearchHighlight: '[data-testid="settings-search-highlight"]',
+  /** Any tab button in the (search-filtered) settings sidebar. */
+  settingsTabButton: '[data-testid^="settings-tab-"]',
 } as const;
 
 /** Session tab carrying the given `data-session-status` (t63). */
@@ -556,4 +563,28 @@ export function sessionTabStatus(
   status: "connecting" | "connected" | "disconnected" | "error",
 ): string {
   return `[data-testid="session-tab"][data-session-status="${status}"]`;
+}
+
+/** Settings sidebar tab button for a `SETTINGS_TABS` id (t75). */
+export function settingsTab(tabId: string): string {
+  return `[data-testid="settings-tab-${tabId}"]`;
+}
+
+/**
+ * The search-result button for one setting key (t75).
+ *
+ * Results only render underneath the *active* tab, so the owning tab must be
+ * clicked in the filtered sidebar first.
+ */
+export function settingsSearchResultFor(settingKey: string): string {
+  return `[data-testid="settings-search-result"][data-setting-result-key="${settingKey}"]`;
+}
+
+/**
+ * The rendered control a search result navigates to (t75) — the `settingKey`
+ * join between `settingsSearchIndex/` and the DOM. Only the active tab is
+ * mounted, so its presence also proves which tab is showing.
+ */
+export function settingAnchor(settingKey: string): string {
+  return `[data-setting-key="${settingKey}"]`;
 }

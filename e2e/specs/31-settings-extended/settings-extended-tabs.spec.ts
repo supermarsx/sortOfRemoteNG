@@ -1,13 +1,22 @@
-import { S } from '../../helpers/selectors';
-import { resetAppState, createCollection, openSettings, closeSettings } from '../../helpers/app';
+import {
+  S,
+  settingsTab,
+  settingsSearchResultFor,
+} from "../../helpers/selectors";
+import {
+  resetAppState,
+  createCollection,
+  openSettings,
+  closeSettings,
+} from "../../helpers/app";
 
-describe('Settings — Performance', () => {
+describe("Settings — Performance", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Perf Test');
+    await createCollection("Settings Perf Test");
   });
 
-  it('should open Performance settings tab', async () => {
+  it("should open Performance settings tab", async () => {
     await openSettings();
 
     const perfTab = await $('[data-testid="settings-tab-performance"]');
@@ -20,19 +29,22 @@ describe('Settings — Performance', () => {
     await closeSettings();
   });
 
-  it('should configure rendering performance options', async () => {
+  it("should configure rendering performance options", async () => {
     await openSettings();
 
     const perfTab = await $('[data-testid="settings-tab-performance"]');
     await perfTab.click();
     await browser.pause(500);
 
-    const hardwareAcceleration = await $('[data-testid="settings-hardware-acceleration"]');
+    const hardwareAcceleration = await $(
+      '[data-testid="settings-hardware-acceleration"]',
+    );
     if (await hardwareAcceleration.isExisting()) {
-      const initialState = await hardwareAcceleration.getAttribute('aria-checked');
+      const initialState =
+        await hardwareAcceleration.getAttribute("aria-checked");
       await hardwareAcceleration.click();
       await browser.pause(300);
-      const newState = await hardwareAcceleration.getAttribute('aria-checked');
+      const newState = await hardwareAcceleration.getAttribute("aria-checked");
       expect(newState).not.toBe(initialState);
     }
 
@@ -40,13 +52,13 @@ describe('Settings — Performance', () => {
   });
 });
 
-describe('Settings — Proxy', () => {
+describe("Settings — Proxy", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Proxy Test');
+    await createCollection("Settings Proxy Test");
   });
 
-  it('should open Proxy settings tab', async () => {
+  it("should open Proxy settings tab", async () => {
     await openSettings();
 
     const proxyTab = await $('[data-testid="settings-tab-proxy"]');
@@ -59,7 +71,7 @@ describe('Settings — Proxy', () => {
     await closeSettings();
   });
 
-  it('should configure proxy host and port', async () => {
+  it("should configure proxy host and port", async () => {
     await openSettings();
 
     const proxyTab = await $('[data-testid="settings-tab-proxy"]');
@@ -69,64 +81,70 @@ describe('Settings — Proxy', () => {
     const proxyHost = await $('[data-testid="settings-proxy-host"]');
     if (await proxyHost.isExisting()) {
       await proxyHost.clearValue();
-      await proxyHost.setValue('proxy.example.com');
+      await proxyHost.setValue("proxy.example.com");
 
       const proxyPort = await $('[data-testid="settings-proxy-port"]');
       await proxyPort.clearValue();
-      await proxyPort.setValue('8080');
+      await proxyPort.setValue("8080");
     }
 
     await closeSettings();
   });
 });
 
-describe('Settings — Advanced', () => {
+describe("Settings — Advanced", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Advanced Test');
+    await createCollection("Settings Advanced Test");
   });
 
-  it('should open Advanced settings tab', async () => {
+  it("should open Advanced settings tab", async () => {
     await openSettings();
 
     const advancedTab = await $('[data-testid="settings-tab-advanced"]');
     await advancedTab.click();
     await browser.pause(500);
 
-    const advancedSection = await $('[data-testid="settings-advanced-section"]');
+    const advancedSection = await $(
+      '[data-testid="settings-advanced-section"]',
+    );
     expect(await advancedSection.isDisplayed()).toBe(true);
 
     await closeSettings();
   });
 });
 
-describe('Settings — Recovery', () => {
+describe("Settings — Recovery", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Recovery Test');
+    await createCollection("Settings Recovery Test");
   });
 
-  it('should open Recovery settings tab', async () => {
+  it("should open Recovery settings tab", async () => {
     await openSettings();
 
     const recoveryTab = await $('[data-testid="settings-tab-recovery"]');
     await recoveryTab.click();
     await browser.pause(500);
 
-    const recoverySection = await $('[data-testid="settings-recovery-section"]');
+    const recoverySection = await $(
+      '[data-testid="settings-recovery-section"]',
+    );
     expect(await recoverySection.isDisplayed()).toBe(true);
 
     await closeSettings();
   });
 
-  it('should show recovery code generation option', async () => {
+  it("should show recovery code generation option", async () => {
     await openSettings();
 
     const recoveryTab = await $('[data-testid="settings-tab-recovery"]');
     await recoveryTab.click();
     await browser.pause(500);
 
-    const recoveryCodeBtn = await $('[data-testid="settings-recovery-generate-codes"]');
+    const recoveryCodeBtn = await $(
+      '[data-testid="settings-recovery-generate-codes"]',
+    );
     if (await recoveryCodeBtn.isExisting()) {
       expect(await recoveryCodeBtn.isDisplayed()).toBe(true);
     }
@@ -135,13 +153,13 @@ describe('Settings — Recovery', () => {
   });
 });
 
-describe('Settings — API', () => {
+describe("Settings — API", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings API Test');
+    await createCollection("Settings API Test");
   });
 
-  it('should open API settings tab', async () => {
+  it("should open API settings tab", async () => {
     await openSettings();
 
     const apiTab = await $('[data-testid="settings-tab-api"]');
@@ -155,38 +173,44 @@ describe('Settings — API', () => {
   });
 });
 
-describe('Settings — Behavior', () => {
+describe("Settings — Behavior", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Behavior Test');
+    await createCollection("Settings Behavior Test");
   });
 
-  it('should open Behavior settings tab', async () => {
+  it("should open Behavior settings tab", async () => {
     await openSettings();
 
     const behaviorTab = await $('[data-testid="settings-tab-behavior"]');
     await behaviorTab.click();
     await browser.pause(500);
 
-    const behaviorSection = await $('[data-testid="settings-behavior-section"]');
+    const behaviorSection = await $(
+      '[data-testid="settings-behavior-section"]',
+    );
     expect(await behaviorSection.isDisplayed()).toBe(true);
 
     await closeSettings();
   });
 
-  it('should configure double-click behavior', async () => {
+  it("should configure double-click behavior", async () => {
     await openSettings();
 
     const behaviorTab = await $('[data-testid="settings-tab-behavior"]');
     await behaviorTab.click();
     await browser.pause(500);
 
-    const doubleClickAction = await $('[data-testid="settings-double-click-action"]');
+    const doubleClickAction = await $(
+      '[data-testid="settings-double-click-action"]',
+    );
     if (await doubleClickAction.isExisting()) {
       await doubleClickAction.click();
       await browser.pause(300);
 
-      const options = await $$('[data-testid="settings-double-click-action"] option');
+      const options = await $$(
+        '[data-testid="settings-double-click-action"] option',
+      );
       expect(options.length).toBeGreaterThan(1);
     }
 
@@ -194,33 +218,37 @@ describe('Settings — Behavior', () => {
   });
 });
 
-describe('Settings — Recording', () => {
+describe("Settings — Recording", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Recording Test');
+    await createCollection("Settings Recording Test");
   });
 
-  it('should open Recording settings tab', async () => {
+  it("should open Recording settings tab", async () => {
     await openSettings();
 
     const recordingTab = await $('[data-testid="settings-tab-recording"]');
     await recordingTab.click();
     await browser.pause(500);
 
-    const recordingSection = await $('[data-testid="settings-recording-section"]');
+    const recordingSection = await $(
+      '[data-testid="settings-recording-section"]',
+    );
     expect(await recordingSection.isDisplayed()).toBe(true);
 
     await closeSettings();
   });
 
-  it('should configure recording format', async () => {
+  it("should configure recording format", async () => {
     await openSettings();
 
     const recordingTab = await $('[data-testid="settings-tab-recording"]');
     await recordingTab.click();
     await browser.pause(500);
 
-    const recordingFormat = await $('[data-testid="settings-recording-format"]');
+    const recordingFormat = await $(
+      '[data-testid="settings-recording-format"]',
+    );
     if (await recordingFormat.isExisting()) {
       expect(await recordingFormat.isDisplayed()).toBe(true);
     }
@@ -229,26 +257,28 @@ describe('Settings — Recording', () => {
   });
 });
 
-describe('Settings — Diagnostics', () => {
+describe("Settings — Diagnostics", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Diagnostics Test');
+    await createCollection("Settings Diagnostics Test");
   });
 
-  it('should open Diagnostics settings tab', async () => {
+  it("should open Diagnostics settings tab", async () => {
     await openSettings();
 
     const diagnosticsTab = await $('[data-testid="settings-tab-diagnostics"]');
     await diagnosticsTab.click();
     await browser.pause(500);
 
-    const diagnosticsSection = await $('[data-testid="settings-diagnostics-section"]');
+    const diagnosticsSection = await $(
+      '[data-testid="settings-diagnostics-section"]',
+    );
     expect(await diagnosticsSection.isDisplayed()).toBe(true);
 
     await closeSettings();
   });
 
-  it('should show debug logging option', async () => {
+  it("should show debug logging option", async () => {
     await openSettings();
 
     const diagnosticsTab = await $('[data-testid="settings-tab-diagnostics"]');
@@ -264,33 +294,35 @@ describe('Settings — Diagnostics', () => {
   });
 });
 
-describe('Settings — Web Browser', () => {
+describe("Settings — Web Browser", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Web Browser Test');
+    await createCollection("Settings Web Browser Test");
   });
 
-  it('should open Web Browser settings tab', async () => {
+  it("should open Web Browser settings tab", async () => {
     await openSettings();
 
     const webBrowserTab = await $('[data-testid="settings-tab-web-browser"]');
     await webBrowserTab.click();
     await browser.pause(500);
 
-    const webBrowserSection = await $('[data-testid="settings-web-browser-section"]');
+    const webBrowserSection = await $(
+      '[data-testid="settings-web-browser-section"]',
+    );
     expect(await webBrowserSection.isDisplayed()).toBe(true);
 
     await closeSettings();
   });
 });
 
-describe('Settings — Layout', () => {
+describe("Settings — Layout", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Layout Test');
+    await createCollection("Settings Layout Test");
   });
 
-  it('should open Layout settings tab', async () => {
+  it("should open Layout settings tab", async () => {
     await openSettings();
 
     const layoutTab = await $('[data-testid="settings-tab-layout"]');
@@ -303,14 +335,16 @@ describe('Settings — Layout', () => {
     await closeSettings();
   });
 
-  it('should configure sidebar position', async () => {
+  it("should configure sidebar position", async () => {
     await openSettings();
 
     const layoutTab = await $('[data-testid="settings-tab-layout"]');
     await layoutTab.click();
     await browser.pause(500);
 
-    const sidebarPosition = await $('[data-testid="settings-sidebar-position"]');
+    const sidebarPosition = await $(
+      '[data-testid="settings-sidebar-position"]',
+    );
     if (await sidebarPosition.isExisting()) {
       await sidebarPosition.click();
       await browser.pause(300);
@@ -320,38 +354,64 @@ describe('Settings — Layout', () => {
   });
 });
 
-describe('Settings — Search', () => {
+describe("Settings — Search", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Settings Search Test');
+    await createCollection("Settings Search Test");
   });
 
-  it('should search settings by keyword', async () => {
+  it("should search settings by keyword", async () => {
     await openSettings();
 
+    const allTabs = await $$(S.settingsTabButton);
+    const totalTabs = await allTabs.length;
+    expect(totalTabs).toBeGreaterThan(20);
+
     const searchInput = await $(S.settingsSearch);
-    await searchInput.setValue('theme');
+    await searchInput.setValue("theme");
     await browser.pause(500);
 
-    // Search should highlight or filter results
-    const highlights = await $$('[data-testid="settings-search-highlight"]');
-    expect(highlights.length).toBeGreaterThanOrEqual(0);
+    // The sidebar is filtered down to the tabs that own a match, so the query
+    // must both keep the Theme tab and drop tabs that own no "theme" setting.
+    const matchedTabs = await $$(S.settingsTabButton);
+    const matchedCount = await matchedTabs.length;
+    expect(matchedCount).toBeGreaterThan(0);
+    expect(matchedCount).toBeLessThan(totalTabs);
+
+    const themeTab = await $(settingsTab("theme"));
+    expect(await themeTab.isDisplayed()).toBe(true);
+
+    const backupTab = await $(settingsTab("backup"));
+    expect(await backupTab.isExisting()).toBe(false);
 
     await closeSettings();
   });
 
-  it('should navigate to matched setting on selection', async () => {
+  it("should navigate to matched setting on selection", async () => {
     await openSettings();
 
     const searchInput = await $(S.settingsSearch);
-    await searchInput.setValue('proxy');
+    await searchInput.setValue("proxy");
     await browser.pause(500);
 
-    const results = await $$('[data-testid="settings-search-result"]');
-    if ((await results.length) > 0) {
-      await results[0].click();
-      await browser.pause(500);
-    }
+    // Results render underneath the active tab, so open Proxy first.
+    const proxyTab = await $(settingsTab("proxy"));
+    await proxyTab.waitForDisplayed({ timeout: 5_000 });
+    await proxyTab.click();
+
+    const results = await $$(S.settingsSearchResult);
+    expect(await results.length).toBeGreaterThan(0);
+
+    const result = await $(settingsSearchResultFor("proxyType"));
+    await result.waitForDisplayed({ timeout: 5_000 });
+    await result.click();
+
+    // Clicking the result must land on the control it names — not scroll to
+    // nothing, which is what 82 index entries did before t75.
+    const highlight = await $(S.settingsSearchHighlight);
+    await highlight.waitForExist({ timeout: 4_000, interval: 50 });
+    expect(await highlight.getAttribute("data-setting-key")).toBe("proxyType");
+    expect(await highlight.isDisplayed({ withinViewport: true })).toBe(true);
 
     await closeSettings();
   });
