@@ -169,7 +169,7 @@ fn reconnect_loop_reuses_cached_secret_and_resumes_frames() {
     let (_cmd_tx, mut cmd_rx) = create_wake_channel().expect("wake channel");
     let (log_tx, _log_rx) = std::sync::mpsc::sync_channel::<RdpLogEntry>(RDP_LOG_CHANNEL_CAPACITY);
     let settings = reconnect_settings();
-    let cached_password = SecretString::new("opensesame".to_string());
+    let cached_password = SecretString::from("opensesame".to_string());
 
     let mut establish_attempt = 0usize;
     let mut active_attempt = 0usize;

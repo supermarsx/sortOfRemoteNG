@@ -67,7 +67,7 @@ polling = "3"
 base64 = { workspace = true }
 cpal = { workspace = true }
 dirs = { workspace = true }
-secrecy = "0.8"
+secrecy = "0.10"
 
 # ── Heavy optional deps (backend decode / snapshot) ──────────────────
 png = { version = "0.17", optional = true }
@@ -75,6 +75,9 @@ serialport = { version = "4", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# secrecy 0.10 no longer re-exports Zeroize; credential_hygiene.rs needs it
+# directly to implement its zeroize-on-drop spy.
+zeroize = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_Foundation"] }

@@ -81,7 +81,7 @@ impl Default for SessionConfig {
             host: String::new(),
             port: DEFAULT_ARD_PORT,
             username: String::new(),
-            password: SecretString::new(String::new()),
+            password: SecretString::from(String::new()),
             connection_id: String::new(),
             authentication_mode: ArdAuthenticationMode::MacOsAccount,
             pixel_format: None,
@@ -1119,7 +1119,7 @@ mod tests {
             host: "10.0.0.1".into(),
             port: 5900,
             username: "admin".into(),
-            password: SecretString::new("secret".into()),
+            password: SecretString::from("secret".to_string()),
             connection_id: "conn-1".into(),
             ..Default::default()
         };
@@ -1175,7 +1175,7 @@ mod tests {
         let config = SessionConfig {
             host: "mac.example".into(),
             username: "person@example.com".into(),
-            password: SecretString::new("must-not-be-forwarded".into()),
+            password: SecretString::from("must-not-be-forwarded".to_string()),
             authentication_mode: ArdAuthenticationMode::AppleAccountNative,
             ..Default::default()
         };
@@ -1190,7 +1190,7 @@ mod tests {
         let mac_os = SessionConfig {
             host: "mac.example".into(),
             username: "alice".into(),
-            password: SecretString::new("secret".into()),
+            password: SecretString::from("secret".to_string()),
             authentication_mode: ArdAuthenticationMode::MacOsAccount,
             ..Default::default()
         };
@@ -1198,7 +1198,7 @@ mod tests {
 
         let vnc = SessionConfig {
             host: "mac.example".into(),
-            password: SecretString::new("vnc-secret".into()),
+            password: SecretString::from("vnc-secret".to_string()),
             authentication_mode: ArdAuthenticationMode::VncPassword,
             ..Default::default()
         };
@@ -1211,7 +1211,7 @@ mod tests {
         let config = SessionConfig {
             host: "mac.example".into(),
             username: "alice".into(),
-            password: SecretString::new(secret.into()),
+            password: SecretString::from(secret.to_string()),
             ..Default::default()
         };
 

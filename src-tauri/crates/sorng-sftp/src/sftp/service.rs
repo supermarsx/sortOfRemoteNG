@@ -790,7 +790,7 @@ impl SftpService {
             let passphrase = config
                 .private_key_passphrase
                 .as_ref()
-                .map(|p| p.expose_secret().as_str());
+                .map(|p| p.expose_secret());
             let tmp_key = EphemeralPrivateKey::create(key_data.expose_secret())?;
             session
                 .userauth_pubkey_file(&config.username, None, tmp_key.path(), passphrase)
@@ -805,7 +805,7 @@ impl SftpService {
             let passphrase = config
                 .private_key_passphrase
                 .as_ref()
-                .map(|p| p.expose_secret().as_str());
+                .map(|p| p.expose_secret());
             session
                 .userauth_pubkey_file(&config.username, None, Path::new(key_path), passphrase)
                 .map_err(|e| format!("Public-key (file) auth failed: {}", e))?;
@@ -823,7 +823,7 @@ impl SftpService {
                         let passphrase = config
                             .private_key_passphrase
                             .as_ref()
-                            .map(|p| p.expose_secret().as_str());
+                            .map(|p| p.expose_secret());
                         if session
                             .userauth_pubkey_file(&config.username, None, &path, passphrase)
                             .is_ok()
@@ -866,7 +866,11 @@ impl SftpService {
                 }
             }
 
-            let mut handler = SimpleKbdHandler { password: pw };
+            // secrecy 0.10's expose_secret yields &str, so own it for the
+            // handler's String field.
+            let mut handler = SimpleKbdHandler {
+                password: pw.to_string(),
+            };
             if session
                 .userauth_keyboard_interactive(&config.username, &mut handler)
                 .is_ok()

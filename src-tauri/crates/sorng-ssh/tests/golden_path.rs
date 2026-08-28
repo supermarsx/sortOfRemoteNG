@@ -33,7 +33,7 @@ fn test_config() -> SshConnectionConfig {
         host: env_or("SSH_HOST", "127.0.0.1"),
         port: env_or("SSH_PORT", "2222").parse().unwrap_or(2222),
         username: env_or("SSH_USER", "testuser"),
-        password: Some(SecretString::new(env_or("SSH_PASSWORD", "testpass"))),
+        password: Some(SecretString::from(env_or("SSH_PASSWORD", "testpass"))),
         private_key_path: None,
         private_key_passphrase: None,
         jump_hosts: Vec::new(),

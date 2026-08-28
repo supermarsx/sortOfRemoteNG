@@ -375,7 +375,7 @@ mod worker_lifecycle_tests {
             activity_control: Arc::new(RdpSessionActivityControl::default()),
             stats: Arc::new(RdpSessionStats::new()),
             worker,
-            cached_password: SecretString::new("test-only".to_string()),
+            cached_password: SecretString::from("test-only".to_string()),
             cached_domain: None,
         };
 

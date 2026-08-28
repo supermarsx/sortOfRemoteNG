@@ -284,7 +284,7 @@ impl ScriptService {
                                                                     host,
                                                                     port,
                                                                     username,
-                                                                    password: password.map(SecretString::new),
+                                                                    password: password.map(SecretString::from),
                                                                     private_key_path: None,
                                                                     private_key_passphrase: None,
                                                                     jump_hosts: vec![],

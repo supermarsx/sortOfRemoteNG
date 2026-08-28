@@ -3992,7 +3992,7 @@ impl SshService {
             let password = proxy_config
                 .password
                 .as_ref()
-                .map(|secret| secret.expose_secret().as_str())
+                .map(|secret| secret.expose_secret())
                 .unwrap_or("");
 
             let mut auth_request = vec![0x01];
@@ -4354,7 +4354,7 @@ impl SshService {
             let password = proxy_config
                 .password
                 .as_ref()
-                .map(|secret| secret.expose_secret().as_str())
+                .map(|secret| secret.expose_secret())
                 .unwrap_or("");
 
             let mut auth = vec![0x01];
@@ -4939,7 +4939,7 @@ impl SshService {
                 let passphrase = config
                     .private_key_passphrase
                     .as_ref()
-                    .map(|secret| secret.expose_secret().as_str());
+                    .map(|secret| secret.expose_secret());
 
                 phase.configure_session_timeout(session)?;
                 if session
@@ -5064,7 +5064,7 @@ impl SshService {
             let passphrase = jump_config
                 .private_key_passphrase
                 .as_ref()
-                .map(|secret| secret.expose_secret().as_str());
+                .map(|secret| secret.expose_secret());
             phase.configure_session_timeout(session)?;
             if session
                 .userauth_pubkey_file(
@@ -5192,7 +5192,7 @@ impl SshService {
             .clone();
 
         if let Some(password) = password {
-            next_config.password = Some(SecretString::new(password));
+            next_config.password = Some(SecretString::from(password));
         }
 
         if let Some(private_key_path) = private_key_path {
@@ -5200,7 +5200,7 @@ impl SshService {
         }
 
         if let Some(passphrase) = private_key_passphrase {
-            next_config.private_key_passphrase = Some(SecretString::new(passphrase));
+            next_config.private_key_passphrase = Some(SecretString::from(passphrase));
         }
 
         let retained_bytes =
@@ -5765,7 +5765,7 @@ impl SshService {
         let provider = OpenSshSkProvider::new();
         let opts = SkKeyGenOptions {
             algorithm,
-            passphrase: passphrase.map(SecretString::new),
+            passphrase: passphrase.map(SecretString::from),
             ..Default::default()
         };
 
@@ -9449,7 +9449,7 @@ mod connection_admission_tests {
     #[test]
     fn retained_config_counts_secrets_and_enforces_per_session_and_aggregate_budgets() {
         let mut with_secret = config();
-        with_secret.password = Some(SecretString::new("secret-value".to_string()));
+        with_secret.password = Some(SecretString::from("secret-value".to_string()));
         let public_bytes = serde_json::to_vec(&with_secret).unwrap().len();
         let retained_bytes = retained_ssh_config_bytes(&with_secret).unwrap();
         assert_eq!(retained_bytes, public_bytes + "secret-value".len());

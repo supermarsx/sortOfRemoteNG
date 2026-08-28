@@ -25,6 +25,6 @@ num_enum = "0.7"
 byteorder = "1"
 hmac = { workspace = true }
 pbkdf2 = "0.12"
-secrecy = "0.8"
+secrecy = "0.10"
 zeroize = { workspace = true }
 tempfile = { workspace = true }

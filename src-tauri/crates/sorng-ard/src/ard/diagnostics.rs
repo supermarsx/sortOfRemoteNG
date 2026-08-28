@@ -46,7 +46,7 @@ pub async fn diagnose_ard_connection(
     // Preserve the existing command contract, but never submit credentials in
     // a probe that only inspects the server's challenge or DH parameters.
     drop(username);
-    drop(SecretString::new(password.unwrap_or_default()));
+    drop(SecretString::from(password.unwrap_or_default()));
 
     tokio::task::spawn_blocking(move || run_diagnostics(&h, p))
         .await

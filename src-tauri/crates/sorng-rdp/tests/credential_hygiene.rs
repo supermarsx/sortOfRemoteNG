@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use secrecy::{CloneableSecret, DebugSecret, ExposeSecret, Secret, SecretString, Zeroize};
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 use sorng_rdp::rdp::cert_trust::security_error_lifecycle_summary;
 use sorng_rdp::rdp::session_runtime::RdpWorkerRuntime;
 use sorng_rdp::rdp::session_state::{ChannelSummary, FrameFlowSummary};
@@ -10,6 +10,7 @@ use sorng_rdp::rdp::types::{
     RdpActiveConnection, RdpSession, RdpSessionActivityControl, RdpStatsEvent,
 };
 use sorng_rdp::rdp::wake_channel::create_wake_channel;
+use zeroize::Zeroize;
 
 const SENSITIVE_MARKERS: &[&str] = &[
     "super-secret",
@@ -56,8 +57,8 @@ impl Zeroize for ZeroizeSpy {
     }
 }
 
-impl CloneableSecret for ZeroizeSpy {}
-impl DebugSecret for ZeroizeSpy {}
+// secrecy 0.10 removed the DebugSecret / CloneableSecret opt-ins that 0.8
+// required here: SecretBox<T> now redacts Debug for every T: Zeroize.
 
 fn test_session() -> RdpSession {
     RdpSession {
@@ -94,7 +95,7 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
             activity_control: Arc::new(RdpSessionActivityControl::default()),
             stats: Arc::new(RdpSessionStats::new()),
             worker: RdpWorkerRuntime::spawn_blocking(1, session_slot, || {}),
-            cached_password: SecretString::new("super-secret".to_string()),
+            cached_password: SecretString::from("super-secret".to_string()),
             cached_domain: Some("LAB".to_string()),
         };
 
@@ -118,10 +119,10 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
 fn secret_backed_password_storage_zeroizes_on_drop() {
     let snapshot = Arc::new(Mutex::new(Vec::new()));
     let zeroized = Arc::new(AtomicBool::new(false));
-    let secret = Secret::new(ZeroizeSpy::new(
+    let secret = SecretBox::new(Box::new(ZeroizeSpy::new(
         Arc::clone(&snapshot),
         Arc::clone(&zeroized),
-    ));
+    )));
 
     let debug = format!("{:?}", secret);
     assert!(

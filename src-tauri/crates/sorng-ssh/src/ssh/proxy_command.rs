@@ -3095,7 +3095,7 @@ mod tests {
         let secret = "placeholder-proxy-secret";
         let mut cfg = free_form_config(false);
         cfg.command = Some("proxy-helper --password {proxy_password} %h %p".to_string());
-        cfg.proxy_password = Some(SecretString::new(secret.into()));
+        cfg.proxy_password = Some(SecretString::from(secret.to_string()));
 
         let err = build_command_string(&cfg, "host.example.com", 22, "alice")
             .expect_err("proxy passwords must never expand into shell arguments");
@@ -3114,7 +3114,7 @@ mod tests {
             cfg.template = Some(template);
             cfg.proxy_host = Some("proxy.example.com".to_string());
             cfg.proxy_username = Some("alice".to_string());
-            cfg.proxy_password = Some(SecretString::new(secret.into()));
+            cfg.proxy_password = Some(SecretString::from(secret.to_string()));
 
             let err = build_command_string(&cfg, "target.example.com", 22, "alice")
                 .expect_err("argv-only proxy password helpers must fail closed");

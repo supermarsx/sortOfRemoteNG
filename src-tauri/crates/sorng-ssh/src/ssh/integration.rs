@@ -407,7 +407,7 @@ fn actor_config(config: ExternalSshConfig<'_>) -> SshConnectionConfig {
         username: config.username.to_string(),
         password: config
             .password
-            .map(|value| SecretString::new(value.to_string())),
+            .map(|value| SecretString::from(value.to_string())),
         private_key_path: config.private_key.map(str::to_string),
         private_key_passphrase: None,
         jump_hosts: vec![],

@@ -196,7 +196,7 @@ pub async fn connect_rdp(
 
     let stats = Arc::new(RdpSessionStats::new());
     let stats_clone = Arc::clone(&stats);
-    let password = SecretString::new(password);
+    let password = SecretString::from(password);
 
     let sid = session_id.clone();
     let h = host.clone();

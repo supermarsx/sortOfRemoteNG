@@ -23,7 +23,7 @@ pub async fn diagnose_rdp_connection(
     // wrap it immediately at the boundary.
     let h = host.clone();
     let u = username.clone();
-    let p = SecretString::new(password);
+    let p = SecretString::from(password);
     let d = domain.clone();
 
     let payload = rdp_settings.unwrap_or_default();

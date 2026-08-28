@@ -311,7 +311,7 @@ pub fn build_authorization_header(
                 .password
                 .as_ref()
                 .ok_or("SSH3: password method selected but no password set")?;
-            let secret = SecretString::new(password.clone());
+            let secret = SecretString::from(password.clone());
             Ok(build_basic_auth_value(&config.username, &secret))
         }
         Ssh3AuthMethod::BearerToken => {
@@ -319,7 +319,7 @@ pub fn build_authorization_header(
                 .bearer_token
                 .as_ref()
                 .ok_or("SSH3: bearer/OIDC method selected but no bearer_token set")?;
-            let secret = SecretString::new(token.clone());
+            let secret = SecretString::from(token.clone());
             Ok(build_bearer_auth_value(&secret))
         }
         Ssh3AuthMethod::PublicKey => {
@@ -330,7 +330,7 @@ pub fn build_authorization_header(
             let passphrase = config
                 .private_key_passphrase
                 .as_ref()
-                .map(|p| SecretString::new(p.clone()));
+                .map(|p| SecretString::from(p.clone()));
             build_pubkey_jwt(
                 key_path,
                 passphrase.as_ref(),
@@ -637,7 +637,7 @@ mod tests {
 
     #[test]
     fn basic_auth_value_is_correct_base64() {
-        let secret = SecretString::new("pass".to_string());
+        let secret = SecretString::from("pass".to_string());
         let v = build_basic_auth_value("user", &secret);
         // base64("user:pass") == "dXNlcjpwYXNz"
         assert_eq!(v, "Basic dXNlcjpwYXNz");
@@ -645,7 +645,7 @@ mod tests {
 
     #[test]
     fn bearer_auth_value_format() {
-        let secret = SecretString::new("abc.def.ghi".to_string());
+        let secret = SecretString::from("abc.def.ghi".to_string());
         assert_eq!(build_bearer_auth_value(&secret), "Bearer abc.def.ghi");
     }
 

@@ -1472,7 +1472,7 @@ mod tests {
     use super::*;
 
     fn secret(value: &str) -> SecretString {
-        SecretString::new(value.to_string())
+        SecretString::from(value.to_string())
     }
 
     #[test]

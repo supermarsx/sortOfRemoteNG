@@ -50,7 +50,7 @@ regex = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 tempfile = { workspace = true }
-secrecy = { version = "0.8", features = ["serde"] }
+secrecy = { version = "0.10", features = ["serde"] }
 # SSH3 pubkey auth (t23-e6): sign the SSH3 JWT bearer assertion (RS256 / EdDSA)
 # with the user's private key. Already in the workspace lock (used by
 # sorng-auth/cloud/gcp); ring-backed (matches the workspace ring mandate, no

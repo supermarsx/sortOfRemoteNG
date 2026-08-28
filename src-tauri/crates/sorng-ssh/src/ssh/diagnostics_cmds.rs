@@ -81,7 +81,7 @@ pub async fn diagnose_ssh_connection(
     // is threaded into the blocking probe. The Tauri command signature still
     // accepts a plain `Option<String>` so the IPC contract is unchanged.
     let h = host.clone();
-    let password: Option<secrecy::SecretString> = password.map(secrecy::SecretString::new);
+    let password: Option<secrecy::SecretString> = password.map(secrecy::SecretString::from);
     tokio::task::spawn_blocking(move || {
         run_ssh_diagnostics(
             &h,

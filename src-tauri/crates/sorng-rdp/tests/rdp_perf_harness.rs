@@ -188,7 +188,7 @@ fn live_xrdp_connect_throughput() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(13389);
     let username = std::env::var("RDP_PERF_USER").unwrap_or_else(|_| "ubuntu".into());
-    let password = secrecy::SecretString::new(
+    let password = secrecy::SecretString::from(
         std::env::var("RDP_PERF_PASSWORD").unwrap_or_else(|_| "ubuntu".into()),
     );
     let connects = env_usize("RDP_PERF_CONNECTS", 10).max(1);

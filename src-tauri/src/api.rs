@@ -694,7 +694,10 @@ pub fn create_router(state: ApiState) -> Router {
             "/rustdesk/settings/{session_id}",
             post(update_rustdesk_settings_api),
         )
-        .route("/rustdesk/input/{session_id}", post(send_rustdesk_input_api))
+        .route(
+            "/rustdesk/input/{session_id}",
+            post(send_rustdesk_input_api),
+        )
         .route(
             "/rustdesk/screenshot/{session_id}",
             get(get_rustdesk_screenshot_api),
@@ -1241,7 +1244,7 @@ async fn connect_ssh(
         host: req.host,
         port: req.port,
         username: req.username,
-        password: req.password.map(SecretString::new),
+        password: req.password.map(SecretString::from),
         private_key_path: req.key_path,
         private_key_passphrase: None,
         jump_hosts: Vec::new(),

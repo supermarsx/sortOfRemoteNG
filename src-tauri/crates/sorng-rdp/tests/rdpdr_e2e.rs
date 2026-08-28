@@ -151,7 +151,7 @@ impl SessionHarness {
             .parse()
             .unwrap_or(RDP_PORT_DEFAULT);
         let username = env_or("RDP_USER", RDP_USER_DEFAULT);
-        let password = SecretString::new(env_or("RDP_PASSWORD", RDP_PASSWORD_DEFAULT));
+        let password = SecretString::from(env_or("RDP_PASSWORD", RDP_PASSWORD_DEFAULT));
         let prompt_emitter = dyn_emitter.clone();
 
         let handle = tokio::task::spawn_blocking(move || {

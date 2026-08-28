@@ -49,7 +49,7 @@ pub async fn connect_ard(
         host: host.clone(),
         port: ard_port,
         username: username.clone(),
-        password: secrecy::SecretString::new(password),
+        password: secrecy::SecretString::from(password),
         connection_id: conn_id.clone(),
         authentication_mode: auth_mode,
         auto_reconnect: auto_reconnect.unwrap_or(true),

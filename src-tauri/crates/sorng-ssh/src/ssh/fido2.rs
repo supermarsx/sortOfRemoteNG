@@ -363,11 +363,8 @@ impl OpenSshSkProvider {
             args.push(format!("device={}", device));
         }
 
-        let mut cmd = self.ssh_keygen_command(
-            opts.pin
-                .as_ref()
-                .map(|secret| secret.expose_secret().as_str()),
-        );
+        let mut cmd =
+            self.ssh_keygen_command(opts.pin.as_ref().map(|secret| secret.expose_secret()));
         cmd.args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -604,11 +601,8 @@ impl Fido2Provider for OpenSshSkProvider {
             namespace.clone(),
         ];
 
-        let mut cmd = self.ssh_keygen_command(
-            opts.pin
-                .as_ref()
-                .map(|secret| secret.expose_secret().as_str()),
-        );
+        let mut cmd =
+            self.ssh_keygen_command(opts.pin.as_ref().map(|secret| secret.expose_secret()));
         cmd.args(&args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -970,7 +964,7 @@ exit 0
         };
         let output_dir = tempfile::tempdir().expect("output dir");
         let opts = SkKeyGenOptions {
-            pin: Some(SecretString::new("1357".to_string())),
+            pin: Some(SecretString::from("1357".to_string())),
             ..Default::default()
         };
 
@@ -1008,7 +1002,7 @@ exit 0
             },
             challenge: b"alpha".to_vec(),
             device_path: None,
-            pin: Some(SecretString::new("1111".to_string())),
+            pin: Some(SecretString::from("1111".to_string())),
             timeout: Duration::from_secs(1),
         };
         let opts_b = SkAssertionOptions {
@@ -1021,7 +1015,7 @@ exit 0
             },
             challenge: b"beta".to_vec(),
             device_path: None,
-            pin: Some(SecretString::new("2222".to_string())),
+            pin: Some(SecretString::from("2222".to_string())),
             timeout: Duration::from_secs(1),
         };
 
