@@ -37,6 +37,24 @@ function jsonText(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+export function rewriteShellAssignment(source, name, value) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) {
+    throw new Error(`Invalid shell assignment name: ${name}`);
+  }
+  if (/\r|\n/u.test(value)) {
+    throw new Error(`Shell assignment ${name} cannot contain a newline.`);
+  }
+
+  const pattern = new RegExp(`^${name}=.*$`, "gmu");
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected exactly one ${name}= assignment, found ${matches.length}.`,
+    );
+  }
+  return source.replace(pattern, `${name}=${value}`);
+}
+
 export function versionDerivedTextMatches(current, expected) {
   if (current === null) return false;
   const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
@@ -59,7 +77,7 @@ function walkFiles(relativeDirectory, fileName) {
   return found.sort();
 }
 
-function buildPlan(versionOverride = null) {
+function buildPlan(versionOverride = null, sourceShaOverride = null) {
   const authority = JSON.parse(read("version.json"));
   const projection = projectVersion(versionOverride ?? authority.version);
   const changes = [];
@@ -94,6 +112,21 @@ function buildPlan(versionOverride = null) {
   const tauriConfig = JSON.parse(read("src-tauri/tauri.conf.json"));
   tauriConfig.version = "../package.json";
   plan("src-tauri/tauri.conf.json", jsonText(tauriConfig));
+
+  for (const recipePath of [
+    "packaging/alpine/APKBUILD",
+    "packaging/arch/PKGBUILD",
+  ]) {
+    let recipe = rewriteShellAssignment(
+      read(recipePath),
+      "pkgver",
+      projection.machineVersion,
+    );
+    if (sourceShaOverride !== null) {
+      recipe = rewriteShellAssignment(recipe, "_commit", sourceShaOverride);
+    }
+    plan(recipePath, recipe);
+  }
 
   plan(
     "src/generated/version.ts",
@@ -186,18 +219,18 @@ function releaseLiteralViolations() {
   return violations;
 }
 
-export function run(mode, versionOverride = null) {
+export function run(mode, versionOverride = null, sourceShaOverride = null) {
   if (mode !== "check" && mode !== "write") {
     throw new Error(
       `Unknown mode ${JSON.stringify(mode)}; use --check or --write`,
     );
   }
 
-  let plan = buildPlan(versionOverride);
+  let plan = buildPlan(versionOverride, sourceShaOverride);
   if (mode === "write") {
     for (const change of plan.changes)
       write(change.relativePath, change.expected);
-    plan = buildPlan(versionOverride);
+    plan = buildPlan(versionOverride, sourceShaOverride);
   }
 
   const violations = releaseLiteralViolations();
@@ -230,7 +263,7 @@ export function run(mode, versionOverride = null) {
 }
 
 export function parseArgs(argv) {
-  const options = { mode: null, version: null };
+  const options = { mode: null, sourceSha: null, version: null };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -246,6 +279,15 @@ export function parseArgs(argv) {
         : argv[++index];
       if (!options.version) throw new Error("--version requires a value.");
       projectVersion(options.version);
+    } else if (arg === "--source-sha" || arg.startsWith("--source-sha=")) {
+      if (options.sourceSha !== null)
+        throw new Error("Specify --source-sha only once.");
+      options.sourceSha = arg.includes("=")
+        ? arg.slice(arg.indexOf("=") + 1)
+        : argv[++index];
+      if (!/^[0-9a-f]{40}$/u.test(options.sourceSha ?? "")) {
+        throw new Error("--source-sha requires a lowercase 40-character SHA.");
+      }
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -261,11 +303,11 @@ const isMain =
 if (isMain) {
   try {
     const options = parseArgs(process.argv.slice(2));
-    process.exitCode = run(options.mode, options.version);
+    process.exitCode = run(options.mode, options.version, options.sourceSha);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     console.error(
-      "Usage: node scripts/sync-version.mjs (--check|--write) [--version <YY.N>]",
+      "Usage: node scripts/sync-version.mjs (--check|--write) [--version <YY.N>] [--source-sha <sha>]",
     );
     process.exitCode = 1;
   }

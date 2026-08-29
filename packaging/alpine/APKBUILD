@@ -1,0 +1,180 @@
+# Contributor: sortOfRemoteNG contributors
+# Maintainer: Mariana <17675589+supermarsx@users.noreply.github.com>
+
+pkgname=sortofremoteng
+pkgver=26.34.0
+pkgrel=0
+pkgdesc="Cross-platform remote connection manager"
+url="https://github.com/supermarsx/sortOfRemoteNG"
+arch="x86_64 aarch64"
+license="MIT"
+options="net ldpath-recursive"
+depends="
+	font-dejavu
+	librdkafka
+	librsvg
+	libssh2
+	openh264~2.6.0
+	setserial
+	sqlite-libs
+	webkit2gtk-4.1
+	"
+makedepends="
+	alsa-lib-dev
+	build-base
+	cargo
+	clang-libclang
+	cmake
+	dbus-dev
+	git
+	go
+	gtk+3.0-dev
+	librdkafka-dev
+	librsvg-dev
+	libsoup3-dev
+	libssh2-dev
+	nodejs
+	npm
+	openh264-dev
+	openssl-dev
+	perl
+	pkgconf
+	python3
+	rust
+	sqlite-dev
+	webkit2gtk-4.1-dev
+	"
+
+_commit=c03269a3404451e85f198e4b3e4b503ddc321d3c
+_opkssh_commit=193d79871f3bad3cd27cfb94734c265773a99c9b
+_release="${pkgver%.0}"
+builddir="$srcdir/$pkgname"
+
+_clone_exact() {
+	local destination="$1" repository="$2" commit="$3"
+	if [ ! -d "$destination/.git" ]; then
+		git clone --filter=blob:none --no-checkout "$repository" "$destination"
+	fi
+	git -C "$destination" fetch --force --depth=1 origin "$commit"
+	git -C "$destination" checkout --force --detach "$commit"
+	test "$(git -C "$destination" rev-parse HEAD)" = "$commit"
+}
+
+fetch() {
+	mkdir -p "$srcdir"
+	_clone_exact "$builddir" "$url.git" "$_commit"
+	_clone_exact "$srcdir/opkssh" \
+		https://github.com/openpubkey/opkssh.git "$_opkssh_commit"
+}
+
+unpack() {
+	fetch
+}
+
+prepare() {
+	cd "$builddir"
+	export CARGO_HOME="$srcdir/cargo"
+	export GOCACHE="$srcdir/go-cache"
+	export GOMODCACHE="$srcdir/go-mod"
+
+	node scripts/sync-version.mjs --write --version "$_release"
+	node scripts/sync-version.mjs --check
+	npm ci --ignore-scripts --no-audit --no-fund
+
+	local rust_target
+	rust_target="$(rustc -vV | sed -n 's/^host: //p')"
+	test -n "$rust_target"
+	cargo fetch --locked --manifest-path src-tauri/Cargo.toml \
+		--target "$rust_target"
+
+	cd "$srcdir/opkssh"
+	go mod download
+}
+
+build() {
+	cd "$builddir"
+	export CARGO_HOME="$srcdir/cargo"
+	export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+	export CARGO_PROFILE_RELEASE_CODEGEN_UNITS="${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-16}"
+	export CARGO_PROFILE_RELEASE_LTO="${CARGO_PROFILE_RELEASE_LTO:-off}"
+	export CARGO_PROFILE_RELEASE_OPT_LEVEL="${CARGO_PROFILE_RELEASE_OPT_LEVEL:-1}"
+	export CARGO_TARGET_DIR="$srcdir/target"
+	export GOCACHE="$srcdir/go-cache"
+	export GOMODCACHE="$srcdir/go-mod"
+	export LIBSSH2_SYS_USE_PKG_CONFIG=1
+	export OPENSSL_NO_VENDOR=1
+	export OPENH264_LIB_DIR=/usr/lib
+	export SORNG_OPKSSH_VENDOR_CHECKOUT="$srcdir/opkssh"
+
+	npm run build
+	node scripts/stage-opkssh-vendor.mjs --release --enable --frozen
+	npm run tauri -- build --ci --no-bundle \
+		--config packaging/linux/tauri.distro.conf.json \
+		--features full-linux-system -- --no-default-features --frozen
+}
+
+check() {
+	local binary="$srcdir/target/release/com.sortofremote.ng"
+	local library dynamic wrapper wrapper_count wrapper_root
+	dynamic="$(readelf -d "$binary")"
+
+	for library in \
+		libopenh264.so.8 \
+		librdkafka.so.1 \
+		libsqlite3.so.0 \
+		libssh2.so.1
+	do
+		echo "$dynamic" | grep -Fq "Shared library: [$library]"
+	done
+
+	wrapper_root="$builddir/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
+	wrapper_count="$(find "$wrapper_root" -type f \
+		-name libsorng_opkssh_vendor.so | wc -l)"
+	test "$wrapper_count" -eq 1
+	wrapper="$(find "$wrapper_root" -type f \
+		-name libsorng_opkssh_vendor.so -print -quit)"
+	python3 -c '
+import ctypes
+import sys
+
+wrapper = ctypes.CDLL(sys.argv[1])
+expected = {
+    "sorng_opkssh_vendor_abi_version": 3,
+    "sorng_opkssh_vendor_embedded_runtime": 1,
+    "sorng_opkssh_vendor_backend_callable": 1,
+}
+for symbol, value in expected.items():
+    function = getattr(wrapper, symbol)
+    function.restype = ctypes.c_uint32
+    actual = function()
+    if actual != value:
+        raise SystemExit(f"{symbol} returned {actual}, expected {value}")
+' "$wrapper"
+}
+
+package() {
+	local resource_root="$pkgdir/usr/lib/sortOfRemoteNG"
+
+	install -Dm755 "$srcdir/target/release/com.sortofremote.ng" \
+		"$pkgdir/usr/bin/com.sortofremote.ng"
+	install -dm755 "$resource_root"
+	cp -a "$builddir/src/i18n/locales" "$resource_root/locales"
+	cp -a "$builddir/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh" \
+		"$resource_root/opkssh"
+
+	install -Dm644 "$builddir/packaging/linux/com.sortofremote.ng.desktop" \
+		"$pkgdir/usr/share/applications/com.sortofremote.ng.desktop"
+	install -Dm644 \
+		"$builddir/packaging/flatpak/com.sortofremote.ng.metainfo.xml" \
+		"$pkgdir/usr/share/metainfo/com.sortofremote.ng.metainfo.xml"
+	install -Dm644 "$builddir/src-tauri/icons/32x32.png" \
+		"$pkgdir/usr/share/icons/hicolor/32x32/apps/com.sortofremote.ng.png"
+	install -Dm644 "$builddir/src-tauri/icons/128x128.png" \
+		"$pkgdir/usr/share/icons/hicolor/128x128/apps/com.sortofremote.ng.png"
+	install -Dm644 "$builddir/src-tauri/icons/128x128@2x.png" \
+		"$pkgdir/usr/share/icons/hicolor/256x256/apps/com.sortofremote.ng.png"
+	install -Dm644 "$builddir/src-tauri/icons/icon.png" \
+		"$pkgdir/usr/share/icons/hicolor/512x512/apps/com.sortofremote.ng.png"
+	install -Dm644 "$builddir/license.md" \
+		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -453,7 +453,7 @@ test("rolling snapshots atomically synchronize package versions back to main", (
   );
   assertOrdered(
     snapshotStep,
-    'node scripts/sync-version.mjs --write --version "$PUBLIC_VERSION"',
+    '--source-sha "$SOURCE_SHA"',
     "git add -A",
     "every version projection must be generated before the snapshot is staged",
   );
@@ -497,6 +497,7 @@ test("normal main CI calls release only after every internal job", () => {
   for (const job of [
     "docs",
     "version",
+    "linux-package-recipes",
     "format",
     "lint",
     "test",

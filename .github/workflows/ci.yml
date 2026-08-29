@@ -58,6 +58,34 @@ jobs:
       - name: Test release metadata enforcement
         run: npm run release:test
 
+  linux-package-recipes:
+    name: Linux package recipe metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate Arch PKGBUILD metadata
+        run: |
+          docker run --rm --volume "$PWD:/work:ro" archlinux:base-devel bash -lc '
+            useradd --create-home builder
+            install -o builder -g builder -m 0644 \
+              /work/packaging/arch/PKGBUILD /home/builder/PKGBUILD
+            su builder -c \
+              "cd /home/builder && bash -n PKGBUILD && makepkg --printsrcinfo"
+          '
+      - name: Validate Alpine APKBUILD metadata and dependencies
+        run: |
+          docker run --rm --volume "$PWD:/work:ro" alpine:3.24 sh -lc '
+            apk add --no-cache alpine-sdk >/dev/null
+            adduser -D builder
+            addgroup builder abuild
+            install -o builder -g builder -m 0644 \
+              /work/packaging/alpine/APKBUILD /home/builder/APKBUILD
+            su builder -c "cd /home/builder && abuild validate"
+            cd /home/builder
+            . ./APKBUILD
+            apk add --simulate $depends $makedepends >/dev/null
+          '
+
   updater-signature-verifier:
     name: Updater signature verifier
     runs-on: ubuntu-latest
@@ -621,6 +649,7 @@ jobs:
     needs:
       - docs
       - version
+      - linux-package-recipes
       - format
       - lint
       - typecheck

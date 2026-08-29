@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   parseArgs as parseSyncVersionArgs,
+  rewriteShellAssignment,
   versionDerivedTextMatches,
 } from "../../scripts/sync-version.mjs";
 import {
@@ -123,12 +124,23 @@ test("generates separate public and explicitly machine-only frontend values", ()
 });
 
 test("accepts an explicit rolling release projection for CI snapshots", () => {
-  assert.deepEqual(parseSyncVersionArgs(["--write", "--version", "26.9"]), {
-    mode: "write",
-    version: "26.9",
-  });
+  assert.deepEqual(
+    parseSyncVersionArgs([
+      "--write",
+      "--version",
+      "26.9",
+      "--source-sha",
+      "a".repeat(40),
+    ]),
+    {
+      mode: "write",
+      sourceSha: "a".repeat(40),
+      version: "26.9",
+    },
+  );
   assert.deepEqual(parseSyncVersionArgs(["--check"]), {
     mode: "check",
+    sourceSha: null,
     version: null,
   });
   assert.throws(
@@ -138,5 +150,29 @@ test("accepts an explicit rolling release projection for CI snapshots", () => {
   assert.throws(
     () => parseSyncVersionArgs(["--write", "--check"]),
     /exactly one/,
+  );
+  assert.throws(
+    () => parseSyncVersionArgs(["--write", "--source-sha", "not-a-sha"]),
+    /lowercase 40-character SHA/,
+  );
+});
+
+test("rewrites one package recipe assignment without disturbing the recipe", () => {
+  const recipe = [
+    "pkgname=sortofremoteng",
+    "pkgver=26.1.0",
+    `_commit=${"a".repeat(40)}`,
+    "pkgrel=1",
+    "",
+  ].join("\n");
+  const versioned = rewriteShellAssignment(recipe, "pkgver", "26.9.0");
+  const pinned = rewriteShellAssignment(versioned, "_commit", "b".repeat(40));
+
+  assert.match(pinned, /^pkgver=26\.9\.0$/m);
+  assert.match(pinned, new RegExp(`^_commit=${"b".repeat(40)}$`, "m"));
+  assert.match(pinned, /^pkgrel=1$/m);
+  assert.throws(
+    () => rewriteShellAssignment(recipe, "missing", "value"),
+    /found 0/,
   );
 });

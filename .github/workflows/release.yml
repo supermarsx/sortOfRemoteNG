@@ -303,7 +303,9 @@ jobs:
             exit 1
           fi
 
-          node scripts/sync-version.mjs --write --version "$PUBLIC_VERSION"
+          node scripts/sync-version.mjs --write \
+            --version "$PUBLIC_VERSION" \
+            --source-sha "$SOURCE_SHA"
           node scripts/sync-version.mjs --check
           git diff --check
           git config user.name "github-actions[bot]"

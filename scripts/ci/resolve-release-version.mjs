@@ -321,6 +321,8 @@ function expectedSnapshotTree(repo, sourceSha, publicVersion) {
         "--write",
         "--version",
         publicVersion,
+        "--source-sha",
+        sourceSha,
       ],
       {
         cwd: checkout,
