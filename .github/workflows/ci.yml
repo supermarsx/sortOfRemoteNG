@@ -75,7 +75,7 @@ jobs:
       - name: Validate Alpine APKBUILD metadata and dependencies
         run: |
           docker run --rm --volume "$PWD:/work:ro" alpine:3.24 sh -lc '
-            apk add --no-cache alpine-sdk >/dev/null
+            apk add alpine-sdk >/dev/null
             adduser -D builder
             addgroup builder abuild
             install -o builder -g builder -m 0644 \

@@ -133,7 +133,7 @@ test("main CI validates both recipes with their native package tools", () => {
   );
   assert.match(
     ciWorkflow,
-    /linux-package-recipes:[\s\S]*?alpine:3\.24[\s\S]*?abuild validate[\s\S]*?apk add --simulate \$depends \$makedepends/,
+    /linux-package-recipes:[\s\S]*?alpine:3\.24[\s\S]*?apk add alpine-sdk[\s\S]*?abuild validate[\s\S]*?apk add --simulate \$depends \$makedepends/,
   );
   assert.match(
     ciWorkflow.slice(ciWorkflow.indexOf("  rolling-release:")),
