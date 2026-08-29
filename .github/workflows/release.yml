@@ -416,8 +416,8 @@ jobs:
             bundles: msi,nsis
             cargo_build_jobs: "1"
             release_lto: "off"
-            release_codegen_units: "16"
-            release_opt_level: "0"
+            release_codegen_units: "64"
+            release_opt_level: "1"
             windows_sdk_arch: x64
           - artifact_id: windows-aarch64
             os: windows-11-arm
@@ -427,8 +427,8 @@ jobs:
             bundles: msi,nsis
             cargo_build_jobs: "1"
             release_lto: "off"
-            release_codegen_units: "16"
-            release_opt_level: "0"
+            release_codegen_units: "64"
+            release_opt_level: "1"
             windows_sdk_arch: arm64
     runs-on: ${{ matrix.os }}
     env:
@@ -443,9 +443,10 @@ jobs:
       # release builds use bounded LLVM profiles instead:
       # Linux splits final codegen into 16 smaller units after repeated
       # 90-minute single-CGU builds ended in runner loss; it retains one job.
-      # Windows also uses split codegen after a direct LLVM allocation failure
-      # in the final app crate. Both macOS runners use 32 unoptimized units after
-      # the arm64 final app crate was SIGKILLed with opt-level 1 and 16 units.
+      # Windows uses 64 lightly optimised units after the size-optimised build
+      # exceeded the standard runners' 16 GB memory; LTO remains off to keep
+      # peak memory bounded. Both macOS runners use 32 unoptimized units after the arm64
+      # final app crate was SIGKILLed with opt-level 1 and 16 units.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}

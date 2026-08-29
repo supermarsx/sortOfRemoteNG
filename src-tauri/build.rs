@@ -96,5 +96,17 @@ fn main() {
         }
     }
 
+    // The release executable has thousands of statically linked Rust command
+    // shims. Ask MSVC to discard unreachable COMDATs and fold identical ones;
+    // keep the repository's proven link.exe path instead of switching this
+    // exceptionally large graph to rust-lld.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("PROFILE").as_deref() == Ok("release")
+    {
+        for argument in ["/OPT:REF", "/OPT:ICF", "/INCREMENTAL:NO", "/Brepro"] {
+            println!("cargo:rustc-link-arg={argument}");
+        }
+    }
+
     tauri_build::build()
 }

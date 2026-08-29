@@ -468,3 +468,18 @@ test("Windows runtime-closure checks stay explicit", () => {
     /NativeLibrary\]::Load[\s\S]*NativeLibrary\]::Free/u,
   );
 });
+
+test("Windows release linker size controls stay explicit", () => {
+  assert.match(
+    appBuildScript,
+    /CARGO_CFG_TARGET_OS[\s\S]*windows[\s\S]*PROFILE[\s\S]*release/u,
+  );
+  for (const linkerArgument of [
+    "/OPT:REF",
+    "/OPT:ICF",
+    "/INCREMENTAL:NO",
+    "/Brepro",
+  ]) {
+    assert.ok(appBuildScript.includes(`"${linkerArgument}"`));
+  }
+});

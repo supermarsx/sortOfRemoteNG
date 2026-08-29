@@ -564,10 +564,14 @@ opt-level = 1
 debug = 0
 
 [profile.release]
-# LTO = thin gives ~90% of full LTO speed-up at a fraction of the cost.
+# Optimise the installed application for size. Hosted release jobs may widen
+# codegen units and disable LTO per platform to stay within runner memory.
+opt-level = "z"
 lto = "thin"
 codegen-units = 1
 strip = true
+debug = 0
+incremental = false
 
 [patch.crates-io]
 ironrdp-connector = { path = "patches/ironrdp-connector" }

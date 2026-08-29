@@ -723,8 +723,8 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       bundles: "msi,nsis",
       cargo_build_jobs: "1",
       release_lto: "off",
-      release_codegen_units: "16",
-      release_opt_level: "0",
+      release_codegen_units: "64",
+      release_opt_level: "1",
       windows_sdk_arch: "x64",
     },
     "windows-aarch64": {
@@ -735,8 +735,8 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       bundles: "msi,nsis",
       cargo_build_jobs: "1",
       release_lto: "off",
-      release_codegen_units: "16",
-      release_opt_level: "0",
+      release_codegen_units: "64",
+      release_opt_level: "1",
       windows_sdk_arch: "arm64",
     },
   });
@@ -750,14 +750,18 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.match(
     buildDefinition,
-    /# release builds use bounded LLVM profiles instead:\r?\n\s+# Linux splits final codegen into 16 smaller units after repeated\r?\n\s+# 90-minute single-CGU builds ended in runner loss; it retains one job\.\r?\n\s+# Windows also uses split codegen after a direct LLVM allocation failure\r?\n\s+# in the final app crate\. Both macOS runners use 32 unoptimized units after\r?\n\s+# the arm64 final app crate was SIGKILLed with opt-level 1 and 16 units\./,
+    /# release builds use bounded LLVM profiles instead:\r?\n\s+# Linux splits final codegen into 16 smaller units after repeated\r?\n\s+# 90-minute single-CGU builds ended in runner loss; it retains one job\.\r?\n\s+# Windows uses 64 lightly optimised units after the size-optimised build\r?\n\s+# exceeded the standard runners' 16 GB memory; LTO remains off to keep\r?\n\s+# peak memory bounded\. Both macOS runners use 32 unoptimized units after the arm64\r?\n\s+# final app crate was SIGKILLed with opt-level 1 and 16 units\./,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "16"$/gm) ?? []).length,
-    4,
+    2,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "32"$/gm) ?? []).length,
+    2,
+  );
+  assert.equal(
+    (matrixDefinition.match(/^\s+release_codegen_units: "64"$/gm) ?? []).length,
     2,
   );
   assert.equal(
@@ -766,14 +770,21 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "0"$/gm) ?? []).length,
-    6,
+    4,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "1"$/gm) ?? []).length,
+    2,
+  );
+  assert.equal(
+    (matrixDefinition.match(/^\s+release_opt_level: "z"$/gm) ?? []).length,
     0,
   );
-  for (const artifactId of Object.keys(profilesByArtifact)) {
-    assert.equal(profilesByArtifact[artifactId].release_opt_level, "0");
+  for (const [artifactId, profile] of Object.entries(profilesByArtifact)) {
+    assert.equal(
+      profile.release_opt_level,
+      artifactId.startsWith("windows-") ? "1" : "0",
+    );
   }
   for (const [environmentName, matrixField] of Object.entries({
     CARGO_BUILD_JOBS: "cargo_build_jobs",
@@ -2630,9 +2641,10 @@ test("platform resource inspection is exact and immediately precedes native buil
   );
   assert.match(releaseProfile, /^lto = "thin"$/m);
   assert.match(releaseProfile, /^codegen-units = 1$/m);
-  // Cargo's checked-in release profile retains the production default
-  // opt-level (3); every hosted release matrix entry overrides it to 0.
-  assert.doesNotMatch(releaseProfile, /^opt-level\s*=/m);
+  assert.match(releaseProfile, /^opt-level = "z"$/m);
+  assert.match(releaseProfile, /^strip = true$/m);
+  assert.match(releaseProfile, /^debug = 0$/m);
+  assert.match(releaseProfile, /^incremental = false$/m);
   assert.doesNotMatch(buildJob, /timeout-minutes:/);
   assert.match(
     buildDefinition,
