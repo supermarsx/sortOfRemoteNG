@@ -34,6 +34,10 @@ const cargoManifest = readFileSync(
   new URL("../../src-tauri/Cargo.toml", import.meta.url),
   "utf8",
 );
+const appBuildScript = readFileSync(
+  new URL("../../src-tauri/build.rs", import.meta.url),
+  "utf8",
+);
 const nativeReadme = readFileSync(
   new URL("../../src-tauri/native/README.md", import.meta.url),
   "utf8",
@@ -276,6 +280,10 @@ test("normal Unix Tauri builds hard-link and package OpenH264", () => {
   assert.match(
     cargoManifest,
     /^full-unix-dynamic = \[[^\r\n]*"rdp-software-decode-dynamic"[^\r\n]*\]$/mu,
+  );
+  assert.match(
+    appBuildScript,
+    /Ok\("linux"\)[\s\S]*?--push-state,--no-as-needed,-lopenh264,--pop-state/u,
   );
 
   const linux = openh264NativeTauriConfig("linux", OPENH264_ELF_RUNTIME);

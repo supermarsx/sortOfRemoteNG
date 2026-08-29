@@ -88,6 +88,15 @@ fn main() {
         match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
             Ok("linux") => {
                 println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/sortOfRemoteNG");
+                // Linux toolchains default to --as-needed, so the dependency
+                // crate's ordinary -lopenh264 can disappear when LTO/dead-code
+                // elimination proves the decoder path is not needed by a
+                // particular codegen unit. Keep the codec as a true process
+                // dependency: this single push/pop group preserves exactly one
+                // DT_NEEDED entry without leaking --no-as-needed to other libs.
+                println!(
+                    "cargo:rustc-link-arg=-Wl,--push-state,--no-as-needed,-lopenh264,--pop-state"
+                );
             }
             Ok("macos") => {
                 println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
