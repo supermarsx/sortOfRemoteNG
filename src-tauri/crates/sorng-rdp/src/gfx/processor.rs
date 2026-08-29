@@ -127,6 +127,10 @@ pub enum GfxOutput {
 pub struct GfxProcessor {
     surfaces: SurfaceManager,
     h264_decoder: Option<Box<dyn H264Decoder>>,
+    /// Prevent a missing optional decoder from triggering filesystem/hash/load
+    /// work and error logging for every incoming AVC frame. Reset/close clears
+    /// this flag so a deliberately restarted graphics channel may retry.
+    decoder_init_attempted: bool,
     decoder_preference: H264DecoderPreference,
     /// Negotiated capability version.
     cap_version: Option<u32>,
@@ -176,6 +180,7 @@ impl GfxProcessor {
         Self {
             surfaces: SurfaceManager::new(),
             h264_decoder: None,
+            decoder_init_attempted: false,
             decoder_preference,
             cap_version: None,
             frame_tx,
@@ -251,15 +256,26 @@ impl GfxProcessor {
     }
 
     fn ensure_decoder(&mut self) {
-        if self.h264_decoder.is_none() {
-            match h264::create_decoder(self.decoder_preference) {
-                Ok((dec, name)) => {
-                    log::info!("GFX: H.264 decoder initialized: {name}");
-                    self.h264_decoder = Some(dec);
-                }
-                Err(e) => {
-                    log::error!("GFX: H.264 decoder init failed: {e}");
-                }
+        self.ensure_decoder_with(h264::create_decoder);
+    }
+
+    fn ensure_decoder_with<F>(&mut self, create: F)
+    where
+        F: FnOnce(
+            H264DecoderPreference,
+        ) -> Result<(Box<dyn H264Decoder>, &'static str), h264::H264Error>,
+    {
+        if self.h264_decoder.is_some() || self.decoder_init_attempted {
+            return;
+        }
+        self.decoder_init_attempted = true;
+        match create(self.decoder_preference) {
+            Ok((dec, name)) => {
+                log::info!("GFX: H.264 decoder initialized: {name}");
+                self.h264_decoder = Some(dec);
+            }
+            Err(e) => {
+                log::error!("GFX: H.264 decoder init failed: {e}");
             }
         }
     }
@@ -379,6 +395,7 @@ impl GfxProcessor {
                 );
                 self.surfaces.reset();
                 self.h264_decoder = None;
+                self.decoder_init_attempted = false;
                 // Surfaces were dropped; refresh the snapshot (stay Ready).
                 self.publish();
             }
@@ -618,6 +635,7 @@ impl DvcProcessor for GfxProcessor {
         log::info!("GFX: DVC channel closed (id={channel_id})");
         self.surfaces.reset();
         self.h264_decoder = None;
+        self.decoder_init_attempted = false;
         // Channel closed but re-openable → back to Registered (mirrors AUDIN).
         self.set_channel_state(VirtualChannelState::Registered);
     }
@@ -665,6 +683,32 @@ mod tests {
         assert_eq!(d.summary.failed_count, 0);
         assert_eq!(d.codec, None);
         assert!(!d.nal_passthrough);
+    }
+
+    #[test]
+    fn decoder_initialization_failure_is_attempted_once_until_reset() {
+        use std::cell::Cell;
+
+        let (mut proc, _rx) = new_processor();
+        let calls = Cell::new(0);
+        proc.ensure_decoder_with(|_| {
+            calls.set(calls.get() + 1);
+            Err(h264::H264Error::InitFailed(
+                "missing optional module".into(),
+            ))
+        });
+        proc.ensure_decoder_with(|_| {
+            calls.set(calls.get() + 1);
+            Err(h264::H264Error::InitFailed("must not run".into()))
+        });
+        assert_eq!(calls.get(), 1);
+
+        proc.close(7);
+        proc.ensure_decoder_with(|_| {
+            calls.set(calls.get() + 1);
+            Err(h264::H264Error::InitFailed("retry after close".into()))
+        });
+        assert_eq!(calls.get(), 2);
     }
 
     #[test]
@@ -739,7 +783,10 @@ mod tests {
 
         let d = handle.lock().unwrap();
         assert_eq!(d.pipeline_errors, 1);
-        assert_eq!(d.summary.ready_count, 1, "channel stays Ready on frame error");
+        assert_eq!(
+            d.summary.ready_count, 1,
+            "channel stays Ready on frame error"
+        );
         assert_eq!(d.summary.failed_count, 0);
         assert_eq!(d.last_error_class.as_deref(), Some("avc420_parse_error"));
     }
