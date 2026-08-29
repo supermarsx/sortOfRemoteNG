@@ -36,12 +36,12 @@ use super::network::{
 use super::session_state::{ChannelSummary, FailureClass, FrameFlowSummary};
 use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
 use super::stats::RdpSessionStats;
+#[cfg(test)]
+use super::types::RdpSessionActivityResult;
 use super::types::{
     RdpCommand, RdpLogEntry, RdpPointerEvent, RdpSessionActivitySnapshot, RdpStatusEvent,
     SharedRdpSessionActivityControl,
 };
-#[cfg(test)]
-use super::types::RdpSessionActivityResult;
 use super::wake_channel::CheckpointStatus;
 use super::{RdpTlsConfig, RdpTlsStream};
 use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};

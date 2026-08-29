@@ -1083,7 +1083,10 @@ mod tests {
         );
         let snapshot = machine.snapshot();
         assert_eq!(snapshot.state, "terminated");
-        assert_eq!(snapshot.last_failure_class.as_deref(), Some("auth_rejected"));
+        assert_eq!(
+            snapshot.last_failure_class.as_deref(),
+            Some("auth_rejected")
+        );
     }
 
     #[test]

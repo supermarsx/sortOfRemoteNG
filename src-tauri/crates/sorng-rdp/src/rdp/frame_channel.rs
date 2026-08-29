@@ -196,8 +196,12 @@ mod tests {
         let frame_channel: DynFrameChannel = Arc::new(FailingFrameChannel);
         let accounting = FrameDeliveryAccounting::new();
 
-        let result =
-            send_accounted_frame(&accounting, &frame_channel, FramePayloadKind::Nal, vec![0; 16]);
+        let result = send_accounted_frame(
+            &accounting,
+            &frame_channel,
+            FramePayloadKind::Nal,
+            vec![0; 16],
+        );
 
         assert!(result.is_err());
         let snapshot = accounting.snapshot();

@@ -124,11 +124,11 @@ impl crate::ironrdp::connector::sspi::network_client::NetworkClient for Blocking
                     .body(request.data.clone())
                     .send()
                     .map_err(|_| {
-                    crate::ironrdp::connector::sspi::Error::new(
-                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
-                        "CredSSP HTTPS request failed".to_string(),
-                    )
-                })?;
+                        crate::ironrdp::connector::sspi::Error::new(
+                            crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                            "CredSSP HTTPS request failed".to_string(),
+                        )
+                    })?;
                 if !resp.status().is_success() {
                     return Err(crate::ironrdp::connector::sspi::Error::new(
                         crate::ironrdp::connector::sspi::ErrorKind::InternalError,
@@ -148,16 +148,17 @@ impl crate::ironrdp::connector::sspi::network_client::NetworkClient for Blocking
                     ));
                 }
                 let mut response_bytes = Vec::with_capacity(
-                    advertised_length.unwrap_or_default().min(MAX_CREDSSP_RESPONSE_BYTES as u64)
-                        as usize,
+                    advertised_length
+                        .unwrap_or_default()
+                        .min(MAX_CREDSSP_RESPONSE_BYTES as u64) as usize,
                 );
                 let mut limited = resp.take((MAX_CREDSSP_RESPONSE_BYTES + 1) as u64);
                 limited.read_to_end(&mut response_bytes).map_err(|_| {
-                        crate::ironrdp::connector::sspi::Error::new(
-                            crate::ironrdp::connector::sspi::ErrorKind::InternalError,
-                            "Failed to read CredSSP HTTPS response body".to_string(),
-                        )
-                    })?;
+                    crate::ironrdp::connector::sspi::Error::new(
+                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                        "Failed to read CredSSP HTTPS response body".to_string(),
+                    )
+                })?;
                 if response_bytes.len() > MAX_CREDSSP_RESPONSE_BYTES {
                     return Err(crate::ironrdp::connector::sspi::Error::new(
                         crate::ironrdp::connector::sspi::ErrorKind::InternalError,

@@ -278,7 +278,12 @@ pub fn push_multi_rect_via_channel(
         }
     }
 
-    let _ = send_accounted_frame(accounting, frame_channel, FramePayloadKind::RgbaRects, payload);
+    let _ = send_accounted_frame(
+        accounting,
+        frame_channel,
+        FramePayloadKind::RgbaRects,
+        payload,
+    );
 }
 
 /// Push a dirty region's pixel data directly through the frame channel.
@@ -387,7 +392,12 @@ pub fn push_compositor_frame_via_channel(
     payload[4..6].copy_from_slice(&frame.width.to_le_bytes());
     payload[6..8].copy_from_slice(&frame.height.to_le_bytes());
 
-    let _ = send_accounted_frame(accounting, frame_channel, FramePayloadKind::Compositor, payload);
+    let _ = send_accounted_frame(
+        accounting,
+        frame_channel,
+        FramePayloadKind::Compositor,
+        payload,
+    );
 }
 
 /// NAL header magic prefix — `0x4E414C48` ("NALH" in ASCII).
