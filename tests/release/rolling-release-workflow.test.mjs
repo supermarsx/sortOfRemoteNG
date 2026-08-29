@@ -572,7 +572,7 @@ test("release builds force the npm Tauri runner instead of lockfile autodetectio
     releaseWorkflow.indexOf("  publish:"),
   );
   const tauriBuild = buildJob.slice(
-    buildJob.indexOf("- name: Build native bundles with static Kafka"),
+    buildJob.indexOf("- name: Build native bundles"),
     buildJob.indexOf("- name: Notarize and staple macOS disk image"),
   );
 
@@ -586,9 +586,7 @@ test("release Tauri builds give the inherited Next build a 4 GiB Node heap", () 
     releaseWorkflow.indexOf("  build:"),
     releaseWorkflow.indexOf("  publish:"),
   );
-  const nativeBuildStart = buildJob.indexOf(
-    "- name: Build native bundles with static Kafka",
-  );
+  const nativeBuildStart = buildJob.indexOf("- name: Build native bundles");
   const nextStepStart = buildJob.indexOf(
     "- name: Preserve native Linux outputs and prune build intermediates",
     nativeBuildStart,
@@ -640,7 +638,7 @@ test("Windows ARM64 QuickJS builds map alloca to the MSVC intrinsic", () => {
   assertOrdered(
     buildJob,
     "CFLAGS_aarch64_pc_windows_msvc: -Dalloca=_alloca",
-    "- name: Build native bundles with static Kafka",
+    "- name: Build native bundles",
     "the ARM64 alloca compatibility flag must be configured before building",
   );
 });
@@ -918,18 +916,41 @@ test("Windows release compiler is pinned and verified without changing other pla
   assert.match(result.stdout, /WINDOWS_RELEASE_COMPILER_VERIFIER_OK/);
 });
 
-test("resource controls preserve release features and signing inputs", () => {
-  const releaseFeatures = releaseWorkflow.match(
-    /^  RELEASE_FEATURES: >-\r?\n    ([^\r\n]+)$/m,
+test("resource controls preserve platform release features and signing inputs", () => {
+  const bundledReleaseFeatures = releaseWorkflow.match(
+    /^  RELEASE_FEATURES_BUNDLED: >-\r?\n    ([^\r\n]+)$/m,
+  )?.[1];
+  const windowsReleaseFeatures = releaseWorkflow.match(
+    /^  RELEASE_FEATURES_WINDOWS: >-\r?\n    ([^\r\n]+)$/m,
   )?.[1];
   assert.equal(
-    releaseFeatures,
-    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
+    bundledReleaseFeatures,
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
   );
   assert.equal(
-    (releaseWorkflow.match(/^  RELEASE_FEATURES:/gm) ?? []).length,
-    1,
+    windowsReleaseFeatures,
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,kafka-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
   );
+  assert.equal(
+    (releaseWorkflow.match(/^  RELEASE_FEATURES_(?:BUNDLED|WINDOWS):/gm) ?? [])
+      .length,
+    2,
+  );
+  assert.doesNotMatch(releaseWorkflow, /^  RELEASE_FEATURES:/m);
+  const bundledFeatureSet = new Set(bundledReleaseFeatures.split(","));
+  const windowsFeatureSet = new Set(windowsReleaseFeatures.split(","));
+  assert.equal(bundledFeatureSet.has("kafka-static"), true);
+  assert.equal(bundledFeatureSet.has("db-sqlite"), true);
+  assert.equal(bundledFeatureSet.has("kafka-dynamic"), false);
+  assert.equal(bundledFeatureSet.has("db-sqlite-dynamic"), false);
+  assert.equal(windowsFeatureSet.has("kafka-dynamic"), true);
+  assert.equal(windowsFeatureSet.has("db-sqlite-dynamic"), true);
+  assert.equal(windowsFeatureSet.has("kafka-static"), false);
+  assert.equal(windowsFeatureSet.has("db-sqlite"), false);
+  assert.equal(bundledFeatureSet.has("rdp-software-decode-dynamic"), true);
+  assert.equal(windowsFeatureSet.has("rdp-software-decode-dynamic"), true);
+  assert.equal(bundledFeatureSet.has("rdp-software-decode"), false);
+  assert.equal(windowsFeatureSet.has("rdp-software-decode"), false);
 
   const buildJob = releaseWorkflow.slice(
     releaseWorkflow.indexOf("  build:"),
@@ -937,7 +958,7 @@ test("resource controls preserve release features and signing inputs", () => {
   );
   const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
   const tauriBuild = buildJob.slice(
-    buildJob.indexOf("- name: Build native bundles with static Kafka"),
+    buildJob.indexOf("- name: Build native bundles"),
     buildJob.indexOf("- name: Notarize and staple macOS disk image"),
   );
   const macosEnvironmentStep = buildJob.slice(
@@ -1033,7 +1054,279 @@ test("resource controls preserve release features and signing inputs", () => {
   );
   assert.match(
     tauriBuild,
-    /args: >-\s+--target \$\{\{ matrix\.rust_target \}\}\s+--bundles \$\{\{ matrix\.bundles \}\}\s+--config src-tauri\/tauri\.release\.conf\.json\s+--features \$\{\{ env\.RELEASE_FEATURES \}\}\s+-- --no-default-features/,
+    /args: >-\s+--target \$\{\{ matrix\.rust_target \}\}\s+--bundles \$\{\{ matrix\.bundles \}\}\s+--config src-tauri\/tauri\.release\.conf\.json\s+--features \$\{\{ matrix\.platform == 'windows' && env\.RELEASE_FEATURES_WINDOWS \|\| env\.RELEASE_FEATURES_BUNDLED \}\}\s+-- --no-default-features/,
+  );
+});
+
+test("Windows releases stage, map, and validate the exact dynamic native runtime", () => {
+  const expectedDllNames = [
+    "libcrypto-3-x64.dll",
+    "libssh2.dll",
+    "libssl-3-x64.dll",
+    "lz4.dll",
+    "openh264-8.dll",
+    "rdkafka.dll",
+    "sqlite3.dll",
+    "z.dll",
+    "zstd.dll",
+  ];
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const cacheStart = buildJob.indexOf(
+    "- name: Cache pinned Windows native runtime",
+  );
+  const installJavaScriptStart = buildJob.indexOf(
+    "- name: Install JavaScript dependencies",
+  );
+  const stageStart = buildJob.indexOf(
+    "- name: Stage Windows dynamic native runtime",
+  );
+  const configureStart = buildJob.indexOf(
+    "- name: Configure updater and OS signing",
+  );
+  const buildStart = buildJob.indexOf("- name: Build native bundles");
+  const importValidationStart = buildJob.indexOf(
+    "- name: Verify Windows dynamic native imports",
+  );
+  const preserveLinuxStart = buildJob.indexOf(
+    "- name: Preserve native Linux outputs and prune build intermediates",
+  );
+
+  assert.ok(cacheStart >= 0);
+  assert.ok(installJavaScriptStart > cacheStart);
+  assert.ok(stageStart > installJavaScriptStart);
+  assert.ok(configureStart > stageStart);
+  assert.ok(buildStart > configureStart);
+  assert.ok(importValidationStart > buildStart);
+  assert.ok(preserveLinuxStart > importValidationStart);
+
+  const cacheStep = buildJob.slice(cacheStart, installJavaScriptStart);
+  assert.match(
+    cacheStep,
+    /if: matrix\.platform == 'windows'\s+uses: actions\/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6\.1\.0/,
+  );
+  assert.match(
+    cacheStep,
+    /path: \.cache\/vcpkg-installed\/\$\{\{ matrix\.rust_target \}\}/,
+  );
+  assert.match(
+    cacheStep,
+    /key: windows-native-\$\{\{ matrix\.rust_target \}\}-\$\{\{ hashFiles\('src-tauri\/native\/vcpkg\.json', 'src-tauri\/native\/ports\/\*\*\/\*', 'src-tauri\/native\/triplets\/\*', 'scripts\/stage-windows-native-runtime\.mjs', 'scripts\/probe-rdkafka-runtime\.ps1'\) \}\}/,
+  );
+
+  const stageStep = buildJob.slice(stageStart, configureStart);
+  assert.match(stageStep, /if: matrix\.platform == 'windows'/);
+  assert.match(stageStep, /RUST_TARGET: \$\{\{ matrix\.rust_target \}\}/);
+  assert.match(
+    stageStep,
+    /node scripts\/stage-windows-native-runtime\.mjs `\s+--target \$env:RUST_TARGET `\s+--github-env \$env:GITHUB_ENV/,
+  );
+
+  const releaseConfigStep = buildJob.slice(
+    configureStart,
+    buildJob.indexOf("- name: Export enabled macOS signing environment"),
+  );
+  const releaseConfigProgram = extractNodeHeredoc(
+    extractLiteralRunScript(releaseConfigStep),
+  );
+  const inspectedPaths = [];
+  let releaseConfigWrite;
+  runInNewContext(releaseConfigProgram, {
+    process: {
+      env: {
+        GITHUB_WORKSPACE: process.cwd(),
+        PLATFORM: "windows",
+        ARTIFACT_ID: "windows-x86_64",
+        UPDATER_ENABLED: "false",
+        WINDOWS_CERT_THUMBPRINT: "",
+      },
+    },
+    require(specifier) {
+      if (specifier === "node:fs") {
+        return {
+          statSync(path) {
+            inspectedPaths.push(path);
+            return { isFile: () => true };
+          },
+          writeFileSync(path, contents) {
+            releaseConfigWrite = { path, contents };
+          },
+        };
+      }
+      if (specifier === "node:path") {
+        return { resolve };
+      }
+      throw new Error(`Unexpected module request: ${specifier}`);
+    },
+  });
+  assert.equal(releaseConfigWrite?.path, "src-tauri/tauri.release.conf.json");
+  const windowsReleaseConfig = JSON.parse(releaseConfigWrite.contents);
+  assert.deepEqual(windowsReleaseConfig.bundle.resources, {
+    "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
+    "../src/i18n/locales/": "locales/",
+    "resources/native-runtime-licenses/": "native-runtime-licenses/",
+    "resources/native-runtime/libcrypto-3-x64.dll": "libcrypto-3-x64.dll",
+    "resources/native-runtime/libssh2.dll": "libssh2.dll",
+    "resources/native-runtime/libssl-3-x64.dll": "libssl-3-x64.dll",
+    "resources/native-runtime/lz4.dll": "lz4.dll",
+    "resources/native-runtime/openh264-8.dll": "openh264-8.dll",
+    "resources/native-runtime/rdkafka.dll": "rdkafka.dll",
+    "resources/native-runtime/sqlite3.dll": "sqlite3.dll",
+    "resources/native-runtime/z.dll": "z.dll",
+    "resources/native-runtime/zstd.dll": "zstd.dll",
+  });
+  assert.deepEqual(inspectedPaths, [
+    resolve("src-tauri", "resources/native-runtime-licenses/openh264.txt"),
+    ...expectedDllNames.map((filename) =>
+      resolve("src-tauri", `resources/native-runtime/${filename}`),
+    ),
+  ]);
+  const adjacentRuntimeResources = Object.entries(
+    windowsReleaseConfig.bundle.resources,
+  ).filter(([source]) => source.startsWith("resources/native-runtime/"));
+  assert.deepEqual(
+    adjacentRuntimeResources,
+    expectedDllNames.map((filename) => [
+      `resources/native-runtime/${filename}`,
+      filename,
+    ]),
+  );
+  assert.equal(
+    windowsReleaseConfig.bundle.resources["resources/native-runtime-licenses/"],
+    "native-runtime-licenses/",
+  );
+
+  const importValidationStep = buildJob.slice(
+    importValidationStart,
+    preserveLinuxStart,
+  );
+  const expectedDllBlock = importValidationStep.match(
+    /\$expectedDllNames = @\(\s*([\s\S]*?)\s*\)/,
+  )?.[1];
+  assert.ok(expectedDllBlock);
+  assert.deepEqual(
+    [...expectedDllBlock.matchAll(/"([^"]+\.dll)"/g)].map((match) =>
+      match[1].replace("$opensslArchitecture", "x64"),
+    ),
+    expectedDllNames,
+  );
+  assert.match(
+    importValidationStep,
+    /Compare-Object \(\$expectedDllNames \| Sort-Object\) \$actualDllNames[\s\S]*?staged Windows native runtime does not match the exact DLL contract/,
+  );
+  assert.match(
+    importValidationStep,
+    /"windows-x86_64" \{ 0x8664 \}[\s\S]*?"windows-aarch64" \{ 0xAA64 \}[\s\S]*?Get-PeMachine -Path \$dll\.FullName/,
+  );
+  assert.match(
+    importValidationStep,
+    /foreach \(\$requiredImport in @\("libssh2\.dll", "openh264-8\.dll", "rdkafka\.dll", "sqlite3\.dll"\)\)[\s\S]*?does not import required dynamic library/,
+  );
+  assert.match(
+    importValidationStep,
+    /Copy-Item -LiteralPath \$dll\.FullName -Destination \$destination -Force[\s\S]*?Get-FileHash \$dll\.FullName -Algorithm SHA256[\s\S]*?Get-FileHash \$destination -Algorithm SHA256/,
+  );
+});
+
+test("macOS releases hard-link and package the exact OpenH264 framework", () => {
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const configureStart = buildJob.indexOf(
+    "- name: Configure updater and OS signing",
+  );
+  const configureEnd = buildJob.indexOf(
+    "- name: Export enabled macOS signing environment",
+  );
+  const releaseConfigProgram = extractNodeHeredoc(
+    extractLiteralRunScript(buildJob.slice(configureStart, configureEnd)),
+  );
+  const inspectedPaths = [];
+  let releaseConfigWrite;
+  runInNewContext(releaseConfigProgram, {
+    process: {
+      env: {
+        GITHUB_WORKSPACE: process.cwd(),
+        PLATFORM: "macos",
+        ARTIFACT_ID: "darwin-aarch64",
+        UPDATER_ENABLED: "true",
+        WINDOWS_CERT_THUMBPRINT: "",
+      },
+    },
+    require(specifier) {
+      if (specifier === "node:fs") {
+        return {
+          statSync(path) {
+            inspectedPaths.push(path);
+            return { isFile: () => true };
+          },
+          writeFileSync(path, contents) {
+            releaseConfigWrite = { path, contents };
+          },
+        };
+      }
+      if (specifier === "node:path") return { resolve };
+      throw new Error(`Unexpected module request: ${specifier}`);
+    },
+  });
+  const macReleaseConfig = JSON.parse(releaseConfigWrite.contents);
+  assert.equal(macReleaseConfig.bundle.createUpdaterArtifacts, true);
+  assert.deepEqual(macReleaseConfig.bundle.macOS.frameworks, [
+    "resources/native-runtime/libopenh264.8.dylib",
+  ]);
+  assert.equal(
+    macReleaseConfig.bundle.resources["resources/native-runtime-licenses/"],
+    "native-runtime-licenses/",
+  );
+  assert.deepEqual(inspectedPaths, [
+    resolve("src-tauri", "resources/native-runtime-licenses/openh264.txt"),
+    resolve("src-tauri", "resources/native-runtime/libopenh264.8.dylib"),
+  ]);
+
+  assertOrdered(
+    buildJob,
+    "- name: Build native bundles",
+    "- name: Verify macOS dynamic OpenH264 bundle",
+    "macOS OpenH264 linkage must be inspected after bundling",
+  );
+  assertOrdered(
+    buildJob,
+    "- name: Verify macOS dynamic OpenH264 bundle",
+    "- name: Notarize and staple macOS disk image",
+    "the complete nested framework must be verified before notarization",
+  );
+  const verificationStep = buildJob.slice(
+    buildJob.indexOf("- name: Verify macOS dynamic OpenH264 bundle"),
+    buildJob.indexOf(
+      "- name: Preserve native Linux outputs and prune build intermediates",
+    ),
+  );
+  assert.match(
+    verificationStep,
+    /darwin-aarch64\) expected_arch=arm64[\s\S]*?darwin-x86_64\) expected_arch=x86_64/,
+  );
+  assert.match(
+    verificationStep,
+    /Contents\/Frameworks\/libopenh264\.8\.dylib[\s\S]*?lipo -archs "\$source_dylib"[\s\S]*?lipo -archs "\$framework"/,
+  );
+  assert.match(
+    verificationStep,
+    /otool -L "\$executable"[\s\S]*?@rpath\/libopenh264\.8\.dylib[\s\S]*?otool -D "\$framework"/,
+  );
+  assert.match(
+    verificationStep,
+    /otool -l "\$executable"[\s\S]*?LC_RPATH[\s\S]*?@executable_path\/\.\.\/Frameworks/,
+  );
+  assert.match(
+    verificationStep,
+    /shasum -a 256 "\$source_dylib"[\s\S]*?shasum -a 256 "\$framework"[\s\S]*?codesign --verify --strict --verbose=2 "\$framework"[\s\S]*?codesign --verify --deep --strict --verbose=2 "\$app"/,
+  );
+  assert.match(
+    verificationStep,
+    /UPDATER_ENABLED[\s\S]*?\.app\.tar\.gz[\s\S]*?tar -xzf "\$updater"[\s\S]*?updater_framework="\$updater_app\/Contents\/Frameworks\/libopenh264\.8\.dylib"[\s\S]*?shasum -a 256 "\$updater_framework"[\s\S]*?\$framework_hash/,
   );
 });
 
@@ -1097,8 +1390,33 @@ test("Windows signing is architecture-aware and both portable archives are compl
   );
   assert.doesNotMatch(signingStep, /ARTIFACT_ID -eq "windows-x86_64"/);
   assert.doesNotMatch(signingStep, /\\x64\\signtool\.exe/);
+  assert.match(
+    signingStep,
+    /Get-ChildItem "src-tauri\/resources\/native-runtime\/\*\.dll" -File[\s\S]*?\$runtimeDlls\.Count -ne 9[\s\S]*?\$files \+= \$runtimeDlls/,
+  );
 
   const portableStep = buildJob.slice(portableStart, macVerifyStart);
+  const expectedNativeDllNames = [
+    "libcrypto-3-$opensslArchitecture.dll",
+    "libssh2.dll",
+    "libssl-3-$opensslArchitecture.dll",
+    "lz4.dll",
+    "openh264-8.dll",
+    "rdkafka.dll",
+    "sqlite3.dll",
+    "z.dll",
+    "zstd.dll",
+  ];
+  const expectedNativeLicenseNames = [
+    "librdkafka.txt",
+    "libssh2.txt",
+    "lz4.txt",
+    "openh264.txt",
+    "openssl.txt",
+    "sqlite3.txt",
+    "zlib.txt",
+    "zstd.txt",
+  ];
   assert.match(portableStep, /if: matrix\.platform == 'windows'/);
   assert.match(portableStep, /ARTIFACT_ID: \$\{\{ matrix\.artifact_id \}\}/);
   assert.match(
@@ -1124,6 +1442,36 @@ test("Windows signing is architecture-aware and both portable archives are compl
   assert.match(
     portableStep,
     /Copy-Item -LiteralPath \$localeSource -Destination \(Join-Path \$resourceRoot "locales"\) -Recurse/,
+  );
+  const nativeDllBlock = portableStep.match(
+    /\$expectedNativeDllNames = @\(\s*([\s\S]*?)\s*\)/,
+  )?.[1];
+  assert.ok(nativeDllBlock);
+  assert.deepEqual(
+    [...nativeDllBlock.matchAll(/"([^"]+\.dll)"/g)].map((match) => match[1]),
+    expectedNativeDllNames,
+  );
+  const nativeLicenseBlock = portableStep.match(
+    /\$expectedNativeLicenseNames = @\(\s*([\s\S]*?)\s*\)/,
+  )?.[1];
+  assert.ok(nativeLicenseBlock);
+  assert.deepEqual(
+    [...nativeLicenseBlock.matchAll(/"([^"]+\.txt)"/g)].map(
+      (match) => match[1],
+    ),
+    expectedNativeLicenseNames,
+  );
+  assert.match(
+    portableStep,
+    /Compare-Object `\s+-ReferenceObject \(\$expectedNativeDllNames \| Sort-Object\) `\s+-DifferenceObject \(\$nativeRuntimeFiles\.Name \| Sort-Object\)[\s\S]*?Portable native DLL sources do not match the exact runtime contract/,
+  );
+  assert.match(
+    portableStep,
+    /Get-PeMachine -Path \$nativeDll\.FullName[\s\S]*?\$nativeMachine -ne \$expectedMachine[\s\S]*?\$expectedNativeRuntimeHashes\[\$nativeDll\.Name\][\s\S]*?Get-FileHash -LiteralPath \$nativeDll\.FullName -Algorithm SHA256/,
+  );
+  assert.match(
+    portableStep,
+    /Copy-Item -LiteralPath \$nativeLicenseSource -Destination \(Join-Path \$resourceRoot "native-runtime-licenses"\) -Recurse/,
   );
   assert.match(
     portableStep,
@@ -1157,13 +1505,36 @@ test("Windows signing is architecture-aware and both portable archives are compl
     portableStep,
     /verifiedLocaleRoot[\s\S]*?resources\/locales[\s\S]*?verifiedLocaleHashes[\s\S]*?Compare-Object[\s\S]*?Extracted locale resources do not match/,
   );
+  assert.match(
+    portableStep,
+    /Compare-Object `\s+-ReferenceObject \(\$expectedNativeDllNames \| Sort-Object\) `\s+-DifferenceObject \(\$verifiedNativeDlls\.Name \| Sort-Object\)[\s\S]*?Extracted portable DLLs do not match the exact runtime contract/,
+  );
+  assert.match(
+    portableStep,
+    /Get-PeMachine -Path \$verifiedNativeDll\.FullName[\s\S]*?wrong PE machine[\s\S]*?Get-FileHash -LiteralPath \$verifiedNativeDll\.FullName -Algorithm SHA256[\s\S]*?\$expectedNativeRuntimeHashes\[\$verifiedNativeDll\.Name\][\s\S]*?changed after staging/,
+  );
+  assert.match(
+    portableStep,
+    /verifiedNativeLicenseRoot = Join-Path \$verificationRoot "resources\/native-runtime-licenses"[\s\S]*?Portable archive is missing the native runtime license directory/,
+  );
+  assert.match(
+    portableStep,
+    /verifiedNativeLicenseHashes = @\(Get-RelativeFileHashes -Root \$verifiedNativeLicenseRoot\)[\s\S]*?Compare-Object `\s+-ReferenceObject \$expectedNativeLicenseHashes `\s+-DifferenceObject \$verifiedNativeLicenseHashes[\s\S]*?Extracted native runtime license notices do not match/,
+  );
+  assert.match(portableStep, /openh264-8\.dll/);
+  assert.match(portableStep, /openh264\.txt/);
   for (const archivePath of [
     "sortOfRemoteNG.exe",
     ".portable",
+    ...expectedNativeDllNames,
     "resources/opkssh",
     "resources/locales",
+    "resources/native-runtime-licenses",
   ]) {
-    assert.match(portableStep, new RegExp(archivePath.replaceAll(".", "\\.")));
+    assert.match(
+      portableStep,
+      new RegExp(archivePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   }
 
   const stageStep = buildJob.slice(stageStart);
@@ -1443,7 +1814,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   const nativePrerequisites = buildJob.slice(
     buildJob.indexOf("- name: Install native Linux build prerequisites"),
-    buildJob.indexOf("- name: Install macOS static Kafka prerequisites"),
+    buildJob.indexOf("- name: Install macOS native build prerequisites"),
   );
   const preserveLinux = buildJob.slice(
     buildJob.indexOf(
@@ -1525,6 +1896,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     flatpakManifest,
     /install -Dm755 sortOfRemoteNG \/app\/bin\/sortOfRemoteNG/,
   );
+  assert.match(
+    flatpakManifest,
+    /install -Dm755 lib\/libopenh264\.so\.8 \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8/,
+  );
   assert.match(flatpakManifest, /cp -a resources \/app\/bin\/resources/);
   assert.match(flatpakManifest, /path: \.\.\/\.\.\/\.ci\/flatpak-payload/);
   for (const [size, stagedName, source] of [
@@ -1598,7 +1973,12 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
       if (specifier === "node:fs") {
         return {
           readFileSync,
-          statSync,
+          statSync(path) {
+            if (/resources[\\/]native-runtime(?:-licenses)?[\\/]/.test(path)) {
+              return { isFile: () => true };
+            }
+            return statSync(path);
+          },
           writeFileSync(path, contents) {
             releaseConfigWrite = { path, contents };
           },
@@ -1618,6 +1998,31 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.equal(linuxReleaseConfig.mainBinaryName, "com.sortofremote.ng");
   assert.equal(linuxReleaseConfig.bundle.createUpdaterArtifacts, false);
+  assert.equal(
+    linuxReleaseConfig.bundle.resources[
+      "resources/native-runtime/libopenh264.so.8"
+    ],
+    "libopenh264.so.8",
+  );
+  assert.equal(
+    linuxReleaseConfig.bundle.resources["resources/native-runtime-licenses/"],
+    "native-runtime-licenses/",
+  );
+
+  assert.match(
+    buildJob,
+    /- name: Cache pinned Unix OpenH264 runtime\s+if: matrix\.platform != 'windows'[\s\S]*?path: \.cache\/vcpkg-installed\/\$\{\{ matrix\.rust_target \}\}[\s\S]*?scripts\/stage-openh264-runtime\.mjs/,
+  );
+  assert.match(
+    buildJob,
+    /- name: Stage Unix OpenH264 runtime\s+if: matrix\.platform != 'windows'[\s\S]*?node scripts\/stage-openh264-runtime\.mjs \\\s+--target "\$RUST_TARGET" \\\s+--github-env "\$GITHUB_ENV"/,
+  );
+  assertOrdered(
+    buildJob,
+    "- name: Stage Unix OpenH264 runtime",
+    "- name: Build native bundles",
+    "OpenH264 must be staged before Linux and macOS release linking",
+  );
 
   assert.match(
     buildJob,
@@ -1691,7 +2096,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(flatpakSetup, /FLATPAK_SDK_COMMIT=\$sdk_commit/);
   assertOrdered(
     buildJob,
-    "- name: Build native bundles with static Kafka",
+    "- name: Build native bundles",
     "- name: Install pinned Flatpak toolchain and GNOME runtime",
     "the GNOME runtime must not consume disk until after native bundles are built",
   );
@@ -1699,6 +2104,22 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(
     preserveLinux,
     /executable="\$release_root\/\$LINUX_PACKAGE_MAIN_BINARY"[\s\S]*?install -m 0755 "\$executable" "\$payload\/sortOfRemoteNG"/,
+  );
+  assert.match(
+    preserveLinux,
+    /openh264_source="\$GITHUB_WORKSPACE\/src-tauri\/resources\/native-runtime\/libopenh264\.so\.8"[\s\S]*?readelf -h "\$openh264_source"[\s\S]*?\$expected_elf_machine/,
+  );
+  assert.match(
+    preserveLinux,
+    /readelf -d "\$executable"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?expected_runpath='\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG'[\s\S]*?actual_runpath/,
+  );
+  assert.match(
+    preserveLinux,
+    /install -m 0755 "\$openh264_source" "\$payload\/lib\/libopenh264\.so\.8"[\s\S]*?cmp "\$openh264_source" "\$payload\/lib\/libopenh264\.so\.8"/,
+  );
+  assert.match(
+    preserveLinux,
+    /cp -a "\$native_license_source" "\$payload\/resources\/native-runtime-licenses"[\s\S]*?cmp "\$openh264_notice_source" "\$payload\/resources\/native-runtime-licenses\/openh264\.txt"/,
   );
   assert.match(
     preserveLinux,
@@ -1731,6 +2152,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakBuild,
+    /test -f "\$payload\/lib\/libopenh264\.so\.8"[\s\S]*?cmp "\$openh264_source" "\$payload\/lib\/libopenh264\.so\.8"[\s\S]*?readelf -h "\$payload\/lib\/libopenh264\.so\.8"/,
+  );
+  assert.match(
+    flatpakBuild,
     /test -d "\$payload\/resources\/locales"[\s\S]*?diff -u[\s\S]*?sha256sum \.\/\*\.json/,
   );
   assert.match(
@@ -1752,7 +2177,11 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakBuild,
-    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"/,
+    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"[\s\S]*?openh264_ldd_path[\s\S]*?readlink -f[\s\S]*?\/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8/,
+  );
+  assert.match(
+    flatpakBuild,
+    /flatpak info --user --show-location[\s\S]*?installed_openh264="\$installed_location\/files\/lib\/sortOfRemoteNG\/libopenh264\.so\.8"[\s\S]*?sha256sum "\$installed_openh264"[\s\S]*?readelf -h "\$installed_openh264"[\s\S]*?cmp "\$openh264_notice_source" "\$installed_openh264_notice"/,
   );
   assert.match(
     flatpakBuild,
@@ -1792,6 +2221,20 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     stageStep,
     /expected_locale_root="\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/locales"/,
   );
+  assert.match(
+    stageStep,
+    /expected_openh264_path="\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/libopenh264\.so\.8"[\s\S]*?expected_openh264_notice_path="\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/native-runtime-licenses\/openh264\.txt"/,
+  );
+  assert.match(
+    stageStep,
+    /verify_linux_openh264_payload\(\)[\s\S]*?readelf -h "\$library"[\s\S]*?sha256sum "\$library"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG[\s\S]*?env -u LD_LIBRARY_PATH ldd "\$executable"[\s\S]*?ldd_openh264_path[\s\S]*?realpath "\$ldd_openh264_path"[\s\S]*?\$resolved_library/,
+  );
+  for (const packageKind of ["RPM", "DEB", "AppImage"]) {
+    assert.match(
+      stageStep,
+      new RegExp(`verify_linux_openh264_payload "[^"\\n]+" ${packageKind}`),
+    );
+  }
   assert.match(
     stageStep,
     /expected_icon_root="\/usr\/share\/icons\/hicolor"[\s\S]*?expected_linux_icon_paths=\([\s\S]*?32x32\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?128x128\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?256x256\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?512x512\/apps\/\$FLATPAK_APP_ID\.png/,
@@ -1999,9 +2442,7 @@ test("platform resource inspection is exact and immediately precedes native buil
   const windowsResourceStepStart = buildJob.indexOf(
     "- name: Inspect Windows release resources",
   );
-  const nativeBuildStart = buildJob.indexOf(
-    "- name: Build native bundles with static Kafka",
-  );
+  const nativeBuildStart = buildJob.indexOf("- name: Build native bundles");
 
   assert.ok(resourceStepStart >= 0);
   assert.ok(windowsResourceStepStart > resourceStepStart);
@@ -2214,7 +2655,7 @@ test("updater private key material is scoped to key checks and Tauri build", () 
   assert.doesNotMatch(beforeSteps, /TAURI_SIGNING_PRIVATE_KEY/);
   assert.match(
     buildJob,
-    /Build native bundles with static Kafka[\s\S]*?env:[\s\S]*?TAURI_SIGNING_PRIVATE_KEY:/,
+    /Build native bundles[\s\S]*?env:[\s\S]*?TAURI_SIGNING_PRIVATE_KEY:/,
   );
   assert.match(
     releaseWorkflow,

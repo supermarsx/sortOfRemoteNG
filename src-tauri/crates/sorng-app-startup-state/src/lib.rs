@@ -64,7 +64,7 @@ use mysql::service::MysqlServiceState;
 use postgres::service::PostgresServiceState;
 #[cfg(feature = "db-redis")]
 use redis::service::RedisServiceState;
-#[cfg(feature = "db-sqlite")]
+#[cfg(any(feature = "db-sqlite", feature = "db-sqlite-dynamic"))]
 use sqlite::service::SqliteServiceState;
 
 use azure::service::AzureService;
@@ -186,7 +186,7 @@ pub const SECURITY_DATA_REGISTRATION_ORDER: &[&str] = &[
     "PostgresServiceState",
     #[cfg(feature = "db-mssql")]
     "MssqlServiceState",
-    #[cfg(feature = "db-sqlite")]
+    #[cfg(any(feature = "db-sqlite", feature = "db-sqlite-dynamic"))]
     "SqliteServiceState",
     #[cfg(feature = "db-mongo")]
     "MongoServiceState",

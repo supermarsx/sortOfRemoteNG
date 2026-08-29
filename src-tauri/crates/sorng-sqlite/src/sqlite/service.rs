@@ -73,13 +73,22 @@ impl SqliteService {
 
     fn validate_where_clause(clause: &str) -> Result<(), SqliteError> {
         if clause.is_empty() {
-            return Err(SqliteError::new(SqliteErrorKind::QueryFailed, "WHERE clause cannot be empty"));
+            return Err(SqliteError::new(
+                SqliteErrorKind::QueryFailed,
+                "WHERE clause cannot be empty",
+            ));
         }
         if clause.contains(';') {
-            return Err(SqliteError::new(SqliteErrorKind::QueryFailed, "WHERE clause must not contain semicolons"));
+            return Err(SqliteError::new(
+                SqliteErrorKind::QueryFailed,
+                "WHERE clause must not contain semicolons",
+            ));
         }
         if clause.contains("--") || clause.contains("/*") {
-            return Err(SqliteError::new(SqliteErrorKind::QueryFailed, "WHERE clause must not contain SQL comments"));
+            return Err(SqliteError::new(
+                SqliteErrorKind::QueryFailed,
+                "WHERE clause must not contain SQL comments",
+            ));
         }
         let upper = clause.to_uppercase();
         for kw in ["UNION", "DROP", "ALTER", "CREATE", "INSERT", "EXEC", "XP_"] {
@@ -1054,6 +1063,54 @@ mod tests {
 
         let del = svc.delete_rows(&id, "test", "id = 1").await.unwrap();
         assert_eq!(del, 1);
+
+        svc.disconnect(&id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn native_compile_options_preserve_bundled_contract() {
+        let mut svc = SqliteService::new();
+        let id = svc.connect(SqliteConnectionConfig::memory()).await.unwrap();
+        let pool = svc.get_pool(&id).unwrap();
+
+        let compile_options: Vec<String> = sqlx::query_scalar("PRAGMA compile_options")
+            .fetch_all(pool)
+            .await
+            .unwrap();
+        for required in [
+            "DEFAULT_FOREIGN_KEYS",
+            "ENABLE_API_ARMOR",
+            "ENABLE_COLUMN_METADATA",
+            "ENABLE_DBSTAT_VTAB",
+            "ENABLE_FTS3",
+            "ENABLE_FTS3_PARENTHESIS",
+            "ENABLE_FTS5",
+            "ENABLE_LOAD_EXTENSION",
+            "ENABLE_MEMORY_MANAGEMENT",
+            "ENABLE_RTREE",
+            "ENABLE_STAT4",
+            "SOUNDEX",
+            "USE_URI",
+        ] {
+            assert!(
+                compile_options.iter().any(|option| option == required),
+                "SQLite is missing compile option {required}; got {compile_options:?}"
+            );
+        }
+
+        sqlx::query("CREATE VIRTUAL TABLE fts_contract USING fts5(content)")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE VIRTUAL TABLE rtree_contract USING rtree(id, min_x, max_x)")
+            .execute(pool)
+            .await
+            .unwrap();
+        let soundex: String = sqlx::query_scalar("SELECT soundex('sortOfRemoteNG')")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert!(!soundex.is_empty());
 
         svc.disconnect(&id).await.unwrap();
     }

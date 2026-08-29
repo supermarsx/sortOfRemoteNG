@@ -2,7 +2,7 @@
 
 #[cfg(all(windows, feature = "mf-decode"))]
 pub mod mf_decoder;
-#[cfg(feature = "software-decode")]
+#[cfg(any(feature = "software-decode", feature = "software-decode-dynamic"))]
 pub mod openh264_decoder;
 pub use sorng_rdp_vendor::yuv_convert;
 
@@ -152,14 +152,14 @@ pub fn create_decoder(
             ))
         }
         H264DecoderPreference::OpenH264 => {
-            #[cfg(feature = "software-decode")]
+            #[cfg(any(feature = "software-decode", feature = "software-decode-dynamic"))]
             {
                 let dec = openh264_decoder::OpenH264SoftDecoder::new()?;
                 return Ok((Box::new(dec), "openh264"));
             }
             #[allow(unreachable_code)]
             Err(H264Error::InitFailed(
-                "openh264 decoder not compiled (enable `software-decode` feature)".into(),
+                "openh264 decoder not compiled (enable `software-decode` or `software-decode-dynamic` feature)".into(),
             ))
         }
         H264DecoderPreference::Auto => {
@@ -172,7 +172,7 @@ pub fn create_decoder(
                 }
             }
 
-            #[cfg(feature = "software-decode")]
+            #[cfg(any(feature = "software-decode", feature = "software-decode-dynamic"))]
             {
                 let dec = openh264_decoder::OpenH264SoftDecoder::new()?;
                 return Ok((Box::new(dec), "openh264"));
@@ -180,7 +180,7 @@ pub fn create_decoder(
 
             #[allow(unreachable_code)]
             Err(H264Error::InitFailed(
-                "No H.264 decoder available (enable `software-decode` or `mf-decode` feature, \
+                "No H.264 decoder available (enable `software-decode`, `software-decode-dynamic`, or `mf-decode` feature, \
                  or use NAL passthrough to decode on the frontend)"
                     .into(),
             ))

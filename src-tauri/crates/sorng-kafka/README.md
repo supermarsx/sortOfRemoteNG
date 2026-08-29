@@ -10,7 +10,7 @@ To verify: `cargo check --workspace --exclude sorng-kafka` passes cleanly; `carg
 
 ## Runtime requirement: librdkafka ≥ 2.x
 
-> **v1.0 default** — `sorng-kafka` ships with the `dynamic-linking` feature as the default (t3-e38). Release artifacts do **not** bundle librdkafka; users install librdkafka ≥ 2.x via their OS package manager. See "Installing librdkafka" below.
+> **v1.0 default** — `sorng-kafka` ships with the `dynamic-linking` feature as the default (t3-e38). Windows release artifacts build a pinned librdkafka with vcpkg and bundle its architecture-matched DLL closure beside the application. Standalone dynamic builds still require a system library; see "Installing librdkafka" below. Linux and macOS release jobs retain the source-built static mode until their package/RPATH contract is migrated separately.
 
 At service-init time (`KafkaService::connect`), `sorng-kafka` runs a fast `dlopen` probe against the platform's candidate sonames (`librdkafka.so.*` / `librdkafka.dylib` / `rdkafka.dll`). If the library cannot be loaded the crate returns a typed `KafkaError` with:
 
@@ -24,13 +24,13 @@ The probe is a no-op under the static `cmake-build` feature (librdkafka is alrea
 
 `sorng-kafka` offers two mutually exclusive ways to link librdkafka. The v1.0 default is **`dynamic-linking`**. Enable exactly one via the top-level `app` crate:
 
-| Top-level flag | Internal `sorng-kafka` feature | What happens | Use when |
-|---|---|---|---|
-| `--features kafka` (v1.0 default) | `dynamic-linking` | `rdkafka-sys` links against a librdkafka already installed on the system. No C build at Rust-build time. Runtime probe surfaces `LibraryMissing` if absent. | Production release flow. You (or your users) install librdkafka via vcpkg, apt, dnf, pacman, brew, winget. |
-| `--features kafka-dynamic` | `dynamic-linking` | Alias of `--features kafka`. Kept for CI compatibility with `--features kafka-dynamic` invocations. | Same as `kafka`. |
-| `--features kafka-static` | `cmake-build` | `rdkafka-sys` invokes CMake to compile librdkafka from source at build time. Produces a statically linked binary. | Developer / CI images that want a self-contained artifact. **Requires**: CMake + a C toolchain. **Fails on Windows/MSYS64** (see "Known issue" below). |
+| Top-level flag                    | Internal `sorng-kafka` feature | What happens                                                                                                                           | Use when                                                                                                                                               |
+| --------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--features kafka` (v1.0 default) | `dynamic-linking`              | `rdkafka-sys` links against an installed librdkafka. No C build at Rust-build time. Runtime probe surfaces `LibraryMissing` if absent. | Standalone builds, or the Windows release flow after its pinned runtime staging step.                                                                  |
+| `--features kafka-dynamic`        | `dynamic-linking`              | Alias of `--features kafka`. Kept for CI compatibility with `--features kafka-dynamic` invocations.                                    | Same as `kafka`.                                                                                                                                       |
+| `--features kafka-static`         | `cmake-build`                  | `rdkafka-sys` invokes CMake to compile librdkafka from source at build time. Produces a statically linked binary.                      | Developer / CI images that want a self-contained artifact. **Requires**: CMake + a C toolchain. **Fails on Windows/MSYS64** (see "Known issue" below). |
 
-These linking modes are mutually exclusive — enabling both results in a duplicate-symbol link error from librdkafka. The top-level `app` crate declares `sorng-kafka` with `default-features = false`, so each feature flag explicitly opts into exactly one linking mode. (The `tokio` and `libz` rdkafka features that the async APIs need stay enabled unconditionally inside this crate's `rdkafka` dep declaration — only the linking mode is user-selectable.)
+These linking modes are mutually exclusive — enabling both results in a duplicate-symbol link error from librdkafka. The top-level `app` crate declares `sorng-kafka` with `default-features = false`, so each feature flag explicitly opts into exactly one linking mode. The async `tokio` feature is common to both modes. The Windows dynamic runtime carries pinned zlib, zstd, LZ4, OpenSSL, and librdkafka DLLs; its overlay build enables gzip, Snappy, LZ4, and zstd codecs plus TLS, SCRAM, and OAuth bearer support.
 
 ### Build invocations
 
@@ -50,16 +50,19 @@ cargo check --workspace --exclude sorng-kafka
 ### Linux
 
 **Debian / Ubuntu:**
+
 ```bash
 sudo apt-get install librdkafka-dev
 ```
 
 **Fedora / RHEL:**
+
 ```bash
 sudo dnf install librdkafka-devel
 ```
 
 **Arch:**
+
 ```bash
 sudo pacman -S librdkafka
 ```
@@ -67,6 +70,7 @@ sudo pacman -S librdkafka
 ### macOS
 
 **Homebrew:**
+
 ```bash
 brew install librdkafka
 ```
@@ -75,9 +79,20 @@ The Homebrew-installed headers land under `/opt/homebrew/include` (Apple Silicon
 
 ### Windows
 
+Repository builds should use the pinned multi-library staging contract instead
+of installing Kafka independently:
+
+```powershell
+npm run native:stage:windows -- --target x86_64-pc-windows-msvc
+```
+
+`npm run tauri:build` invokes that step automatically on Windows. For an
+external consumer of this crate, the manual options are:
+
 Three options, in order of recommendation:
 
 **1. vcpkg (recommended for MSVC toolchain users):**
+
 ```powershell
 git clone https://github.com/microsoft/vcpkg
 .\vcpkg\bootstrap-vcpkg.bat
@@ -87,12 +102,15 @@ git clone https://github.com/microsoft/vcpkg
 ```
 
 **2. winget:**
+
 ```powershell
 winget install librdkafka
 ```
+
 (Availability varies by package source; check `winget search librdkafka` first.)
 
 **3. MSYS2 pacman (for the mingw/cygwin toolchain):**
+
 ```bash
 pacman -S mingw-w64-x86_64-librdkafka
 ```
@@ -118,10 +136,11 @@ cargo build --features kafka          # dynamic-link (default in v1.0)
 ```
 
 **Workaround (if you need the static build):**
+
 - Use the MSVC toolchain (`rustup default stable-x86_64-pc-windows-msvc`) with Visual Studio Build Tools. cmake's native-Windows path handling matches MSVC's, and the static build succeeds.
 - Or build in WSL2 where the cygwin/mingw path translation layer does not apply.
 
-**CI:** the project's CI workflow passes `--exclude sorng-kafka` on Windows jobs and enables `--features kafka` (dynamic-linking) on Linux jobs, so the failure does not block merges. Release artifacts are built with `--features kafka-dynamic`. See `.github/workflows/ci.yml` and `.github/workflows/release.yml`.
+**CI:** ordinary developer/CI paths can keep Kafka disabled or use the self-contained static feature. The rolling release uses `kafka-dynamic` plus the pinned vcpkg runtime on Windows and `kafka-static` on Linux/macOS. See `.github/workflows/release.yml` and `src-tauri/native/README.md`.
 
 ## Source layout
 

@@ -13,6 +13,7 @@ db-mysql = []
 db-postgres = []
 db-redis = []
 db-sqlite = []
+db-sqlite-dynamic = ["db-sqlite"]
 
 [dependencies]
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false }

@@ -74,7 +74,7 @@ pub(super) fn register(
         let state: MssqlServiceState = mssql::service::new_state();
         app.manage(state);
     }
-    #[cfg(feature = "db-sqlite")]
+    #[cfg(any(feature = "db-sqlite", feature = "db-sqlite-dynamic"))]
     {
         let state: SqliteServiceState = sqlite::service::new_state();
         app.manage(state);

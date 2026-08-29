@@ -16,7 +16,8 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
   const currentFrontend = rdp.frontendRenderer ?? "auto";
   const isWebCodecsFrontend =
-    currentFrontend === "webcodecs-worker" || currentFrontend === "webcodecs-cpu";
+    currentFrontend === "webcodecs-worker" ||
+    currentFrontend === "webcodecs-cpu";
   const backendBypassed = nalPassthrough || isWebCodecsFrontend;
 
   return (
@@ -28,9 +29,9 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
       <Card>
         <p className="text-xs text-[var(--color-textMuted)]">
-          Controls which bitmap compression codecs are advertised to the
-          server. When disabled, only raw/RLE bitmaps are used (higher
-          bandwidth, lower CPU).
+          Controls which bitmap compression codecs are advertised to the server.
+          When disabled, only raw/RLE bitmaps are used (higher bandwidth, lower
+          CPU).
         </p>
 
         <Toggle
@@ -44,7 +45,9 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         />
 
         <div
-          className={!codecsOn ? "opacity-50 pointer-events-none space-y-3" : "space-y-3"}
+          className={
+            !codecsOn ? "opacity-50 pointer-events-none space-y-3" : "space-y-3"
+          }
         >
           <Toggle
             settingKey="remoteFxEnabled"
@@ -95,8 +98,9 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
                 className={`pl-7 flex items-center gap-2 ${backendBypassed ? "opacity-50 pointer-events-none" : ""}`}
               >
                 <span className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
-                  H.264 Decoder{backendBypassed ? " (N/A — decoded on frontend)" : ""}:
-                  <InfoTooltip text="Selects the backend H.264 decoder. Media Foundation uses GPU hardware; openh264 is a software fallback." />
+                  H.264 Decoder
+                  {backendBypassed ? " (N/A — decoded on frontend)" : ""}:
+                  <InfoTooltip text="Selects the backend H.264 decoder. Media Foundation uses GPU hardware; OpenH264 is the packaged software fallback." />
                 </span>
                 <Select
                   settingKey="h264Decoder"
@@ -104,16 +108,23 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
                   onChange={(v: string) =>
                     update({
                       h264Decoder: v as
-                        | "auto"
-                        | "media-foundation"
-                        | "openh264",
+                        "auto" | "media-foundation" | "openh264",
                     })
                   }
                   disabled={backendBypassed}
                   options={[
-                    { value: "auto", label: "Auto (MF hardware → openh264 fallback)" },
-                    { value: "media-foundation", label: "Media Foundation (GPU hardware)" },
-                    { value: "openh264", label: "openh264 (software)" },
+                    {
+                      value: "auto",
+                      label: "Auto (MF hardware → OpenH264 fallback)",
+                    },
+                    {
+                      value: "media-foundation",
+                      label: "Media Foundation (GPU hardware)",
+                    },
+                    {
+                      value: "openh264",
+                      label: "OpenH264 (software, required native library)",
+                    },
                   ]}
                   className="selectClass"
                 />

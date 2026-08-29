@@ -89,6 +89,14 @@ target/reports/
 /src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/sorng_opkssh_vendor.dll
 /src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/libsorng_opkssh_vendor.dylib
 /src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/libsorng_opkssh_vendor.so
+# Pinned vcpkg DLLs staged immediately before Windows native builds.
+/src-tauri/resources/native-runtime/*.dll
+/src-tauri/resources/native-runtime/libopenh264.so
+/src-tauri/resources/native-runtime/libopenh264.so.*
+/src-tauri/resources/native-runtime/libopenh264.*.dylib
+/src-tauri/resources/native-runtime-licenses/*.txt
+/src-tauri/tauri.windows-native.conf.json
+/src-tauri/tauri.openh264-native.conf.json
 /target-copilot-rdp-session-state
 
 # Local verification build directories

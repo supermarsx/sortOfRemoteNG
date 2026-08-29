@@ -25,7 +25,7 @@ sorng-passbolt = { path = "../sorng-passbolt" }
 sorng-postgres = { path = "../sorng-postgres", optional = true }
 sorng-probes = { path = "../sorng-probes", default-features = false }
 sorng-protocols = { path = "../sorng-protocols", default-features = false }
-sorng-rdp = { path = "../sorng-rdp", optional = true }
+sorng-rdp = { path = "../sorng-rdp", optional = true, default-features = false }
 sorng-redis = { path = "../sorng-redis", optional = true }
 sorng-remote-mgmt = { path = "../sorng-remote-mgmt" }
 sorng-rustdesk = { path = "../sorng-rustdesk" }
@@ -33,7 +33,7 @@ sorng-scp = { path = "../sorng-scp" }
 sorng-serial = { path = "../sorng-serial" }
 sorng-sftp = { path = "../sorng-sftp" }
 sorng-smb = { path = "../sorng-smb" }
-sorng-sqlite = { path = "../sorng-sqlite", optional = true }
+sorng-sqlite = { path = "../sorng-sqlite", optional = true, default-features = false }
 sorng-ssh = { path = "../sorng-ssh", default-features = false }
 sorng-storage = { path = "../sorng-storage" }
 sorng-telnet = { path = "../sorng-telnet" }
@@ -52,16 +52,18 @@ sorng-x2go = { path = "../sorng-x2go" }
 sorng-xdmcp = { path = "../sorng-xdmcp" }
 
 [features]
-default = ["rdp"]
+default = ["rdp", "rdp-software-decode", "rdp-mf-decode", "rdp-snapshot"]
 cert-auth = ["sorng-auth/cert-auth"]
 db-mongo = ["dep:sorng-mongodb"]
 db-mssql = ["dep:sorng-mssql"]
 db-mysql = ["dep:sorng-mysql"]
 db-postgres = ["dep:sorng-postgres"]
 db-redis = ["dep:sorng-redis"]
-db-sqlite = ["dep:sorng-sqlite"]
+db-sqlite = ["dep:sorng-sqlite", "sorng-sqlite/bundled"]
+db-sqlite-dynamic = ["dep:sorng-sqlite", "sorng-sqlite/unbundled"]
 rdp = ["dep:sorng-rdp"]
 rdp-software-decode = ["rdp", "sorng-rdp/software-decode"]
+rdp-software-decode-dynamic = ["rdp", "sorng-rdp/software-decode-dynamic"]
 rdp-mf-decode = ["rdp", "sorng-rdp/mf-decode"]
 rdp-snapshot = ["rdp", "sorng-rdp/snapshot"]
 script-engine = ["sorng-ssh/script-engine"]

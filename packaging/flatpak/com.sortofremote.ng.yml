@@ -19,6 +19,7 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 sortOfRemoteNG /app/bin/sortOfRemoteNG
+      - install -Dm755 lib/libopenh264.so.8 /app/lib/sortOfRemoteNG/libopenh264.so.8
       - cp -a resources /app/bin/resources
       - install -Dm644 com.sortofremote.ng.desktop /app/share/applications/com.sortofremote.ng.desktop
       - install -Dm644 com.sortofremote.ng.metainfo.xml /app/share/metainfo/com.sortofremote.ng.metainfo.xml

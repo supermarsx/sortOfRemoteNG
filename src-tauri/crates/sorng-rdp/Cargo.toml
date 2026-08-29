@@ -12,9 +12,11 @@ description = "RDP connectivity, graphics pipeline, and H.264 decoding"
 # ═══════════════════════════════════════════════════════════════════════
 [features]
 default = ["software-decode", "mf-decode", "snapshot"]
-# Software H.264 decode via Cisco openh264 (downloads ~1.5 MB prebuilt library).
-# Activates the openh264 dependency inside the vendor wrapper.
+# Software H.264 decode compiled from source for local development.
 software-decode = ["sorng-rdp-vendor/software-decode"]
+# Release-only decoder backed by a required, hard-imported OpenH264 2.6 shared
+# library. This is mutually exclusive with `software-decode`.
+software-decode-dynamic = ["sorng-rdp-vendor/software-decode-dynamic"]
 # Windows Media Foundation hardware-accelerated H.264 decode (DXVA2).
 # Activates the heavy Win32 COM / Direct3D / MF feature flags on the
 # `windows` crate — only meaningful on Windows targets.

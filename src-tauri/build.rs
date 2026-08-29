@@ -80,5 +80,21 @@ fn main() {
         );
     }
 
+    // The dynamic OpenH264 release profile packages the required ABI-8 module
+    // in the platform's conventional private-library directory. Keep these
+    // lookup paths scoped to that feature so static development builds retain
+    // their existing loader contract.
+    if std::env::var_os("CARGO_FEATURE_RDP_SOFTWARE_DECODE_DYNAMIC").is_some() {
+        match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
+            Ok("linux") => {
+                println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/sortOfRemoteNG");
+            }
+            Ok("macos") => {
+                println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+            }
+            _ => {}
+        }
+    }
+
     tauri_build::build()
 }

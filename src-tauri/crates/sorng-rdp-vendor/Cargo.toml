@@ -15,7 +15,8 @@ crate-type = ["rlib"]
 
 [features]
 default = ["software-decode"]
-software-decode = ["dep:openh264"]
+software-decode = ["dep:openh264", "openh264/source"]
+software-decode-dynamic = ["dep:openh264", "openh264/libloading"]
 
 [dependencies]
 ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input", "core", "displaycontrol"] }
@@ -26,4 +27,4 @@ ironrdp-core = "0.1"
 ironrdp-cliprdr = "0.5"
 ironrdp-cliprdr-native = "0.5"
 log = "0.4"
-openh264 = { version = "0.8", optional = true }
+openh264 = { version = "0.8", optional = true, default-features = false }

@@ -16,7 +16,7 @@ pub(crate) use sorng_rdp_vendor::ironrdp_dvc;
 #[allow(unused_imports)]
 pub(crate) use sorng_rdp_vendor::ironrdp_svc;
 
-#[cfg(feature = "software-decode")]
+#[cfg(any(feature = "software-decode", feature = "software-decode-dynamic"))]
 pub(crate) use sorng_rdp_vendor::openh264;
 
 pub mod gfx;

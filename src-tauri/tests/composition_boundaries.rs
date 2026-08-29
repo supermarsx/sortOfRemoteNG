@@ -86,7 +86,7 @@ fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
         cfg!(feature = "db-mysql"),
         cfg!(feature = "db-postgres"),
         cfg!(feature = "db-mssql"),
-        cfg!(feature = "db-sqlite"),
+        cfg!(any(feature = "db-sqlite", feature = "db-sqlite-dynamic")),
         cfg!(feature = "db-mongo"),
         cfg!(feature = "db-redis"),
     ]

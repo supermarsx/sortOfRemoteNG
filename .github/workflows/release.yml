@@ -77,8 +77,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_FEATURES: >-
-    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+  RELEASE_FEATURES_BUNDLED: >-
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+  RELEASE_FEATURES_WINDOWS: >-
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,kafka-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
   FLATPAK_APP_ID: com.sortofremote.ng
   FLATPAK_BUILDER_PACKAGE: 1.4.2-1build2
   FLATPAK_BUILDER_VERSION: 1.4.2
@@ -519,6 +521,20 @@ jobs:
           workspaces: src-tauri -> target
           key: release-${{ matrix.rust_target }}
 
+      - name: Cache pinned Windows native runtime
+        if: matrix.platform == 'windows'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/vcpkg-installed/${{ matrix.rust_target }}
+          key: windows-native-${{ matrix.rust_target }}-${{ hashFiles('src-tauri/native/vcpkg.json', 'src-tauri/native/ports/**/*', 'src-tauri/native/triplets/*', 'scripts/stage-windows-native-runtime.mjs', 'scripts/probe-rdkafka-runtime.ps1') }}
+
+      - name: Cache pinned Unix OpenH264 runtime
+        if: matrix.platform != 'windows'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/vcpkg-installed/${{ matrix.rust_target }}
+          key: openh264-${{ matrix.rust_target }}-${{ hashFiles('src-tauri/native/vcpkg.json', 'src-tauri/native/triplets/*', 'scripts/stage-openh264-runtime.mjs') }}
+
       - name: Install native Linux build prerequisites
         if: matrix.platform == 'linux'
         run: >-
@@ -529,12 +545,34 @@ jobs:
           libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev patchelf
           rpm
 
-      - name: Install macOS static Kafka prerequisites
+      - name: Install macOS native build prerequisites
         if: matrix.platform == 'macos'
         run: brew install cmake pkg-config openssl@3
 
       - name: Install JavaScript dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Stage Windows dynamic native runtime
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          node scripts/stage-windows-native-runtime.mjs `
+            --target $env:RUST_TARGET `
+            --github-env $env:GITHUB_ENV
+
+      - name: Stage Unix OpenH264 runtime
+        if: matrix.platform != 'windows'
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          node scripts/stage-openh264-runtime.mjs \
+            --target "$RUST_TARGET" \
+            --github-env "$GITHUB_ENV"
 
       - name: Check macOS Developer ID signing inputs
         id: macos_signing
@@ -632,10 +670,46 @@ jobs:
             "thumbprint=$thumbprint" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
 
+      - name: Sign Windows native runtime DLLs
+        if: matrix.platform == 'windows' && steps.windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERT_THUMBPRINT: ${{ steps.windows_signing.outputs.thumbprint }}
+          WINDOWS_SDK_ARCH: ${{ matrix.windows_sdk_arch }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $windowsKits = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+          $signtool = (
+            Get-ChildItem "$windowsKits\*\$env:WINDOWS_SDK_ARCH\signtool.exe" |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+          ).FullName
+          if (-not $signtool) { throw "signtool.exe was not found." }
+          $runtimeDlls = @(Get-ChildItem "src-tauri/resources/native-runtime/*.dll" -File)
+          if ($runtimeDlls.Count -ne 9) {
+            throw "Expected exactly nine staged native runtime DLLs before signing."
+          }
+          foreach ($file in $runtimeDlls) {
+            & $signtool sign `
+              /sha1 $env:WINDOWS_CERT_THUMBPRINT `
+              /fd SHA256 `
+              /td SHA256 `
+              /tr http://timestamp.digicert.com `
+              $file.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool failed to sign $($file.FullName)."
+            }
+            & $signtool verify /pa /tw $file.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool failed to verify $($file.FullName)."
+            }
+          }
+
       - name: Configure updater and OS signing
         shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
           UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
           WINDOWS_CERT_THUMBPRINT: ${{ steps.windows_signing.outputs.thumbprint || '' }}
         run: |
@@ -644,8 +718,24 @@ jobs:
           const path = require("node:path");
           const bundle = {
             createUpdaterArtifacts: process.env.UPDATER_ENABLED === "true",
+            resources: {
+              "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
+              "../src/i18n/locales/": "locales/",
+              "resources/native-runtime-licenses/": "native-runtime-licenses/",
+            },
           };
           const releaseConfig = { bundle };
+          const requireStagedFile = (source, description) => {
+            const absoluteSource = path.resolve("src-tauri", source);
+            if (!fs.statSync(absoluteSource).isFile()) {
+              throw new Error(`${description} is missing: ${absoluteSource}`);
+            }
+            return absoluteSource;
+          };
+          requireStagedFile(
+            "resources/native-runtime-licenses/openh264.txt",
+            "OpenH264 license notice",
+          );
           if (process.env.PLATFORM === "linux") {
             // Tauri renames the Linux executable to mainBinaryName and uses
             // that same value as its generated desktop icon key.
@@ -678,22 +768,59 @@ jobs:
             );
             console.log(`Configured Linux main binary name: ${mainBinaryName}`);
             releaseConfig.mainBinaryName = mainBinaryName;
+            const openh264Source = "resources/native-runtime/libopenh264.so.8";
+            requireStagedFile(openh264Source, "Linux OpenH264 runtime");
+            bundle.resources[openh264Source] = "libopenh264.so.8";
             bundle.linux = {
               rpm: {
                 desktopTemplate,
               },
             };
           }
-          if (
-            process.env.PLATFORM === "windows" &&
-            process.env.WINDOWS_CERT_THUMBPRINT
-          ) {
-            bundle.windows = {
-              certificateThumbprint: process.env.WINDOWS_CERT_THUMBPRINT,
-              digestAlgorithm: "sha256",
-              timestampUrl: "http://timestamp.digicert.com",
-              tsp: true,
+          if (process.env.PLATFORM === "macos") {
+            const openh264Framework =
+              "resources/native-runtime/libopenh264.8.dylib";
+            requireStagedFile(openh264Framework, "macOS OpenH264 runtime");
+            bundle.macOS = {
+              frameworks: [openh264Framework],
             };
+          }
+          if (process.env.PLATFORM === "windows") {
+            const opensslArchitecture = {
+              "windows-x86_64": "x64",
+              "windows-aarch64": "arm64",
+            }[process.env.ARTIFACT_ID];
+            if (!opensslArchitecture) {
+              throw new Error(
+                `Unsupported Windows artifact ${process.env.ARTIFACT_ID}.`,
+              );
+            }
+            const nativeRuntimeDlls = [
+              `libcrypto-3-${opensslArchitecture}.dll`,
+              "libssh2.dll",
+              `libssl-3-${opensslArchitecture}.dll`,
+              "lz4.dll",
+              "openh264-8.dll",
+              "rdkafka.dll",
+              "sqlite3.dll",
+              "z.dll",
+              "zstd.dll",
+            ];
+            for (const filename of nativeRuntimeDlls) {
+              const source = `resources/native-runtime/${filename}`;
+              requireStagedFile(source, "Windows native runtime DLL");
+              // A filename-only resource target places each hard-imported DLL
+              // beside the executable in MSI and NSIS payloads.
+              bundle.resources[source] = filename;
+            }
+            if (process.env.WINDOWS_CERT_THUMBPRINT) {
+              bundle.windows = {
+                certificateThumbprint: process.env.WINDOWS_CERT_THUMBPRINT,
+                digestAlgorithm: "sha256",
+                timestampUrl: "http://timestamp.digicert.com",
+                tsp: true,
+              };
+            }
           }
           fs.writeFileSync(
             "src-tauri/tauri.release.conf.json",
@@ -865,7 +992,7 @@ jobs:
             Write-Host "pagefile_peak_usage_bytes=$([uint64]$pageFile.PeakUsage * 1MB)"
           }
 
-      - name: Build native bundles with static Kafka
+      - name: Build native bundles
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           # Next's TypeScript worker can exceed Node's default heap on the
@@ -881,8 +1008,241 @@ jobs:
             --target ${{ matrix.rust_target }}
             --bundles ${{ matrix.bundles }}
             --config src-tauri/tauri.release.conf.json
-            --features ${{ env.RELEASE_FEATURES }}
+            --features ${{ matrix.platform == 'windows' && env.RELEASE_FEATURES_WINDOWS || env.RELEASE_FEATURES_BUNDLED }}
             -- --no-default-features
+
+      - name: Verify Windows dynamic native imports
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          WINDOWS_SDK_ARCH: ${{ matrix.windows_sdk_arch }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function Get-PeMachine {
+            param([Parameter(Mandatory = $true)][string]$Path)
+            $stream = [System.IO.File]::OpenRead($Path)
+            $reader = [System.IO.BinaryReader]::new($stream)
+            try {
+              if ($reader.ReadUInt16() -ne 0x5A4D) { throw "$Path is not a PE file." }
+              $stream.Position = 0x3C
+              $peOffset = $reader.ReadUInt32()
+              if ($peOffset -gt ($stream.Length - 6)) { throw "$Path has an invalid PE offset." }
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) { throw "$Path has no PE signature." }
+              return $reader.ReadUInt16()
+            } finally {
+              $reader.Dispose()
+              $stream.Dispose()
+            }
+          }
+
+          $expectedMachine = switch ($env:ARTIFACT_ID) {
+            "windows-x86_64" { 0x8664 }
+            "windows-aarch64" { 0xAA64 }
+            default { throw "Unsupported Windows artifact $env:ARTIFACT_ID." }
+          }
+          $opensslArchitecture = switch ($env:ARTIFACT_ID) {
+            "windows-x86_64" { "x64" }
+            "windows-aarch64" { "arm64" }
+            default { throw "Unsupported Windows artifact $env:ARTIFACT_ID." }
+          }
+          $expectedDllNames = @(
+            "libcrypto-3-$opensslArchitecture.dll",
+            "libssh2.dll",
+            "libssl-3-$opensslArchitecture.dll",
+            "lz4.dll",
+            "openh264-8.dll",
+            "rdkafka.dll",
+            "sqlite3.dll",
+            "z.dll",
+            "zstd.dll"
+          )
+          $stageRoot = "src-tauri/resources/native-runtime"
+          $stagedDlls = @(Get-ChildItem -LiteralPath $stageRoot -File -Filter *.dll)
+          $actualDllNames = @($stagedDlls.Name | Sort-Object)
+          $dllDifference = @(Compare-Object ($expectedDllNames | Sort-Object) $actualDllNames)
+          if ($dllDifference.Count -ne 0) {
+            $dllDifference | Format-Table | Out-String | Write-Host
+            throw "The staged Windows native runtime does not match the exact DLL contract."
+          }
+          foreach ($dll in $stagedDlls) {
+            $machine = Get-PeMachine -Path $dll.FullName
+            if ($machine -ne $expectedMachine) {
+              throw (
+                "{0} has PE Machine 0x{1:X4}; expected 0x{2:X4}." -f
+                  $dll.Name,
+                  $machine,
+                  $expectedMachine
+              )
+            }
+            $handle = [System.Runtime.InteropServices.NativeLibrary]::Load(
+              $dll.FullName
+            )
+            try {
+              if ($handle -eq [IntPtr]::Zero) {
+                throw "NativeLibrary.Load returned a null handle for $($dll.Name)."
+              }
+            } finally {
+              if ($handle -ne [IntPtr]::Zero) {
+                [System.Runtime.InteropServices.NativeLibrary]::Free($handle)
+              }
+            }
+          }
+
+          $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/app.exe"
+          if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
+            throw "Windows release executable was not found at $sourceExecutable."
+          }
+          if ((Get-PeMachine -Path $sourceExecutable) -ne $expectedMachine) {
+            throw "Windows release executable has the wrong PE machine."
+          }
+
+          $dumpbin = (Get-Command dumpbin.exe -ErrorAction SilentlyContinue).Source
+          if (-not $dumpbin) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+            if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+              throw "Neither dumpbin.exe nor vswhere.exe was found."
+            }
+            $visualStudioRoot = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+            if (-not $visualStudioRoot) { throw "Visual Studio C++ tools were not found." }
+            $dumpbin = (
+              Get-ChildItem (Join-Path $visualStudioRoot "VC\Tools\MSVC") -Recurse -File -Filter dumpbin.exe |
+                Where-Object { $_.FullName -match "\\bin\\Host[^\\]+\\$([regex]::Escape($env:WINDOWS_SDK_ARCH))\\dumpbin\.exe$" } |
+                Sort-Object FullName -Descending |
+                Select-Object -First 1
+            ).FullName
+          }
+          if (-not $dumpbin) { throw "dumpbin.exe was not found for $env:WINDOWS_SDK_ARCH." }
+          $imports = @(& $dumpbin /DEPENDENTS $sourceExecutable 2>&1)
+          if ($LASTEXITCODE -ne 0) {
+            $imports | ForEach-Object { Write-Host $_ }
+            throw "dumpbin failed to inspect app.exe imports."
+          }
+          $importText = $imports -join "`n"
+          foreach ($requiredImport in @("libssh2.dll", "openh264-8.dll", "rdkafka.dll", "sqlite3.dll")) {
+            if ($importText -notmatch "(?im)^\s*$([regex]::Escape($requiredImport))\s*$") {
+              throw "app.exe does not import required dynamic library $requiredImport."
+            }
+          }
+
+          $targetRoot = Split-Path -Parent $sourceExecutable
+          foreach ($dll in $stagedDlls) {
+            $destination = Join-Path $targetRoot $dll.Name
+            Copy-Item -LiteralPath $dll.FullName -Destination $destination -Force
+            if ((Get-FileHash $dll.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $destination -Algorithm SHA256).Hash) {
+              throw "$($dll.Name) changed while it was copied beside app.exe."
+            }
+          }
+          $executableBytes = (Get-Item -LiteralPath $sourceExecutable).Length
+          $nativeRuntimeBytes = ($stagedDlls | Measure-Object Length -Sum).Sum
+          @(
+            "### Windows native size boundary",
+            "",
+            "- Executable bytes: $executableBytes",
+            "- Dynamic native runtime bytes: $nativeRuntimeBytes",
+            ""
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Verify macOS dynamic OpenH264 bundle
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
+          MACOS_SIGNED: ${{ steps.macos_signing.outputs.enabled || 'false' }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
+        run: |
+          set -euo pipefail
+          case "$ARTIFACT_ID" in
+            darwin-aarch64) expected_arch=arm64 ;;
+            darwin-x86_64) expected_arch=x86_64 ;;
+            *)
+              echo "::error::Unsupported macOS artifact ID $ARTIFACT_ID."
+              exit 1
+              ;;
+          esac
+
+          source_dylib="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime/libopenh264.8.dylib"
+          source_notice="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime-licenses/openh264.txt"
+          app_dir="src-tauri/target/$RUST_TARGET/release/bundle/macos"
+          app_count=$(find "$app_dir" -maxdepth 1 -type d -name '*.app' | wc -l | tr -d '[:space:]')
+          test "$app_count" -eq 1
+          app=$(find "$app_dir" -maxdepth 1 -type d -name '*.app' -print -quit)
+          executable="$app/Contents/MacOS/sortOfRemoteNG"
+          framework="$app/Contents/Frameworks/libopenh264.8.dylib"
+          bundled_notice="$app/Contents/Resources/native-runtime-licenses/openh264.txt"
+
+          test -f "$source_dylib"
+          test ! -L "$source_dylib"
+          test -s "$source_notice"
+          test -x "$executable"
+          test -f "$framework"
+          test ! -L "$framework"
+          test -s "$bundled_notice"
+          test "$(find "$app/Contents/Frameworks" -maxdepth 1 -type f -name 'libopenh264.8.dylib' | wc -l | tr -d '[:space:]')" -eq 1
+          test "$(lipo -archs "$source_dylib")" = "$expected_arch"
+          test "$(lipo -archs "$framework")" = "$expected_arch"
+          cmp "$source_notice" "$bundled_notice"
+
+          executable_libraries=$(otool -L "$executable")
+          printf '%s\n' "$executable_libraries"
+          test "$(printf '%s\n' "$executable_libraries" | tail -n +2 | awk '{ print $1 }' | grep -Fxc '@rpath/libopenh264.8.dylib' || true)" -eq 1
+          framework_id=$(otool -D "$framework" | tail -n +2)
+          test "$framework_id" = '@rpath/libopenh264.8.dylib'
+          framework_libraries=$(otool -L "$framework")
+          printf '%s\n' "$framework_libraries"
+          if printf '%s\n%s\n' "$executable_libraries" "$framework_libraries" |
+            grep -E '(vcpkg-installed|GITHUB_WORKSPACE|/Users/runner/work|/opt/homebrew|/usr/local/Cellar)' > /dev/null; then
+            echo "::error::macOS OpenH264 linkage contains a build-machine library path."
+            exit 1
+          fi
+          executable_rpaths=$(otool -l "$executable" | awk '
+            $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
+            in_rpath && $1 == "path" { print $2; in_rpath = 0 }
+          ')
+          test "$(printf '%s\n' "$executable_rpaths" | grep -Fxc '@executable_path/../Frameworks' || true)" -eq 1
+
+          source_hash=$(shasum -a 256 "$source_dylib" | awk '{ print $1 }')
+          framework_hash=$(shasum -a 256 "$framework" | awk '{ print $1 }')
+          [[ "$source_hash" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$framework_hash" =~ ^[0-9a-f]{64}$ ]]
+          if [ "$MACOS_SIGNED" = true ]; then
+            codesign --verify --strict --verbose=2 "$framework"
+            codesign --verify --deep --strict --verbose=2 "$app"
+          else
+            test "$framework_hash" = "$source_hash"
+          fi
+
+          if [ "$UPDATER_ENABLED" = true ]; then
+            updater_count=$(find "$app_dir" -maxdepth 1 -type f -name '*.app.tar.gz' | wc -l | tr -d '[:space:]')
+            test "$updater_count" -eq 1
+            updater=$(find "$app_dir" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)
+            updater_root="$RUNNER_TEMP/${ARTIFACT_ID}-updater-app"
+            if [ -e "$updater_root" ] || [ -L "$updater_root" ]; then
+              echo "::error::Refusing to replace unexpected updater extraction path $updater_root."
+              exit 1
+            fi
+            mkdir -p "$updater_root"
+            tar -xzf "$updater" -C "$updater_root"
+            updater_app_count=$(find "$updater_root" -maxdepth 2 -type d -name '*.app' | wc -l | tr -d '[:space:]')
+            test "$updater_app_count" -eq 1
+            updater_app=$(find "$updater_root" -maxdepth 2 -type d -name '*.app' -print -quit)
+            updater_framework="$updater_app/Contents/Frameworks/libopenh264.8.dylib"
+            updater_notice="$updater_app/Contents/Resources/native-runtime-licenses/openh264.txt"
+            test -f "$updater_framework"
+            test ! -L "$updater_framework"
+            test "$(lipo -archs "$updater_framework")" = "$expected_arch"
+            test "$(otool -D "$updater_framework" | tail -n +2)" = '@rpath/libopenh264.8.dylib'
+            test "$(shasum -a 256 "$updater_framework" | awk '{ print $1 }')" = "$framework_hash"
+            cmp "$source_notice" "$updater_notice"
+            if [ "$MACOS_SIGNED" = true ]; then
+              codesign --verify --strict --verbose=2 "$updater_framework"
+              codesign --verify --deep --strict --verbose=2 "$updater_app"
+            fi
+          fi
 
       - name: Preserve native Linux outputs and prune build intermediates
         if: matrix.platform == 'linux'
@@ -914,9 +1274,38 @@ jobs:
           bundle="$release_root/bundle"
           payload="$GITHUB_WORKSPACE/.ci/flatpak-payload"
           preserved_bundles="$GITHUB_WORKSPACE/.ci/linux-native-bundles"
+          openh264_source="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime/libopenh264.so.8"
+          native_license_source="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime-licenses"
+          openh264_notice_source="$native_license_source/openh264.txt"
 
           test -x "$executable"
           readelf -h "$executable" | grep -F "Machine:" | grep -F "$expected_elf_machine"
+          test -f "$openh264_source"
+          test ! -L "$openh264_source"
+          test -s "$openh264_notice_source"
+          test "$(find "$native_license_source" -maxdepth 1 -type f -name '*.txt' | wc -l | tr -d '[:space:]')" -eq 1
+          readelf -h "$openh264_source" | grep -F "Machine:" | grep -F "$expected_elf_machine"
+
+          executable_dynamic=$(readelf -d "$executable")
+          printf '%s\n' "$executable_dynamic"
+          openh264_needed_count=$(printf '%s\n' "$executable_dynamic" |
+            grep -F '(NEEDED)' |
+            grep -Fc 'Shared library: [libopenh264.so.8]' || true)
+          if [ "$openh264_needed_count" -ne 1 ]; then
+            echo "::error::Linux release executable must have exactly one DT_NEEDED entry for libopenh264.so.8."
+            exit 1
+          fi
+          expected_runpath='$ORIGIN/../lib/sortOfRemoteNG'
+          actual_runpath=$(printf '%s\n' "$executable_dynamic" |
+            sed -n 's/.*(RUNPATH).*Library runpath: \[\([^]]*\)\].*/\1/p')
+          if [ "$actual_runpath" != "$expected_runpath" ]; then
+            echo "::error::Linux release RUNPATH is '$actual_runpath'; expected '$expected_runpath'."
+            exit 1
+          fi
+          if printf '%s\n' "$executable_dynamic" | grep -E '(vcpkg-installed|GITHUB_WORKSPACE|/home/runner/work)' > /dev/null; then
+            echo "::error::Linux release executable contains a build-machine native-library path."
+            exit 1
+          fi
           for staged_path in "$payload" "$preserved_bundles"; do
             if [ -e "$staged_path" ] || [ -L "$staged_path" ]; then
               echo "::error::Refusing to replace unexpected Linux staging path $staged_path."
@@ -937,10 +1326,12 @@ jobs:
           test "$opkssh_file_count" -gt 0
           test "$locale_file_count" -gt 0
           test "$locale_file_count" -eq "$locale_total_file_count"
-          mkdir -p "$payload/resources" "$preserved_bundles"
+          mkdir -p "$payload/resources" "$payload/lib" "$preserved_bundles"
           install -m 0755 "$executable" "$payload/sortOfRemoteNG"
+          install -m 0755 "$openh264_source" "$payload/lib/libopenh264.so.8"
           cp -a "$opkssh_source" "$payload/resources/opkssh"
           cp -a "$locale_source" "$payload/resources/locales"
+          cp -a "$native_license_source" "$payload/resources/native-runtime-licenses"
 
           preserve_one() {
             local directory="$1" pattern="$2"
@@ -1003,8 +1394,13 @@ jobs:
           done
 
           test -x "$payload/sortOfRemoteNG"
+          test -f "$payload/lib/libopenh264.so.8"
+          test ! -L "$payload/lib/libopenh264.so.8"
+          cmp "$openh264_source" "$payload/lib/libopenh264.so.8"
           test -d "$payload/resources/opkssh"
           test -d "$payload/resources/locales"
+          test -s "$payload/resources/native-runtime-licenses/openh264.txt"
+          cmp "$openh264_notice_source" "$payload/resources/native-runtime-licenses/openh264.txt"
           test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -eq "$opkssh_file_count"
           test "$(find "$payload/resources/locales" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')" -eq "$locale_file_count"
           diff -u \
@@ -1110,10 +1506,26 @@ jobs:
           set -euo pipefail
           payload="$GITHUB_WORKSPACE/.ci/flatpak-payload"
           locale_source="$GITHUB_WORKSPACE/src/i18n/locales"
+          openh264_source="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime/libopenh264.so.8"
+          openh264_notice_source="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime-licenses/openh264.txt"
+          case "$ARTIFACT_ID" in
+            linux-x86_64) expected_elf_machine="Advanced Micro Devices X86-64" ;;
+            linux-aarch64) expected_elf_machine=AArch64 ;;
+            *)
+              echo "::error::Unsupported Linux artifact ID $ARTIFACT_ID."
+              exit 1
+              ;;
+          esac
           test -x "$payload/sortOfRemoteNG"
+          test -f "$payload/lib/libopenh264.so.8"
+          test ! -L "$payload/lib/libopenh264.so.8"
+          cmp "$openh264_source" "$payload/lib/libopenh264.so.8"
+          readelf -h "$payload/lib/libopenh264.so.8" | grep -F "Machine:" | grep -F "$expected_elf_machine"
           test -d "$payload/resources/opkssh"
           test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -gt 0
           test -d "$payload/resources/locales"
+          test -s "$payload/resources/native-runtime-licenses/openh264.txt"
+          cmp "$openh264_notice_source" "$payload/resources/native-runtime-licenses/openh264.txt"
           locale_file_count=$(find "$locale_source" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')
           [[ "$locale_file_count" =~ ^[0-9]+$ ]]
           test "$locale_file_count" -gt 0
@@ -1196,16 +1608,35 @@ jobs:
               test -s /app/share/applications/com.sortofremote.ng.desktop
               grep -Fx "Icon=com.sortofremote.ng" /app/share/applications/com.sortofremote.ng.desktop
               test -s /app/share/metainfo/com.sortofremote.ng.metainfo.xml
+              test -f /app/lib/sortOfRemoteNG/libopenh264.so.8
+              test ! -L /app/lib/sortOfRemoteNG/libopenh264.so.8
               test -d /app/bin/resources/opkssh
               resource_count=$(find /app/bin/resources/opkssh -type f ! -name .gitkeep | wc -l)
               test "$resource_count" -gt 0
               test -d /app/bin/resources/locales
+              test -s /app/bin/resources/native-runtime-licenses/openh264.txt
               locale_count=$(find /app/bin/resources/locales -maxdepth 1 -type f -name "*.json" | wc -l)
               test "$locale_count" -gt 0
               ldd_output=$(ldd /app/bin/sortOfRemoteNG)
               printf "%s\n" "$ldd_output"
               ! printf "%s\n" "$ldd_output" | grep -F "not found"
+              test "$(printf "%s\n" "$ldd_output" | awk "\$1 == \"libopenh264.so.8\" && \$2 == \"=>\" { count += 1 } END { print count + 0 }")" -eq 1
+              openh264_ldd_path=$(printf "%s\n" "$ldd_output" | awk "\$1 == \"libopenh264.so.8\" && \$2 == \"=>\" { print \$3 }")
+              test "$(readlink -f "$openh264_ldd_path")" = /app/lib/sortOfRemoteNG/libopenh264.so.8
             '
+
+          installed_location=$(flatpak info --user --show-location "$FLATPAK_APP_ID")
+          test -d "$installed_location/files"
+          installed_openh264="$installed_location/files/lib/sortOfRemoteNG/libopenh264.so.8"
+          installed_openh264_notice="$installed_location/files/bin/resources/native-runtime-licenses/openh264.txt"
+          test -f "$installed_openh264"
+          test ! -L "$installed_openh264"
+          test "$(find "$installed_location/files/lib/sortOfRemoteNG" -maxdepth 1 -type f -name 'libopenh264.so.8' | wc -l | tr -d '[:space:]')" -eq 1
+          expected_openh264_hash=$(sha256sum "$openh264_source" | awk '{ print $1 }')
+          actual_openh264_hash=$(sha256sum "$installed_openh264" | awk '{ print $1 }')
+          test "$actual_openh264_hash" = "$expected_openh264_hash"
+          readelf -h "$installed_openh264" | grep -F "Machine:" | grep -F "$expected_elf_machine"
+          cmp "$openh264_notice_source" "$installed_openh264_notice"
 
           expected_flatpak_icon_digests="$RUNNER_TEMP/${ARTIFACT_ID}-flatpak-icons.expected"
           actual_flatpak_icon_digests="$RUNNER_TEMP/${ARTIFACT_ID}-flatpak-icons.actual"
@@ -1291,6 +1722,9 @@ jobs:
           if ($files.Count -eq 0) { throw "No Windows installers were produced." }
           $portableExecutable = Get-Item -LiteralPath "src-tauri/target/$env:RUST_TARGET/release/app.exe"
           $files += $portableExecutable
+          $runtimeDlls = @(Get-ChildItem "src-tauri/resources/native-runtime/*.dll" -File)
+          if ($runtimeDlls.Count -ne 9) { throw "Expected nine signed native runtime DLLs." }
+          $files += $runtimeDlls
           foreach ($file in $files) {
             & $signtool verify /pa /tw $file.FullName
             if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for $($file.FullName)" }
@@ -1359,6 +1793,11 @@ jobs:
             "windows-aarch64" { 0xAA64 }
             default { throw "Unsupported portable Windows artifact $env:ARTIFACT_ID." }
           }
+          $opensslArchitecture = switch ($env:ARTIFACT_ID) {
+            "windows-x86_64" { "x64" }
+            "windows-aarch64" { "arm64" }
+            default { throw "Unsupported portable Windows artifact $env:ARTIFACT_ID." }
+          }
           $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/app.exe"
           if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
             throw "Portable source executable was not found at $sourceExecutable."
@@ -1372,6 +1811,68 @@ jobs:
                 $expectedMachine
             )
           }
+
+          $expectedNativeDllNames = @(
+            "libcrypto-3-$opensslArchitecture.dll",
+            "libssh2.dll",
+            "libssl-3-$opensslArchitecture.dll",
+            "lz4.dll",
+            "openh264-8.dll",
+            "rdkafka.dll",
+            "sqlite3.dll",
+            "z.dll",
+            "zstd.dll"
+          )
+          $nativeRuntimeSource = "src-tauri/resources/native-runtime"
+          $nativeRuntimeFiles = @(Get-ChildItem -LiteralPath $nativeRuntimeSource -File -Filter *.dll)
+          $nativeDllDifference = @(
+            Compare-Object `
+              -ReferenceObject ($expectedNativeDllNames | Sort-Object) `
+              -DifferenceObject ($nativeRuntimeFiles.Name | Sort-Object)
+          )
+          if ($nativeDllDifference.Count -ne 0) {
+            $nativeDllDifference | Format-Table | Out-String | Write-Host
+            throw "Portable native DLL sources do not match the exact runtime contract."
+          }
+          $expectedNativeRuntimeHashes = @{}
+          foreach ($nativeDll in $nativeRuntimeFiles) {
+            $nativeMachine = Get-PeMachine -Path $nativeDll.FullName
+            if ($nativeMachine -ne $expectedMachine) {
+              throw (
+                "Portable DLL {0} has PE Machine 0x{1:X4}; expected 0x{2:X4}." -f
+                  $nativeDll.Name,
+                  $nativeMachine,
+                  $expectedMachine
+              )
+            }
+            $expectedNativeRuntimeHashes[$nativeDll.Name] = (
+              Get-FileHash -LiteralPath $nativeDll.FullName -Algorithm SHA256
+            ).Hash
+          }
+
+          $nativeLicenseSource = "src-tauri/resources/native-runtime-licenses"
+          $expectedNativeLicenseNames = @(
+            "librdkafka.txt",
+            "libssh2.txt",
+            "lz4.txt",
+            "openh264.txt",
+            "openssl.txt",
+            "sqlite3.txt",
+            "zlib.txt",
+            "zstd.txt"
+          )
+          $nativeLicenseFiles = @(
+            Get-ChildItem -LiteralPath $nativeLicenseSource -File -Filter *.txt
+          )
+          $nativeLicenseDifference = @(
+            Compare-Object `
+              -ReferenceObject ($expectedNativeLicenseNames | Sort-Object) `
+              -DifferenceObject ($nativeLicenseFiles.Name | Sort-Object)
+          )
+          if ($nativeLicenseDifference.Count -ne 0) {
+            throw "Portable native license sources do not match the exact notice contract."
+          }
+          $expectedNativeLicenseHashes = @(Get-RelativeFileHashes -Root $nativeLicenseSource)
 
           $opksshSource = "src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
           $opksshFiles = @(Get-ChildItem -LiteralPath $opksshSource -Recurse -File)
@@ -1404,11 +1905,15 @@ jobs:
           New-Item -ItemType Directory -Path $portableRoot | Out-Null
           Copy-Item -LiteralPath $sourceExecutable -Destination (Join-Path $portableRoot "sortOfRemoteNG.exe")
           New-Item -ItemType File -Path (Join-Path $portableRoot ".portable") | Out-Null
+          foreach ($nativeDll in $nativeRuntimeFiles) {
+            Copy-Item -LiteralPath $nativeDll.FullName -Destination (Join-Path $portableRoot $nativeDll.Name)
+          }
 
           $resourceRoot = Join-Path $portableRoot "resources"
           New-Item -ItemType Directory -Path $resourceRoot | Out-Null
           Copy-Item -LiteralPath $opksshSource -Destination (Join-Path $resourceRoot "opkssh") -Recurse
           Copy-Item -LiteralPath $localeSource -Destination (Join-Path $resourceRoot "locales") -Recurse
+          Copy-Item -LiteralPath $nativeLicenseSource -Destination (Join-Path $resourceRoot "native-runtime-licenses") -Recurse
 
           $portableBundleDir = "src-tauri/target/$env:RUST_TARGET/release/bundle/portable"
           New-Item -ItemType Directory -Path $portableBundleDir -Force | Out-Null
@@ -1418,6 +1923,9 @@ jobs:
             (Join-Path $portableRoot ".portable"),
             (Join-Path $portableRoot "resources")
           )
+          $portableContents += @(
+            $expectedNativeDllNames | ForEach-Object { Join-Path $portableRoot $_ }
+          )
           Compress-Archive -LiteralPath $portableContents -DestinationPath $archive -CompressionLevel Optimal
 
           $verificationRoot = Join-Path $env:RUNNER_TEMP "sortOfRemoteNG-$($env:ARTIFACT_ID)-portable-verification"
@@ -1425,10 +1933,8 @@ jobs:
             throw "Refusing to replace unexpected portable verification path $verificationRoot."
           }
           Expand-Archive -LiteralPath $archive -DestinationPath $verificationRoot
-          foreach ($requiredFile in @(
-            "sortOfRemoteNG.exe",
-            ".portable"
-          )) {
+          $requiredPortableFiles = @("sortOfRemoteNG.exe", ".portable") + $expectedNativeDllNames
+          foreach ($requiredFile in $requiredPortableFiles) {
             if (-not (Test-Path -LiteralPath (Join-Path $verificationRoot $requiredFile) -PathType Leaf)) {
               throw "Portable archive is missing required file $requiredFile."
             }
@@ -1440,6 +1946,10 @@ jobs:
           $verifiedLocaleRoot = Join-Path $verificationRoot "resources/locales"
           if (-not (Test-Path -LiteralPath $verifiedLocaleRoot -PathType Container)) {
             throw "Portable archive is missing the resources/locales directory."
+          }
+          $verifiedNativeLicenseRoot = Join-Path $verificationRoot "resources/native-runtime-licenses"
+          if (-not (Test-Path -LiteralPath $verifiedNativeLicenseRoot -PathType Container)) {
+            throw "Portable archive is missing the native runtime license directory."
           }
 
           $verifiedExecutable = Join-Path $verificationRoot "sortOfRemoteNG.exe"
@@ -1456,6 +1966,28 @@ jobs:
           $verifiedExecutableHash = (Get-FileHash -LiteralPath $verifiedExecutable -Algorithm SHA256).Hash
           if ($verifiedExecutableHash -ne $sourceExecutableHash) {
             throw "Extracted portable executable does not match the $env:ARTIFACT_ID source executable."
+          }
+
+          $verifiedNativeDlls = @(Get-ChildItem -LiteralPath $verificationRoot -File -Filter *.dll)
+          $verifiedNativeDllDifference = @(
+            Compare-Object `
+              -ReferenceObject ($expectedNativeDllNames | Sort-Object) `
+              -DifferenceObject ($verifiedNativeDlls.Name | Sort-Object)
+          )
+          if ($verifiedNativeDllDifference.Count -ne 0) {
+            $verifiedNativeDllDifference | Format-Table | Out-String | Write-Host
+            throw "Extracted portable DLLs do not match the exact runtime contract."
+          }
+          foreach ($verifiedNativeDll in $verifiedNativeDlls) {
+            if ((Get-PeMachine -Path $verifiedNativeDll.FullName) -ne $expectedMachine) {
+              throw "Extracted portable DLL $($verifiedNativeDll.Name) has the wrong PE machine."
+            }
+            $verifiedNativeHash = (
+              Get-FileHash -LiteralPath $verifiedNativeDll.FullName -Algorithm SHA256
+            ).Hash
+            if ($verifiedNativeHash -ne $expectedNativeRuntimeHashes[$verifiedNativeDll.Name]) {
+              throw "Extracted portable DLL $($verifiedNativeDll.Name) changed after staging."
+            }
           }
 
           $sourceMarker = Join-Path $portableRoot ".portable"
@@ -1486,6 +2018,16 @@ jobs:
           if ($localeDifference.Count -ne 0) {
             $localeDifference | Format-Table | Out-String | Write-Host
             throw "Extracted locale resources do not match the staged source manifest."
+          }
+
+          $verifiedNativeLicenseHashes = @(Get-RelativeFileHashes -Root $verifiedNativeLicenseRoot)
+          $nativeLicenseHashDifference = @(
+            Compare-Object `
+              -ReferenceObject $expectedNativeLicenseHashes `
+              -DifferenceObject $verifiedNativeLicenseHashes
+          )
+          if ($nativeLicenseHashDifference.Count -ne 0) {
+            throw "Extracted native runtime license notices do not match the staged sources."
           }
 
       - name: Verify macOS Developer ID, notarization, and stapling
@@ -1541,6 +2083,23 @@ jobs:
               expected_binary_path="/usr/bin/$LINUX_PACKAGE_MAIN_BINARY"
               expected_resource_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/opkssh"
               expected_locale_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/locales"
+              expected_openh264_path="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/libopenh264.so.8"
+              expected_openh264_notice_path="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/native-runtime-licenses/openh264.txt"
+              openh264_source="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime/libopenh264.so.8"
+              openh264_notice_source="$GITHUB_WORKSPACE/src-tauri/resources/native-runtime-licenses/openh264.txt"
+              test -f "$openh264_source"
+              test ! -L "$openh264_source"
+              test -s "$openh264_notice_source"
+              expected_openh264_hash=$(sha256sum "$openh264_source" | awk '{ print $1 }')
+              expected_openh264_notice_hash=$(sha256sum "$openh264_notice_source" | awk '{ print $1 }')
+              case "$ARTIFACT_ID" in
+                linux-x86_64) expected_elf_machine="Advanced Micro Devices X86-64" ;;
+                linux-aarch64) expected_elf_machine=AArch64 ;;
+                *)
+                  echo "::error::Unsupported Linux artifact ID $ARTIFACT_ID."
+                  exit 1
+                  ;;
+              esac
               expected_icon_root="/usr/share/icons/hicolor"
               expected_linux_icon_paths=(
                 "$expected_icon_root/32x32/apps/$FLATPAK_APP_ID.png"
@@ -1583,6 +2142,38 @@ jobs:
                   }
                 '
               }
+              verify_linux_openh264_payload() {
+                local root="$1" label="$2"
+                local executable="$root$expected_binary_path"
+                local library="$root$expected_openh264_path"
+                local notice="$root$expected_openh264_notice_path"
+                local dynamic actual_runpath actual_hash actual_notice_hash ldd_output resolved_library ldd_openh264_path
+
+                test -x "$executable"
+                test -f "$library"
+                test ! -L "$library"
+                test -s "$notice"
+                test "$(find "$(dirname "$library")" -maxdepth 1 -type f -name 'libopenh264.so.8' | wc -l | tr -d '[:space:]')" -eq 1
+                readelf -h "$library" | grep -F "Machine:" | grep -F "$expected_elf_machine"
+                actual_hash=$(sha256sum "$library" | awk '{ print $1 }')
+                actual_notice_hash=$(sha256sum "$notice" | awk '{ print $1 }')
+                test "$actual_hash" = "$expected_openh264_hash"
+                test "$actual_notice_hash" = "$expected_openh264_notice_hash"
+
+                dynamic=$(readelf -d "$executable")
+                test "$(printf '%s\n' "$dynamic" | grep -F '(NEEDED)' | grep -Fc 'Shared library: [libopenh264.so.8]' || true)" -eq 1
+                actual_runpath=$(printf '%s\n' "$dynamic" |
+                  sed -n 's/.*(RUNPATH).*Library runpath: \[\([^]]*\)\].*/\1/p')
+                test "$actual_runpath" = '$ORIGIN/../lib/sortOfRemoteNG'
+                resolved_library=$(realpath "$library")
+                ldd_output=$(env -u LD_LIBRARY_PATH ldd "$executable")
+                printf '%s\n' "$ldd_output"
+                ! printf '%s\n' "$ldd_output" | grep -F 'not found'
+                test "$(printf '%s\n' "$ldd_output" | awk '$1 == "libopenh264.so.8" && $2 == "=>" { count += 1 } END { print count + 0 }')" -eq 1
+                ldd_openh264_path=$(printf '%s\n' "$ldd_output" | awk '$1 == "libopenh264.so.8" && $2 == "=>" { print $3 }')
+                test "$(realpath "$ldd_openh264_path")" = "$resolved_library"
+                printf 'Verified %s OpenH264 payload: %s\n' "$label" "$resolved_library"
+              }
               opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
               expected_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-expected-opkssh-files.txt"
               (
@@ -1617,6 +2208,8 @@ jobs:
               rpm_file_list="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-files.txt"
               rpm -qpl "$rpm_source" | tee "$rpm_file_list"
               grep -Fx "$expected_binary_path" "$rpm_file_list"
+              test "$(grep -Fxc "$expected_openh264_path" "$rpm_file_list")" -eq 1
+              test "$(grep -Fxc "$expected_openh264_notice_path" "$rpm_file_list")" -eq 1
               grep -Eq "^${expected_resource_root}/.+[^/]$" "$rpm_file_list"
               grep -Eq "^${expected_locale_root}/.+\.json$" "$rpm_file_list"
               for icon_path in "${expected_linux_icon_paths[@]}"; do
@@ -1632,6 +2225,7 @@ jobs:
                 cd "$rpm_extract_root"
                 rpm2archive "$rpm_source" | tar -xzf - --no-same-owner
               )
+              verify_linux_openh264_payload "$rpm_extract_root" RPM
               rpm_desktop_entry="$rpm_extract_root/usr/share/applications/sortOfRemoteNG.desktop"
               test -s "$rpm_desktop_entry"
               grep -Fx "Icon=$FLATPAK_APP_ID" "$rpm_desktop_entry"
@@ -1666,6 +2260,8 @@ jobs:
                 LC_ALL=C sort > "$deb_payload_files"
               test -s "$deb_payload_files"
               grep -Fx "$expected_binary_path" "$deb_payload_files"
+              test "$(grep -Fxc "$expected_openh264_path" "$deb_payload_files")" -eq 1
+              test "$(grep -Fxc "$expected_openh264_notice_path" "$deb_payload_files")" -eq 1
               grep -Eq "^${expected_resource_root}/.+[^/]$" "$deb_payload_files"
               grep -Eq "^${expected_locale_root}/.+\.json$" "$deb_payload_files"
               deb_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-opkssh-files.txt"
@@ -1686,6 +2282,7 @@ jobs:
               fi
               mkdir -p "$deb_extract_root"
               dpkg-deb -x "$deb_source" "$deb_extract_root"
+              verify_linux_openh264_payload "$deb_extract_root" DEB
               deb_locale_hashes="$RUNNER_TEMP/${ARTIFACT_ID}-deb-locale-hashes.txt"
               (
                 cd "$deb_extract_root$expected_locale_root"
@@ -1705,6 +2302,7 @@ jobs:
               )
               appimage_root="$appimage_extract_root/squashfs-root"
               test -x "$appimage_root$expected_binary_path"
+              verify_linux_openh264_payload "$appimage_root" AppImage
               test -d "$appimage_root$expected_resource_root"
               test -d "$appimage_root$expected_locale_root"
               appimage_resource_count=$(find "$appimage_root$expected_resource_root" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')

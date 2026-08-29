@@ -397,6 +397,14 @@ reqwest = { workspace = true }
 default = ["lean"]
 lean = ["opkssh", "protocol-serial-dynamic"]
 full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
+# Normal `npm run tauri:build` selects this feature set only on Windows after
+# staging the pinned DLL closure. `full` remains portable for non-Windows and
+# callers that intentionally want bundled SQLite.
+full-windows-dynamic = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite-dynamic", "kafka-dynamic", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
+# Linux and macOS local production builds retain the normal platform-native
+# Kafka/SQLite choices while replacing source-backed OpenH264 with the staged,
+# required shared library used by release CI.
+full-unix-dynamic = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 # `full-dev` mirrors `full` but is tuned for local development where the host
 # system doesn't have librdkafka installed and the OPKSSH vendor bundle isn't
 # staged. Two swaps versus `full`:
@@ -405,7 +413,8 @@ full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-
 #     the `kafka-static` comment about MSYS64 path mangling does not apply.)
 #   - `opkssh-vendored-wrapper` → `opkssh`: skips the resource-bundle staging
 #     step (`scripts/stage-opkssh-vendor.mjs --enable`) and the MSVC stub
-#     DLL — runtime keeps the CLI fallback path. Release/CI use `full`.
+#     DLL — runtime keeps the CLI fallback path. Release CI selects its exact
+#     platform feature list directly.
 full-dev = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka-static", "logs-json", "opkssh", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 cert-auth = ["sorng-app-domains/cert-auth", "sorng-app-startup-state/cert-auth"]
 cloud = ["sorng-app-domains/cloud", "sorng-app-startup-state/cloud", "sorng-commands-core/cloud", "dep:sorng-commands-cloud"]
@@ -416,6 +425,7 @@ db-mysql = ["sorng-app-domains/db-mysql", "sorng-app-startup-state/db-mysql", "s
 db-postgres = ["sorng-app-domains/db-postgres", "sorng-app-startup-state/db-postgres", "sorng-commands-core/db-postgres", "sorng-commands-sessions/db-postgres"]
 db-redis = ["sorng-app-domains/db-redis", "sorng-app-startup-state/db-redis", "sorng-commands-sessions/db-redis"]
 db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-app-startup-state/db-sqlite", "sorng-commands-sessions/db-sqlite"]
+db-sqlite-dynamic = ["sorng-app-domains/db-sqlite-dynamic", "sorng-app-startup-state/db-sqlite-dynamic", "sorng-commands-sessions/db-sqlite-dynamic"]
 # `kafka` dynamic-links against a system-installed librdkafka (t3-e38) —
 # this is the v1.0 default. Users must install librdkafka ≥ 2.x via their
 # OS package manager (apt/dnf/pacman/brew/vcpkg/winget). At runtime the
@@ -423,10 +433,10 @@ db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-app-startup-state/db-sqlite",
 # error with a per-OS install hint if the native library is absent.
 # See `crates/sorng-kafka/README.md` for platform install instructions.
 kafka = ["dep:sorng-kafka", "sorng-kafka/dynamic-linking", "sorng-commands-ops?/kafka", "sorng-app-domains/kafka"]
-# `kafka-dynamic` is kept as an explicit alias of `kafka` for the v1.0
-# release flow (CI invokes `--features kafka-dynamic`). Both pull the
-# same `dynamic-linking` linking mode.
-kafka-dynamic = ["dep:sorng-kafka", "sorng-kafka/dynamic-linking", "sorng-commands-ops?/kafka", "sorng-app-domains/kafka"]
+# `kafka-dynamic` is an alias of the top-level `kafka` feature. Keeping the
+# alias chained through `kafka` is important because app state registration is
+# guarded by `cfg(feature = "kafka")`.
+kafka-dynamic = ["kafka"]
 # `kafka-static` compiles librdkafka from source via cmake and statically
 # links it. Requires CMake + a C toolchain. Works on Windows MSVC (used by
 # `full-dev`); historical MSYS64 builds hit mixed-slash path mangling — use
@@ -443,6 +453,7 @@ ops = ["sorng-app-domains/ops", "sorng-app-startup-state/ops", "sorng-commands-c
 platform = ["sorng-app-domains/platform", "sorng-app-startup-state/platform", "dep:sorng-commands-platform"]
 rdp = ["sorng-app-domains/rdp", "sorng-app-startup-connectivity/rdp", "sorng-commands-core/rdp"]
 rdp-software-decode = ["sorng-app-domains/rdp-software-decode"]
+rdp-software-decode-dynamic = ["sorng-app-domains/rdp-software-decode-dynamic"]
 rdp-mf-decode = ["sorng-app-domains/rdp-mf-decode"]
 rdp-snapshot = ["sorng-app-domains/rdp-snapshot"]
 script-engine = ["sorng-app-domains/script-engine"]

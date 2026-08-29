@@ -1,17 +1,17 @@
-#[cfg(feature = "db-sqlite")]
+#[cfg(any(feature = "db-sqlite", feature = "db-sqlite-dynamic"))]
 mod sqlite {
     pub use crate::sqlite::*;
 }
 
-#[cfg(feature = "db-sqlite")]
+#[cfg(any(feature = "db-sqlite", feature = "db-sqlite-dynamic"))]
 mod generated {
     include!("../crates/sorng-sqlite/src/sqlite/commands.rs");
 }
 
-#[cfg(feature = "db-sqlite")]
+#[cfg(any(feature = "db-sqlite", feature = "db-sqlite-dynamic"))]
 pub use generated::*;
 
-#[cfg(not(feature = "db-sqlite"))]
+#[cfg(not(any(feature = "db-sqlite", feature = "db-sqlite-dynamic")))]
 mod disabled {
     macro_rules! disabled_commands {
         ($($name:ident),* $(,)?) => {
@@ -60,5 +60,5 @@ mod disabled {
     );
 }
 
-#[cfg(not(feature = "db-sqlite"))]
+#[cfg(not(any(feature = "db-sqlite", feature = "db-sqlite-dynamic")))]
 pub use disabled::*;

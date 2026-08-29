@@ -109,7 +109,7 @@ pub use sorng_mysql::mysql;
 pub use sorng_postgres::postgres;
 #[cfg(feature = "db-redis")]
 pub use sorng_redis::redis_impl as redis;
-#[cfg(feature = "db-sqlite")]
+#[cfg(any(feature = "db-sqlite", feature = "db-sqlite-dynamic"))]
 pub use sorng_sqlite::sqlite;
 
 pub use sorng_1password::onepassword;

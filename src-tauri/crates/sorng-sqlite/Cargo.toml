@@ -13,8 +13,15 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-sqlx = { workspace = true, features = ["sqlite", "runtime-tokio"] }
+sqlx = { workspace = true, features = ["runtime-tokio"] }
 thiserror = { workspace = true }
+
+[features]
+# Source and ordinary developer builds remain self-contained. Windows release
+# packaging explicitly selects `unbundled` after staging sqlite3.dll.
+default = ["bundled"]
+bundled = ["sqlx/sqlite"]
+unbundled = ["sqlx/sqlite-unbundled"]
 
 [dev-dependencies]
 serde_json = { workspace = true }

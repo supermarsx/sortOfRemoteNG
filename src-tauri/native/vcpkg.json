@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "sortofremoteng-native-runtime",
+  "version-string": "0.0.0",
+  "builtin-baseline": "b9b668c1de09b065f53a3943939801b901b585ef",
+  "dependencies": [
+    {
+      "name": "librdkafka",
+      "default-features": false,
+      "features": ["ssl", "zlib", "zstd"],
+      "platform": "windows"
+    },
+    {
+      "name": "libssh2",
+      "default-features": false,
+      "features": ["zlib"],
+      "platform": "windows"
+    },
+    {
+      "name": "sqlite3",
+      "features": ["dbstat", "fts3", "fts4", "fts5", "rtree", "soundex"],
+      "platform": "windows"
+    },
+    "openh264",
+    {
+      "name": "pkgconf",
+      "host": true
+    }
+  ]
+}
