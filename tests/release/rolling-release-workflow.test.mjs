@@ -1827,6 +1827,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     buildJob.indexOf("- name: Install native Linux build prerequisites"),
     buildJob.indexOf("- name: Install macOS native build prerequisites"),
   );
+  const macOsNativePrerequisites = buildJob.slice(
+    buildJob.indexOf("- name: Install macOS native build prerequisites"),
+    buildJob.indexOf("- name: Install JavaScript dependencies"),
+  );
   const preserveLinux = buildJob.slice(
     buildJob.indexOf(
       "- name: Preserve native Linux outputs and prune build intermediates",
@@ -2043,6 +2047,8 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     buildJob,
     /artifact_id: linux-aarch64[\s\S]*?os: ubuntu-24\.04-arm[\s\S]*?bundles: appimage,deb,rpm/,
   );
+  assert.match(nativePrerequisites, /\bnasm\b/);
+  assert.match(macOsNativePrerequisites, /\bnasm\b/);
   assert.doesNotMatch(nativePrerequisites, /\b(?:flatpak|appstream)\b/);
   assert.match(flatpakSetup, /"flatpak-builder=\$\{FLATPAK_BUILDER_PACKAGE\}"/);
   assert.doesNotMatch(
