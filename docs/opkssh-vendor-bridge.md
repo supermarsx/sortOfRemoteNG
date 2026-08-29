@@ -1,3 +1,10 @@
+---
+title: Building the OPKSSH vendor bridge
+description: Build, verify, and stage the bridge-carrying OPKSSH vendor DLL for Windows releases.
+permalink: /opkssh-vendor-bridge/
+hide_page_header: true
+---
+
 # Building the OPKSSH vendor bridge
 
 The OPKSSH vendor DLL (`sorng_opkssh_vendor.dll`) can be built in two shapes:

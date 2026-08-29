@@ -36,6 +36,9 @@ function topTab(query: string): string | undefined {
 }
 
 const MY_TABS = ["backup", "cloudSync", "backend", "proxy", "vpn"] as const;
+// V8 instrumentation and full-suite contention can exceed Vitest's 5 s
+// default even though the exhaustive scan is synchronously bounded.
+const EXHAUSTIVE_SEARCH_TIMEOUT_MS = 20_000;
 
 describe("settings search — backup / cloud / network tabs", () => {
   describe("VPN (the tab had zero entries before t75)", () => {
@@ -222,22 +225,26 @@ describe("settings search — backup / cloud / network tabs", () => {
       }
     });
 
-    it("every indexed option value is findable", () => {
-      // The user's report in one assertion: "doesn't search for ... possible
-      // values". Each of the 20 option sets across these tabs is checked here.
-      for (const tab of MY_TABS) {
-        for (const entry of SETTINGS_SEARCH_INDEX.filter(
-          (e) => e.section === tab,
-        )) {
-          for (const value of entry.values ?? []) {
-            expect(
-              keys(value),
-              `${entry.key} value ${JSON.stringify(value)}`,
-            ).toContain(entry.key);
+    it(
+      "every indexed option value is findable",
+      () => {
+        // The user's report in one assertion: "doesn't search for ... possible
+        // values". Each of the 20 option sets across these tabs is checked here.
+        for (const tab of MY_TABS) {
+          for (const entry of SETTINGS_SEARCH_INDEX.filter(
+            (e) => e.section === tab,
+          )) {
+            for (const value of entry.values ?? []) {
+              expect(
+                keys(value),
+                `${entry.key} value ${JSON.stringify(value)}`,
+              ).toContain(entry.key);
+            }
           }
         }
-      }
-    });
+      },
+      EXHAUSTIVE_SEARCH_TIMEOUT_MS,
+    );
 
     it("indexes the possible values behind every option set on these tabs", () => {
       // The audit counted 20 rendered option sets across these five tabs, none

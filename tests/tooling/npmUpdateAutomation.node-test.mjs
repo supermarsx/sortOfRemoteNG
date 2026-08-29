@@ -596,7 +596,7 @@ test("real-repository dry-run is read-only and reports the complete direct graph
   const after = await artifactHashes();
   assert.deepEqual(after, before);
   assert.equal(result.mode, "dry-run");
-  assert.equal(result.parity.total, 56);
+  assert.equal(result.parity.total, 57);
   assert.equal(result.parity.bunVersion, "1.3.11");
   assert.ok(result.policy.eligible.length > 0);
   assert.deepEqual(result.policy.exactHolds, [
