@@ -1137,7 +1137,7 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
 
   const releaseConfigStep = buildJob.slice(
     configureStart,
-    buildJob.indexOf("- name: Export enabled macOS signing environment"),
+    buildJob.indexOf("- name: Select relocatable macOS OpenSSL linkage"),
   );
   const releaseConfigProgram = extractNodeHeredoc(
     extractLiteralRunScript(releaseConfigStep),
@@ -1250,7 +1250,7 @@ test("macOS releases hard-link and package the exact OpenH264 framework", () => 
     "- name: Configure updater and OS signing",
   );
   const configureEnd = buildJob.indexOf(
-    "- name: Export enabled macOS signing environment",
+    "- name: Select relocatable macOS OpenSSL linkage",
   );
   const releaseConfigProgram = extractNodeHeredoc(
     extractLiteralRunScript(buildJob.slice(configureStart, configureEnd)),
@@ -1299,6 +1299,12 @@ test("macOS releases hard-link and package the exact OpenH264 framework", () => 
 
   assertOrdered(
     buildJob,
+    "- name: Select relocatable macOS OpenSSL linkage",
+    "- name: Build native bundles",
+    "macOS OpenSSL linkage must be selected before Cargo runs",
+  );
+  assertOrdered(
+    buildJob,
     "- name: Build native bundles",
     "- name: Verify macOS dynamic OpenH264 bundle",
     "macOS OpenH264 linkage must be inspected after bundling",
@@ -1314,6 +1320,15 @@ test("macOS releases hard-link and package the exact OpenH264 framework", () => 
     buildJob.indexOf(
       "- name: Preserve native Linux outputs and prune build intermediates",
     ),
+  );
+  const opensslSelectionStep = buildJob.slice(
+    buildJob.indexOf("- name: Select relocatable macOS OpenSSL linkage"),
+    buildJob.indexOf("- name: Export enabled macOS signing environment"),
+  );
+  assert.match(opensslSelectionStep, /if: matrix\.platform == 'macos'/);
+  assert.match(
+    opensslSelectionStep,
+    /openssl_root=\$\(brew --prefix openssl@3\)[\s\S]*?lib\/libssl\.a[\s\S]*?lib\/libcrypto\.a[\s\S]*?OPENSSL_DIR=\$openssl_root[\s\S]*?OPENSSL_STATIC=1[\s\S]*?GITHUB_ENV/,
   );
   assert.match(
     verificationStep,
@@ -1331,6 +1346,14 @@ test("macOS releases hard-link and package the exact OpenH264 framework", () => 
   assert.match(
     verificationStep,
     /otool -L "\$executable"[\s\S]*?@rpath\/libopenh264\.8\.dylib[\s\S]*?otool -D "\$framework"/,
+  );
+  assert.match(
+    verificationStep,
+    /lib\(ssl\|crypto\)\\\.3\\\.dylib[\s\S]*?macOS executable retains dynamic OpenSSL linkage/,
+  );
+  assert.match(
+    verificationStep,
+    /vcpkg-installed[\s\S]*?GITHUB_WORKSPACE[\s\S]*?\/Users\/runner\/work[\s\S]*?\/opt\/homebrew[\s\S]*?\/usr\/local\/Cellar[\s\S]*?macOS bundle linkage contains a build-machine library path/,
   );
   assert.match(
     verificationStep,
@@ -1856,7 +1879,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   const releaseConfigStep = buildJob.slice(
     buildJob.indexOf("- name: Configure updater and OS signing"),
-    buildJob.indexOf("- name: Export enabled macOS signing environment"),
+    buildJob.indexOf("- name: Select relocatable macOS OpenSSL linkage"),
   );
   const stageStep = buildJob.slice(
     buildJob.indexOf("- name: Stage architecture-specific release assets"),

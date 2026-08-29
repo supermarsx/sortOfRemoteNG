@@ -829,6 +829,19 @@ jobs:
           );
           NODE
 
+      - name: Select relocatable macOS OpenSSL linkage
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          openssl_root=$(brew --prefix openssl@3)
+          test -f "$openssl_root/lib/libssl.a"
+          test -f "$openssl_root/lib/libcrypto.a"
+          {
+            echo "OPENSSL_DIR=$openssl_root"
+            echo "OPENSSL_STATIC=1"
+          } >> "$GITHUB_ENV"
+
       - name: Export enabled macOS signing environment
         if: matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true'
         shell: bash
@@ -1206,7 +1219,12 @@ jobs:
           printf '%s\n' "$framework_libraries"
           if printf '%s\n%s\n' "$executable_libraries" "$framework_libraries" |
             grep -E '(vcpkg-installed|GITHUB_WORKSPACE|/Users/runner/work|/opt/homebrew|/usr/local/Cellar)' > /dev/null; then
-            echo "::error::macOS OpenH264 linkage contains a build-machine library path."
+            echo "::error::macOS bundle linkage contains a build-machine library path."
+            exit 1
+          fi
+          if printf '%s\n' "$executable_libraries" |
+            grep -E 'lib(ssl|crypto)\.3\.dylib' > /dev/null; then
+            echo "::error::macOS executable retains dynamic OpenSSL linkage."
             exit 1
           fi
           executable_rpaths=$(otool -l "$executable" | awk '
