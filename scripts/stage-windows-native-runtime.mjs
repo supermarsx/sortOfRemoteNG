@@ -440,13 +440,40 @@ function commandPath(command) {
   }
 }
 
-function usableVcpkgRoot(candidate) {
+export function usablePinnedVcpkgRoot(
+  candidate,
+  executableName = "vcpkg.exe",
+  baseline = VCPKG_BASELINE,
+) {
   if (!candidate) return undefined;
   const root = path.resolve(candidate);
-  const executable = path.join(root, "vcpkg.exe");
-  return existsSync(executable) && statSync(executable).isFile()
-    ? { root, executable }
-    : undefined;
+  const executable = path.join(root, executableName);
+  if (!existsSync(executable) || !statSync(executable).isFile()) {
+    return undefined;
+  }
+
+  try {
+    const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    })
+      .trim()
+      .toLowerCase();
+    if (head !== baseline.toLowerCase()) return undefined;
+    execFileSync(
+      "git",
+      ["-C", root, "cat-file", "-e", `${baseline}:versions/baseline.json`],
+      {
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
+  } catch {
+    return undefined;
+  }
+
+  return { root, executable };
 }
 
 function bootstrapVcpkg() {
@@ -455,6 +482,7 @@ function bootstrapVcpkg() {
     mkdirSync(path.dirname(bootstrapRoot), { recursive: true });
     run("git", [
       "clone",
+      "--depth=1",
       "--filter=blob:none",
       "--no-checkout",
       "https://github.com/microsoft/vcpkg.git",
@@ -493,13 +521,14 @@ function resolveVcpkg() {
     process.env.VCPKG_INSTALLATION_ROOT,
     process.env.VCPKG_ROOT,
   ]) {
-    const installation = usableVcpkgRoot(candidate);
+    const installation = usablePinnedVcpkgRoot(candidate);
     if (installation) return installation;
   }
 
   const executable = commandPath("vcpkg.exe") ?? commandPath("vcpkg");
   if (executable) {
-    return { root: path.dirname(executable), executable };
+    const installation = usablePinnedVcpkgRoot(path.dirname(executable));
+    if (installation) return installation;
   }
   return bootstrapVcpkg();
 }

@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,6 +22,7 @@ import {
   runtimeDllsForArchitecture,
   rustTargetFromArgs,
   targetSpec,
+  usablePinnedVcpkgRoot,
   validateRuntimeDependencyClosure,
   windowsNativeTauriConfig,
 } from "../../scripts/stage-windows-native-runtime.mjs";
@@ -147,6 +155,41 @@ function peWithImports(machine, imports) {
   });
   return bytes;
 }
+
+function git(repo, args) {
+  return execFileSync("git", ["-C", repo, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+}
+
+test("rejects stale runner vcpkg roots that do not match the pinned baseline", (t) => {
+  const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "sorng-vcpkg-root-"));
+  t.after(() => rmSync(fixtureRoot, { recursive: true, force: true }));
+
+  git(fixtureRoot, ["init", "--quiet"]);
+  git(fixtureRoot, ["config", "user.name", "Release Test"]);
+  git(fixtureRoot, ["config", "user.email", "release@test.invalid"]);
+  mkdirSync(path.join(fixtureRoot, "versions"), { recursive: true });
+  writeFileSync(path.join(fixtureRoot, "versions", "baseline.json"), "{}\n");
+  writeFileSync(path.join(fixtureRoot, "vcpkg.exe"), "fixture\n");
+  git(fixtureRoot, ["add", "."]);
+  git(fixtureRoot, ["commit", "--quiet", "-m", "pinned baseline"]);
+  const baseline = git(fixtureRoot, ["rev-parse", "HEAD"]);
+
+  assert.deepEqual(usablePinnedVcpkgRoot(fixtureRoot, "vcpkg.exe", baseline), {
+    root: path.resolve(fixtureRoot),
+    executable: path.join(path.resolve(fixtureRoot), "vcpkg.exe"),
+  });
+
+  writeFileSync(path.join(fixtureRoot, "stale-runner.txt"), "newer checkout\n");
+  git(fixtureRoot, ["add", "."]);
+  git(fixtureRoot, ["commit", "--quiet", "-m", "stale runner head"]);
+  assert.equal(
+    usablePinnedVcpkgRoot(fixtureRoot, "vcpkg.exe", baseline),
+    undefined,
+  );
+});
 
 test("maps the supported Windows Rust targets to their exact vcpkg and PE identities", () => {
   assert.deepEqual(targetSpec("x86_64-pc-windows-msvc"), {

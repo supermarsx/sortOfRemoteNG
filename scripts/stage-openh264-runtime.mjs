@@ -21,6 +21,7 @@ import {
   STAGED_LICENSE_DIRECTORY,
   STAGED_RUNTIME_DIRECTORY,
   VCPKG_BASELINE,
+  usablePinnedVcpkgRoot,
 } from "./stage-windows-native-runtime.mjs";
 
 export const OPENH264_ABI_MAJOR = 8;
@@ -181,21 +182,13 @@ function vcpkgExecutableName() {
   return process.platform === "win32" ? "vcpkg.exe" : "vcpkg";
 }
 
-function usableVcpkgRoot(candidate) {
-  if (!candidate) return undefined;
-  const root = path.resolve(candidate);
-  const executable = path.join(root, vcpkgExecutableName());
-  return existsSync(executable) && statSync(executable).isFile()
-    ? { root, executable }
-    : undefined;
-}
-
 function bootstrapVcpkg() {
   const gitDirectory = path.join(bootstrapRoot, ".git");
   if (!existsSync(gitDirectory)) {
     mkdirSync(path.dirname(bootstrapRoot), { recursive: true });
     run("git", [
       "clone",
+      "--depth=1",
       "--filter=blob:none",
       "--no-checkout",
       "https://github.com/microsoft/vcpkg.git",
@@ -230,13 +223,20 @@ function resolveVcpkg() {
     process.env.VCPKG_INSTALLATION_ROOT,
     process.env.VCPKG_ROOT,
   ]) {
-    const installation = usableVcpkgRoot(candidate);
+    const installation = usablePinnedVcpkgRoot(
+      candidate,
+      vcpkgExecutableName(),
+    );
     if (installation) return installation;
   }
 
   const executable = commandPath(vcpkgExecutableName());
   if (executable) {
-    return { root: path.dirname(executable), executable };
+    const installation = usablePinnedVcpkgRoot(
+      path.dirname(executable),
+      vcpkgExecutableName(),
+    );
+    if (installation) return installation;
   }
   return bootstrapVcpkg();
 }

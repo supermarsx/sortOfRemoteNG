@@ -226,6 +226,7 @@ test("the source-build stager validates version, architecture, and loader identi
   }
   assert.match(runtimeStager, /--overlay-ports=\$\{portsRoot\}/u);
   assert.match(runtimeStager, /--overlay-triplets=\$\{tripletsRoot\}/u);
+  assert.match(runtimeStager, /usablePinnedVcpkgRoot/u);
   assert.match(runtimeStager, /--modversion[\s\S]*openh264/u);
   assert.match(runtimeStager, /readNativeMachine/u);
   assert.match(runtimeStager, /readelf[\s\S]*SONAME/u);
