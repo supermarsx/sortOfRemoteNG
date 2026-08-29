@@ -374,22 +374,13 @@ function stageLicense(packageRoot, licenseStageRoot) {
 }
 
 export function openh264BuildEnvironment({
-  pkgconf,
   packageRoot,
   stageRoot,
   loaderVariable,
 }) {
-  const pkgConfigPath = [
-    path.join(packageRoot, "lib", "pkgconfig"),
-    path.join(packageRoot, "share", "pkgconfig"),
-  ].join(path.delimiter);
   const existingLoaderPath = process.env[loaderVariable] ?? "";
   return {
     OPENH264_LIB_DIR: path.join(packageRoot, "lib"),
-    PKG_CONFIG: pkgconf,
-    PKG_CONFIG_ALLOW_CROSS: "1",
-    PKG_CONFIG_LIBDIR: pkgConfigPath,
-    PKG_CONFIG_PATH: pkgConfigPath,
     [loaderVariable]: [
       stageRoot,
       path.join(packageRoot, "lib"),
@@ -555,7 +546,6 @@ export function stageOpenH264Runtime({
   );
   const license = stageLicense(packageRoot, path.resolve(licenseStageRoot));
   const environment = openh264BuildEnvironment({
-    pkgconf,
     packageRoot,
     stageRoot: resolvedStageRoot,
     loaderVariable: configuration.loaderVariable,

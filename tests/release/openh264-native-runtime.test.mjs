@@ -207,14 +207,19 @@ test("parses the release workflow CLI and exports link and loader paths", () => 
   const packageRoot = path.resolve("native", "arm64-linux-sorng");
   const stageRoot = path.resolve("runtime");
   const environment = openh264BuildEnvironment({
-    pkgconf: "/tools/pkgconf",
     packageRoot,
     stageRoot,
     loaderVariable: "LD_LIBRARY_PATH",
   });
   assert.equal(environment.OPENH264_LIB_DIR, path.join(packageRoot, "lib"));
-  assert.equal(environment.PKG_CONFIG, "/tools/pkgconf");
-  assert.equal(environment.PKG_CONFIG_ALLOW_CROSS, "1");
+  for (const name of [
+    "PKG_CONFIG",
+    "PKG_CONFIG_ALLOW_CROSS",
+    "PKG_CONFIG_LIBDIR",
+    "PKG_CONFIG_PATH",
+  ]) {
+    assert.equal(environment[name], undefined);
+  }
   assert.deepEqual(
     environment.LD_LIBRARY_PATH.split(path.delimiter).slice(0, 2),
     [stageRoot, path.join(packageRoot, "lib")],
@@ -228,6 +233,14 @@ test("parses the release workflow CLI and exports link and loader paths", () => 
     githubEnvironment.OPENH264_LIB_DIR,
     path.join(packageRoot, "lib"),
   );
+  for (const name of [
+    "PKG_CONFIG",
+    "PKG_CONFIG_ALLOW_CROSS",
+    "PKG_CONFIG_LIBDIR",
+    "PKG_CONFIG_PATH",
+  ]) {
+    assert.equal(githubEnvironment[name], undefined);
+  }
 });
 
 test("the source-build stager validates version, architecture, and loader identity", () => {
