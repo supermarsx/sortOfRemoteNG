@@ -1325,6 +1325,11 @@ test("macOS releases hard-link and package the exact OpenH264 framework", () => 
   );
   assert.match(
     verificationStep,
+    /info_plist="\$app\/Contents\/Info\.plist"[\s\S]*?plutil -extract CFBundleExecutable raw -o - "\$info_plist"[\s\S]*?Invalid CFBundleExecutable[\s\S]*?executable="\$app\/Contents\/MacOS\/\$bundle_executable"/,
+  );
+  assert.doesNotMatch(verificationStep, /Contents\/MacOS\/sortOfRemoteNG/);
+  assert.match(
+    verificationStep,
     /otool -L "\$executable"[\s\S]*?@rpath\/libopenh264\.8\.dylib[\s\S]*?otool -D "\$framework"/,
   );
   assert.match(

@@ -1172,7 +1172,16 @@ jobs:
           app_count=$(find "$app_dir" -maxdepth 1 -type d -name '*.app' | wc -l | tr -d '[:space:]')
           test "$app_count" -eq 1
           app=$(find "$app_dir" -maxdepth 1 -type d -name '*.app' -print -quit)
-          executable="$app/Contents/MacOS/sortOfRemoteNG"
+          info_plist="$app/Contents/Info.plist"
+          test -s "$info_plist"
+          bundle_executable=$(plutil -extract CFBundleExecutable raw -o - "$info_plist")
+          case "$bundle_executable" in
+            ''|'.'|'..'|*/*|*\\*)
+              echo "::error::Invalid CFBundleExecutable value '$bundle_executable'."
+              exit 1
+              ;;
+          esac
+          executable="$app/Contents/MacOS/$bundle_executable"
           framework="$app/Contents/Frameworks/libopenh264.8.dylib"
           bundled_notice="$app/Contents/Resources/native-runtime-licenses/openh264.txt"
 
