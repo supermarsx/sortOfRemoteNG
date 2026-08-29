@@ -118,7 +118,7 @@ test("release snapshots synchronize recipe versions and exact source commits", (
   assert.match(syncVersion, /rewriteShellAssignment\(recipe, "_commit"/);
   assert.match(
     snapshotVerifier,
-    /"--version",\s*publicVersion,\s*"--source-sha",\s*sourceSha/s,
+    /SOURCE_SHA_USAGE_TOKEN[\s\S]*?syncVersionArgs\.push\("--source-sha", sourceSha\)/,
   );
   assert.match(
     releaseWorkflow,

@@ -10,6 +10,7 @@ import { projectVersion } from "../versioning.mjs";
 export const PUBLIC_RELEASE_TAG_PATTERN = /^(\d{2})\.([1-9][0-9]*)$/;
 export const RELEASE_SOURCE_TRAILER = "Release-Source-SHA";
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const SOURCE_SHA_USAGE_TOKEN = "[--source-sha <sha>]";
 
 export function utcReleaseYear(date = new Date()) {
   if (!(date instanceof Date) || Number.isNaN(date.valueOf())) {
@@ -314,22 +315,26 @@ function expectedSnapshotTree(repo, sourceSha, publicVersion) {
     );
     git(checkout, ["config", "core.autocrlf", "false"]);
     git(checkout, ["checkout", "--quiet", "--detach", sourceSha]);
-    execFileSync(
-      process.execPath,
-      [
-        path.join(checkout, "scripts", "sync-version.mjs"),
-        "--write",
-        "--version",
-        publicVersion,
-        "--source-sha",
-        sourceSha,
-      ],
-      {
-        cwd: checkout,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    const syncVersionPath = path.join(checkout, "scripts", "sync-version.mjs");
+    const syncVersionArgs = [
+      syncVersionPath,
+      "--write",
+      "--version",
+      publicVersion,
+    ];
+    // Snapshot verification must use the CLI contract from the historical
+    // source being projected. Releases created before source-pinned package
+    // recipes did not accept --source-sha, while current projections require it.
+    if (
+      readFileSync(syncVersionPath, "utf8").includes(SOURCE_SHA_USAGE_TOKEN)
+    ) {
+      syncVersionArgs.push("--source-sha", sourceSha);
+    }
+    execFileSync(process.execPath, syncVersionArgs, {
+      cwd: checkout,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     git(checkout, ["add", "-A"]);
     return normalizeSourceSha(git(checkout, ["write-tree"]));
   } catch (error) {

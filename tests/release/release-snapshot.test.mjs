@@ -26,6 +26,7 @@ function json(value) {
 function createSnapshotRepository({
   machineVersionOverride = null,
   projectionVersion = "27.1",
+  sourceAwareProjection = false,
   tamper = false,
   trailerSource = null,
 } = {}) {
@@ -44,27 +45,58 @@ function createSnapshotRepository({
     path.join(repo, "scripts", "sync-version.mjs"),
     [
       'import fs from "node:fs";',
-      'const index = process.argv.indexOf("--version");',
-      'if (index < 0 || !process.argv[index + 1]) throw new Error("missing version");',
-      "const version = process.argv[index + 1];",
+      ...(sourceAwareProjection
+        ? [
+            "// Usage: node sync-version.mjs --write --version <version> [--source-sha <sha>]",
+          ]
+        : []),
+      "const args = process.argv.slice(2);",
+      "let version = null;",
+      ...(sourceAwareProjection ? ["let sourceSha = null;"] : []),
+      "for (let index = 0; index < args.length; index += 1) {",
+      "  const arg = args[index];",
+      '  if (arg === "--write") continue;',
+      '  if (arg === "--version") { version = args[++index]; continue; }',
+      ...(sourceAwareProjection
+        ? [
+            '  if (arg === "--source-sha") { sourceSha = args[++index]; continue; }',
+          ]
+        : []),
+      "  throw new Error(`Unknown option: ${arg}`);",
+      "}",
+      'if (!version) throw new Error("missing version");',
+      ...(sourceAwareProjection
+        ? ['if (!sourceSha) throw new Error("missing source SHA");']
+        : []),
       'const authority = JSON.parse(fs.readFileSync("version.json", "utf8"));',
       "authority.version = version;",
       'fs.writeFileSync("version.json", `${JSON.stringify(authority, null, 2)}\\n`);',
       'const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));',
       "packageJson.version = `${version}.0`;",
       'fs.writeFileSync("package.json", `${JSON.stringify(packageJson, null, 2)}\\n`);',
+      ...(sourceAwareProjection
+        ? ['fs.writeFileSync("source-pin.txt", `${sourceSha}\\n`);']
+        : []),
       "",
     ].join("\n"),
   );
+  if (sourceAwareProjection) {
+    writeFileSync(path.join(repo, "source-pin.txt"), "unreleased\n");
+  }
   git(repo, ["add", "."]);
   git(repo, ["commit", "--quiet", "-m", "source"]);
   const sourceSha = git(repo, ["rev-parse", "HEAD"]);
 
-  execFileSync(
-    process.execPath,
-    ["scripts/sync-version.mjs", "--write", "--version", projectionVersion],
-    { cwd: repo },
-  );
+  const projectionArgs = [
+    "scripts/sync-version.mjs",
+    "--write",
+    "--version",
+    projectionVersion,
+  ];
+  if (sourceAwareProjection) {
+    projectionArgs.push("--source-sha", sourceSha);
+  }
+  execFileSync(process.execPath, projectionArgs, { cwd: repo });
   if (machineVersionOverride) {
     const packagePath = path.join(repo, "package.json");
     const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -185,6 +217,27 @@ test("verifies tag target, parent, source trailer, version, and exact tree", () 
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true });
     rmSync(outputDirectory, { recursive: true, force: true });
+  }
+});
+
+test("passes the source SHA to source-aware snapshot projections", () => {
+  const fixture = createSnapshotRepository({ sourceAwareProjection: true });
+  try {
+    const result = verifyReleaseSnapshot({
+      repo: fixture.repo,
+      tag: "27.1",
+      snapshotCommit: fixture.snapshotCommit,
+      sourceSha: fixture.sourceSha,
+      publicVersion: "27.1",
+    });
+
+    assert.equal(result.verified, true);
+    assert.equal(
+      git(fixture.repo, ["show", `${fixture.snapshotCommit}:source-pin.txt`]),
+      fixture.sourceSha,
+    );
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true });
   }
 });
 
