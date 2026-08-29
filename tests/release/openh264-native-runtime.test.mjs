@@ -13,6 +13,7 @@ import {
   openh264BuildEnvironment,
   openh264GithubEnvironment,
   openh264NativeTauriConfig,
+  parseElfSoname,
   parseOpenH264Cli,
   readElfMachine,
   readMachCpuType,
@@ -162,6 +163,19 @@ test("reads x64 and ARM64 ELF and Mach-O headers", (t) => {
   assert.equal(readMachCpuType(arm64Mach), 0x0100000c);
   assert.throws(() => readElfMachine(invalid), /valid ELF header/u);
   assert.throws(() => readMachCpuType(invalid), /Mach-O 64-bit/u);
+});
+
+test("reads the SONAME from GNU readelf dynamic-section output", () => {
+  const output = `
+Dynamic section at offset 0x123 contains 3 entries:
+  Tag        Type                         Name/Value
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x000000000000000e (SONAME)             Library soname: [libopenh264.so.8]
+ 0x0000000000000000 (NULL)               0x0
+`;
+
+  assert.equal(parseElfSoname(output), OPENH264_ELF_RUNTIME);
+  assert.equal(parseElfSoname(output.replace("SONAME", "NEEDED")), undefined);
 });
 
 test("parses the release workflow CLI and exports link and loader paths", () => {

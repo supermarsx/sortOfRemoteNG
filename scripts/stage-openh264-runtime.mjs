@@ -317,9 +317,14 @@ function clearPreviouslyStagedOpenH264(stageRoot) {
   }
 }
 
+export function parseElfSoname(output) {
+  return output.match(
+    /^\s*[^\r\n]*\(SONAME\)[^\r\n]*\[([^\]\r\n]+)\]\s*$/mu,
+  )?.[1];
+}
+
 function readElfSoname(filePath) {
-  const output = capture("readelf", ["-d", filePath]);
-  return output.match(/\(SONAME\).*Shared library: \[([^\]]+)\]/u)?.[1];
+  return parseElfSoname(capture("readelf", ["-d", filePath]));
 }
 
 function readMachInstallName(filePath) {
