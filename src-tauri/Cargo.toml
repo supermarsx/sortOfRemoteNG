@@ -405,6 +405,11 @@ full-windows-dynamic = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", 
 # Kafka/SQLite choices while replacing source-backed OpenH264 with the staged,
 # required shared library used by release CI.
 full-unix-dynamic = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
+# Distribution-native Linux packages use the system copies of every native
+# library that has a supported shared-link contract. OpenH264 remains a hard
+# ELF import through `rdp-software-decode-dynamic`; libssh2 is forced through
+# pkg-config by the package recipe's `LIBSSH2_SYS_USE_PKG_CONFIG=1` environment.
+full-linux-system = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite-dynamic", "kafka-dynamic", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 # `full-dev` mirrors `full` but is tuned for local development where the host
 # system doesn't have librdkafka installed and the OPKSSH vendor bundle isn't
 # staged. Two swaps versus `full`:
