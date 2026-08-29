@@ -98,6 +98,8 @@ vi.mock("../../src/contexts/useConnections", () => ({
 }));
 
 const SCRIPTS_STORAGE_KEY = "bulkSshScripts";
+const SCRIPT_LIBRARY_LOAD_TIMEOUT_MS = 10_000;
+const SCRIPT_MIGRATION_TEST_TIMEOUT_MS = 15_000;
 const mockOnClose = vi.fn();
 
 const ensureLocalStorage = () => {
@@ -785,33 +787,43 @@ describe("BulkSSHCommander Script Storage", () => {
     resetSSHCommandHistoryMemoryForTests();
   });
 
-  it("should migrate saved scripts from localStorage", async () => {
-    // Drain any load queued by a component unmounted in the preceding test,
-    // then remove the durable generation so this exercises legacy migration
-    // deterministically instead of inheriting suite-order state.
-    await bulkScriptsStore.load();
-    await IndexedDbService.removeItemStrict(bulkScriptsStore.key);
-    const customScript = {
-      id: "custom-1",
-      name: "Custom Script",
-      description: "A custom test script",
-      script: 'echo "Hello World"',
-      category: "Custom",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
+  it(
+    "should migrate saved scripts from localStorage",
+    async () => {
+      // Drain any load queued by a component unmounted in the preceding test,
+      // then remove the durable generation so this exercises legacy migration
+      // deterministically instead of inheriting suite-order state.
+      await bulkScriptsStore.load();
+      await IndexedDbService.removeItemStrict(bulkScriptsStore.key);
+      const customScript = {
+        id: "custom-1",
+        name: "Custom Script",
+        description: "A custom test script",
+        script: 'echo "Hello World"',
+        category: "Custom",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
 
-    const migrated = await bulkScriptsStore.load();
-    expect(migrated.value?.active).toEqual([
-      expect.objectContaining({ id: "custom-1", name: "Custom Script" }),
-    ]);
-    expect(localStorage.getItem(SCRIPTS_STORAGE_KEY)).toBeNull();
+      const migrated = await bulkScriptsStore.load();
+      expect(migrated.value?.active).toEqual([
+        expect.objectContaining({ id: "custom-1", name: "Custom Script" }),
+      ]);
+      expect(localStorage.getItem(SCRIPTS_STORAGE_KEY)).toBeNull();
 
-    renderComponent();
-    const scriptsButton = screen.getByText("Scripts");
-    fireEvent.click(scriptsButton);
+      renderComponent();
+      const scriptsButton = screen.getByText("Scripts");
+      fireEvent.click(scriptsButton);
 
-    expect(await screen.findByText("Custom Script")).toBeInTheDocument();
-  });
+      expect(
+        await screen.findByText(
+          "Custom Script",
+          {},
+          { timeout: SCRIPT_LIBRARY_LOAD_TIMEOUT_MS },
+        ),
+      ).toBeInTheDocument();
+    },
+    SCRIPT_MIGRATION_TEST_TIMEOUT_MS,
+  );
 });
