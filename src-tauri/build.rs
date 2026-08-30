@@ -86,6 +86,16 @@ fn main() {
     // their existing loader contract.
     if std::env::var_os("CARGO_FEATURE_RDP_SOFTWARE_DECODE_DYNAMIC").is_some() {
         match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
+            Ok("windows") => {
+                // /OPT:REF may discard the complete decoder COMDAT before it
+                // observes the direct version probe, which also removes the
+                // DLL import descriptor. Retain only that import-address-table
+                // symbol at the final app link. This keeps OpenH264 a required
+                // process dependency without whole-archiving every export in
+                // openh264.lib. The spelling is shared by Windows x64 and
+                // ARM64 MSVC import libraries.
+                println!("cargo:rustc-link-arg=/INCLUDE:__imp_WelsGetCodecVersionEx");
+            }
             Ok("linux") => {
                 println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/sortOfRemoteNG");
                 // Linux toolchains default to --as-needed, so the dependency

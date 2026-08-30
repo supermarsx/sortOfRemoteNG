@@ -303,6 +303,14 @@ test("normal Unix Tauri builds hard-link and package OpenH264", () => {
   );
 });
 
+test("Windows hard-import retention survives release dead-code elimination", () => {
+  assert.match(
+    appBuildScript,
+    /CARGO_FEATURE_RDP_SOFTWARE_DECODE_DYNAMIC[\s\S]*Ok\("windows"\)[\s\S]*\/INCLUDE:__imp_WelsGetCodecVersionEx/u,
+  );
+  assert.doesNotMatch(appBuildScript, /WHOLEARCHIVE[^\r\n]*openh264/iu);
+});
+
 test("documents the required hard import and source-build licensing caveat", () => {
   assert.match(nativeReadme, /hard-link OpenH264/u);
   assert.match(nativeReadme, /openh264-8\.dll/u);

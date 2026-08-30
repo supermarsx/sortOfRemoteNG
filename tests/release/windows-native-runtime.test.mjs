@@ -512,6 +512,16 @@ test("Windows runtime-closure checks stay explicit", () => {
   );
 });
 
+test("Windows release links OpenH264 as a required process dependency", () => {
+  const retainedImport = "/INCLUDE:__imp_WelsGetCodecVersionEx";
+  assert.match(
+    appBuildScript,
+    /CARGO_FEATURE_RDP_SOFTWARE_DECODE_DYNAMIC[\s\S]*Ok\("windows"\)[\s\S]*\/INCLUDE:__imp_WelsGetCodecVersionEx/u,
+  );
+  assert.equal(appBuildScript.split(retainedImport).length - 1, 1);
+  assert.doesNotMatch(appBuildScript, /WHOLEARCHIVE[^\r\n]*openh264/iu);
+});
+
 test("Windows release linker size controls stay explicit", () => {
   assert.match(
     appBuildScript,
