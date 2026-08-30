@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (relativePath) =>
-  readFileSync(new URL(`../../${relativePath}`, import.meta.url), "utf8");
+  readFileSync(
+    new URL(`../../${relativePath}`, import.meta.url),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
 
 const arch = read("packaging/arch/PKGBUILD");
 const alpine = read("packaging/alpine/APKBUILD");
