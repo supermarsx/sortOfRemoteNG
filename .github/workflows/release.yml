@@ -2144,6 +2144,18 @@ jobs:
               test -s "$openh264_notice_source"
               expected_openh264_hash=$(sha256sum "$openh264_source" | awk '{ print $1 }')
               expected_openh264_notice_hash=$(sha256sum "$openh264_notice_source" | awk '{ print $1 }')
+              expected_openh264_build_id=$(readelf -n "$openh264_source" |
+                awk '$1 == "Build" && $2 == "ID:" { print $3; exit }')
+              test -n "$expected_openh264_build_id"
+              command -v objcopy
+              expected_openh264_text_image="$RUNNER_TEMP/${ARTIFACT_ID}-openh264-source-text.bin"
+              objcopy \
+                --only-section=.text \
+                --output-target=binary \
+                "$openh264_source" \
+                "$expected_openh264_text_image"
+              test -s "$expected_openh264_text_image"
+              expected_openh264_text_hash=$(sha256sum "$expected_openh264_text_image" | awk '{ print $1 }')
               case "$ARTIFACT_ID" in
                 linux-x86_64) expected_elf_machine="Advanced Micro Devices X86-64" ;;
                 linux-aarch64) expected_elf_machine=AArch64 ;;
@@ -2195,11 +2207,12 @@ jobs:
                 '
               }
               verify_linux_openh264_payload() {
-                local root="$1" label="$2"
+                local root="$1" label="$2" identity_mode="${3:-exact}"
                 local executable="$root$expected_binary_path"
                 local library="$root$expected_openh264_path"
                 local notice="$root$expected_openh264_notice_path"
-                local dynamic actual_runpath actual_hash actual_notice_hash ldd_output resolved_library ldd_openh264_path
+                local dynamic library_dynamic actual_runpath actual_hash actual_notice_hash actual_build_id
+                local actual_text_image actual_text_hash ldd_output resolved_library ldd_openh264_path
 
                 test -x "$executable"
                 test -f "$library"
@@ -2209,8 +2222,37 @@ jobs:
                 readelf -h "$library" | grep -F "Machine:" | grep -F "$expected_elf_machine"
                 actual_hash=$(sha256sum "$library" | awk '{ print $1 }')
                 actual_notice_hash=$(sha256sum "$notice" | awk '{ print $1 }')
-                test "$actual_hash" = "$expected_openh264_hash"
                 test "$actual_notice_hash" = "$expected_openh264_notice_hash"
+                actual_build_id=$(readelf -n "$library" |
+                  awk '$1 == "Build" && $2 == "ID:" { print $3; exit }')
+                test "$actual_build_id" = "$expected_openh264_build_id"
+                case "$identity_mode" in
+                  exact)
+                    test "$actual_hash" = "$expected_openh264_hash"
+                    ;;
+                  strip-safe)
+                    actual_text_image="$RUNNER_TEMP/${ARTIFACT_ID}-${label}-openh264-text.bin"
+                    objcopy \
+                      --only-section=.text \
+                      --output-target=binary \
+                      "$library" \
+                      "$actual_text_image"
+                    test -s "$actual_text_image"
+                    actual_text_hash=$(sha256sum "$actual_text_image" | awk '{ print $1 }')
+                    test "$actual_text_hash" = "$expected_openh264_text_hash"
+                    ;;
+                  *)
+                    echo "::error::Unsupported OpenH264 identity mode $identity_mode for $label."
+                    exit 1
+                    ;;
+                esac
+
+                library_dynamic=$(readelf -d "$library")
+                test "$(printf '%s\n' "$library_dynamic" |
+                  grep -F '(SONAME)' |
+                  grep -Fc 'Library soname: [libopenh264.so.8]' || true)" -eq 1
+                test "$(readelf --dyn-syms --wide "$library" |
+                  awk '$8 == "WelsGetCodecVersionEx" { count += 1 } END { print count + 0 }')" -eq 1
 
                 dynamic=$(readelf -d "$executable")
                 test "$(printf '%s\n' "$dynamic" | grep -F '(NEEDED)' | grep -Fc 'Shared library: [libopenh264.so.8]' || true)" -eq 1
@@ -2224,7 +2266,8 @@ jobs:
                 test "$(printf '%s\n' "$ldd_output" | awk '$1 == "libopenh264.so.8" && $2 == "=>" { count += 1 } END { print count + 0 }')" -eq 1
                 ldd_openh264_path=$(printf '%s\n' "$ldd_output" | awk '$1 == "libopenh264.so.8" && $2 == "=>" { print $3 }')
                 test "$(realpath "$ldd_openh264_path")" = "$resolved_library"
-                printf 'Verified %s OpenH264 payload: %s\n' "$label" "$resolved_library"
+                printf 'Verified %s OpenH264 payload (%s, build ID %s): %s\n' \
+                  "$label" "$identity_mode" "$actual_build_id" "$resolved_library"
               }
               opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
               expected_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-expected-opkssh-files.txt"
@@ -2356,7 +2399,7 @@ jobs:
               )
               appimage_root="$appimage_extract_root/squashfs-root"
               test -x "$appimage_root$expected_binary_path"
-              verify_linux_openh264_payload "$appimage_root" AppImage
+              verify_linux_openh264_payload "$appimage_root" AppImage strip-safe
               test -d "$appimage_root$expected_resource_root"
               test -d "$appimage_root$expected_locale_root"
               appimage_resource_count=$(find "$appimage_root$expected_resource_root" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')

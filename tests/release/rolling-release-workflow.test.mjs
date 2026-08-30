@@ -2288,14 +2288,18 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     stageStep,
-    /verify_linux_openh264_payload\(\)[\s\S]*?readelf -h "\$library"[\s\S]*?sha256sum "\$library"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG[\s\S]*?env -u LD_LIBRARY_PATH ldd "\$executable"[\s\S]*?ldd_openh264_path[\s\S]*?realpath "\$ldd_openh264_path"[\s\S]*?\$resolved_library/,
+    /expected_openh264_build_id=\$\(readelf -n "\$openh264_source"[\s\S]*?expected_openh264_text_hash=\$\(sha256sum "\$expected_openh264_text_image"[\s\S]*?verify_linux_openh264_payload\(\)[\s\S]*?identity_mode="\$\{3:-exact\}"[\s\S]*?readelf -h "\$library"[\s\S]*?actual_build_id=\$\(readelf -n "\$library"[\s\S]*?test "\$actual_build_id" = "\$expected_openh264_build_id"[\s\S]*?exact\)[\s\S]*?test "\$actual_hash" = "\$expected_openh264_hash"[\s\S]*?strip-safe\)[\s\S]*?--only-section=\.text[\s\S]*?test "\$actual_text_hash" = "\$expected_openh264_text_hash"[\s\S]*?Library soname: \[libopenh264\.so\.8\][\s\S]*?WelsGetCodecVersionEx[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG[\s\S]*?env -u LD_LIBRARY_PATH ldd "\$executable"[\s\S]*?ldd_openh264_path[\s\S]*?realpath "\$ldd_openh264_path"[\s\S]*?\$resolved_library/,
   );
-  for (const packageKind of ["RPM", "DEB", "AppImage"]) {
+  for (const packageKind of ["RPM", "DEB"]) {
     assert.match(
       stageStep,
       new RegExp(`verify_linux_openh264_payload "[^"\\n]+" ${packageKind}`),
     );
   }
+  assert.match(
+    stageStep,
+    /verify_linux_openh264_payload "\$appimage_root" AppImage strip-safe/,
+  );
   assert.match(
     stageStep,
     /expected_icon_root="\/usr\/share\/icons\/hicolor"[\s\S]*?expected_linux_icon_paths=\([\s\S]*?32x32\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?128x128\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?256x256\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?512x512\/apps\/\$FLATPAK_APP_ID\.png/,
