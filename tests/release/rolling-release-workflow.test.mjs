@@ -2288,7 +2288,15 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     stageStep,
-    /expected_openh264_build_id=\$\(readelf -n "\$openh264_source"[\s\S]*?expected_openh264_text_hash=\$\(sha256sum "\$expected_openh264_text_image"[\s\S]*?verify_linux_openh264_payload\(\)[\s\S]*?identity_mode="\$\{3:-exact\}"[\s\S]*?readelf -h "\$library"[\s\S]*?actual_build_id=\$\(readelf -n "\$library"[\s\S]*?test "\$actual_build_id" = "\$expected_openh264_build_id"[\s\S]*?exact\)[\s\S]*?test "\$actual_hash" = "\$expected_openh264_hash"[\s\S]*?strip-safe\)[\s\S]*?--only-section=\.text[\s\S]*?test "\$actual_text_hash" = "\$expected_openh264_text_hash"[\s\S]*?Library soname: \[libopenh264\.so\.8\][\s\S]*?WelsGetCodecVersionEx[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG[\s\S]*?env -u LD_LIBRARY_PATH ldd "\$executable"[\s\S]*?ldd_openh264_path[\s\S]*?realpath "\$ldd_openh264_path"[\s\S]*?\$resolved_library/,
+    /expected_openh264_build_id=\$\(readelf -n "\$openh264_source"[\s\S]*?elf_export_fingerprint\(\)[\s\S]*?probe_openh264_version\(\)[\s\S]*?expected_openh264_text_hash=\$\(sha256sum "\$expected_openh264_text_image"[\s\S]*?expected_openh264_rodata_hash=\$\(sha256sum "\$expected_openh264_rodata_image"[\s\S]*?expected_openh264_abi_hash=\$\(elf_export_fingerprint "\$openh264_source"[\s\S]*?expected_openh264_version=\$\(probe_openh264_version "\$openh264_source"/,
+  );
+  assert.match(
+    stageStep,
+    /verify_linux_openh264_library_identity\(\)[\s\S]*?identity_mode="\$\{3:-exact\}"[\s\S]*?readelf -h "\$library"[\s\S]*?actual_build_id=\$\(readelf -n "\$library"[\s\S]*?require_equal "\$label OpenH264 build ID"[\s\S]*?exact\)[\s\S]*?require_equal "\$label OpenH264 file SHA-256"[\s\S]*?strip-safe\)[\s\S]*?--only-section=\.text[\s\S]*?require_equal "\$label OpenH264 \.text SHA-256"[\s\S]*?--only-section=\.rodata[\s\S]*?require_equal "\$label OpenH264 \.rodata SHA-256"[\s\S]*?require_equal "\$label OpenH264 exported ABI SHA-256"[\s\S]*?probe_openh264_version "\$library"[\s\S]*?Library soname: \[libopenh264\.so\.8\][\s\S]*?WelsGetCodecVersionEx/,
+  );
+  assert.match(
+    stageStep,
+    /verify_linux_openh264_payload\(\)[\s\S]*?library_path="\$\{4:-\$expected_openh264_path\}"[\s\S]*?required_runpath="\$\{5:-\}"[\s\S]*?if \[ -z "\$required_runpath" \]; then[\s\S]*?required_runpath='\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG'[\s\S]*?verify_linux_openh264_library_identity "\$library" "\$label runtime" "\$identity_mode"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?require_equal "\$label executable RUNPATH"[\s\S]*?env -u LD_LIBRARY_PATH ldd "\$executable"[\s\S]*?ldd_openh264_path[\s\S]*?require_equal "\$label OpenH264 resolved runtime path"/,
   );
   for (const packageKind of ["RPM", "DEB"]) {
     assert.match(
@@ -2298,7 +2306,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   }
   assert.match(
     stageStep,
-    /verify_linux_openh264_payload "\$appimage_root" AppImage strip-safe/,
+    /appimage_runtime_openh264_path=\/usr\/lib\/libopenh264\.so\.8[\s\S]*?diff -u[\s\S]*?"\$appimage_runtime_openh264_path"[\s\S]*?"\$expected_openh264_path"[\s\S]*?find "\$appimage_root\/usr\/lib"[\s\S]*?verify_linux_openh264_payload \\\s+"\$appimage_root" \\\s+AppImage \\\s+strip-safe \\\s+"\$appimage_runtime_openh264_path" \\\s+'\$ORIGIN\/\.\.\/lib'[\s\S]*?verify_linux_openh264_library_identity \\\s+"\$appimage_root\$expected_openh264_path" \\\s+"AppImage nested resource" \\\s+strip-safe/,
   );
   assert.match(
     stageStep,
