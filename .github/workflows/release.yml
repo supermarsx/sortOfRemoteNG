@@ -778,6 +778,10 @@ jobs:
             bundle.resources[openh264Source] = "libopenh264.so.8";
             bundle.linux = {
               rpm: {
+                // Tauri's default gzip level 6 spent roughly 2h45 compressing
+                // the hosted x64 package. Its supported zstd profile keeps the
+                // RPM compressed while avoiding that single-threaded bottleneck.
+                compression: { type: "zstd", level: 3 },
                 desktopTemplate,
               },
             };
@@ -2238,8 +2242,10 @@ jobs:
 
               actual_rpm_arch=$(rpm -qp --qf '%{ARCH}' "$rpm_source")
               actual_rpm_version=$(rpm -qp --qf '%{VERSION}' "$rpm_source")
+              actual_rpm_compressor=$(rpm -qp --qf '%{PAYLOADCOMPRESSOR}' "$rpm_source")
               test "$actual_rpm_arch" = "$LINUX_RPM_ARCH"
               test "$actual_rpm_version" = "$MACHINE_VERSION"
+              test "$actual_rpm_compressor" = zstd
               rpm_file_list="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-files.txt"
               rpm -qpl "$rpm_source" | tee "$rpm_file_list"
               grep -Fx "$expected_binary_path" "$rpm_file_list"

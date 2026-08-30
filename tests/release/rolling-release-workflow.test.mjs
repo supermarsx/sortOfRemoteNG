@@ -2040,6 +2040,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     linuxReleaseConfig.bundle.linux.rpm.desktopTemplate,
     resolve(process.cwd(), "src-tauri/packaging/linux.desktop"),
   );
+  assert.deepEqual(linuxReleaseConfig.bundle.linux.rpm.compression, {
+    type: "zstd",
+    level: 3,
+  });
   assert.equal(linuxReleaseConfig.mainBinaryName, "com.sortofremote.ng");
   assert.equal(linuxReleaseConfig.bundle.createUpdaterArtifacts, false);
   assert.equal(
@@ -2258,6 +2262,8 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   }
   assert.match(stageStep, /rpm -qp --qf '%\{ARCH\}'/);
   assert.match(stageStep, /rpm -qp --qf '%\{VERSION\}'/);
+  assert.match(stageStep, /rpm -qp --qf '%\{PAYLOADCOMPRESSOR\}'/);
+  assert.match(stageStep, /test "\$actual_rpm_compressor" = zstd/);
   assert.match(
     stageStep,
     /expected_binary_path="\/usr\/bin\/\$LINUX_PACKAGE_MAIN_BINARY"/,
