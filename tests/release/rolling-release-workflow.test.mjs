@@ -2227,7 +2227,15 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakBuild,
-    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"[\s\S]*?openh264_ldd_path[\s\S]*?readlink -f[\s\S]*?\/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8/,
+    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"[\s\S]*?openh264_ldd_path/,
+  );
+  assert.match(
+    flatpakBuild,
+    /actual_openh264_path=\$\(readlink -f "\$openh264_ldd_path"\)[\s\S]*?expected_openh264_path=\$\(readlink -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8\)[\s\S]*?printf "flatpak_openh264_actual_path=%s\\n" "\$actual_openh264_path"[\s\S]*?printf "flatpak_openh264_expected_path=%s\\n" "\$expected_openh264_path"[\s\S]*?test "\$actual_openh264_path" = "\$expected_openh264_path"/,
+  );
+  assert.doesNotMatch(
+    flatpakBuild,
+    /test "\$\(readlink -f "\$openh264_ldd_path"\)" = \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8/,
   );
   assert.match(
     flatpakBuild,

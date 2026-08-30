@@ -1660,7 +1660,11 @@ jobs:
               ! printf "%s\n" "$ldd_output" | grep -F "not found"
               test "$(printf "%s\n" "$ldd_output" | awk "\$1 == \"libopenh264.so.8\" && \$2 == \"=>\" { count += 1 } END { print count + 0 }")" -eq 1
               openh264_ldd_path=$(printf "%s\n" "$ldd_output" | awk "\$1 == \"libopenh264.so.8\" && \$2 == \"=>\" { print \$3 }")
-              test "$(readlink -f "$openh264_ldd_path")" = /app/lib/sortOfRemoteNG/libopenh264.so.8
+              actual_openh264_path=$(readlink -f "$openh264_ldd_path")
+              expected_openh264_path=$(readlink -f /app/lib/sortOfRemoteNG/libopenh264.so.8)
+              printf "flatpak_openh264_actual_path=%s\n" "$actual_openh264_path"
+              printf "flatpak_openh264_expected_path=%s\n" "$expected_openh264_path"
+              test "$actual_openh264_path" = "$expected_openh264_path"
             '
 
           installed_location=$(flatpak info --user --show-location "$FLATPAK_APP_ID")
