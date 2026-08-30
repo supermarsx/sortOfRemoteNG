@@ -736,8 +736,8 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       bundles: "msi,nsis",
       cargo_build_jobs: "1",
       release_lto: "off",
-      release_codegen_units: "64",
-      release_opt_level: "1",
+      release_codegen_units: "16",
+      release_opt_level: "0",
       windows_sdk_arch: "arm64",
     },
   });
@@ -751,11 +751,11 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.match(
     buildDefinition,
-    /# release builds use bounded LLVM profiles instead:\r?\n\s+# Linux splits final codegen into 16 smaller units after repeated\r?\n\s+# 90-minute single-CGU builds ended in runner loss; it retains one job\.\r?\n\s+# Windows uses 64 lightly optimised units after the size-optimised build\r?\n\s+# exceeded the standard runners' 16 GB memory; LTO remains off to keep\r?\n\s+# peak memory bounded\. Both macOS runners use 32 unoptimized units after the arm64\r?\n\s+# final app crate was SIGKILLed with opt-level 1 and 16 units\./,
+    /# release builds use bounded LLVM profiles instead:\r?\n\s+# Linux splits final codegen into 16 smaller units after repeated\r?\n\s+# 90-minute single-CGU builds ended in runner loss; it retains one job\.\r?\n\s+# Windows x64 uses 64 lightly optimised units after the size-optimised build\r?\n\s+# exceeded the standard runner's 16 GB memory\. Windows ARM64 restores its\r?\n\s+# last-known-green 16 unoptimized units after opt-level 1 with 64 units\r?\n\s+# exhausted LLVM memory in the root app crate\. LTO remains off\. Both macOS\r?\n\s+# runners use 32 unoptimized units after the arm64 final app crate was\r?\n\s+# SIGKILLed with opt-level 1 and 16 units\./,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "16"$/gm) ?? []).length,
-    2,
+    3,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "32"$/gm) ?? []).length,
@@ -763,7 +763,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "64"$/gm) ?? []).length,
-    2,
+    1,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "1"$/gm) ?? []).length,
@@ -771,11 +771,11 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "0"$/gm) ?? []).length,
-    4,
+    5,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "1"$/gm) ?? []).length,
-    2,
+    1,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "z"$/gm) ?? []).length,
@@ -784,7 +784,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   for (const [artifactId, profile] of Object.entries(profilesByArtifact)) {
     assert.equal(
       profile.release_opt_level,
-      artifactId.startsWith("windows-") ? "1" : "0",
+      artifactId === "windows-x86_64" ? "1" : "0",
     );
   }
   for (const [environmentName, matrixField] of Object.entries({
