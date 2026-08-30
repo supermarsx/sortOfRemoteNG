@@ -1,7 +1,7 @@
 # Maintainer: Mariana <17675589+supermarsx@users.noreply.github.com>
 
 pkgname=sortofremoteng
-pkgver=26.37.0
+pkgver=26.38.0
 pkgrel=1
 pkgdesc="Cross-platform remote connection manager"
 arch=('x86_64')
@@ -41,7 +41,7 @@ makedepends=(
 )
 options=('!debug')
 
-_commit=819c2b2634fd0c532e866d30dabb5bd4185e4f27
+_commit=7a05e18002cf9a06f158976ac08e59a5d2bb2c1c
 _opkssh_commit=193d79871f3bad3cd27cfb94734c265773a99c9b
 _release="${pkgver%.0}"
 source=(
