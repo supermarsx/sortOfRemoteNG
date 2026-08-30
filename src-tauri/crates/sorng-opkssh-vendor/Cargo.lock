@@ -4,4 +4,4 @@ version = 4
 
 [[package]]
 name = "sorng-opkssh-vendor"
-version = "26.39.0"
+version = "26.40.0"
