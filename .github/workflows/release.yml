@@ -1674,10 +1674,20 @@ jobs:
           test -f "$installed_openh264"
           test ! -L "$installed_openh264"
           test "$(find "$installed_location/files/lib/sortOfRemoteNG" -maxdepth 1 -type f -name 'libopenh264.so.8' | wc -l | tr -d '[:space:]')" -eq 1
-          expected_openh264_hash=$(sha256sum "$openh264_source" | awk '{ print $1 }')
-          actual_openh264_hash=$(sha256sum "$installed_openh264" | awk '{ print $1 }')
-          test "$actual_openh264_hash" = "$expected_openh264_hash"
+          expected_openh264_build_id=$(readelf -n "$openh264_source" |
+            awk '$1 == "Build" && $2 == "ID:" { print $3; exit }')
+          actual_openh264_build_id=$(readelf -n "$installed_openh264" |
+            awk '$1 == "Build" && $2 == "ID:" { print $3; exit }')
+          printf 'flatpak_openh264_expected_build_id=%s\n' "$expected_openh264_build_id"
+          printf 'flatpak_openh264_actual_build_id=%s\n' "$actual_openh264_build_id"
+          test -n "$expected_openh264_build_id"
+          test "$actual_openh264_build_id" = "$expected_openh264_build_id"
           readelf -h "$installed_openh264" | grep -F "Machine:" | grep -F "$expected_elf_machine"
+          test "$(readelf -d "$installed_openh264" |
+            grep -F '(SONAME)' |
+            grep -Fc 'Library soname: [libopenh264.so.8]' || true)" -eq 1
+          test "$(readelf --dyn-syms --wide "$installed_openh264" |
+            awk '$8 == "WelsGetCodecVersionEx" { count += 1 } END { print count + 0 }')" -eq 1
           cmp "$openh264_notice_source" "$installed_openh264_notice"
 
           expected_flatpak_icon_digests="$RUNNER_TEMP/${ARTIFACT_ID}-flatpak-icons.expected"

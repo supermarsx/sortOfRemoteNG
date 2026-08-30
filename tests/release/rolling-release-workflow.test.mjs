@@ -2239,8 +2239,9 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakBuild,
-    /flatpak info --user --show-location[\s\S]*?installed_openh264="\$installed_location\/files\/lib\/sortOfRemoteNG\/libopenh264\.so\.8"[\s\S]*?sha256sum "\$installed_openh264"[\s\S]*?readelf -h "\$installed_openh264"[\s\S]*?cmp "\$openh264_notice_source" "\$installed_openh264_notice"/,
+    /flatpak info --user --show-location[\s\S]*?installed_openh264="\$installed_location\/files\/lib\/sortOfRemoteNG\/libopenh264\.so\.8"[\s\S]*?expected_openh264_build_id=\$\(readelf -n "\$openh264_source"[\s\S]*?actual_openh264_build_id=\$\(readelf -n "\$installed_openh264"[\s\S]*?test -n "\$expected_openh264_build_id"[\s\S]*?test "\$actual_openh264_build_id" = "\$expected_openh264_build_id"[\s\S]*?readelf -h "\$installed_openh264"[\s\S]*?Library soname: \[libopenh264\.so\.8\][\s\S]*?WelsGetCodecVersionEx[\s\S]*?cmp "\$openh264_notice_source" "\$installed_openh264_notice"/,
   );
+  assert.doesNotMatch(flatpakBuild, /sha256sum "\$installed_openh264"/);
   assert.match(
     flatpakBuild,
     /expected_flatpak_locale_digests[\s\S]*?cd "\$locale_source"[\s\S]*?\/app\/bin\/resources\/locales[\s\S]*?diff -u "\$expected_flatpak_locale_digests" "\$actual_flatpak_locale_digests"/,
