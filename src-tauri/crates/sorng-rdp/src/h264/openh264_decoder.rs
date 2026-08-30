@@ -143,6 +143,50 @@ impl H264Decoder for OpenH264SoftDecoder {
     }
 }
 
+#[cfg(all(test, feature = "software-decode"))]
+mod source_tests {
+    use super::*;
+    use crate::openh264::encoder::Encoder;
+    use crate::openh264::formats::{RgbaSliceU8, YUVBuffer};
+
+    #[test]
+    fn encoded_frame_round_trips_through_the_rgba_pipeline() {
+        const WIDTH: usize = 32;
+        const HEIGHT: usize = 32;
+        const EXPECTED_RGB: [u8; 3] = [64, 128, 192];
+
+        let mut source = Vec::with_capacity(WIDTH * HEIGHT * 4);
+        for _ in 0..(WIDTH * HEIGHT) {
+            source.extend_from_slice(&[EXPECTED_RGB[0], EXPECTED_RGB[1], EXPECTED_RGB[2], 255]);
+        }
+        let yuv = YUVBuffer::from_rgba8_source(RgbaSliceU8::new(&source, (WIDTH, HEIGHT)));
+        let encoded = Encoder::new()
+            .expect("the bundled development encoder must initialize")
+            .encode(&yuv)
+            .expect("the synthetic frame must encode")
+            .to_vec();
+
+        let frames = OpenH264SoftDecoder::new()
+            .expect("the bundled development decoder must initialize")
+            .decode(&encoded)
+            .expect("the synthetic frame must decode");
+        assert_eq!(frames.len(), 1);
+        let frame = &frames[0];
+        assert_eq!((frame.width, frame.height), (WIDTH as u32, HEIGHT as u32));
+        assert_eq!(frame.rgba.len(), WIDTH * HEIGHT * 4);
+
+        for pixel in frame.rgba.chunks_exact(4) {
+            assert_eq!(pixel[3], 255);
+            for (actual, expected) in pixel[..3].iter().zip(EXPECTED_RGB) {
+                assert!(
+                    actual.abs_diff(expected) <= 8,
+                    "decoded channel {actual} drifted from {expected}"
+                );
+            }
+        }
+    }
+}
+
 #[cfg(all(test, feature = "software-decode-dynamic"))]
 mod tests {
     use super::*;

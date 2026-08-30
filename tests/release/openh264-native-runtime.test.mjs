@@ -34,6 +34,17 @@ const cargoManifest = readFileSync(
   new URL("../../src-tauri/Cargo.toml", import.meta.url),
   "utf8",
 );
+const cargoLock = readFileSync(
+  new URL("../../src-tauri/Cargo.lock", import.meta.url),
+  "utf8",
+);
+const rdpVendorManifest = readFileSync(
+  new URL(
+    "../../src-tauri/crates/sorng-rdp-vendor/Cargo.toml",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const appBuildScript = readFileSync(
   new URL("../../src-tauri/build.rs", import.meta.url),
   "utf8",
@@ -309,6 +320,30 @@ test("Windows hard-import retention survives release dead-code elimination", () 
     /CARGO_FEATURE_RDP_SOFTWARE_DECODE_DYNAMIC[\s\S]*Ok\("windows"\)[\s\S]*\/INCLUDE:__imp_WelsGetCodecVersionEx/u,
   );
   assert.doesNotMatch(appBuildScript, /WHOLEARCHIVE[^\r\n]*openh264/iu);
+});
+
+test("dynamic OpenH264 builds do not compile the crate's bundled C++ source", () => {
+  assert.match(
+    rdpVendorManifest,
+    /^software-decode = \["dep:openh264", "openh264\/source"\]$/mu,
+  );
+  assert.match(
+    rdpVendorManifest,
+    /^software-decode-dynamic = \["dep:openh264", "openh264\/libloading"\]$/mu,
+  );
+  assert.match(
+    rdpVendorManifest,
+    /^openh264 = \{ version = "=0\.9\.8", optional = true, default-features = false \}$/mu,
+  );
+  for (const crate of ["openh264", "openh264-sys2"]) {
+    assert.match(
+      cargoLock,
+      new RegExp(
+        `\\[\\[package\\]\\]\\r?\\nname = "${crate}"\\r?\\nversion = "0\\.9\\.8"`,
+        "u",
+      ),
+    );
+  }
 });
 
 test("documents the required hard import and source-build licensing caveat", () => {
