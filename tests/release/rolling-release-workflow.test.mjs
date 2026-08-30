@@ -2080,6 +2080,9 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(macOsNativePrerequisites, /\bnasm\b/);
   assert.doesNotMatch(nativePrerequisites, /\b(?:flatpak|appstream)\b/);
   assert.match(flatpakSetup, /"flatpak-builder=\$\{FLATPAK_BUILDER_PACKAGE\}"/);
+  assert.match(flatpakSetup, /^\s+elfutils \\/m);
+  assert.match(flatpakSetup, /^\s+command -v eu-elfcompress$/m);
+  assert.match(flatpakSetup, /^\s+command -v eu-strip$/m);
   assert.doesNotMatch(
     flatpakSetup,
     /test "\$\(flatpak-builder --version\)" = "flatpak-builder \$FLATPAK_BUILDER_VERSION"/,

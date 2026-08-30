@@ -1460,8 +1460,11 @@ jobs:
           set -euo pipefail
           sudo apt-get install -y --no-install-recommends \
             appstream \
+            elfutils \
             flatpak \
             "flatpak-builder=${FLATPAK_BUILDER_PACKAGE}"
+          command -v eu-elfcompress
+          command -v eu-strip
           flatpak_builder_version_output=$(flatpak-builder --version)
           printf 'flatpak_builder_version_output=%s\n' "$flatpak_builder_version_output"
           flatpak_builder_version_pattern='^flatpak-builder([[:space:]]+|-)([0-9]+\.[0-9]+\.[0-9]+)([[:space:]]+\(libflatpak version [0-9]+\.[0-9]+\.[0-9]+\))?$'
