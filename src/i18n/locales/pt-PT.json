@@ -2453,6 +2453,11 @@
     "autoCheckTooltip": "As verificações nunca instalam atualizações sem confirmação.",
     "checkIntervalHours": "Intervalo de verificação (horas)",
     "artifact": "Artefacto",
+    "downloadManually": "Transferir manualmente",
+    "unsigned": {
+      "title": "É necessária uma transferência manual",
+      "description": "Esta versão não tem uma assinatura do atualizador, pelo que não pode ser instalada na aplicação. Transfira o artefacto acima e instale-o manualmente."
+    },
     "msiElevation": {
       "title": "É necessária aprovação de administrador",
       "description": "O Windows pede aprovação de administrador antes de instalar esta atualização .msi. O sortOfRemoteNG fecha assim que o instalador arranca, o Windows mostra uma janela de progresso enquanto os ficheiros instalados são substituídos e a aplicação volta a abrir sozinha quando a atualização termina. Se recusar o pedido, não é instalado nada: volte a abrir o sortOfRemoteNG para continuar a usar a versão atual."

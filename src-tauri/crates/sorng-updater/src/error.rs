@@ -7,7 +7,7 @@ pub enum UpdateError {
     InvalidEndpoint(String),
     Settings(String),
     SelfUpdateUnsupported(String),
-    /// The signed feed carried no entry for the per-installer updater target this
+    /// The feed carried no entry for the per-installer updater target this
     /// install mode pins (see [`crate::types::UpdaterInstallMode::updater_target_suffix`]).
     ///
     /// Pinning the target disables the plugin's silent `{os}-{arch}` fallback, so a feed
@@ -20,6 +20,9 @@ pub enum UpdateError {
     Io(String),
     Serialization(String),
     NoUpdateAvailable,
+    /// The discovery feed carried no minisign signature. The release may
+    /// still be shown to the user, but the updater must never download or execute it.
+    UnsignedUpdateNotInstallable,
     VersionMismatch {
         requested: String,
         available: String,
@@ -41,12 +44,16 @@ impl fmt::Display for UpdateError {
             Self::Io(msg) => write!(f, "I/O error: {msg}"),
             Self::Serialization(msg) => write!(f, "serialization error: {msg}"),
             Self::NoUpdateAvailable => write!(f, "no update available"),
+            Self::UnsignedUpdateNotInstallable => write!(
+                f,
+                "This release has no updater signature, so it cannot be installed in the app. Download and install it manually from GitHub Releases."
+            ),
             Self::VersionMismatch {
                 requested,
                 available,
             } => write!(
                 f,
-                "requested updater version {requested}, but the signed feed offered {available}"
+                "requested updater version {requested}, but the updater feed offered {available}"
             ),
             Self::State(msg) => write!(f, "updater state error: {msg}"),
         }
@@ -115,5 +122,15 @@ mod tests {
 
         let error = UpdateError::from("not a url".parse::<url::Url>().unwrap_err());
         assert!(matches!(error, UpdateError::InvalidEndpoint(_)));
+    }
+
+    #[test]
+    fn unsigned_update_error_explains_the_fail_closed_manual_path() {
+        let message = UpdateError::UnsignedUpdateNotInstallable.to_string();
+
+        assert!(message.contains("no updater signature"));
+        assert!(message.contains("cannot be installed in the app"));
+        assert!(message.contains("manually"));
+        assert!(message.contains("GitHub Releases"));
     }
 }

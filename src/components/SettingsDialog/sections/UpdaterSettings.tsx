@@ -389,7 +389,9 @@ export const UpdaterSettings: React.FC = () => {
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
-                  {t("updater.artifact", "Artifact")}
+                  {available.signaturePresent
+                    ? t("updater.artifact", "Artifact")
+                    : t("updater.downloadManually", "Download manually")}
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
@@ -401,26 +403,45 @@ export const UpdaterSettings: React.FC = () => {
             </div>
           )}
 
-          {updater.installMode === "msi" && available && (
+          {available && !available.signaturePresent && (
             <div
               role="note"
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm text-[var(--color-textSecondary)]"
-              data-testid="updater-msi-elevation-notice"
+              className="rounded-md border border-warning/40 bg-warning/10 px-3 py-3 text-sm text-[var(--color-textSecondary)]"
+              data-testid="updater-unsigned-notice"
             >
               <p className="font-medium text-[var(--color-text)]">
-                {t(
-                  "updater.msiElevation.title",
-                  "Administrator approval required",
-                )}
+                {t("updater.unsigned.title", "Manual download required")}
               </p>
               <p className="mt-1 text-xs">
                 {t(
-                  "updater.msiElevation.description",
-                  "Windows asks for administrator approval before this .msi update is installed. sortOfRemoteNG closes as soon as the installer starts, Windows shows a progress window while the installed files are replaced, and the app reopens itself when the update finishes. If you decline the prompt, nothing is installed — reopen sortOfRemoteNG to keep using the current version.",
+                  "updater.unsigned.description",
+                  "This release has no updater signature, so it cannot be installed in the app. Download the artifact above and install it manually.",
                 )}
               </p>
             </div>
           )}
+
+          {updater.installMode === "msi" &&
+            available?.signaturePresent === true && (
+              <div
+                role="note"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm text-[var(--color-textSecondary)]"
+                data-testid="updater-msi-elevation-notice"
+              >
+                <p className="font-medium text-[var(--color-text)]">
+                  {t(
+                    "updater.msiElevation.title",
+                    "Administrator approval required",
+                  )}
+                </p>
+                <p className="mt-1 text-xs">
+                  {t(
+                    "updater.msiElevation.description",
+                    "Windows asks for administrator approval before this .msi update is installed. sortOfRemoteNG closes as soon as the installer starts, Windows shows a progress window while the installed files are replaced, and the app reopens itself when the update finishes. If you decline the prompt, nothing is installed — reopen sortOfRemoteNG to keep using the current version.",
+                  )}
+                </p>
+              </div>
+            )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -523,7 +544,7 @@ export const UpdaterSettings: React.FC = () => {
                   <InfoTooltip
                     text={t(
                       "updater.checkIntervalTooltip",
-                      "How often the app checks for signed updates while automatic checks are enabled.",
+                      "How often the app checks for updates while automatic checks are enabled.",
                     )}
                   />
                 </span>

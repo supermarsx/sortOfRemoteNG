@@ -2453,6 +2453,11 @@
     "autoCheckTooltip": "检查绝不会在未经确认的情况下安装更新。",
     "checkIntervalHours": "检查间隔（小时）",
     "artifact": "构件",
+    "downloadManually": "手动下载",
+    "unsigned": {
+      "title": "需要手动下载",
+      "description": "此版本没有更新程序签名，因此无法在应用内安装。请下载上方的构件并手动安装。"
+    },
     "msiElevation": {
       "title": "需要管理员授权",
       "description": "在安装此 .msi 更新之前，Windows 会请求管理员授权。安装程序一启动，sortOfRemoteNG 就会关闭；替换已安装文件时 Windows 会显示进度窗口；更新完成后应用会自行重新打开。如果拒绝该提示，则不会安装任何内容 — 请重新打开 sortOfRemoteNG 以继续使用当前版本。"

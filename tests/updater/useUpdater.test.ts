@@ -369,6 +369,56 @@ describe("useUpdater", () => {
     expect(result.current.canRelaunch).toBe(true);
   });
 
+  it("keeps an unsigned release discoverable but never invokes installation", async () => {
+    const unsignedUpdate: AvailableUpdate = {
+      ...update,
+      signaturePresent: false,
+    };
+    const unsignedStatus: UpdaterStatusSnapshot = {
+      ...availableStatus,
+      availableUpdate: unsignedUpdate,
+    };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          return Promise.resolve(idleStatus);
+        case "updater_check":
+          return Promise.resolve({
+            updateAvailable: true,
+            availableUpdate: unsignedUpdate,
+            status: unsignedStatus,
+          });
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    const { result } = renderHook(() => useUpdater({ autoLoad: false }));
+    await act(async () => {
+      await result.current.refresh();
+    });
+    await waitFor(() => expect(result.current.canCheck).toBe(true));
+    await act(async () => {
+      await result.current.check(true);
+    });
+
+    expect(result.current.availableUpdate).toEqual(unsignedUpdate);
+    expect(result.current.updateAvailable).toBe(true);
+    expect(result.current.updateInfo?.checksum).toBe("");
+    expect(result.current.canInstall).toBe(false);
+
+    await act(async () => {
+      expect(await result.current.install("1.6.0")).toBeNull();
+    });
+
+    expect(result.current.lastError).toContain("no updater signature");
+    expect(result.current.lastError).toContain("manually");
+    const commandNames = mockInvoke.mock.calls.map(([cmd]) => cmd);
+    expect(commandNames).not.toContain("updater_download_and_install");
+  });
+
   it("fails closed when check or install is called before capability loading", async () => {
     const { result } = renderHook(() => useUpdater({ autoLoad: false }));
 

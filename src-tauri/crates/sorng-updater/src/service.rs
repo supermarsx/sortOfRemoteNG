@@ -219,7 +219,7 @@ impl UpdaterService {
         match update_result {
             Ok(Some(update)) => {
                 let available = available_update_from_plugin(&update);
-                debug!("signed updater feed offered version {}", available.version);
+                debug!("updater feed offered version {}", available.version);
                 self.record_available_update(available.clone())?;
                 self.check_result(true, Some(available))
             }
@@ -273,6 +273,11 @@ impl UpdaterService {
         }
 
         let available = available_update_from_plugin(&update);
+        if let Err(error) = ensure_installable_signature(&update.signature) {
+            self.record_available_update(available)?;
+            self.record_error(error.to_string())?;
+            return Err(error);
+        }
         self.begin_download(available)?;
 
         let inner_for_progress = self.inner.clone();
@@ -661,6 +666,17 @@ fn available_update_from_plugin(update: &Update) -> AvailableUpdate {
         download_url: update.download_url.to_string(),
         signature_present: !update.signature.trim().is_empty(),
         raw_json: update.raw_json.clone(),
+    }
+}
+
+/// Keeps unsigned discovery feeds useful without ever handing their payload to the
+/// downloader. Tauri verifies signatures after downloading, so this earlier guard is
+/// what guarantees an unsigned artifact is rejected before the payload request starts.
+fn ensure_installable_signature(signature: &str) -> Result<(), UpdateError> {
+    if signature.trim().is_empty() {
+        Err(UpdateError::UnsignedUpdateNotInstallable)
+    } else {
+        Ok(())
     }
 }
 
@@ -1211,6 +1227,24 @@ mod tests {
             map_plugin_error(tauri_plugin_updater::Error::ReleaseNotFound),
             UpdateError::Plugin(_)
         ));
+    }
+
+    #[test]
+    fn unsigned_discovery_entries_are_rejected_before_payload_installation() {
+        assert!(matches!(
+            ensure_installable_signature(""),
+            Err(UpdateError::UnsignedUpdateNotInstallable)
+        ));
+        assert!(matches!(
+            ensure_installable_signature(" \r\n\t "),
+            Err(UpdateError::UnsignedUpdateNotInstallable)
+        ));
+    }
+
+    #[test]
+    fn signed_discovery_entries_keep_the_existing_install_path() {
+        ensure_installable_signature("minisign-payload")
+            .expect("a non-empty signature must remain installable");
     }
 
     #[test]

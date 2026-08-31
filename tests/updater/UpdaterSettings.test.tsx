@@ -289,6 +289,39 @@ describe("UpdaterSettings", () => {
     },
   );
 
+  it("shows an unsigned release as a manual download without install controls", async () => {
+    const unsignedUpdate: AvailableUpdate = {
+      ...availableUpdate,
+      signaturePresent: false,
+    };
+    const unsignedStatus: UpdaterStatusSnapshot = {
+      ...idleStatus,
+      installMode: "msi",
+      status: "available",
+      availableUpdate: unsignedUpdate,
+    };
+    const msiSettings: UpdaterSettings = { ...settings, installMode: "msi" };
+    mockInvoke.mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === "updater_get_settings" ? msiSettings : unsignedStatus,
+      ),
+    );
+
+    render(<UpdaterSettingsSection />);
+
+    const notice = await screen.findByTestId("updater-unsigned-notice");
+    expect(notice).toHaveTextContent("Manual download required");
+    expect(notice).toHaveTextContent(/no updater signature/i);
+    expect(notice).toHaveTextContent(/install it manually/i);
+    expect(
+      screen.getByRole("link", { name: /Download manually/i }),
+    ).toHaveAttribute("href", unsignedUpdate.downloadUrl);
+    expect(screen.queryByTestId("updater-install-btn")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("updater-msi-elevation-notice"),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows no MSI elevation notice while an MSI install has no update waiting", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       const modeSettings: UpdaterSettings = { ...settings, installMode: "msi" };

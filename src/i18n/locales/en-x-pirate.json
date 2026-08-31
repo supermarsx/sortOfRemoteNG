@@ -2453,6 +2453,11 @@
     "autoCheckTooltip": "Checks never install updates without confirmation.",
     "checkIntervalHours": "Check interval (hours)",
     "artifact": "Artifact",
+    "downloadManually": "Haul aboard manually",
+    "unsigned": {
+      "title": "Manual haul aboard required",
+      "description": "This release has nay updater signature, so it cannot be installed in the app. Haul aboard the artifact above and install it manually."
+    },
     "msiElevation": {
       "title": "Captain approval required",
       "description": "Windows asks for captain approval before this .msi refit is installed. sortOfRemoteNG closes as soon as the installer starts, Windows shows a progress window while the installed charts are replaced, and the app reopens itself when the refit finishes. If ye decline the prompt, nothing is installed — reopen sortOfRemoteNG to keep using the current version."

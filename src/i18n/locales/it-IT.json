@@ -2453,6 +2453,11 @@
     "autoCheckTooltip": "I controlli non installano mai aggiornamenti senza conferma.",
     "checkIntervalHours": "Intervallo di controllo (ore)",
     "artifact": "Artefatto",
+    "downloadManually": "Scarica manualmente",
+    "unsigned": {
+      "title": "Download manuale richiesto",
+      "description": "Questa versione non dispone di una firma dell'aggiornamento, quindi non può essere installata dall'app. Scarica l'artefatto qui sopra e installalo manualmente."
+    },
     "msiElevation": {
       "title": "Approvazione amministratore richiesta",
       "description": "Windows chiede l'approvazione dell'amministratore prima di installare questo aggiornamento .msi. sortOfRemoteNG si chiude non appena parte il programma di installazione, Windows mostra una finestra di avanzamento mentre i file installati vengono sostituiti e l'app si riapre da sola al termine dell'aggiornamento. Se rifiuti la richiesta, non viene installato nulla: riapri sortOfRemoteNG per continuare a usare la versione attuale."

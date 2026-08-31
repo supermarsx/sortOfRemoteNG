@@ -23,6 +23,8 @@ const SELF_UPDATE_CAPABILITY_LOADING_MESSAGE =
   "Updater capability is still loading. Wait for package compatibility checks to finish and try again.";
 const SELF_UPDATE_UNSUPPORTED_FALLBACK =
   "This installation cannot be safely updated in the app.";
+const UNSIGNED_UPDATE_INSTALL_MESSAGE =
+  "This release has no updater signature, so it cannot be installed in the app. Download and install the artifact manually.";
 
 async function invokeUpdater<T>(
   command: string,
@@ -513,6 +515,12 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
         setError(selfUpdateMessage ?? SELF_UPDATE_UNSUPPORTED_FALLBACK);
         return null;
       }
+      const discoveredUpdate =
+        status?.availableUpdate ?? checkResult?.availableUpdate ?? null;
+      if (discoveredUpdate && !discoveredUpdate.signaturePresent) {
+        setError(UNSIGNED_UPDATE_INSTALL_MESSAGE);
+        return null;
+      }
       if (status?.status === "restart_required") {
         await relaunch();
         return status;
@@ -540,6 +548,7 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     [
       refreshStatus,
       relaunch,
+      checkResult?.availableUpdate,
       selfUpdateAllowed,
       selfUpdateCapabilityLoaded,
       selfUpdateMessage,
@@ -588,7 +597,10 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     relaunching;
   const canCheck = selfUpdateAllowed && !isBusy;
   const canInstall =
-    selfUpdateAllowed && updateAvailable && Boolean(availableUpdate) && !isBusy;
+    selfUpdateAllowed &&
+    updateAvailable &&
+    availableUpdate?.signaturePresent === true &&
+    !isBusy;
   const canRelaunch = isRestartRequired && !relaunching;
 
   const checkForUpdates = useCallback(async (): Promise<UpdateInfo | null> => {
