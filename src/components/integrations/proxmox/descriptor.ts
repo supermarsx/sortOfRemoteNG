@@ -9,14 +9,14 @@
 //   password auth: username `root@pam` (realm inside the username), password;
 //   API token:     username `user@realm!tokenname`, apiKey = token secret.
 
-import { Server } from "lucide-react";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
+import { proxmox } from "../../../utils/icons/brand";
 
 export const proxmoxDescriptor: IntegrationDescriptor = {
   key: "proxmox",
   label: "Proxmox VE",
   category: "virtualization",
-  icon: Server,
-  defaultConnectionIconKey: "server",
+  icon: proxmox,
+  defaultConnectionIconKey: "proxmox",
   importPanel: () => import("./ProxmoxIntegrationPanel"),
 };

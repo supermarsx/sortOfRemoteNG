@@ -1,5 +1,6 @@
 import { GlobeLock, Layers, MonitorCog } from "lucide-react";
 
+import { portainer, proxmox, vmware } from "../brand";
 import { defineIcon } from "./types";
 
 /**
@@ -28,5 +29,23 @@ export const VIRTUALIZATION_ICONS = [
     "dynamic dns",
     "ddns",
     "hostname",
+  ]),
+  defineIcon("vmware", "VMware", "virtualization", vmware, [
+    "vmware",
+    "vsphere",
+    "workstation",
+    "virtual machine",
+  ]),
+  defineIcon("proxmox", "Proxmox VE", "virtualization", proxmox, [
+    "proxmox",
+    "virtual machine",
+    "lxc",
+    "hypervisor",
+  ]),
+  defineIcon("portainer", "Portainer", "virtualization", portainer, [
+    "portainer",
+    "containers",
+    "docker",
+    "kubernetes",
   ]),
 ] as const;

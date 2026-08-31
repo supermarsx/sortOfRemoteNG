@@ -2,6 +2,8 @@ import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AppToolbar } from "../../src/components/app/AppToolbar";
+import { TOOL_DESCRIPTORS } from "../../src/components/app/toolDescriptors";
+import { TOOL_LABELS } from "../../src/components/app/toolSession";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -91,6 +93,12 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("keeps the canonical tool descriptor exhaustive", () => {
+    expect(Object.keys(TOOL_DESCRIPTORS).sort()).toEqual(
+      Object.keys(TOOL_LABELS).sort(),
+    );
+  });
+
   it("renders without crashing", () => {
     const { container } = render(<AppToolbar {...(makeProps() as any)} />);
     expect(container.querySelector(".app-bar")).toBeTruthy();
@@ -188,5 +196,57 @@ describe("AppToolbar", () => {
     expect(btn).toBeTruthy();
     fireEvent.click(btn);
     expect(props.setRdpPanelOpen).toHaveBeenCalledWith(true);
+  });
+
+  it("uses the same canonical icons as the tool tabs it launches", () => {
+    const props = makeProps({
+      databaseManager: {
+        getCurrentDatabase: () => ({ id: "col-1", name: "Test" }),
+      } as any,
+    });
+    Object.assign(props.appSettings, {
+      showProxyMenuIcon: true,
+      showShortcutManagerIcon: true,
+      showWolIcon: true,
+      showBulkSSHIcon: true,
+      showServerStatsIcon: true,
+      showOpksshIcon: true,
+      showMcpServerIcon: true,
+      showScriptManagerIcon: true,
+      showMacroManagerIcon: true,
+      showRecordingManagerIcon: true,
+      showPerformanceMonitorIcon: true,
+      showActionLogIcon: true,
+    });
+
+    render(<AppToolbar {...(props as any)} />);
+
+    const expected = [
+      ["Import / Export", "importExport"],
+      ["Settings", "settings"],
+      ["Tag Manager", "tagManager"],
+      ["Tab Group Manager", "tabGroupManager"],
+      ["Session Manager", "rdpSessions"],
+      ["Proxy & VPN", "proxyChain"],
+      ["Shortcut Manager", "shortcutManager"],
+      ["Wake-on-LAN", "wol"],
+      ["Bulk SSH", "bulkSsh"],
+      ["Server Stats", "serverStats"],
+      ["opkssh", "opkssh"],
+      ["MCP Server", "mcpServer"],
+      ["Script Manager", "scriptManager"],
+      ["Macro Manager", "macroManager"],
+      ["Recording Manager", "recordingManager"],
+      ["Performance Monitor", "performanceMonitor"],
+      ["Action Log", "actionLog"],
+    ] as const;
+
+    expected.forEach(([title, toolKey]) => {
+      const button = screen.getByTitle(title);
+      expect(
+        button.querySelector(`[data-tool-icon="${toolKey}"]`),
+        `${title} should use ${toolKey}'s canonical icon`,
+      ).toBeInTheDocument();
+    });
   });
 });

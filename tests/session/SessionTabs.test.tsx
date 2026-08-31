@@ -13,6 +13,10 @@ import type {
   ConnectionSession,
   TabGroup,
 } from "../../src/types/connection/connection";
+import {
+  clearRuntimeConnectionsForTests,
+  registerRuntimeConnection,
+} from "../../src/utils/session/runtimeConnectionRegistry";
 
 const mockDispatch = vi.fn();
 
@@ -170,6 +174,7 @@ describe("SessionTabs accessibility", () => {
 
   afterEach(() => {
     restoreTabSizing();
+    clearRuntimeConnectionsForTests();
   });
 
   it("shows that no session is selected when the tab list is empty", () => {
@@ -209,6 +214,164 @@ describe("SessionTabs accessibility", () => {
       "data-session-status",
       "error",
     );
+  });
+
+  it("uses canonical saved, protocol, brand, integration, and tool icons", () => {
+    const makeSession = (
+      id: string,
+      protocol: string,
+      connectionId = `connection-${id}`,
+    ): ConnectionSession => ({
+      id,
+      connectionId,
+      name: id,
+      status: "connected",
+      startTime: new Date("2026-01-01T00:00:00.000Z"),
+      protocol,
+      hostname: `${id}.example.test`,
+    });
+    const makeConnection = (
+      id: string,
+      protocol: Connection["protocol"],
+      overrides: Partial<Connection> = {},
+    ): Connection => ({
+      id: `connection-${id}`,
+      name: id,
+      protocol,
+      hostname: `${id}.example.test`,
+      port: 22,
+      isGroup: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    });
+
+    mockSessions = [
+      makeSession("ssh-built-in", "ssh"),
+      makeSession("saved-override", "ssh"),
+      makeSession("database-brand", "postgresql"),
+      makeSession("cloud-brand", "azure"),
+      makeSession("integration-brand", "integration:nginx"),
+      makeSession("settings-tool", "tool:settings", "tool-settings"),
+    ];
+    mockConnections = [
+      makeConnection("ssh-built-in", "ssh"),
+      makeConnection("saved-override", "ssh", { icon: "star" }),
+      makeConnection("database-brand", "postgresql"),
+      makeConnection("cloud-brand", "azure"),
+      makeConnection("integration-brand", "integration:nginx", {
+        integration: { descriptorKey: "nginx" },
+      }),
+    ];
+
+    renderTabs({ activeSessionId: "ssh-built-in" });
+
+    const expected = {
+      "ssh-built-in": "terminal",
+      "saved-override": "star",
+      "database-brand": "postgresql",
+      "cloud-brand": "azure",
+      "integration-brand": "nginx",
+      "settings-tool": "tool:settings",
+    } as const;
+
+    Object.entries(expected).forEach(([name, iconKey]) => {
+      const tab = screen.getByRole("tab", { name });
+      expect(
+        tab.querySelector(`[data-session-icon="${iconKey}"]`),
+        `${name} should render ${iconKey}`,
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("uses the canonical provider icon for an ephemeral pfSense WebGUI tab", () => {
+    const runtimeConnection: Connection = {
+      id: "runtime-pfsense-webui",
+      name: "pfSense WebGUI",
+      protocol: "https",
+      hostname: "fw.example.test",
+      port: 443,
+      isGroup: false,
+      icon: "pfsense",
+      createdAt: "2026-08-31T00:00:00.000Z",
+      updatedAt: "2026-08-31T00:00:00.000Z",
+    };
+    registerRuntimeConnection(runtimeConnection);
+    mockConnections = [];
+    mockSessions = [
+      {
+        id: "runtime-pfsense-session",
+        connectionId: runtimeConnection.id,
+        name: runtimeConnection.name,
+        status: "connected",
+        startTime: new Date("2026-08-31T00:00:00.000Z"),
+        protocol: runtimeConnection.protocol,
+        hostname: runtimeConnection.hostname,
+      },
+    ];
+
+    renderTabs({ activeSessionId: "runtime-pfsense-session" });
+
+    const tab = screen.getByRole("tab", { name: "pfSense WebGUI" });
+    expect(
+      tab.querySelector('[data-session-icon="pfsense"]'),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps canonical database and tool icons in the overflow menu", async () => {
+    forceTabOverflow();
+    mockSessions = [
+      {
+        id: "postgres-tab",
+        connectionId: "postgres-connection",
+        name: "Postgres tab",
+        status: "connected",
+        startTime: new Date("2026-01-01T00:00:00.000Z"),
+        protocol: "postgresql",
+        hostname: "postgres.example.test",
+      },
+      {
+        id: "database-tool",
+        connectionId: "tool-database",
+        name: "Database tool",
+        status: "connected",
+        startTime: new Date("2026-01-01T00:00:00.000Z"),
+        protocol: "tool:database",
+        hostname: "",
+      },
+    ];
+    mockConnections = [
+      {
+        id: "postgres-connection",
+        name: "Postgres",
+        protocol: "postgresql",
+        hostname: "postgres.example.test",
+        port: 5432,
+        isGroup: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    renderTabs({ activeSessionId: "postgres-tab" });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /show all tabs/i }),
+    );
+
+    const menu = await screen.findByTestId("session-tabs-overflow-menu");
+    const postgresItem = within(menu).getByRole("menuitem", {
+      name: "Postgres tab",
+    });
+    const databaseToolItem = within(menu).getByRole("menuitem", {
+      name: "Database tool",
+    });
+
+    expect(
+      postgresItem.querySelector('[data-session-icon="postgresql"]'),
+    ).toBeInTheDocument();
+    expect(
+      databaseToolItem.querySelector('[data-session-icon="tool:database"]'),
+    ).toBeInTheDocument();
   });
 
   it("dims an unresponsive tab, disables ordinary interaction, and exposes explicit recovery controls", async () => {

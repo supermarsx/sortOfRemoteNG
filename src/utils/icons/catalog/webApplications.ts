@@ -1,5 +1,6 @@
 import { AppWindowMac, Hammer, SquareCode } from "lucide-react";
 
+import { cpanel, grafana, nginx, traefikproxy } from "../brand";
 import { defineIcon } from "./types";
 
 /**
@@ -28,5 +29,29 @@ export const WEB_APPLICATION_ICONS = [
     "ide",
     "editor",
     "development",
+  ]),
+  defineIcon("nginx", "NGINX", "web-applications", nginx, [
+    "nginx",
+    "web server",
+    "reverse proxy",
+  ]),
+  defineIcon(
+    "traefikproxy",
+    "Traefik Proxy",
+    "web-applications",
+    traefikproxy,
+    ["traefik", "reverse proxy", "router"],
+  ),
+  defineIcon("grafana", "Grafana", "web-applications", grafana, [
+    "grafana",
+    "monitoring",
+    "dashboards",
+    "observability",
+  ]),
+  defineIcon("cpanel", "cPanel", "web-applications", cpanel, [
+    "cpanel",
+    "whm",
+    "hosting",
+    "control panel",
   ]),
 ] as const;

@@ -274,9 +274,9 @@ describe("advanced protocol connection integration", () => {
     expect(getDefaultPort("nx")).toBe(4000);
     expect(getProtocolDefaultIconKey("raw")).toBe("cable");
     expect(getProtocolDefaultIconKey("rlogin")).toBe("phone");
-    expect(getProtocolDefaultIconKey("winrm")).toBe("server");
+    expect(getProtocolDefaultIconKey("winrm")).toBe("powershell");
     expect(getProtocolDefaultIconKey("ard")).toBe("eye");
-    expect(getProtocolDefaultIconKey("postgresql")).toBe("database");
+    expect(getProtocolDefaultIconKey("postgresql")).toBe("postgresql");
     expect(getProtocolDefaultIconKey("spice")).toBe("monitor");
     expect(getProtocolDefaultIconKey("xdmcp")).toBe("monitor");
     expect(getProtocolDefaultIconKey("x2go")).toBe("monitor");

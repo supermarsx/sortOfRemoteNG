@@ -1,19 +1,21 @@
 import {
   Activity,
-  BarChart3,
   Boxes,
   Database,
   HardDrive,
   KeyRound,
-  MonitorPlay,
   Network,
   Router,
-  Server,
-  ShieldCheck,
-  Waypoints,
 } from "lucide-react";
 
 import type { IntegrationDescriptor } from "../../types/integrations/registry";
+import {
+  grafana,
+  nginx,
+  pfsense,
+  traefikproxy,
+  vmware,
+} from "../../utils/icons/brand";
 
 export const lxdDescriptor: IntegrationDescriptor = {
   key: "lxd",
@@ -28,8 +30,8 @@ export const pfsenseDescriptor: IntegrationDescriptor = {
   key: "pfsense",
   label: "pfSense",
   category: "networking",
-  icon: ShieldCheck,
-  defaultConnectionIconKey: "shield-check",
+  icon: pfsense,
+  defaultConnectionIconKey: "pfsense",
   importPanel: () => import("./pfsense/PfsensePanel"),
 };
 
@@ -37,8 +39,8 @@ export const vmwareDesktopDescriptor: IntegrationDescriptor = {
   key: "vmwareDesktop",
   label: "VMware Workstation",
   category: "virtualization",
-  icon: MonitorPlay,
-  defaultConnectionIconKey: "monitor-play",
+  icon: vmware,
+  defaultConnectionIconKey: "vmware",
   importPanel: () => import("./vmwareDesktop/VmwareDesktopPanel"),
 };
 
@@ -46,8 +48,8 @@ export const vmwareDescriptor: IntegrationDescriptor = {
   key: "vmware",
   label: "VMware vSphere",
   category: "virtualization",
-  icon: Server,
-  defaultConnectionIconKey: "server",
+  icon: vmware,
+  defaultConnectionIconKey: "vmware",
   importPanel: () => import("./VmwarePanel"),
 };
 
@@ -55,8 +57,8 @@ export const nginxDescriptor: IntegrationDescriptor = {
   key: "nginx",
   label: "Nginx",
   category: "web-server",
-  icon: Server,
-  defaultConnectionIconKey: "server",
+  icon: nginx,
+  defaultConnectionIconKey: "nginx",
   importPanel: () => import("./NginxPanel"),
 };
 
@@ -82,8 +84,8 @@ export const traefikDescriptor: IntegrationDescriptor = {
   key: "traefik",
   label: "Traefik",
   category: "web-server",
-  icon: Waypoints,
-  defaultConnectionIconKey: "waypoints",
+  icon: traefikproxy,
+  defaultConnectionIconKey: "traefikproxy",
   importPanel: () => import("./TraefikPanel"),
 };
 
@@ -118,8 +120,8 @@ export const grafanaDescriptor: IntegrationDescriptor = {
   key: "grafana",
   label: "Grafana",
   category: "monitoring",
-  icon: BarChart3,
-  defaultConnectionIconKey: "bar-chart",
+  icon: grafana,
+  defaultConnectionIconKey: "grafana",
   importPanel: () => import("./GrafanaPanel"),
 };
 

@@ -9,6 +9,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { pfsense } from "../brand";
 import { defineIcon } from "./types";
 
 export const SECURITY_ICONS = [
@@ -41,5 +42,11 @@ export const SECURITY_ICONS = [
   defineIcon("file-key", "Key file", "security", FileKey2, [
     "certificate",
     "private key",
+  ]),
+  defineIcon("pfsense", "pfSense", "security", pfsense, [
+    "pfsense",
+    "firewall",
+    "router",
+    "network appliance",
   ]),
 ] as const;

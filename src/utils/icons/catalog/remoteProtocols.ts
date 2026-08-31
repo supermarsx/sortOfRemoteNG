@@ -8,6 +8,7 @@ import {
   Terminal,
 } from "lucide-react";
 
+import { anydesk, powershell, rustdesk } from "../brand";
 import { defineIcon } from "./types";
 
 export const REMOTE_PROTOCOL_ICONS = [
@@ -47,5 +48,21 @@ export const REMOTE_PROTOCOL_ICONS = [
   defineIcon("pointer", "Pointer", "remote-protocols", MousePointer2, [
     "mouse",
     "remote control",
+  ]),
+  defineIcon("anydesk", "AnyDesk", "remote-protocols", anydesk, [
+    "anydesk",
+    "remote desktop",
+    "remote access",
+  ]),
+  defineIcon("rustdesk", "RustDesk", "remote-protocols", rustdesk, [
+    "rustdesk",
+    "remote desktop",
+    "remote access",
+  ]),
+  defineIcon("powershell", "PowerShell", "remote-protocols", powershell, [
+    "powershell",
+    "winrm",
+    "wsman",
+    "remoting",
   ]),
 ] as const;

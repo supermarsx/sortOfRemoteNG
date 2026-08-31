@@ -8,14 +8,14 @@
 // `ConnectionTypeCategory`; the Docker-ish integrations (LXD, Proxmox, VMware)
 // live under `virtualization`, so Portainer joins them there.
 
-import { Container } from "lucide-react";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
+import { portainer } from "../../../utils/icons/brand";
 
 export const portainerDescriptor: IntegrationDescriptor = {
   key: "portainer",
   label: "Portainer",
   category: "virtualization",
-  icon: Container,
-  defaultConnectionIconKey: "container",
+  icon: portainer,
+  defaultConnectionIconKey: "portainer",
   importPanel: () => import("./PortainerPanel"),
 };

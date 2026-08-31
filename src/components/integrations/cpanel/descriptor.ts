@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.infra.ts`:
 //   import { cpanelDescriptor } from "../../components/integrations/cpanel/descriptor";
 
-import { Server } from "lucide-react";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
+import { cpanel } from "../../../utils/icons/brand";
 
 export const cpanelDescriptor: IntegrationDescriptor = {
   key: "cpanel",
   label: "cPanel/WHM",
   category: "management",
-  icon: Server,
-  defaultConnectionIconKey: "server",
+  icon: cpanel,
+  defaultConnectionIconKey: "cpanel",
   importPanel: () => import("./CpanelPanel"),
 };

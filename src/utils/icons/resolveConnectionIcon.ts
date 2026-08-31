@@ -20,15 +20,15 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   ard: "eye",
   serial: "cable",
   vnc: "eye",
-  anydesk: "monitor",
+  anydesk: "anydesk",
   http: "globe",
   https: "globe",
   telnet: "phone",
   raw: "cable",
   rlogin: "phone",
   mysql: "database",
-  mongodb: "database",
-  postgresql: "database",
+  mongodb: "mongodb",
+  postgresql: "postgresql",
   spice: "monitor",
   xdmcp: "monitor",
   x2go: "monitor",
@@ -36,29 +36,26 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   ftp: "folder",
   sftp: "folder",
   scp: "folder",
-  winrm: "server",
-  rustdesk: "monitor",
+  winrm: "powershell",
+  rustdesk: "rustdesk",
   smb: "folder",
-  gcp: "cloud",
-  azure: "cloud",
+  gcp: "googlecloud",
+  azure: "azure",
   "ibm-csp": "cloud",
   "digital-ocean": "cloud",
   heroku: "cloud",
   scaleway: "cloud",
   linode: "cloud",
   ovhcloud: "cloud",
-  idrac: "server-cog",
-  ilo: "server-cog",
+  idrac: "dell",
+  ilo: "hp",
   lenovo: "server-cog",
-  supermicro: "server-cog",
+  supermicro: "supermicro",
   "voip-phone": "phone",
 });
 
 export type EffectiveConnectionIconSource =
-  | "override"
-  | "integration"
-  | "protocol"
-  | "fallback";
+  "override" | "integration" | "protocol" | "fallback";
 
 export type ConnectionIconOverrideState = "unset" | "valid" | "unknown";
 
@@ -104,8 +101,7 @@ export function getProtocolDefaultIconKey(
 ): ConnectionIconKey | undefined {
   if (!protocol || protocol.startsWith("integration:")) return undefined;
   return PROTOCOL_ICON_DEFAULTS[protocol as BuiltInConnectionProtocol] as
-    | ConnectionIconKey
-    | undefined;
+    ConnectionIconKey | undefined;
 }
 
 /**

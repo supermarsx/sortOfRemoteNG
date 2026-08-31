@@ -6,6 +6,7 @@ import {
   CloudUpload,
 } from "lucide-react";
 
+import { azure, googlecloud } from "../brand";
 import { defineIcon } from "./types";
 
 export const CLOUD_ICONS = [
@@ -25,5 +26,15 @@ export const CLOUD_ICONS = [
   defineIcon("cloud-lightning", "Cloud compute", "cloud", CloudLightning, [
     "compute",
     "serverless",
+  ]),
+  defineIcon("googlecloud", "Google Cloud", "cloud", googlecloud, [
+    "gcp",
+    "google cloud",
+    "cloud platform",
+  ]),
+  defineIcon("azure", "Microsoft Azure", "cloud", azure, [
+    "azure",
+    "microsoft cloud",
+    "cloud platform",
   ]),
 ] as const;

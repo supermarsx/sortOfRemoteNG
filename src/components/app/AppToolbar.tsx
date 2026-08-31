@@ -7,26 +7,12 @@ import {
   Square,
   X,
   Pin,
-  Settings,
   Database,
-  BarChart3,
-  ScrollText,
   Shield,
   Droplet,
-  Keyboard,
-  Network,
-  Power,
   Bug,
-  FileCode,
   ScreenShare,
-  ArrowUpDown,
-  Cpu,
-  ListVideo,
-  Disc,
-  Server,
   FlaskConical,
-  Tag,
-  Layers,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -41,6 +27,16 @@ import { SyncBackupStatusBar } from "../sync/SyncBackupStatusBar";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { buildBackupPayload } from "../../utils/services/backupPayload";
+import { TOOL_DESCRIPTORS } from "./toolDescriptors";
+import type { ToolKey } from "./toolSession";
+
+const ToolGlyph: React.FC<{ tool: ToolKey; size?: number }> = ({
+  tool,
+  size = 14,
+}) => {
+  const Icon = TOOL_DESCRIPTORS[tool].icon;
+  return <Icon size={size} data-tool-icon={tool} />;
+};
 
 interface AppToolbarProps {
   appSettings: GlobalSettings;
@@ -252,7 +248,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               title={t("toolbar.importExport", "Import / Export")}
               data-testid="toolbar-import-export"
             >
-              <ArrowUpDown size={14} />
+              <ToolGlyph tool="importExport" />
             </button>
           )}
           {appSettings.showSettingsIcon && (
@@ -262,7 +258,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               title={t("toolbar.settings", "Settings")}
               data-testid="toolbar-settings"
             >
-              <Settings size={14} />
+              <ToolGlyph tool="settings" />
             </button>
           )}
           <button
@@ -271,7 +267,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             className="app-bar-button p-2"
             title={t("toolbar.tagManager", "Tag Manager")}
           >
-            <Tag size={14} />
+            <ToolGlyph tool="tagManager" />
           </button>
           <button
             onClick={() => setShowTabGroupManager(true)}
@@ -279,7 +275,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             className="app-bar-button p-2"
             title={t("toolbar.tabGroupManager", "Tab Group Manager")}
           >
-            <Layers size={14} />
+            <ToolGlyph tool="tabGroupManager" />
           </button>
         </div>
 
@@ -291,7 +287,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.sessionManager", "Session Manager")}
             >
-              <Cpu size={14} />
+              <ToolGlyph tool="rdpSessions" />
             </button>
           )}
           {appSettings.showProxyMenuIcon && (
@@ -301,7 +297,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.proxyVpn", "Proxy & VPN")}
             >
-              <Network size={14} />
+              <ToolGlyph tool="proxyChain" />
             </button>
           )}
           {appSettings.showShortcutManagerIcon && (
@@ -311,7 +307,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.shortcutManager", "Shortcut Manager")}
             >
-              <Keyboard size={14} />
+              <ToolGlyph tool="shortcutManager" />
             </button>
           )}
           {appSettings.showWolIcon && (
@@ -321,7 +317,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.wakeOnLan", "Wake-on-LAN")}
             >
-              <Power size={14} />
+              <ToolGlyph tool="wol" />
             </button>
           )}
           {appSettings.showBulkSSHIcon && (
@@ -331,7 +327,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("bulkSsh.title", "Bulk SSH")}
             >
-              <Terminal size={14} />
+              <ToolGlyph tool="bulkSsh" />
             </button>
           )}
           {appSettings.showServerStatsIcon && (
@@ -341,7 +337,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("serverStats.title", "Server Stats")}
             >
-              <Server size={14} />
+              <ToolGlyph tool="serverStats" />
             </button>
           )}
           {appSettings.showOpksshIcon && (
@@ -351,7 +347,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("opkssh.title", "opkssh")}
             >
-              <Shield size={14} />
+              <ToolGlyph tool="opkssh" />
             </button>
           )}
           {appSettings.showMcpServerIcon && (
@@ -361,7 +357,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("mcpServer.title", "MCP Server")}
             >
-              <Server size={14} />
+              <ToolGlyph tool="mcpServer" />
             </button>
           )}
           {appSettings.showScriptManagerIcon && (
@@ -371,7 +367,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("scriptManager.title", "Script Manager")}
             >
-              <FileCode size={14} />
+              <ToolGlyph tool="scriptManager" />
             </button>
           )}
           {appSettings.showMacroManagerIcon && (
@@ -381,7 +377,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.macroManager", "Macro Manager")}
             >
-              <ListVideo size={14} />
+              <ToolGlyph tool="macroManager" />
             </button>
           )}
           {appSettings.showRecordingManagerIcon && (
@@ -391,7 +387,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.recordingManager", "Recording Manager")}
             >
-              <Disc size={14} />
+              <ToolGlyph tool="recordingManager" />
             </button>
           )}
           {appSettings.showPerformanceMonitorIcon && (
@@ -400,7 +396,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.performanceMonitor", "Performance Monitor")}
             >
-              <BarChart3 size={14} />
+              <ToolGlyph tool="performanceMonitor" />
             </button>
           )}
           {appSettings.showActionLogIcon && (
@@ -410,7 +406,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               title={t("toolbar.actionLog", "Action Log")}
             >
-              <ScrollText size={14} />
+              <ToolGlyph tool="actionLog" />
             </button>
           )}
           {appSettings.showErrorLogBar && (

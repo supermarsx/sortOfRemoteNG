@@ -10,24 +10,11 @@ import {
   X,
   XCircle,
   Monitor,
-  Terminal,
   Eye,
-  Globe,
-  Phone,
   Wifi,
   WifiOff,
   ExternalLink,
   ShieldOff,
-  Gauge,
-  ScrollText,
-  Keyboard,
-  Network,
-  Server,
-  Radio,
-  TerminalSquare,
-  FileCode,
-  ListVideo,
-  Circle,
   Wrench,
   Pencil,
   RefreshCw,
@@ -59,17 +46,25 @@ import { LayoutGrid } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
+import { getToolIcon } from "../app/toolDescriptors";
 import {
   isWinmgmtProtocol,
   getWinmgmtToolId,
   getWindowsToolIcon,
 } from "../windows/WindowsToolPanel.helpers";
 import MenuSurface from "../ui/overlays/MenuSurface";
-import type {
+import {
+  type Connection,
   ConnectionSession,
   TabGroup,
   TabLayout,
 } from "../../types/connection/connection";
+import { findDescriptor } from "../../types/integrations/registry";
+import {
+  getConnectionIntegrationKey,
+  resolveEffectiveConnectionIcon,
+} from "../../utils/icons/resolveConnectionIcon";
+import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
 import { SESSION_TAB_DND_TYPE } from "./TabLayoutManager";
 import type {
@@ -103,70 +98,35 @@ const focusFirstSubmenuItem = (panel: HTMLElement | null) => {
   first?.focus();
 };
 
-const getToolIcon = (toolKey: string) => {
-  switch (toolKey) {
-    case "performanceMonitor":
-      return Gauge;
-    case "actionLog":
-      return ScrollText;
-    case "shortcutManager":
-      return Keyboard;
-    case "proxyChain":
-      return Network;
-    case "internalProxy":
-      return Server;
-    case "wol":
-      return Radio;
-    case "bulkSsh":
-      return TerminalSquare;
-    case "scriptManager":
-      return FileCode;
-    case "macroManager":
-      return ListVideo;
-    case "recordingManager":
-      return Circle;
-    case "proxyProfileEditor":
-      return Network;
-    case "proxyChainEditor":
-      return Network;
-    case "sshTunnelEditor":
-      return Network;
-    case "shortcutCreator":
-      return Keyboard;
-    default:
-      return Wrench;
+const getSessionIcon = (
+  session: ConnectionSession,
+  connections: readonly Connection[],
+) => {
+  if (isToolProtocol(session.protocol)) {
+    const toolKey = getToolKeyFromProtocol(session.protocol);
+    return toolKey
+      ? { icon: getToolIcon(toolKey), key: `tool:${toolKey}` }
+      : { icon: Wrench, key: "tool:unknown" };
   }
-};
+  if (isWinmgmtProtocol(session.protocol)) {
+    const toolId = getWinmgmtToolId(session.protocol);
+    return toolId
+      ? { icon: getWindowsToolIcon(toolId), key: `winmgmt:${toolId}` }
+      : { icon: Monitor, key: "winmgmt:unknown" };
+  }
 
-const getProtocolIcon = (protocol: string) => {
-  if (isToolProtocol(protocol)) {
-    const toolKey = getToolKeyFromProtocol(protocol);
-    return toolKey ? getToolIcon(toolKey) : Wrench;
-  }
-  if (isWinmgmtProtocol(protocol)) {
-    const toolId = getWinmgmtToolId(protocol);
-    return toolId ? getWindowsToolIcon(toolId) : Monitor;
-  }
-  switch (protocol) {
-    case "rdp":
-      return Monitor;
-    case "ssh":
-      return Terminal;
-    case "vnc":
-      return Eye;
-    case "http":
-    case "https":
-      return Globe;
-    case "telnet":
-    case "rlogin":
-      return Phone;
-    case "raw":
-      return Network;
-    case "winrm":
-      return Server;
-    default:
-      return Monitor;
-  }
+  const connection = resolveRuntimeConnection(
+    connections,
+    session.connectionId,
+  );
+  const iconInput = connection ?? { protocol: session.protocol };
+  const integrationKey = getConnectionIntegrationKey(iconInput);
+  const descriptor = integrationKey
+    ? findDescriptor(integrationKey)
+    : undefined;
+
+  const resolution = resolveEffectiveConnectionIcon(iconInput, descriptor);
+  return { icon: resolution.icon, key: resolution.key };
 };
 
 const getStatusIcon = (status: string) => {
@@ -985,7 +945,10 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   };
 
   const renderTab = (session: ConnectionSession, groupColor?: string) => {
-    const ProtocolIcon = getProtocolIcon(session.protocol);
+    const { icon: ProtocolIcon, key: iconKey } = getSessionIcon(
+      session,
+      state.connections,
+    );
     const StatusIcon = getStatusIcon(session.status);
     const isActive = session.id === activeSessionId;
     const tabTint = resolveTabColor(session);
@@ -1076,7 +1039,11 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             style={{ backgroundColor: groupColor }}
           />
         )}
-        <ProtocolIcon size={14} className="mr-2 flex-shrink-0" />
+        <ProtocolIcon
+          size={14}
+          className="mr-2 flex-shrink-0"
+          data-session-icon={iconKey}
+        />
         {(session as any).pinned && (
           <Pin
             size={10}
@@ -1360,7 +1327,10 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                   data-testid="session-tabs-overflow-menu"
                 >
                   {sessions.map((session) => {
-                    const Icon = getProtocolIcon(session.protocol);
+                    const { icon: Icon, key: iconKey } = getSessionIcon(
+                      session,
+                      state.connections,
+                    );
                     const isActive = session.id === activeSessionId;
                     const closeState = sessionCloseStates[session.id];
                     return (
@@ -1400,6 +1370,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                           <Icon
                             size={14}
                             className="flex-shrink-0"
+                            data-session-icon={iconKey}
                           />
                         )}
                         <span className="truncate">
