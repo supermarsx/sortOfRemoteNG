@@ -226,13 +226,13 @@ jobs:
 
           if [ "$key_configured" = true ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Signed updater artifacts and latest.json are enabled."
+            echo "Signed updater artifacts are enabled; latest.json will advertise signed automatic updates."
           elif [ "$password_configured" = true ]; then
             echo "::error title=Incomplete updater signing configuration::TAURI_SIGNING_PRIVATE_KEY_PASSWORD is configured without TAURI_SIGNING_PRIVATE_KEY. Configure the private key or remove the orphaned password."
             exit 1
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            message="Optional updater signing is disabled because TAURI_SIGNING_PRIVATE_KEY is not configured. Public installers will be released without updater signatures or latest.json."
+            message="Optional updater signing is disabled because TAURI_SIGNING_PRIVATE_KEY is not configured. Public installers and a discovery-only latest.json will be released without updater signatures."
             echo "$message"
             {
               echo "### Optional updater signing"
@@ -2758,24 +2758,32 @@ jobs:
             exit 1
           fi
 
-      - name: Generate signed updater feed
-        if: needs.metadata.outputs.updater_enabled == 'true'
+      - name: Generate updater feed
         shell: bash
         env:
           MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
           PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
           SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
         run: |
           set -euo pipefail
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/$PUBLIC_TAG"
           pub_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           platforms='{}'
           add() {
-            local target="$1" artifact="$2"
+            local target="$1" signed_artifact="$2" unsigned_artifact="${3:-$2}" artifact signature
+            if [ "$UPDATER_ENABLED" = true ]; then
+              artifact="$signed_artifact"
+            else
+              artifact="$unsigned_artifact"
+            fi
             test -s "dist/$artifact"
-            test -s "dist/$artifact.sig"
-            signature=$(tr -d '\r\n\t ' < "dist/$artifact.sig")
-            test -n "$signature"
+            signature=""
+            if [ "$UPDATER_ENABLED" = true ]; then
+              test -s "dist/$artifact.sig"
+              signature=$(tr -d '\r\n\t ' < "dist/$artifact.sig")
+              test -n "$signature"
+            fi
             platforms=$(jq \
               --arg target "$target" \
               --arg signature "$signature" \
@@ -2785,8 +2793,12 @@ jobs:
           }
           add linux-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.AppImage"
           add linux-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.AppImage"
-          add darwin-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz"
-          add darwin-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz"
+          add darwin-aarch64 \
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz" \
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.dmg"
+          add darwin-x86_64 \
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz" \
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.dmg"
           add windows-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe"
           add windows-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64-setup.exe"
           add windows-x86_64-msi "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64.msi"
@@ -2795,13 +2807,16 @@ jobs:
             --arg version "$MACHINE_VERSION" \
             --arg pub_date "$pub_date" \
             --arg notes "Rolling release $PUBLIC_TAG from source $SOURCE_SHA" \
+            --argjson updater_signing "$UPDATER_ENABLED" \
             --argjson platforms "$platforms" \
-            '{version: $version, pub_date: $pub_date, notes: $notes, platforms: $platforms}' \
+            '{version: $version, pub_date: $pub_date, notes: $notes, updater_signing: $updater_signing, platforms: $platforms}' \
             > dist/latest.json
-          node scripts/ci/validate-updater-feed.mjs dist/latest.json \
+          validation_args=(
+            dist/latest.json
             --dist-dir dist \
+            --expected-release-base-url "$base" \
             --expected-version "$MACHINE_VERSION" \
-            --require-signature-files \
+            --updater-signing "$([ "$UPDATER_ENABLED" = true ] && echo signed || echo unsigned)" \
             --require-platform linux-x86_64 \
             --require-platform linux-aarch64 \
             --require-platform darwin-aarch64 \
@@ -2810,6 +2825,11 @@ jobs:
             --require-platform windows-aarch64 \
             --require-platform windows-x86_64-msi \
             --require-platform windows-aarch64-msi
+          )
+          if [ "$UPDATER_ENABLED" = true ]; then
+            validation_args+=(--require-signature-files)
+          fi
+          node scripts/ci/validate-updater-feed.mjs "${validation_args[@]}"
 
       - name: Cryptographically verify every updater payload
         if: needs.metadata.outputs.updater_enabled == 'true'
@@ -2819,6 +2839,7 @@ jobs:
           verifier=src-tauri/target/debug/sorng-updater-signature-verifier
           node scripts/ci/verify-published-release-assets.mjs \
             --asset-dir dist \
+            --expected-release-base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/${{ needs.metadata.outputs.public_tag }}" \
             --expected-version "${{ needs.metadata.outputs.machine_version }}" \
             --updater-mode signed \
             --public-key-config src-tauri/tauri.conf.json \
@@ -2829,6 +2850,7 @@ jobs:
         run: >-
           node scripts/ci/verify-published-release-assets.mjs
           --asset-dir dist
+          --expected-release-base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/${{ needs.metadata.outputs.public_tag }}"
           --expected-version "${{ needs.metadata.outputs.machine_version }}"
           --updater-mode unsigned
 
@@ -2880,7 +2902,7 @@ jobs:
             if [ "$UPDATER_ENABLED" = true ]; then
               echo "Signed automatic-update artifacts and \`latest.json\` are included."
             else
-              echo "Public installers are included. The updater signing key was not configured, so no updater signatures or \`latest.json\` are published."
+              echo "Public installers and a discovery-only \`latest.json\` are included. The updater signing key was not configured, so in-app installation is unavailable and no updater signatures are published."
             fi
             echo
             echo "macOS Developer ID and Windows Authenticode status is recorded in the per-target provenance assets."
@@ -3135,7 +3157,7 @@ jobs:
           latest_signed=false
           if [ "$latest_exists" = true ]; then
             latest_tag=$(jq -er '.tag_name' "$latest_json")
-            if jq -e '[.assets[].name | select(. == "latest.json" or endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$latest_json" > /dev/null; then
+            if jq -e '[.assets[].name | select(endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$latest_json" > /dev/null; then
               latest_signed=true
             fi
           fi
@@ -3218,12 +3240,13 @@ jobs:
           fi
 
           remote_updater_mode=unsigned
-          if jq -e '[.[].name | select(. == "latest.json" or endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$asset_manifest" > /dev/null; then
+          if jq -e '[.[].name | select(endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$asset_manifest" > /dev/null; then
             remote_updater_mode=signed
           fi
           verifier=src-tauri/target/debug/sorng-updater-signature-verifier
           verify_args=(
             --asset-dir "$remote_dir"
+            --expected-release-base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$PUBLIC_TAG"
             --expected-version "$MACHINE_VERSION"
             --updater-mode "$remote_updater_mode"
           )
@@ -3251,7 +3274,7 @@ jobs:
               echo "reconcile=false" >> "$GITHUB_OUTPUT"
               echo "public_promotion=false" >> "$GITHUB_OUTPUT"
               echo "candidate_updater_mode=$remote_updater_mode" >> "$GITHUB_OUTPUT"
-              echo "Existing published release is complete, current, and cryptographically valid; no mutation is needed."
+              echo "Existing published release is complete, current, and valid; no mutation is needed."
             else
               echo "no_op=false" >> "$GITHUB_OUTPUT"
               echo "upload=false" >> "$GITHUB_OUTPUT"
@@ -3413,6 +3436,7 @@ jobs:
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64.provenance.json
+            dist/latest.json
 
       - name: Upload exact signed assets and root updater feed to draft release
         id: upload_signed
@@ -3577,7 +3601,7 @@ jobs:
             "$release_json"
           asset_manifest="$RUNNER_TEMP/staged-release-assets.json"
           list_release_assets "$RELEASE_ID" "$asset_manifest"
-          expected_asset_count=22
+          expected_asset_count=23
           if [ "$UPDATER_MODE" = signed ]; then
             expected_asset_count=33
           fi
@@ -3591,6 +3615,7 @@ jobs:
           download_release_assets "$RELEASE_ID" "$asset_manifest" "$remote_dir"
           verify_args=(
             --asset-dir "$remote_dir"
+            --expected-release-base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$PUBLIC_TAG"
             --expected-version "$MACHINE_VERSION"
             --updater-mode "$UPDATER_MODE"
           )

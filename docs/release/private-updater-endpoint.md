@@ -118,13 +118,14 @@ s3://sortofremoteng-updates/
 
 ---
 
-## 5. `latest.json` schema (identical to the public feed)
+## 5. `latest.json` schema (signed-feed variant)
 
 ```jsonc
 {
   "version": "26.1.0",
   "notes": "Enterprise build for release 26.1.",
   "pub_date": "2026-04-20T00:00:00Z",
+  "updater_signing": true,
   "platforms": {
     "windows-x86_64": {
       "signature": "<base64 minisign signature of the .msi artifact>",
@@ -146,10 +147,12 @@ s3://sortofremoteng-updates/
 }
 ```
 
-The `signature` values are the **same** ones you'd publish on the public
-GitHub release — both feeds point at different URLs but the bytes at
-those URLs are byte-identical (or at least both signed by the same
-private key).
+The private endpoint must serve the signed variant; it is not a place to
+bypass updater verification. The `signature` values are the **same** ones
+you'd publish on a signed public GitHub release — both feeds point at different
+URLs but the bytes at those URLs are byte-identical (or at least both signed by
+the same private key). Public unsigned releases can use empty signatures for
+discovery-only metadata, but private automatic-install feeds cannot.
 
 ---
 
@@ -229,8 +232,8 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
 2. **Assemble `latest.json`** with the base64 `.sig` values and the
    CloudFront URLs for each platform (see § 5 above). Prefer the validated
    feed and artifacts from the automatic release for the same source SHA;
-   never fabricate a feed for an OS-installer-only release that lacked the
-   Tauri signing key.
+   never promote or copy a discovery-only unsigned feed into this private
+   automatic-install channel.
 3. **Upload to S3** (versioned dir + root `latest.json`):
    ```sh
    aws s3 cp src-tauri/target/release/bundle/ \

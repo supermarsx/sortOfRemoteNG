@@ -10,8 +10,11 @@ const USAGE = `Usage: node scripts/ci/validate-updater-feed.mjs <feed.json> [opt
 Options:
   --dist-dir <dir>              Require every platform URL basename to exist in this directory.
   --expected-version <semver>   Require the feed version to equal this machine SemVer.
+  --expected-release-base-url <url>
+                                Require every platform URL to use this exact release directory.
   --require-platform <name>     Require a platform key. May be repeated.
   --require-signature-files     Require <artifact>.sig files in --dist-dir and match feed signatures.
+  --updater-signing <mode>      Require an explicit signed or unsigned feed contract.
   --allow-empty-signatures      Permit empty platform signature strings.
   --allow-empty-platforms       Permit an empty platforms object.
   --help                        Show this help text.
@@ -63,6 +66,60 @@ function parsePlatformUrl(value, fieldPath, errors) {
   } catch {
     errors.push(`${fieldPath} must be a valid URL.`);
     return null;
+  }
+}
+
+function parseExpectedReleaseBaseUrl(value, errors) {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    errors.push("expectedReleaseBaseUrl must be a non-empty string.");
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    if (parsedUrl.protocol !== "https:") {
+      errors.push("expectedReleaseBaseUrl must use https.");
+      return null;
+    }
+    if (
+      parsedUrl.username ||
+      parsedUrl.password ||
+      parsedUrl.search ||
+      parsedUrl.hash
+    ) {
+      errors.push(
+        "expectedReleaseBaseUrl must not contain credentials, a query, or a fragment.",
+      );
+      return null;
+    }
+    parsedUrl.pathname = `${parsedUrl.pathname.replace(/\/+$/u, "")}/`;
+    return parsedUrl;
+  } catch {
+    errors.push("expectedReleaseBaseUrl must be a valid URL.");
+    return null;
+  }
+}
+
+function validateExpectedReleaseUrl(
+  platformUrl,
+  expectedReleaseBaseUrl,
+  fieldPath,
+  errors,
+) {
+  if (!platformUrl || !expectedReleaseBaseUrl) {
+    return;
+  }
+
+  const artifactSegment = path.posix.basename(platformUrl.pathname);
+  if (!artifactSegment) {
+    return;
+  }
+  const expectedUrl = new URL(artifactSegment, expectedReleaseBaseUrl);
+  if (platformUrl.href !== expectedUrl.href) {
+    errors.push(`${fieldPath} must equal ${expectedUrl.href}.`);
   }
 }
 
@@ -130,8 +187,13 @@ export function validateUpdaterFeed(feed, options = {}) {
   const allowEmptyPlatforms = Boolean(options.allowEmptyPlatforms);
   const allowEmptySignatures = Boolean(options.allowEmptySignatures);
   const requireSignatureFiles = Boolean(options.requireSignatureFiles);
+  const updaterSigning = options.updaterSigning ?? null;
   const distDir = options.distDir ? path.resolve(options.distDir) : null;
   const expectedVersion = options.expectedVersion ?? null;
+  const expectedReleaseBaseUrl = parseExpectedReleaseBaseUrl(
+    options.expectedReleaseBaseUrl ?? null,
+    errors,
+  );
 
   if (!isPlainObject(feed)) {
     return ["Feed root must be a JSON object."];
@@ -151,6 +213,19 @@ export function validateUpdaterFeed(feed, options = {}) {
   const pubDate = requireNonEmptyString(feed.pub_date, "pub_date", errors);
   validateDate(pubDate, "pub_date", errors);
   requireNonEmptyString(feed.notes, "notes", errors);
+
+  if (updaterSigning !== null) {
+    if (updaterSigning !== "signed" && updaterSigning !== "unsigned") {
+      errors.push(
+        `updaterSigning must be signed or unsigned, received ${updaterSigning}.`,
+      );
+    } else {
+      const expectedSigning = updaterSigning === "signed";
+      if (feed.updater_signing !== expectedSigning) {
+        errors.push(`updater_signing must be ${expectedSigning}.`);
+      }
+    }
+  }
 
   if (!isPlainObject(feed.platforms)) {
     errors.push("platforms must be an object.");
@@ -190,13 +265,25 @@ export function validateUpdaterFeed(feed, options = {}) {
       `${platformPath}.url`,
       errors,
     );
+    validateExpectedReleaseUrl(
+      platformUrl,
+      expectedReleaseBaseUrl,
+      `${platformPath}.url`,
+      errors,
+    );
 
     if (typeof platformEntry.signature !== "string") {
       errors.push(`${platformPath}.signature must be a string.`);
     }
     const feedSignature = normalizedSignature(platformEntry.signature);
-    if (!feedSignature && !allowEmptySignatures) {
+    if (
+      !feedSignature &&
+      (!allowEmptySignatures || updaterSigning === "signed")
+    ) {
       errors.push(`${platformPath}.signature must not be empty.`);
+    }
+    if (updaterSigning === "unsigned" && feedSignature) {
+      errors.push(`${platformPath}.signature must be empty in unsigned mode.`);
     }
 
     for (const optionalField of ["version", "pub_date", "notes"]) {
@@ -245,10 +332,12 @@ export function parseArgs(argv) {
     allowEmptyPlatforms: false,
     allowEmptySignatures: false,
     distDir: null,
+    expectedReleaseBaseUrl: null,
     expectedVersion: null,
     feedPath: null,
     requiredPlatforms: [],
     requireSignatureFiles: false,
+    updaterSigning: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -274,6 +363,23 @@ export function parseArgs(argv) {
       continue;
     }
 
+    if (arg === "--updater-signing" || arg.startsWith("--updater-signing=")) {
+      const value = arg.includes("=")
+        ? arg.slice(arg.indexOf("=") + 1)
+        : argv[++index];
+      if (!value) {
+        throw new Error("--updater-signing requires a value.");
+      }
+      if (value !== "signed" && value !== "unsigned") {
+        throw new Error("--updater-signing must be signed or unsigned.");
+      }
+      options.updaterSigning = value;
+      if (value === "unsigned") {
+        options.allowEmptySignatures = true;
+      }
+      continue;
+    }
+
     if (arg === "--dist-dir" || arg.startsWith("--dist-dir=")) {
       const value = arg.includes("=")
         ? arg.slice(arg.indexOf("=") + 1)
@@ -282,6 +388,20 @@ export function parseArgs(argv) {
         throw new Error("--dist-dir requires a value.");
       }
       options.distDir = value;
+      continue;
+    }
+
+    if (
+      arg === "--expected-release-base-url" ||
+      arg.startsWith("--expected-release-base-url=")
+    ) {
+      const value = arg.includes("=")
+        ? arg.slice(arg.indexOf("=") + 1)
+        : argv[++index];
+      if (!value) {
+        throw new Error("--expected-release-base-url requires a value.");
+      }
+      options.expectedReleaseBaseUrl = value;
       continue;
     }
 

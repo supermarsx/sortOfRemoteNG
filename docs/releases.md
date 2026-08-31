@@ -37,7 +37,7 @@ otherwise the leased atomic push fails before either the branch or tag moves.
 3. Build Windows x64 and ARM64 installers plus an architecture-matched, installer-free portable ZIP for each, Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles, macOS Intel bundles, and macOS Apple Silicon bundles.
 4. Publish the public OS installers and application bundles. When every credential for an optional OS-signing capability is absent, CI records that intentional unsigned mode in the job summary without creating a warning annotation. A partial Apple credential set fails closed; a fully absent set leaves the macOS bundles truthfully OS-unsigned and does not suppress the release.
 5. When `TAURI_SIGNING_PRIVATE_KEY` is configured, generate and validate signed updater artifacts for `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`.
-6. Publish and promote `latest.json` only after every referenced updater artifact and signature is present and verifiable. Without the updater key, record the optional-off state in the job summary and omit updater signatures and `latest.json` while retaining the public installers and application bundles. An updater password configured without its private key fails closed as an incomplete secret set.
+6. Generate and validate `latest.json` in both signed and unsigned modes, and include it in every successfully promoted release. Signed mode references the verifiable updater payloads. Without the updater key, the feed declares `updater_signing: false`, carries empty signature strings, and links to the existing public installers only for discovery and manual installation. An updater password configured without its private key fails closed as an incomplete secret set. Once the latest public release has a signed updater feed, the signing key must remain available: promotion fails rather than replacing that usable signed feed with an unsigned discovery feed.
 
 The Windows x64 and ARM64 portable ZIPs are installer-free extract-and-run packages. Each archive contains the executable for its named architecture, the adjacent `.portable` runtime marker, and the bundled OPKSSH resources; release CI extracts the ZIP and verifies those files against the matching build inputs. Here, portable describes delivery without an installer; it does not promise that every setting, credential, cache, operating-system dependency, or updater state remains inside the extracted directory.
 
@@ -87,7 +87,7 @@ current package layout.
 - [Apple Developer enrollment]({{ '/release/apple-developer-enrollment/' | relative_url }}) tracks macOS signing and notarization prerequisites.
 - [Windows EV certificate]({{ '/release/windows-ev-cert/' | relative_url }}) tracks Authenticode/SmartScreen signing prerequisites.
 
-OS-level code signing and updater signing solve different problems. Unsigned public bundles may prompt platform warnings. A release has an automatic-update channel only when its updater artifacts are signed with the protected Tauri key and a validated `latest.json` is published.
+OS-level code signing and updater signing solve different problems. Unsigned public bundles may prompt platform warnings. Every release has validated version metadata in `latest.json`, but automatic installation is available only when its updater artifacts are signed with the protected Tauri key. The backend refuses an empty-signature entry before downloading it and leaves the public artifact link available for manual installation.
 
 ## Recovery and rollback
 

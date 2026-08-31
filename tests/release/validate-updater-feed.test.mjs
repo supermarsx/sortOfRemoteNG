@@ -12,6 +12,7 @@ const fixturesDir = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "fixtures",
 );
+const RELEASE_BASE_URL = "https://example.invalid/v26.1";
 
 function fixture(name) {
   return JSON.parse(readFileSync(path.join(fixturesDir, name), "utf8"));
@@ -54,6 +55,88 @@ test("parses an expected-version CLI constraint", () => {
   assert.equal(
     parseArgs(["feed.json", "--expected-version", "26.1.0"]).expectedVersion,
     "26.1.0",
+  );
+});
+
+test("parses an exact expected release base URL constraint", () => {
+  assert.equal(
+    parseArgs(["feed.json", "--expected-release-base-url", RELEASE_BASE_URL])
+      .expectedReleaseBaseUrl,
+    RELEASE_BASE_URL,
+  );
+});
+
+test("accepts an explicitly unsigned discovery feed with empty signatures", () => {
+  const feed = {
+    version: "26.1.0",
+    notes: "Release 26.1",
+    pub_date: "2026-07-15T00:00:00Z",
+    updater_signing: false,
+    platforms: {
+      "windows-x86_64": {
+        signature: "",
+        url: "https://example.invalid/v26.1/sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe",
+      },
+    },
+  };
+
+  assert.deepEqual(
+    validateUpdaterFeed(feed, {
+      allowEmptySignatures: true,
+      expectedReleaseBaseUrl: RELEASE_BASE_URL,
+      expectedVersion: "26.1.0",
+      updaterSigning: "unsigned",
+    }),
+    [],
+  );
+
+  feed.platforms["windows-x86_64"].signature = "unexpected-signature";
+  assert.ok(
+    validateUpdaterFeed(feed, {
+      allowEmptySignatures: true,
+      expectedReleaseBaseUrl: RELEASE_BASE_URL,
+      expectedVersion: "26.1.0",
+      updaterSigning: "unsigned",
+    }).includes(
+      "platforms.windows-x86_64.signature must be empty in unsigned mode.",
+    ),
+  );
+});
+
+test("rejects a same-basename platform URL outside the expected release", () => {
+  const artifact = "sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe";
+  const feed = windowsFeed({
+    "windows-x86_64": {
+      ...NSIS_ENTRY,
+      url: `https://downloads.attacker.invalid/${artifact}`,
+    },
+  });
+
+  const errors = validateUpdaterFeed(feed, {
+    expectedReleaseBaseUrl: RELEASE_BASE_URL,
+  });
+  assert.ok(
+    errors.includes(
+      `platforms.windows-x86_64.url must equal ${RELEASE_BASE_URL}/${artifact}.`,
+    ),
+  );
+});
+
+test("requires the feed signing marker to match the requested mode", () => {
+  const feed = windowsFeed({ "windows-x86_64": { ...NSIS_ENTRY } });
+  assert.ok(
+    validateUpdaterFeed(feed, { updaterSigning: "signed" }).includes(
+      "updater_signing must be true.",
+    ),
+  );
+
+  feed.updater_signing = true;
+  feed.platforms["windows-x86_64"].signature = "";
+  assert.ok(
+    validateUpdaterFeed(feed, {
+      allowEmptySignatures: true,
+      updaterSigning: "signed",
+    }).includes("platforms.windows-x86_64.signature must not be empty."),
   );
 });
 
@@ -132,4 +215,10 @@ test("collects repeated require-platform CLI flags", () => {
     ]).requiredPlatforms,
     ["windows-x86_64", "windows-x86_64-msi"],
   );
+});
+
+test("parses the unsigned feed contract and enables empty signatures", () => {
+  const options = parseArgs(["feed.json", "--updater-signing", "unsigned"]);
+  assert.equal(options.updaterSigning, "unsigned");
+  assert.equal(options.allowEmptySignatures, true);
 });

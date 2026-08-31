@@ -8,10 +8,19 @@ import {
   expectedAssetNames,
   UPDATER_ARTIFACTS,
   UPDATER_PLATFORMS,
-  validatePublishedReleaseAssets,
+  updaterArtifactName,
+  validatePublishedReleaseAssets as validatePublishedReleaseAssetsContract,
 } from "../../scripts/ci/verify-published-release-assets.mjs";
 
 const VERSION = "26.7.0";
+const RELEASE_BASE_URL = "https://example.invalid/releases";
+
+function validatePublishedReleaseAssets(options) {
+  return validatePublishedReleaseAssetsContract({
+    expectedReleaseBaseUrl: RELEASE_BASE_URL,
+    ...options,
+  });
+}
 
 function makeAssets(updaterMode) {
   const directory = mkdtempSync(path.join(tmpdir(), "sorng-release-assets-"));
@@ -60,32 +69,34 @@ function makeAssets(updaterMode) {
       `${JSON.stringify(provenance)}\n`,
     );
   }
-  if (updaterMode === "signed") {
-    const platforms = {};
-    for (const platform of UPDATER_PLATFORMS) {
-      const artifact = UPDATER_ARTIFACTS[platform](VERSION);
-      const signature = `signature-${platform}`;
+  const platforms = {};
+  for (const platform of UPDATER_PLATFORMS) {
+    const artifact = updaterArtifactName(platform, VERSION, updaterMode);
+    const signature = updaterMode === "signed" ? `signature-${platform}` : "";
+    if (updaterMode === "signed") {
       writeFileSync(path.join(directory, `${artifact}.sig`), `${signature}\n`);
-      platforms[platform] = {
-        signature,
-        url: `https://example.invalid/releases/${artifact}`,
-      };
     }
-    writeFileSync(
-      path.join(directory, "latest.json"),
-      `${JSON.stringify({
-        version: VERSION,
-        pub_date: "2026-07-20T12:00:00Z",
-        notes: "fixture",
-        platforms,
-      })}\n`,
-    );
+    platforms[platform] = {
+      signature,
+      url: `${RELEASE_BASE_URL}/${artifact}`,
+    };
   }
+  writeFileSync(
+    path.join(directory, "latest.json"),
+    `${JSON.stringify({
+      version: VERSION,
+      pub_date: "2026-07-20T12:00:00Z",
+      notes: "fixture",
+      updater_signing: updaterMode === "signed",
+      platforms,
+    })}\n`,
+  );
   return directory;
 }
 
 test("enumerates ARM, RPM, Flatpak, and portable assets in the exact public set", () => {
   assert.deepEqual(expectedAssetNames(VERSION, "unsigned"), [
+    "latest.json",
     `sortOfRemoteNG_${VERSION}_darwin-aarch64.dmg`,
     `sortOfRemoteNG_${VERSION}_darwin-aarch64.provenance.json`,
     `sortOfRemoteNG_${VERSION}_darwin-x86_64.dmg`,
@@ -117,7 +128,7 @@ test("enumerates ARM, RPM, Flatpak, and portable assets in the exact public set"
     "windows-aarch64",
     "windows-x86_64",
   ]);
-  assert.equal(expectedAssetNames(VERSION, "unsigned").length, 22);
+  assert.equal(expectedAssetNames(VERSION, "unsigned").length, 23);
   assert.equal(expectedAssetNames(VERSION, "signed").length, 33);
   for (const artifactForVersion of Object.values(UPDATER_ARTIFACTS)) {
     assert.doesNotMatch(artifactForVersion(VERSION), /-portable\.zip$/u);
@@ -170,7 +181,7 @@ test("separates build targets from per-installer updater platform keys", () => {
   );
 });
 
-test("accepts the exact unsigned installer and provenance set", () => {
+test("accepts the exact unsigned installer, provenance, and discovery feed set", () => {
   const assetDir = makeAssets("unsigned");
   try {
     assert.deepEqual(
@@ -180,6 +191,74 @@ test("accepts the exact unsigned installer and provenance set", () => {
         updaterMode: "unsigned",
       }),
       [],
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("requires an expected release base URL for published asset validation", () => {
+  const assetDir = makeAssets("unsigned");
+  try {
+    const errors = validatePublishedReleaseAssetsContract({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "unsigned",
+    });
+    assert.ok(
+      errors.includes(
+        "Expected release base URL is required for published asset validation.",
+      ),
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects a same-basename unsigned artifact URL on a foreign host", () => {
+  const assetDir = makeAssets("unsigned");
+  try {
+    const feedPath = path.join(assetDir, "latest.json");
+    const feed = JSON.parse(readFileSync(feedPath, "utf8"));
+    const artifact = updaterArtifactName("windows-x86_64", VERSION, "unsigned");
+    feed.platforms["windows-x86_64"].url =
+      `https://downloads.attacker.invalid/${artifact}`;
+    writeFileSync(feedPath, `${JSON.stringify(feed)}\n`);
+
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "unsigned",
+    });
+    assert.ok(
+      errors.includes(
+        `platforms.windows-x86_64.url must equal ${RELEASE_BASE_URL}/${artifact}.`,
+      ),
+    );
+  } finally {
+    rmSync(assetDir, { recursive: true, force: true });
+  }
+});
+
+test("requires unsigned feeds to stay explicitly unsigned and use published DMGs", () => {
+  const assetDir = makeAssets("unsigned");
+  try {
+    const feedPath = path.join(assetDir, "latest.json");
+    const feed = JSON.parse(readFileSync(feedPath, "utf8"));
+    assert.match(feed.platforms["darwin-aarch64"].url, /\.dmg$/u);
+    assert.equal(feed.platforms["darwin-aarch64"].signature, "");
+
+    feed.platforms["windows-x86_64"].signature = "must-not-exist";
+    writeFileSync(feedPath, `${JSON.stringify(feed)}\n`);
+    const errors = validatePublishedReleaseAssets({
+      assetDir,
+      expectedVersion: VERSION,
+      updaterMode: "unsigned",
+    });
+    assert.ok(
+      errors.includes(
+        "platforms.windows-x86_64.signature must be empty in unsigned mode.",
+      ),
     );
   } finally {
     rmSync(assetDir, { recursive: true, force: true });

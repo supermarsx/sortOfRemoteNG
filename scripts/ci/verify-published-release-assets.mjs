@@ -48,6 +48,16 @@ export const UPDATER_ARTIFACTS = {
 
 export const UPDATER_PLATFORMS = Object.keys(UPDATER_ARTIFACTS).sort();
 
+export function updaterArtifactName(platform, version, updaterMode) {
+  if (updaterMode === "unsigned" && platform === "darwin-aarch64") {
+    return `sortOfRemoteNG_${version}_darwin-aarch64.dmg`;
+  }
+  if (updaterMode === "unsigned" && platform === "darwin-x86_64") {
+    return `sortOfRemoteNG_${version}_darwin-x86_64.dmg`;
+  }
+  return UPDATER_ARTIFACTS[platform](version);
+}
+
 export function expectedAssetNames(version, updaterMode) {
   const names = [
     `sortOfRemoteNG_${version}_linux-aarch64.AppImage`,
@@ -69,6 +79,7 @@ export function expectedAssetNames(version, updaterMode) {
     ...BUILD_TARGETS.map(
       (target) => `sortOfRemoteNG_${version}_${target}.provenance.json`,
     ),
+    "latest.json",
   ];
   if (updaterMode === "signed") {
     // Every updater manifest key contributes a detached `.sig`, including the
@@ -80,7 +91,6 @@ export function expectedAssetNames(version, updaterMode) {
     names.push(
       ...updaterArtifacts.filter((name) => name.endsWith(".app.tar.gz")),
       ...updaterArtifacts.map((name) => `${name}.sig`),
-      "latest.json",
     );
   }
   return [...new Set(names)].sort();
@@ -173,6 +183,7 @@ function validateProvenance(assetDir, version, updaterMode, errors) {
 
 export function validatePublishedReleaseAssets({
   assetDir,
+  expectedReleaseBaseUrl,
   expectedVersion,
   updaterMode,
   verifySignature,
@@ -182,6 +193,14 @@ export function validatePublishedReleaseAssets({
     return [
       `Updater mode must be signed or unsigned, received ${updaterMode}.`,
     ];
+  }
+  if (
+    typeof expectedReleaseBaseUrl !== "string" ||
+    !expectedReleaseBaseUrl.trim()
+  ) {
+    errors.push(
+      "Expected release base URL is required for published asset validation.",
+    );
   }
 
   const expectedNames = expectedAssetNames(expectedVersion, updaterMode);
@@ -215,16 +234,19 @@ export function validatePublishedReleaseAssets({
     }
   }
 
-  if (updaterMode === "signed" && missing.length === 0) {
+  if (missing.length === 0) {
     const feedPath = path.join(assetDir, "latest.json");
     const feed = readJson(feedPath, errors, "latest.json");
     if (feed) {
       errors.push(
         ...validateUpdaterFeed(feed, {
+          allowEmptySignatures: updaterMode === "unsigned",
           distDir: assetDir,
+          expectedReleaseBaseUrl,
           expectedVersion,
           requiredPlatforms: UPDATER_PLATFORMS,
-          requireSignatureFiles: true,
+          requireSignatureFiles: updaterMode === "signed",
+          updaterSigning: updaterMode,
         }),
       );
       const feedPlatforms = Object.keys(feed.platforms ?? {}).sort();
@@ -232,7 +254,11 @@ export function validatePublishedReleaseAssets({
         errors.push("latest.json must contain exactly the supported targets.");
       }
       for (const platform of UPDATER_PLATFORMS) {
-        const expectedArtifact = UPDATER_ARTIFACTS[platform](expectedVersion);
+        const expectedArtifact = updaterArtifactName(
+          platform,
+          expectedVersion,
+          updaterMode,
+        );
         try {
           const actualArtifact = path.posix.basename(
             new URL(feed.platforms?.[platform]?.url).pathname,
@@ -246,7 +272,7 @@ export function validatePublishedReleaseAssets({
           // validateUpdaterFeed already reports missing or malformed URLs.
         }
       }
-      if (typeof verifySignature === "function") {
+      if (updaterMode === "signed" && typeof verifySignature === "function") {
         for (const platform of UPDATER_PLATFORMS) {
           const artifactName = UPDATER_ARTIFACTS[platform](expectedVersion);
           try {
@@ -280,6 +306,7 @@ export function parseArgs(argv) {
     if (!value) throw new Error(`${name} requires a value.`);
     const property = {
       "--asset-dir": "assetDir",
+      "--expected-release-base-url": "expectedReleaseBaseUrl",
       "--expected-version": "expectedVersion",
       "--updater-mode": "updaterMode",
       "--public-key-config": "publicKeyConfig",
@@ -295,6 +322,8 @@ const USAGE = `Usage: node scripts/ci/verify-published-release-assets.mjs [optio
 
 Options:
   --asset-dir <dir>             Directory containing the exact release asset set.
+  --expected-release-base-url <url>
+                                Exact HTTPS release directory required by every feed URL.
   --expected-version <semver>   Expected machine SemVer in every bundle filename/feed.
   --updater-mode <mode>         signed or unsigned.
   --public-key-config <file>    Tauri JSON config containing plugins.updater.pubkey.
@@ -308,8 +337,14 @@ function main() {
       console.log(USAGE);
       return;
     }
-    for (const required of ["assetDir", "expectedVersion", "updaterMode"]) {
-      if (!options[required]) throw new Error(`--${required} is required.`);
+    const requiredOptions = {
+      assetDir: "--asset-dir",
+      expectedReleaseBaseUrl: "--expected-release-base-url",
+      expectedVersion: "--expected-version",
+      updaterMode: "--updater-mode",
+    };
+    for (const [property, flag] of Object.entries(requiredOptions)) {
+      if (!options[property]) throw new Error(`${flag} is required.`);
     }
 
     let verifySignature;

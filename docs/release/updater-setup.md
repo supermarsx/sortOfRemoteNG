@@ -9,9 +9,9 @@ hide_page_header: true
 
 This document covers the **Tauri updater plugin** wiring for
 `sortOfRemoteNG`: how the Ed25519 signing keypair is generated, where the
-private key must live, and the JSON schema of the optional `latest.json`
-feed that our GitHub Releases publisher produces when updater signing is
-configured.
+private key must live, and the JSON schema of the `latest.json` feed included
+with every successfully promoted GitHub Release. The feed enables automatic installation only when
+updater signing is configured; otherwise it is discovery-only.
 
 The production updater path is intentionally narrow: the signed
 `tauri-plugin-updater` runtime verifies and installs artifacts, and the
@@ -30,9 +30,12 @@ and documented in
 
 Public OS installers and updater delivery are separate release outputs. Every
 successful `main` push may publish Windows, Linux, and macOS installers without
-OS-signing certificates. The workflow publishes updater archives, signatures,
-and `latest.json` only when `TAURI_SIGNING_PRIVATE_KEY` is configured; it never
-advertises an unsigned artifact to the updater.
+OS-signing certificates. The workflow generates `latest.json` with or without
+the updater signing key and includes it in every promoted release. When
+`TAURI_SIGNING_PRIVATE_KEY` is absent, its platform entries have empty
+signatures and act only as version discovery and manual-download links; the
+backend refuses installation before any payload download. Signed updater
+archives and signatures are published only when the key is configured.
 
 The feed's Linux payload is the architecture-matched AppImage. Windows carries
 two payloads per architecture, selected by how the running app was installed:
@@ -106,10 +109,10 @@ Then:
 The GitHub release workflow (`.github/workflows/release.yml`) consumes these
 environment variables when invoking `tauri-apps/tauri-action`:
 
-| Env var                              | Required                                    | Notes                                                                             |
-| ------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------- |
-| `TAURI_SIGNING_PRIVATE_KEY`          | for updater artifacts and `latest.json`     | Full contents of `sortofremoteng.key`, including the `untrusted comment:` header. |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | when that private key is password-protected | Plaintext password; store it as a protected secret.                               |
+| Env var                              | Required                                                | Notes                                                                             |
+| ------------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | for signed updater artifacts and automatic installation | Full contents of `sortofremoteng.key`, including the `untrusted comment:` header. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | when that private key is password-protected             | Plaintext password; store it as a protected secret.                               |
 
 No other updater-specific secrets are required — the pubkey is embedded at
 build time from `tauri.conf.json`. Apple Developer ID/notarization credentials
@@ -143,13 +146,14 @@ The eight updater platform keys are `windows-x86_64`, `windows-aarch64`,
 targets: the two Windows targets each contribute both an NSIS and an MSI
 platform key, so the per-installer keys have no build target and no
 `*.provenance.json` record of their own. If the
-Tauri private key is absent, the workflow omits their updater signatures and
-`latest.json` but may still publish the corresponding public OS installers,
-recording that intentional optional-off state in the job summary rather than a
-warning annotation. A password secret configured without the private key fails
-closed as an incomplete updater configuration. If the key is present, missing
-or invalid updater artifacts fail publication of the feed. Public `.rpm` and
-`.flatpak` files do not add updater platform keys or signature entries.
+Tauri private key is absent, the workflow omits updater signatures and signed
+macOS app archives but still publishes the corresponding public OS installers
+and a discovery-only `latest.json`, recording that intentional optional-off
+state in the job summary rather than a warning annotation. A password secret
+configured without the private key fails closed as an incomplete updater
+configuration. If the key is present, missing or invalid updater artifacts fail
+publication of the feed. Public `.rpm` and `.flatpak` files do not add updater
+platform keys or signature entries.
 
 ---
 
@@ -164,11 +168,11 @@ The committed public endpoint in `tauri.conf.json` is:
 ```
 
 GitHub serves `latest/download/<asset>` as a 302 redirect to the most recent
-release's asset with that filename, so publishing a signed release with a
-`latest.json` asset is sufficient to promote it — no edits to the committed
-endpoint list are required per release. An OS-installer-only release omits
-`latest.json`; that release is downloadable from GitHub but is not advertised
-as an automatic in-app update.
+release's asset with that filename, so publishing `latest.json` is sufficient
+to expose the newest version — no edits to the committed endpoint list are
+required per release. The feed's `updater_signing` marker and selected
+platform signature distinguish automatic installation from discovery-only
+manual installation.
 
 At runtime, `sorng-updater` may prepend a Settings-managed private endpoint
 by constructing a plugin updater with `updater_builder().endpoints(..)`. The
@@ -187,12 +191,16 @@ upstream reference). The file must be a release asset named exactly
 `latest.json` and must sign the **installer artifacts**, not itself.
 The feed's `version` is always the machine projection (`YY.N.0`), while its
 release URL and human-facing notes retain the bare public tag/version (`YY.N`).
+`updater_signing` is a sortOfRemoteNG release-contract marker used by CI and
+release auditing. Tauri ignores the extra field, and the runtime/manual-install
+UX derives installability from the selected platform entry's signature.
 
 ```jsonc
 {
   "version": "26.1.0", // machine SemVer; must be > the running app's version
   "notes": "Release 26.1",
   "pub_date": "2026-04-20T00:00:00Z", // RFC 3339 / ISO 8601
+  "updater_signing": true,
   "platforms": {
     "windows-x86_64": {
       "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe>",
@@ -246,6 +254,28 @@ The release workflow owns the generator that emits this file from the
 schema, platform entries, artifact URLs, and signatures before a feed can be
 published. It also requires valid SemVer transport metadata and the exact
 expected machine projection supplied by the release workflow.
+
+Unsigned releases use the same eight platform keys and set
+`"updater_signing": false` plus `"signature": ""` on every entry. Linux
+entries reference the published AppImages, Windows entries retain their NSIS
+and MSI mapping, and macOS entries reference the published DMGs instead of the
+signed-only app archives. Tauri requires the signature field to be a string,
+so it cannot be omitted or set to `null`. Empty signatures are a metadata
+marker, not a verification bypass: the backend exposes the version and manual
+artifact link but rejects installation before download, while Tauri's embedded
+public-key verification remains unchanged.
+
+Clients released before this pre-download guard may display the first unsigned
+discovery feed as installable and download its artifact before Tauri rejects
+the empty signature. They still fail closed before installation. A signed
+bridge release avoids that one-time UX and bandwidth limitation.
+
+Signing-key continuity is required after publishing a signed updater release.
+If the newest public release has a signed feed and a later build lacks the
+updater key, promotion fails instead of replacing the usable signed
+`/releases/latest/download/latest.json` with an unsigned discovery feed. Restore
+the signing secret (or perform an explicitly reviewed channel transition)
+before retrying that release.
 
 ### 4.1 Per-installer Windows platform keys
 
@@ -355,14 +385,16 @@ cargo check -p sorng-updater
 cargo check -p sorng-commands-core -p sorng-commands-tools
 cargo check -p app                # embeds pubkey at compile time
 npm run lint && npm run test      # covers the Settings updater UI and command facade
-node scripts/ci/validate-updater-feed.mjs <latest.json> --expected-version 26.1.0
+node scripts/ci/validate-updater-feed.mjs <latest.json> --expected-version 26.1.0 --updater-signing signed
 npm run tauri:build               # produces signed bundle if env vars set
 ```
 
 A bundle built **without** `TAURI_SIGNING_PRIVATE_KEY` in the environment
 will still compile but will not emit updater `.sig` files — that is
 intentional so day-to-day local builds and public OS-installer releases do not
-require the secret. Do not construct or upload `latest.json` for those bundles.
+require the secret. Local builds do not create a release feed; the release
+workflow constructs and validates its unsigned discovery feed from the public
+artifacts instead.
 
 ---
 

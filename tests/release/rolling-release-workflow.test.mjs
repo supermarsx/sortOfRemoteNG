@@ -1589,7 +1589,7 @@ test("Windows signing is architecture-aware and both portable archives are compl
   );
 
   const updaterFeed = releaseWorkflow.slice(
-    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+    releaseWorkflow.indexOf("- name: Generate updater feed"),
     releaseWorkflow.indexOf(
       "- name: Cryptographically verify every updater payload",
     ),
@@ -1744,7 +1744,7 @@ test("Windows staging emits an MSI updater signature only alongside a signing ke
 test("the Windows MSI updater signature travels from staging to the signed release", () => {
   const validateSet = releaseWorkflow.slice(
     releaseWorkflow.indexOf("- name: Validate complete public installer set"),
-    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+    releaseWorkflow.indexOf("- name: Generate updater feed"),
   );
   const unsignedUpload = releaseWorkflow.slice(
     releaseWorkflow.indexOf("- name: Upload exact unsigned assets"),
@@ -1884,10 +1884,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   const publicSet = releaseWorkflow.slice(
     releaseWorkflow.indexOf("- name: Validate complete public installer set"),
-    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+    releaseWorkflow.indexOf("- name: Generate updater feed"),
   );
   const updaterFeed = releaseWorkflow.slice(
-    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+    releaseWorkflow.indexOf("- name: Generate updater feed"),
     releaseWorkflow.indexOf(
       "- name: Cryptographically verify every updater payload",
     ),
@@ -2404,7 +2404,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   ]) {
     assert.match(stageStep, new RegExp(`${field}:`));
   }
-  assert.match(releaseWorkflow, /expected_asset_count=22/);
+  assert.match(releaseWorkflow, /expected_asset_count=23/);
   assert.match(releaseWorkflow, /expected_asset_count=33/);
   assert.doesNotMatch(releaseWorkflow, /expected_asset_count=31/);
   assert.doesNotMatch(updaterFeed, /\.(?:rpm|flatpak)/);
@@ -2834,7 +2834,7 @@ test("optional signing states are annotation-clean while partial secrets fail cl
   assert.match(updaterAbsent.stdout, /### Optional updater signing/);
   assert.match(
     updaterAbsent.stdout,
-    /Public installers will be released without updater signatures or latest\.json/,
+    /Public installers and a discovery-only latest\.json will be released without updater signatures/,
   );
   assert.doesNotMatch(updaterAbsent.stdout, /::(?:notice|warning)::?/);
 
@@ -2929,7 +2929,7 @@ test("optional signing states are annotation-clean while partial secrets fail cl
 
   assert.match(
     updaterSetupDocumentation,
-    /job summary rather than a\s+warning annotation[\s\S]*?password secret configured without the private key fails\s+closed/,
+    /job summary rather than a\s+warning annotation[\s\S]*?password secret\s+configured without the private key fails\s+closed/i,
   );
   assert.match(
     appleEnrollmentDocumentation,
@@ -2948,9 +2948,18 @@ test("optional signing states are annotation-clean while partial secrets fail cl
 });
 
 test("signed and unsigned release sets are validated before any release mutation", () => {
-  assert.match(
-    releaseWorkflow,
-    /Generate signed updater feed[\s\S]*?if: needs\.metadata\.outputs\.updater_enabled == 'true'/,
+  const generateFeed = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Generate updater feed"),
+    releaseWorkflow.indexOf(
+      "- name: Cryptographically verify every updater payload",
+    ),
+  );
+  assert.match(generateFeed, /UPDATER_ENABLED:/);
+  assert.match(generateFeed, /--argjson updater_signing/);
+  assert.match(generateFeed, /--updater-signing/);
+  assert.doesNotMatch(
+    generateFeed,
+    /if: needs\.metadata\.outputs\.updater_enabled == 'true'/,
   );
   assert.match(
     releaseWorkflow,
@@ -2965,8 +2974,20 @@ test("signed and unsigned release sets are validated before any release mutation
     /one "\$bundle\/macos" '\*\.app\.tar\.gz' "sortOfRemoteNG_\$\{MACHINE_VERSION\}_\$\{ARTIFACT_ID\}\.app\.tar\.gz"/,
   );
   assert.match(
-    releaseWorkflow,
-    /add linux-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_linux-x86_64\.AppImage"[\s\S]*?add linux-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_linux-aarch64\.AppImage"[\s\S]*?add darwin-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_darwin-aarch64\.app\.tar\.gz"[\s\S]*?add darwin-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_darwin-x86_64\.app\.tar\.gz"[\s\S]*?add windows-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_windows-x86_64-setup\.exe"[\s\S]*?add windows-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_windows-aarch64-setup\.exe"/,
+    generateFeed,
+    /add linux-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_linux-x86_64\.AppImage"[\s\S]*?add linux-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_linux-aarch64\.AppImage"/,
+  );
+  for (const arch of ["aarch64", "x86_64"]) {
+    assert.match(
+      generateFeed,
+      new RegExp(
+        `add darwin-${arch}[\\s\\S]*?"sortOfRemoteNG_\\$\\{MACHINE_VERSION\\}_darwin-${arch}\\.app\\.tar\\.gz"[\\s\\S]*?"sortOfRemoteNG_\\$\\{MACHINE_VERSION\\}_darwin-${arch}\\.dmg"`,
+      ),
+    );
+  }
+  assert.match(
+    generateFeed,
+    /add windows-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_windows-x86_64-setup\.exe"[\s\S]*?add windows-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_windows-aarch64-setup\.exe"/,
   );
   const unsignedUpload = releaseWorkflow.slice(
     releaseWorkflow.indexOf("Upload exact unsigned assets to draft release"),
@@ -2999,9 +3020,10 @@ test("signed and unsigned release sets are validated before any release mutation
     assert.match(signedUpload, portablePattern);
   }
   assert.match(signedUpload, /^\s+dist\/latest\.json$/m);
+  assert.match(unsignedUpload, /^\s+dist\/latest\.json$/m);
   assert.doesNotMatch(
     releaseWorkflow.slice(
-      releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+      releaseWorkflow.indexOf("- name: Generate updater feed"),
       releaseWorkflow.indexOf(
         "- name: Cryptographically verify every updater payload",
       ),
@@ -3009,6 +3031,134 @@ test("signed and unsigned release sets are validated before any release mutation
     /portable\.zip/,
   );
   assert.doesNotMatch(releaseWorkflow, /gh release delete-asset/);
+});
+
+test("the updater feed generator executes in signed and unsigned modes", () => {
+  const feedStepStart = releaseWorkflow.indexOf(
+    "- name: Generate updater feed",
+  );
+  const feedStepEnd = releaseWorkflow.indexOf(
+    "- name: Cryptographically verify every updater payload",
+    feedStepStart,
+  );
+  const feedProgram = extractLiteralRunScript(
+    releaseWorkflow.slice(feedStepStart, feedStepEnd),
+  );
+  const bashArtifactsExpansion = "${artifacts[@]}";
+
+  for (const updaterEnabled of [false, true]) {
+    const result = runBashSnippet(String.raw`
+set -euo pipefail
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+cd "$work"
+mkdir dist
+artifacts=(
+  sortOfRemoteNG_26.42.0_linux-x86_64.AppImage
+  sortOfRemoteNG_26.42.0_linux-aarch64.AppImage
+  sortOfRemoteNG_26.42.0_windows-x86_64-setup.exe
+  sortOfRemoteNG_26.42.0_windows-aarch64-setup.exe
+  sortOfRemoteNG_26.42.0_windows-x86_64.msi
+  sortOfRemoteNG_26.42.0_windows-aarch64.msi
+)
+if [ "${updaterEnabled}" = true ]; then
+  artifacts+=(
+    sortOfRemoteNG_26.42.0_darwin-aarch64.app.tar.gz
+    sortOfRemoteNG_26.42.0_darwin-x86_64.app.tar.gz
+  )
+else
+  artifacts+=(
+    sortOfRemoteNG_26.42.0_darwin-aarch64.dmg
+    sortOfRemoteNG_26.42.0_darwin-x86_64.dmg
+  )
+fi
+for artifact in "${bashArtifactsExpansion}"; do
+  printf 'payload\n' > "dist/$artifact"
+  if [ "${updaterEnabled}" = true ]; then
+    printf 'signature-%s\n' "$artifact" > "dist/$artifact.sig"
+  fi
+done
+node() {
+  printf '%s\n' "$@" > validator-args.txt
+}
+export GITHUB_REPOSITORY=supermarsx/sortOfRemoteNG
+export MACHINE_VERSION=26.42.0
+export PUBLIC_TAG=26.42
+export SOURCE_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+export UPDATER_ENABLED=${updaterEnabled}
+${feedProgram}
+jq -c . dist/latest.json
+printf '%s\n' ---VALIDATOR-ARGS---
+cat validator-args.txt
+`);
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const [feedText, validatorText = ""] = result.stdout.split(
+      "---VALIDATOR-ARGS---\n",
+    );
+    const feed = JSON.parse(feedText.trim());
+    const validatorArgs = validatorText.trim().split(/\r?\n/u);
+    const releaseBaseArgument = validatorArgs.indexOf(
+      "--expected-release-base-url",
+    );
+    const signingArgument = validatorArgs.indexOf("--updater-signing");
+
+    assert.equal(feed.version, "26.42.0");
+    assert.equal(feed.updater_signing, updaterEnabled);
+    assert.equal(Object.keys(feed.platforms).length, 8);
+    assert.ok(releaseBaseArgument >= 0);
+    assert.equal(
+      validatorArgs[releaseBaseArgument + 1],
+      "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.42",
+    );
+    assert.ok(signingArgument >= 0);
+    assert.equal(
+      validatorArgs[signingArgument + 1],
+      updaterEnabled ? "signed" : "unsigned",
+    );
+    assert.equal(
+      validatorArgs.includes("--require-signature-files"),
+      updaterEnabled,
+    );
+    for (const platform of Object.values(feed.platforms)) {
+      assert.equal(Boolean(platform.signature), updaterEnabled);
+    }
+    assert.match(
+      feed.platforms["darwin-aarch64"].url,
+      updaterEnabled ? /\.app\.tar\.gz$/u : /\.dmg$/u,
+    );
+  }
+});
+
+test("every local, recovery, and staged feed validation pins the exact release URL base", () => {
+  assert.equal(
+    (releaseWorkflow.match(/--expected-release-base-url/g) ?? []).length,
+    5,
+  );
+  assert.equal(
+    (
+      releaseWorkflow.match(
+        /node scripts\/ci\/verify-published-release-assets\.mjs/g,
+      ) ?? []
+    ).length,
+    4,
+  );
+  assert.equal(
+    (
+      releaseWorkflow.match(
+        /--expected-release-base-url "https:\/\/github\.com\/\$GITHUB_REPOSITORY\/releases\/download\/\$\{\{ needs\.metadata\.outputs\.public_tag \}\}"/g,
+      ) ?? []
+    ).length,
+    2,
+  );
+  assert.equal(
+    (
+      releaseWorkflow.match(
+        /--expected-release-base-url "https:\/\/github\.com\/\$GITHUB_REPOSITORY\/releases\/download\/\$PUBLIC_TAG"/g,
+      ) ?? []
+    ).length,
+    2,
+  );
 });
 
 test("updater setup documents the eight canonical updater payload names", () => {
@@ -3130,7 +3280,7 @@ test("recovery distinguishes 404, no-ops valid releases, and blocks signing down
   );
   assert.match(
     releaseWorkflow,
-    /Existing published release is complete, current, and cryptographically valid; no mutation is needed/,
+    /Existing published release is complete, current, and valid; no mutation is needed/,
   );
   assert.match(
     releaseWorkflow,
@@ -3168,6 +3318,10 @@ test("recovery distinguishes 404, no-ops valid releases, and blocks signing down
     /Existing public release is incomplete or is not the latest release\. Refusing a non-atomic in-place overwrite/,
   );
   assert.doesNotMatch(releaseWorkflow, /2>\s*\/dev\/null\); then/);
+  assert.doesNotMatch(
+    releaseWorkflow,
+    /select\(\. == "latest\.json" or endswith\("\.sig"\)/,
+  );
 });
 
 test("hidden drafts resolve through the authenticated list to one immutable ID", () => {
@@ -3421,7 +3575,7 @@ test("publication stays draft until remote validation and a final live guard", (
   assert.doesNotMatch(releaseWorkflow, /gh release download "\$PUBLIC_TAG"/);
   assert.match(
     releaseWorkflow.slice(validateIndex, promoteIndex),
-    /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=22[\s\S]*?expected_asset_count=33[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
+    /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=23[\s\S]*?expected_asset_count=33[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
   );
   const promotion = releaseWorkflow.slice(promoteIndex);
   assertOrdered(
