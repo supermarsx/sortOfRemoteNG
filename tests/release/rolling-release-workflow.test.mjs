@@ -582,7 +582,7 @@ test("release builds force the npm Tauri runner instead of lockfile autodetectio
   assert.doesNotMatch(tauriBuild, /tauriScript:\s+(?:bun|pnpm|yarn)\b/);
 });
 
-test("release Tauri builds give the inherited Next build a 4 GiB Node heap", () => {
+test("release Tauri launchers give the inherited Next build a 4 GiB Node heap", () => {
   const buildJob = releaseWorkflow.slice(
     releaseWorkflow.indexOf("  build:"),
     releaseWorkflow.indexOf("  publish:"),
@@ -604,8 +604,12 @@ test("release Tauri builds give the inherited Next build a 4 GiB Node heap", () 
   assert.equal(
     (buildJob.match(/^\s+NODE_OPTIONS: --max-old-space-size=4096$/gm) ?? [])
       .length,
-    1,
-    "the heap override must remain scoped to the native release-build step",
+    2,
+    "the heap override must remain scoped to the macOS action and Windows/Linux telemetry launcher",
+  );
+  assert.match(
+    tauriBuild,
+    /Build native bundles with progress telemetry[\s\S]*?NODE_OPTIONS: --max-old-space-size=4096[\s\S]*?run-release-native-build\.mjs/,
   );
   assert.equal(
     tauriConfig.build.beforeBuildCommand,
@@ -2707,7 +2711,10 @@ test("platform resource inspection is exact and immediately precedes native buil
   assert.match(releaseProfile, /^strip = true$/m);
   assert.match(releaseProfile, /^debug = 0$/m);
   assert.match(releaseProfile, /^incremental = false$/m);
-  assert.doesNotMatch(buildJob, /timeout-minutes:/);
+  assert.match(
+    buildDefinition,
+    /runs-on: \$\{\{ matrix\.os \}\}[\s\S]*?timeout-minutes: 360/,
+  );
   assert.match(
     buildDefinition,
     /strategy:\s*\n\s+fail-fast: false\s*\n\s+matrix:/,

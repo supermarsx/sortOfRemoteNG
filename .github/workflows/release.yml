@@ -433,6 +433,11 @@ jobs:
             release_opt_level: "0"
             windows_sdk_arch: arm64
     runs-on: ${{ matrix.os }}
+    # The hosted runner maximum is six hours. Native LLVM/Tauri phases have
+    # legitimately been quiet for one to three hours, so use the full bounded
+    # window and rely on the live build telemetry below to distinguish silence
+    # from a process that has actually stopped making progress.
+    timeout-minutes: 360
     env:
       # This wins over the repository's `stable` rust-toolchain.toml directory
       # override, so the Windows matrix pin also governs plain cargo/rustc calls.
@@ -1014,6 +1019,7 @@ jobs:
           }
 
       - name: Build native bundles
+        if: matrix.platform == 'macos'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           # Next's TypeScript worker can exceed Node's default heap on the
@@ -1031,6 +1037,40 @@ jobs:
             --config src-tauri/tauri.release.conf.json
             --features ${{ matrix.platform == 'windows' && env.RELEASE_FEATURES_WINDOWS || env.RELEASE_FEATURES_BUNDLED }}
             -- --no-default-features
+
+      - name: Build native bundles with progress telemetry
+        if: matrix.platform == 'windows' || matrix.platform == 'linux'
+        timeout-minutes: 300
+        shell: bash
+        env:
+          # Keep the Next beforeBuildCommand heap override scoped to the native
+          # build while the repository-owned launcher reports Cargo/Tauri phases.
+          NODE_OPTIONS: --max-old-space-size=4096
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: >-
+          node scripts/ci/run-release-native-build.mjs
+          --artifact-id "${{ matrix.artifact_id }}"
+          --platform "${{ matrix.platform }}"
+          --rust-target "${{ matrix.rust_target }}"
+          --bundles "${{ matrix.bundles }}"
+          --features "${{ matrix.platform == 'windows' && env.RELEASE_FEATURES_WINDOWS || env.RELEASE_FEATURES_BUNDLED }}"
+          --heartbeat-seconds 300
+          --hard-timeout-minutes 285
+
+      - name: Upload native build diagnostics
+        if: always() && (matrix.platform == 'windows' || matrix.platform == 'linux')
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          # This deliberately does not match release-* and therefore cannot be
+          # merged into the public installer set by the publication job.
+          name: build-diagnostics-${{ matrix.artifact_id }}
+          path: |
+            .ci/build-telemetry/${{ matrix.artifact_id }}.json
+            src-tauri/target/cargo-timings/cargo-timing.html
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Verify Windows dynamic native imports
         if: matrix.platform == 'windows'
