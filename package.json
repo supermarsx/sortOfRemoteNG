@@ -1,7 +1,7 @@
 {
   "name": "sortofremoteng",
   "private": true,
-  "version": "26.41.0",
+  "version": "26.42.0",
   "license": "MIT",
   "type": "module",
   "packageManager": "npm@11.11.0",
