@@ -71,6 +71,7 @@ vi.mock("../../../hooks/integration/usePortainer", () => ({
 }));
 
 import PortainerPanel from "./PortainerPanel";
+import { portainer as portainerBrandIcon } from "../../../utils/icons/brand";
 import { portainerDescriptor } from "./descriptor";
 
 const endpoints: PortainerEndpoint[] = [
@@ -172,10 +173,11 @@ beforeEach(() => {
 });
 
 describe("portainerDescriptor", () => {
-  it("is registered under virtualization with a lazy panel", async () => {
+  it("uses the Portainer brand icon and a lazy virtualization panel", async () => {
     expect(portainerDescriptor.key).toBe("portainer");
     expect(portainerDescriptor.category).toBe("virtualization");
-    expect(portainerDescriptor.defaultConnectionIconKey).toBe("container");
+    expect(portainerDescriptor.icon).toBe(portainerBrandIcon);
+    expect(portainerDescriptor.defaultConnectionIconKey).toBe("portainer");
     const mod = await portainerDescriptor.importPanel();
     expect(mod.default).toBe(PortainerPanel);
   });
