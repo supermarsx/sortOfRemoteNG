@@ -27,7 +27,9 @@ use crate::{
 const SETTINGS_FILENAME: &str = "settings.json";
 const SETTINGS_KEY_UPDATER: &str = "updater";
 const LEGACY_PRIVATE_ENDPOINT_KEY: &str = "private_endpoint";
-const MAX_CHECK_INTERVAL_HOURS: u64 = 24 * 30;
+const DEFAULT_CHECK_INTERVAL_HOURS: u64 = 24;
+const MAX_CUSTOM_CHECK_INTERVAL_HOURS: u64 = 24 * 30;
+const ANNUAL_CHECK_INTERVAL_HOURS: u64 = 24 * 365;
 const PORTABLE_MARKER_FILENAME: &str = ".portable";
 
 pub type UpdaterServiceState = Arc<UpdaterService>;
@@ -44,7 +46,7 @@ impl Default for StoredUpdaterSettings {
     fn default() -> Self {
         Self {
             auto_check_enabled: true,
-            check_interval_hours: 24,
+            check_interval_hours: DEFAULT_CHECK_INTERVAL_HOURS,
             private_endpoint_enabled: false,
             private_endpoint_url: None,
         }
@@ -152,9 +154,9 @@ impl UpdaterService {
             next.auto_check_enabled = value;
         }
         if let Some(value) = patch.check_interval_hours {
-            if value == 0 || value > MAX_CHECK_INTERVAL_HOURS {
+            if !is_valid_check_interval_hours(value) {
                 return Err(UpdateError::Settings(format!(
-                    "checkIntervalHours must be between 1 and {MAX_CHECK_INTERVAL_HOURS}"
+                    "checkIntervalHours must be between 1 and {MAX_CUSTOM_CHECK_INTERVAL_HOURS}, or exactly {ANNUAL_CHECK_INTERVAL_HOURS} for annual checks"
                 )));
             }
             next.check_interval_hours = value;
@@ -751,8 +753,8 @@ fn load_settings(path: &Path) -> Result<StoredUpdaterSettings, UpdateError> {
             .unwrap_or(true),
         check_interval_hours: u64_field(updater.get("checkIntervalHours"))
             .or_else(|| u64_field(updater.get("check_interval_hours")))
-            .filter(|value| *value > 0 && *value <= MAX_CHECK_INTERVAL_HOURS)
-            .unwrap_or(24),
+            .filter(|value| is_valid_check_interval_hours(*value))
+            .unwrap_or(DEFAULT_CHECK_INTERVAL_HOURS),
         private_endpoint_enabled,
         private_endpoint_url,
     })
@@ -838,6 +840,10 @@ fn u64_field(value: Option<&Value>) -> Option<u64> {
     value.and_then(Value::as_u64)
 }
 
+fn is_valid_check_interval_hours(value: u64) -> bool {
+    (1..=MAX_CUSTOM_CHECK_INTERVAL_HOURS).contains(&value) || value == ANNUAL_CHECK_INTERVAL_HOURS
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,6 +859,107 @@ mod tests {
             "sorng-updater-{label}-{}-{nonce}",
             std::process::id()
         ))
+    }
+
+    fn interval_patch(check_interval_hours: u64) -> UpdaterSettingsPatch {
+        UpdaterSettingsPatch {
+            check_interval_hours: Some(check_interval_hours),
+            ..UpdaterSettingsPatch::default()
+        }
+    }
+
+    #[test]
+    fn accepts_and_persists_custom_weekly_monthly_and_annual_intervals() {
+        let root = unique_temp_dir("accepted-check-intervals");
+        let service =
+            UpdaterService::new_with_install_mode("26.42.0", &root, UpdaterInstallMode::Unknown);
+
+        for value in [
+            1,
+            168,
+            MAX_CUSTOM_CHECK_INTERVAL_HOURS,
+            ANNUAL_CHECK_INTERVAL_HOURS,
+        ] {
+            let saved = service
+                .save_settings(interval_patch(value))
+                .unwrap_or_else(|error| panic!("save interval {value}: {error}"));
+            assert_eq!(saved.check_interval_hours, value);
+
+            let reloaded = UpdaterService::new_with_install_mode(
+                "26.42.0",
+                &root,
+                UpdaterInstallMode::Unknown,
+            );
+            assert_eq!(
+                reloaded
+                    .get_settings()
+                    .expect("reload persisted updater settings")
+                    .check_interval_hours,
+                value
+            );
+        }
+
+        std::fs::remove_dir_all(root).expect("remove accepted interval test directory");
+    }
+
+    #[test]
+    fn rejects_intervals_between_monthly_and_annual_or_beyond_annual() {
+        let root = unique_temp_dir("rejected-check-intervals");
+        let service =
+            UpdaterService::new_with_install_mode("26.42.0", &root, UpdaterInstallMode::Unknown);
+
+        for value in [0, 721, 8759, 8761, u64::MAX] {
+            let error = service
+                .save_settings(interval_patch(value))
+                .expect_err("invalid updater interval must be rejected");
+            let UpdateError::Settings(message) = error else {
+                panic!("expected settings error for {value}, got {error:?}");
+            };
+            assert!(message.contains("between 1 and 720"), "{message}");
+            assert!(message.contains("exactly 8760"), "{message}");
+        }
+
+        assert_eq!(
+            service
+                .get_settings()
+                .expect("settings after rejected saves")
+                .check_interval_hours,
+            DEFAULT_CHECK_INTERVAL_HOURS
+        );
+        assert!(
+            !root.join(SETTINGS_FILENAME).exists(),
+            "rejected values must not be persisted"
+        );
+    }
+
+    #[test]
+    fn invalid_persisted_intervals_fall_back_without_discarding_other_settings() {
+        for value in [0, 721, 8759, 8761, u64::MAX] {
+            let root = unique_temp_dir(&format!("invalid-persisted-check-interval-{value}"));
+            std::fs::create_dir_all(&root).expect("create persisted interval test directory");
+            std::fs::write(
+                root.join(SETTINGS_FILENAME),
+                serde_json::to_vec(&json!({
+                    "updater": {
+                        "autoCheckEnabled": false,
+                        "checkIntervalHours": value
+                    }
+                }))
+                .expect("serialize persisted updater settings"),
+            )
+            .expect("write persisted updater settings");
+
+            let service = UpdaterService::new_with_install_mode(
+                "26.42.0",
+                &root,
+                UpdaterInstallMode::Unknown,
+            );
+            let settings = service.get_settings().expect("load updater settings");
+            assert_eq!(settings.check_interval_hours, DEFAULT_CHECK_INTERVAL_HOURS);
+            assert!(!settings.auto_check_enabled);
+
+            std::fs::remove_dir_all(root).expect("remove persisted interval test directory");
+        }
     }
 
     #[test]

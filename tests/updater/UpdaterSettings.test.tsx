@@ -132,6 +132,8 @@ describe("UpdaterSettings", () => {
       expect(toggle).not.toBeDisabled();
       expect(interval).not.toBeDisabled();
     });
+    expect(interval).toHaveAttribute("min", "1");
+    expect(interval).toHaveAttribute("max", "720");
 
     fireEvent.change(interval, { target: { value: "6" } });
     await waitFor(() => expect(interval).toHaveValue(6));
@@ -153,6 +155,43 @@ describe("UpdaterSettings", () => {
         patch: { autoCheckEnabled: false },
       });
       expect(toggle).not.toBeChecked();
+    });
+  });
+
+  it("persists weekly, monthly, and annual check schedules as exact hours", async () => {
+    render(<UpdaterSettingsSection />);
+
+    const schedule = await screen.findByTestId("updater-check-schedule");
+    await waitFor(() => expect(schedule).not.toBeDisabled());
+
+    for (const [label, hours] of [
+      ["Weekly", 168],
+      ["Monthly", 720],
+      ["Annually", 8760],
+    ] as const) {
+      fireEvent.click(schedule);
+      fireEvent.mouseDown(await screen.findByRole("option", { name: label }));
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
+          patch: { checkIntervalHours: hours },
+        });
+        expect(schedule).toHaveTextContent(label);
+      });
+    }
+
+    expect(
+      screen.queryByTestId("updater-check-interval"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(schedule);
+    fireEvent.mouseDown(
+      await screen.findByRole("option", { name: "Custom hours" }),
+    );
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
+        patch: { checkIntervalHours: 24 },
+      });
+      expect(screen.getByTestId("updater-check-interval")).toHaveValue(24);
     });
   });
 
@@ -193,7 +232,9 @@ describe("UpdaterSettings", () => {
     render(<UpdaterSettingsSection />);
 
     const intervalInput = await screen.findByTestId("updater-check-interval");
-    const intervalField = intervalInput.parentElement;
+    const intervalField = intervalInput.closest(
+      '[data-setting-key="updater.checkIntervalHours"]',
+    );
     expect(intervalField?.className).not.toContain("ml-7");
     expect(
       intervalField?.querySelector(".sor-settings-row-label"),
@@ -313,13 +354,61 @@ describe("UpdaterSettings", () => {
     expect(notice).toHaveTextContent("Manual download required");
     expect(notice).toHaveTextContent(/no updater signature/i);
     expect(notice).toHaveTextContent(/install it manually/i);
-    expect(
-      screen.getByRole("link", { name: /Download manually/i }),
-    ).toHaveAttribute("href", unsignedUpdate.downloadUrl);
+    const manualLink = screen.getByRole("link", {
+      name: /Download manually/i,
+    });
+    expect(manualLink).toHaveAttribute("href", unsignedUpdate.downloadUrl);
+    fireEvent.click(manualLink);
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("open_url_external", {
+        url: unsignedUpdate.downloadUrl,
+      });
+    });
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "updater_download_and_install",
+      expect.anything(),
+    );
     expect(screen.queryByTestId("updater-install-btn")).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("updater-msi-elevation-notice"),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens GitHub Releases through the native browser command", async () => {
+    const unsupportedMessage =
+      "This Flatpak installation is updated externally.";
+    const unsupportedSettings: UpdaterSettings = {
+      ...settings,
+      installMode: "flatpak",
+      selfUpdateSupported: false,
+      selfUpdateMessage: unsupportedMessage,
+    };
+    const unsupportedStatus: UpdaterStatusSnapshot = {
+      ...idleStatus,
+      installMode: "flatpak",
+      selfUpdateSupported: false,
+      selfUpdateMessage: unsupportedMessage,
+    };
+    mockInvoke.mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === "updater_get_settings"
+          ? unsupportedSettings
+          : unsupportedStatus,
+      ),
+    );
+
+    render(<UpdaterSettingsSection />);
+
+    const releasesLink = await screen.findByRole("link", {
+      name: /Open GitHub Releases/i,
+    });
+    fireEvent.click(releasesLink);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("open_url_external", {
+        url: "https://github.com/supermarsx/sortOfRemoteNG/releases/latest",
+      });
+    });
   });
 
   it("shows no MSI elevation notice while an MSI install has no update waiting", async () => {

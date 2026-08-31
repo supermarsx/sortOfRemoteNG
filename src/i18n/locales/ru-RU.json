@@ -2452,6 +2452,13 @@
     "autoChecks": "Автоматические проверки",
     "autoCheckTooltip": "Проверка никогда не устанавливает обновления без подтверждения.",
     "checkIntervalHours": "Интервал проверки (часы)",
+    "checkCadence": "Периодичность проверки",
+    "schedule": {
+      "customHours": "Пользовательский интервал",
+      "weekly": "Еженедельно",
+      "monthly": "Ежемесячно",
+      "annually": "Ежегодно"
+    },
     "artifact": "Артефакт",
     "downloadManually": "Скачать вручную",
     "unsigned": {

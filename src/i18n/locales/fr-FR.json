@@ -2452,6 +2452,13 @@
     "autoChecks": "Vérifications automatiques",
     "autoCheckTooltip": "Les vérifications n'installent jamais de mises à jour sans confirmation.",
     "checkIntervalHours": "Intervalle de vérification (heures)",
+    "checkCadence": "Fréquence de vérification",
+    "schedule": {
+      "customHours": "Heures personnalisées",
+      "weekly": "Chaque semaine",
+      "monthly": "Chaque mois",
+      "annually": "Chaque année"
+    },
     "artifact": "Artefact",
     "downloadManually": "Télécharger manuellement",
     "unsigned": {

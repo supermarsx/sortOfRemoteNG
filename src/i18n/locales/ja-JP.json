@@ -2452,6 +2452,13 @@
     "autoChecks": "自動確認",
     "autoCheckTooltip": "確認では、確認なしに更新をインストールすることはありません。",
     "checkIntervalHours": "確認間隔（時間）",
+    "checkCadence": "確認頻度",
+    "schedule": {
+      "customHours": "カスタム時間",
+      "weekly": "毎週",
+      "monthly": "毎月",
+      "annually": "毎年"
+    },
     "artifact": "アーティファクト",
     "downloadManually": "手動でダウンロード",
     "unsigned": {

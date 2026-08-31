@@ -11,7 +11,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
-import { useUpdater } from "../../src/hooks/updater/useUpdater";
+import {
+  UPDATER_SETTINGS_CHANGED_EVENT,
+  updaterApi,
+  useUpdater,
+} from "../../src/hooks/updater/useUpdater";
 import { useUpdaterAutoCheck } from "../../src/hooks/updater/useUpdaterAutoCheck";
 
 function deferred<T>() {
@@ -331,18 +335,35 @@ describe("useUpdater", () => {
   });
 
   it("saves updater settings through updater_save_settings", async () => {
+    const settingsChanged = vi.fn();
+    window.addEventListener(UPDATER_SETTINGS_CHANGED_EVENT, settingsChanged);
     const { result } = renderHook(() => useUpdater({ autoLoad: false }));
 
-    await act(async () => {
-      await result.current.saveSettings({
+    try {
+      await act(async () => {
+        await result.current.saveSettings({
+          autoCheckEnabled: false,
+          checkIntervalHours: 6,
+        });
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
+        patch: { autoCheckEnabled: false, checkIntervalHours: 6 },
+      });
+      expect(settingsChanged).toHaveBeenCalledTimes(1);
+      expect(
+        (settingsChanged.mock.calls[0]?.[0] as CustomEvent<UpdaterSettings>)
+          .detail,
+      ).toMatchObject({
         autoCheckEnabled: false,
         checkIntervalHours: 6,
       });
-    });
-
-    expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
-      patch: { autoCheckEnabled: false, checkIntervalHours: 6 },
-    });
+    } finally {
+      window.removeEventListener(
+        UPDATER_SETTINGS_CHANGED_EVENT,
+        settingsChanged,
+      );
+    }
   });
 
   it("downloads and installs through updater_download_and_install", async () => {
@@ -520,6 +541,58 @@ describe("useUpdater", () => {
     expect(mockInvoke).not.toHaveBeenCalledWith("updater_check", {
       force: false,
     });
+  });
+
+  it("reschedules auto-check after transient settings or status IPC failures", async () => {
+    vi.useFakeTimers();
+    const getSettings = vi
+      .spyOn(updaterApi, "getSettings")
+      .mockRejectedValueOnce(new Error("settings IPC unavailable"))
+      .mockRejectedValueOnce(new Error("settings IPC unavailable"))
+      .mockResolvedValue(settings);
+    const getStatus = vi
+      .spyOn(updaterApi, "getStatus")
+      .mockRejectedValueOnce(new Error("status IPC unavailable"))
+      .mockResolvedValue(idleStatus);
+    const check = vi.spyOn(updaterApi, "check").mockResolvedValue({
+      updateAvailable: true,
+      availableUpdate: update,
+      status: availableStatus,
+    });
+
+    const { result, unmount } = renderHook(() =>
+      useUpdaterAutoCheck({ startDelayMs: 0, minIntervalMs: 0 }),
+    );
+
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.waitFor(() => {
+          expect(getStatus).toHaveBeenCalledTimes(1);
+          expect(vi.getTimerCount()).toBe(1);
+        });
+      });
+
+      expect(result.current.error).toBe("settings IPC unavailable");
+      expect(check).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(1);
+      expect(getSettings).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        await vi.advanceTimersToNextTimerAsync();
+        await vi.waitFor(() => expect(check).toHaveBeenCalledWith(false));
+      });
+
+      expect(result.current.error).toBeNull();
+      expect(result.current.lastResult?.availableUpdate?.version).toBe("1.6.0");
+    } finally {
+      unmount();
+      getSettings.mockRestore();
+      getStatus.mockRestore();
+      check.mockRestore();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("relaunches through updater_relaunch", async () => {

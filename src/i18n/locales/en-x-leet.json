@@ -2452,6 +2452,13 @@
     "autoChecks": "4u70m471c ch3ck5",
     "autoCheckTooltip": "Ch3ck5 n3v3r 1n57411 upd4735 w17h0u7 c0nf1rm4710n.",
     "checkIntervalHours": "Ch3ck 1n73rv41 (h0ur5)",
+    "checkCadence": "Ch3ck c4d3nc3",
+    "schedule": {
+      "customHours": "Cu570m h0ur5",
+      "weekly": "W33k1y",
+      "monthly": "M0n7h1y",
+      "annually": "4nnu411y"
+    },
     "artifact": "4r71f4c7",
     "downloadManually": "D0wn104d m4nu411y",
     "unsigned": {

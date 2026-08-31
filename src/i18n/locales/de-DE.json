@@ -2452,6 +2452,13 @@
     "autoChecks": "Automatische Prüfungen",
     "autoCheckTooltip": "Prüfungen installieren niemals Updates ohne Bestätigung.",
     "checkIntervalHours": "Prüfintervall (Stunden)",
+    "checkCadence": "Prüfrhythmus",
+    "schedule": {
+      "customHours": "Benutzerdefinierte Stunden",
+      "weekly": "Wöchentlich",
+      "monthly": "Monatlich",
+      "annually": "Jährlich"
+    },
     "artifact": "Artefakt",
     "downloadManually": "Manuell herunterladen",
     "unsigned": {

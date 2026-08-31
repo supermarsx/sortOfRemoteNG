@@ -2452,6 +2452,13 @@
     "autoChecks": "자동 확인",
     "autoCheckTooltip": "확인은 사용자의 동의 없이 업데이트를 설치하지 않습니다.",
     "checkIntervalHours": "확인 간격(시간)",
+    "checkCadence": "확인 주기",
+    "schedule": {
+      "customHours": "사용자 지정 시간",
+      "weekly": "매주",
+      "monthly": "매월",
+      "annually": "매년"
+    },
     "artifact": "아티팩트",
     "downloadManually": "수동으로 다운로드",
     "unsigned": {

@@ -2452,6 +2452,13 @@
     "autoChecks": "自动检查",
     "autoCheckTooltip": "检查绝不会在未经确认的情况下安装更新。",
     "checkIntervalHours": "检查间隔（小时）",
+    "checkCadence": "检查频率",
+    "schedule": {
+      "customHours": "自定义小时数",
+      "weekly": "每周",
+      "monthly": "每月",
+      "annually": "每年"
+    },
     "artifact": "构件",
     "downloadManually": "手动下载",
     "unsigned": {

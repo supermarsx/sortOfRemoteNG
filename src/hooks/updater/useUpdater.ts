@@ -25,6 +25,7 @@ const SELF_UPDATE_UNSUPPORTED_FALLBACK =
   "This installation cannot be safely updated in the app.";
 const UNSIGNED_UPDATE_INSTALL_MESSAGE =
   "This release has no updater signature, so it cannot be installed in the app. Download and install the artifact manually.";
+export const UPDATER_SETTINGS_CHANGED_EVENT = "sorng-updater-settings-changed";
 
 async function invokeUpdater<T>(
   command: string,
@@ -432,6 +433,11 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
           setSettingsCapabilityLoaded(true);
           setSettingsRefreshError(null);
         }
+        window.dispatchEvent(
+          new CustomEvent<UpdaterSettings>(UPDATER_SETTINGS_CHANGED_EVENT, {
+            detail: nextSettings,
+          }),
+        );
         const nextStatus = await updaterApi.getStatus();
         if (mountedRef.current) {
           setStatus(nextStatus);

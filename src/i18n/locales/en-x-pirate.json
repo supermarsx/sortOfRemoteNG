@@ -2452,6 +2452,13 @@
     "autoChecks": "Automatic checks",
     "autoCheckTooltip": "Checks never install updates without confirmation.",
     "checkIntervalHours": "Check interval (hours)",
+    "checkCadence": "Check cadence",
+    "schedule": {
+      "customHours": "Custom hours",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "annually": "Annually"
+    },
     "artifact": "Artifact",
     "downloadManually": "Haul aboard manually",
     "unsigned": {

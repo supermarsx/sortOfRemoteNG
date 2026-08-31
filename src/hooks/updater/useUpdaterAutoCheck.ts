@@ -4,9 +4,14 @@ import type {
   UpdaterSettings,
   UpdaterStatusSnapshot,
 } from "../../types/updater/updater";
-import { updaterApi } from "./useUpdater";
+import {
+  boundedUpdaterTimerDelay,
+  checkIntervalMilliseconds,
+  HOUR_MS,
+  millisecondsUntilNextCheck,
+} from "../../utils/updater/checkSchedule";
+import { UPDATER_SETTINGS_CHANGED_EVENT, updaterApi } from "./useUpdater";
 
-const HOUR_MS = 60 * 60 * 1000;
 const STRICT_MODE_DUPLICATE_WINDOW_MS = 30_000;
 
 let sharedAutoCheckPromise: Promise<UpdaterCheckResult | null> | null = null;
@@ -41,8 +46,7 @@ function intervalMsFor(
   settings: UpdaterSettings,
   minIntervalMs: number,
 ): number {
-  const configured = Math.max(1, settings.checkIntervalHours) * HOUR_MS;
-  return Math.max(minIntervalMs, configured);
+  return checkIntervalMilliseconds(settings.checkIntervalHours, minIntervalMs);
 }
 
 function isDue(
@@ -93,11 +97,28 @@ export function useUpdaterAutoCheck(
   const [lastResult, setLastResult] = useState<UpdaterCheckResult | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scheduleRevision, setScheduleRevision] = useState(0);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleSettingsChanged = () => {
+      setScheduleRevision((revision) => revision + 1);
+    };
+    window.addEventListener(
+      UPDATER_SETTINGS_CHANGED_EVENT,
+      handleSettingsChanged,
+    );
+    return () => {
+      window.removeEventListener(
+        UPDATER_SETTINGS_CHANGED_EVENT,
+        handleSettingsChanged,
+      );
     };
   }, []);
 
@@ -159,44 +180,53 @@ export function useUpdaterAutoCheck(
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    let intervalTimer: number | undefined;
+    let timer: number | undefined;
 
-    const tick = async () => {
+    const schedule = (delayMs: number) => {
       if (cancelled) return;
-      await runNow();
+      timer = window.setTimeout(() => {
+        void tickAndReschedule();
+      }, boundedUpdaterTimerDelay(delayMs));
     };
 
-    const start = async () => {
-      await tick();
+    const tickAndReschedule = async () => {
+      await runNow();
       if (cancelled) return;
-      const latestSettings = await updaterApi.getSettings().catch(() => null);
+
+      const [latestSettings, latestStatus] = await Promise.all([
+        updaterApi.getSettings().catch(() => null),
+        updaterApi.getStatus().catch(() => null),
+      ]);
+      const transientFailureRetryMs = Math.max(minIntervalMs, HOUR_MS);
+      if (!latestSettings || !latestStatus) {
+        schedule(transientFailureRetryMs);
+        return;
+      }
       if (
         cancelled ||
-        !latestSettings?.selfUpdateSupported ||
-        !latestSettings.autoCheckEnabled
+        !latestSettings.selfUpdateSupported ||
+        !latestSettings.autoCheckEnabled ||
+        !latestStatus.selfUpdateSupported
       ) {
         return;
       }
-      intervalTimer = window.setInterval(
-        tick,
-        intervalMsFor(latestSettings, minIntervalMs),
+
+      const intervalMs = intervalMsFor(latestSettings, minIntervalMs);
+      const remainingMs = millisecondsUntilNextCheck(
+        intervalMs,
+        latestStatus.lastCheckedAt,
       );
+      const retryMs = Math.min(intervalMs, transientFailureRetryMs);
+      schedule(remainingMs > 0 ? remainingMs : retryMs);
     };
 
-    const startTimer = window.setTimeout(
-      () => {
-        void start();
-      },
-      Math.max(0, startDelayMs),
-    );
+    schedule(scheduleRevision === 0 ? Math.max(0, startDelayMs) : 0);
 
     return () => {
       cancelled = true;
-      if (typeof startTimer === "number") window.clearTimeout(startTimer);
-      if (typeof intervalTimer === "number")
-        window.clearInterval(intervalTimer);
+      if (typeof timer === "number") window.clearTimeout(timer);
     };
-  }, [enabled, minIntervalMs, runNow, startDelayMs]);
+  }, [enabled, minIntervalMs, runNow, scheduleRevision, startDelayMs]);
 
   return {
     settings,

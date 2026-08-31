@@ -2452,6 +2452,13 @@
     "autoChecks": "Comprobaciones automáticas",
     "autoCheckTooltip": "Las comprobaciones nunca instalan actualizaciones sin confirmación.",
     "checkIntervalHours": "Intervalo de comprobación (horas)",
+    "checkCadence": "Frecuencia de comprobación",
+    "schedule": {
+      "customHours": "Horas personalizadas",
+      "weekly": "Semanal",
+      "monthly": "Mensual",
+      "annually": "Anualmente"
+    },
     "artifact": "Artefacto",
     "downloadManually": "Descargar manualmente",
     "unsigned": {

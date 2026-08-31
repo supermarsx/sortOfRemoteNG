@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
@@ -13,7 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import SectionHeading from "../../ui/SectionHeading";
-import { NumberInput, TextInput } from "../../ui/forms";
+import { NumberInput, Select, TextInput } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import {
   Card,
@@ -28,6 +29,27 @@ import type {
   UpdaterStatusValue,
 } from "../../../types/updater/updater";
 import { formatAppVersion } from "../../../generated/version";
+import {
+  MAX_CUSTOM_CHECK_INTERVAL_HOURS,
+  MIN_CUSTOM_CHECK_INTERVAL_HOURS,
+  checkScheduleForHours,
+  clampCustomCheckIntervalHours,
+  hoursForCheckSchedule,
+  type UpdaterCheckSchedule,
+} from "../../../utils/updater/checkSchedule";
+
+const GITHUB_RELEASES_URL =
+  "https://github.com/supermarsx/sortOfRemoteNG/releases/latest";
+
+function openExternalUrl(
+  event: React.MouseEvent<HTMLAnchorElement>,
+  url: string,
+): void {
+  event.preventDefault();
+  void invoke("open_url_external", { url }).catch(() => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
+}
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -115,6 +137,8 @@ export const UpdaterSettings: React.FC = () => {
   const { t } = useTranslation();
   const updater = useUpdater();
   const [intervalDraft, setIntervalDraft] = useState(24);
+  const [intervalSchedule, setIntervalSchedule] =
+    useState<UpdaterCheckSchedule>("custom");
   const [endpointEnabledDraft, setEndpointEnabledDraft] = useState(false);
   const [endpointDraft, setEndpointDraft] = useState("");
   const [endpointLocalError, setEndpointLocalError] = useState<string | null>(
@@ -123,7 +147,13 @@ export const UpdaterSettings: React.FC = () => {
 
   useEffect(() => {
     if (!updater.settings) return;
-    setIntervalDraft(updater.settings.checkIntervalHours);
+    const schedule = checkScheduleForHours(updater.settings.checkIntervalHours);
+    setIntervalSchedule(schedule);
+    if (schedule === "custom") {
+      setIntervalDraft(
+        clampCustomCheckIntervalHours(updater.settings.checkIntervalHours),
+      );
+    }
     setEndpointEnabledDraft(updater.settings.privateEndpointEnabled);
     setEndpointDraft(updater.settings.privateEndpointUrl ?? "");
   }, [updater.settings]);
@@ -175,10 +205,26 @@ export const UpdaterSettings: React.FC = () => {
   );
 
   const saveIntervalDraft = useCallback(() => {
+    const hours = clampCustomCheckIntervalHours(intervalDraft);
+    setIntervalDraft(hours);
     void updater.saveSettings({
-      checkIntervalHours: Math.max(1, intervalDraft),
+      checkIntervalHours: hours,
     });
   }, [intervalDraft, updater]);
+
+  const handleIntervalScheduleChange = useCallback(
+    (value: string) => {
+      const schedule: UpdaterCheckSchedule =
+        value === "weekly" || value === "monthly" || value === "annually"
+          ? value
+          : "custom";
+      const hours = hoursForCheckSchedule(schedule, intervalDraft);
+      setIntervalSchedule(schedule);
+      if (schedule === "custom") setIntervalDraft(hours);
+      void updater.saveSettings({ checkIntervalHours: hours });
+    },
+    [intervalDraft, updater],
+  );
 
   const handleIntervalBlur = useCallback(
     (event: React.FocusEvent<HTMLInputElement>) => {
@@ -239,6 +285,7 @@ export const UpdaterSettings: React.FC = () => {
 
   const handleResetToDefaults = useCallback(async () => {
     setIntervalDraft(DEFAULT_UPDATER_SETTINGS.checkIntervalHours ?? 24);
+    setIntervalSchedule("custom");
     setEndpointEnabledDraft(false);
     setEndpointDraft("");
     setEndpointLocalError(null);
@@ -270,9 +317,10 @@ export const UpdaterSettings: React.FC = () => {
             >
               <p>{selfUpdateMessage}</p>
               <a
-                href="https://github.com/supermarsx/sortOfRemoteNG/releases/latest"
+                href={GITHUB_RELEASES_URL}
                 target="_blank"
                 rel="noreferrer"
+                onClick={(event) => openExternalUrl(event, GITHUB_RELEASES_URL)}
                 className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
               >
                 {t("updater.openGitHubReleases", "Open GitHub Releases")}
@@ -387,6 +435,9 @@ export const UpdaterSettings: React.FC = () => {
                   href={available.downloadUrl}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={(event) =>
+                    openExternalUrl(event, available.downloadUrl)
+                  }
                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   {available.signaturePresent
@@ -540,38 +591,76 @@ export const UpdaterSettings: React.FC = () => {
                   <span className="text-[var(--color-textSecondary)] mr-1">
                     <Clock3 size={16} />
                   </span>
-                  {t("updater.checkIntervalHours", "Check interval (hours)")}
+                  {t("updater.checkCadence", "Check cadence")}
                   <InfoTooltip
                     text={t(
                       "updater.checkIntervalTooltip",
-                      "How often the app checks for updates while automatic checks are enabled.",
+                      "Choose a custom interval up to 720 hours, or check weekly, monthly, or annually.",
                     )}
                   />
                 </span>
                 <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
                   {t(
                     "updater.checkIntervalDescription",
-                    "Valid range: 1 to 720 hours.",
+                    "Custom intervals support 1 to 720 hours.",
                   )}
                 </p>
               </div>
-              <NumberInput
-                id="updater-check-interval"
-                value={intervalDraft}
-                min={1}
-                max={720}
-                onChange={setIntervalDraft}
-                onBlur={handleIntervalBlur}
-                disabled={
-                  updater.savingSettings ||
-                  !updater.settings ||
-                  !updater.selfUpdateSupported
-                }
-                variant="settings-compact"
-                className="text-right"
-                style={{ width: "5rem" }}
-                data-testid="updater-check-interval"
-              />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Select
+                  id="updater-check-schedule"
+                  value={intervalSchedule}
+                  onChange={handleIntervalScheduleChange}
+                  options={[
+                    {
+                      value: "custom",
+                      label: t("updater.schedule.customHours", "Custom hours"),
+                    },
+                    {
+                      value: "weekly",
+                      label: t("updater.schedule.weekly", "Weekly"),
+                    },
+                    {
+                      value: "monthly",
+                      label: t("updater.schedule.monthly", "Monthly"),
+                    },
+                    {
+                      value: "annually",
+                      label: t("updater.schedule.annually", "Annually"),
+                    },
+                  ]}
+                  disabled={
+                    updater.savingSettings ||
+                    !updater.settings ||
+                    !updater.selfUpdateSupported
+                  }
+                  label={t("updater.checkCadence", "Check cadence")}
+                  data-testid="updater-check-schedule"
+                />
+                {intervalSchedule === "custom" && (
+                  <NumberInput
+                    id="updater-check-interval"
+                    value={intervalDraft}
+                    min={MIN_CUSTOM_CHECK_INTERVAL_HOURS}
+                    max={MAX_CUSTOM_CHECK_INTERVAL_HOURS}
+                    onChange={setIntervalDraft}
+                    onBlur={handleIntervalBlur}
+                    disabled={
+                      updater.savingSettings ||
+                      !updater.settings ||
+                      !updater.selfUpdateSupported
+                    }
+                    label={t(
+                      "updater.checkIntervalHours",
+                      "Check interval (hours)",
+                    )}
+                    variant="settings-compact"
+                    className="text-right"
+                    style={{ width: "5rem" }}
+                    data-testid="updater-check-interval"
+                  />
+                )}
+              </div>
             </div>
           </div>
         </Card>
