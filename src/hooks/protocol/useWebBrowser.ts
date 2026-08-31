@@ -23,6 +23,8 @@ import {
 } from "../../utils/auth/trustStore";
 import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
+import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
+import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -32,6 +34,149 @@ export interface ProxyMediatorResponse {
   local_port: number;
   session_id: string;
   proxy_url: string;
+}
+
+export const PROXY_FAILURE_MESSAGE_TYPE = "sorng_proxy_failure" as const;
+
+export type ProxyFailureKind =
+  | "timeout"
+  | "connection_refused"
+  | "dns_failure"
+  | "tls_failure"
+  | "connection_failed"
+  | "bad_request"
+  | "redirect_loop"
+  | "upstream_failure"
+  | "http_status"
+  | "invalid_navigation"
+  | "proxy_start_failed"
+  | "certificate_rejected";
+
+export interface ProxyNavigationFailure {
+  version: 1;
+  sessionId: string;
+  kind: ProxyFailureKind;
+  status: number | null;
+  title: string;
+  url: string;
+  reason: string;
+  detail: string;
+}
+
+const PROXY_FAILURE_KINDS = new Set<ProxyFailureKind>([
+  "timeout",
+  "connection_refused",
+  "dns_failure",
+  "tls_failure",
+  "connection_failed",
+  "bad_request",
+  "redirect_loop",
+  "upstream_failure",
+  "http_status",
+]);
+
+function boundedString(value: unknown, maxLength: number): string | undefined {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maxLength
+    ? value
+    : undefined;
+}
+
+function requestUrlWithoutFragment(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password
+    ) {
+      return null;
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate the untrusted `postMessage` payload from a proxy-owned iframe.
+ * Source-window and exact proxy-origin checks live in the message listener;
+ * this helper additionally binds the payload to the active proxy session and
+ * navigation target before any text reaches React state.
+ */
+export function parseProxyFailurePayload(
+  data: unknown,
+  expectedSessionId: string,
+  expectedTargetUrl: string,
+): ProxyNavigationFailure | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const value = data as Record<string, unknown>;
+  const sessionId = boundedString(value.sessionId, 128);
+  const kind = boundedString(value.kind, 64) as ProxyFailureKind | undefined;
+  const title = boundedString(value.title, 512);
+  const url = boundedString(value.url, 16_384);
+  const reason = boundedString(value.reason, 2_048);
+  const detail = boundedString(value.detail, 16_384);
+  const status = value.status;
+  if (
+    value.type !== PROXY_FAILURE_MESSAGE_TYPE ||
+    value.version !== 1 ||
+    !sessionId ||
+    sessionId !== expectedSessionId ||
+    !kind ||
+    !PROXY_FAILURE_KINDS.has(kind) ||
+    typeof status !== "number" ||
+    !Number.isSafeInteger(status) ||
+    status < 400 ||
+    status > 599 ||
+    !title ||
+    !url ||
+    !reason ||
+    !detail
+  ) {
+    return null;
+  }
+  const normalizedUrl = requestUrlWithoutFragment(url);
+  const normalizedTarget = requestUrlWithoutFragment(expectedTargetUrl);
+  if (!normalizedUrl || normalizedUrl !== normalizedTarget) return null;
+
+  return {
+    version: 1,
+    sessionId,
+    kind,
+    status,
+    title,
+    url,
+    reason,
+    detail,
+  };
+}
+
+function localNavigationFailure(
+  kind: Extract<
+    ProxyFailureKind,
+    | "timeout"
+    | "invalid_navigation"
+    | "proxy_start_failed"
+    | "certificate_rejected"
+  >,
+  title: string,
+  url: string,
+  reason: string,
+  detail = reason,
+): ProxyNavigationFailure {
+  return {
+    version: 1,
+    sessionId: "local",
+    kind,
+    status: null,
+    title,
+    url,
+    reason,
+    detail,
+  };
 }
 
 const PROTECTED_PROXY_HOST_RE = /^p[0-9a-f]{32}\.localhost$/u;
@@ -173,20 +318,6 @@ export function useWebBrowser(session: ConnectionSession) {
     });
   }, [dispatch, session]);
 
-  const markSessionError = useCallback(
-    (errorMessage: string) => {
-      dispatch({
-        type: "UPDATE_SESSION",
-        payload: {
-          ...session,
-          status: "error",
-          errorMessage,
-        },
-      });
-    },
-    [dispatch, session],
-  );
-
   // ── State ───────────────────────────────────────────────────
   const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
   const [inputUrl, setInputUrl] = useState(currentUrl);
@@ -194,6 +325,21 @@ export function useWebBrowser(session: ConnectionSession) {
   const [loadError, setLoadError] = useState<string>(
     targetResolution.error ?? "",
   );
+  const [navigationFailure, setNavigationFailure] =
+    useState<ProxyNavigationFailure | null>(
+      targetResolution.error
+        ? localNavigationFailure(
+            "invalid_navigation",
+            "Invalid web connection",
+            targetResolution.url || session.hostname,
+            targetResolution.error,
+          )
+        : null,
+    );
+  const [diagnosticReport, setDiagnosticReport] =
+    useState<ProtocolDiagnosticReport | null>(null);
+  const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
   const [isSecure, setIsSecure] = useState(session.protocol === "https");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -213,6 +359,34 @@ export function useWebBrowser(session: ConnectionSession) {
   const proxyUrlRef = useRef<string>("");
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
+  const activeNavigationUrlRef = useRef(currentUrl);
+  const navigationFailureRef = useRef<ProxyNavigationFailure | null>(
+    navigationFailure,
+  );
+
+  const clearNavigationFailure = useCallback(() => {
+    navigationFailureRef.current = null;
+    setNavigationFailure(null);
+    setLoadError("");
+    setDiagnosticReport(null);
+    setDiagnosticError(null);
+  }, []);
+
+  const applyNavigationFailure = useCallback(
+    (failure: ProxyNavigationFailure) => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
+      navigationFailureRef.current = failure;
+      setNavigationFailure(failure);
+      setLoadError(failure.detail || failure.reason);
+      setIsLoading(false);
+      setDiagnosticReport(null);
+      setDiagnosticError(null);
+    },
+    [],
+  );
   /**
    * Set once `fetchAndVerifyCert` has resolved trust for this tab.
    * The proxy receives this SHA-256 leaf certificate fingerprint and pins
@@ -476,10 +650,16 @@ export function useWebBrowser(session: ConnectionSession) {
     setTrustPrompt(null);
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
-    setLoadError(errorMessage);
-    setIsLoading(false);
-    markSessionError(errorMessage);
-  }, [markSessionError]);
+    applyNavigationFailure(
+      localNavigationFailure(
+        "certificate_rejected",
+        "Certificate was not trusted",
+        currentUrl,
+        "The connection was stopped because the certificate was rejected.",
+        errorMessage,
+      ),
+    );
+  }, [applyNavigationFailure, currentUrl]);
 
   /**
    * P7: snapshot the live `:root --color-*` CSS variables so the
@@ -539,7 +719,8 @@ export function useWebBrowser(session: ConnectionSession) {
     async (url: string, addToHistory = true) => {
       const gen = ++navGenRef.current;
       setIsLoading(true);
-      setLoadError("");
+      clearNavigationFailure();
+      activeNavigationUrlRef.current = url;
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
         loadTimeoutRef.current = null;
@@ -567,11 +748,18 @@ export function useWebBrowser(session: ConnectionSession) {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Invalid web navigation.";
-        setIsLoading(false);
-        setLoadError(message);
-        markSessionError(message);
+        applyNavigationFailure(
+          localNavigationFailure(
+            "invalid_navigation",
+            "Invalid web address",
+            url || session.hostname,
+            "The requested address is not valid for this saved connection.",
+            message,
+          ),
+        );
         return;
       }
+      activeNavigationUrlRef.current = urlObj.toString();
       if (urlObj.protocol === "https:") {
         const trusted = await fetchAndVerifyCert();
         if (!trusted) return;
@@ -579,9 +767,15 @@ export function useWebBrowser(session: ConnectionSession) {
       }
       loadTimeoutRef.current = setTimeout(() => {
         const errorMessage = `Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`;
-        setIsLoading(false);
-        setLoadError(errorMessage);
-        markSessionError(errorMessage);
+        applyNavigationFailure(
+          localNavigationFailure(
+            "timeout",
+            "Connection timed out",
+            url,
+            "The server did not respond before the browser timeout expired.",
+            errorMessage,
+          ),
+        );
       }, LOAD_TIMEOUT_MS);
       try {
         // ── Universal proxy mediation (P1) ──
@@ -639,6 +833,10 @@ export function useWebBrowser(session: ConnectionSession) {
                     ? acceptedCertFingerprintRef.current
                     : null,
                 connection_id: connection?.id ?? "",
+                // If the app has a global HTTP(S) proxy, the loopback
+                // mediator owns that outbound hop. The iframe still talks only
+                // to its protected p<token>.localhost authority.
+                upstream_proxy_url: getGlobalHttpProxyUrl(),
                 // t20: arm proxy-side web auto-login for this session
                 // when the connection opted in. Default off. The
                 // credential itself is NOT sent separately — the
@@ -715,13 +913,15 @@ export function useWebBrowser(session: ConnectionSession) {
               ? "Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials."
               : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings."
             : `Failed to load page: ${msg}`;
-        if (msg.includes("401") || msg.includes("Unauthorized")) {
-          setLoadError(errorMessage);
-        } else {
-          setLoadError(errorMessage);
-        }
-        markSessionError(errorMessage);
-        setIsLoading(false);
+        applyNavigationFailure(
+          localNavigationFailure(
+            "proxy_start_failed",
+            "Unable to start the web connection",
+            url,
+            "The internal proxy could not prepare this navigation.",
+            errorMessage,
+          ),
+        );
       }
     },
     [
@@ -736,7 +936,9 @@ export function useWebBrowser(session: ConnectionSession) {
       settings.webRecording,
       webRecorder,
       markSessionConnected,
-      markSessionError,
+      session.hostname,
+      clearNavigationFailure,
+      applyNavigationFailure,
     ],
   );
 
@@ -917,21 +1119,50 @@ export function useWebBrowser(session: ConnectionSession) {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "proxy_navigate" && event.data.url) {
-        const proxyOrigin = proxyUrlRef.current;
-        if (proxyOrigin && event.data.url.startsWith(proxyOrigin)) {
-          const rawPath = event.data.url.slice(proxyOrigin.length);
-          const path =
-            rawPath && !rawPath.startsWith("/") ? "/" + rawPath : rawPath;
-          const realUrl = baseTargetRef.current + (path || "/");
-          setCurrentUrl(realUrl);
-          setInputUrl(realUrl);
-        }
+      const iframeWindow = iframeRef.current?.contentWindow;
+      const proxyUrl = proxyUrlRef.current;
+      if (!iframeWindow || event.source !== iframeWindow || !proxyUrl) return;
+
+      let expectedOrigin: string;
+      try {
+        expectedOrigin = new URL(proxyUrl).origin;
+      } catch {
+        return;
+      }
+      if (event.origin !== expectedOrigin) return;
+
+      const failure = parseProxyFailurePayload(
+        event.data,
+        proxySessionIdRef.current,
+        activeNavigationUrlRef.current,
+      );
+      if (failure) {
+        applyNavigationFailure(failure);
+        return;
+      }
+
+      if (event.data?.type !== "proxy_navigate") return;
+      const reportedUrl = boundedString(event.data.url, 16_384);
+      if (!reportedUrl) return;
+      try {
+        const reportedProxyUrl = new URL(reportedUrl);
+        if (reportedProxyUrl.origin !== expectedOrigin) return;
+        const path = `${reportedProxyUrl.pathname}${reportedProxyUrl.search}${reportedProxyUrl.hash}`;
+        const realUrl = new URL(
+          path || "/",
+          `${baseTargetRef.current}/`,
+        ).toString();
+        activeNavigationUrlRef.current = realUrl;
+        setCurrentUrl(realUrl);
+        setInputUrl(realUrl);
+        setIsSecure(realUrl.startsWith("https:"));
+      } catch {
+        // Ignore malformed or cross-origin navigation reports.
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [applyNavigationFailure]);
 
   // ── Navigation handlers ────────────────────────────────────
   const handleUrlSubmit = useCallback(
@@ -943,27 +1174,43 @@ export function useWebBrowser(session: ConnectionSession) {
       }
       setCurrentUrl(url);
       setIsSecure(url.startsWith("https://"));
-      setLoadError("");
       navigateToUrl(url);
     },
     [inputUrl, navigateToUrl],
   );
 
   const handleIframeLoad = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (
+      !proxyUrlRef.current ||
+      !iframe ||
+      iframe.getAttribute("src") === "about:blank"
+    ) {
+      return;
+    }
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;
     }
     setIsLoading(false);
+    if (navigationFailureRef.current) return;
     try {
-      const doc = iframeRef.current?.contentDocument;
+      const doc = iframe.contentDocument;
       if (doc) {
         const body = doc.body?.innerText?.trim() ?? "";
         if (
           body.startsWith("Upstream request failed:") ||
           body.startsWith("Failed to read upstream response:")
         ) {
-          setLoadError(body);
+          applyNavigationFailure(
+            localNavigationFailure(
+              "proxy_start_failed",
+              "Unable to load webpage",
+              activeNavigationUrlRef.current || currentUrl,
+              "The internal proxy could not complete the upstream request.",
+              body,
+            ),
+          );
           return;
         }
       }
@@ -971,7 +1218,7 @@ export function useWebBrowser(session: ConnectionSession) {
       // Cross-origin
     }
     setLoadError("");
-  }, []);
+  }, [applyNavigationFailure, currentUrl]);
 
   const handleRefresh = useCallback(() => {
     navigateToUrl(currentUrl, false);
@@ -1015,6 +1262,54 @@ export function useWebBrowser(session: ConnectionSession) {
       window.open(currentUrl, "_blank", "noopener,noreferrer");
     });
   }, [currentUrl]);
+
+  const runDeepDiagnostics = useCallback(async () => {
+    const diagnosticUrl = navigationFailure?.url || currentUrl;
+    setDiagnosticReport(null);
+    setDiagnosticError(null);
+    setIsRunningDiagnostics(true);
+    try {
+      const target = new URL(diagnosticUrl);
+      if (
+        (target.protocol !== "http:" && target.protocol !== "https:") ||
+        target.username ||
+        target.password
+      ) {
+        throw new Error(
+          "The failed navigation does not contain a valid web URL.",
+        );
+      }
+      const useTls = target.protocol === "https:";
+      const defaultPort = useTls ? 443 : 80;
+      const port = target.port ? Number.parseInt(target.port, 10) : defaultPort;
+      const path = `${target.pathname || "/"}${target.search}`;
+      const verifySsl =
+        ((connection as unknown as Record<string, unknown>)?.httpVerifySsl ??
+          true) !== false;
+      const report = await invoke<ProtocolDiagnosticReport>(
+        "diagnose_http_connection",
+        {
+          host: target.hostname,
+          port,
+          useTls,
+          path,
+          method: "GET",
+          expectedStatus: null,
+          connectTimeoutSecs:
+            settings.diagnostics?.protocolDiagTimeoutSecs ?? 15,
+          verifySsl,
+          proxyUrl: getGlobalHttpProxyUrl(),
+        },
+      );
+      setDiagnosticReport(report);
+    } catch (error) {
+      setDiagnosticError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setIsRunningDiagnostics(false);
+    }
+  }, [connection, currentUrl, navigationFailure?.url, settings.diagnostics]);
 
   // ── Bookmark helpers ───────────────────────────────────────
   const collectPaths = useCallback((items: HttpBookmarkItem[]): string[] => {
@@ -1383,11 +1678,16 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [editingBmIdx]);
 
   const handleCancelLoading = useCallback(() => {
-    setIsLoading(false);
-    setLoadError(
-      `Connection timed out. The server at ${currentUrl} did not respond.`,
+    applyNavigationFailure(
+      localNavigationFailure(
+        "timeout",
+        "Loading cancelled",
+        currentUrl,
+        "The navigation was cancelled before the server finished responding.",
+        `Loading ${currentUrl} was cancelled.`,
+      ),
     );
-  }, [currentUrl]);
+  }, [applyNavigationFailure, currentUrl]);
 
   return {
     // Context
@@ -1400,6 +1700,10 @@ export function useWebBrowser(session: ConnectionSession) {
     setInputUrl,
     isLoading,
     loadError,
+    navigationFailure,
+    diagnosticReport,
+    isRunningDiagnostics,
+    diagnosticError,
     isSecure,
     canGoBack,
     canGoForward,
@@ -1411,6 +1715,7 @@ export function useWebBrowser(session: ConnectionSession) {
     handleForward,
     handleOpenInNewTab,
     handleOpenExternal,
+    runDeepDiagnostics,
     navigateToUrl,
     handleCancelLoading,
     // Auth

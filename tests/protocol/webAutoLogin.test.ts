@@ -11,12 +11,16 @@
  * proxy/asset side): it pins the actual invoke payload the React hook sends.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   verifyIdentity,
   resolveEffectiveTrustPolicy,
 } from "../../src/utils/auth/trustStore";
+import {
+  SettingsManager,
+  _resetInMemorySettingsStore,
+} from "../../src/utils/settings/settingsManager";
 
 // ── Mocks for the hook's context / side-effect dependencies ──
 const { mockDispatch, connections } = vi.hoisted(() => ({
@@ -96,6 +100,8 @@ function lastProxyConfig(): Record<string, unknown> | undefined {
 describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    SettingsManager.resetInstance();
+    _resetInMemorySettingsStore();
     connections.length = 0;
     mockInvoke.mockReset();
     mockInvoke.mockResolvedValue({
@@ -323,5 +329,141 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
         validateProtectedProxyUrl({ ...protectedResponse, proxy_url }),
       ).toThrow();
     }
+  });
+
+  it("accepts failure messages only from the active proxy iframe, origin, session, and target", async () => {
+    connections.push({
+      id: "conn-1",
+      name: "Device Panel",
+      hostname: "device.local",
+      protocol: "http",
+      httpVerifySsl: true,
+      isGroup: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const { result, unmount } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => {
+      expect(result.current.proxySessionIdRef.current).toBe("proxy-1");
+    });
+
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    (
+      result.current.iframeRef as { current: HTMLIFrameElement | null }
+    ).current = iframe;
+    const source = iframe.contentWindow;
+    expect(source).not.toBeNull();
+
+    const payload = {
+      type: "sorng_proxy_failure",
+      version: 1,
+      sessionId: "proxy-1",
+      kind: "connection_refused",
+      status: 502,
+      title: "Connection refused",
+      url: "http://device.local/",
+      reason: "The service refused the connection.",
+      detail: "tcp connect error 10061",
+    };
+    const dispatchMessage = (
+      data: Record<string, unknown>,
+      origin: string,
+      eventSource: MessageEventSource | null,
+    ) => {
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent("message", { data, origin, source: eventSource }),
+        );
+      });
+    };
+    const proxyOrigin =
+      "http://p0123456789abcdef0123456789abcdef.localhost:9000";
+
+    dispatchMessage({ ...payload, sessionId: "proxy-2" }, proxyOrigin, source);
+    dispatchMessage(payload, "http://attacker.example", source);
+    dispatchMessage(payload, proxyOrigin, window);
+    expect(result.current.navigationFailure).toBeNull();
+
+    dispatchMessage(payload, proxyOrigin, source);
+    expect(result.current.navigationFailure).toEqual(
+      expect.objectContaining({
+        kind: "connection_refused",
+        sessionId: "proxy-1",
+        url: "http://device.local/",
+      }),
+    );
+
+    unmount();
+    iframe.remove();
+  });
+
+  it("uses the global HTTP(S) proxy for both navigation and deep diagnostics", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      globalProxy: {
+        enabled: true,
+        type: "http",
+        host: "proxy.example.test",
+        port: 8080,
+        username: "proxy user",
+        password: "proxy:secret",
+      },
+    });
+    connections.push({
+      id: "conn-1",
+      name: "Device Panel",
+      hostname: "device.local",
+      protocol: "http",
+      httpVerifySsl: true,
+      isGroup: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => {
+      expect(result.current.proxySessionIdRef.current).toBe("proxy-1");
+    });
+
+    const expectedProxyUrl =
+      "http://proxy%20user:proxy%3Asecret@proxy.example.test:8080";
+    expect(lastProxyConfig()?.upstream_proxy_url).toBe(expectedProxyUrl);
+
+    mockInvoke.mockImplementation(async (command) => {
+      if (command === "diagnose_http_connection") {
+        return {
+          host: "device.local",
+          port: 80,
+          protocol: "http",
+          resolvedIp: null,
+          steps: [],
+          summary: "Proxied diagnostic complete",
+          rootCauseHint: null,
+          totalDurationMs: 1,
+        };
+      }
+      return {
+        local_port: 9000,
+        session_id: "proxy-1",
+        proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+      };
+    });
+
+    await act(async () => {
+      await result.current.runDeepDiagnostics();
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith("diagnose_http_connection", {
+      host: "device.local",
+      port: 80,
+      useTls: false,
+      path: "/",
+      method: "GET",
+      expectedStatus: null,
+      connectTimeoutSecs: 15,
+      verifySsl: true,
+      proxyUrl: expectedProxyUrl,
+    });
   });
 });

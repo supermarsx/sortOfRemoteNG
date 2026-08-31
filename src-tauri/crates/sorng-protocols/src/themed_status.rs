@@ -24,7 +24,9 @@
 use axum::body::Body;
 use axum::http::{Response, StatusCode};
 
-use crate::themed_errors::escape_html_public as escape_html;
+use crate::themed_errors::{
+    escape_html_public as escape_html, inject_proxy_failure_bridge, proxy_failure_bridge_script,
+};
 
 /// Visual tone of a themed status page. Drives the icon-container
 /// accent and CSS variable values. Mirrors the React-side
@@ -62,8 +64,10 @@ pub fn presentation_for(code: u16) -> StatusPresentation {
     const ICON_LOCK: &str = r#"<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>"#;
     const ICON_SHIELD_X: &str = r#"<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9.5" y1="9.5" x2="14.5" y2="14.5"/><line x1="14.5" y1="9.5" x2="9.5" y2="14.5"/>"#;
     const ICON_FILE_QUESTION: &str = r#"<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M10 18h.01"/><path d="M8.5 14a2 2 0 0 1 1.5-2.5 2 2 0 0 1 2 2c0 .9-.6 1.4-1.2 1.7"/>"#;
-    const ICON_BAN: &str = r#"<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>"#;
-    const ICON_CLOCK: &str = r#"<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>"#;
+    const ICON_BAN: &str =
+        r#"<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>"#;
+    const ICON_CLOCK: &str =
+        r#"<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>"#;
     const ICON_GAUGE: &str = r#"<path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>"#;
     const ICON_TRAFFIC_CONE: &str = r#"<path d="M9.3 6.8L4 19h16L14.7 6.8a3 3 0 0 0-5.4 0z"/><line x1="6" y1="14" x2="18" y2="14"/><line x1="8" y1="10" x2="16" y2="10"/>"#;
     const ICON_TEAPOT: &str = r#"<path d="M4 11h12a4 4 0 0 1 0 8h-8a4 4 0 0 1-4-4z"/><line x1="6" y1="3" x2="6" y2="7"/><line x1="10" y1="3" x2="10" y2="7"/><line x1="14" y1="3" x2="14" y2="7"/><line x1="18" y1="13" x2="22" y2="13"/>"#;
@@ -341,10 +345,7 @@ pub fn presentation_for(code: u16) -> StatusPresentation {
 /// Map a [`StatusTone`] to its (rgb-triplet, hex) accent colour,
 /// pulled from the snapshotted theme so the page matches the user's
 /// current theme selection (P7).
-fn tone_accent(
-    tone: StatusTone,
-    theme: &crate::theme_tokens::ThemeTokens,
-) -> (&str, &str) {
+fn tone_accent(tone: StatusTone, theme: &crate::theme_tokens::ThemeTokens) -> (&str, &str) {
     match tone {
         StatusTone::Error => theme.error_pair(),
         StatusTone::Warn => theme.warning_pair(),
@@ -574,8 +575,22 @@ pub fn themed_status_response(
     target: &str,
     upstream_body: &[u8],
     theme: &crate::theme_tokens::ThemeTokens,
+    session_id: &str,
 ) -> Response<Body> {
     let body = render_status_page(code, target, upstream_body, theme);
+    let presentation = presentation_for(code);
+    let detail = snippet_for(upstream_body)
+        .unwrap_or_else(|| format!("The upstream server returned HTTP {code}."));
+    let bridge = proxy_failure_bridge_script(
+        session_id,
+        "http_status",
+        code,
+        presentation.title,
+        target,
+        presentation.hint,
+        &detail,
+    );
+    let body = inject_proxy_failure_bridge(body, &bridge);
     // Forward the upstream code if it's a valid HTTP status; fall
     // back to 502 if somehow we got something out of range.
     let status = StatusCode::from_u16(code).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -656,12 +671,7 @@ mod tests {
 
     #[test]
     fn render_escapes_upstream_body() {
-        let html = render_status_page(
-            500,
-            "https://x",
-            b"<script>alert(1)</script>",
-            &theme(),
-        );
+        let html = render_status_page(500, "https://x", b"<script>alert(1)</script>", &theme());
         assert!(!html.contains("<script>alert(1)</script>"));
         assert!(html.contains("&lt;script&gt;"));
     }
@@ -731,7 +741,7 @@ mod tests {
 
     #[test]
     fn response_forwards_upstream_status_code() {
-        let resp = themed_status_response(429, "https://x", b"", &theme());
+        let resp = themed_status_response(429, "https://x", b"", &theme(), "session-test");
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         let ct = resp
             .headers()
@@ -746,7 +756,7 @@ mod tests {
     #[test]
     fn response_handles_unusual_status_code() {
         // 477 isn't standard but is a valid u16 status code.
-        let resp = themed_status_response(477, "https://x", b"", &theme());
+        let resp = themed_status_response(477, "https://x", b"", &theme(), "session-test");
         assert_eq!(resp.status().as_u16(), 477);
     }
 

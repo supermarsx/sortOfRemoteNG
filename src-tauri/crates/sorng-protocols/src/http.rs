@@ -462,7 +462,43 @@ impl Default for HttpService {
 
 pub type HttpServiceState = Arc<Mutex<HttpService>>;
 
-/// Configuration for the basic auth proxy mediator
+/// Closed set of credential formats the loopback mediator may inject upstream.
+/// Omitted values remain HTTP Basic for backward compatibility with existing
+/// web-browser sessions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpstreamAuthMode {
+    #[default]
+    #[serde(rename = "basic")]
+    Basic,
+    /// pfSense REST API v1 expects the non-standard exact header value
+    /// `Authorization: <client-id> <client-secret>`.
+    #[serde(rename = "pfSenseV1")]
+    PfSenseV1,
+}
+
+impl UpstreamAuthMode {
+    fn authorization_value(self, username: &str, password: &str) -> Option<String> {
+        match self {
+            Self::Basic => None,
+            Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
+                Some(format!("{username} {password}"))
+            }
+            Self::PfSenseV1 => None,
+        }
+    }
+
+    /// The proxy manager historically displays Basic-auth usernames. API keys
+    /// are credentials rather than user labels, so alternate auth modes must
+    /// never expose the first credential field through status DTOs.
+    pub fn manager_visible_username(self, username: &str) -> String {
+        match self {
+            Self::Basic => username.to_string(),
+            Self::PfSenseV1 => String::new(),
+        }
+    }
+}
+
+/// Configuration for the authenticated loopback proxy mediator.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BasicAuthProxyConfig {
     /// The target URL to proxy requests to
@@ -471,6 +507,16 @@ pub struct BasicAuthProxyConfig {
     pub username: String,
     /// Password for basic authentication
     pub password: String,
+    /// Credential format injected into upstream requests. Defaults to HTTP
+    /// Basic when omitted; the only alternate mode is the pfSense REST API v1
+    /// `Authorization: <client-id> <client-secret>` contract.
+    #[serde(default)]
+    pub upstream_auth_mode: UpstreamAuthMode,
+    /// Optional app-level HTTP(S) proxy used by the mediator for outbound
+    /// requests. Credentials may be embedded in the URL; the value remains in
+    /// private session state and is never exposed by proxy status DTOs.
+    #[serde(default)]
+    pub upstream_proxy_url: Option<String>,
     /// Local port to listen on (0 for auto-assign)
     #[serde(default)]
     pub local_port: u16,
@@ -532,6 +578,43 @@ pub struct HttpAutoLoginSelectors {
     pub submit_selector: Option<String>,
 }
 
+#[cfg(test)]
+mod upstream_auth_mode_tests {
+    use super::{BasicAuthProxyConfig, UpstreamAuthMode};
+
+    #[test]
+    fn omitted_mode_remains_basic_and_unknown_modes_fail_closed() {
+        let config: BasicAuthProxyConfig = serde_json::from_value(serde_json::json!({
+            "target_url": "https://firewall.test/",
+            "username": "client-id",
+            "password": "client-secret"
+        }))
+        .expect("legacy proxy config should deserialize");
+        assert_eq!(config.upstream_auth_mode, UpstreamAuthMode::Basic);
+        assert_eq!(
+            config.upstream_auth_mode.manager_visible_username("admin"),
+            "admin"
+        );
+
+        assert!(serde_json::from_str::<UpstreamAuthMode>(r#""bearer""#).is_err());
+    }
+
+    #[test]
+    fn pfsense_v1_mode_emits_the_exact_api_authorization_value() {
+        let mode: UpstreamAuthMode = serde_json::from_str(r#""pfSenseV1""#)
+            .expect("documented pfSense auth mode should deserialize");
+
+        assert_eq!(mode, UpstreamAuthMode::PfSenseV1);
+        assert_eq!(
+            mode.authorization_value("client-id", "client-secret")
+                .as_deref(),
+            Some("client-id client-secret")
+        );
+        assert_eq!(serde_json::to_string(&mode).unwrap(), r#""pfSenseV1""#);
+        assert_eq!(mode.manager_visible_username("api-key-secret"), "");
+    }
+}
+
 /// Response from starting the proxy mediator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyMediatorResponse {
@@ -563,6 +646,8 @@ pub struct ProxySessionEntry {
     pub target_url: String,
     pub username: String,
     pub password: String,
+    pub upstream_auth_mode: UpstreamAuthMode,
+    pub upstream_proxy_url: Option<String>,
     pub target_origin: String,
     pub connection_id: String,
     pub created_at: String,
@@ -764,6 +849,7 @@ pub struct AxumProxyState {
     pub target_url: String,
     pub username: Arc<std::sync::RwLock<String>>,
     pub password: Arc<std::sync::RwLock<String>>,
+    pub upstream_auth_mode: UpstreamAuthMode,
     pub pending_nonce: Arc<std::sync::RwLock<Option<String>>>,
     /// P7: live snapshot of the frontend's `:root --color-*` tokens.
     /// `RwLock` so a new `update_proxy_theme(session_id, tokens)` IPC
@@ -1004,8 +1090,16 @@ pub async fn axum_proxy_handler(
             let p = state.password.read().map(|g| g.clone()).unwrap_or_default();
             (u, p)
         };
-        if !user.is_empty() || !pass.is_empty() {
-            upstream = upstream.basic_auth(&user, Some(&pass));
+        match state.upstream_auth_mode {
+            UpstreamAuthMode::Basic if !user.is_empty() || !pass.is_empty() => {
+                upstream = upstream.basic_auth(&user, Some(&pass));
+            }
+            UpstreamAuthMode::PfSenseV1 => {
+                if let Some(value) = state.upstream_auth_mode.authorization_value(&user, &pass) {
+                    upstream = upstream.header(reqwest::header::AUTHORIZATION, value);
+                }
+            }
+            UpstreamAuthMode::Basic => {}
         }
         for (k, v) in headers {
             upstream = upstream.header(k.as_str(), v.as_str());
@@ -1208,7 +1302,11 @@ pub async fn axum_proxy_handler(
                     // P7: snapshot theme tokens for this render.
                     let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
                     return crate::themed_status::themed_status_response(
-                        status_u16, &full_url, &raw_bytes, &theme,
+                        status_u16,
+                        &full_url,
+                        &raw_bytes,
+                        &theme,
+                        &state.session_id,
                     );
                 }
                 // Non-HTML 4xx/5xx — pass through as-is so JSON/XML
@@ -1353,7 +1451,12 @@ pub async fn axum_proxy_handler(
             // whose layout, palette, and iconography match the app's
             // own error views (GenericErrorView / FeatureErrorBoundary).
             let kind = crate::themed_errors::categorize_reqwest_error(&e);
-            let err_msg = format!("Upstream request failed: {}", e);
+            // Never surface the raw reqwest error here. When an app-level
+            // upstream proxy is configured its connector error may contain the
+            // proxy authority or embedded credentials. The category and stable
+            // hint retain actionable context without copying transport URLs or
+            // secrets into themed pages, manager state, recordings, or logs.
+            let err_msg = format!("Upstream request failed ({}): {}", kind.code(), kind.hint());
             let themed_status = kind.status().as_u16();
 
             state.request_count.fetch_add(1, Ordering::Relaxed);
@@ -1408,7 +1511,13 @@ pub async fn axum_proxy_handler(
 
             // P7: snapshot theme tokens for this render.
             let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
-            crate::themed_errors::themed_error_response(kind, &full_url, &err_msg, &theme)
+            crate::themed_errors::themed_error_response(
+                kind,
+                &full_url,
+                &err_msg,
+                &theme,
+                &state.session_id,
+            )
         }
     }
 }

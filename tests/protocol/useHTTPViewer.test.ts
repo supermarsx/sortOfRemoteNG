@@ -56,7 +56,7 @@ const mockInvoke = vi.mocked(invoke);
 const defaultProxyResponse = {
   local_port: 9000,
   session_id: "proxy-default",
-  proxy_url: "http://127.0.0.1:9000",
+  proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
 };
 
 const makeSession = (
@@ -154,7 +154,7 @@ describe("useHTTPViewer", () => {
     const proxyResp = {
       local_port: 9000,
       session_id: "proxy-1",
-      proxy_url: "http://127.0.0.1:9000",
+      proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
     };
     mockInvoke.mockResolvedValue(proxyResp);
 
@@ -164,18 +164,29 @@ describe("useHTTPViewer", () => {
       expect(result.current.status).toBe("connected");
     });
 
-    expect(result.current.proxyUrl).toBe("http://127.0.0.1:9000");
+    expect(result.current.proxyUrl).toBe(proxyResp.proxy_url);
     expect(result.current.proxySessionId).toBe("proxy-1");
   });
 
-  it("initProxy sets direct URL when no credentials", async () => {
+  it("initProxy routes through the protected proxy even without credentials", async () => {
     const { result } = renderHook(() => useHTTPViewer(makeHttpsSession()));
 
     await waitFor(() => {
       expect(result.current.status).toBe("connected");
     });
 
-    expect(result.current.proxyUrl).toBe("https://secure.example.com");
+    expect(result.current.proxyUrl).toBe(defaultProxyResponse.proxy_url);
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "start_basic_auth_proxy",
+      expect.objectContaining({
+        config: expect.objectContaining({
+          target_url: "https://secure.example.com",
+          username: "",
+          password: "",
+          connection_id: "conn-2",
+        }),
+      }),
+    );
   });
 
   it("initProxy sets error when connection not found", async () => {
@@ -218,7 +229,7 @@ describe("useHTTPViewer", () => {
     mockInvoke.mockResolvedValue({
       local_port: 9000,
       session_id: "p1",
-      proxy_url: "http://127.0.0.1:9000",
+      proxy_url: "http://p11111111111111111111111111111111.localhost:9000/",
     });
 
     const { result } = renderHook(() => useHTTPViewer(makeSession()));

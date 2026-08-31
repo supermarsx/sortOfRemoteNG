@@ -5,6 +5,8 @@ import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
+import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import { validateProtectedProxyUrl } from "./useWebBrowser";
 
 interface ProxyMediatorResponse {
   local_port: number;
@@ -28,6 +30,7 @@ export function useHTTPViewer(session: ConnectionSession) {
   const [error, setError] = useState<string>("");
   const [proxyUrl, setProxyUrl] = useState<string>("");
   const [proxySessionId, setProxySessionId] = useState<string>("");
+  const proxySessionIdRef = useRef<string>("");
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const { isFullscreen, toggleFullscreen } = useSessionFullscreen(session.id);
   const [showSettings, setShowSettings] = useState(false);
@@ -138,8 +141,9 @@ export function useHTTPViewer(session: ConnectionSession) {
     setStatus("connecting");
     setError("");
 
-    if (proxySessionId) {
-      await stopProxy(proxySessionId);
+    if (proxySessionIdRef.current) {
+      await stopProxy(proxySessionIdRef.current);
+      proxySessionIdRef.current = "";
       setProxySessionId("");
     }
 
@@ -154,30 +158,38 @@ export function useHTTPViewer(session: ConnectionSession) {
       setIsSecure(targetUrl.startsWith("https"));
 
       const creds = resolveCredentials();
-      if (creds) {
-        const proxyConfig = {
-          target_url: targetUrl,
-          username: creds.username,
-          password: creds.password,
-          local_port: 0,
-          verify_ssl: connection.httpVerifySsl ?? true,
-        };
-        const response = await invoke<ProxyMediatorResponse>(
-          "start_basic_auth_proxy",
-          { config: proxyConfig },
-        );
-        setProxyUrl(response.proxy_url);
-        setProxySessionId(response.session_id);
-        setHistory([response.proxy_url]);
-        setHistoryIndex(0);
-        setStatus("connected");
-      } else {
-        setProxyUrl(targetUrl);
-        setHistory([targetUrl]);
-        setHistoryIndex(0);
-        setStatus("connected");
-      }
+      const proxyConfig = {
+        target_url: targetUrl,
+        username: creds?.username ?? "",
+        password: creds?.password ?? "",
+        local_port: 0,
+        verify_ssl: connection.httpVerifySsl ?? true,
+        connection_id: connection.id,
+        upstream_proxy_url: getGlobalHttpProxyUrl(),
+        http_auto_login: connection.httpAutoLogin ?? false,
+        http_auto_login_selectors: connection.httpAutoLoginSelectors
+          ? {
+              username_selector:
+                connection.httpAutoLoginSelectors.usernameSelector,
+              password_selector:
+                connection.httpAutoLoginSelectors.passwordSelector,
+              submit_selector: connection.httpAutoLoginSelectors.submitSelector,
+            }
+          : undefined,
+      };
+      const response = await invoke<ProxyMediatorResponse>(
+        "start_basic_auth_proxy",
+        { config: proxyConfig },
+      );
+      const protectedProxyUrl = validateProtectedProxyUrl(response);
+      proxySessionIdRef.current = response.session_id;
+      setProxyUrl(protectedProxyUrl);
+      setProxySessionId(response.session_id);
+      setHistory([protectedProxyUrl]);
+      setHistoryIndex(0);
+      setStatus("connected");
     } catch (err) {
+      proxySessionIdRef.current = "";
       const safeMessage =
         err instanceof Error &&
         err.message === "Connection host or port is not a valid HTTP authority"
@@ -187,13 +199,7 @@ export function useHTTPViewer(session: ConnectionSession) {
       setStatus("error");
       setError(safeMessage);
     }
-  }, [
-    connection,
-    buildTargetUrl,
-    resolveCredentials,
-    proxySessionId,
-    stopProxy,
-  ]);
+  }, [connection, buildTargetUrl, resolveCredentials, stopProxy]);
 
   useEffect(() => {
     initProxy();
@@ -201,13 +207,12 @@ export function useHTTPViewer(session: ConnectionSession) {
 
   useEffect(() => {
     return () => {
-      if (proxySessionId) {
-        invoke("stop_basic_auth_proxy", { sessionId: proxySessionId }).catch(
-          () => {},
-        );
+      const sessionId = proxySessionIdRef.current;
+      if (sessionId) {
+        invoke("stop_basic_auth_proxy", { sessionId }).catch(() => {});
       }
     };
-  }, [proxySessionId]);
+  }, []);
 
   const navigateTo = useCallback(
     (url: string) => {

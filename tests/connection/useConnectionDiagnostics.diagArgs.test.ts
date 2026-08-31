@@ -1,9 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
+const { getGlobalHttpProxyUrlMock } = vi.hoisted(() => ({
+  getGlobalHttpProxyUrlMock: vi.fn(),
+}));
+
 // ── Mock Tauri invoke ─────────────────────────────────────────────
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock("../../src/hooks/integration/httpProxy", () => ({
+  getGlobalHttpProxyUrl: getGlobalHttpProxyUrlMock,
 }));
 
 // ── Mock i18n ─────────────────────────────────────────────────────
@@ -16,7 +24,12 @@ vi.mock("react-i18next", () => ({
 // ── Mock toast context (avoid pulling the real provider tree) ─────
 vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({
-    toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
+    toast: {
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+    },
   }),
 }));
 
@@ -59,6 +72,9 @@ import type { Connection } from "../../src/types/connection/connection";
 // The hook short-circuits unless it detects a Tauri runtime.
 beforeEach(() => {
   vi.clearAllMocks();
+  getGlobalHttpProxyUrlMock.mockReturnValue(
+    "http://proxy-user:proxy-secret@proxy.example.test:8080",
+  );
   (window as any).__TAURI_INTERNALS__ = {};
   // Generic benign response: covers PingResult/PortCheckResult/etc. shapes the
   // hook reads (`.success`, `.resolved_ips`) without us caring about non-RDP
@@ -89,6 +105,12 @@ function rdpInvokeCall() {
   return vi
     .mocked(invoke)
     .mock.calls.find((c) => c[0] === "diagnose_rdp_connection");
+}
+
+function httpInvokeCall() {
+  return vi
+    .mocked(invoke)
+    .mock.calls.find((c) => c[0] === "diagnose_http_connection");
 }
 
 describe("useConnectionDiagnostics — diagnose_rdp_connection invoke contract", () => {
@@ -144,7 +166,10 @@ describe("useConnectionDiagnostics — diagnose_rdp_connection invoke contract",
   });
 
   it("sends an explicit empty object (never null) when the connection has no RDP settings", async () => {
-    const connection: Connection = { ...baseRdpConnection, rdpSettings: undefined };
+    const connection: Connection = {
+      ...baseRdpConnection,
+      rdpSettings: undefined,
+    };
 
     const { result } = renderHook(() => useConnectionDiagnostics(connection));
     await act(async () => {
@@ -156,5 +181,33 @@ describe("useConnectionDiagnostics — diagnose_rdp_connection invoke contract",
     expect(args).toHaveProperty("rdpSettings");
     expect(args.rdpSettings).toEqual({});
     expect(args.rdpSettings).not.toBeNull();
+  });
+});
+
+describe("useConnectionDiagnostics — proxied HTTP diagnostic contract", () => {
+  it("passes the active global HTTP(S) proxy through the command boundary", async () => {
+    const connection: Connection = {
+      ...baseRdpConnection,
+      id: "https-1",
+      name: "Managed appliance",
+      protocol: "https",
+      hostname: "appliance.example.test",
+      port: 8443,
+    };
+
+    const { result } = renderHook(() => useConnectionDiagnostics(connection));
+    await act(async () => {
+      await result.current.runDiagnostics();
+    });
+
+    expect(httpInvokeCall()).toEqual([
+      "diagnose_http_connection",
+      expect.objectContaining({
+        host: "appliance.example.test",
+        port: 8443,
+        useTls: true,
+        proxyUrl: "http://proxy-user:proxy-secret@proxy.example.test:8080",
+      }),
+    ]);
   });
 });

@@ -82,6 +82,7 @@ import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
+import { useRuntimeConnectionLaunch } from "./hooks/session/useRuntimeConnectionLaunch";
 import { useUpdaterAutoCheck } from "./hooks/updater/useUpdaterAutoCheck";
 import { useStartupFailureAlerts } from "./hooks/app/useStartupFailureAlerts";
 import { useSettingsWriteFailureAlerts } from "./hooks/app/useSettingsWriteFailureAlerts";
@@ -201,6 +202,7 @@ const AppContent: React.FC = () => {
     confirmDialog,
     emitWindowSignal,
   } = useSessionManager();
+  useRuntimeConnectionLaunch(handleConnect);
 
   const {
     requestClose: requestMainWindowClose,

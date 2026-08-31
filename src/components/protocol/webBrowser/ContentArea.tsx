@@ -49,20 +49,28 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
       </div>
     )}
 
-    {mgr.loadError ? (
-      <ErrorPage mgr={mgr} />
-    ) : (
-      <iframe
-        ref={mgr.iframeRef}
-        src="about:blank"
-        className="w-full h-full border-0"
-        title={mgr.session.name}
-        onLoad={mgr.handleIframeLoad}
-        // Cookie-backed managed UIs require same-origin behavior. The proxy
-        // origin is deliberately excluded from Tauri capabilities, while
-        // popups and downloads stay blocked until mediated handlers exist.
-        sandbox="allow-same-origin allow-scripts allow-forms"
-      />
+    {/* Keep the iframe mounted while the recovery screen is visible. Retry and
+        Back clear the error and navigate synchronously; unmounting here made
+        iframeRef null for that navigation, so the replacement frame reopened
+        at about:blank instead of the requested page. */}
+    <iframe
+      ref={mgr.iframeRef}
+      src="about:blank"
+      className={`h-full w-full border-0 ${
+        mgr.loadError ? "invisible pointer-events-none" : ""
+      }`}
+      aria-hidden={mgr.loadError ? true : undefined}
+      title={mgr.session.name}
+      onLoad={mgr.handleIframeLoad}
+      // Cookie-backed managed UIs require same-origin behavior. The proxy
+      // origin is deliberately excluded from Tauri capabilities, while
+      // popups and downloads stay blocked until mediated handlers exist.
+      sandbox="allow-same-origin allow-scripts allow-forms"
+    />
+    {mgr.loadError && (
+      <div className="absolute inset-0 z-20">
+        <ErrorPage mgr={mgr} />
+      </div>
     )}
   </div>
 );

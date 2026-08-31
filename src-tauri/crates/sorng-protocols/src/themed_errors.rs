@@ -16,12 +16,33 @@
 //! - Per-category icon, title, and hint so a refused-connection page
 //!   looks different from a DNS or TLS or timeout one.
 //!
-//! No external assets, no fonts to fetch, no JS — everything inlined
-//! so the iframe renders the page even when the network is fully
-//! broken.
+//! No external assets or fonts are fetched. Everything is inlined so the
+//! iframe renders even when the network is fully broken; the only script is a
+//! tiny structured failure bridge back to the owning React tab.
 
 use axum::body::Body;
 use axum::http::{Response, StatusCode};
+use serde::Serialize;
+
+/// Message type shared with the React web-browser hook. Failure pages are
+/// served from a randomized per-session loopback origin, so `postMessage` is
+/// the browser API that can hand structured failure details back to the
+/// parent Tauri document.
+const PROXY_FAILURE_MESSAGE_TYPE: &str = "sorng_proxy_failure";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProxyFailureBridgePayload<'a> {
+    r#type: &'static str,
+    version: u8,
+    session_id: &'a str,
+    kind: &'a str,
+    status: u16,
+    title: &'a str,
+    url: &'a str,
+    reason: &'a str,
+    detail: &'a str,
+}
 
 /// Discriminator for the kind of upstream failure that caused the
 /// proxy to fall back to a themed page. Distinct values get distinct
@@ -53,6 +74,20 @@ pub enum ProxyErrorKind {
 }
 
 impl ProxyErrorKind {
+    /// Stable identifier consumed by the frontend failure classifier.
+    pub fn code(self) -> &'static str {
+        match self {
+            ProxyErrorKind::Timeout => "timeout",
+            ProxyErrorKind::ConnectionRefused => "connection_refused",
+            ProxyErrorKind::DnsFailure => "dns_failure",
+            ProxyErrorKind::TlsFailure => "tls_failure",
+            ProxyErrorKind::GenericConnect => "connection_failed",
+            ProxyErrorKind::BadRequest => "bad_request",
+            ProxyErrorKind::RedirectLoop => "redirect_loop",
+            ProxyErrorKind::Other => "upstream_failure",
+        }
+    }
+
     /// HTTP status code the proxy returns alongside the themed body.
     /// Picks the closest match so curl users and DevTools see a
     /// meaningful status — not just 502 for everything.
@@ -140,10 +175,51 @@ impl ProxyErrorKind {
     /// (real failures) stay red while timeout/redirect (potentially
     /// transient or self-induced) sit in warning yellow.
     fn is_warning(self) -> bool {
-        matches!(
-            self,
-            ProxyErrorKind::Timeout | ProxyErrorKind::RedirectLoop
-        )
+        matches!(self, ProxyErrorKind::Timeout | ProxyErrorKind::RedirectLoop)
+    }
+}
+
+/// Build the tiny inline bridge used by proxy-owned failure documents.
+///
+/// `serde_json` guarantees JSON string quoting, while the replacements below
+/// make the result safe inside a classic `<script>` element too. In
+/// particular, an upstream URL or error containing `</script>` must never be
+/// able to terminate the bridge and inject markup into the loopback page.
+pub(crate) fn proxy_failure_bridge_script(
+    session_id: &str,
+    kind: &str,
+    status: u16,
+    title: &str,
+    url: &str,
+    reason: &str,
+    detail: &str,
+) -> String {
+    let payload = ProxyFailureBridgePayload {
+        r#type: PROXY_FAILURE_MESSAGE_TYPE,
+        version: 1,
+        session_id,
+        kind,
+        status,
+        title,
+        url,
+        reason,
+        detail,
+    };
+    let json = serde_json::to_string(&payload)
+        .unwrap_or_else(|_| r#"{"type":"sorng_proxy_failure","version":1}"#.to_string())
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
+    format!(r#"<script>try{{window.parent.postMessage({json},'*')}}catch(_error){{}}</script>"#)
+}
+
+pub(crate) fn inject_proxy_failure_bridge(body: String, bridge: &str) -> String {
+    if body.contains("</body>") {
+        body.replacen("</body>", &format!("{bridge}</body>"), 1)
+    } else {
+        format!("{body}{bridge}")
     }
 }
 
@@ -378,17 +454,30 @@ pub fn themed_error_response(
     target: &str,
     detail: &str,
     theme: &crate::theme_tokens::ThemeTokens,
+    session_id: &str,
 ) -> Response<Body> {
     let body = render_error_page(kind, target, detail, theme);
+    let bridge = proxy_failure_bridge_script(
+        session_id,
+        kind.code(),
+        kind.status().as_u16(),
+        kind.title(),
+        target,
+        kind.hint(),
+        detail,
+    );
+    let body = inject_proxy_failure_bridge(body, &bridge);
     Response::builder()
         .status(kind.status())
         .header("Content-Type", "text/html; charset=utf-8")
         // No-store so a transient failure doesn't get cached as the
         // page for that URL.
         .header("Cache-Control", "no-store")
-        // Allow iframe rendering — the parent app loads this from
-        // 127.0.0.1 into the WebBrowser iframe.
-        .header("X-Frame-Options", "SAMEORIGIN")
+        // Deliberately omit X-Frame-Options. The parent Tauri document and the
+        // randomized proxy authority are different origins; SAMEORIGIN makes
+        // WebView2 replace this recovery page with its native "content is
+        // blocked" document. The proxy's unguessable Host/Origin middleware
+        // remains the access boundary for the loopback response.
         .body(Body::from(body))
         .expect("themed error response builder always valid")
 }
@@ -479,19 +568,17 @@ mod tests {
         let mut t = theme();
         t.background = "#abcdef".into();
         t.text = "#123456".into();
-        let html = render_error_page(
-            ProxyErrorKind::Other,
-            "https://x",
-            "msg",
-            &t,
-        );
+        let html = render_error_page(ProxyErrorKind::Other, "https://x", "msg", &t);
         assert!(html.contains("--proxy-bg: #abcdef"));
         assert!(html.contains("--proxy-text: #123456"));
     }
 
     #[test]
     fn status_maps_per_kind() {
-        assert_eq!(ProxyErrorKind::Timeout.status(), StatusCode::GATEWAY_TIMEOUT);
+        assert_eq!(
+            ProxyErrorKind::Timeout.status(),
+            StatusCode::GATEWAY_TIMEOUT
+        );
         assert_eq!(ProxyErrorKind::BadRequest.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
             ProxyErrorKind::ConnectionRefused.status(),
@@ -517,8 +604,7 @@ mod tests {
             ProxyErrorKind::RedirectLoop,
             ProxyErrorKind::Other,
         ];
-        let titles: std::collections::HashSet<_> =
-            kinds.iter().map(|k| k.title()).collect();
+        let titles: std::collections::HashSet<_> = kinds.iter().map(|k| k.title()).collect();
         assert_eq!(titles.len(), kinds.len(), "every kind needs a unique title");
     }
 
@@ -529,6 +615,7 @@ mod tests {
             "https://nope.test",
             "couldn't resolve",
             &theme(),
+            "session-test",
         );
         let ct = resp
             .headers()
@@ -537,5 +624,25 @@ mod tests {
             .unwrap_or("");
         assert!(ct.starts_with("text/html"));
         assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+        assert!(!resp.headers().contains_key("x-frame-options"));
+    }
+
+    #[test]
+    fn failure_bridge_is_session_scoped_and_script_safe() {
+        let script = proxy_failure_bridge_script(
+            "session-123",
+            "dns_failure",
+            502,
+            "Server not found",
+            "https://example.test/</script><script>alert(1)</script>",
+            "The host did not resolve.",
+            "lookup failed </script>",
+        );
+
+        assert!(script.contains(r#""type":"sorng_proxy_failure""#));
+        assert!(script.contains(r#""sessionId":"session-123""#));
+        assert!(script.contains(r#""kind":"dns_failure""#));
+        assert!(script.contains("\\u003c/script\\u003e"));
+        assert!(!script.contains("</script><script>alert"));
     }
 }

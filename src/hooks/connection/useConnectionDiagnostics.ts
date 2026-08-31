@@ -24,6 +24,7 @@ import {
   initialDiagnosticResults,
   DEFAULT_PROTOCOL_PORTS,
 } from "../../types/monitoring/diagnostics";
+import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 
 /* ── Hook ──────────────────────────────────────────────────────── */
 
@@ -622,6 +623,7 @@ export function useConnectionDiagnostics(connection: Connection) {
                 expectedStatus: null,
                 connectTimeoutSecs: diag.protocolDiagTimeoutSecs,
                 verifySsl: true,
+                proxyUrl: getGlobalHttpProxyUrl(),
               },
             );
           } else if (proto === "rdp") {

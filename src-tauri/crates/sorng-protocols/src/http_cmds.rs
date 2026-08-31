@@ -79,6 +79,7 @@ fn proxy_client_builder(
     verify_ssl: bool,
     accepted_cert_fingerprint: Option<&str>,
     min_tls: &str,
+    upstream_proxy_url: Option<&str>,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -89,6 +90,10 @@ fn proxy_client_builder(
         .redirect(reqwest::redirect::Policy::limited(10))
         .min_tls_version(resolve_min_tls_version(min_tls))
         .cookie_store(true);
+
+    if let Some(proxy_url) = upstream_proxy_url {
+        builder = builder.proxy(validate_upstream_proxy(proxy_url)?);
+    }
 
     if let Some(fingerprint) = accepted_cert_fingerprint
         .map(normalize_cert_fingerprint)
@@ -101,7 +106,120 @@ fn proxy_client_builder(
 
     builder
         .build()
-        .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))
+        .map_err(|_| "Failed to create proxy HTTP client".to_string())
+}
+
+fn validate_upstream_proxy(proxy_url: &str) -> Result<reqwest::Proxy, String> {
+    if proxy_url.is_empty() || proxy_url.trim() != proxy_url {
+        return Err("Upstream proxy URL cannot be empty or padded with whitespace".into());
+    }
+    let parsed = reqwest::Url::parse(proxy_url)
+        .map_err(|_| "Upstream proxy URL is not a valid URL".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Upstream proxy URL must use http or https".into());
+    }
+    if parsed.host_str().is_none()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err("Upstream proxy URL must contain only a proxy authority".into());
+    }
+    if parsed.port() == Some(0) {
+        return Err("Upstream proxy URL contains an invalid port".into());
+    }
+    reqwest::Proxy::all(parsed.as_str())
+        .map_err(|_| "Upstream proxy URL could not be configured".to_string())
+}
+
+fn diagnostic_upstream_proxy(
+    proxy_url: Option<&str>,
+    use_tls: bool,
+    steps: &mut Vec<DiagnosticStep>,
+) -> Result<Option<reqwest::Proxy>, String> {
+    let Some(proxy_url) = proxy_url else {
+        return Ok(None);
+    };
+    let proxy = validate_upstream_proxy(proxy_url)?;
+    steps.push(DiagnosticStep {
+        name: "Upstream Proxy Route".into(),
+        status: "pass".into(),
+        message: "The configured global HTTP(S) proxy will carry the diagnostic request."
+            .into(),
+        duration_ms: 0,
+        detail: Some(
+            "Target DNS, TCP, and TLS negotiation are delegated to the proxy; direct target probes were intentionally skipped so this report matches the browser session route."
+                .into(),
+        ),
+    });
+    for name in ["DNS Resolution", "TCP Connect"] {
+        steps.push(DiagnosticStep {
+            name: name.into(),
+            status: "skip".into(),
+            message: format!(
+                "Direct target {name} was skipped because the configured proxy owns this connection stage."
+            ),
+            duration_ms: 0,
+            detail: Some(
+                "The final HTTP request below tests the same proxied route used by the embedded browser."
+                    .into(),
+            ),
+        });
+    }
+    if use_tls {
+        steps.push(DiagnosticStep {
+            name: "TLS Handshake".into(),
+            status: "skip".into(),
+            message:
+                "Direct target TLS negotiation was skipped because the configured proxy owns this connection stage."
+                    .into(),
+            duration_ms: 0,
+            detail: Some(
+                "TLS success or failure is still reflected by the final proxied HTTPS request."
+                    .into(),
+            ),
+        });
+    }
+    Ok(Some(proxy))
+}
+
+fn proxied_request_failure_copy(
+    error: &reqwest::Error,
+    timeout_secs: u64,
+) -> (String, Option<String>) {
+    // Never render the reqwest error itself on this branch. Connector error
+    // chains may contain the configured proxy authority, including user-info.
+    // A closed category plus a stable action hint preserves useful diagnostics
+    // without copying proxy credentials into React state, logs, or reports.
+    if error.is_timeout() {
+        (
+            "The proxied HTTP request timed out.".into(),
+            Some(format!(
+                "The configured proxy did not complete the target request within {timeout_secs}s. Check proxy reachability, authentication, and target access rules."
+            )),
+        )
+    } else if error.is_connect() {
+        (
+            "The configured proxy could not establish the HTTP route.".into(),
+            Some(
+                "Check that the global HTTP(S) proxy is reachable and that its credentials and access policy are valid."
+                    .into(),
+            ),
+        )
+    } else if error.is_redirect() {
+        (
+            "The proxied request could not complete its redirect handling.".into(),
+            Some("Review the target and proxy redirect policies before retrying.".into()),
+        )
+    } else {
+        (
+            "The proxied HTTP request failed before a response was received.".into(),
+            Some(
+                "Check the global HTTP(S) proxy, its authentication, and whether it permits this target."
+                    .into(),
+            ),
+        )
+    }
 }
 
 fn validate_proxy_target_url(target_url: &str) -> Result<reqwest::Url, String> {
@@ -161,7 +279,10 @@ fn protected_proxy_endpoint(local_port: u16) -> ProtectedProxyEndpoint {
 
 #[cfg(test)]
 mod proxy_target_validation_tests {
-    use super::{protected_proxy_endpoint, validate_proxy_target_url};
+    use super::{
+        diagnostic_upstream_proxy, protected_proxy_endpoint, validate_proxy_target_url,
+        validate_upstream_proxy,
+    };
 
     #[test]
     fn accepts_and_canonicalizes_safe_web_authorities() {
@@ -222,6 +343,62 @@ mod proxy_target_validation_tests {
         assert!(label[1..].chars().all(|c| c.is_ascii_hexdigit()));
         assert!(!first.url.contains("127.0.0.1"));
     }
+
+    #[test]
+    fn accepts_only_authority_scoped_http_upstream_proxies() {
+        for input in [
+            "http://proxy.example.test:8080",
+            "https://user:secret@proxy.example.test:8443/",
+            "http://[2001:db8::10]:3128/",
+        ] {
+            assert!(
+                validate_upstream_proxy(input).is_ok(),
+                "valid upstream proxy was rejected: {input}"
+            );
+        }
+
+        for input in [
+            "",
+            " http://proxy.example.test:8080",
+            "socks5://proxy.example.test:1080/",
+            "http://proxy.example.test:8080/path",
+            "http://proxy.example.test:8080/?mode=open",
+            "http://proxy.example.test:8080/#fragment",
+            "http://proxy.example.test:0/",
+        ] {
+            assert!(
+                validate_upstream_proxy(input).is_err(),
+                "unsafe upstream proxy unexpectedly passed: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_proxy_route_never_echoes_proxy_credentials() {
+        let mut steps = Vec::new();
+        let proxy = diagnostic_upstream_proxy(
+            Some("https://proxy-user:proxy-secret@proxy.example.test:8443/"),
+            true,
+            &mut steps,
+        )
+        .expect("valid diagnostic proxy")
+        .expect("configured proxy");
+        drop(proxy);
+
+        assert_eq!(steps.len(), 4);
+        assert_eq!(steps[0].name, "Upstream Proxy Route");
+        assert_eq!(steps[0].status, "pass");
+        assert_eq!(steps[1].name, "DNS Resolution");
+        assert_eq!(steps[1].status, "skip");
+        assert_eq!(steps[2].name, "TCP Connect");
+        assert_eq!(steps[2].status, "skip");
+        assert_eq!(steps[3].name, "TLS Handshake");
+        assert_eq!(steps[3].status, "skip");
+        let rendered = format!("{steps:?}");
+        assert!(!rendered.contains("proxy-user"));
+        assert!(!rendered.contains("proxy-secret"));
+        assert!(rendered.contains("delegated"));
+    }
 }
 
 /// Start a basic auth proxy mediator.
@@ -237,6 +414,11 @@ pub async fn start_basic_auth_proxy(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
     let validated_target = validate_proxy_target_url(&config.target_url)?;
+    if config.upstream_auth_mode == crate::http::UpstreamAuthMode::PfSenseV1
+        && (config.username.is_empty() || config.password.is_empty())
+    {
+        return Err("pfSense v1 proxy authentication requires both key and secret".into());
+    }
     let session_id = uuid::Uuid::new_v4().to_string();
     let target_url = validated_target.as_str().to_string();
     let target_origin = validated_target.origin().ascii_serialization();
@@ -244,6 +426,7 @@ pub async fn start_basic_auth_proxy(
     let accepted_cert_fingerprint = config.accepted_cert_fingerprint.clone();
     let min_tls = config.min_tls_version.clone();
     let connection_id = config.connection_id.clone();
+    let upstream_proxy_url = config.upstream_proxy_url.clone();
 
     // ---- Per-connection isolation ----
     // If a proxy already exists for this connection_id, shut it down first so
@@ -267,7 +450,12 @@ pub async fn start_basic_auth_proxy(
 
     // Build an async reqwest client for this session with connection keep-alive
     // and reasonable timeouts to avoid stale-connection errors.
-    let client = proxy_client_builder(verify_ssl, accepted_cert_fingerprint.as_deref(), &min_tls)?;
+    let client = proxy_client_builder(
+        verify_ssl,
+        accepted_cert_fingerprint.as_deref(),
+        &min_tls,
+        upstream_proxy_url.as_deref(),
+    )?;
 
     // Bind to a random free port.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -301,6 +489,7 @@ pub async fn start_basic_auth_proxy(
         target_url: target_url.clone(),
         username: Arc::new(std::sync::RwLock::new(config.username.clone())),
         password: Arc::new(std::sync::RwLock::new(config.password.clone())),
+        upstream_auth_mode: config.upstream_auth_mode,
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(theme_tokens)),
         target_origin: target_origin.clone(),
@@ -364,6 +553,8 @@ pub async fn start_basic_auth_proxy(
                 target_url: target_url.clone(),
                 username: config.username.clone(),
                 password: config.password.clone(),
+                upstream_auth_mode: config.upstream_auth_mode,
+                upstream_proxy_url,
                 target_origin,
                 connection_id,
                 created_at: chrono::Utc::now().to_rfc3339(),
@@ -433,7 +624,9 @@ pub fn get_proxy_session_details(
         .map(|(id, entry)| ProxySessionDetail {
             session_id: id.clone(),
             target_url: entry.target_url.clone(),
-            username: entry.username.clone(),
+            username: entry
+                .upstream_auth_mode
+                .manager_visible_username(&entry.username),
             connection_id: entry.connection_id.clone(),
             proxy_url: format!("http://127.0.0.1:{}/", entry.local_port),
             created_at: entry.created_at.clone(),
@@ -561,6 +754,8 @@ pub async fn restart_proxy_session(
         target_url,
         username,
         password,
+        upstream_auth_mode,
+        upstream_proxy_url,
         target_origin,
         connection_id,
         verify_ssl,
@@ -576,6 +771,8 @@ pub async fn restart_proxy_session(
             entry.target_url.clone(),
             entry.username.clone(),
             entry.password.clone(),
+            entry.upstream_auth_mode,
+            entry.upstream_proxy_url.clone(),
             entry.target_origin.clone(),
             entry.connection_id.clone(),
             entry.verify_ssl,
@@ -595,7 +792,12 @@ pub async fn restart_proxy_session(
     }
 
     // Build a fresh reqwest client.
-    let client = proxy_client_builder(verify_ssl, accepted_cert_fingerprint.as_deref(), &min_tls)?;
+    let client = proxy_client_builder(
+        verify_ssl,
+        accepted_cert_fingerprint.as_deref(),
+        &min_tls,
+        upstream_proxy_url.as_deref(),
+    )?;
 
     // Bind to a new random free port.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -618,6 +820,7 @@ pub async fn restart_proxy_session(
         target_url: target_url.clone(),
         username: Arc::new(std::sync::RwLock::new(username.clone())),
         password: Arc::new(std::sync::RwLock::new(password.clone())),
+        upstream_auth_mode,
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         // P7: a restart reuses whichever theme was active at the
         // start of the original session — the frontend will push
@@ -683,6 +886,8 @@ pub async fn restart_proxy_session(
                 target_url,
                 username,
                 password,
+                upstream_auth_mode,
+                upstream_proxy_url,
                 target_origin,
                 connection_id,
                 created_at: chrono::Utc::now().to_rfc3339(),
@@ -805,6 +1010,7 @@ pub async fn diagnose_http_connection(
     expected_status: Option<u16>,
     connect_timeout_secs: Option<u64>,
     verify_ssl: Option<bool>,
+    proxy_url: Option<String>,
 ) -> Result<DiagnosticReport, String> {
     let run_start = std::time::Instant::now();
     let mut steps: Vec<DiagnosticStep> = Vec::new();
@@ -816,15 +1022,19 @@ pub async fn diagnose_http_connection(
     let req_method = method.unwrap_or_else(|| "GET".to_string());
     let verify = verify_ssl.unwrap_or(true);
 
-    // ── Step 1: DNS Resolution ──────────────────────────────────────────
-
-    let (socket_addr, ip_str, _all_ips) = diagnostics::probe_dns(&host, port, &mut steps);
-    let socket_addr = match socket_addr {
-        Some(a) => {
-            resolved_ip = ip_str;
-            a
-        }
-        None => {
+    let upstream_proxy = match diagnostic_upstream_proxy(proxy_url.as_deref(), use_tls, &mut steps)
+    {
+        Ok(proxy) => proxy,
+        Err(message) => {
+            steps.push(DiagnosticStep {
+                name: "Upstream Proxy Route".into(),
+                status: "fail".into(),
+                message,
+                duration_ms: 0,
+                detail: Some(
+                    "Correct the global HTTP(S) proxy settings before retrying diagnostics.".into(),
+                ),
+            });
             return Ok(diagnostics::finish_report(
                 &host,
                 port,
@@ -835,99 +1045,121 @@ pub async fn diagnose_http_connection(
             ));
         }
     };
+    let uses_upstream_proxy = upstream_proxy.is_some();
 
-    // ── Step 2: TCP Connect ─────────────────────────────────────────────
-    // We use the shared probe for consistency
-    let tcp_ok = diagnostics::probe_tcp(socket_addr, timeout, true, &mut steps).is_some();
-    if !tcp_ok {
-        return Ok(diagnostics::finish_report(
-            &host,
-            port,
-            protocol,
-            resolved_ip,
-            steps,
-            run_start,
-        ));
-    }
+    // ── Step 1: DNS Resolution ──────────────────────────────────────────
+    if upstream_proxy.is_none() {
+        let (socket_addr, ip_str, _all_ips) = diagnostics::probe_dns(&host, port, &mut steps);
+        let socket_addr = match socket_addr {
+            Some(a) => {
+                resolved_ip = ip_str;
+                a
+            }
+            None => {
+                return Ok(diagnostics::finish_report(
+                    &host,
+                    port,
+                    protocol,
+                    resolved_ip,
+                    steps,
+                    run_start,
+                ));
+            }
+        };
 
-    // ── Step 3: TLS Handshake + Certificate (HTTPS only) ────────────────
+        // ── Step 2: TCP Connect ─────────────────────────────────────────
+        // We use the shared probe for consistency
+        let tcp_ok = diagnostics::probe_tcp(socket_addr, timeout, true, &mut steps).is_some();
+        if !tcp_ok {
+            return Ok(diagnostics::finish_report(
+                &host,
+                port,
+                protocol,
+                resolved_ip,
+                steps,
+                run_start,
+            ));
+        }
 
-    if use_tls {
-        let h = host.clone();
-        let t = std::time::Instant::now();
+        // ── Step 3: TLS Handshake + Certificate (HTTPS only) ────────────
+        if use_tls {
+            let h = host.clone();
+            let t = std::time::Instant::now();
 
-        match build_tls_config(verify) {
-            Ok(config) => {
-                let tls_connector = tokio_rustls::TlsConnector::from(config);
-                let tcp = match tokio::net::TcpStream::connect(&socket_addr).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        steps.push(DiagnosticStep {
-                            name: "TLS Handshake".into(),
-                            status: "fail".into(),
-                            message: format!("TCP reconnect for TLS failed: {e}"),
-                            duration_ms: t.elapsed().as_millis() as u64,
-                            detail: None,
-                        });
-                        return Ok(diagnostics::finish_report(
-                            &host,
-                            port,
-                            protocol,
-                            resolved_ip,
-                            steps,
-                            run_start,
-                        ));
-                    }
-                };
+            match build_tls_config(verify) {
+                Ok(config) => {
+                    let tls_connector = tokio_rustls::TlsConnector::from(config);
+                    let tcp = match tokio::net::TcpStream::connect(&socket_addr).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            steps.push(DiagnosticStep {
+                                name: "TLS Handshake".into(),
+                                status: "fail".into(),
+                                message: format!("TCP reconnect for TLS failed: {e}"),
+                                duration_ms: t.elapsed().as_millis() as u64,
+                                detail: None,
+                            });
+                            return Ok(diagnostics::finish_report(
+                                &host,
+                                port,
+                                protocol,
+                                resolved_ip,
+                                steps,
+                                run_start,
+                            ));
+                        }
+                    };
 
-                match tls_connector.connect(tls_server_name(&h)?, tcp).await {
-                    Ok(tls_stream) => {
-                        let elapsed = t.elapsed().as_millis() as u64;
+                    match tls_connector.connect(tls_server_name(&h)?, tcp).await {
+                        Ok(tls_stream) => {
+                            let elapsed = t.elapsed().as_millis() as u64;
 
-                        // Extract certificate info
-                        let cert_detail = peer_certificate_der(&tls_stream).ok().and_then(|der| {
-                            let mut hasher = Sha256::new();
-                            hasher.update(&der);
-                            let fp = hex::encode(hasher.finalize());
-                            parse_tls_certificate_details(&der, &fp).diagnostic_detail
-                        });
+                            // Extract certificate info
+                            let cert_detail =
+                                peer_certificate_der(&tls_stream).ok().and_then(|der| {
+                                    let mut hasher = Sha256::new();
+                                    hasher.update(&der);
+                                    let fp = hex::encode(hasher.finalize());
+                                    parse_tls_certificate_details(&der, &fp).diagnostic_detail
+                                });
 
-                        steps.push(DiagnosticStep {
-                            name: "TLS Handshake".into(),
-                            status: "pass".into(),
-                            message: "TLS handshake completed, certificate obtained".into(),
-                            duration_ms: elapsed,
-                            detail: cert_detail,
-                        });
-                    }
-                    Err(e) => {
-                        let msg = format!("{e}");
-                        let hint = if msg.contains("certificate") {
-                            Some("Certificate verification failed. The server may use a self-signed, expired, or mismatched certificate.".into())
-                        } else if msg.contains("handshake") || msg.contains("alert") {
-                            Some("TLS protocol negotiation failed. Check the server supports modern TLS versions (1.2+).".into())
-                        } else {
-                            None
-                        };
-                        steps.push(DiagnosticStep {
-                            name: "TLS Handshake".into(),
-                            status: "fail".into(),
-                            message: format!("TLS handshake failed: {}", msg),
-                            duration_ms: t.elapsed().as_millis() as u64,
-                            detail: hint,
-                        });
-                        // Don't return yet — we can still try HTTP (useful for diagnostic info)
+                            steps.push(DiagnosticStep {
+                                name: "TLS Handshake".into(),
+                                status: "pass".into(),
+                                message: "TLS handshake completed, certificate obtained".into(),
+                                duration_ms: elapsed,
+                                detail: cert_detail,
+                            });
+                        }
+                        Err(e) => {
+                            let msg = format!("{e}");
+                            let hint = if msg.contains("certificate") {
+                                Some("Certificate verification failed. The server may use a self-signed, expired, or mismatched certificate.".into())
+                            } else if msg.contains("handshake") || msg.contains("alert") {
+                                Some("TLS protocol negotiation failed. Check the server supports modern TLS versions (1.2+).".into())
+                            } else {
+                                None
+                            };
+                            steps.push(DiagnosticStep {
+                                name: "TLS Handshake".into(),
+                                status: "fail".into(),
+                                message: format!("TLS handshake failed: {}", msg),
+                                duration_ms: t.elapsed().as_millis() as u64,
+                                detail: hint,
+                            });
+                            // Don't return yet — we can still try HTTP (useful for diagnostic info)
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                steps.push(DiagnosticStep {
-                    name: "TLS Handshake".into(),
-                    status: "fail".into(),
-                    message: format!("Failed to create TLS config: {e}"),
-                    duration_ms: t.elapsed().as_millis() as u64,
-                    detail: None,
-                });
+                Err(e) => {
+                    steps.push(DiagnosticStep {
+                        name: "TLS Handshake".into(),
+                        status: "fail".into(),
+                        message: format!("Failed to create TLS config: {e}"),
+                        duration_ms: t.elapsed().as_millis() as u64,
+                        detail: None,
+                    });
+                }
             }
         }
     }
@@ -937,21 +1169,35 @@ pub async fn diagnose_http_connection(
     let t = std::time::Instant::now();
     let url = format!("{}://{}:{}{}", protocol, host, port, req_path);
 
-    let client = reqwest::Client::builder()
+    let mut client_builder = reqwest::Client::builder()
         .timeout(timeout)
         .danger_accept_invalid_certs(!verify)
-        .redirect(reqwest::redirect::Policy::none()) // we'll handle redirects manually
-        .build();
+        .redirect(reqwest::redirect::Policy::none()); // we'll handle redirects manually
+    if let Some(proxy) = upstream_proxy {
+        client_builder = client_builder.proxy(proxy);
+    }
+    let client = client_builder.build();
 
     let client = match client {
         Ok(c) => c,
         Err(e) => {
+            let (message, detail) = if uses_upstream_proxy {
+                (
+                    "Failed to create the proxied HTTP diagnostic client.".to_string(),
+                    Some(
+                        "Check the configured global HTTP(S) proxy and retry diagnostics."
+                            .to_string(),
+                    ),
+                )
+            } else {
+                (format!("Failed to create HTTP client: {e}"), None)
+            };
             steps.push(DiagnosticStep {
                 name: "HTTP Request".into(),
                 status: "fail".into(),
-                message: format!("Failed to create HTTP client: {e}"),
+                message,
                 duration_ms: t.elapsed().as_millis() as u64,
-                detail: None,
+                detail,
             });
             return Ok(diagnostics::finish_report(
                 &host,
@@ -1056,7 +1302,12 @@ pub async fn diagnose_http_connection(
                         status: "info".into(),
                         message: format!("Received {} bytes", body_len),
                         duration_ms: t2.elapsed().as_millis() as u64,
-                        detail: if !preview.trim().is_empty() {
+                        detail: if uses_upstream_proxy {
+                            Some(
+                                "Body preview omitted for proxied diagnostics so proxy-generated content cannot disclose configured credentials."
+                                    .into(),
+                            )
+                        } else if !preview.trim().is_empty() {
                             Some(format!("Preview: {}", preview.trim()))
                         } else {
                             None
@@ -1067,7 +1318,11 @@ pub async fn diagnose_http_connection(
                     steps.push(DiagnosticStep {
                         name: "Response Body".into(),
                         status: "warn".into(),
-                        message: format!("Could not read response body: {e}"),
+                        message: if uses_upstream_proxy {
+                            "Could not read the proxied response body.".into()
+                        } else {
+                            format!("Could not read response body: {e}")
+                        },
                         duration_ms: t2.elapsed().as_millis() as u64,
                         detail: None,
                     });
@@ -1075,29 +1330,35 @@ pub async fn diagnose_http_connection(
             }
         }
         Err(e) => {
-            let msg = format!("{e}");
-            let hint = if msg.contains("timeout") || msg.contains("timed out") {
-                Some(format!(
-                    "The server did not respond within {}s. It may be overloaded, \
-                     behind a firewall, or the URL may be incorrect.",
-                    timeout_secs
-                ))
-            } else if msg.contains("connection refused") {
-                Some(format!(
-                    "Connection refused on {}:{}. Verify the web server is running \
-                     and listening on this port.",
-                    host, port
-                ))
-            } else if msg.contains("certificate") || msg.contains("ssl") || msg.contains("tls") {
-                Some("TLS/SSL error during the HTTP request. Try with verify_ssl=false for diagnostics.".into())
+            let (message, hint) = if uses_upstream_proxy {
+                proxied_request_failure_copy(&e, timeout_secs)
             } else {
-                None
+                let msg = format!("{e}");
+                let hint = if msg.contains("timeout") || msg.contains("timed out") {
+                    Some(format!(
+                        "The server did not respond within {}s. It may be overloaded, \
+                     behind a firewall, or the URL may be incorrect.",
+                        timeout_secs
+                    ))
+                } else if msg.contains("connection refused") {
+                    Some(format!(
+                        "Connection refused on {}:{}. Verify the web server is running \
+                     and listening on this port.",
+                        host, port
+                    ))
+                } else if msg.contains("certificate") || msg.contains("ssl") || msg.contains("tls")
+                {
+                    Some("TLS/SSL error during the HTTP request. Try with verify_ssl=false for diagnostics.".into())
+                } else {
+                    None
+                };
+                (format!("Request failed: {msg}"), hint)
             };
 
             steps.push(DiagnosticStep {
                 name: "HTTP Request".into(),
                 status: "fail".into(),
-                message: format!("Request failed: {}", msg),
+                message,
                 duration_ms: t.elapsed().as_millis() as u64,
                 detail: hint,
             });
