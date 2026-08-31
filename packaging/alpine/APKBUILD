@@ -11,6 +11,7 @@ license="MIT"
 options="net ldpath-recursive"
 depends="
 	font-dejavu
+	libayatana-appindicator
 	librdkafka
 	librsvg
 	libssh2

@@ -9,6 +9,7 @@ where
 
 pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     // Always-on command crates
+    let tray_handler = erase_handler(tauri::generate_handler![crate::tray::set_tray_icon_visible]);
     let core_handler = sorng_commands_core::build();
     let sessions_handler = erase_handler(sorng_commands_sessions::build());
     let access_handler = erase_handler(sorng_commands_access::build());
@@ -37,6 +38,10 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
 
     move |invoke| {
         let command = invoke.message.command();
+        if crate::tray::is_command(command) {
+            return tray_handler(invoke);
+        }
+
         if sorng_commands_core::is_command(command) {
             return core_handler(invoke);
         }

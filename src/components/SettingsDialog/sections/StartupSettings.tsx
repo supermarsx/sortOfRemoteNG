@@ -73,7 +73,12 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           />
           <Toggle
             checked={settings.startMinimized}
-            onChange={(v) => updateSettings({ startMinimized: v })}
+            onChange={(v) =>
+              updateSettings({
+                startMinimized: v,
+                ...(v ? { startMaximized: false } : {}),
+              })
+            }
             icon={<Minimize2 size={16} />}
             label={t("settings.startup.startMinimized", "Start minimized")}
             description="Open the application minimized to the taskbar or system tray"
@@ -82,7 +87,12 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           />
           <Toggle
             checked={settings.startMaximized}
-            onChange={(v) => updateSettings({ startMaximized: v })}
+            onChange={(v) =>
+              updateSettings({
+                startMaximized: v,
+                ...(v ? { startMinimized: false } : {}),
+              })
+            }
             icon={<Monitor size={16} />}
             label={t("settings.startup.startMaximized", "Start maximized")}
             description="Open the application window in full-screen mode"

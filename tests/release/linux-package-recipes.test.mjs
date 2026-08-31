@@ -77,12 +77,14 @@ test("package checks enforce every requested shared native library", () => {
 
 test("recipes declare supported distro architectures and runtime helpers", () => {
   assert.match(arch, /^arch=\('x86_64'\)$/m);
+  assert.match(arch, /'libayatana-appindicator'/);
   assert.match(arch, /'libserialport'/);
   assert.match(arch, /'openh264=2\.6\.0'/);
 
   assert.match(alpine, /^arch="x86_64 aarch64"$/m);
   assert.match(alpine, /^options="net ldpath-recursive"$/m);
   assert.match(alpine, /\n\tfont-dejavu\n/);
+  assert.match(alpine, /\n\tlibayatana-appindicator\n/);
   assert.match(alpine, /\n\tlibrsvg\n/);
   assert.match(alpine, /\n\tsetserial\n/);
   assert.match(alpine, /\n\topenh264~2\.6\.0\n/);

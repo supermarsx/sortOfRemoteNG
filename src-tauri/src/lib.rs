@@ -47,6 +47,7 @@ pub(crate) mod event_bridge;
 mod invoke_handler;
 mod splash;
 mod state_registry;
+mod tray;
 // Compatibility helpers for the updater settings file. The production
 // updater path is owned by `sorng-updater` and `tauri-plugin-updater`.
 pub mod updater_config;

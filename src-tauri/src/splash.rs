@@ -129,18 +129,16 @@ pub fn show(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Close the splash window and show the main window.
-/// Called from the frontend once the app is ready.
+/// Close the splash window.
+/// Called from the frontend once the app is ready. The frontend applies the
+/// persisted startup window policy (show, maximize, minimize, or hide to tray)
+/// after this returns, so this command must not force the main window visible.
 /// (Used by sorng-commands-core via #[path] include, not by this crate directly.)
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn close_splash(app: AppHandle) {
     if let Some(splash) = app.get_webview_window("splash") {
         let _ = splash.close();
-    }
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.show();
-        let _ = main.set_focus();
     }
 }
 

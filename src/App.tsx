@@ -10,6 +10,7 @@ import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Connection,
   ConnectionSession,
@@ -86,6 +87,11 @@ import { useRuntimeConnectionLaunch } from "./hooks/session/useRuntimeConnection
 import { useUpdaterAutoCheck } from "./hooks/updater/useUpdaterAutoCheck";
 import { useStartupFailureAlerts } from "./hooks/app/useStartupFailureAlerts";
 import { useSettingsWriteFailureAlerts } from "./hooks/app/useSettingsWriteFailureAlerts";
+import { resolveStartupWindowAction } from "./utils/window/trayPolicy";
+import {
+  applyStartupWindowAction,
+  handleCloseToTrayRequest,
+} from "./utils/window/trayRuntime";
 // t5-e4: global reachability-check modal — listens for `bulk-check-connections` CustomEvent.
 import { CheckConnectionsModalMount } from "./components/connection/CheckConnectionsModal";
 
@@ -94,6 +100,8 @@ const AppDialogs = dynamic(
     import("./components/app/AppDialogs").then((module) => module.AppDialogs),
   { ssr: false },
 );
+
+const TRAY_QUIT_REQUESTED_EVENT = "tray-quit-requested";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -178,6 +186,7 @@ const AppContent: React.FC = () => {
   const [appSettings, setAppSettings] = useState(() =>
     settingsManager.getSettings(),
   );
+  const [appSettingsLoaded, setAppSettingsLoaded] = useState(false);
   // windowSaveTimeout and sidebarSaveTimeout are in useWindowPersistence hook
   const lastWorkAtRef = useRef<number>(Date.now());
   const hasUnsavedWorkRef = useRef(false);
@@ -187,9 +196,22 @@ const AppContent: React.FC = () => {
   const closingMainRef = useRef(false);
   const pendingCloseRef = useRef<(() => void) | null>(null);
   const awaitingCloseConfirmRef = useRef(false);
+  const trayQuitRequestedRef = useRef(false);
+  const startupWindowAppliedRef = useRef(false);
+  const trayVisibilitySyncRef = useRef<Promise<void>>(Promise.resolve());
 
   const statusChecker = StatusChecker.getInstance();
   const databaseManager = DatabaseManager.getInstance();
+
+  const syncTrayVisibility = useCallback((visible: boolean): Promise<void> => {
+    const operation = trayVisibilitySyncRef.current.then(() =>
+      invoke<void>("set_tray_icon_visible", { visible }),
+    );
+    // Keep later changes moving after a failed native update while returning
+    // the original operation so callers can choose a reachability-safe fallback.
+    trayVisibilitySyncRef.current = operation.catch(() => undefined);
+    return operation;
+  }, []);
 
   const {
     activeSessionId,
@@ -371,22 +393,6 @@ const AppContent: React.FC = () => {
     toolShowSetters.current = result;
   }
 
-  // Show window immediately so splash screen is visible
-  useEffect(() => {
-    const showWindow = async () => {
-      try {
-        const currentWindow = getCurrentWindow();
-        // Center the window first, then show it
-        await currentWindow.center();
-        await currentWindow.show();
-        await currentWindow.setFocus();
-      } catch {
-        // Not in Tauri environment, ignore
-      }
-    };
-    showWindow();
-  }, []);
-
   // Suppress autocomplete on all inputs when the setting is disabled
   useEffect(() => {
     if (appSettings.enableAutocomplete) return;
@@ -416,8 +422,6 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (isInitialized && !appReady) {
       setAppReady(true);
-      // Close the native splash screen now that the frontend is ready
-      invoke("close_splash").catch(() => {});
     }
   }, [isInitialized, appReady]);
 
@@ -1161,7 +1165,10 @@ const AppContent: React.FC = () => {
           setAppSettings(settings);
         }
       })
-      .catch(console.error);
+      .catch(console.error)
+      .finally(() => {
+        if (isMounted) setAppSettingsLoaded(true);
+      });
 
     const handleSettingsUpdated = (event: Event) => {
       const detail = (event as CustomEvent<GlobalSettings>).detail;
@@ -1387,6 +1394,7 @@ const AppContent: React.FC = () => {
     const currentWindow = getCurrentWindow();
     let isCancelled = false;
     let unlisten: (() => void) | null = null;
+    let trayQuitUnlisten: (() => void) | null = null;
 
     const performClose = async () => {
       if (closingMainRef.current) return;
@@ -1400,6 +1408,7 @@ const AppContent: React.FC = () => {
           error,
         );
         closingMainRef.current = false;
+        trayQuitRequestedRef.current = false;
         await cancelMainWindowClose();
         return;
       }
@@ -1429,13 +1438,26 @@ const AppContent: React.FC = () => {
           return;
         }
 
+        const settings = settingsManager.getSettings();
+        const hiddenToTray = await handleCloseToTrayRequest({
+          settings,
+          explicitQuit: trayQuitRequestedRef.current,
+          preventDefault: () => event.preventDefault(),
+          ensureTray: () => syncTrayVisibility(true),
+          hide: () => currentWindow.hide(),
+          onError: (error) =>
+            console.error("Failed to close to the system tray:", error),
+        });
+        if (hiddenToTray) {
+          return;
+        }
+
         await requestMainWindowClose();
 
         // Check if we should warn the user. Only real connections
         // count here — closing the app while only tool tabs are
         // open (Settings, Wake-on-LAN, etc.) is not lossy and
         // shouldn't trigger a prompt.
-        const settings = settingsManager.getSettings();
         const hasActiveSessions = realConnectionCount(sessionsRef.current) > 0;
 
         if (
@@ -1460,6 +1482,7 @@ const AppContent: React.FC = () => {
             onCancel: () => {
               awaitingCloseConfirmRef.current = false;
               pendingCloseRef.current = null;
+              trayQuitRequestedRef.current = false;
               void cancelMainWindowClose();
             },
           });
@@ -1481,10 +1504,36 @@ const AppContent: React.FC = () => {
       })
       .catch(console.error);
 
+    listen(TRAY_QUIT_REQUESTED_EVENT, () => {
+      if (closingMainRef.current || awaitingCloseConfirmRef.current) return;
+      trayQuitRequestedRef.current = true;
+      currentWindow.close().catch((error) => {
+        trayQuitRequestedRef.current = false;
+        console.error("Failed to process system tray Quit request:", error);
+      });
+    })
+      .then((stop) => {
+        if (isCancelled) {
+          try {
+            stop();
+          } catch {
+            /* ignore */
+          }
+        } else {
+          trayQuitUnlisten = stop;
+        }
+      })
+      .catch(console.error);
+
     return () => {
       isCancelled = true;
       try {
         unlisten?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        trayQuitUnlisten?.();
       } catch {
         /* ignore */
       }
@@ -1496,7 +1545,79 @@ const AppContent: React.FC = () => {
     requestMainWindowClose,
     settingsManager,
     state.sessions.length,
+    syncTrayVisibility,
     t,
+  ]);
+
+  // Keep the native icon synchronized with persisted settings. The native
+  // command restores a hidden main window before disabling the icon, so a
+  // cross-window settings update cannot strand the application.
+  useEffect(() => {
+    if (!appSettingsLoaded || typeof window === "undefined") return;
+    const isTauri = Boolean(
+      (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
+    );
+    if (!isTauri) return;
+
+    void syncTrayVisibility(appSettings.showTrayIcon).catch((error) => {
+      console.error("Failed to synchronize system tray visibility:", error);
+    });
+  }, [appSettings.showTrayIcon, appSettingsLoaded, syncTrayVisibility]);
+
+  // The native main window starts hidden. Apply the persisted launch policy
+  // only after settings and the application are ready, then retire the native
+  // splash. A critical initialization error always wins and is shown.
+  useEffect(() => {
+    if (
+      startupWindowAppliedRef.current ||
+      !appSettingsLoaded ||
+      (!appReady && !criticalError) ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+    const isTauri = Boolean(
+      (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
+    );
+    if (!isTauri) return;
+
+    startupWindowAppliedRef.current = true;
+
+    void (async () => {
+      const currentWindow = getCurrentWindow();
+      let trayAvailable = false;
+      try {
+        await syncTrayVisibility(appSettings.showTrayIcon);
+        trayAvailable = appSettings.showTrayIcon;
+      } catch (error) {
+        console.error("Failed to initialize the system tray:", error);
+      }
+
+      const action = criticalError
+        ? "show"
+        : resolveStartupWindowAction(appSettings);
+
+      try {
+        await applyStartupWindowAction(
+          action,
+          trayAvailable,
+          currentWindow,
+          () => invoke("close_splash"),
+        );
+      } catch (error) {
+        console.error("Failed to apply startup window behavior:", error);
+        // Best effort escape hatch: never leave only the splash visible.
+        await invoke("close_splash").catch(() => undefined);
+        await currentWindow.show().catch(() => undefined);
+        await currentWindow.setFocus().catch(() => undefined);
+      }
+    })();
+  }, [
+    appReady,
+    appSettings,
+    appSettingsLoaded,
+    criticalError,
+    syncTrayVisibility,
   ]);
 
   // Convert native title attributes to data-tooltip for the styled tooltip

@@ -16,6 +16,7 @@ depends=(
   'glib2'
   'gtk3'
   'hicolor-icon-theme'
+  'libayatana-appindicator'
   'librdkafka'
   'librsvg'
   'libserialport'

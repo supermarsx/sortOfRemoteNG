@@ -5,6 +5,7 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { repatriateWindow } from "../../utils/window/windowRepatriation";
+import { shouldHideOnMinimize } from "../../utils/window/trayPolicy";
 
 export interface WindowControlsReturn {
   isAlwaysOnTop: boolean;
@@ -44,6 +45,17 @@ export function useWindowControls(
   const handleMinimize = async () => {
     if (!hasTauriRuntime()) return;
     const window = getCurrentWindow();
+    if (shouldHideOnMinimize(appSettings)) {
+      try {
+        // Reconcile the native icon before hiding. If tray creation fails,
+        // preserve reachability by falling back to a normal taskbar minimize.
+        await invoke("set_tray_icon_visible", { visible: true });
+        await window.hide();
+        return;
+      } catch (error) {
+        console.error("Failed to minimize to the system tray:", error);
+      }
+    }
     await window.minimize();
   };
 

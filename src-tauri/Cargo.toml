@@ -243,7 +243,7 @@ async-trait = "0.1"
 # WITHOUT the DevTools machinery. DevTools-related code is additionally
 # gated by `cfg(any(debug_assertions, feature = "devtools"))` to match
 # Tauri's own gate on `WebviewWindow::open_devtools`.
-tauri = { version = "=2.11.5", features = ["webview-data-url"] }
+tauri = { version = "=2.11.5", features = ["tray-icon", "webview-data-url"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }
