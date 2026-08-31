@@ -61,6 +61,10 @@ import {
 import { redactSecrets } from "../../utils/errors/redact";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 import { appendSSHSessionActivity } from "../../utils/ssh/sshSessionActivity";
+import {
+  classifySshFailure,
+  type SshFailureKind,
+} from "../../utils/ssh/sshFailure";
 import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
 import {
@@ -111,18 +115,7 @@ type SshDisconnectIntent = "none" | "user" | "replace";
 const SSH_ATTEMPT_WATCHDOG_GRACE_MS = 15_000;
 const SSH_ATTEMPT_TIMEOUT_MESSAGE =
   "SSH connection attempt timed out before the remote shell became ready.";
-export type SshFailureKind =
-  | "auth"
-  | "connection_refused"
-  | "timeout"
-  | "host_key"
-  | "certificate"
-  | "key_missing"
-  | "permission"
-  | "tcp_connect"
-  | "network_unreachable"
-  | "transport"
-  | "unknown";
+export type { SshFailureKind } from "../../utils/ssh/sshFailure";
 export interface SshConnectionFailure {
   kind: SshFailureKind;
   summary: string;
@@ -386,11 +379,12 @@ export function useWebTerminal(
     () => {
       if (!initialSessionError) return null;
       const policy = resolveSshReconnectPolicy(settings, connection);
+      const classification = classifySshFailure(initialSessionError);
       return {
-        kind: "unknown",
-        summary: initialSessionError,
+        kind: classification.kind,
+        summary: classification.friendly,
         technicalDetails: initialSessionError,
-        recoverable: false,
+        recoverable: classification.recoverable,
         occurredAt: new Date().toISOString(),
         retryScheduled: false,
         retryAttempt: 0,
@@ -926,107 +920,7 @@ export function useWebTerminal(
     [],
   );
 
-  const classifySshError = useCallback(
-    (
-      message: string,
-    ): { kind: SshFailureKind; friendly: string; recoverable: boolean } => {
-      const lower = message.toLowerCase();
-      if (
-        message.includes("All authentication methods failed") ||
-        message.includes("Authentication failed")
-      )
-        return {
-          kind: "auth",
-          friendly: "Authentication failed - please check your credentials",
-          recoverable: false,
-        };
-      if (
-        lower.includes("connection refused") ||
-        lower.includes("os error 10061")
-      )
-        return {
-          kind: "connection_refused",
-          friendly: "Connection refused - please check the host and port",
-          recoverable: true,
-        };
-      if (
-        lower.includes("timeout") ||
-        lower.includes("timed out") ||
-        lower.includes("os error 10060") ||
-        lower.includes("connection attempt failed")
-      )
-        return {
-          kind: "timeout",
-          friendly: "Connection timeout - please check network connectivity",
-          recoverable: true,
-        };
-      if (message.includes("Host key verification failed"))
-        return {
-          kind: "host_key",
-          friendly: "Host key verification failed - server may have changed",
-          recoverable: false,
-        };
-      if (lower.includes("certificate") || lower.includes("x509"))
-        return {
-          kind: "certificate",
-          friendly:
-            "Certificate validation failed - please verify the server identity",
-          recoverable: false,
-        };
-      if (
-        message.includes("No such file or directory") &&
-        message.includes("private key")
-      )
-        return {
-          kind: "key_missing",
-          friendly: "Private key file not found - please check the key path",
-          recoverable: false,
-        };
-      if (message.includes("Permission denied"))
-        return {
-          kind: "permission",
-          friendly: "Permission denied - please check your credentials",
-          recoverable: false,
-        };
-      if (
-        lower.includes("failed to establish tcp connection") ||
-        lower.includes("failed to connect")
-      )
-        return {
-          kind: "tcp_connect",
-          friendly: "TCP connection failed - please verify the host and port",
-          recoverable: true,
-        };
-      if (
-        lower.includes("no route to host") ||
-        lower.includes("network unreachable")
-      )
-        return {
-          kind: "network_unreachable",
-          friendly: "Network unreachable - please check routing or VPN",
-          recoverable: true,
-        };
-      if (
-        lower.includes("transport") ||
-        lower.includes("connection reset") ||
-        lower.includes("broken pipe") ||
-        lower.includes("unexpected eof") ||
-        lower.includes("end of file")
-      )
-        return {
-          kind: "transport",
-          friendly: "SSH transport was interrupted",
-          recoverable: true,
-        };
-      return {
-        kind: "unknown",
-        friendly:
-          "SSH connection failed - please check credentials and network",
-        recoverable: false,
-      };
-    },
-    [],
-  );
+  const classifySshError = useCallback(classifySshFailure, []);
 
   /* ── SSH connect / disconnect ── */
 

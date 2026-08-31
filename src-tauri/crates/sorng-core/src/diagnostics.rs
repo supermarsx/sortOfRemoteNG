@@ -219,21 +219,30 @@ pub fn finish_report(
     steps: Vec<DiagnosticStep>,
     start: Instant,
 ) -> DiagnosticReport {
-    let all_pass = steps
+    // An empty iterator must not be a vacuous success, and an unrecognised
+    // status must fail closed instead of producing an "all passed" summary.
+    let first_fail = steps.iter().find(|s| {
+        !matches!(s.status.as_str(), "pass" | "info" | "warn" | "skip") || s.status == "fail"
+    });
+    let any_warn = steps
         .iter()
-        .all(|s| s.status == "pass" || s.status == "info");
-    let first_fail = steps.iter().find(|s| s.status == "fail");
-    let any_warn = steps.iter().any(|s| s.status == "warn");
+        .any(|s| matches!(s.status.as_str(), "warn" | "skip"));
+    let all_pass = !steps.is_empty()
+        && steps
+            .iter()
+            .all(|s| matches!(s.status.as_str(), "pass" | "info"));
     let root_cause = steps
         .iter()
         .rfind(|s| s.name == "Root Cause Analysis")
         .and_then(|s| s.detail.clone());
 
-    let summary = if all_pass {
-        "All diagnostic probes passed — the service is fully reachable and accepted the connection."
-            .into()
+    let summary = if steps.is_empty() {
+        "No diagnostic probes were run; reachability was not established.".into()
     } else if let Some(fail) = first_fail {
         format!("Diagnostics stopped at: {} — {}", fail.name, fail.message)
+    } else if all_pass {
+        "All diagnostic probes passed — the service is fully reachable and accepted the connection."
+            .into()
     } else if any_warn {
         "Connection partially succeeded but warnings were reported.".into()
     } else {
@@ -579,7 +588,33 @@ mod tests {
     fn finish_report_empty_steps() {
         let steps = vec![];
         let report = finish_report("host", 80, "HTTP", None, steps, Instant::now());
-        assert!(report.summary.contains("All diagnostic probes passed"));
+        assert!(report.summary.contains("No diagnostic probes were run"));
+        assert!(!report.summary.contains("All diagnostic probes passed"));
+    }
+
+    #[test]
+    fn finish_report_session_minus_five_key_exchange_is_never_success() {
+        let steps = vec![
+            DiagnosticStep {
+                name: "TCP Connect".into(),
+                status: "pass".into(),
+                message: "Connected".into(),
+                duration_ms: 1,
+                detail: None,
+            },
+            DiagnosticStep {
+                name: "Key Exchange".into(),
+                status: "fail".into(),
+                message: "SSH handshake failed: [Session(-5)] Unable to exchange encryption keys"
+                    .into(),
+                duration_ms: 2,
+                detail: Some("No mutually supported KEX/cipher combination".into()),
+            },
+        ];
+        let report = finish_report("host", 22, "SSH", None, steps, Instant::now());
+        assert!(report.summary.contains("Key Exchange"));
+        assert!(report.summary.contains("Session(-5)"));
+        assert!(!report.summary.contains("All diagnostic probes passed"));
     }
 
     // ── probe_ports_parallel ────────────────────────────────────────────

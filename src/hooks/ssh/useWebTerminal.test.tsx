@@ -389,6 +389,41 @@ afterEach(() => {
 });
 
 describe("useWebTerminal input lifecycle", () => {
+  it("classifies a restored Session(-5) handshake failure as key exchange", () => {
+    const restoredFailure: ConnectionSession = {
+      ...session,
+      status: "error",
+      errorMessage:
+        "SSH handshake failed: [Session(-5)] Unable to exchange encryption keys",
+    };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(restoredFailure);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+
+    expect((model as WebTerminalMgr | null)?.status).toBe("error");
+    expect((model as WebTerminalMgr | null)?.sshFailure).toEqual(
+      expect.objectContaining({
+        kind: "key_exchange",
+        summary:
+          "SSH key exchange failed - client and server could not agree on encryption algorithms",
+        technicalDetails:
+          "SSH handshake failed: [Session(-5)] Unable to exchange encryption keys",
+        recoverable: false,
+        retryScheduled: false,
+      }),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "connect_ssh",
+      expect.anything(),
+    );
+
+    view.unmount();
+  });
+
   it("shows a persisted connected SSH session immediately while validating its backend actor", async () => {
     const fallbackInvoke = mocks.invoke.getMockImplementation();
     const pendingValidation = new Promise<boolean>(() => undefined);
@@ -2040,8 +2075,7 @@ describe("useWebTerminal input lifecycle", () => {
     let staleDisconnectAttempts = 0;
     mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
       const invokeArgs = args as
-        | { ownerId?: string; sessionId?: string }
-        | undefined;
+        { ownerId?: string; sessionId?: string } | undefined;
       const ownerId = String(invokeArgs?.ownerId);
       if (command === "acquire_vpn_leases") {
         acquiredOwners.push(ownerId);

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { ProtocolDiagnosticReport } from "../../../types/monitoring/diagnostics";
 import { redactSecrets } from "../../../utils/errors/redact";
+import { reconcileSshDiagnosticReport } from "../../../utils/ssh/sshFailure";
 import type { SshFailureKind } from "../../../hooks/ssh/useWebTerminal";
 import type { WebTerminalMgr } from "./types";
 
@@ -25,6 +26,8 @@ const FAILURE_LABELS: Record<SshFailureKind, string> = {
   connection_refused: "Connection refused",
   timeout: "Connection timeout",
   host_key: "Host key verification",
+  key_exchange: "Key exchange",
+  command: "Remote command",
   certificate: "Certificate validation",
   key_missing: "Private key",
   permission: "Permission denied",
@@ -54,6 +57,16 @@ const TROUBLESHOOTING: Record<SshFailureKind, string[]> = {
     "Verify the server fingerprint through a trusted channel.",
     "If the host was rebuilt, approve the new key only after verification.",
     "Remove a stale stored identity only when the key change is expected.",
+  ],
+  key_exchange: [
+    "Compare the configured key-exchange, cipher, MAC, and host-key algorithms with those enabled on the server.",
+    "Temporarily remove algorithm overrides to confirm whether the default negotiation succeeds.",
+    "Upgrade legacy SSH algorithms on the server instead of weakening every connection.",
+  ],
+  command: [
+    "Confirm that authentication succeeded and the account is allowed to open a shell or execute commands.",
+    "Check the configured shell, ForceCommand, subsystem, and server policy.",
+    "Review the server log for the command or channel rejection.",
   ],
   certificate: [
     "Verify the server identity and certificate validity period.",
@@ -189,7 +202,7 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
             mgr.sshTerminalConfig?.tcpOptions?.connectionTimeout ?? 15,
         },
       );
-      setDiagnostics({
+      const sanitizedReport: ProtocolDiagnosticReport = {
         ...report,
         summary: safe(report.summary),
         rootCauseHint: report.rootCauseHint ? safe(report.rootCauseHint) : null,
@@ -198,7 +211,19 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
           message: safe(step.message),
           detail: step.detail ? safe(step.detail) : null,
         })),
-      });
+      };
+      setDiagnostics(
+        reconcileSshDiagnosticReport(
+          sanitizedReport,
+          failure
+            ? {
+                kind: failure.kind,
+                summary: safe(failure.summary),
+                technicalDetails: safe(failure.technicalDetails),
+              }
+            : null,
+        ),
+      );
     } catch (diagnosticFailure) {
       setDiagnosticError(safe(diagnosticFailure));
     } finally {
