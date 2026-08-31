@@ -1239,7 +1239,10 @@ export function useRDPClient(session: ConnectionSession) {
       setStatusMessage("Initiating connection...");
 
       const currentPipeline = pipelineRef.current!;
-      const frameChannel = new Channel<ArrayBuffer>(currentPipeline.onFrame);
+      // Raw channel responses are normally ArrayBuffers. Tauri's
+      // postMessage fallback serializes the same bytes as number[], so keep
+      // the boundary honest and let the pipeline normalize the runtime shape.
+      const frameChannel = new Channel<unknown>(currentPipeline.onFrame);
 
       // Check for existing backend session to re-attach.
       // Try by backendSessionId first (carried through detach/reattach), then

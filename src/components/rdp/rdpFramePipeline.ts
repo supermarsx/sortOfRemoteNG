@@ -34,6 +34,11 @@ import type {
   RdpH264RecoveryReason,
   RdpH264RecoveryState,
 } from "../../types/rdp/rdpEvents";
+import {
+  MAX_RDP_FRAME_PAYLOAD_BYTES,
+  normalizeRdpFramePayload,
+  RdpFramePayloadError,
+} from "../../utils/rdp/rdpFramePayload";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +62,7 @@ export class RdpFramePipeline {
   private diagFrameCount = 0;
   private diagRenderCount = 0;
   private diagDropCount = 0;
+  private malformedPayloadCount = 0;
   private receivedFrameCount = 0;
   private presentedFrameCount = 0;
   private coalescedFrameCount = 0;
@@ -73,7 +79,7 @@ export class RdpFramePipeline {
   // at 60fps = seconds of accumulated lag).  When the queue exceeds
   // MAX_QUEUE_SIZE, the oldest frames are dropped to keep latency bounded.
   private static readonly MAX_QUEUE_SIZE = 12;
-  private static readonly MAX_QUEUE_BYTES = 32 * 1024 * 1024;
+  private static readonly MAX_QUEUE_BYTES = MAX_RDP_FRAME_PAYLOAD_BYTES;
   private queueDropCount = 0;
   private queueDropBytes = 0;
   private lastQueueWarning = 0;
@@ -142,23 +148,51 @@ export class RdpFramePipeline {
     }
   }
 
-  /** The callback to wire into `new Channel<ArrayBuffer>(cb)`. */
-  readonly onFrame = (data: ArrayBuffer): void => {
+  /** The callback to wire into the raw Tauri frame channel. */
+  readonly onFrame = (payload: unknown): void => {
     if (this.destroyed) {
       if (this.diagDropCount++ < 3) {
         console.warn(
-          `[RDP pipeline] onFrame called on DESTROYED pipeline (drop #${this.diagDropCount}, ${data.byteLength} bytes)`,
+          `[RDP pipeline] onFrame called on DESTROYED pipeline (drop #${this.diagDropCount})`,
         );
       }
       return;
     }
-    if (data.byteLength < 8) return;
 
     this.receivedFrameCount++;
     this.lastFrameReceivedAtMs = performance.now();
 
+    let data: ArrayBuffer;
+    try {
+      data = normalizeRdpFramePayload(
+        payload,
+        RdpFramePipeline.MAX_QUEUE_BYTES,
+      );
+    } catch (error) {
+      const payloadError =
+        error instanceof RdpFramePayloadError
+          ? error
+          : new RdpFramePayloadError(
+              "unsupported",
+              error instanceof Error ? error.message : String(error),
+            );
+      this.rejectFramePayload(
+        payloadError.message,
+        payloadError.observedByteLength,
+      );
+      return;
+    }
+
+    if (data.byteLength < 8) {
+      this.rejectFramePayload(
+        `expected at least 8 bytes, received ${data.byteLength}`,
+        data.byteLength,
+      );
+      return;
+    }
+
     if (!this.visible) {
-      this.recordDroppedFrame(data);
+      this.recordDroppedFrame(data, "background");
       if (isNalPayload(data)) this.enterH264Recovery("background");
       return;
     }
@@ -231,14 +265,31 @@ export class RdpFramePipeline {
     });
   }
 
-  private recordDroppedFrame(frame: ArrayBuffer): void {
+  private recordDroppedFrame(
+    frame: ArrayBuffer,
+    reason = "queue-pressure",
+  ): void {
+    this.recordDroppedBytes(frame.byteLength, reason);
+  }
+
+  private rejectFramePayload(message: string, byteLength: number): void {
+    this.malformedPayloadCount += 1;
+    this.recordDroppedBytes(byteLength, "malformed-payload");
+    if (this.malformedPayloadCount <= 3) {
+      console.error(
+        `[RDP pipeline] Rejected malformed frame payload #${this.malformedPayloadCount}: ${message}`,
+      );
+    }
+  }
+
+  private recordDroppedBytes(byteLength: number, reason: string): void {
     this.queueDropCount += 1;
-    this.queueDropBytes += frame.byteLength;
+    this.queueDropBytes += byteLength;
     const now = performance.now();
     if (now - this.lastQueueWarning > 2000) {
       console.warn(
-        `[RDP pipeline] Queue pressure: dropped ${this.queueDropCount} frames ` +
-          `(${(this.queueDropBytes / 1024).toFixed(0)} KB total), queue=${this.queue.length}`,
+        `[RDP pipeline] Dropped ${this.queueDropCount} frames ` +
+          `(${(this.queueDropBytes / 1024).toFixed(0)} KB total), reason=${reason}, queue=${this.queue.length}`,
       );
       this.lastQueueWarning = now;
     }
@@ -292,7 +343,7 @@ export class RdpFramePipeline {
   private enqueueMainFrame(data: ArrayBuffer): boolean {
     const tooLarge = data.byteLength > RdpFramePipeline.MAX_QUEUE_BYTES;
     if (tooLarge) {
-      this.recordDroppedFrame(data);
+      this.recordDroppedFrame(data, "oversized-frame");
       if (isNalPayload(data)) this.enterH264Recovery("queue-overflow", true);
       return false;
     }
@@ -327,7 +378,7 @@ export class RdpFramePipeline {
 
   private bufferPreAttachFrame(data: ArrayBuffer): void {
     if (data.byteLength > RdpFramePipeline.MAX_PRE_ATTACH_BYTES) {
-      this.recordDroppedFrame(data);
+      this.recordDroppedFrame(data, "oversized-frame");
       if (isNalPayload(data)) {
         this.enterH264Recovery("pre-attach-overflow", true);
       }
