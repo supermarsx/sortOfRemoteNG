@@ -46,6 +46,8 @@ vi.mock("@tauri-apps/api/window", () => ({
 const onSessionSelect = vi.fn();
 const onSessionClose = vi.fn();
 const onSessionDetach = vi.fn();
+const onSessionRetryClose = vi.fn();
+const onSessionForceClose = vi.fn();
 
 const originalScrollWidth = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
@@ -207,6 +209,99 @@ describe("SessionTabs accessibility", () => {
       "data-session-status",
       "error",
     );
+  });
+
+  it("dims an unresponsive tab, disables ordinary interaction, and exposes explicit recovery controls", async () => {
+    renderTabs({
+      sessionCloseStates: {
+        s1: {
+          sessionId: "s1",
+          attemptId: 7,
+          phase: "unresponsive",
+          startedAt: Date.now(),
+          timeoutMs: 15_000,
+          cleanupPending: true,
+          message:
+            "Cleanup is still pending. Check again or force close the tab.",
+        },
+      },
+      onSessionRetryClose,
+      onSessionForceClose,
+    });
+
+    const tab = screen.getByRole("tab", { name: /session one/i });
+    expect(tab).not.toHaveAttribute("aria-disabled");
+    expect(tab).toHaveAttribute("data-interaction-disabled", "true");
+    expect(tab).toHaveAttribute("data-close-state", "unresponsive");
+    expect(tab).toHaveClass("opacity-60", "saturate-50");
+    expect(tab).not.toHaveAttribute("draggable", "true");
+
+    fireEvent.click(tab);
+    expect(onSessionSelect).not.toHaveBeenCalledWith("s1");
+    expect(
+      within(tab).queryByTestId("session-tab-detach"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(tab).queryByTestId("session-tab-close"),
+    ).not.toBeInTheDocument();
+
+    const retryButton = within(tab).getByRole("button", {
+      name: /check cleanup again/i,
+    });
+    const forceButton = within(tab).getByRole("button", {
+      name: /force close session one/i,
+    });
+    expect(retryButton).toBeEnabled();
+    expect(forceButton).toBeEnabled();
+
+    fireEvent.click(retryButton);
+    expect(onSessionRetryClose).toHaveBeenCalledWith("s1");
+
+    fireEvent.click(forceButton);
+    expect(onSessionForceClose).toHaveBeenCalledWith("s1");
+
+    fireEvent.contextMenu(tab);
+    expect(
+      await screen.findByRole("menuitem", {
+        name: /check existing cleanup again/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", {
+        name: /force close tab.*cleanup unconfirmed/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /^rename tab$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("announces a bounded close in progress without exposing force prematurely", () => {
+    renderTabs({
+      sessionCloseStates: {
+        s1: {
+          sessionId: "s1",
+          attemptId: 8,
+          phase: "closing",
+          startedAt: Date.now(),
+          timeoutMs: 15_000,
+          cleanupPending: true,
+          message: "Closing session and waiting for cleanup…",
+        },
+      },
+      onSessionRetryClose,
+      onSessionForceClose,
+    });
+
+    const tab = screen.getByRole("tab", { name: /session one.*closing/i });
+    expect(tab).toHaveAttribute("aria-busy", "true");
+    expect(tab).toHaveAttribute("data-close-state", "closing");
+    expect(within(tab).getByRole("status")).toHaveAccessibleName(
+      /closing session one/i,
+    );
+    expect(
+      within(tab).queryByRole("button", { name: /force close/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens and closes submenu with keyboard and updates aria-expanded", async () => {

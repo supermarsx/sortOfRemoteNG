@@ -15,8 +15,14 @@ import type {
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import {
   clearRuntimeConnectionsForTests,
+  registerRuntimeConnection,
   resolveRuntimeConnection,
 } from "../../src/utils/session/runtimeConnectionRegistry";
+import { DEFAULT_SESSION_CLOSE_TIMEOUT_MS } from "../../src/utils/session/sessionClose";
+import {
+  FORCED_SESSION_CLEANUP_LEDGER_KEY,
+  readForcedSessionCleanupLedger,
+} from "../../src/utils/session/forcedSessionCleanupLedger";
 
 const connectionMocks = vi.hoisted(() => ({
   state: {
@@ -443,7 +449,7 @@ describe("useSessionManager settings effects", () => {
         sessions: [session],
         connections: [connection],
       };
-      const { result } = renderHook(() => useSessionManager());
+      const { result, rerender } = renderHook(() => useSessionManager());
 
       await act(async () => {
         await result.current.handleSessionClose(session.id);
@@ -1386,6 +1392,446 @@ describe("useSessionManager settings effects", () => {
     expect(connectionMocks.dispatch.mock.invocationCallOrder[0]).toBeLessThan(
       notificationCtor.mock.invocationCallOrder[0],
     );
+  });
+
+  it("times out one close attempt, rechecks without overlap, and accepts its late settlement", async () => {
+    vi.useFakeTimers();
+    try {
+      const connection = makeConnection({
+        id: "conn-close-timeout",
+        protocol: "raw",
+        warnOnClose: false,
+      });
+      const session = makeSession({
+        id: "session-close-timeout",
+        connectionId: connection.id,
+        protocol: "raw",
+        backendSessionId: "raw-timeout-actor",
+      });
+      connectionMocks.state = {
+        sessions: [session],
+        connections: [connection],
+      };
+      SettingsManager.getInstance().applyInMemory({
+        warnOnClose: false,
+        confirmCloseActiveTab: false,
+      });
+      let finishDisconnect!: () => void;
+      const pendingDisconnect = new Promise<void>((resolve) => {
+        finishDisconnect = resolve;
+      });
+      connectionMocks.invoke.mockImplementation((command: string) =>
+        command === "disconnect_raw_socket"
+          ? pendingDisconnect
+          : Promise.resolve(undefined),
+      );
+      const { result } = renderHook(() => useSessionManager());
+
+      let firstClose!: Promise<boolean>;
+      let duplicateClose!: Promise<boolean>;
+      act(() => {
+        firstClose = result.current.handleSessionClose(session.id);
+        duplicateClose = result.current.handleSessionClose(session.id);
+      });
+
+      expect(duplicateClose).toBe(firstClose);
+      expect(result.current.sessionCloseStates[session.id]).toEqual(
+        expect.objectContaining({
+          phase: "closing",
+          cleanupPending: true,
+        }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(connectionMocks.invoke).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEFAULT_SESSION_CLOSE_TIMEOUT_MS);
+      });
+      await expect(firstClose).resolves.toBe(false);
+      await expect(duplicateClose).resolves.toBe(false);
+      expect(result.current.sessionCloseStates[session.id]).toEqual(
+        expect.objectContaining({
+          phase: "unresponsive",
+          cleanupPending: true,
+        }),
+      );
+
+      let recheck!: Promise<boolean>;
+      act(() => {
+        recheck = result.current.retrySessionClose(session.id);
+      });
+      expect(result.current.sessionCloseStates[session.id]).toEqual(
+        expect.objectContaining({
+          phase: "closing",
+          message: expect.stringMatching(/no second teardown/i),
+        }),
+      );
+      expect(connectionMocks.invoke).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEFAULT_SESSION_CLOSE_TIMEOUT_MS);
+      });
+      await expect(recheck).resolves.toBe(false);
+      expect(result.current.sessionCloseStates[session.id]?.phase).toBe(
+        "unresponsive",
+      );
+      expect(connectionMocks.invoke).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        finishDisconnect();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.sessionCloseStates[session.id]).toBeUndefined();
+      expect(
+        connectionMocks.dispatch.mock.calls.filter(
+          ([action]) =>
+            action.type === "REMOVE_SESSION" && action.payload === session.id,
+        ),
+      ).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not override a user-selected tab when hung cleanup settles late", async () => {
+    vi.useFakeTimers();
+    try {
+      const connection = makeConnection({
+        id: "conn-late-selection",
+        protocol: "raw",
+        warnOnClose: false,
+      });
+      const closingSession = makeSession({
+        id: "session-late-selection",
+        connectionId: connection.id,
+        protocol: "raw",
+        backendSessionId: "raw-late-selection-actor",
+      });
+      const firstRemaining = makeSession({
+        id: "session-first-remaining",
+        connectionId: "conn-first-remaining",
+        name: "First remaining",
+      });
+      const userSelected = makeSession({
+        id: "session-user-selected",
+        connectionId: "conn-user-selected",
+        name: "User selected",
+      });
+      connectionMocks.state = {
+        sessions: [closingSession, firstRemaining, userSelected],
+        connections: [connection],
+      };
+      SettingsManager.getInstance().applyInMemory({
+        warnOnClose: false,
+        confirmCloseActiveTab: false,
+      });
+      let finishDisconnect!: () => void;
+      const pendingDisconnect = new Promise<void>((resolve) => {
+        finishDisconnect = resolve;
+      });
+      connectionMocks.invoke.mockImplementation((command: string) =>
+        command === "disconnect_raw_socket"
+          ? pendingDisconnect
+          : Promise.resolve(undefined),
+      );
+      const { result } = renderHook(() => useSessionManager());
+      act(() => result.current.setActiveSessionId(closingSession.id));
+
+      let close!: Promise<boolean>;
+      act(() => {
+        close = result.current.handleSessionClose(closingSession.id);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(DEFAULT_SESSION_CLOSE_TIMEOUT_MS);
+      });
+      await expect(close).resolves.toBe(false);
+
+      act(() => result.current.setActiveSessionId(userSelected.id));
+      expect(result.current.activeSessionId).toBe(userSelected.id);
+
+      await act(async () => {
+        finishDisconnect();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(result.current.activeSessionId).toBe(userSelected.id);
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "REMOVE_SESSION",
+        payload: closingSession.id,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refuses a stale force close when a newer actor occupies the same session id", async () => {
+    vi.useFakeTimers();
+    try {
+      window.localStorage.removeItem(FORCED_SESSION_CLEANUP_LEDGER_KEY);
+      const connection = makeConnection({
+        id: "conn-stale-force",
+        protocol: "raw",
+        warnOnClose: false,
+      });
+      const originalSession = makeSession({
+        id: "session-stale-force",
+        connectionId: connection.id,
+        protocol: "raw",
+        backendSessionId: "raw-original-actor",
+        lifecycleActorGeneration: 4,
+        lifecycleRevision: 9,
+        lifecycleWriterId: "main",
+      });
+      connectionMocks.state = {
+        sessions: [originalSession],
+        connections: [connection],
+      };
+      SettingsManager.getInstance().applyInMemory({
+        warnOnClose: false,
+        confirmCloseActiveTab: false,
+        enableActionLog: true,
+      });
+      const pendingDisconnect = new Promise<void>(() => {});
+      connectionMocks.invoke.mockImplementation((command: string) =>
+        command === "disconnect_raw_socket"
+          ? pendingDisconnect
+          : Promise.resolve(undefined),
+      );
+      const { result, rerender, unmount } = renderHook(() =>
+        useSessionManager(),
+      );
+
+      let staleClose!: Promise<boolean>;
+      act(() => {
+        staleClose = result.current.handleSessionClose(originalSession.id);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(DEFAULT_SESSION_CLOSE_TIMEOUT_MS);
+      });
+      await expect(staleClose).resolves.toBe(false);
+
+      const replacementSession = {
+        ...originalSession,
+        backendSessionId: "raw-replacement-actor",
+        lifecycleActorGeneration: 5,
+        lifecycleRevision: 10,
+        lifecycleWriterId: "detached-replacement",
+      };
+      const protectedSelection = makeSession({
+        id: "session-protected-selection",
+        connectionId: "conn-protected-selection",
+        name: "Protected selection",
+      });
+      connectionMocks.state = {
+        sessions: [replacementSession, protectedSelection],
+        connections: [connection],
+      };
+      rerender();
+      act(() => result.current.setActiveSessionId(protectedSelection.id));
+      expect(result.current.activeSessionId).toBe(protectedSelection.id);
+      const dispatchCountBeforeForce =
+        connectionMocks.dispatch.mock.calls.length;
+
+      act(() => {
+        expect(result.current.forceSessionClose(originalSession.id)).toBe(
+          false,
+        );
+      });
+
+      expect(connectionMocks.dispatch).toHaveBeenCalledTimes(
+        dispatchCountBeforeForce,
+      );
+      expect(result.current.activeSessionId).toBe(protectedSelection.id);
+      expect(
+        connectionMocks.dispatch.mock.calls.some(
+          ([action]) =>
+            action.type === "REMOVE_SESSION" &&
+            action.payload === originalSession.id,
+        ),
+      ).toBe(false);
+      expect(readForcedSessionCleanupLedger()).toEqual([]);
+      expect(
+        result.current.sessionCloseStates[originalSession.id],
+      ).toBeUndefined();
+      expect(result.current.confirmDialog?.props.message).toMatch(
+        /different or newer backend actor/i,
+      );
+      expect(
+        SettingsManager.getInstance()
+          .getActionLog()
+          .some(
+            (entry) => entry.action === "Stale session force close refused",
+          ),
+      ).toBe(true);
+
+      let replacementClose!: Promise<boolean>;
+      act(() => {
+        replacementClose = result.current.handleSessionClose(
+          replacementSession.id,
+        );
+      });
+      expect(replacementClose).not.toBe(staleClose);
+      expect(
+        result.current.sessionCloseStates[replacementSession.id]?.phase,
+      ).toBe("closing");
+      expect(result.current.activeSessionId).toBe(protectedSelection.id);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(connectionMocks.invoke).toHaveBeenCalledWith(
+        "disconnect_raw_socket",
+        { sessionId: "raw-replacement-actor" },
+      );
+
+      act(() => unmount());
+      await expect(replacementClose).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+      window.localStorage.removeItem(FORCED_SESSION_CLEANUP_LEDGER_KEY);
+    }
+  });
+
+  it("force closes the tab, retains cleanup evidence, and fences late settlement", async () => {
+    vi.useFakeTimers();
+    try {
+      window.localStorage.removeItem(FORCED_SESSION_CLEANUP_LEDGER_KEY);
+      const connection = makeConnection({
+        id: "conn-force-close",
+        protocol: "ssh",
+        warnOnClose: false,
+      });
+      const session = makeSession({
+        id: "session-force-close",
+        connectionId: connection.id,
+        protocol: "ssh",
+        backendSessionId: "ssh-force-actor",
+        vpnLeaseOwnerId: "vpn-owner-force",
+        vpnLeaseOwnerIds: ["vpn-owner-force"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "vpn-owner-force",
+            backendSessionId: "ssh-force-actor",
+            protocol: "ssh",
+            status: "active",
+          },
+        ],
+      });
+      const remainingSession = makeSession({
+        id: "session-stays-open",
+        connectionId: "conn-stays-open",
+        name: "Still open",
+      });
+      connectionMocks.state = {
+        sessions: [session, remainingSession],
+        connections: [],
+      };
+      registerRuntimeConnection(connection);
+      SettingsManager.getInstance().applyInMemory({
+        warnOnClose: false,
+        confirmCloseActiveTab: false,
+        enableActionLog: true,
+      });
+      let finishDisconnect!: () => void;
+      const pendingDisconnect = new Promise<void>((resolve) => {
+        finishDisconnect = resolve;
+      });
+      connectionMocks.invoke.mockImplementation((command: string) =>
+        command === "disconnect_ssh"
+          ? pendingDisconnect
+          : Promise.resolve(undefined),
+      );
+      const { result, rerender } = renderHook(() => useSessionManager());
+      act(() => result.current.setActiveSessionId(session.id));
+
+      let close!: Promise<boolean>;
+      act(() => {
+        close = result.current.handleSessionClose(session.id);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(DEFAULT_SESSION_CLOSE_TIMEOUT_MS);
+      });
+      await expect(close).resolves.toBe(false);
+
+      act(() => {
+        expect(result.current.forceSessionClose(session.id)).toBe(true);
+      });
+
+      expect(result.current.sessionCloseStates[session.id]).toBeUndefined();
+      expect(result.current.activeSessionId).toBe(remainingSession.id);
+      expect(resolveRuntimeConnection([], connection.id)).toBeUndefined();
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "REMOVE_SESSION",
+        payload: session.id,
+      });
+      expect(result.current.confirmDialog?.props.message).toMatch(
+        /backend cleanup was not confirmed/i,
+      );
+      expect(readForcedSessionCleanupLedger()[0]).toEqual(
+        expect.objectContaining({
+          sessionId: session.id,
+          backendSessionId: session.backendSessionId,
+          cleanupPending: true,
+          vpnLeaseBindings: session.vpnLeaseBindings,
+        }),
+      );
+      expect(
+        SettingsManager.getInstance()
+          .getActionLog()
+          .some(
+            (entry) =>
+              entry.action === "Session force closed - cleanup unconfirmed" &&
+              entry.details.includes("ssh-force-actor"),
+          ),
+      ).toBe(true);
+
+      const replacementSession = {
+        ...session,
+        backendSessionId: "ssh-replacement-actor",
+        lifecycleActorGeneration: (session.lifecycleActorGeneration ?? 0) + 1,
+      };
+      connectionMocks.state = {
+        sessions: [replacementSession, remainingSession],
+        connections: [],
+      };
+      rerender();
+      const dispatchCountAfterForce =
+        connectionMocks.dispatch.mock.calls.length;
+
+      await act(async () => {
+        finishDisconnect();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(connectionMocks.dispatch).toHaveBeenCalledTimes(
+        dispatchCountAfterForce,
+      );
+      expect(result.current.activeSessionId).toBe(remainingSession.id);
+      const removals = connectionMocks.dispatch.mock.calls.filter(
+        ([action]) =>
+          action.type === "REMOVE_SESSION" && action.payload === session.id,
+      );
+      expect(removals).toHaveLength(1);
+      expect(
+        SettingsManager.getInstance()
+          .getActionLog()
+          .some(
+            (entry) =>
+              entry.action === "Session closed" &&
+              entry.connectionId === connection.id,
+          ),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      window.localStorage.removeItem(FORCED_SESSION_CLEANUP_LEDGER_KEY);
+    }
   });
 
   it("coalesces duplicate manual reconnect requests through one pending primitive", async () => {

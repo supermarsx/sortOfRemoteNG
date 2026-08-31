@@ -52,6 +52,8 @@ import {
   Layers,
   Send,
   MoreHorizontal,
+  LoaderCircle,
+  TriangleAlert,
 } from "lucide-react";
 import { LayoutGrid } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
@@ -70,6 +72,10 @@ import type {
 } from "../../types/connection/connection";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
 import { SESSION_TAB_DND_TYPE } from "./TabLayoutManager";
+import type {
+  SessionCloseState,
+  SessionCloseStateById,
+} from "../../utils/session/sessionClose";
 
 const GROUP_COLORS = [
   { name: "Red", value: "#ef4444" },
@@ -83,6 +89,7 @@ const GROUP_COLORS = [
 ];
 
 const MAIN_SESSION_PANEL_ID = "session-main-panel";
+const EMPTY_SESSION_CLOSE_STATES: SessionCloseStateById = {};
 
 const SUBMENU_ITEM_SELECTOR = [
   '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
@@ -189,10 +196,69 @@ const getStatusColor = (status: string) => {
   }
 };
 
+interface UnresponsiveCloseActionsProps {
+  session: ConnectionSession;
+  closeState: SessionCloseState;
+  onRetry?: (sessionId: string) => void;
+  onForce?: (sessionId: string) => void;
+}
+
+const UnresponsiveCloseActions: React.FC<UnresponsiveCloseActionsProps> = ({
+  session,
+  closeState,
+  onRetry,
+  onForce,
+}) => (
+  <div
+    role="group"
+    aria-label={`Cleanup controls for ${session.name}`}
+    className="ml-auto flex flex-shrink-0 items-center gap-0.5"
+  >
+    <TriangleAlert
+      size={13}
+      className="mr-0.5 text-warning"
+      aria-hidden="true"
+    />
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onRetry?.(session.id);
+      }}
+      disabled={!onRetry}
+      aria-label={`Check cleanup again for ${session.name}`}
+      data-tooltip="Check the same cleanup attempt again (does not start another teardown)"
+      className="rounded p-1 text-warning transition-colors hover:bg-[var(--color-border)] disabled:opacity-40"
+    >
+      <RefreshCw size={12} />
+    </button>
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onForce?.(session.id);
+      }}
+      disabled={!onForce}
+      aria-label={`Force close ${session.name}`}
+      aria-describedby={`session-close-status-${session.id}`}
+      data-tooltip="Force close tab — backend cleanup is not confirmed"
+      className="rounded p-1 text-error transition-colors hover:bg-error/15 disabled:opacity-40"
+    >
+      <XCircle size={13} />
+    </button>
+    <span id={`session-close-status-${session.id}`} className="sr-only">
+      {closeState.message}
+    </span>
+  </div>
+);
+
 interface SessionTabsProps {
   activeSessionId?: string;
   onSessionSelect: (sessionId: string) => void;
   onSessionClose: (sessionId: string) => void;
+  sessionCloseStates?: SessionCloseStateById;
+  onSessionRetryClose?: (sessionId: string) => void;
+  onSessionForceClose?: (sessionId: string) => void;
   onSessionDetach: (sessionId: string) => void;
   onSessionReconnect?: (sessionId: string) => void;
   onSessionDuplicate?: (sessionId: string) => void;
@@ -211,6 +277,9 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   activeSessionId,
   onSessionSelect,
   onSessionClose,
+  sessionCloseStates = EMPTY_SESSION_CLOSE_STATES,
+  onSessionRetryClose,
+  onSessionForceClose,
   onSessionDetach,
   onSessionReconnect,
   onSessionDuplicate,
@@ -920,23 +989,39 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     const StatusIcon = getStatusIcon(session.status);
     const isActive = session.id === activeSessionId;
     const tabTint = resolveTabColor(session);
+    const closeState = sessionCloseStates[session.id];
+    const isClosing = closeState?.phase === "closing";
+    const isUnresponsive = closeState?.phase === "unresponsive";
+    const closeStatusLabel = isClosing
+      ? "Closing"
+      : isUnresponsive
+        ? "Cleanup not responding"
+        : undefined;
 
     return (
       <div
         key={session.id}
         id={`session-tab-${session.id}`}
-        draggable={enableReorder}
+        draggable={enableReorder && !closeState}
         data-tauri-disable-drag="true"
         data-testid="session-tab"
         data-session-status={session.status}
+        data-close-state={closeState?.phase}
+        data-interaction-disabled={closeState ? "true" : undefined}
         role="tab"
         aria-selected={isActive}
         aria-controls={MAIN_SESSION_PANEL_ID}
+        aria-busy={isClosing || undefined}
+        aria-label={`${session.name}${closeStatusLabel ? ` — ${closeStatusLabel}` : ""}`}
         tabIndex={isActive ? 0 : -1}
-        className={`relative flex items-center h-full px-3 cursor-pointer border-r border-[var(--color-border)] min-w-[140px] flex-shrink-0 ${
+        className={`relative flex items-center h-full px-3 border-r border-[var(--color-border)] min-w-[140px] flex-shrink-0 ${
+          closeState
+            ? "cursor-default opacity-60 saturate-50"
+            : "cursor-pointer"
+        } ${
           isActive
             ? "bg-[var(--color-border)] text-[var(--color-text)]"
-            : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
+            : `text-[var(--color-textSecondary)] ${closeState ? "" : "hover:bg-[var(--color-border)]/50"}`
         } ${draggedSessionId === session.id ? "opacity-50" : ""} ${
           dragOverSessionId === session.id && draggedSessionId !== session.id
             ? "border-l-2 border-primary"
@@ -954,14 +1039,28 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               }
             : undefined
         }
-        onClick={() => onSessionSelect(session.id)}
-        onKeyDown={(event) => handleTabKeyDown(event, session.id)}
-        onMouseDown={(e) => handleMiddleClick(session.id, e)}
+        onClick={() => {
+          if (!closeState) onSessionSelect(session.id);
+        }}
+        onKeyDown={(event) => {
+          if (!closeState) handleTabKeyDown(event, session.id);
+        }}
+        onMouseDown={(e) => {
+          if (!closeState) handleMiddleClick(session.id, e);
+        }}
         onContextMenu={(e) => handleContextMenu(e, session.id)}
-        onDragStart={(e) => handleDragStart(e, session.id)}
-        onDragOver={(e) => handleDragOver(e, session.id)}
-        onDragEnd={(e) => handleDragEnd(e, session.id)}
-        onDrop={(e) => handleDrop(e, session.id)}
+        onDragStart={(e) => {
+          if (!closeState) handleDragStart(e, session.id);
+        }}
+        onDragOver={(e) => {
+          if (!closeState) handleDragOver(e, session.id);
+        }}
+        onDragEnd={(e) => {
+          if (!closeState) handleDragEnd(e, session.id);
+        }}
+        onDrop={(e) => {
+          if (!closeState) handleDrop(e, session.id);
+        }}
       >
         {/* Tab tint indicator — left edge bar */}
         {tabTint && (
@@ -1048,29 +1147,54 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           }
           return null;
         })()}
-        {!isToolProtocol(session.protocol) &&
+        {!closeState &&
+          !isToolProtocol(session.protocol) &&
           !isWinmgmtProtocol(session.protocol) && (
             <StatusIcon
               size={12}
               className={`mr-2 flex-shrink-0 ${getStatusColor(session.status)}`}
             />
           )}
-        <button
-          onClick={(e) => handleDetachSession(session.id, e)}
-          className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
-          data-tooltip="Detach"
-          data-testid="session-tab-detach"
-        >
-          <ExternalLink size={12} />
-        </button>
-        <button
-          onClick={(e) => handleCloseSession(session.id, e)}
-          className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
-          data-tooltip="Close"
-          data-testid="session-tab-close"
-        >
-          <X size={12} />
-        </button>
+        {isClosing && (
+          <span
+            role="status"
+            aria-label={`Closing ${session.name}`}
+            className="ml-auto flex flex-shrink-0 items-center gap-1 text-[10px] text-warning"
+          >
+            <LoaderCircle size={12} className="animate-spin" />
+            Closing…
+          </span>
+        )}
+        {isUnresponsive && closeState && (
+          <UnresponsiveCloseActions
+            session={session}
+            closeState={closeState}
+            onRetry={onSessionRetryClose}
+            onForce={onSessionForceClose}
+          />
+        )}
+        {!closeState && (
+          <>
+            <button
+              onClick={(e) => handleDetachSession(session.id, e)}
+              className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
+              data-tooltip="Detach"
+              data-testid="session-tab-detach"
+              aria-label={`Detach ${session.name}`}
+            >
+              <ExternalLink size={12} />
+            </button>
+            <button
+              onClick={(e) => handleCloseSession(session.id, e)}
+              className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
+              data-tooltip="Close"
+              data-testid="session-tab-close"
+              aria-label={`Close ${session.name}`}
+            >
+              <X size={12} />
+            </button>
+          </>
+        )}
       </div>
     );
   };
@@ -1238,22 +1362,46 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                   {sessions.map((session) => {
                     const Icon = getProtocolIcon(session.protocol);
                     const isActive = session.id === activeSessionId;
+                    const closeState = sessionCloseStates[session.id];
                     return (
                       <button
                         key={session.id}
                         role="menuitem"
+                        disabled={Boolean(closeState)}
+                        aria-busy={closeState?.phase === "closing" || undefined}
                         onMouseDown={(event) => {
-                          if (handleMiddleClick(session.id, event)) {
+                          if (
+                            !closeState &&
+                            handleMiddleClick(session.id, event)
+                          ) {
                             setOverflowMenuOpen(false);
                           }
                         }}
                         onClick={() => {
+                          if (closeState) return;
                           onSessionSelect(session.id);
                           setOverflowMenuOpen(false);
                         }}
-                        className={`sor-menu-item w-full ${isActive ? "bg-primary/10 text-primary" : ""}`}
+                        className={`sor-menu-item w-full ${isActive ? "bg-primary/10 text-primary" : ""} ${closeState ? "opacity-50" : ""}`}
                       >
-                        <Icon size={14} className="flex-shrink-0" />
+                        {closeState ? (
+                          closeState.phase === "closing" ? (
+                            <LoaderCircle
+                              size={14}
+                              className="flex-shrink-0 animate-spin"
+                            />
+                          ) : (
+                            <TriangleAlert
+                              size={14}
+                              className="flex-shrink-0 text-warning"
+                            />
+                          )
+                        ) : (
+                          <Icon
+                            size={14}
+                            className="flex-shrink-0"
+                          />
+                        )}
                         <span className="truncate">
                           {session.name || session.protocol}
                         </span>
@@ -1318,11 +1466,81 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               ? isWinmgmtProtocol(targetSession.protocol)
               : false;
             const isRealConnection = !isTool && !isWinTool;
+            const closeState = sessionCloseStates[sessionId];
 
             const act = (fn: () => void) => {
               fn();
               closeContextMenu();
             };
+
+            if (closeState) {
+              const isUnresponsive = closeState.phase === "unresponsive";
+              return (
+                <>
+                  <div className="border-b border-[var(--color-border)] px-3 py-2">
+                    <div className="font-medium text-[var(--color-textSecondary)]">
+                      {targetSession.name}
+                    </div>
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className={`mt-1 flex items-start gap-1.5 text-xs ${isUnresponsive ? "text-warning" : "text-[var(--color-textMuted)]"}`}
+                    >
+                      {isUnresponsive ? (
+                        <TriangleAlert
+                          size={14}
+                          className="mt-0.5 flex-shrink-0"
+                        />
+                      ) : (
+                        <LoaderCircle
+                          size={14}
+                          className="mt-0.5 flex-shrink-0 animate-spin"
+                        />
+                      )}
+                      <span>{closeState.message}</span>
+                    </div>
+                  </div>
+                  {isUnresponsive ? (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() =>
+                          act(() => onSessionRetryClose?.(sessionId))
+                        }
+                        disabled={!onSessionRetryClose}
+                        className="sor-menu-item"
+                      >
+                        <RefreshCw size={14} className="mr-2" /> Check Existing
+                        Cleanup Again
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() =>
+                          act(() => onSessionForceClose?.(sessionId))
+                        }
+                        disabled={!onSessionForceClose}
+                        className="sor-menu-item sor-menu-item-danger"
+                      >
+                        <XCircle size={14} className="mr-2" /> Force Close Tab
+                        (Cleanup Unconfirmed)
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled
+                      className="sor-menu-item opacity-50"
+                    >
+                      <LoaderCircle size={14} className="mr-2 animate-spin" />
+                      Closing…
+                    </button>
+                  )}
+                </>
+              );
+            }
 
             return (
               <>

@@ -1,6 +1,9 @@
+import { DEFAULT_SESSION_CLOSE_TIMEOUT_MS } from "../../../utils/session/sessionClose";
+
+export { DEFAULT_SESSION_CLOSE_TIMEOUT_MS } from "../../../utils/session/sessionClose";
+
 export const DEFAULT_SESSION_CLOSE_CONCURRENCY = 8;
 export const MAX_SESSION_CLOSE_CONCURRENCY = 64;
-export const DEFAULT_SESSION_CLOSE_TIMEOUT_MS = 15_000;
 
 export interface SessionCloseTarget<T> {
   readonly id: string;
@@ -8,11 +11,7 @@ export interface SessionCloseTarget<T> {
 }
 
 type SessionCloseEntryState =
-  | "pending"
-  | "in-flight"
-  | "settling"
-  | "completed"
-  | "failed";
+  "pending" | "in-flight" | "settling" | "completed" | "failed";
 
 interface SessionCloseEntry<T> extends SessionCloseTarget<T> {
   state: SessionCloseEntryState;
@@ -130,12 +129,10 @@ const runUntilTimeout = async <T>(
 
   try {
     return await Promise.race([
-      settlement.then(
-        (result): SessionCloseAttempt => ({
-          status: "settled",
-          settlement: result,
-        }),
-      ),
+      settlement.then((result): SessionCloseAttempt => ({
+        status: "settled",
+        settlement: result,
+      })),
       timeoutPromise,
     ]);
   } finally {

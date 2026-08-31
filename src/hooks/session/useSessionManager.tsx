@@ -59,6 +59,12 @@ import {
   releaseIntegrationSession,
   type IntegrationSessionStateEvent,
 } from "../integrations/IntegrationSessionLifecycle";
+import {
+  DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+  type SessionCloseState,
+  type SessionCloseStateById,
+} from "../../utils/session/sessionClose";
+import { recordForcedSessionCleanupEvidence } from "../../utils/session/forcedSessionCleanupLedger";
 
 export function usesGenericSessionTimer(protocol: string): boolean {
   return usesLegacyGenericTimer(protocol);
@@ -128,6 +134,83 @@ type GenericCompletionTimer = {
   resolve: (completed: boolean) => void;
 };
 
+type SessionCloseWaitOutcome =
+  | { readonly kind: "settled"; readonly value: boolean }
+  | { readonly kind: "timed-out" }
+  | { readonly kind: "forced" };
+
+type SessionCloseActorSnapshot = Readonly<{
+  sessionId: string;
+  connectionId: string;
+  protocol: string;
+  hostname: string;
+  startTime: string;
+  backendSessionId?: string;
+  shellId?: string;
+  lifecycleRevision?: number;
+  lifecycleActorGeneration?: number;
+  lifecycleWriterId?: string;
+  lifecycleActorReservationId?: number;
+}>;
+
+type SessionCloseAttempt = {
+  readonly sessionId: string;
+  readonly attemptId: number;
+  readonly startedAt: number;
+  readonly originalActor?: SessionCloseActorSnapshot;
+  readonly waiters: Set<(outcome: SessionCloseWaitOutcome) => void>;
+  resultPromise: Promise<boolean>;
+  resolveResult: (value: boolean) => void;
+  cleanupPromise?: Promise<boolean>;
+  cleanupSettled: boolean;
+  timedOut: boolean;
+  forced: boolean;
+};
+
+const sessionStartTimeIdentity = (session: ConnectionSession): string =>
+  session.startTime instanceof Date
+    ? session.startTime.toISOString()
+    : String(session.startTime);
+
+const captureSessionCloseActor = (
+  session: ConnectionSession | undefined,
+): SessionCloseActorSnapshot | undefined =>
+  session
+    ? Object.freeze({
+        sessionId: session.id,
+        connectionId: session.connectionId,
+        protocol: session.protocol,
+        hostname: session.hostname,
+        startTime: sessionStartTimeIdentity(session),
+        backendSessionId: session.backendSessionId,
+        shellId: session.shellId,
+        lifecycleRevision: session.lifecycleRevision,
+        lifecycleActorGeneration: session.lifecycleActorGeneration,
+        lifecycleWriterId: session.lifecycleWriterId,
+        lifecycleActorReservationId: session.lifecycleActorReservationId,
+      })
+    : undefined;
+
+const isSameSessionCloseActor = (
+  original: SessionCloseActorSnapshot | undefined,
+  current: ConnectionSession,
+): boolean =>
+  Boolean(
+    original &&
+    original.sessionId === current.id &&
+    original.connectionId === current.connectionId &&
+    original.protocol === current.protocol &&
+    original.hostname === current.hostname &&
+    original.startTime === sessionStartTimeIdentity(current) &&
+    original.backendSessionId === current.backendSessionId &&
+    original.shellId === current.shellId &&
+    original.lifecycleRevision === current.lifecycleRevision &&
+    original.lifecycleActorGeneration === current.lifecycleActorGeneration &&
+    original.lifecycleWriterId === current.lifecycleWriterId &&
+    original.lifecycleActorReservationId ===
+      current.lifecycleActorReservationId,
+  );
+
 /**
  * Manages connection sessions and exposes helpers for session workflows.
  *
@@ -142,6 +225,8 @@ export const useSessionManager = () => {
   const scriptEngine = ScriptEngine.getInstance();
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
   // Keep a ref to the latest state so timer callbacks can read current sessions
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -152,6 +237,10 @@ export const useSessionManager = () => {
     new Map<string, GenericCompletionTimer>(),
   );
   const endingSessionIdsRef = useRef(new Set<string>());
+  const closeAttemptsRef = useRef(new Map<string, SessionCloseAttempt>());
+  const nextCloseAttemptIdRef = useRef(0);
+  const [sessionCloseStates, setSessionCloseStates] =
+    useState<SessionCloseStateById>({});
   const isUnmountedRef = useRef(false);
   const pendingReconnectsRef = useRef(new Set<string>());
   const reconnectsInFlightRef = useRef(new Set<string>());
@@ -224,9 +313,125 @@ export const useSessionManager = () => {
     cancelGenericCompletionTimer(sessionId);
   };
 
+  const moveSelectionAfterSessionClose = (sessionId: string) => {
+    if (activeSessionIdRef.current !== sessionId) return;
+    const nextSession = stateRef.current.sessions.find(
+      (candidate) =>
+        candidate.id !== sessionId && !candidate.layout?.isDetached,
+    );
+    activeSessionIdRef.current = nextSession?.id;
+    setActiveSessionId(nextSession?.id);
+  };
+
+  const publishSessionCloseState = (
+    attempt: SessionCloseAttempt,
+    state: Omit<SessionCloseState, "sessionId" | "attemptId" | "startedAt">,
+  ) => {
+    if (isUnmountedRef.current) return;
+    setSessionCloseStates((current) => ({
+      ...current,
+      [attempt.sessionId]: {
+        sessionId: attempt.sessionId,
+        attemptId: attempt.attemptId,
+        startedAt: attempt.startedAt,
+        ...state,
+      },
+    }));
+  };
+
+  const clearSessionCloseState = (attempt: SessionCloseAttempt) => {
+    if (isUnmountedRef.current) return;
+    setSessionCloseStates((current) => {
+      if (current[attempt.sessionId]?.attemptId !== attempt.attemptId) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[attempt.sessionId];
+      return next;
+    });
+  };
+
+  const isCurrentCloseAttempt = (attempt: SessionCloseAttempt): boolean =>
+    !attempt.forced &&
+    closeAttemptsRef.current.get(attempt.sessionId) === attempt;
+
+  const retireSessionCloseAttempt = (attempt: SessionCloseAttempt) => {
+    if (closeAttemptsRef.current.get(attempt.sessionId) === attempt) {
+      closeAttemptsRef.current.delete(attempt.sessionId);
+    }
+    clearSessionCloseState(attempt);
+  };
+
+  const waitForSessionCleanup = async (
+    attempt: SessionCloseAttempt,
+  ): Promise<boolean> => {
+    const cleanupPromise = attempt.cleanupPromise;
+    if (!cleanupPromise) return false;
+
+    const outcome = await new Promise<SessionCloseWaitOutcome>((resolve) => {
+      let settled = false;
+      const finish = (value: SessionCloseWaitOutcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        attempt.waiters.delete(finish);
+        resolve(value);
+      };
+      const timeout = setTimeout(
+        () => finish({ kind: "timed-out" }),
+        DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+      );
+      attempt.waiters.add(finish);
+      void cleanupPromise.then((value) => finish({ kind: "settled", value }));
+    });
+
+    if (outcome.kind === "timed-out") {
+      attempt.timedOut = true;
+      publishSessionCloseState(attempt, {
+        phase: "unresponsive",
+        timeoutMs: DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+        cleanupPending: true,
+        message:
+          "Cleanup is still pending. Check again without starting another teardown, or force close the tab.",
+      });
+      return false;
+    }
+    return outcome.kind === "settled" ? outcome.value : false;
+  };
+
+  const runBoundedSessionCleanup = (
+    attempt: SessionCloseAttempt,
+    operation: () => Promise<boolean>,
+  ): Promise<boolean> => {
+    if (attempt.cleanupPromise) return waitForSessionCleanup(attempt);
+
+    publishSessionCloseState(attempt, {
+      phase: "closing",
+      timeoutMs: DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+      cleanupPending: true,
+      message: "Closing session and waiting for cleanup…",
+    });
+
+    const cleanupPromise = Promise.resolve()
+      .then(operation)
+      .catch((error) => {
+        console.error("Session close cleanup failed:", error);
+        return false;
+      });
+    attempt.cleanupPromise = cleanupPromise;
+    void cleanupPromise.then(() => {
+      attempt.cleanupSettled = true;
+      if (attempt.timedOut || attempt.forced) {
+        retireSessionCloseAttempt(attempt);
+      }
+    });
+    return waitForSessionCleanup(attempt);
+  };
+
   useEffect(() => {
     isUnmountedRef.current = false;
     const genericCompletionTimers = genericCompletionTimersRef.current;
+    const closeAttempts = closeAttemptsRef.current;
     return () => {
       isUnmountedRef.current = true;
       // Clear any active timers when the hook unmounts
@@ -239,6 +444,14 @@ export const useSessionManager = () => {
         entry.resolve(false);
       }
       genericCompletionTimers.clear();
+
+      for (const attempt of closeAttempts.values()) {
+        attempt.forced = true;
+        attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
+        attempt.waiters.clear();
+        attempt.resolveResult(false);
+      }
+      closeAttempts.clear();
 
       const pendingDialogs = [
         ...(dialogStateRef.current ? [dialogStateRef.current] : []),
@@ -925,8 +1138,9 @@ export const useSessionManager = () => {
    * Closes an active session and performs cleanup.
    * @param sessionId - ID of the session to close.
    */
-  const handleSessionClose = async (
+  const performSessionClose = async (
     sessionId: string,
+    attempt: SessionCloseAttempt,
     authoritativeSession?: ConnectionSession,
   ): Promise<boolean> => {
     const storedState = stateRef.current;
@@ -951,6 +1165,7 @@ export const useSessionManager = () => {
       isToolProtocol(session.protocol) ||
       isWinmgmtProtocol(session.protocol)
     ) {
+      if (!isCurrentCloseAttempt(attempt)) return false;
       markSessionEnding(sessionId);
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       return true;
@@ -992,53 +1207,56 @@ export const useSessionManager = () => {
     // mounted host. Await it before removing the owning session; host unmount
     // remains an idempotent fallback.
     if (isIntegrationConnectionProtocol(session.protocol)) {
-      try {
-        await releaseIntegrationSession(sessionId);
-      } catch (error) {
-        const detail =
-          typeof error === "string"
-            ? error
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        if (abandoned) {
-          reportAbandonedCleanupIncomplete(
-            `Integration cleanup failed while closing "${session.name}" (the panel never connected). The provider may need manual cleanup. ${detail}`,
-          );
-        } else {
-          dispatch({
-            type: "UPDATE_SESSION",
-            payload: {
-              ...session,
-              status: "error",
-              errorMessage: `Integration cleanup failed and the session was kept open so cleanup can be retried. Retry Close after resolving the provider error. ${detail}`,
-              lastActivity: new Date(),
-            },
-          });
-          return false;
+      return runBoundedSessionCleanup(attempt, async () => {
+        markSessionEnding(sessionId);
+        lifecycle.beginEnding(sessionId);
+        try {
+          await releaseIntegrationSession(sessionId);
+        } catch (error) {
+          if (!isCurrentCloseAttempt(attempt)) return false;
+          const detail =
+            typeof error === "string"
+              ? error
+              : error instanceof Error
+                ? error.message
+                : String(error);
+          if (abandoned) {
+            reportAbandonedCleanupIncomplete(
+              `Integration cleanup failed while closing "${session.name}" (the panel never connected). The provider may need manual cleanup. ${detail}`,
+            );
+          } else {
+            dispatch({
+              type: "UPDATE_SESSION",
+              payload: {
+                ...session,
+                status: "error",
+                errorMessage: `Integration cleanup failed and the session was kept open so cleanup can be retried. Retry Close after resolving the provider error. ${detail}`,
+                lastActivity: new Date(),
+              },
+            });
+            return false;
+          }
         }
-      }
-      markSessionEnding(sessionId);
-      lifecycle.beginEnding(sessionId);
-      dispatch({ type: "REMOVE_SESSION", payload: sessionId });
-      releaseRuntimeConnection(session.connectionId);
-      if (connection) {
-        statusChecker.stopChecking(connection.id);
-        settingsManager.logAction(
-          "info",
-          "Session closed",
-          connection.id,
-          `Session "${session.name}" closed`,
-        );
-        await lifecycle.emitEnded(session, connection, { reason: "user" });
-      }
-      if (activeSessionId === sessionId) {
-        const remaining = currentState.sessions.filter(
-          (s) => s.id !== sessionId,
-        );
-        setActiveSessionId(remaining.length > 0 ? remaining[0].id : undefined);
-      }
-      return true;
+        if (!isCurrentCloseAttempt(attempt)) return false;
+        dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+        releaseRuntimeConnection(session.connectionId);
+        if (connection) {
+          statusChecker.stopChecking(connection.id);
+          settingsManager.logAction(
+            "info",
+            "Session closed",
+            connection.id,
+            `Session "${session.name}" closed`,
+          );
+          void lifecycle
+            .emitEnded(session, connection, { reason: "user" })
+            .catch((error) =>
+              console.error("Failed to emit ended session lifecycle:", error),
+            );
+        }
+        moveSelectionAfterSessionClose(sessionId);
+        return true;
+      });
     }
 
     // Global "confirm before closing an active tab" check —
@@ -1046,7 +1264,7 @@ export const useSessionManager = () => {
     if (
       settings.confirmCloseActiveTab &&
       !authoritativeSession &&
-      session.id === activeSessionId &&
+      session.id === activeSessionIdRef.current &&
       session.status === "connected"
     ) {
       const confirmed = await showConfirm(
@@ -1114,398 +1332,464 @@ export const useSessionManager = () => {
     }
 
     if (preserveRdpBackend) {
-      try {
-        await invoke("detach_rdp_session", {
-          ...(session.backendSessionId
-            ? { sessionId: session.backendSessionId }
-            : { connectionId: session.connectionId }),
-        });
-      } catch (error) {
-        const message = `RDP detach failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
+      return runBoundedSessionCleanup(attempt, async () => {
+        try {
+          await invoke("detach_rdp_session", {
+            ...(session.backendSessionId
+              ? { sessionId: session.backendSessionId }
+              : { connectionId: session.connectionId }),
+          });
+        } catch (error) {
+          if (!isCurrentCloseAttempt(attempt)) return false;
+          const message = `RDP detach failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: { ...session, status: "error", errorMessage: message },
+          });
+          return false;
+        }
+
+        if (!isCurrentCloseAttempt(attempt)) return false;
         dispatch({
           type: "UPDATE_SESSION",
-          payload: { ...session, status: "error", errorMessage: message },
-        });
-        return false;
-      }
-
-      dispatch({
-        type: "UPDATE_SESSION",
-        payload: {
-          ...session,
-          layout: {
-            x: session.layout?.x ?? 0,
-            y: session.layout?.y ?? 0,
-            width: session.layout?.width ?? 100,
-            height: session.layout?.height ?? 100,
-            zIndex: session.layout?.zIndex ?? 1,
-            isDetached: true,
-            windowId: undefined,
+          payload: {
+            ...session,
+            layout: {
+              x: session.layout?.x ?? 0,
+              y: session.layout?.y ?? 0,
+              width: session.layout?.width ?? 100,
+              height: session.layout?.height ?? 100,
+              zIndex: session.layout?.zIndex ?? 1,
+              isDetached: true,
+              windowId: undefined,
+            },
+            lastActivity: new Date(),
           },
-          lastActivity: new Date(),
-        },
+        });
+        moveSelectionAfterSessionClose(sessionId);
+        return true;
       });
-      if (activeSessionId === sessionId) {
-        const remaining = currentState.sessions.filter(
-          (candidate) =>
-            candidate.id !== sessionId && !candidate.layout?.isDetached,
-        );
-        setActiveSessionId(remaining[0]?.id);
-      }
-      return true;
     }
 
     // From this point onward every user-facing close policy has been accepted.
     // Cancelling in-flight rules here cannot bypass a confirmation dialog.
-    markSessionEnding(sessionId);
-    lifecycle.beginEnding(sessionId);
+    return runBoundedSessionCleanup(attempt, async () => {
+      markSessionEnding(sessionId);
+      lifecycle.beginEnding(sessionId);
 
-    if (connection) {
-      try {
-        await scriptEngine.executeScriptsForTrigger("onDisconnect", {
-          connection,
-          session,
-        });
-      } catch (error) {
-        console.error("Script execution failed:", error);
+      if (connection) {
+        try {
+          await scriptEngine.executeScriptsForTrigger("onDisconnect", {
+            connection,
+            session,
+          });
+        } catch (error) {
+          console.error("Script execution failed:", error);
+        }
       }
-    }
+      if (!isCurrentCloseAttempt(attempt)) return false;
 
-    const vpnBackedProtocol =
-      session.protocol === "ssh" ||
-      (session.protocol === "rdp" && disconnectRdpBackend);
-    if (vpnBackedProtocol) {
-      const protocol = session.protocol as "ssh" | "rdp";
-      let workingSessions = [...currentState.sessions];
-      let targetSession =
-        workingSessions.find((candidate) => candidate.id === session.id) ??
-        session;
-      const backendSessionIds = sessionVpnBackendIds(targetSession, protocol);
+      const vpnBackedProtocol =
+        session.protocol === "ssh" ||
+        (session.protocol === "rdp" && disconnectRdpBackend);
+      if (vpnBackedProtocol) {
+        const protocol = session.protocol as "ssh" | "rdp";
+        let workingSessions = [...currentState.sessions];
+        let targetSession =
+          workingSessions.find((candidate) => candidate.id === session.id) ??
+          session;
+        const backendSessionIds = sessionVpnBackendIds(targetSession, protocol);
 
-      // An old owner-only cleanup row has no durable proof that its actor was
-      // closed. Releasing it would risk tearing down a live replacement route.
-      if (
-        backendSessionIds.length === 0 &&
-        sessionVpnLeaseOwnerIds(targetSession).length > 0
-      ) {
-        const message = `${protocol.toUpperCase()} VPN ownership is from an older uncorrelated session record and cannot be released automatically. Verify the route in the VPN manager and remove it manually.`;
-        if (abandoned) {
-          reportAbandonedCleanupIncomplete(message);
-        } else {
-          dispatch({
-            type: "UPDATE_SESSION",
-            payload: {
-              ...targetSession,
-              status: "error",
-              errorMessage: message,
-              lastActivity: new Date(),
+        // An old owner-only cleanup row has no durable proof that its actor was
+        // closed. Releasing it would risk tearing down a live replacement route.
+        if (
+          backendSessionIds.length === 0 &&
+          sessionVpnLeaseOwnerIds(targetSession).length > 0
+        ) {
+          const message = `${protocol.toUpperCase()} VPN ownership is from an older uncorrelated session record and cannot be released automatically. Verify the route in the VPN manager and remove it manually.`;
+          if (abandoned) {
+            reportAbandonedCleanupIncomplete(message);
+          } else {
+            if (!isCurrentCloseAttempt(attempt)) return false;
+            dispatch({
+              type: "UPDATE_SESSION",
+              payload: {
+                ...targetSession,
+                status: "error",
+                errorMessage: message,
+                lastActivity: new Date(),
+              },
+            });
+            return false;
+          }
+        }
+
+        let cleanupFailed = false;
+        for (const backendSessionId of backendSessionIds) {
+          const associated = findAssociatedVpnSessions(
+            workingSessions,
+            protocol,
+            backendSessionId,
+            targetSession.connectionId,
+          );
+          if (
+            !associated.some((candidate) => candidate.id === targetSession.id)
+          ) {
+            associated.push(targetSession);
+          }
+          const cleanup = await cleanupSessionVpnBackend({
+            sessions: associated,
+            protocol,
+            backendSessionId,
+            closeBackend: () =>
+              invoke(protocol === "ssh" ? "disconnect_ssh" : "disconnect_rdp", {
+                sessionId: backendSessionId,
+              }),
+            onSessionsUpdated: (updatedSessions) => {
+              const updatedById = new Map(
+                updatedSessions.map((candidate) => [candidate.id, candidate]),
+              );
+              workingSessions = workingSessions.map(
+                (candidate) => updatedById.get(candidate.id) ?? candidate,
+              );
+              targetSession =
+                workingSessions.find(
+                  (candidate) => candidate.id === targetSession.id,
+                ) ?? targetSession;
+              if (isCurrentCloseAttempt(attempt)) {
+                updatedSessions.forEach((candidate) => {
+                  dispatch({ type: "UPDATE_SESSION", payload: candidate });
+                });
+              }
             },
           });
-          return false;
+          if (!isCurrentCloseAttempt(attempt)) return false;
+          if (
+            !cleanup.backendClosed ||
+            cleanup.failures.length > 0 ||
+            cleanup.blockedReason
+          ) {
+            cleanupFailed = true;
+          }
+        }
+
+        if (cleanupFailed) {
+          if (!isCurrentCloseAttempt(attempt)) return false;
+          if (!abandoned) return false;
+          reportAbandonedCleanupIncomplete(
+            `${protocol.toUpperCase()} backend/VPN cleanup did not complete while closing "${session.name}" (the session never connected). The tab was closed; verify the route in the VPN manager and remove it manually if it is still present.`,
+          );
         }
       }
 
-      let cleanupFailed = false;
-      for (const backendSessionId of backendSessionIds) {
-        const associated = findAssociatedVpnSessions(
-          workingSessions,
-          protocol,
-          backendSessionId,
-          targetSession.connectionId,
+      if (session.protocol === "raw" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_raw_socket", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect Raw Socket session:", error);
+        }
+      }
+
+      if (session.protocol === "ard" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_ard", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect ARD session:", error);
+        }
+      }
+
+      if (session.protocol === "serial" && session.backendSessionId) {
+        try {
+          await invoke("serial_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect Serial session:", error);
+        }
+      }
+
+      if (session.protocol === "rlogin" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_rlogin", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect RLogin session:", error);
+        }
+      }
+
+      if (session.protocol === "winrm" && session.backendSessionId) {
+        try {
+          await invoke("close_powershell_session", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to close PowerShell session:", error);
+        }
+      }
+
+      if (session.protocol === "telnet" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_telnet", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect Telnet session:", error);
+        }
+      }
+
+      if (session.protocol === "sftp" && session.backendSessionId) {
+        try {
+          await invoke("sftp_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect SFTP session:", error);
+        }
+      }
+
+      if (session.protocol === "ftp" && session.backendSessionId) {
+        try {
+          await invoke("ftp_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect FTP session:", error);
+        }
+      }
+
+      if (session.protocol === "scp" && session.backendSessionId) {
+        try {
+          await invoke("scp_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect SCP session:", error);
+        }
+      }
+
+      if (session.protocol === "anydesk" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_anydesk", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to stop AnyDesk launcher process:", error);
+        }
+      }
+
+      if (session.protocol === "rustdesk" && session.backendSessionId) {
+        try {
+          await invoke("rustdesk_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect RustDesk session:", error);
+        }
+      }
+
+      if (session.protocol === "smb" && session.backendSessionId) {
+        try {
+          await invoke("smb_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect SMB session:", error);
+        }
+      }
+
+      if (session.protocol === "mysql" && session.backendSessionId) {
+        try {
+          await mysqlApi.disconnect(session.backendSessionId);
+        } catch (error) {
+          console.error("Failed to disconnect MySQL session:", error);
+        }
+      }
+
+      if (session.protocol === "postgresql" && session.backendSessionId) {
+        try {
+          await invoke("pg_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect PostgreSQL session:", error);
+        }
+      }
+
+      if (session.protocol === "mongodb" && session.backendSessionId) {
+        try {
+          await invoke("mongo_disconnect", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to disconnect MongoDB session:", error);
+        }
+      }
+
+      if (session.protocol === "spice" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_spice", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to stop SPICE remote-viewer process:", error);
+        }
+      }
+
+      if (session.protocol === "xdmcp" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_xdmcp", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to stop XDMCP X server process:", error);
+        }
+      }
+
+      if (session.protocol === "x2go" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_x2go", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to stop X2Go Client process:", error);
+        }
+      }
+
+      if (session.protocol === "nx" && session.backendSessionId) {
+        try {
+          await invoke("disconnect_nx", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.error("Failed to stop NoMachine Client process:", error);
+        }
+      }
+
+      if (!isCurrentCloseAttempt(attempt)) return false;
+
+      // Notify detached windows that this session has been closed from main window.
+      // Delivery is observational; a stuck event bus cannot own tab removal.
+      const isTauri =
+        typeof window !== "undefined" &&
+        Boolean(
+          (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
         );
-        if (
-          !associated.some((candidate) => candidate.id === targetSession.id)
-        ) {
-          associated.push(targetSession);
-        }
-        const cleanup = await cleanupSessionVpnBackend({
-          sessions: associated,
-          protocol,
-          backendSessionId,
-          closeBackend: () =>
-            invoke(protocol === "ssh" ? "disconnect_ssh" : "disconnect_rdp", {
-              sessionId: backendSessionId,
-            }),
-          onSessionsUpdated: (updatedSessions) => {
-            const updatedById = new Map(
-              updatedSessions.map((candidate) => [candidate.id, candidate]),
-            );
-            workingSessions = workingSessions.map(
-              (candidate) => updatedById.get(candidate.id) ?? candidate,
-            );
-            updatedSessions.forEach((candidate) => {
-              dispatch({ type: "UPDATE_SESSION", payload: candidate });
-            });
-            targetSession =
-              workingSessions.find(
-                (candidate) => candidate.id === targetSession.id,
-              ) ?? targetSession;
-          },
-        });
-        if (
-          !cleanup.backendClosed ||
-          cleanup.failures.length > 0 ||
-          cleanup.blockedReason
-        ) {
-          cleanupFailed = true;
-        }
+      if (isTauri && session.layout?.isDetached) {
+        void import("@tauri-apps/api/event")
+          .then(({ emit }) => emit("main-session-closed", { sessionId }))
+          .catch((error) =>
+            console.error("Failed to emit main-session-closed event:", error),
+          );
       }
 
-      if (cleanupFailed) {
-        if (!abandoned) return false;
-        reportAbandonedCleanupIncomplete(
-          `${protocol.toUpperCase()} backend/VPN cleanup did not complete while closing "${session.name}" (the session never connected). The tab was closed; verify the route in the VPN manager and remove it manually if it is still present.`,
+      // Record RDP session to history before removing
+      if (session.protocol === "rdp") {
+        const now = new Date();
+        const durationSecs = session.startTime
+          ? Math.round(
+              (now.getTime() - new Date(session.startTime).getTime()) / 1000,
+            )
+          : 0;
+        recordRdpSessionHistory({
+          connectionId: session.connectionId || "",
+          connectionName: session.name || connection?.name || session.hostname,
+          hostname: session.hostname,
+          port: connection?.port || 3389,
+          username: connection?.username || "",
+          lastConnected: session.startTime
+            ? new Date(session.startTime).toISOString()
+            : now.toISOString(),
+          disconnectedAt: now.toISOString(),
+          duration: durationSecs,
+          desktopWidth: 0,
+          desktopHeight: 0,
+        });
+      }
+
+      dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+      releaseRuntimeConnection(session.connectionId);
+
+      if (connection) {
+        statusChecker.stopChecking(connection.id);
+        settingsManager.logAction(
+          "info",
+          "Session closed",
+          connection.id,
+          `Session "${session.name}" closed`,
         );
       }
-    }
 
-    if (session.protocol === "raw" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_raw_socket", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect Raw Socket session:", error);
+      moveSelectionAfterSessionClose(sessionId);
+
+      if (connection) {
+        void lifecycle
+          .emitEnded(session, connection, { reason: "user" })
+          .catch((error) =>
+            console.error("Failed to emit ended session lifecycle:", error),
+          );
       }
-    }
+      return true;
+    });
+  };
 
-    if (session.protocol === "ard" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_ard", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect ARD session:", error);
-      }
-    }
+  const handleSessionClose = (
+    sessionId: string,
+    authoritativeSession?: ConnectionSession,
+  ): Promise<boolean> => {
+    const existing = closeAttemptsRef.current.get(sessionId);
+    if (existing) return existing.resultPromise;
 
-    if (session.protocol === "serial" && session.backendSessionId) {
-      try {
-        await invoke("serial_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect Serial session:", error);
-      }
-    }
+    const storedSession = stateRef.current.sessions.find(
+      (candidate) => candidate.id === sessionId,
+    );
+    const originalSession =
+      storedSession && authoritativeSession?.id === sessionId
+        ? { ...storedSession, ...authoritativeSession }
+        : storedSession;
 
-    if (session.protocol === "rlogin" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_rlogin", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect RLogin session:", error);
-      }
-    }
+    let resolveResult = (_value: boolean) => {};
+    const resultPromise = new Promise<boolean>((resolve) => {
+      resolveResult = resolve;
+    });
+    const attempt: SessionCloseAttempt = {
+      sessionId,
+      attemptId: ++nextCloseAttemptIdRef.current,
+      startedAt: Date.now(),
+      originalActor: captureSessionCloseActor(originalSession),
+      waiters: new Set(),
+      resultPromise,
+      resolveResult,
+      cleanupSettled: false,
+      timedOut: false,
+      forced: false,
+    };
+    closeAttemptsRef.current.set(sessionId, attempt);
+    publishSessionCloseState(attempt, {
+      phase: "closing",
+      timeoutMs: DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+      cleanupPending: false,
+      message: "Preparing to close session…",
+    });
 
-    if (session.protocol === "winrm" && session.backendSessionId) {
-      try {
-        await invoke("close_powershell_session", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to close PowerShell session:", error);
-      }
-    }
-
-    if (session.protocol === "telnet" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_telnet", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect Telnet session:", error);
-      }
-    }
-
-    if (session.protocol === "sftp" && session.backendSessionId) {
-      try {
-        await invoke("sftp_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect SFTP session:", error);
-      }
-    }
-
-    if (session.protocol === "ftp" && session.backendSessionId) {
-      try {
-        await invoke("ftp_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect FTP session:", error);
-      }
-    }
-
-    if (session.protocol === "scp" && session.backendSessionId) {
-      try {
-        await invoke("scp_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect SCP session:", error);
-      }
-    }
-
-    if (session.protocol === "anydesk" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_anydesk", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to stop AnyDesk launcher process:", error);
-      }
-    }
-
-    if (session.protocol === "rustdesk" && session.backendSessionId) {
-      try {
-        await invoke("rustdesk_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect RustDesk session:", error);
-      }
-    }
-
-    if (session.protocol === "smb" && session.backendSessionId) {
-      try {
-        await invoke("smb_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect SMB session:", error);
-      }
-    }
-
-    if (session.protocol === "mysql" && session.backendSessionId) {
-      try {
-        await mysqlApi.disconnect(session.backendSessionId);
-      } catch (error) {
-        console.error("Failed to disconnect MySQL session:", error);
-      }
-    }
-
-    if (session.protocol === "postgresql" && session.backendSessionId) {
-      try {
-        await invoke("pg_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect PostgreSQL session:", error);
-      }
-    }
-
-    if (session.protocol === "mongodb" && session.backendSessionId) {
-      try {
-        await invoke("mongo_disconnect", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect MongoDB session:", error);
-      }
-    }
-
-    if (session.protocol === "spice" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_spice", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to stop SPICE remote-viewer process:", error);
-      }
-    }
-
-    if (session.protocol === "xdmcp" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_xdmcp", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to stop XDMCP X server process:", error);
-      }
-    }
-
-    if (session.protocol === "x2go" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_x2go", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to stop X2Go Client process:", error);
-      }
-    }
-
-    if (session.protocol === "nx" && session.backendSessionId) {
-      try {
-        await invoke("disconnect_nx", {
-          sessionId: session.backendSessionId,
-        });
-      } catch (error) {
-        console.error("Failed to stop NoMachine Client process:", error);
-      }
-    }
-
-    // Notify detached windows that this session has been closed from main window
-    const isTauri =
-      typeof window !== "undefined" &&
-      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
-    if (isTauri && session.layout?.isDetached) {
-      try {
-        const { emit } = await import("@tauri-apps/api/event");
-        await emit("main-session-closed", { sessionId });
-      } catch (error) {
-        console.error("Failed to emit main-session-closed event:", error);
-      }
-    }
-
-    // Record RDP session to history before removing
-    if (session.protocol === "rdp") {
-      const now = new Date();
-      const durationSecs = session.startTime
-        ? Math.round(
-            (now.getTime() - new Date(session.startTime).getTime()) / 1000,
-          )
-        : 0;
-      recordRdpSessionHistory({
-        connectionId: session.connectionId || "",
-        connectionName: session.name || connection?.name || session.hostname,
-        hostname: session.hostname,
-        port: connection?.port || 3389,
-        username: connection?.username || "",
-        lastConnected: session.startTime
-          ? new Date(session.startTime).toISOString()
-          : now.toISOString(),
-        disconnectedAt: now.toISOString(),
-        duration: durationSecs,
-        desktopWidth: 0,
-        desktopHeight: 0,
-      });
-    }
-
-    dispatch({ type: "REMOVE_SESSION", payload: sessionId });
-    releaseRuntimeConnection(session.connectionId);
-
-    if (connection) {
-      statusChecker.stopChecking(connection.id);
-      settingsManager.logAction(
-        "info",
-        "Session closed",
-        connection.id,
-        `Session "${session.name}" closed`,
-      );
-    }
-
-    if (activeSessionId === sessionId) {
-      const remaining = currentState.sessions.filter((s) => s.id !== sessionId);
-      setActiveSessionId(remaining.length > 0 ? remaining[0].id : undefined);
-    }
-
-    if (connection) {
-      await lifecycle.emitEnded(session, connection, { reason: "user" });
-    }
-    return true;
+    void performSessionClose(sessionId, attempt, authoritativeSession).then(
+      (closed) => {
+        if (!attempt.cleanupPromise || attempt.cleanupSettled) {
+          retireSessionCloseAttempt(attempt);
+        }
+        attempt.resolveResult(closed);
+      },
+      (error) => {
+        console.error("Session close failed:", error);
+        retireSessionCloseAttempt(attempt);
+        attempt.resolveResult(false);
+      },
+    );
+    return resultPromise;
   };
 
   handleSessionCloseRef.current = handleSessionClose;
@@ -1565,6 +1849,133 @@ export const useSessionManager = () => {
     windowActions: behaviorWindowActionsRef.current,
     onTransition: sendSessionNotification,
   });
+
+  const retrySessionClose = (sessionId: string): Promise<boolean> => {
+    const attempt = closeAttemptsRef.current.get(sessionId);
+    if (
+      !attempt ||
+      attempt.forced ||
+      attempt.cleanupSettled ||
+      !attempt.cleanupPromise
+    ) {
+      return Promise.resolve(false);
+    }
+
+    publishSessionCloseState(attempt, {
+      phase: "closing",
+      timeoutMs: DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+      cleanupPending: true,
+      message:
+        "Checking the existing cleanup attempt; no second teardown was started…",
+    });
+    return waitForSessionCleanup(attempt);
+  };
+
+  const forceSessionClose = (sessionId: string): boolean => {
+    const attempt = closeAttemptsRef.current.get(sessionId);
+    const closeState = sessionCloseStates[sessionId];
+    const session = stateRef.current.sessions.find(
+      (candidate) => candidate.id === sessionId,
+    );
+    if (
+      !attempt ||
+      attempt.forced ||
+      closeState?.phase !== "unresponsive" ||
+      !session
+    ) {
+      return false;
+    }
+
+    if (!isSameSessionCloseActor(attempt.originalActor, session)) {
+      attempt.forced = true;
+      attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
+      attempt.waiters.clear();
+      endingSessionIdsRef.current.delete(sessionId);
+      retireSessionCloseAttempt(attempt);
+
+      const warning = `Force close was refused because session "${session.name}" now belongs to a different or newer backend actor. The stale cleanup attempt was retired without recording or removing the current tab. Start a new close attempt for the current session.`;
+      console.warn(warning, {
+        originalActor: attempt.originalActor,
+        currentActor: captureSessionCloseActor(session),
+      });
+      settingsManager.logAction(
+        "warn",
+        "Stale session force close refused",
+        session.connectionId,
+        warning,
+        undefined,
+        session.name,
+      );
+      void showAlert(warning);
+      return false;
+    }
+
+    attempt.forced = true;
+    attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
+    attempt.waiters.clear();
+    clearSessionCloseState(attempt);
+
+    markSessionEnding(sessionId);
+    pendingReconnectsRef.current.delete(sessionId);
+    reconnectsInFlightRef.current.delete(sessionId);
+    lifecycle.beginEnding(sessionId);
+
+    const evidence = recordForcedSessionCleanupEvidence(
+      session,
+      attempt.attemptId,
+    );
+    const proofCount =
+      (session.vpnLeaseBindings?.length ?? 0) +
+      (session.vpnLeaseReleaseTombstones?.length ?? 0) +
+      (session.vpnLeaseCleanupQuarantine?.proofs.length ?? 0);
+    const backendSummary = session.backendSessionId
+      ? ` Backend handle: ${session.backendSessionId}.`
+      : " No backend handle was available.";
+    const proofSummary =
+      proofCount > 0
+        ? ` ${proofCount} VPN cleanup proof record${proofCount === 1 ? " was" : "s were"} retained.`
+        : " No VPN cleanup proof was present.";
+    const persistenceSummary = evidence.persisted
+      ? ` Local evidence record: ${evidence.record.id}.`
+      : ` Local evidence persistence failed: ${evidence.error ?? "unknown storage error"}.`;
+    const warning = `Session "${session.name}" was force closed in the app after cleanup stopped responding. Backend cleanup was not confirmed and the remote session may still be running.${backendSummary}${proofSummary}${persistenceSummary}`;
+
+    console.warn(warning, evidence.record);
+    settingsManager.logAction(
+      "warn",
+      "Session force closed - cleanup unconfirmed",
+      session.connectionId,
+      `${warning} Evidence: ${JSON.stringify(evidence.record)}`,
+      undefined,
+      session.name,
+    );
+
+    const connection = resolveRuntimeConnection(
+      stateRef.current.connections,
+      session.connectionId,
+    );
+    dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+    releaseRuntimeConnection(session.connectionId);
+    if (connection) statusChecker.stopChecking(connection.id);
+
+    moveSelectionAfterSessionClose(sessionId);
+
+    const isTauri =
+      typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (isTauri && session.layout?.isDetached) {
+      void import("@tauri-apps/api/event")
+        .then(({ emit }) => emit("main-session-closed", { sessionId }))
+        .catch((error) =>
+          console.error("Failed to notify detached session window:", error),
+        );
+    }
+
+    void showAlert(
+      `${warning}\n\nThe tab and its frontend state were removed without claiming a clean shutdown. Verify the remote endpoint and VPN manager before reconnecting.`,
+    );
+    return true;
+  };
 
   const activeSession = state.sessions.find((s) => s.id === activeSessionId);
 
@@ -1699,6 +2110,9 @@ export const useSessionManager = () => {
     handleReconnect,
     handleQuickConnect,
     handleSessionClose,
+    retrySessionClose,
+    forceSessionClose,
+    sessionCloseStates,
     restoreSession,
     handleIntegrationSessionState,
     emitWindowSignal: lifecycle.emitWindowSignal,

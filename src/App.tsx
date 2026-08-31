@@ -219,6 +219,9 @@ const AppContent: React.FC = () => {
     handleConnect,
     handleQuickConnect,
     handleSessionClose,
+    retrySessionClose,
+    forceSessionClose,
+    sessionCloseStates,
     restoreSession,
     handleIntegrationSessionState,
     confirmDialog,
@@ -1817,6 +1820,9 @@ const AppContent: React.FC = () => {
               activeSessionId={activeSessionId}
               onSessionSelect={setActiveSessionId}
               onSessionClose={handleSessionClose}
+              sessionCloseStates={sessionCloseStates}
+              onSessionRetryClose={retrySessionClose}
+              onSessionForceClose={forceSessionClose}
               onSessionDetach={handleSessionDetach}
               enableReorder={appSettings.enableTabReorder}
               middleClickCloseTab={appSettings.middleClickCloseTab}
