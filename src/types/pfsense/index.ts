@@ -2,9 +2,7 @@
 // t42-pfsense-L).
 //
 // camelCase 1:1 mirror of the connection types in
-// `src-tauri/crates/sorng-pfsense/src/types.rs` (serde `rename_all` is NOT set
-// on this crate, but the field names are already snake_case → Tauri serialises
-// them verbatim; the connection struct below matches the Rust field names).
+// `src-tauri/crates/sorng-pfsense/src/types.rs` (`rename_all = "camelCase"`).
 //
 // Domain types (interfaces/firewall/nat/routing/vpn and dhcp/dns/services/…)
 // live in the per-category files `./network.ts` and `./services.ts`, each owned
@@ -17,13 +15,14 @@
 export interface PfsenseConnectionConfig {
   host: string;
   port: number;
-  apiKey: string;
-  apiSecret: string;
   useTls: boolean;
   acceptInvalidCerts: boolean;
   /** Runtime-only acknowledgement for one insecure connection attempt. */
-  acknowledge_invalid_cert_risk?: boolean;
+  acknowledgeInvalidCertRisk?: boolean;
   timeoutSecs: number;
+  /** Protected `p<token>.localhost` endpoint created by the internal proxy. */
+  internalProxyUrl: string;
+  /** Deprecated transport metadata; outbound proxying belongs to the internal mediator. */
   proxyUrl?: string | null;
 }
 

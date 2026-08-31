@@ -62,6 +62,13 @@ const toastMocks = vi.hoisted(() => ({
 
 const mockIntegrationRegistry = vi.hoisted(() => [
   {
+    key: "pfsense",
+    label: "pfSense",
+    category: "networking",
+    icon: () => null,
+    importPanel: async () => ({ default: () => null }),
+  },
+  {
     key: "netbox",
     label: "NetBox",
     category: "networking",
@@ -1704,6 +1711,268 @@ describe("ConnectionEditor", () => {
       expect(screen.getByTestId("editor-password")).toBeInTheDocument();
       expect(screen.getByTestId("editor-integration-tls-verify")).toBeChecked();
       expect(screen.getByTestId("editor-integration-timeout")).toHaveValue(30);
+    });
+
+    it("exposes independently combinable pfSense API and WebGUI settings", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /pfSense/i }));
+
+      expect(screen.getByTestId("editor-pfsense-api-enabled")).toBeChecked();
+      expect(screen.getByTestId("editor-pfsense-web-enabled")).toBeChecked();
+      expect(screen.getByTestId("editor-pfsense-api-key")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-pfsense-api-secret"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-pfsense-web-username"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-pfsense-web-password"),
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("editor-pfsense-api-enabled"));
+      expect(
+        screen.queryByTestId("editor-pfsense-api-secret"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-pfsense-web-password"),
+      ).toBeInTheDocument();
+    });
+
+    it("persists pfSense modes as metadata and all credentials as named vault references", async () => {
+      let latestConnections: Connection[] = [];
+      renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {
+        latestConnections = connections;
+      });
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "Edge firewall" },
+      });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /pfSense/i }));
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "fw.example.test" },
+      });
+      fireEvent.change(screen.getByTestId("editor-pfsense-api-key"), {
+        target: { value: "api-client-id" },
+      });
+      fireEvent.change(screen.getByTestId("editor-pfsense-api-secret"), {
+        target: { value: "api-client-secret" },
+      });
+      fireEvent.change(screen.getByTestId("editor-pfsense-web-username"), {
+        target: { value: "admin" },
+      });
+      fireEvent.change(screen.getByTestId("editor-pfsense-web-password"), {
+        target: { value: "web-password" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+
+      await waitFor(() => expect(latestConnections).toHaveLength(1));
+      const saved = latestConnections[0];
+      expect(saved.protocol).toBe("integration:pfsense");
+      expect(saved.integration).toEqual(
+        expect.objectContaining({
+          descriptorKey: "pfsense",
+          host: "fw.example.test",
+          providerFields: expect.objectContaining({
+            apiEnabled: true,
+            webEnabled: true,
+          }),
+          credentialRefIds: expect.objectContaining({
+            apiKey: expect.any(String),
+            apiSecret: expect.any(String),
+            webPassword: expect.any(String),
+          }),
+        }),
+      );
+      expect(saved.integration).not.toHaveProperty("providerSecrets");
+
+      const durableInstances = JSON.parse(integrationConfigRaw ?? "[]");
+      expect(durableInstances[0]).toEqual(
+        expect.objectContaining({
+          integrationKey: "pfsense",
+          fields: expect.objectContaining({
+            apiEnabled: "true",
+            webEnabled: "true",
+            webUsername: "admin",
+          }),
+          credentialRefIds: expect.objectContaining({
+            apiKey: expect.any(String),
+            apiSecret: expect.any(String),
+            webPassword: expect.any(String),
+          }),
+        }),
+      );
+      expect(durableInstances[0]).not.toHaveProperty("credentialRefId");
+      expect(JSON.stringify({ saved, durableInstances })).not.toContain(
+        "api-client-secret",
+      );
+      expect(JSON.stringify({ saved, durableInstances })).not.toContain(
+        "web-password",
+      );
+    });
+
+    it("does not rotate saved instance vault refs with stale transient credentials", async () => {
+      let latestConnections: Connection[] = [];
+      const existingCredentialRefs = {
+        authToken: "vault-netbox-auth-token",
+        apiKey: "vault-netbox-api-key",
+        password: "vault-netbox-password",
+      };
+      integrationConfigRaw = JSON.stringify([
+        {
+          id: "netbox-existing",
+          integrationKey: "netbox",
+          name: "Existing NetBox",
+          host: "netbox.example.test",
+          credentialRefId: existingCredentialRefs.authToken,
+          credentialRefIds: existingCredentialRefs,
+          createdAt: "2026-08-31T00:00:00.000Z",
+          updatedAt: "2026-08-31T00:00:00.000Z",
+        },
+      ]);
+      renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {
+        latestConnections = connections;
+      });
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "Existing NetBox connection" },
+      });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /NetBox/i }));
+      const instanceSelector = screen.getByTestId(
+        "editor-integration-instance-id",
+      );
+      await waitFor(() => expect(instanceSelector).not.toBeDisabled());
+
+      fireEvent.change(screen.getByTestId("editor-integration-auth-token"), {
+        target: { value: "stale-auth-token" },
+      });
+      fireEvent.change(screen.getByTestId("editor-integration-api-key"), {
+        target: { value: "stale-api-key" },
+      });
+      fireEvent.change(screen.getByTestId("editor-password"), {
+        target: { value: "stale-password" },
+      });
+      fireEvent.change(instanceSelector, {
+        target: { value: "netbox-existing" },
+      });
+
+      expect(screen.getByTestId("editor-integration-auth-token")).toHaveValue(
+        "",
+      );
+      expect(screen.getByTestId("editor-integration-api-key")).toHaveValue("");
+      expect(screen.getByTestId("editor-password")).toHaveValue("");
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.filter(([command]) => command === "vault_store_secret"),
+      ).toHaveLength(0);
+
+      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+      await waitFor(() => expect(latestConnections).toHaveLength(1));
+
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.filter(([command]) => command === "vault_store_secret"),
+      ).toHaveLength(0);
+      const durableInstances = JSON.parse(integrationConfigRaw ?? "[]");
+      expect(durableInstances).toHaveLength(1);
+      expect(durableInstances[0].credentialRefId).toBe(
+        existingCredentialRefs.authToken,
+      );
+      expect(durableInstances[0].credentialRefIds).toEqual(
+        existingCredentialRefs,
+      );
+      expect(
+        JSON.stringify({ latestConnections, durableInstances }),
+      ).not.toMatch(/stale-(?:auth-token|api-key|password)/);
+    });
+
+    it("clears provider-specific plaintext when deselecting a saved instance", async () => {
+      let latestConnections: Connection[] = [];
+      const existingCredentialRefs = {
+        apiKey: "vault-pfsense-api-key",
+        apiSecret: "vault-pfsense-api-secret",
+        webPassword: "vault-pfsense-web-password",
+      };
+      integrationConfigRaw = JSON.stringify([
+        {
+          id: "pfsense-existing",
+          integrationKey: "pfsense",
+          name: "Existing pfSense",
+          host: "firewall.example.test",
+          fields: {
+            apiEnabled: "true",
+            webEnabled: "true",
+          },
+          credentialRefIds: existingCredentialRefs,
+          createdAt: "2026-08-31T00:00:00.000Z",
+          updatedAt: "2026-08-31T00:00:00.000Z",
+        },
+      ]);
+      renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {
+        latestConnections = connections;
+      });
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "New pfSense connection" },
+      });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /pfSense/i }));
+      const instanceSelector = screen.getByTestId(
+        "editor-integration-instance-id",
+      );
+      await waitFor(() => expect(instanceSelector).not.toBeDisabled());
+      fireEvent.change(instanceSelector, {
+        target: { value: "pfsense-existing" },
+      });
+
+      fireEvent.change(screen.getByTestId("editor-pfsense-api-key"), {
+        target: { value: "stale-pfsense-api-key" },
+      });
+      fireEvent.change(screen.getByTestId("editor-pfsense-api-secret"), {
+        target: { value: "stale-pfsense-api-secret" },
+      });
+      fireEvent.change(screen.getByTestId("editor-pfsense-web-password"), {
+        target: { value: "stale-pfsense-web-password" },
+      });
+      fireEvent.change(instanceSelector, { target: { value: "" } });
+
+      expect(screen.getByTestId("editor-pfsense-api-key")).toHaveValue("");
+      expect(screen.getByTestId("editor-pfsense-api-secret")).toHaveValue("");
+      expect(screen.getByTestId("editor-pfsense-web-password")).toHaveValue("");
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.filter(([command]) => command === "vault_store_secret"),
+      ).toHaveLength(0);
+
+      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+      await waitFor(() => expect(latestConnections).toHaveLength(1));
+
+      const durableInstances = JSON.parse(integrationConfigRaw ?? "[]");
+      const originalInstance = durableInstances.find(
+        (instance: { id?: string }) => instance.id === "pfsense-existing",
+      );
+      expect(originalInstance?.credentialRefIds).toEqual(
+        existingCredentialRefs,
+      );
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.filter(
+            ([command]) =>
+              command === "vault_store_secret" ||
+              command === "vault_delete_secret",
+          ),
+      ).toHaveLength(0);
+      expect(
+        JSON.stringify({ latestConnections, durableInstances }),
+      ).not.toMatch(/stale-pfsense/);
     });
 
     it("should populate generic integration fields for integration-backed connections", async () => {

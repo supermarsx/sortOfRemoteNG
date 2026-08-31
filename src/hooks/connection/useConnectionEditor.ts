@@ -536,6 +536,27 @@ const hostFromBaseUrl = (baseUrl: string | undefined): string => {
   }
 };
 
+export const normalizePfsenseProviderFields = (
+  fields: IntegrationConnectionSettings["providerFields"],
+): NonNullable<IntegrationConnectionSettings["providerFields"]> => {
+  const current = fields ?? {};
+  const legacyUseTls = current.useTls ?? true;
+  const legacyInvalidCerts = current.acceptInvalidCerts ?? false;
+  const legacyPort = current.port ?? 443;
+  return {
+    apiEnabled: current.apiEnabled ?? true,
+    apiPort: current.apiPort ?? legacyPort,
+    apiUseTls: current.apiUseTls ?? legacyUseTls,
+    apiAcceptInvalidCerts: current.apiAcceptInvalidCerts ?? legacyInvalidCerts,
+    webEnabled: current.webEnabled ?? true,
+    webPort: current.webPort ?? legacyPort,
+    webUseTls: current.webUseTls ?? legacyUseTls,
+    webAcceptInvalidCerts: current.webAcceptInvalidCerts ?? legacyInvalidCerts,
+    webAutoLogin: current.webAutoLogin ?? true,
+    ...current,
+  };
+};
+
 const buildIntegrationSettings = (
   protocol: string | undefined,
   current?: IntegrationConnectionFormSettings,
@@ -561,7 +582,9 @@ const buildIntegrationSettings = (
             timeout: current?.timeout ?? source?.timeout,
           }),
         )
-      : current?.providerFields;
+      : descriptorKey === "pfsense"
+        ? normalizePfsenseProviderFields(current?.providerFields)
+        : current?.providerFields;
   const exchangeFields =
     descriptorKey === EXCHANGE_INTEGRATION_KEY
       ? normalizeExchangeConnectionFields(providerFields, {
@@ -730,11 +753,16 @@ const integrationSecretInput = (
   if (integration.apiKey) secrets.apiKey = integration.apiKey;
   if (integration.password) secrets.password = integration.password;
 
+  // pfSense has independently usable API and WebGUI credentials. There is no
+  // meaningful single "primary" secret; named vault references are the source
+  // of truth and allow both credential sets to coexist.
   const secret =
-    integration.authToken ||
-    integration.apiKey ||
-    integration.password ||
-    Object.values(integration.providerSecrets ?? {}).find(Boolean);
+    integration.descriptorKey === "pfsense"
+      ? undefined
+      : integration.authToken ||
+        integration.apiKey ||
+        integration.password ||
+        Object.values(integration.providerSecrets ?? {}).find(Boolean);
   return {
     ...(secret ? { secret } : {}),
     ...(Object.keys(secrets).length > 0 ? { secrets } : {}),
@@ -1229,8 +1257,7 @@ export function useConnectionEditor(
       }
 
       const integration = runtimeConnection.integration as
-        | IntegrationConnectionLaunchSettings
-        | undefined;
+        IntegrationConnectionLaunchSettings | undefined;
       if (!integration?.descriptorKey) {
         throw new Error(
           "Choose a registered integration type before saving this connection.",
@@ -1332,8 +1359,7 @@ export function useConnectionEditor(
       }
       setFormData((current) => {
         const currentIntegration = current.integration as
-          | IntegrationConnectionLaunchSettings
-          | undefined;
+          IntegrationConnectionLaunchSettings | undefined;
         const hasRuntimeSecrets = Boolean(
           currentIntegration?.authToken ||
           currentIntegration?.apiKey ||

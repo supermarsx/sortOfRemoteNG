@@ -5,23 +5,27 @@ use serde::{Deserialize, Serialize};
 // ── Connection ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PfsenseConnectionConfig {
     pub host: String,
     pub port: u16,
-    #[serde(default)]
-    pub api_key: String,
-    #[serde(default)]
-    pub api_secret: String,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_true", alias = "use_tls")]
     pub use_tls: bool,
-    #[serde(default)]
+    #[serde(default, alias = "accept_invalid_certs")]
     pub accept_invalid_certs: bool,
     /// Runtime-only acknowledgement for this insecure connection attempt.
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing, alias = "acknowledge_invalid_cert_risk")]
     pub acknowledge_invalid_cert_risk: bool,
-    #[serde(default = "default_timeout")]
+    #[serde(default = "default_timeout", alias = "timeout_secs")]
     pub timeout_secs: u64,
-    #[serde(default, alias = "proxyUrl")]
+    /// Capability-protected internal reverse-proxy endpoint. API requests must
+    /// never target the appliance directly from this client.
+    #[serde(default, alias = "internal_proxy_url")]
+    pub internal_proxy_url: String,
+    /// Retained for persisted/wire compatibility. The frontend passes this to
+    /// the internal mediator as `upstream_proxy_url`; this client never applies
+    /// it to its loopback hop.
+    #[serde(default, alias = "proxy_url")]
     pub proxy_url: Option<String>,
 }
 

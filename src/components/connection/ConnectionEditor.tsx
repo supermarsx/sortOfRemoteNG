@@ -28,6 +28,7 @@ import {
   PROTOCOL_CATEGORY_LABEL_KEYS,
   PROTOCOL_CATEGORY_LABELS,
   getIntegrationKeyFromProtocol,
+  normalizePfsenseProviderFields,
   type ProtocolOption,
   type ConnectionEditorMgr,
 } from "../../hooks/connection/useConnectionEditor";
@@ -838,10 +839,17 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
     (instance) => instance.id === integration.instanceId,
   );
   const hasUnresolvedSelection = !!integration.instanceId && !selectedInstance;
+  const clearedTransientSecrets: Partial<IntegrationConnectionFormSettings> = {
+    authToken: undefined,
+    apiKey: undefined,
+    password: undefined,
+    providerSecrets: undefined,
+  };
 
   const selectInstance = (id: string) => {
     if (!id) {
       updateIntegration({
+        ...clearedTransientSecrets,
         instanceId: "",
         instanceName: "",
         credentialRefId: undefined,
@@ -853,6 +861,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
     if (!instance) return;
     const fields = instance.fields ?? {};
     const patch: Partial<IntegrationConnectionFormSettings> = {
+      ...clearedTransientSecrets,
       instanceId: instance.id,
       instanceName: instance.name,
       credentialRefId: instance.credentialRefId,
@@ -875,6 +884,8 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
           timeout: integration.timeout,
         }),
       );
+    } else if (descriptorKey === "pfsense") {
+      patch.providerFields = normalizePfsenseProviderFields(fields);
     }
     updateIntegration(patch);
   };
@@ -937,6 +948,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
     </div>
   );
   const isExchange = descriptorKey === EXCHANGE_INTEGRATION_KEY;
+  const isPfsense = descriptorKey === "pfsense";
   const exchangeFields = normalizeExchangeConnectionFields(
     integration.providerFields,
     {
@@ -979,6 +991,247 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
       },
     });
   };
+
+  const pfsenseFields = integration.providerFields ?? {};
+  const pfsenseSecrets = integration.providerSecrets ?? {};
+  const pfsenseFlag = (key: string, fallback: boolean): boolean => {
+    const value = pfsenseFields[key];
+    return value === undefined
+      ? fallback
+      : value !== false && value !== "false";
+  };
+  const updatePfsenseField = (
+    key: string,
+    value: string | number | boolean,
+  ) => {
+    updateIntegration({
+      providerFields: { ...pfsenseFields, [key]: value },
+    });
+  };
+  const updatePfsenseSecret = (key: string, value: string) => {
+    updateIntegration({
+      providerSecrets: { ...pfsenseSecrets, [key]: value },
+    });
+  };
+
+  if (isPfsense) {
+    const apiEnabled = pfsenseFlag("apiEnabled", true);
+    const webEnabled = pfsenseFlag("webEnabled", true);
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <div>{instanceSelector}</div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-textSecondary)]">
+              {t("connectionEditor.integration.instanceName", "Instance Name")}
+            </label>
+            <input
+              type="text"
+              data-testid="editor-integration-instance-name"
+              value={integration.instanceName || ""}
+              onChange={(event) =>
+                updateIntegration({ instanceName: event.target.value })
+              }
+              className="sor-form-input text-sm"
+              placeholder="Edge firewall"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-[var(--color-textSecondary)]">
+            {t("connectionEditor.integration.host", "Host")}{" "}
+            <span className="text-error">*</span>
+          </label>
+          <input
+            type="text"
+            data-testid="editor-hostname"
+            value={integration.host || ""}
+            onChange={(event) =>
+              updateIntegration({ host: event.target.value })
+            }
+            className="sor-form-input text-sm font-mono"
+            placeholder="firewall.example.com"
+          />
+        </div>
+
+        <div className="rounded-lg border border-[var(--color-border)] p-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Checkbox
+              checked={apiEnabled}
+              onChange={(checked) => updatePfsenseField("apiEnabled", checked)}
+              variant="form"
+              data-testid="editor-pfsense-api-enabled"
+            />
+            Use REST API management
+          </label>
+          {apiEnabled && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-xs text-[var(--color-textSecondary)]">
+                  API port
+                </label>
+                <NumberInput
+                  value={Number(pfsenseFields.apiPort ?? 443)}
+                  onChange={(value: number) =>
+                    updatePfsenseField("apiPort", value)
+                  }
+                  min={1}
+                  max={65535}
+                  variant="form"
+                  data-testid="editor-pfsense-api-port"
+                />
+              </div>
+              <label className="flex items-center gap-2 self-end rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm">
+                <Checkbox
+                  checked={pfsenseFlag("apiUseTls", true)}
+                  onChange={(checked) =>
+                    updatePfsenseField("apiUseTls", checked)
+                  }
+                  variant="form"
+                  data-testid="editor-pfsense-api-tls"
+                />
+                API HTTPS
+              </label>
+              <div>
+                <label className="mb-1 block text-xs text-[var(--color-textSecondary)]">
+                  API key
+                </label>
+                <PasswordInput
+                  value={pfsenseSecrets.apiKey || integration.apiKey || ""}
+                  onChange={(event) =>
+                    updatePfsenseSecret("apiKey", event.target.value)
+                  }
+                  isSaved={false}
+                  className="sor-form-input text-sm"
+                  data-testid="editor-pfsense-api-key"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-[var(--color-textSecondary)]">
+                  API secret
+                </label>
+                <PasswordInput
+                  value={pfsenseSecrets.apiSecret || ""}
+                  onChange={(event) =>
+                    updatePfsenseSecret("apiSecret", event.target.value)
+                  }
+                  isSaved={false}
+                  className="sor-form-input text-sm"
+                  data-testid="editor-pfsense-api-secret"
+                />
+              </div>
+              <label className="col-span-2 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm">
+                <Checkbox
+                  checked={pfsenseFlag("apiAcceptInvalidCerts", false)}
+                  onChange={(checked) =>
+                    updatePfsenseField("apiAcceptInvalidCerts", checked)
+                  }
+                  variant="form"
+                  data-testid="editor-pfsense-api-invalid-certs"
+                />
+                Accept self-signed API certificate
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-[var(--color-border)] p-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Checkbox
+              checked={webEnabled}
+              onChange={(checked) => updatePfsenseField("webEnabled", checked)}
+              variant="form"
+              data-testid="editor-pfsense-web-enabled"
+            />
+            Use browser WebGUI
+          </label>
+          {webEnabled && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-xs text-[var(--color-textSecondary)]">
+                  WebGUI port
+                </label>
+                <NumberInput
+                  value={Number(pfsenseFields.webPort ?? 443)}
+                  onChange={(value: number) =>
+                    updatePfsenseField("webPort", value)
+                  }
+                  min={1}
+                  max={65535}
+                  variant="form"
+                  data-testid="editor-pfsense-web-port"
+                />
+              </div>
+              <label className="flex items-center gap-2 self-end rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm">
+                <Checkbox
+                  checked={pfsenseFlag("webUseTls", true)}
+                  onChange={(checked) =>
+                    updatePfsenseField("webUseTls", checked)
+                  }
+                  variant="form"
+                  data-testid="editor-pfsense-web-tls"
+                />
+                WebGUI HTTPS
+              </label>
+              <div>
+                <label className="mb-1 block text-xs text-[var(--color-textSecondary)]">
+                  WebGUI username
+                </label>
+                <input
+                  type="text"
+                  value={String(pfsenseFields.webUsername ?? "")}
+                  onChange={(event) =>
+                    updatePfsenseField("webUsername", event.target.value)
+                  }
+                  className="sor-form-input text-sm"
+                  data-testid="editor-pfsense-web-username"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-[var(--color-textSecondary)]">
+                  WebGUI password
+                </label>
+                <PasswordInput
+                  value={
+                    pfsenseSecrets.webPassword || integration.password || ""
+                  }
+                  onChange={(event) =>
+                    updatePfsenseSecret("webPassword", event.target.value)
+                  }
+                  isSaved={false}
+                  className="sor-form-input text-sm"
+                  data-testid="editor-pfsense-web-password"
+                />
+              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm">
+                <Checkbox
+                  checked={pfsenseFlag("webAutoLogin", true)}
+                  onChange={(checked) =>
+                    updatePfsenseField("webAutoLogin", checked)
+                  }
+                  variant="form"
+                  data-testid="editor-pfsense-web-auto-login"
+                />
+                Automated login
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm">
+                <Checkbox
+                  checked={pfsenseFlag("webAcceptInvalidCerts", false)}
+                  onChange={(checked) =>
+                    updatePfsenseField("webAcceptInvalidCerts", checked)
+                  }
+                  variant="form"
+                  data-testid="editor-pfsense-web-invalid-certs"
+                />
+                Accept self-signed WebGUI certificate
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (isExchange) {
     return (

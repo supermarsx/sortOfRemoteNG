@@ -198,8 +198,7 @@ describe("useIntegrationConfigStore (R1: encrypted cred persistence)", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     let created:
-      | Awaited<ReturnType<typeof result.current.createInstance>>
-      | undefined;
+      Awaited<ReturnType<typeof result.current.createInstance>> | undefined;
     await act(async () => {
       created = await result.current.createInstance({
         id: "adopt-and-extend",
@@ -279,6 +278,127 @@ describe("useIntegrationConfigStore (R1: encrypted cred persistence)", () => {
       password: "password-ref",
     });
     expect(operationOrder).toEqual(["cas", "cas", "delete:client-secret-ref"]);
+  });
+
+  it("distinguishes absent secrets from transient vault read failures", async () => {
+    const stored = JSON.stringify([
+      {
+        id: "pfsense-read-state",
+        integrationKey: "pfsense",
+        name: "Firewall",
+        credentialRefId: "legacy-primary-ref",
+        credentialRefIds: { apiKey: "api-key-ref" },
+        createdAt: "2026-08-31T00:00:00.000Z",
+        updatedAt: "2026-08-31T00:00:00.000Z",
+      },
+    ]);
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "read_app_data") return Promise.resolve(stored);
+        if (cmd === "vault_read_secret") {
+          return Promise.reject(
+            new Error(`temporary vault failure for ${String(args?.account)}`),
+          );
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const { result } = renderHook(() => useIntegrationConfigStore());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const instance = result.current.instances[0]!;
+
+    await expect(result.current.readSecretState(instance)).resolves.toEqual({
+      status: "failed",
+      error: "temporary vault failure for legacy-primary-ref",
+    });
+    await expect(
+      result.current.readNamedSecretState(instance, "apiKey"),
+    ).resolves.toEqual({
+      status: "failed",
+      error: "temporary vault failure for api-key-ref",
+    });
+    await expect(
+      result.current.readNamedSecretState(instance, "notConfigured"),
+    ).resolves.toEqual({ status: "absent" });
+  });
+
+  it("clears a legacy primary reference before retiring its vault blob", async () => {
+    let stored: string | null = JSON.stringify([
+      {
+        id: "pfsense-migrated",
+        integrationKey: "pfsense",
+        name: "Firewall",
+        credentialRefId: "legacy-primary-ref",
+        credentialRefIds: {
+          apiKey: "api-key-ref",
+          apiSecret: "api-secret-ref",
+        },
+        createdAt: "2026-08-31T00:00:00.000Z",
+        updatedAt: "2026-08-31T00:00:00.000Z",
+      },
+    ]);
+    const operationOrder: string[] = [];
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "read_app_data") return Promise.resolve(stored);
+        if (cmd === "compare_and_swap_app_data") {
+          if (args?.expected !== stored) return Promise.resolve(false);
+          stored = String(args?.replacement ?? "");
+          operationOrder.push("cas");
+          return Promise.resolve(true);
+        }
+        if (cmd === "vault_delete_secret") {
+          operationOrder.push(`delete:${String(args?.account)}`);
+          return Promise.resolve(undefined);
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const { result } = renderHook(() => useIntegrationConfigStore());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.clearPrimarySecret("pfsense-migrated");
+    });
+
+    const durable = JSON.parse(stored!)[0];
+    expect(durable).not.toHaveProperty("credentialRefId");
+    expect(durable.credentialRefIds).toEqual({
+      apiKey: "api-key-ref",
+      apiSecret: "api-secret-ref",
+    });
+    expect(operationOrder).toEqual(["cas", "delete:legacy-primary-ref"]);
+  });
+
+  it("never deletes a primary vault blob when clearing cannot commit", async () => {
+    const stored = JSON.stringify([
+      {
+        id: "pfsense-conflict",
+        integrationKey: "pfsense",
+        name: "Firewall",
+        credentialRefId: "legacy-primary-ref",
+        createdAt: "2026-08-31T00:00:00.000Z",
+        updatedAt: "2026-08-31T00:00:00.000Z",
+      },
+    ]);
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "read_app_data") return Promise.resolve(stored);
+      if (cmd === "compare_and_swap_app_data") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useIntegrationConfigStore());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await expect(
+      result.current.clearPrimarySecret("pfsense-conflict"),
+    ).rejects.toThrow("changed concurrently");
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "vault_delete_secret",
+      expect.anything(),
+    );
   });
 
   it("surfaces corrupt durable JSON instead of silently replacing it", async () => {

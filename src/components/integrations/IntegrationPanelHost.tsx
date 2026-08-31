@@ -168,12 +168,14 @@ export const IntegrationPanelHost: React.FC<IntegrationPanelHostProps> = ({
           secrets.password = integrationSettings.password;
         }
         const primarySecret =
-          integrationSettings.authToken ||
-          integrationSettings.apiKey ||
-          integrationSettings.password ||
-          Object.values(integrationSettings.providerSecrets ?? {}).find(
-            Boolean,
-          );
+          integrationSettings.descriptorKey === "pfsense"
+            ? undefined
+            : integrationSettings.authToken ||
+              integrationSettings.apiKey ||
+              integrationSettings.password ||
+              Object.values(integrationSettings.providerSecrets ?? {}).find(
+                Boolean,
+              );
         const input: IntegrationInstanceInput = {
           integrationKey:
             existing?.integrationKey ?? integrationSettings.descriptorKey,

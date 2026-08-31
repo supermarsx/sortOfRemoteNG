@@ -45,6 +45,16 @@ describe("PfsensePanel session lifecycle", () => {
           return Promise.resolve(true);
         }
         if (command === "vault_store_secret") return Promise.resolve(undefined);
+        if (command === "start_basic_auth_proxy") {
+          return Promise.resolve({
+            local_port: 43123,
+            session_id: "api-proxy-session",
+            proxy_url:
+              "http://p0123456789abcdef0123456789abcdef.localhost:43123/",
+          });
+        }
+        if (command === "stop_basic_auth_proxy")
+          return Promise.resolve(undefined);
         if (command === "pfsense_connect") {
           return Promise.resolve({
             hostname: "fw-edge",
@@ -78,10 +88,10 @@ describe("PfsensePanel session lifecycle", () => {
     fireEvent.change(screen.getByLabelText("API secret"), {
       target: { value: "api-secret" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /^Connect$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Connect API$/i }));
 
     expect(
-      await screen.findByRole("button", { name: /^Disconnect$/i }),
+      await screen.findByRole("button", { name: /^Disconnect API$/i }),
     ).toBeVisible();
     expect(invokeMock).toHaveBeenCalledWith(
       "pfsense_connect",
@@ -89,16 +99,21 @@ describe("PfsensePanel session lifecycle", () => {
         id: expect.any(String),
         config: expect.objectContaining({
           host: "fw.example.test",
-          apiKey: "api-key",
-          apiSecret: "api-secret",
-          acknowledge_invalid_cert_risk: false,
+          internalProxyUrl:
+            "http://p0123456789abcdef0123456789abcdef.localhost:43123/",
+          acknowledgeInvalidCertRisk: false,
         }),
       }),
     );
+    const nativeConfig = invokeMock.mock.calls.find(
+      ([command]) => command === "pfsense_connect",
+    )?.[1]?.config as Record<string, unknown>;
+    expect(nativeConfig).not.toHaveProperty("apiKey");
+    expect(nativeConfig).not.toHaveProperty("apiSecret");
 
     await disconnectIntegrationSession("pfsense-session");
     expect(
-      await screen.findByRole("button", { name: /^Connect$/i }),
+      await screen.findByRole("button", { name: /^Connect API$/i }),
     ).toBeVisible();
     expect(invokeMock).toHaveBeenCalledWith("pfsense_disconnect", {
       id: expect.any(String),
@@ -109,7 +124,7 @@ describe("PfsensePanel session lifecycle", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: /^Disconnect$/i }),
+        screen.getByRole("button", { name: /^Disconnect API$/i }),
       ).toBeVisible(),
     );
     expect(

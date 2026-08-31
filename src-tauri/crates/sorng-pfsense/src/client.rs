@@ -23,11 +23,6 @@ impl PfsenseClient {
                 "request timeout must be greater than zero",
             ));
         }
-        if config.api_key.trim().is_empty() || config.api_secret.trim().is_empty() {
-            return Err(PfsenseError::auth(
-                "API key and API secret must both be provided",
-            ));
-        }
         let acknowledged = std::mem::take(&mut config.acknowledge_invalid_cert_risk);
         let effective_tls_skip = config.use_tls && config.accept_invalid_certs;
         if effective_tls_skip != acknowledged {
@@ -36,40 +31,24 @@ impl PfsenseClient {
             ));
         }
 
-        let mut builder = HttpClient::builder()
-            .danger_accept_invalid_certs(effective_tls_skip)
-            .timeout(Duration::from_secs(config.timeout_secs));
-        if let Some(proxy_url) = config
-            .proxy_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            let proxy = reqwest::Proxy::all(proxy_url)
-                .map_err(|e| PfsenseError::connection(format!("invalid proxy URL: {e}")))?;
-            builder = builder.proxy(proxy);
-        }
-        let http = builder
+        validate_internal_proxy_url(&config.internal_proxy_url)?;
+
+        // TLS verification and any configured external/global proxy are owned
+        // by the internal mediator's upstream client. This client talks only to
+        // its protected loopback HTTP endpoint; proxying this hop again could
+        // leak the local capability URL to an external proxy.
+        let http = HttpClient::builder()
+            .timeout(Duration::from_secs(config.timeout_secs))
             .build()
             .map_err(|e| PfsenseError::connection(format!("HTTP client build: {e}")))?;
         Ok(Self { config, http })
     }
 
-    fn scheme(&self) -> &str {
-        if self.config.use_tls {
-            "https"
-        } else {
-            "http"
-        }
-    }
-
     fn base_url(&self) -> String {
-        format!(
-            "{}://{}:{}",
-            self.scheme(),
-            self.config.host,
-            self.config.port
-        )
+        self.config
+            .internal_proxy_url
+            .trim_end_matches('/')
+            .to_string()
     }
 
     fn api_url(&self, endpoint: &str) -> String {
@@ -81,17 +60,6 @@ impl PfsenseClient {
     }
 
     // ── Auth ─────────────────────────────────────────────────────
-
-    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if !self.config.api_key.is_empty() {
-            req.header(
-                "Authorization",
-                format!("{} {}", self.config.api_key, self.config.api_secret),
-            )
-        } else {
-            req
-        }
-    }
 
     fn map_status_error(&self, status: u16, body: &str) -> PfsenseError {
         match status {
@@ -108,7 +76,8 @@ impl PfsenseClient {
         let url = self.api_url(endpoint);
         debug!("PFSENSE GET {url}");
         let resp = self
-            .apply_auth(self.http.get(&url))
+            .http
+            .get(&url)
             .send()
             .await
             .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
@@ -134,7 +103,9 @@ impl PfsenseClient {
         let url = self.api_url(endpoint);
         debug!("PFSENSE POST {url}");
         let resp = self
-            .apply_auth(self.http.post(&url).json(body))
+            .http
+            .post(&url)
+            .json(body)
             .send()
             .await
             .map_err(|e| Self::request_error(format!("POST {url}"), e))?;
@@ -156,7 +127,9 @@ impl PfsenseClient {
         let url = self.api_url(endpoint);
         debug!("PFSENSE PUT {url}");
         let resp = self
-            .apply_auth(self.http.put(&url).json(body))
+            .http
+            .put(&url)
+            .json(body)
             .send()
             .await
             .map_err(|e| Self::request_error(format!("PUT {url}"), e))?;
@@ -174,7 +147,8 @@ impl PfsenseClient {
         let url = self.api_url(endpoint);
         debug!("PFSENSE DELETE {url}");
         let resp = self
-            .apply_auth(self.http.delete(&url))
+            .http
+            .delete(&url)
             .send()
             .await
             .map_err(|e| Self::request_error(format!("DELETE {url}"), e))?;
@@ -192,7 +166,8 @@ impl PfsenseClient {
         let url = self.api_url(endpoint);
         debug!("PFSENSE DELETE {url}");
         let resp = self
-            .apply_auth(self.http.delete(&url))
+            .http
+            .delete(&url)
             .send()
             .await
             .map_err(|e| Self::request_error(format!("DELETE {url}"), e))?;
@@ -208,7 +183,8 @@ impl PfsenseClient {
         let url = self.api_url(endpoint);
         debug!("PFSENSE GET bytes {url}");
         let resp = self
-            .apply_auth(self.http.get(&url))
+            .http
+            .get(&url)
             .send()
             .await
             .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
@@ -262,4 +238,34 @@ impl PfsenseClient {
             PfsenseError::http(message)
         }
     }
+}
+
+fn validate_internal_proxy_url(raw: &str) -> PfsenseResult<()> {
+    let url = reqwest::Url::parse(raw.trim()).map_err(|_| {
+        PfsenseError::invalid_request("pfSense API requires a valid protected internal proxy URL")
+    })?;
+    let host = url.host_str().unwrap_or_default();
+    let token = host
+        .strip_prefix('p')
+        .and_then(|value| value.strip_suffix(".localhost"));
+    let protected_host = token.is_some_and(|value| {
+        value.len() == 32
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    });
+    if url.scheme() != "http"
+        || !protected_host
+        || url.port().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(PfsenseError::invalid_request(
+            "pfSense API requests must use the capability-protected internal proxy",
+        ));
+    }
+    Ok(())
 }

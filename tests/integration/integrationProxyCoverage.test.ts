@@ -133,8 +133,8 @@ const FRONTEND_PROXY_CASES = [
     name: "pfSense",
     hookFile: "src/components/integrations/pfsense/PfsensePanel.tsx",
     typeFile: "src/types/pfsense/index.ts",
-    helperCall: 'withGlobalHttpProxy(attemptConfig, "camel")',
-    typeField: "proxyUrl?:",
+    helperCall: "getGlobalHttpProxyUrl()",
+    typeField: "internalProxyUrl:",
   },
   {
     name: "Prometheus",
@@ -253,7 +253,8 @@ const RUST_PROXY_CASES = [
     name: "pfSense",
     typeFile: "src-tauri/crates/sorng-pfsense/src/types.rs",
     proxyFiles: ["src-tauri/crates/sorng-pfsense/src/client.rs"],
-    wire: "alias",
+    wire: "camel",
+    proxyPolicy: "protectedInternalMediator",
   },
   {
     name: "Prometheus",
@@ -301,9 +302,11 @@ describe("integration HTTP proxy coverage contract", () => {
     (testCase) => {
       const { hookFile, helperCall } = testCase;
       const hookSource = compact(readWorkspaceFile(hookFile));
-      const helperName = helperCall.startsWith("withGlobalHttpProxyArgs")
-        ? "withGlobalHttpProxyArgs"
-        : "withGlobalHttpProxy";
+      const helperName = helperCall.startsWith("getGlobalHttpProxyUrl")
+        ? "getGlobalHttpProxyUrl"
+        : helperCall.startsWith("withGlobalHttpProxyArgs")
+          ? "withGlobalHttpProxyArgs"
+          : "withGlobalHttpProxy";
 
       expect(hookSource).toContain(helperName);
       expect(hookSource).toContain(compact(helperCall));
@@ -333,6 +336,14 @@ describe("integration HTTP proxy coverage contract", () => {
           "vmrest is an HTTP-only local management endpoint; proxies are not permitted",
         );
         expect(proxySource).toContain("normalize_loopback_host");
+      } else if (
+        "proxyPolicy" in testCase &&
+        testCase.proxyPolicy === "protectedInternalMediator"
+      ) {
+        expect(proxySource).toContain("validate_internal_proxy_url");
+        expect(proxySource).toContain("capability-protected internal proxy");
+        expect(proxySource).toContain("internal_proxy_url");
+        expect(proxySource).not.toContain("reqwest::Proxy::all");
       } else {
         expect(proxySource).toContain("reqwest::Proxy::all");
         expect(proxySource).toMatch(/builder\s*=\s*builder\.proxy\(proxy\)/);

@@ -33,9 +33,12 @@ async fn spawn_server(
                 request.lines().next().unwrap(),
                 "GET /api/v1/status/system HTTP/1.1"
             );
-            assert!(request
-                .lines()
-                .any(|line| line.eq_ignore_ascii_case("authorization: key-id key-secret")));
+            assert!(
+                !request
+                    .lines()
+                    .any(|line| line.to_ascii_lowercase().starts_with("authorization:")),
+                "credentials are injected by the internal mediator, not sent by the loopback client"
+            );
             let response = format!(
                 "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 expected.status,
@@ -53,12 +56,11 @@ fn insecure_tls_requires_a_matching_runtime_acknowledgement() {
     let mut cfg = PfsenseConnectionConfig {
         host: "pfsense.example.test".into(),
         port: 443,
-        api_key: "test-key".into(),
-        api_secret: "test-secret".into(),
         use_tls: true,
         accept_invalid_certs: true,
         acknowledge_invalid_cert_risk: false,
         timeout_secs: 5,
+        internal_proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:1/".into(),
         proxy_url: None,
     };
     assert!(PfsenseClient::new(cfg.clone()).is_err());
@@ -70,20 +72,75 @@ fn config(address: std::net::SocketAddr) -> PfsenseConnectionConfig {
     PfsenseConnectionConfig {
         host: address.ip().to_string(),
         port: address.port(),
-        api_key: "key-id".into(),
-        api_secret: "key-secret".into(),
         use_tls: false,
         accept_invalid_certs: false,
         acknowledge_invalid_cert_risk: false,
         timeout_secs: 5,
+        internal_proxy_url: format!(
+            "http://p0123456789abcdef0123456789abcdef.localhost:{}/",
+            address.port()
+        ),
         proxy_url: None,
     }
+}
+
+#[test]
+fn config_rejects_direct_or_unprotected_api_targets() {
+    let address: std::net::SocketAddr = "127.0.0.1:8443".parse().unwrap();
+    let mut cfg = config(address);
+    for unsafe_url in [
+        "https://pfsense.example.test:443/",
+        "http://127.0.0.1:8443/",
+        "http://p0123456789abcdef0123456789abcdef.localhost:8443/api/",
+    ] {
+        cfg.internal_proxy_url = unsafe_url.into();
+        let error = match PfsenseClient::new(cfg.clone()) {
+            Ok(_) => panic!("unsafe URL must fail"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("protected internal proxy"));
+    }
+}
+
+#[test]
+fn config_accepts_legacy_credential_fields_without_retaining_them() {
+    let camel: PfsenseConnectionConfig = serde_json::from_value(serde_json::json!({
+        "host": "fw.test",
+        "port": 443,
+        "apiKey": "id",
+        "apiSecret": "secret",
+        "useTls": true,
+        "acceptInvalidCerts": false,
+        "timeoutSecs": 10,
+        "internalProxyUrl": "http://p0123456789abcdef0123456789abcdef.localhost:1234/"
+    }))
+    .unwrap();
+    assert_eq!(camel.timeout_secs, 10);
+    let serialized_camel = serde_json::to_value(&camel).unwrap();
+    assert!(serialized_camel.get("apiKey").is_none());
+    assert!(serialized_camel.get("apiSecret").is_none());
+
+    let snake: PfsenseConnectionConfig = serde_json::from_value(serde_json::json!({
+        "host": "fw.test",
+        "port": 443,
+        "api_key": "legacy-id",
+        "api_secret": "legacy-secret",
+        "use_tls": true,
+        "accept_invalid_certs": false,
+        "timeout_secs": 10,
+        "internal_proxy_url": "http://p0123456789abcdef0123456789abcdef.localhost:1234/"
+    }))
+    .unwrap();
+    assert_eq!(snake.timeout_secs, 10);
+    let serialized_snake = serde_json::to_value(&snake).unwrap();
+    assert!(serialized_snake.get("apiKey").is_none());
+    assert!(serialized_snake.get("apiSecret").is_none());
 }
 
 const SYSTEM_BODY: &str = r#"{"status":"ok","code":200,"return":0,"message":"","data":{"hostname":"edge-fw","system_version":"2.7.2","platform":"pfSense Plus"}}"#;
 
 #[tokio::test]
-async fn connect_and_ping_use_system_status_probe_auth_and_map_lifecycle() {
+async fn connect_and_ping_use_internal_proxy_path_and_map_lifecycle() {
     let (address, server) = spawn_server(vec![
         ExpectedResponse {
             status: "200 OK",

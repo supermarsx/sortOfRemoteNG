@@ -74,6 +74,13 @@ export interface IntegrationInstanceInput {
   secrets?: Record<string, string | undefined>;
 }
 
+/** Result of a vault read that preserves the difference between no configured
+ * reference and a configured secret that could not be read. */
+export type IntegrationSecretReadState =
+  | { status: "absent" }
+  | { status: "loaded"; value: string }
+  | { status: "failed"; error: string };
+
 const normalizeError = (error: unknown): string =>
   typeof error === "string"
     ? error
@@ -353,20 +360,51 @@ export function useIntegrationConfigStore() {
     [],
   );
 
-  /** Read an instance's secret back from the OS vault, or null if none/unavailable. */
-  const readSecret = useCallback(
-    async (instance: IntegrationInstance): Promise<string | null> => {
-      if (!instance.credentialRefId) return null;
+  const readSecretRefState = useCallback(
+    async (credentialRefId?: string): Promise<IntegrationSecretReadState> => {
+      if (!credentialRefId) return { status: "absent" };
       try {
-        return await SecureStorage.vaultReadSecret(
+        const value = await SecureStorage.vaultReadSecret(
           INTEGRATION_VAULT_SERVICE,
-          instance.credentialRefId,
+          credentialRefId,
         );
-      } catch {
-        return null;
+        return typeof value === "string"
+          ? { status: "loaded", value }
+          : {
+              status: "failed",
+              error: "Credential vault returned an invalid secret value",
+            };
+      } catch (error) {
+        return { status: "failed", error: normalizeError(error) };
       }
     },
     [],
+  );
+
+  /** Read a primary secret without collapsing vault failure into absence. */
+  const readSecretState = useCallback(
+    (instance: IntegrationInstance): Promise<IntegrationSecretReadState> =>
+      readSecretRefState(instance.credentialRefId),
+    [readSecretRefState],
+  );
+
+  /** Read a named secret without collapsing vault failure into absence. */
+  const readNamedSecretState = useCallback(
+    (
+      instance: IntegrationInstance,
+      name: string,
+    ): Promise<IntegrationSecretReadState> =>
+      readSecretRefState(instance.credentialRefIds?.[name]),
+    [readSecretRefState],
+  );
+
+  /** Read an instance's secret back from the OS vault, or null if none/unavailable. */
+  const readSecret = useCallback(
+    async (instance: IntegrationInstance): Promise<string | null> => {
+      const state = await readSecretState(instance);
+      return state.status === "loaded" ? state.value : null;
+    },
+    [readSecretState],
   );
 
   /** Read a named vault secret, or null if the integration has no such secret. */
@@ -375,18 +413,10 @@ export function useIntegrationConfigStore() {
       instance: IntegrationInstance,
       name: string,
     ): Promise<string | null> => {
-      const credentialRefId = instance.credentialRefIds?.[name];
-      if (!credentialRefId) return null;
-      try {
-        return await SecureStorage.vaultReadSecret(
-          INTEGRATION_VAULT_SERVICE,
-          credentialRefId,
-        );
-      } catch {
-        return null;
-      }
+      const state = await readNamedSecretState(instance, name);
+      return state.status === "loaded" ? state.value : null;
     },
-    [],
+    [readNamedSecretState],
   );
 
   const writeNamedSecrets = useCallback(
@@ -545,6 +575,41 @@ export function useIntegrationConfigStore() {
     [writeSecret, writeNamedSecrets],
   );
 
+  /**
+   * Remove an instance's legacy primary-secret reference durably, then retire
+   * its vault blob. Named references are preserved. The delete runs only after
+   * the compare-and-swap commits, so a crash or CAS conflict can leave a safe
+   * duplicate but can never leave the durable record pointing at deleted data.
+   */
+  const clearPrimarySecret = useCallback(
+    async (id: string): Promise<IntegrationInstance> => {
+      return enqueueMutation(async (current) => {
+        const existing = current.find((instance) => instance.id === id);
+        if (!existing) {
+          throw new Error(`Integration instance "${id}" no longer exists`);
+        }
+        if (!existing.credentialRefId) {
+          return { next: current, result: existing };
+        }
+
+        const retiredRef = existing.credentialRefId;
+        const updated: IntegrationInstance = {
+          ...existing,
+          updatedAt: new Date().toISOString(),
+        };
+        delete updated.credentialRefId;
+        return {
+          next: current.map((instance) =>
+            instance.id === id ? updated : instance,
+          ),
+          result: updated,
+          afterCommit: () => deleteVaultRefs([retiredRef]),
+        };
+      });
+    },
+    [],
+  );
+
   /** Remove an instance and its vault secret (best-effort). */
   const deleteInstance = useCallback(async (id: string): Promise<void> => {
     await enqueueMutation(async (current) => {
@@ -580,6 +645,9 @@ export function useIntegrationConfigStore() {
     deleteInstance,
     readSecret,
     readNamedSecret,
+    readSecretState,
+    readNamedSecretState,
+    clearPrimarySecret,
   };
 }
 
