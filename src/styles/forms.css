@@ -1,4 +1,69 @@
 /* Centralized settings primitives */
+
+/* Native radio controls otherwise retain the WebView/OS accent and surface,
+   which makes them visibly diverge from custom themes. Keep the native input
+   semantics while painting every radio from the live application tokens. */
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: 0 0 1rem;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background-color: var(--color-input);
+  background-position: center;
+  background-repeat: no-repeat;
+  color: var(--color-primary);
+  vertical-align: middle;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+input[type="radio"]:hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: color-mix(
+    in srgb,
+    var(--color-primary) 62%,
+    var(--color-border)
+  );
+}
+
+input[type="radio"]:checked {
+  border-color: var(--color-primary);
+  background-color: color-mix(
+    in srgb,
+    var(--color-primary) 14%,
+    var(--color-input)
+  );
+  background-image: radial-gradient(
+    circle at center,
+    var(--color-primary) 0 34%,
+    transparent 38%
+  );
+}
+
+input[type="radio"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 70%, transparent);
+  outline-offset: 2px;
+}
+
+input[type="radio"]:disabled,
+input[type="radio"][aria-disabled="true"] {
+  opacity: 0.45;
+}
+
+@media (forced-colors: active) {
+  input[type="radio"] {
+    appearance: auto;
+    -webkit-appearance: auto;
+    accent-color: Highlight;
+    forced-color-adjust: auto;
+  }
+}
+
 .sor-settings-section-header {
   display: flex;
   align-items: center;
@@ -319,7 +384,9 @@
   font-size: 0.8125rem;
   color: var(--color-textSecondary);
   cursor: pointer;
-  transition: background-color 80ms ease, color 80ms ease;
+  transition:
+    background-color 80ms ease,
+    color 80ms ease;
   user-select: none;
 }
 
