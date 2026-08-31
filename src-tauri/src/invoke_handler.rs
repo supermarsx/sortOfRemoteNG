@@ -7,6 +7,10 @@ where
     Box::new(handler)
 }
 
+fn is_tray_command(command: &str) -> bool {
+    matches!(command, "set_tray_icon_visible")
+}
+
 pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     // Always-on command crates
     let tray_handler = erase_handler(tauri::generate_handler![crate::tray::set_tray_icon_visible]);
@@ -38,7 +42,7 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
 
     move |invoke| {
         let command = invoke.message.command();
-        if crate::tray::is_command(command) {
+        if is_tray_command(command) {
             return tray_handler(invoke);
         }
 
@@ -100,5 +104,16 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_router_claims_only_the_registered_visibility_command() {
+        assert!(is_tray_command("set_tray_icon_visible"));
+        assert!(!is_tray_command("read_app_settings"));
     }
 }

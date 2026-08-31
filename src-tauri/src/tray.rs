@@ -118,10 +118,6 @@ fn create_tray(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn is_command(command: &str) -> bool {
-    command == "set_tray_icon_visible"
-}
-
 /// Apply the persisted tray visibility setting immediately.
 ///
 /// The tray object is retained while hidden so toggling the setting repeatedly
@@ -170,11 +166,5 @@ mod tests {
         assert_eq!(tray_menu_action(OPEN_MENU_ID), Some(TrayMenuAction::Open));
         assert_eq!(tray_menu_action(QUIT_MENU_ID), Some(TrayMenuAction::Quit));
         assert_eq!(tray_menu_action("other-menu-item"), None);
-    }
-
-    #[test]
-    fn command_router_claims_only_the_tray_visibility_command() {
-        assert!(is_command("set_tray_icon_visible"));
-        assert!(!is_command("read_app_settings"));
     }
 }
