@@ -2,12 +2,14 @@
 //! unsigned GitHub release artifacts.
 
 use std::{
-    ffi::OsString,
     fs::File,
     io,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
+
+#[cfg(any(windows, test))]
+use std::ffi::OsString;
 
 use memmap2::{Mmap, MmapOptions};
 use tauri_plugin_updater::Update;
@@ -689,6 +691,7 @@ pub(crate) fn install_validated_artifact(
     }
 }
 
+#[cfg(any(windows, test))]
 fn windows_installer_parameters(
     format: ArtifactFormat,
     artifact_path: &std::path::Path,
@@ -707,6 +710,7 @@ fn windows_installer_parameters(
     }
 }
 
+#[cfg(any(windows, test))]
 fn windows_shell_handoff_succeeded(result: isize) -> bool {
     // ShellExecuteW documents values greater than 32 as a successful handoff.
     result > 32
