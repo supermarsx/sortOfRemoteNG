@@ -51,6 +51,14 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 
+const rdpBinaryIpcPreflightMocks = vi.hoisted(() => ({
+  assert: vi.fn(async () => undefined),
+}));
+
+vi.mock("../../src/utils/rdp/rdpBinaryIpcPreflight", () => ({
+  assertRdpBinaryIpcPreflight: rdpBinaryIpcPreflightMocks.assert,
+}));
+
 // Mock Tauri event API
 const mockListeners: Record<string, (event: { payload: unknown }) => void> = {};
 vi.mock("@tauri-apps/api/event", () => ({
@@ -475,6 +483,7 @@ describe("RDPClient", () => {
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
     MockResizeObserver.reset();
     tauriCoreMocks.channels.length = 0;
+    rdpBinaryIpcPreflightMocks.assert.mockReset().mockResolvedValue(undefined);
     connectionContextMocks.dispatch.mockReset();
     localStorage.clear();
     setDocumentVisibility("visible", false);
@@ -504,6 +513,26 @@ describe("RDPClient", () => {
   });
 
   describe("RDP Connection", () => {
+    it("fails closed before session discovery when binary IPC preflight fails", async () => {
+      rdpBinaryIpcPreflightMocks.assert.mockRejectedValueOnce(
+        new Error("binary channel fetch path is unavailable"),
+      );
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            /Connection failed: binary channel fetch path is unavailable/,
+          ),
+        ).toBeInTheDocument();
+      });
+      const commands = mockInvoke.mock.calls.map(([command]) => command);
+      expect(commands).not.toContain("list_rdp_sessions");
+      expect(commands).not.toContain("connect_rdp");
+      expect(commands).not.toContain("detect_keyboard_layout");
+    });
+
     it("should call connect_rdp with new parameters", async () => {
       renderWithProviders(mockSession);
 
@@ -1118,8 +1147,7 @@ describe("RDPClient", () => {
 
       mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
         const invokeArgs = args as
-          | { ownerId?: string; sessionId?: string }
-          | undefined;
+          { ownerId?: string; sessionId?: string } | undefined;
         const ownerId = String(invokeArgs?.ownerId);
         if (cmd === "list_rdp_sessions") return [];
         if (cmd === "list_openvpn_connections") {
@@ -1234,8 +1262,7 @@ describe("RDPClient", () => {
 
       mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
         const invokeArgs = args as
-          | { ownerId?: string; sessionId?: string }
-          | undefined;
+          { ownerId?: string; sessionId?: string } | undefined;
         const ownerId = String(invokeArgs?.ownerId);
         if (cmd === "list_rdp_sessions") return [];
         if (cmd === "list_openvpn_connections") {

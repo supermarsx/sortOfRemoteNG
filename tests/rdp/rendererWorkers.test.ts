@@ -11,6 +11,23 @@ type WorkerEventSink = { onmessage: WorkerMessageHandler };
 type RawBufferRenderer = FrameRenderer & {
   pushRawBuffer: (data: ArrayBuffer) => void;
 };
+type BoundedRawBufferRenderer = RawBufferRenderer & {
+  inFlightFrames: Map<number, { byteLength: number }>;
+  inFlightBytes: number;
+  deferredRgba: ArrayBuffer | null;
+  flushDeferredRgba: () => void;
+};
+type BoundedOffscreenRenderer = FrameRenderer & {
+  pendingFrames: ArrayBuffer[];
+  pendingBytes: number;
+  inFlightBatches: Map<
+    number,
+    { frameCount: number; byteLength: number; recoveryEpoch?: number }
+  >;
+  inFlightFrames: number;
+  inFlightBytes: number;
+  recoveryPending: boolean;
+};
 
 const workerBlobs = new Map<string, string>();
 const workers: MockWorker[] = [];
@@ -21,8 +38,7 @@ const NAL_MAGIC = 0x4e414c48;
 let originalCreateObjectURL: typeof URL.createObjectURL | undefined;
 let originalRevokeObjectURL: typeof URL.revokeObjectURL | undefined;
 let originalTransferControlToOffscreen:
-  | HTMLCanvasElement["transferControlToOffscreen"]
-  | undefined;
+  HTMLCanvasElement["transferControlToOffscreen"] | undefined;
 let hadTransferControlToOffscreen = false;
 
 class MockImageData {
@@ -176,10 +192,12 @@ class MockOffscreenCanvas {
 class MockWorker implements WorkerEventSink {
   onmessage: WorkerMessageHandler = null;
   readonly errors: unknown[] = [];
+  readonly heldMessages: unknown[] = [];
   private readonly scope: WorkerEventSink & {
     postMessage: (data: unknown) => void;
   };
   private pending: Promise<void>;
+  private processingPaused = false;
 
   constructor(url: string) {
     const source = workerBlobs.get(url);
@@ -223,7 +241,7 @@ class MockWorker implements WorkerEventSink {
     workers.push(this);
   }
 
-  postMessage(data: unknown): void {
+  private enqueueMessage(data: unknown): void {
     this.pending = this.pending
       .then(() => {
         this.scope.onmessage?.({ data });
@@ -233,7 +251,27 @@ class MockWorker implements WorkerEventSink {
       });
   }
 
-  terminate(): void {}
+  postMessage(data: unknown): void {
+    if (this.processingPaused) {
+      this.heldMessages.push(data);
+      return;
+    }
+    this.enqueueMessage(data);
+  }
+
+  pauseProcessing(): void {
+    this.processingPaused = true;
+  }
+
+  resumeProcessing(): void {
+    this.processingPaused = false;
+    const held = this.heldMessages.splice(0);
+    for (const message of held) this.enqueueMessage(message);
+  }
+
+  terminate(): void {
+    this.heldMessages.length = 0;
+  }
 
   async whenIdle(): Promise<void> {
     await this.pending;
@@ -249,6 +287,24 @@ function buildRgbaRectBuffer(width = 2, height = 2): ArrayBuffer {
   view.setUint16(4, width, true);
   view.setUint16(6, height, true);
   new Uint8ClampedArray(buffer, 8).set(rgba);
+  return buffer;
+}
+
+function buildFullRgbaFrameBuffer(width: number, height: number): ArrayBuffer {
+  const buffer = buildRgbaRectBuffer(width, height);
+  const view = new DataView(buffer);
+  view.setUint16(0, 0, true);
+  view.setUint16(2, 0, true);
+  return buffer;
+}
+
+function buildFullWidthRgbaTile(
+  width: number,
+  y: number,
+  height: number,
+): ArrayBuffer {
+  const buffer = buildFullRgbaFrameBuffer(width, height);
+  new DataView(buffer).setUint16(2, y, true);
   return buffer;
 }
 
@@ -487,7 +543,10 @@ describe("rdp worker blobs", () => {
     canvas.width = 8;
     canvas.height = 8;
 
-    const renderer = createFrameRenderer("offscreen-worker", canvas);
+    const renderer = createFrameRenderer(
+      "offscreen-worker",
+      canvas,
+    ) as unknown as BoundedOffscreenRenderer;
     expect(renderer.type).toBe("offscreen-worker");
 
     renderer.paintRegion(1, 2, 2, 2, new Uint8ClampedArray(16).fill(0xaa));
@@ -495,6 +554,9 @@ describe("rdp worker blobs", () => {
     await waitForWorkersToDrain();
 
     expect(getWorker(renderer).errors).toEqual([]);
+    expect(renderer.inFlightBatches.size).toBe(0);
+    expect(renderer.inFlightFrames).toBe(0);
+    expect(renderer.inFlightBytes).toBe(0);
   });
 
   it("parses view-like RGBA batches inside the offscreen paint worker blob", async () => {
@@ -507,11 +569,248 @@ describe("rdp worker blobs", () => {
 
     getWorker(renderer).postMessage({
       type: "frames",
+      batchId: 99,
       buffers: [asOffsetUint8View(buildRgbaRectBuffer())],
     });
     await waitForWorkersToDrain();
 
     expect(getWorker(renderer).errors).toEqual([]);
+  });
+
+  it("bounds a hung offscreen inbox, drops stale pending snapshots, and recovers after ACK drain", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("offscreen-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedOffscreenRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    worker.pauseProcessing();
+
+    const dirty = new Uint8ClampedArray(2 * 2 * 4).fill(0x44);
+    for (let index = 0; index < 4; index += 1) {
+      renderer.paintRegion(0, 0, 2, 2, dirty);
+      renderer.present();
+    }
+    expect(renderer.inFlightBatches.size).toBe(4);
+
+    // This complete but undispatched snapshot predates the subsequent loss.
+    // It must be discarded rather than being re-epoched and declaring the
+    // renderer healthy after the worker resumes.
+    renderer.paintRegion(0, 0, 16, 16, new Uint8ClampedArray(16 * 16 * 4));
+    renderer.present();
+    expect(renderer.pendingFrames).toHaveLength(1);
+    renderer.paintRegion(0, 0, 65_535, 65_535, new Uint8ClampedArray(0));
+    expect(renderer.pendingFrames).toHaveLength(0);
+    expect(renderer.pendingBytes).toBe(0);
+
+    for (let index = 0; index < 1_000; index += 1) {
+      renderer.paintRegion(0, 0, 2, 2, dirty);
+      renderer.present();
+    }
+
+    const heldFrames = worker.heldMessages.filter(
+      (message) => (message as { type?: string }).type === "frames",
+    );
+    expect(heldFrames).toHaveLength(4);
+    expect(renderer.inFlightBatches.size).toBeLessThanOrEqual(4);
+    expect(renderer.inFlightFrames).toBeLessThanOrEqual(1_024);
+    expect(renderer.inFlightBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+    expect(renderer.pendingFrames.length).toBeLessThanOrEqual(256);
+    expect(renderer.pendingBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+    ]);
+
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+
+    expect(worker.errors).toEqual([]);
+    expect(renderer.pendingFrames).toHaveLength(0);
+    expect(renderer.pendingBytes).toBe(0);
+    expect(renderer.inFlightBatches.size).toBe(0);
+    expect(renderer.inFlightFrames).toBe(0);
+    expect(renderer.inFlightBytes).toBe(0);
+    expect(recoveryStates).toHaveLength(1);
+
+    // An intervening non-full-width update breaks contiguous tile coverage.
+    renderer.paintRegion(0, 0, 16, 8, new Uint8ClampedArray(16 * 8 * 4));
+    renderer.present();
+    await waitForWorkersToDrain();
+    renderer.paintRegion(0, 8, 2, 2, dirty);
+    renderer.present();
+    await waitForWorkersToDrain();
+    renderer.paintRegion(0, 8, 16, 8, new Uint8ClampedArray(16 * 8 * 4));
+    renderer.present();
+    await waitForWorkersToDrain();
+    expect(recoveryStates).toHaveLength(1);
+
+    renderer.paintRegion(0, 0, 16, 8, new Uint8ClampedArray(16 * 8 * 4));
+    renderer.present();
+    await waitForWorkersToDrain();
+    renderer.paintRegion(0, 8, 16, 8, new Uint8ClampedArray(16 * 8 * 4));
+    renderer.present();
+    await waitForWorkersToDrain();
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+      { state: "healthy", reason: undefined },
+    ]);
+    renderer.destroy();
+  });
+
+  it("restarts native offscreen recovery and accepts only fresh acknowledged 4K tiles", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 3_840;
+    canvas.height = 2_160;
+    const renderer = createFrameRenderer("offscreen-worker", canvas, {
+      width: 3_840,
+      height: 2_160,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedOffscreenRenderer;
+    const topTile = new Uint8ClampedArray(3_840 * 1_080 * 4);
+    const bottomTile = new Uint8ClampedArray(3_840 * 1_080 * 4);
+
+    await waitForWorkersToDrain();
+    renderer.resetH264Recovery?.("queue-overflow");
+    renderer.paintRegion(0, 0, 3_840, 1_080, topTile);
+    renderer.present();
+    await waitForWorkersToDrain();
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+    ]);
+
+    // A second native loss restarts coverage without opening a duplicate
+    // awaiting-recovery episode. The old top tile cannot combine with this
+    // newer bottom tile.
+    renderer.resetH264Recovery?.("queue-overflow");
+    renderer.paintRegion(0, 1_080, 3_840, 1_080, bottomTile);
+    renderer.present();
+    await waitForWorkersToDrain();
+    expect(recoveryStates).toHaveLength(1);
+
+    renderer.paintRegion(0, 0, 3_840, 1_080, topTile);
+    renderer.present();
+    await waitForWorkersToDrain();
+    renderer.paintRegion(0, 1_080, 3_840, 1_080, bottomTile);
+    renderer.present();
+    await waitForWorkersToDrain();
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+      { state: "healthy", reason: undefined },
+    ]);
+    expect(getWorker(renderer).errors).toEqual([]);
+    renderer.destroy();
+  });
+
+  it("rolls back failed offscreen posts, contains resize errors, and clears retained state", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("offscreen-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedOffscreenRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const postSpy = vi.spyOn(worker, "postMessage");
+    postSpy.mockImplementationOnce(() => {
+      throw new DOMException("Worker transfer failed", "DataCloneError");
+    });
+
+    renderer.paintRegion(0, 0, 16, 16, new Uint8ClampedArray(16 * 16 * 4));
+    expect(() => renderer.present()).not.toThrow();
+    expect(renderer.pendingFrames).toHaveLength(0);
+    expect(renderer.pendingBytes).toBe(0);
+    expect(renderer.inFlightBatches.size).toBe(0);
+    expect(renderer.inFlightFrames).toBe(0);
+    expect(renderer.inFlightBytes).toBe(0);
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+    ]);
+
+    renderer.paintRegion(0, 0, 16, 16, new Uint8ClampedArray(16 * 16 * 4));
+    renderer.present();
+    await waitForWorkersToDrain();
+    expect(recoveryStates[recoveryStates.length - 1]).toEqual({
+      state: "healthy",
+      reason: undefined,
+    });
+
+    postSpy.mockImplementationOnce(() => {
+      throw new DOMException("Worker resize failed", "DataCloneError");
+    });
+    expect(() => renderer.resize(16, 16)).not.toThrow();
+    expect(recoveryStates[recoveryStates.length - 1]).toEqual({
+      state: "awaitingRecovery",
+      reason: "resize",
+    });
+
+    renderer.paintRegion(0, 0, 16, 16, new Uint8ClampedArray(16 * 16 * 4));
+    renderer.present();
+    await waitForWorkersToDrain();
+    expect(recoveryStates[recoveryStates.length - 1]?.state).toBe("healthy");
+    expect(worker.errors).toEqual([]);
+
+    renderer.destroy();
+    expect(renderer.pendingFrames).toHaveLength(0);
+    expect(renderer.pendingBytes).toBe(0);
+    expect(renderer.inFlightBatches.size).toBe(0);
+    expect(renderer.inFlightFrames).toBe(0);
+    expect(renderer.inFlightBytes).toBe(0);
+    expect(renderer.recoveryPending).toBe(false);
+    errorSpy.mockRestore();
+  });
+
+  it("acknowledges failed offscreen batches when the worker has no 2D context", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    Object.defineProperty(canvas, "transferControlToOffscreen", {
+      configurable: true,
+      value: () => ({
+        width: 16,
+        height: 16,
+        getContext: () => null,
+      }),
+    });
+    const renderer = createFrameRenderer("offscreen-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedOffscreenRenderer;
+
+    await waitForWorkersToDrain();
+    renderer.paintRegion(0, 0, 16, 16, new Uint8ClampedArray(16 * 16 * 4));
+    renderer.present();
+    await waitForWorkersToDrain();
+
+    expect(getWorker(renderer).errors).toEqual([]);
+    expect(renderer.inFlightBatches.size).toBe(0);
+    expect(renderer.inFlightFrames).toBe(0);
+    expect(renderer.inFlightBytes).toBe(0);
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+    ]);
+    renderer.destroy();
   });
 
   it("parses RGBA and NAL buffers inside the WebCodecs worker blob without ReferenceError", async () => {
@@ -610,6 +909,323 @@ describe("rdp worker blobs", () => {
       renderer.destroy();
     },
   );
+
+  it("deduplicates pre-ready H264 resets while worker initialization is hung", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as RawBufferRenderer & {
+      pendingBuffers: ArrayBuffer[];
+      pendingBytes: number;
+    };
+    const worker = getWorker(renderer);
+    worker.pauseProcessing();
+
+    for (let index = 0; index < 100; index += 1) {
+      renderer.pushRawBuffer(buildNalBuffer(16, 16));
+    }
+
+    const heldResets = worker.heldMessages.filter(
+      (message) => (message as { type?: string }).type === "reset-h264",
+    );
+    expect(heldResets).toHaveLength(1);
+    expect(renderer.pendingBuffers.length).toBeLessThanOrEqual(4);
+    expect(renderer.pendingBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+    expect(
+      recoveryStates.filter((event) => event.reason === "pre-ready-overflow"),
+    ).toEqual([{ state: "awaitingRecovery", reason: "pre-ready-overflow" }]);
+
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+    expect(worker.errors).toEqual([]);
+    renderer.destroy();
+  });
+
+  it("bounds a hung ready WebCodecs inbox until consumed acknowledgements arrive", async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+    }) as unknown as BoundedRawBufferRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    worker.pauseProcessing();
+
+    for (let index = 0; index < 1_000; index += 1) {
+      renderer.pushRawBuffer(buildRgbaRectBuffer(16, 16));
+    }
+
+    const heldFrames = worker.heldMessages.filter(
+      (message) => (message as { type?: string }).type === "frame",
+    );
+    const deferredBytes = renderer.deferredRgba?.byteLength ?? 0;
+    expect(heldFrames).toHaveLength(5);
+    expect(renderer.inFlightFrames.size).toBeLessThanOrEqual(5);
+    expect(renderer.inFlightBytes + deferredBytes).toBeLessThanOrEqual(
+      32 * 1024 * 1024,
+    );
+    expect(renderer.deferredRgba).not.toBeNull();
+
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+
+    expect(worker.errors).toEqual([]);
+    expect(renderer.inFlightFrames.size).toBe(0);
+    expect(renderer.inFlightBytes).toBe(0);
+    expect(renderer.deferredRgba).toBeNull();
+    renderer.destroy();
+  });
+
+  it("replaces deferred RGBA without posting a newer dirty update ahead of it", async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+    }) as unknown as BoundedRawBufferRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    worker.pauseProcessing();
+
+    const olderDeferred = buildRgbaRectBuffer(16, 16);
+    new Uint8Array(olderDeferred, 8)[0] = 0x11;
+    renderer.deferredRgba = olderDeferred;
+    const newestDeferred = buildRgbaRectBuffer(16, 16);
+    new Uint8Array(newestDeferred, 8)[0] = 0x22;
+    renderer.pushRawBuffer(newestDeferred);
+
+    const heldFrames = () =>
+      worker.heldMessages.filter(
+        (message) => (message as { type?: string }).type === "frame",
+      ) as Array<{ data: ArrayBuffer }>;
+    expect(heldFrames()).toHaveLength(0);
+    expect(new Uint8Array(renderer.deferredRgba!, 8)[0]).toBe(0x22);
+
+    renderer.flushDeferredRgba();
+    expect(heldFrames()).toHaveLength(1);
+    expect(new Uint8Array(heldFrames()[0].data, 8)[0]).toBe(0x22);
+    expect(renderer.deferredRgba).toBeNull();
+
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+    expect(worker.errors).toEqual([]);
+    expect(renderer.inFlightFrames.size).toBe(0);
+    renderer.destroy();
+  });
+
+  it("requests one full refresh after RGBA dirty updates are superseded", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedRawBufferRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    worker.pauseProcessing();
+    for (let index = 0; index < 5; index += 1) {
+      renderer.pushRawBuffer(buildRgbaRectBuffer());
+    }
+
+    renderer.pushRawBuffer(buildRgbaRectBuffer());
+    renderer.pushRawBuffer(buildRgbaRectBuffer());
+    renderer.pushRawBuffer(buildRgbaRectBuffer());
+    renderer.pushRawBuffer(buildFullRgbaFrameBuffer(16, 16));
+
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+    ]);
+    expect(renderer.deferredRgba).not.toBeNull();
+    expect(new DataView(renderer.deferredRgba!).getUint16(0, true)).toBe(0);
+    expect(new DataView(renderer.deferredRgba!).getUint16(2, true)).toBe(0);
+
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+
+    expect(worker.errors).toEqual([]);
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+      { state: "healthy", reason: undefined },
+    ]);
+    expect(renderer.inFlightFrames.size).toBe(0);
+    renderer.destroy();
+  });
+
+  it("leaves RGBA recovery only after acknowledged full-width tiles cover the desktop", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedRawBufferRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    worker.pauseProcessing();
+    for (let index = 0; index < 5; index += 1) {
+      renderer.pushRawBuffer(buildRgbaRectBuffer());
+    }
+    renderer.pushRawBuffer(buildRgbaRectBuffer());
+    renderer.pushRawBuffer(buildRgbaRectBuffer());
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+    ]);
+
+    renderer.pushRawBuffer(buildFullWidthRgbaTile(16, 0, 8));
+    await waitForWorkersToDrain();
+    expect(recoveryStates).toHaveLength(1);
+
+    renderer.pushRawBuffer(buildFullWidthRgbaTile(16, 8, 8));
+    await waitForWorkersToDrain();
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+      { state: "healthy", reason: undefined },
+    ]);
+    renderer.destroy();
+  });
+
+  it("rolls back ready accounting and requests recovery when frame transfer throws", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedRawBufferRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(worker, "postMessage").mockImplementationOnce(() => {
+      throw new DOMException("Worker transfer failed", "DataCloneError");
+    });
+
+    expect(() => renderer.pushRawBuffer(buildRgbaRectBuffer())).not.toThrow();
+    expect(renderer.inFlightFrames.size).toBe(0);
+    expect(renderer.inFlightBytes).toBe(0);
+    expect(recoveryStates).toEqual([
+      { state: "awaitingRecovery", reason: "queue-overflow" },
+    ]);
+
+    renderer.destroy();
+    errorSpy.mockRestore();
+  });
+
+  it("recovers pure RGBA resize with acknowledged tiles but never lets RGBA recover a NAL stream", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedRawBufferRenderer;
+
+    await waitForWorkersToDrain();
+    renderer.resize(16, 16);
+    await waitForWorkersToDrain();
+    renderer.pushRawBuffer(buildFullWidthRgbaTile(16, 0, 8));
+    await waitForWorkersToDrain();
+    expect(recoveryStates.filter(({ state }) => state === "healthy")).toEqual(
+      [],
+    );
+    renderer.pushRawBuffer(buildFullWidthRgbaTile(16, 8, 8));
+    await waitForWorkersToDrain();
+    expect(recoveryStates.filter(({ state }) => state === "healthy")).toEqual([
+      { state: "healthy", reason: undefined },
+    ]);
+
+    renderer.pushRawBuffer(buildNalBuffer(16, 16));
+    await waitForWorkersToDrain();
+    renderer.resize(16, 16);
+    await waitForWorkersToDrain();
+    const healthyBeforeRgbaFallback = recoveryStates.filter(
+      ({ state }) => state === "healthy",
+    ).length;
+    renderer.pushRawBuffer(buildFullWidthRgbaTile(16, 0, 8));
+    renderer.pushRawBuffer(buildFullWidthRgbaTile(16, 8, 8));
+    await waitForWorkersToDrain();
+    expect(
+      recoveryStates.filter(({ state }) => state === "healthy"),
+    ).toHaveLength(healthyBeforeRgbaFallback);
+
+    renderer.destroy();
+  });
+
+  it("fails a hung stateful NAL inbox into one bounded recovery reset", async () => {
+    const recoveryStates: Array<{ state: string; reason?: string }> = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 16;
+    const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+      width: 16,
+      height: 16,
+      onH264RecoveryStateChange: (state, reason) => {
+        recoveryStates.push({ state, reason });
+      },
+    }) as unknown as BoundedRawBufferRenderer;
+
+    await waitForWorkersToDrain();
+    const worker = getWorker(renderer);
+    worker.pauseProcessing();
+
+    for (let index = 0; index < 100; index += 1) {
+      renderer.pushRawBuffer(buildNalBuffer(16, 16));
+    }
+
+    const heldFrames = worker.heldMessages.filter(
+      (message) => (message as { type?: string }).type === "frame",
+    );
+    const heldResets = worker.heldMessages.filter(
+      (message) => (message as { type?: string }).type === "reset-h264",
+    );
+    expect(heldFrames).toHaveLength(5);
+    expect(heldResets).toHaveLength(1);
+    expect(renderer.inFlightFrames.size).toBe(5);
+    expect(renderer.inFlightBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+    expect(
+      recoveryStates.filter((event) => event.reason === "queue-overflow"),
+    ).toEqual([{ state: "awaitingRecovery", reason: "queue-overflow" }]);
+
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+    expect(worker.errors).toEqual([]);
+    expect(renderer.inFlightFrames.size).toBe(0);
+    renderer.destroy();
+  });
 
   it("keeps decoder input ordered, uniquely timestamped, and bounded to four pending chunks", async () => {
     const recoveryStates: Array<{ state: string; reason?: string }> = [];

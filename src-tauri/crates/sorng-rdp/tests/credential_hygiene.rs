@@ -92,6 +92,7 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
         let connection = RdpActiveConnection {
             session: test_session(),
             cmd_tx,
+            frame_channel: Arc::new(sorng_rdp::rdp::frame_channel::NoopFrameChannel),
             activity_control: Arc::new(RdpSessionActivityControl::default()),
             stats: Arc::new(RdpSessionStats::new()),
             worker: RdpWorkerRuntime::spawn_blocking(1, session_slot, || {}),

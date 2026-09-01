@@ -3,6 +3,11 @@ use std::time::Duration;
 use crate::ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use serde::{Deserialize, Serialize};
 
+pub const MIN_RDP_FRAME_BATCH_INTERVAL_MS: u64 = 8;
+pub const MAX_RDP_FRAME_BATCH_INTERVAL_MS: u64 = 250;
+pub const MIN_RDP_FULL_FRAME_SYNC_INTERVAL: u64 = 1;
+pub const MAX_RDP_FULL_FRAME_SYNC_INTERVAL: u64 = 1_000_000;
+
 // ---- Frontend RDP settings (mirrors TypeScript RdpConnectionSettings) ----
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -135,7 +140,12 @@ impl ClipboardDirection {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_bitmap_codecs, ClipboardDirection, RdpSettingsPayload, ResolvedSettings};
+    use super::{
+        build_bitmap_codecs, ClipboardDirection, RdpSettingsPayload, ResolvedSettings,
+        MAX_RDP_FRAME_BATCH_INTERVAL_MS, MAX_RDP_FULL_FRAME_SYNC_INTERVAL,
+        MIN_RDP_FRAME_BATCH_INTERVAL_MS, MIN_RDP_FULL_FRAME_SYNC_INTERVAL,
+    };
+    use std::time::Duration;
 
     fn parse_clipboard_direction(value: &str) -> ClipboardDirection {
         serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
@@ -179,6 +189,69 @@ mod tests {
             parse_clipboard_direction("none"),
             ClipboardDirection::Disabled
         );
+    }
+
+    #[test]
+    fn missing_performance_settings_enable_frame_batching_at_33ms() {
+        let settings = ResolvedSettings::from_payload(&RdpSettingsPayload::default(), 1280, 720);
+
+        assert!(settings.frame_batching);
+        assert_eq!(settings.frame_batch_interval, Duration::from_millis(33));
+    }
+
+    #[test]
+    fn explicit_frame_batching_override_remains_respected() {
+        let payload = serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
+            "performance": {
+                "frameBatching": false,
+                "frameBatchIntervalMs": 16
+            }
+        }))
+        .expect("frame batching payload");
+
+        let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
+
+        assert!(!settings.frame_batching);
+        assert_eq!(settings.frame_batch_interval, Duration::from_millis(16));
+    }
+
+    #[test]
+    fn frame_batch_interval_is_clamped_to_native_safety_range() {
+        for (requested, expected) in [
+            (0, MIN_RDP_FRAME_BATCH_INTERVAL_MS),
+            (u64::MAX, MAX_RDP_FRAME_BATCH_INTERVAL_MS),
+        ] {
+            let payload = serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
+                "performance": {
+                    "frameBatchIntervalMs": requested
+                }
+            }))
+            .expect("frame batch interval payload");
+
+            let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
+            assert_eq!(
+                settings.frame_batch_interval,
+                Duration::from_millis(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn full_frame_sync_interval_is_nonzero_and_bounded() {
+        for (requested, expected) in [
+            (0, MIN_RDP_FULL_FRAME_SYNC_INTERVAL),
+            (u64::MAX, MAX_RDP_FULL_FRAME_SYNC_INTERVAL),
+        ] {
+            let payload = serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
+                "advanced": {
+                    "fullFrameSyncInterval": requested
+                }
+            }))
+            .expect("full-frame sync interval payload");
+
+            let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
+            assert_eq!(settings.full_frame_sync_interval, expected);
+        }
     }
 
     #[test]
@@ -601,7 +674,13 @@ impl ResolvedSettings {
                 | PerformanceFlags::ENABLE_FONT_SMOOTHING
         });
 
-        let batch_ms = perf.and_then(|p| p.frame_batch_interval_ms).unwrap_or(33);
+        let batch_ms = perf
+            .and_then(|p| p.frame_batch_interval_ms)
+            .unwrap_or(33)
+            .clamp(
+                MIN_RDP_FRAME_BATCH_INTERVAL_MS,
+                MAX_RDP_FRAME_BATCH_INTERVAL_MS,
+            );
 
         // Master CredSSP toggle: if useCredSsp is false, force credssp off
         let use_credssp_master = sec.and_then(|s| s.use_credssp).unwrap_or(true);
@@ -693,9 +772,15 @@ impl ResolvedSettings {
                 .unwrap_or_default(),
             use_routing_token: nego.and_then(|n| n.use_routing_token).unwrap_or(false),
             // Frame delivery
-            frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(false),
+            frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(true),
             frame_batch_interval: Duration::from_millis(batch_ms),
-            full_frame_sync_interval: adv.and_then(|a| a.full_frame_sync_interval).unwrap_or(1000),
+            full_frame_sync_interval: adv
+                .and_then(|a| a.full_frame_sync_interval)
+                .unwrap_or(1000)
+                .clamp(
+                    MIN_RDP_FULL_FRAME_SYNC_INTERVAL,
+                    MAX_RDP_FULL_FRAME_SYNC_INTERVAL,
+                ),
             // Render backend
             render_backend: perf
                 .and_then(|p| p.render_backend.clone())

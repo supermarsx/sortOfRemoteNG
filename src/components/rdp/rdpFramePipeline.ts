@@ -50,11 +50,16 @@ export interface PipelineOptions {
   onH264RecoveryStateChange?: (event: RdpH264RecoveryEvent) => void;
 }
 
+interface QueuedRdpFrame {
+  data: ArrayBuffer;
+  completeDelivery: () => void;
+}
+
 // ─── Pipeline ───────────────────────────────────────────────────────────────
 
 export class RdpFramePipeline {
   // ── Queue & scheduling ──────────────────────────────────────────────
-  private queue: ArrayBuffer[] = [];
+  private queue: QueuedRdpFrame[] = [];
   private queueBytes = 0;
   private rafId = 0;
   private pending = false;
@@ -107,7 +112,7 @@ export class RdpFramePipeline {
   private surfaceHeight = 0;
   private readonly rendererOpts: RendererOptions;
   // Frames that arrived before attach() — replayed once a renderer exists.
-  private preAttachBuffer: ArrayBuffer[] = [];
+  private preAttachBuffer: QueuedRdpFrame[] = [];
   private static readonly MAX_PRE_ATTACH_FRAMES = 4;
   private static readonly MAX_PRE_ATTACH_BYTES = 16 * 1024 * 1024;
   private preAttachBytes = 0;
@@ -148,15 +153,22 @@ export class RdpFramePipeline {
     }
   }
 
-  /** The callback to wire into the raw Tauri frame channel. */
-  readonly onFrame = (payload: unknown): void => {
+  /**
+   * The callback wired into the raw Tauri frame channel.
+   *
+   * Its promise settles only after the frame leaves the main-thread queue by
+   * being rendered, handed to a bounded worker renderer, or deliberately
+   * dropped. The channel adapter uses that boundary for native delivery ACKs,
+   * so a busy animation frame cannot let native IPC outrun this queue.
+   */
+  readonly onFrame = (payload: unknown): Promise<void> => {
     if (this.destroyed) {
       if (this.diagDropCount++ < 3) {
         console.warn(
           `[RDP pipeline] onFrame called on DESTROYED pipeline (drop #${this.diagDropCount})`,
         );
       }
-      return;
+      return Promise.resolve();
     }
 
     this.receivedFrameCount++;
@@ -180,7 +192,7 @@ export class RdpFramePipeline {
         payloadError.message,
         payloadError.observedByteLength,
       );
-      return;
+      return Promise.resolve();
     }
 
     if (data.byteLength < 8) {
@@ -188,22 +200,55 @@ export class RdpFramePipeline {
         `expected at least 8 bytes, received ${data.byteLength}`,
         data.byteLength,
       );
-      return;
+      return Promise.resolve();
     }
 
     if (!this.visible) {
       this.recordDroppedFrame(data, "background");
       if (isNalPayload(data)) this.enterH264Recovery("background");
-      return;
+      return Promise.resolve();
     }
-    if (!this.enqueueMainFrame(data)) return;
+
+    let completeDelivery!: () => void;
+    const delivery = new Promise<void>((resolve) => {
+      let completed = false;
+      completeDelivery = () => {
+        if (completed) return;
+        completed = true;
+        resolve();
+      };
+    });
+    const frame: QueuedRdpFrame = { data, completeDelivery };
+    if (!this.enqueueMainFrame(frame)) {
+      completeDelivery();
+      return delivery;
+    }
     if (this.diagFrameCount++ < 5) {
       console.log(
         `[RDP pipeline] onFrame #${this.diagFrameCount}: ${data.byteLength} bytes, queue=${this.queue.length}, canvas=${!!this.canvas}, renderer=${this.renderer?.name ?? "null"}, fb=${!!this.fb}`,
       );
     }
     this.scheduleRender();
+    return delivery;
   };
+
+  /**
+   * Native delivery credits rejected at least one frame before it entered the
+   * frontend queue. Neither incremental H.264 nor RGBA dirty rectangles can
+   * safely continue across that gap, so request a full recovery immediately.
+   */
+  handleNativeDeliveryPressure(
+    droppedFrames: number,
+    nalChainBroken: boolean,
+  ): void {
+    if (this.destroyed) return;
+    if (droppedFrames <= 0 && !nalChainBroken) return;
+
+    // A missing RGBA dirty rectangle is just as display-corrupting as a
+    // missing NAL. Reset capable renderers so the next full snapshot can be
+    // tracked to completion; NAL renderers additionally clear decoder state.
+    this.enterH264Recovery("queue-overflow", true);
+  }
 
   private readonly handleRendererRecoveryState = (
     state: RdpH264RecoveryState,
@@ -296,13 +341,19 @@ export class RdpFramePipeline {
   }
 
   private clearMainQueue(): void {
-    for (const frame of this.queue) this.recordDroppedFrame(frame);
+    for (const frame of this.queue) {
+      this.recordDroppedFrame(frame.data);
+      frame.completeDelivery();
+    }
     this.queue.length = 0;
     this.queueBytes = 0;
   }
 
   private clearPreAttachBuffer(): void {
-    for (const frame of this.preAttachBuffer) this.recordDroppedFrame(frame);
+    for (const frame of this.preAttachBuffer) {
+      this.recordDroppedFrame(frame.data);
+      frame.completeDelivery();
+    }
     this.preAttachBuffer = [];
     this.preAttachBytes = 0;
   }
@@ -310,29 +361,31 @@ export class RdpFramePipeline {
   /** Discard every queued H.264 access unit while retaining independent RGBA updates. */
   private discardQueuedNalChain(): boolean {
     let discarded = false;
-    const retainedMain: ArrayBuffer[] = [];
+    const retainedMain: QueuedRdpFrame[] = [];
     let retainedMainBytes = 0;
     for (const frame of this.queue) {
-      if (isNalPayload(frame)) {
+      if (isNalPayload(frame.data)) {
         discarded = true;
-        this.recordDroppedFrame(frame);
+        this.recordDroppedFrame(frame.data);
+        frame.completeDelivery();
       } else {
         retainedMain.push(frame);
-        retainedMainBytes += frame.byteLength;
+        retainedMainBytes += frame.data.byteLength;
       }
     }
     this.queue = retainedMain;
     this.queueBytes = retainedMainBytes;
 
-    const retainedPreAttach: ArrayBuffer[] = [];
+    const retainedPreAttach: QueuedRdpFrame[] = [];
     let retainedPreAttachBytes = 0;
     for (const frame of this.preAttachBuffer) {
-      if (isNalPayload(frame)) {
+      if (isNalPayload(frame.data)) {
         discarded = true;
-        this.recordDroppedFrame(frame);
+        this.recordDroppedFrame(frame.data);
+        frame.completeDelivery();
       } else {
         retainedPreAttach.push(frame);
-        retainedPreAttachBytes += frame.byteLength;
+        retainedPreAttachBytes += frame.data.byteLength;
       }
     }
     this.preAttachBuffer = retainedPreAttach;
@@ -340,11 +393,13 @@ export class RdpFramePipeline {
     return discarded;
   }
 
-  private enqueueMainFrame(data: ArrayBuffer): boolean {
+  private enqueueMainFrame(frame: QueuedRdpFrame): boolean {
+    const { data } = frame;
     const tooLarge = data.byteLength > RdpFramePipeline.MAX_QUEUE_BYTES;
     if (tooLarge) {
       this.recordDroppedFrame(data, "oversized-frame");
       if (isNalPayload(data)) this.enterH264Recovery("queue-overflow", true);
+      frame.completeDelivery();
       return false;
     }
 
@@ -353,7 +408,8 @@ export class RdpFramePipeline {
       this.queueBytes + data.byteLength > RdpFramePipeline.MAX_QUEUE_BYTES;
     if (exceedsBounds()) {
       const breaksNalChain =
-        isNalPayload(data) || this.queue.some((frame) => isNalPayload(frame));
+        isNalPayload(data) ||
+        this.queue.some((queued) => isNalPayload(queued.data));
       if (breaksNalChain) {
         this.clearMainQueue();
         this.enterH264Recovery("queue-overflow", true);
@@ -361,27 +417,32 @@ export class RdpFramePipeline {
         while (this.queue.length > 0 && exceedsBounds()) {
           const dropped = this.queue.shift();
           if (!dropped) break;
-          this.queueBytes -= dropped.byteLength;
-          this.recordDroppedFrame(dropped);
+          this.queueBytes -= dropped.data.byteLength;
+          this.recordDroppedFrame(dropped.data);
+          dropped.completeDelivery();
+          this.enterH264Recovery("queue-overflow");
         }
       }
     }
 
     if (exceedsBounds()) {
       this.recordDroppedFrame(data);
+      frame.completeDelivery();
       return false;
     }
-    this.queue.push(data);
+    this.queue.push(frame);
     this.queueBytes += data.byteLength;
     return true;
   }
 
-  private bufferPreAttachFrame(data: ArrayBuffer): void {
+  private bufferPreAttachFrame(frame: QueuedRdpFrame): void {
+    const { data } = frame;
     if (data.byteLength > RdpFramePipeline.MAX_PRE_ATTACH_BYTES) {
       this.recordDroppedFrame(data, "oversized-frame");
       if (isNalPayload(data)) {
         this.enterH264Recovery("pre-attach-overflow", true);
       }
+      frame.completeDelivery();
       return;
     }
 
@@ -392,7 +453,7 @@ export class RdpFramePipeline {
     if (exceedsBounds()) {
       const breaksNalChain =
         isNalPayload(data) ||
-        this.preAttachBuffer.some((frame) => isNalPayload(frame));
+        this.preAttachBuffer.some((queued) => isNalPayload(queued.data));
       if (breaksNalChain) {
         this.clearPreAttachBuffer();
         this.enterH264Recovery("pre-attach-overflow", true);
@@ -400,17 +461,20 @@ export class RdpFramePipeline {
         while (this.preAttachBuffer.length > 0 && exceedsBounds()) {
           const dropped = this.preAttachBuffer.shift();
           if (!dropped) break;
-          this.preAttachBytes -= dropped.byteLength;
-          this.recordDroppedFrame(dropped);
+          this.preAttachBytes -= dropped.data.byteLength;
+          this.recordDroppedFrame(dropped.data);
+          dropped.completeDelivery();
+          this.enterH264Recovery("pre-attach-overflow");
         }
       }
     }
 
     if (exceedsBounds()) {
       this.recordDroppedFrame(data);
+      frame.completeDelivery();
       return;
     }
-    this.preAttachBuffer.push(data);
+    this.preAttachBuffer.push(frame);
     this.preAttachBytes += data.byteLength;
   }
 
@@ -538,7 +602,7 @@ export class RdpFramePipeline {
     const discardedNalChain =
       isReattach &&
       [...this.preAttachBuffer, ...this.queue].some((frame) =>
-        isNalPayload(frame),
+        isNalPayload(frame.data),
       );
     if (isReattach) {
       this.clearMainQueue();
@@ -551,38 +615,62 @@ export class RdpFramePipeline {
       this.preAttachBytes = 0;
     }
 
-    console.log(
-      `[RDP pipeline] attach: ${width}x${height}, type=${rendererType}, destroyed=${this.destroyed}, queuedFrames=${this.queue.length}`,
-    );
-    this.canvas = canvas;
-    canvas.width = width;
-    canvas.height = height;
-
-    this.fb = new FrameBuffer(width, height);
-    this.renderer = createFrameRenderer(rendererType, canvas, {
-      ...this.rendererOpts,
-      width,
-      height,
-    });
-    this.visCtx = null;
-    if (this.h264RecoveryState === "awaitingRecovery") {
-      this.renderer.resetH264Recovery?.(
-        this.h264RecoveryReason ?? "renderer-reset",
-      );
-    }
-    console.log(
-      `[RDP pipeline] attach complete: renderer=${this.renderer.name}, tripleBuffered=${this.renderer.tripleBuffered}, buffered=${bufferedFrames.length}`,
-    );
-
-    // Replay frames that arrived before the canvas was ready
-    if (bufferedFrames.length > 0) {
+    try {
       console.log(
-        `[RDP pipeline] replaying ${bufferedFrames.length} buffered frames`,
+        `[RDP pipeline] attach: ${width}x${height}, type=${rendererType}, destroyed=${this.destroyed}, queuedFrames=${this.queue.length}`,
       );
-      for (const frame of bufferedFrames) this.enqueueMainFrame(frame);
-    }
-    if (this.queue.length > 0 && !this.pending) {
-      this.scheduleRender();
+      this.canvas = canvas;
+      canvas.width = width;
+      canvas.height = height;
+
+      this.fb = new FrameBuffer(width, height);
+      this.renderer = createFrameRenderer(rendererType, canvas, {
+        ...this.rendererOpts,
+        width,
+        height,
+      });
+      this.visCtx = null;
+      if (this.h264RecoveryState === "awaitingRecovery") {
+        this.renderer.resetH264Recovery?.(
+          this.h264RecoveryReason ?? "renderer-reset",
+        );
+      }
+      console.log(
+        `[RDP pipeline] attach complete: renderer=${this.renderer.name}, tripleBuffered=${this.renderer.tripleBuffered}, buffered=${bufferedFrames.length}`,
+      );
+
+      // Replay frames that arrived before the canvas was ready.
+      if (bufferedFrames.length > 0) {
+        console.log(
+          `[RDP pipeline] replaying ${bufferedFrames.length} buffered frames`,
+        );
+        for (const frame of bufferedFrames) this.enqueueMainFrame(frame);
+      }
+      if (this.queue.length > 0 && !this.pending) {
+        this.scheduleRender();
+      }
+    } catch (error) {
+      // Initial attach temporarily owns pre-attach entries outside both queues.
+      // Settle them even when canvas transfer or renderer construction fails.
+      for (const frame of bufferedFrames) frame.completeDelivery();
+      this.clearMainQueue();
+      this.clearPreAttachBuffer();
+      try {
+        this.renderer?.destroy();
+      } catch (destroyError) {
+        console.error(
+          "[RDP pipeline] renderer cleanup after attach failure also failed:",
+          destroyError,
+        );
+      }
+      this.renderer = null;
+      this.fb = null;
+      this.canvas = null;
+      this.visCtx = null;
+      this.surfaceWidth = 0;
+      this.surfaceHeight = 0;
+      console.error("[RDP pipeline] attach failed:", error);
+      throw error;
     }
   }
 
@@ -634,8 +722,8 @@ export class RdpFramePipeline {
         this.pending = false;
       }
       const hasNalChain =
-        this.queue.some((frame) => isNalPayload(frame)) ||
-        this.preAttachBuffer.some((frame) => isNalPayload(frame));
+        this.queue.some((frame) => isNalPayload(frame.data)) ||
+        this.preAttachBuffer.some((frame) => isNalPayload(frame.data));
       this.clearMainQueue();
       this.clearPreAttachBuffer();
       if (
@@ -757,6 +845,8 @@ export class RdpFramePipeline {
       this.msgChannel.port1.close();
       this.msgChannel.port2.close();
     }
+    this.clearMainQueue();
+    this.clearPreAttachBuffer();
     this.renderer?.destroy();
     this.renderer = null;
     this.fb = null;
@@ -764,17 +854,12 @@ export class RdpFramePipeline {
     this.surfaceWidth = 0;
     this.surfaceHeight = 0;
     this.visCtx = null;
-    this.queue.length = 0;
-    this.queueBytes = 0;
-    this.preAttachBuffer = [];
-    this.preAttachBytes = 0;
   }
 
   // ── Hot path ────────────────────────────────────────────────────────
 
   private renderFrames(): void {
     this.pending = false;
-    const queue = this.queue;
     const fb = this.fb;
     const canvas = this.canvas;
     const renderer = this.renderer;
@@ -782,11 +867,11 @@ export class RdpFramePipeline {
     // Adaptive scheduling decision (before we drain)
     this.adaptiveCheck();
 
-    if (queue.length === 0) return;
+    if (this.queue.length === 0) return;
 
     if (!fb || !canvas || !renderer) {
       // Not yet attached — buffer frames for replay after attach().
-      const pendingFrames = queue.splice(0);
+      const pendingFrames = this.queue.splice(0);
       this.queueBytes = 0;
       for (const buf of pendingFrames) this.bufferPreAttachFrame(buf);
       if (this.diagRenderCount < 3) {
@@ -797,6 +882,12 @@ export class RdpFramePipeline {
       return;
     }
 
+    // Detach this batch from the live queue. Any re-entrant delivery remains
+    // independently scheduled while every entry in this snapshot is settled
+    // by the finally block, even if a renderer throws.
+    const queue = this.queue.splice(0);
+    this.queueBytes = 0;
+
     if (this.diagRenderCount++ < 5) {
       console.log(
         `[RDP pipeline] renderFrames #${this.diagRenderCount}: ${queue.length} buffers, renderer=${renderer.name}`,
@@ -806,7 +897,7 @@ export class RdpFramePipeline {
     const frameBatchSize = queue.length;
     const renderStartMs = performance.now();
 
-    if (renderer) {
+    try {
       // ── WebCodecs fast path: forward raw buffers directly to the worker ──
       const isWebCodecs =
         renderer.type === "webcodecs-worker" ||
@@ -819,7 +910,7 @@ export class RdpFramePipeline {
 
       if (isWebCodecs && pushRaw) {
         for (let i = 0; i < queue.length; i++) {
-          pushRaw(queue[i]);
+          pushRaw(queue[i].data);
         }
       } else {
         // ── Standard RGBA dirty-rect rendering path ──
@@ -827,7 +918,7 @@ export class RdpFramePipeline {
         const offCtx = needsOffscreen ? fb.offscreen.getContext("2d") : null;
 
         for (let i = 0; i < queue.length; i++) {
-          const data = queue[i];
+          const data = queue[i].data;
 
           // Check if this is a NAL payload (shouldn't happen on non-WebCodecs
           // renderers, but skip gracefully if the backend sends one)
@@ -872,55 +963,33 @@ export class RdpFramePipeline {
         }
         renderer.present();
       }
-    } else {
-      // Canvas 2D fallback (no pluggable renderer)
-      if (!this.visCtx) this.visCtx = canvas.getContext("2d");
-      const ctx = this.visCtx;
-      if (ctx) {
-        for (let i = 0; i < queue.length; i++) {
-          const data = queue[i];
-          const _buf =
-            data instanceof ArrayBuffer ? data : ((data as any).buffer ?? data);
-          const _off =
-            data instanceof ArrayBuffer ? 0 : ((data as any).byteOffset ?? 0);
-          const _len =
-            data instanceof ArrayBuffer
-              ? data.byteLength
-              : ((data as any).byteLength ?? 0);
-          const view = new DataView(_buf, _off, _len);
-          let offset = 0;
-          while (offset + 8 <= _len) {
-            const x = view.getUint16(offset, true);
-            const y = view.getUint16(offset + 2, true);
-            const w = view.getUint16(offset + 4, true);
-            const h = view.getUint16(offset + 6, true);
-            const pixelBytes = w * h * 4;
-            if (offset + 8 + pixelBytes > _len) break;
-            const rgba = new Uint8ClampedArray(
-              _buf,
-              _off + offset + 8,
-              pixelBytes,
-            );
-            fb.paintDirect(ctx, x, y, w, h, rgba);
-            offset += 8 + pixelBytes;
-          }
-        }
+      const renderEndMs = performance.now();
+      this.recordRenderDuration(renderEndMs - renderStartMs);
+      this.presentedFrameCount += frameBatchSize;
+      this.lastFramePresentedAtMs = renderEndMs;
+    } catch (error) {
+      console.error(
+        `[RDP pipeline] renderer failed while consuming ${frameBatchSize} queued frame(s):`,
+        error,
+      );
+      try {
+        this.enterH264Recovery("renderer-reset", true);
+      } catch (recoveryError) {
+        console.error(
+          "[RDP pipeline] renderer failure recovery also failed:",
+          recoveryError,
+        );
       }
-    }
+    } finally {
+      for (const frame of queue) frame.completeDelivery();
+      queue.length = 0;
 
-    const renderEndMs = performance.now();
-    this.recordRenderDuration(renderEndMs - renderStartMs);
-    this.presentedFrameCount += frameBatchSize;
-    this.lastFramePresentedAtMs = renderEndMs;
-
-    queue.length = 0;
-    this.queueBytes = 0;
-
-    // In low-latency mode, if new frames arrived while we were rendering,
-    // schedule another tick immediately instead of waiting for the next
-    // onFrame call.  This keeps the pipeline drained.
-    if (this.queue.length > 0 && !this.pending) {
-      this.scheduleRender();
+      // In low-latency mode, if new frames arrived while we were rendering,
+      // schedule another tick immediately instead of waiting for the next
+      // onFrame call. This keeps the live queue drained after success or error.
+      if (!this.destroyed && this.queue.length > 0 && !this.pending) {
+        this.scheduleRender();
+      }
     }
   }
 

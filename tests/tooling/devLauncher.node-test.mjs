@@ -131,4 +131,6 @@ test("Tauri development preserves the native window close contract", () => {
   assert.deepEqual(capability.remote, {
     urls: ["http://localhost:3042"],
   });
+  assert.match(security.csp, /connect-src[^;]*\bipc:/);
+  assert.match(security.csp, /connect-src[^;]*http:\/\/ipc\.localhost/);
 });

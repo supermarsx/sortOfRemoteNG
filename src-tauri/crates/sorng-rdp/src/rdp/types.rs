@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::frame_channel::DynFrameChannel;
+use super::frame_channel::{DynFrameChannel, FrameDeliveryCredits};
 use super::session_state::SessionStateSnapshot;
 use super::wake_channel::WakeSender;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
@@ -564,6 +564,10 @@ pub struct ClipboardFileEntry {
 pub struct RdpActiveConnection {
     pub session: RdpSession,
     pub cmd_tx: WakeSender,
+    /// Currently authoritative viewer channel. The process-global delivery
+    /// ledger remains independent so acknowledgements from replaced viewers
+    /// can still release their exact retained bodies.
+    pub frame_channel: DynFrameChannel,
     pub activity_control: SharedRdpSessionActivityControl,
     pub stats: Arc<RdpSessionStats>,
     pub worker: RdpWorkerRuntime,
@@ -587,6 +591,9 @@ pub struct RdpLogEntry {
 
 pub struct RdpService {
     pub connections: HashMap<String, RdpActiveConnection>,
+    /// One process-global ledger bounds retained raw IPC bodies across every
+    /// RDP session and across viewer replacements.
+    pub frame_delivery_credits: Arc<FrameDeliveryCredits>,
     /// Counts both active sessions and connect calls that have passed
     /// admission but have not yet been inserted into `connections`.
     pub session_slots: Arc<Semaphore>,
@@ -621,6 +628,7 @@ impl RdpService {
 
         Arc::new(tokio::sync::Mutex::new(RdpService {
             connections: HashMap::new(),
+            frame_delivery_credits: Arc::new(FrameDeliveryCredits::new()),
             session_slots: Arc::new(Semaphore::new(MAX_RDP_ACTIVE_OR_PENDING_SESSIONS)),
             next_worker_generation: 1,
             cached_tls_connector: tls_connector,
@@ -655,6 +663,7 @@ impl RdpService {
     pub(crate) fn new_test_state(capacity: usize) -> super::RdpServiceState {
         Arc::new(tokio::sync::Mutex::new(RdpService {
             connections: HashMap::new(),
+            frame_delivery_credits: Arc::new(FrameDeliveryCredits::new()),
             session_slots: Arc::new(Semaphore::new(capacity)),
             next_worker_generation: 1,
             cached_tls_connector: None,

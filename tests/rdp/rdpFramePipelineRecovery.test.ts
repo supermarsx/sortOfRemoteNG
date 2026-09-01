@@ -68,6 +68,7 @@ describe("RDP frame pipeline recovery", () => {
     );
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -290,5 +291,117 @@ describe("RDP frame pipeline recovery", () => {
       destroyed: true,
     });
     expect(scheduledFrames.size).toBe(0);
+  });
+
+  it("holds native delivery completion until a queued frame is consumed or dropped", async () => {
+    const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+    let settled = false;
+    const delivery = pipeline.onFrame(buildRgbaFrame(1024)).then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(pipeline.getMetrics().queuedFrames).toBe(1);
+
+    pipeline.setVisibility(false);
+    await delivery;
+    expect(settled).toBe(true);
+    expect(pipeline.getMetrics().queuedFrames).toBe(0);
+    pipeline.destroy();
+  });
+
+  it("settles a detached render batch and keeps scheduling after a renderer throws", async () => {
+    const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+    const pushRawBuffer = vi
+      .fn<(data: ArrayBuffer) => void>()
+      .mockImplementationOnce(() => {
+        throw new Error("worker transfer failed");
+      });
+    const renderer = {
+      name: "Throwing WebCodecs renderer",
+      type: "webcodecs-worker",
+      tripleBuffered: false,
+      pushRawBuffer,
+      paintRegion: vi.fn(),
+      present: vi.fn(),
+      resize: vi.fn(),
+      destroy: vi.fn(),
+    };
+    Object.assign(pipeline as unknown as Record<string, unknown>, {
+      canvas: document.createElement("canvas"),
+      fb: {},
+      renderer,
+    });
+
+    const failedDelivery = pipeline.onFrame(buildRgbaFrame(1024));
+    flushScheduledFrames();
+    await expect(failedDelivery).resolves.toBeUndefined();
+    expect(pipeline.getMetrics()).toMatchObject({
+      queuedFrames: 0,
+      queuedBytes: 0,
+      h264RecoveryState: "awaitingRecovery",
+      h264RecoveryReason: "renderer-reset",
+    });
+
+    pushRawBuffer.mockImplementation(() => {});
+    const nextDelivery = pipeline.onFrame(buildRgbaFrame(1024));
+    flushScheduledFrames();
+    await expect(nextDelivery).resolves.toBeUndefined();
+    expect(pushRawBuffer).toHaveBeenCalledTimes(2);
+    expect(scheduledFrames.size).toBe(0);
+    pipeline.destroy();
+  });
+
+  it("settles pre-attach delivery when detached transferred-canvas setup throws", async () => {
+    const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+    const delivery = pipeline.onFrame(buildRgbaFrame(1024));
+    flushScheduledFrames();
+    expect(pipeline.getMetrics().preAttachFrames).toBe(1);
+
+    const detachedCanvas = document.createElement("canvas");
+    Object.defineProperty(detachedCanvas, "width", {
+      configurable: true,
+      get: () => 16,
+      set: () => {
+        throw new DOMException("Canvas was transferred", "InvalidStateError");
+      },
+    });
+
+    expect(() => pipeline.attach(detachedCanvas, 16, 16, "canvas2d")).toThrow(
+      /Canvas was transferred/,
+    );
+    await expect(delivery).resolves.toBeUndefined();
+    expect(pipeline.getMetrics()).toMatchObject({
+      queuedFrames: 0,
+      queuedBytes: 0,
+      preAttachFrames: 0,
+      preAttachBytes: 0,
+      canvasAttached: false,
+    });
+    pipeline.destroy();
+  });
+
+  it("starts full-snapshot recovery when native pressure drops only RGBA", () => {
+    const recoveryEvents: RdpH264RecoveryEvent[] = [];
+    const pipeline = new RdpFramePipeline({
+      scheduling: "vsync",
+      onH264RecoveryStateChange: (event) => recoveryEvents.push(event),
+    });
+
+    pipeline.handleNativeDeliveryPressure(2, false);
+
+    expect(pipeline.getMetrics()).toMatchObject({
+      h264RecoveryState: "awaitingRecovery",
+      h264RecoveryReason: "queue-overflow",
+    });
+    expect(recoveryEvents).toEqual([
+      {
+        state: "awaitingRecovery",
+        episode: 1,
+        reason: "queue-overflow",
+      },
+    ]);
+    pipeline.destroy();
   });
 });

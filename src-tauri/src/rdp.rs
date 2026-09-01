@@ -10,6 +10,8 @@ macro_rules! disabled_commands {
 }
 
 disabled_commands!(
+    rdp_binary_ipc_preflight,
+    rdp_ack_frame_delivery,
     connect_rdp,
     disconnect_rdp,
     attach_rdp_session,

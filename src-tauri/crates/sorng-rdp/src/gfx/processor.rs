@@ -1,5 +1,6 @@
 //! RDPGFX DVC processor — core state machine implementing the Graphics Pipeline Extension.
 
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -86,6 +87,7 @@ fn codec_for_cap_version(version: u32) -> &'static str {
 }
 
 /// A decoded GFX frame ready for display (RGBA dirty rect).
+#[derive(Debug)]
 pub struct GfxFrame {
     /// Screen X coordinate (from surface mapping).
     pub screen_x: u16,
@@ -100,6 +102,7 @@ pub struct GfxFrame {
 }
 
 /// A raw H.264 NAL unit for frontend WebCodecs decode.
+#[derive(Debug)]
 pub struct GfxNalFrame {
     /// Surface ID (for multi-surface tracking).
     pub surface_id: u16,
@@ -116,11 +119,136 @@ pub struct GfxNalFrame {
 }
 
 /// Output from the GFX processor — either decoded RGBA or raw NAL passthrough.
+#[derive(Debug)]
 pub enum GfxOutput {
     /// Fully decoded RGBA dirty rect (legacy path).
     Rgba(GfxFrame),
     /// Raw H.264 NAL for frontend WebCodecs decode (zero-decode path).
     Nal(GfxNalFrame),
+}
+
+pub const MAX_PENDING_GFX_FRAMES: usize = 4;
+/// Aggregate decoded-output mailbox budget. A 4096x2160 RGBA surface is about
+/// 33.75 MiB before its transport header, so the former 32 MiB cap rejected
+/// every valid 4K fallback frame before the consumer could tile it.
+pub const MAX_PENDING_GFX_FRAME_BYTES: usize = 48 * 1024 * 1024;
+
+impl GfxOutput {
+    fn retained_bytes(&self) -> usize {
+        match self {
+            Self::Rgba(frame) => frame.rgba.len().saturating_add(8),
+            Self::Nal(frame) => frame.nal_data.len().saturating_add(16),
+        }
+    }
+
+    fn is_nal(&self) -> bool {
+        matches!(self, Self::Nal(_))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GfxFrameMailboxPressure {
+    pub dropped_frames: u64,
+    pub nal_chain_broken: bool,
+}
+
+#[derive(Default)]
+struct GfxFrameMailboxState {
+    frames: VecDeque<GfxOutput>,
+    retained_bytes: usize,
+    receiver_alive: bool,
+    pressure: GfxFrameMailboxPressure,
+    max_frames: usize,
+    max_bytes: usize,
+}
+
+#[derive(Clone)]
+pub struct GfxFrameSender {
+    state: Arc<Mutex<GfxFrameMailboxState>>,
+}
+
+pub struct GfxFrameReceiver {
+    state: Arc<Mutex<GfxFrameMailboxState>>,
+}
+
+pub fn bounded_gfx_frame_channel() -> (GfxFrameSender, GfxFrameReceiver) {
+    bounded_gfx_frame_channel_with_limits(MAX_PENDING_GFX_FRAMES, MAX_PENDING_GFX_FRAME_BYTES)
+}
+
+fn bounded_gfx_frame_channel_with_limits(
+    max_frames: usize,
+    max_bytes: usize,
+) -> (GfxFrameSender, GfxFrameReceiver) {
+    let state = Arc::new(Mutex::new(GfxFrameMailboxState {
+        frames: VecDeque::with_capacity(max_frames),
+        receiver_alive: true,
+        max_frames,
+        max_bytes,
+        ..GfxFrameMailboxState::default()
+    }));
+    (
+        GfxFrameSender {
+            state: Arc::clone(&state),
+        },
+        GfxFrameReceiver { state },
+    )
+}
+
+impl GfxFrameSender {
+    /// Non-blocking send: producer and consumer execute on the same session
+    /// thread, so a standard bounded `sync_channel::send` could deadlock.
+    pub fn send(&self, output: GfxOutput) -> Result<(), mpsc::TrySendError<GfxOutput>> {
+        let bytes = output.retained_bytes();
+        let nal_payload = output.is_nal();
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return Err(mpsc::TrySendError::Disconnected(output)),
+        };
+        if !state.receiver_alive {
+            return Err(mpsc::TrySendError::Disconnected(output));
+        }
+        let next_bytes = state.retained_bytes.saturating_add(bytes);
+        if state.frames.len() >= state.max_frames
+            || bytes > state.max_bytes
+            || next_bytes > state.max_bytes
+        {
+            state.pressure.dropped_frames = state.pressure.dropped_frames.saturating_add(1);
+            state.pressure.nal_chain_broken |= nal_payload;
+            return Err(mpsc::TrySendError::Full(output));
+        }
+        state.frames.push_back(output);
+        state.retained_bytes = next_bytes;
+        Ok(())
+    }
+}
+
+impl GfxFrameReceiver {
+    pub fn try_recv(&self) -> Result<GfxOutput, mpsc::TryRecvError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| mpsc::TryRecvError::Disconnected)?;
+        let output = state.frames.pop_front().ok_or(mpsc::TryRecvError::Empty)?;
+        state.retained_bytes = state.retained_bytes.saturating_sub(output.retained_bytes());
+        Ok(output)
+    }
+
+    pub fn take_pressure(&self) -> GfxFrameMailboxPressure {
+        self.state
+            .lock()
+            .map(|mut state| std::mem::take(&mut state.pressure))
+            .unwrap_or_default()
+    }
+}
+
+impl Drop for GfxFrameReceiver {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.receiver_alive = false;
+            state.frames.clear();
+            state.retained_bytes = 0;
+        }
+    }
 }
 
 /// GFX processor state.
@@ -135,7 +263,7 @@ pub struct GfxProcessor {
     /// Negotiated capability version.
     cap_version: Option<u32>,
     /// Channel for sending decoded frames to the session loop.
-    frame_tx: mpsc::Sender<GfxOutput>,
+    frame_tx: GfxFrameSender,
     /// When true, send raw H.264 NALs instead of decoded RGBA.
     nal_passthrough: bool,
     /// Frame acknowledge tracking.
@@ -161,7 +289,7 @@ pub struct GfxProcessor {
 impl GfxProcessor {
     pub fn new(
         decoder_preference: H264DecoderPreference,
-        frame_tx: mpsc::Sender<GfxOutput>,
+        frame_tx: GfxFrameSender,
         nal_passthrough: bool,
     ) -> Self {
         if nal_passthrough {
@@ -648,10 +776,83 @@ mod tests {
     use super::*;
     use crate::ironrdp_dvc::DvcProcessor;
 
-    fn new_processor() -> (GfxProcessor, mpsc::Receiver<GfxOutput>) {
-        let (tx, rx) = mpsc::channel::<GfxOutput>();
+    fn new_processor() -> (GfxProcessor, GfxFrameReceiver) {
+        let (tx, rx) = bounded_gfx_frame_channel();
         let proc = GfxProcessor::new(H264DecoderPreference::Auto, tx, false);
         (proc, rx)
+    }
+
+    fn rgba_output(bytes: usize) -> GfxOutput {
+        GfxOutput::Rgba(GfxFrame {
+            screen_x: 0,
+            screen_y: 0,
+            width: 1,
+            height: 1,
+            rgba: vec![0; bytes],
+        })
+    }
+
+    fn nal_output(bytes: usize) -> GfxOutput {
+        GfxOutput::Nal(GfxNalFrame {
+            surface_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            dest_w: 1,
+            dest_h: 1,
+            nal_data: vec![0; bytes],
+        })
+    }
+
+    #[test]
+    fn gfx_mailbox_is_hard_bounded_by_count_and_releases_after_receive() {
+        let (tx, rx) = bounded_gfx_frame_channel_with_limits(2, 128);
+        tx.send(rgba_output(4)).expect("first frame");
+        tx.send(rgba_output(4)).expect("second frame");
+        assert!(matches!(
+            tx.send(rgba_output(4)),
+            Err(mpsc::TrySendError::Full(_))
+        ));
+        assert_eq!(
+            rx.take_pressure(),
+            GfxFrameMailboxPressure {
+                dropped_frames: 1,
+                nal_chain_broken: false,
+            }
+        );
+
+        rx.try_recv().expect("release one frame");
+        tx.send(rgba_output(4))
+            .expect("released count capacity is reusable");
+    }
+
+    #[test]
+    fn gfx_mailbox_byte_rejection_marks_a_broken_nal_chain() {
+        let (tx, rx) = bounded_gfx_frame_channel_with_limits(4, 24);
+        tx.send(rgba_output(4)).expect("12 retained bytes");
+        assert!(matches!(
+            tx.send(nal_output(1)),
+            Err(mpsc::TrySendError::Full(_))
+        ));
+        assert_eq!(
+            rx.take_pressure(),
+            GfxFrameMailboxPressure {
+                dropped_frames: 1,
+                nal_chain_broken: true,
+            }
+        );
+        assert_eq!(rx.take_pressure(), GfxFrameMailboxPressure::default());
+    }
+
+    #[test]
+    fn gfx_mailbox_accepts_one_4096x2160_rgba_frame_within_aggregate_cap() {
+        let rgba_bytes = 4096usize * 2160 * 4;
+        assert!(rgba_bytes + 8 <= MAX_PENDING_GFX_FRAME_BYTES);
+
+        let (tx, rx) = bounded_gfx_frame_channel();
+        tx.send(rgba_output(rgba_bytes))
+            .expect("one valid 4K decoded frame must reach the tiling consumer");
+        let received = rx.try_recv().expect("4K decoded frame");
+        assert_eq!(received.retained_bytes(), rgba_bytes + 8);
     }
 
     /// Wrap a GFX command body in a full RDPGFX PDU (header + body).

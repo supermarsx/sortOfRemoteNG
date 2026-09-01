@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runInNewContext } from "node:vm";
 import { RdpFramePipeline } from "../../src/components/rdp/rdpFramePipeline";
 import {
   normalizeRdpFramePayload,
@@ -39,6 +40,20 @@ describe("RDP frame IPC payload normalization", () => {
 
     expect(normalizeRdpFramePayload(buffer)).toBe(buffer);
     expect(normalizeRdpFramePayload(fullView)).toBe(buffer);
+  });
+
+  it("copies foreign-realm ArrayBuffers into the renderer realm", () => {
+    const foreignBuffer = runInNewContext(
+      "Uint8Array.from([1, 2, 3, 4]).buffer",
+    ) as ArrayBuffer;
+
+    expect(foreignBuffer).not.toBeInstanceOf(ArrayBuffer);
+
+    const normalized = normalizeRdpFramePayload(foreignBuffer);
+
+    expect(normalized).toBeInstanceOf(ArrayBuffer);
+    expect(normalized).not.toBe(foreignBuffer);
+    expect(Array.from(new Uint8Array(normalized))).toEqual([1, 2, 3, 4]);
   });
 
   it("copies only an offset view so worker transfer cannot detach unrelated bytes", () => {

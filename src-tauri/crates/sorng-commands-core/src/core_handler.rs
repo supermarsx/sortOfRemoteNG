@@ -155,6 +155,8 @@ pub fn is_command(command: &str) -> bool {
             | "jump_hosts_to_mixed_chain"
             | "proxy_chain_to_mixed_chain"
             | "test_mixed_chain_connection"
+            | "rdp_binary_ipc_preflight"
+            | "rdp_ack_frame_delivery"
             | "connect_rdp"
             | "disconnect_rdp"
             | "attach_rdp_session"
@@ -1548,6 +1550,8 @@ define_command_group!(
         ssh_commands::jump_hosts_to_mixed_chain,
         ssh_commands::proxy_chain_to_mixed_chain,
         ssh_commands::test_mixed_chain_connection,
+        rdp_commands::rdp_binary_ipc_preflight,
+        rdp_commands::rdp_ack_frame_delivery,
         rdp_commands::connect_rdp,
         rdp_commands::disconnect_rdp,
         rdp_commands::attach_rdp_session,
@@ -3261,6 +3265,19 @@ mod tests {
             include_str!("core_handler.rs").contains("updater_commands::updater_install_unsigned,"),
             "{command} missing from generate_handler"
         );
+    }
+
+    #[test]
+    fn rdp_binary_delivery_commands_are_recognized_and_registered() {
+        let source = include_str!("core_handler.rs");
+        for command in ["rdp_binary_ipc_preflight", "rdp_ack_frame_delivery"] {
+            assert!(is_command(command), "{command} missing from is_command");
+            let registration = format!("rdp_commands::{command},");
+            assert!(
+                source.contains(&registration),
+                "{command} missing from generate_handler"
+            );
+        }
     }
 
     #[test]

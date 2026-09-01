@@ -556,7 +556,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     frameScheduling: "adaptive",
     tripleBuffering: true,
     targetFps: 30,
-    frameBatching: false,
+    frameBatching: true,
     frameBatchIntervalMs: 33,
     fullFrameSyncInterval: 300,
     readTimeoutMs: 16,

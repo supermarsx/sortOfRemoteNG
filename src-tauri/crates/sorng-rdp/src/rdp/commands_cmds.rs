@@ -132,6 +132,40 @@ pub fn detect_keyboard_layout() -> Result<u32, String> {
     }
 }
 
+/// Verify that Tauri's large raw-channel fetch path reaches the webview as
+/// binary data before an RDP session is allowed to start producing frames.
+#[tauri::command]
+pub fn rdp_binary_ipc_preflight(probe_channel: Channel<InvokeResponseBody>) -> Result<(), String> {
+    probe_channel
+        .send(InvokeResponseBody::Raw(
+            build_rdp_binary_ipc_preflight_payload(),
+        ))
+        .map_err(|error| format!("Failed to deliver RDP binary IPC preflight: {error}"))
+}
+
+/// Return the exact native delivery credit after JavaScript has fetched and
+/// consumed a raw frame. The process-global ledger keeps old viewer entries
+/// addressable after replacement, while `(channel_id, delivery_id)` makes
+/// retries idempotent and prevents stale acknowledgements releasing new data.
+#[tauri::command]
+pub async fn rdp_ack_frame_delivery(
+    state: tauri::State<'_, RdpServiceState>,
+    channel_id: u32,
+    delivery_id: u64,
+) -> Result<FrameDeliveryAcknowledgement, String> {
+    let service = state.lock().await;
+    let acknowledgement = service
+        .frame_delivery_credits
+        .acknowledge(channel_id, delivery_id)?;
+    // Credits are process-global, so the released slot may unblock a
+    // different session than the one that owned this channel. Wake every
+    // active loop; each loop re-checks its own bounded queues.
+    for connection in service.connections.values() {
+        connection.cmd_tx.wake_session_loop();
+    }
+    Ok(acknowledgement)
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn connect_rdp(
@@ -215,8 +249,17 @@ pub async fn connect_rdp(
         crate::rdp::cert_trust::default_prompt_timeout(),
         emitter.clone(),
     );
-    // Wrap the Tauri Channel as a DynFrameChannel.
-    let dyn_frame_channel: DynFrameChannel = std::sync::Arc::new(TauriFrameChannel(frame_channel));
+    let frame_delivery_credits = {
+        let service = state.lock().await;
+        Arc::clone(&service.frame_delivery_credits)
+    };
+    // Wrap the Tauri Channel as a DynFrameChannel using the process-global
+    // cache ledger rather than a per-session budget.
+    let dyn_frame_channel: DynFrameChannel = std::sync::Arc::new(TauriFrameChannel::new(
+        frame_channel,
+        frame_delivery_credits,
+    ));
+    let worker_frame_channel = Arc::clone(&dyn_frame_channel);
 
     // Log sink channel: the session runner pushes log entries through this
     // channel and a background task drains them into the service's log buffer.
@@ -312,7 +355,7 @@ pub async fn connect_rdp(
                 tls_conn,
                 http_client,
                 fs,
-                dyn_frame_channel,
+                worker_frame_channel,
                 log_tx,
                 worker_activity_control,
             );
@@ -321,6 +364,7 @@ pub async fn connect_rdp(
         let connection = RdpActiveConnection {
             session,
             cmd_tx,
+            frame_channel: dyn_frame_channel,
             activity_control,
             stats,
             worker,
@@ -448,13 +492,17 @@ pub async fn attach_rdp_session(
     };
 
     let id = target_id.ok_or("No session_id or connection_id provided")?;
+    let frame_delivery_credits = Arc::clone(&service.frame_delivery_credits);
     let conn = service
         .connections
         .get_mut(&id)
         .ok_or_else(|| format!("Session {id} not found"))?;
 
-    let dyn_frame_channel: DynFrameChannel = std::sync::Arc::new(TauriFrameChannel(frame_channel));
-    let attach_command = RdpCommand::AttachViewer(dyn_frame_channel);
+    let dyn_frame_channel: DynFrameChannel = std::sync::Arc::new(TauriFrameChannel::new(
+        frame_channel,
+        frame_delivery_credits,
+    ));
+    let attach_command = RdpCommand::AttachViewer(Arc::clone(&dyn_frame_channel));
     // Reserve before advancing the generation fence. A saturated command
     // surface therefore rejects the attach without consuming an epoch.
     let command_permit = conn
@@ -469,6 +517,7 @@ pub async fn attach_rdp_session(
         .send_reserved(attach_command, command_permit)
         .map_err(|error| error.to_string())?;
 
+    conn.frame_channel = dyn_frame_channel;
     conn.session.viewer_attached = true;
     let session_clone = conn.session.clone();
     service.push_log("info", format!("Viewer attached to session {id}"), Some(id));

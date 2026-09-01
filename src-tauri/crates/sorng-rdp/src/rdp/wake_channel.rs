@@ -171,6 +171,12 @@ impl WakeSender {
         self.send_reserved(command, permit)
     }
 
+    /// Wake the session loop without enqueueing a command. Used when shared
+    /// state (such as frame-delivery credits) changed out of band.
+    pub fn wake_session_loop(&self) {
+        self.signal();
+    }
+
     /// Reserve capacity for one regular command without publishing it yet.
     /// Out-of-band commands (`Shutdown` and `ActivityChanged`) do not consume
     /// this budget and must be sent through [`WakeSender::send`].

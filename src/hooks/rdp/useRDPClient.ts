@@ -11,7 +11,9 @@ import {
   DEFAULT_RDP_SETTINGS,
 } from "../../types/connection/connection";
 import { mergeRdpSettings } from "../../utils/rdp/rdpSettingsMerge";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { assertRdpBinaryIpcPreflight } from "../../utils/rdp/rdpBinaryIpcPreflight";
+import { createRdpFrameDeliveryChannel } from "../../utils/rdp/rdpFrameDeliveryChannel";
+import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
@@ -1236,13 +1238,30 @@ export function useRDPClient(session: ConnectionSession) {
       dispatch({ type: "UPDATE_SESSION", payload: reservation.session });
 
       setConnectionStatus("connecting");
+      setStatusMessage("Checking binary IPC transport...");
+
+      // Fail closed before session discovery, VPN/tunnel setup, reattach, or
+      // connect can start a native frame producer. The probe exercises Tauri's
+      // large raw-channel fetch path and rejects JSON-serialized byte arrays.
+      await assertRdpBinaryIpcPreflight();
+      if (await stopIfStale()) return;
       setStatusMessage("Initiating connection...");
 
       const currentPipeline = pipelineRef.current!;
-      // Raw channel responses are normally ArrayBuffers. Tauri's
-      // postMessage fallback serializes the same bytes as number[], so keep
-      // the boundary honest and let the pipeline normalize the runtime shape.
-      const frameChannel = new Channel<unknown>(currentPipeline.onFrame);
+      // The preflight above guarantees a binary transport shape before this
+      // high-volume channel exists. Keep the runtime type unknown because
+      // Tauri may still provide either an ArrayBuffer or a typed-array view.
+      const frameChannel = createRdpFrameDeliveryChannel(
+        currentPipeline.onFrame,
+        {
+          onDeliveryPressure: ({ droppedFrames, nalChainBroken }) => {
+            currentPipeline.handleNativeDeliveryPressure(
+              droppedFrames,
+              nalChainBroken,
+            );
+          },
+        },
+      );
 
       // Check for existing backend session to re-attach.
       // Try by backendSessionId first (carried through detach/reattach), then

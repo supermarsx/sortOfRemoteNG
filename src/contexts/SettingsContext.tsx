@@ -489,7 +489,7 @@ export const defaultSettings: GlobalSettings = {
     persistentBitmapCaching: false,
     // Performance / Frame Delivery
     targetFps: 30,
-    frameBatching: false,
+    frameBatching: true,
     frameBatchIntervalMs: 33,
     fullFrameSyncInterval: 300,
     readTimeoutMs: 16,

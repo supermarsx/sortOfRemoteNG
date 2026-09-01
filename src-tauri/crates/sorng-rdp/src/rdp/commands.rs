@@ -7,6 +7,7 @@ pub use crate::ironrdp_displaycontrol;
 pub use tokio::sync::mpsc;
 pub use uuid::Uuid;
 
+pub use super::frame_delivery::NAL_MAGIC;
 pub use super::frame_store::SharedFrameStoreState;
 pub use super::input::convert_input;
 pub use super::session_runner::{run_rdp_session, LogSink};
@@ -19,6 +20,17 @@ pub use super::RdpServiceState;
 pub const MAX_RDP_THUMBNAIL_DIMENSION: u32 = 4096;
 pub const MAX_RDP_THUMBNAIL_PIXELS: u64 = 4_194_304;
 pub const RDP_WORKER_SHUTDOWN_GRACE: Duration = Duration::from_millis(250);
+pub const RDP_BINARY_IPC_PREFLIGHT_PAYLOAD_BYTES: usize = 2_048;
+pub const RDP_BINARY_IPC_PREFLIGHT_MAGIC: &[u8] = b"SORNG_RDP_BINARY_IPC_V1";
+
+pub fn build_rdp_binary_ipc_preflight_payload() -> Vec<u8> {
+    let mut payload = vec![0_u8; RDP_BINARY_IPC_PREFLIGHT_PAYLOAD_BYTES];
+    for (index, byte) in payload.iter_mut().enumerate() {
+        *byte = ((index * 17 + 29) % 251) as u8;
+    }
+    payload[..RDP_BINARY_IPC_PREFLIGHT_MAGIC.len()].copy_from_slice(RDP_BINARY_IPC_PREFLIGHT_MAGIC);
+    payload
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RdpConnectionSelector {
@@ -292,6 +304,21 @@ mod thumbnail_safety_tests {
 }
 
 #[cfg(test)]
+mod binary_ipc_preflight_tests {
+    use super::*;
+
+    #[test]
+    fn probe_payload_forces_tauri_fetch_and_is_deterministic() {
+        let payload = build_rdp_binary_ipc_preflight_payload();
+
+        assert!(RDP_BINARY_IPC_PREFLIGHT_PAYLOAD_BYTES > 1_024);
+        assert_eq!(payload.len(), RDP_BINARY_IPC_PREFLIGHT_PAYLOAD_BYTES);
+        assert!(payload.starts_with(RDP_BINARY_IPC_PREFLIGHT_MAGIC));
+        assert_eq!(payload, build_rdp_binary_ipc_preflight_payload());
+    }
+}
+
+#[cfg(test)]
 mod worker_lifecycle_tests {
     use super::*;
     use crate::rdp::session_runtime::{RdpWorkerCompletion, RdpWorkerLifecycle};
@@ -372,6 +399,7 @@ mod worker_lifecycle_tests {
                 reconnecting: false,
             },
             cmd_tx,
+            frame_channel: Arc::new(crate::rdp::frame_channel::NoopFrameChannel),
             activity_control: Arc::new(RdpSessionActivityControl::default()),
             stats: Arc::new(RdpSessionStats::new()),
             worker,

@@ -116,8 +116,7 @@ export type IntegrationConnectionProtocol =
   `${typeof INTEGRATION_PROTOCOL_PREFIX}${string}`;
 
 export type ConnectionProtocol =
-  | BuiltInConnectionProtocol
-  | IntegrationConnectionProtocol;
+  BuiltInConnectionProtocol | IntegrationConnectionProtocol;
 
 export const isIntegrationConnectionProtocol = (
   protocol: string | undefined,
@@ -748,10 +747,7 @@ export interface RdpInputSettings {
   // ─── Magnifier ──────────────────────────────────────────────────
   /** Default magnifier PiP corner */
   magnifierDefaultCorner?:
-    | "bottom-right"
-    | "bottom-left"
-    | "top-right"
-    | "top-left";
+    "bottom-right" | "bottom-left" | "top-right" | "top-left";
   /** Auto-reposition behavior when cursor approaches PiP */
   magnifierAutoReposition?: boolean;
   /** Default PiP window size in pixels (150-500) */
@@ -1198,7 +1194,7 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     persistentBitmapCaching: false,
     connectionSpeed: "broadband-high",
     targetFps: 30,
-    frameBatching: false,
+    frameBatching: true,
     frameBatchIntervalMs: 33,
     codecs: {
       enableCodecs: true,
@@ -1588,11 +1584,7 @@ export interface ConnectionSession {
   connectionId: string;
   name: string;
   status:
-    | "connecting"
-    | "connected"
-    | "disconnected"
-    | "error"
-    | "reconnecting";
+    "connecting" | "connected" | "disconnected" | "error" | "reconnecting";
   startTime: Date;
   lastActivity?: Date;
   protocol: string;

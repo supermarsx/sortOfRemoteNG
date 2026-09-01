@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use super::clipboard::{self, SharedClipboardState};
 use super::frame_channel::{
-    send_accounted_frame, DynFrameChannel, FrameDeliveryAccounting, FramePayloadKind,
+    DynFrameChannel, FrameDeliveryAccounting, FramePayloadKind, MAX_RDP_FRAME_PAYLOAD_BYTES,
 };
 use super::frame_flow_control::{FrameFlowBudget, FrameFlowController};
 use crate::ironrdp::connector::connection_activation::ConnectionActivationState;
@@ -305,7 +305,7 @@ struct EstablishedSession {
     desktop_scale_factor: u32,
     compositor: Option<Box<dyn FrameCompositor>>,
     active_render_backend: String,
-    gfx_frame_rx: Option<std::sync::mpsc::Receiver<crate::gfx::processor::GfxOutput>>,
+    gfx_frame_rx: Option<crate::gfx::processor::GfxFrameReceiver>,
     clipboard_state: Option<SharedClipboardState>,
     /// Live AUDIN channel summary shared out of the `AudinDvcProcessor` before it
     /// was moved into DRDYNVC, letting the runner merge AUDIN's real
@@ -1438,7 +1438,7 @@ fn establish_rdp_connection(
     // ready/fault state + the Tier-B GFX signals (codec/surfaces/frames/errors).
     let mut gfx_diagnostics: Option<crate::gfx::processor::SharedGfxDiagnostics> = None;
     let gfx_frame_rx = if settings.gfx_enabled {
-        let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxOutput>();
+        let (gfx_tx, gfx_rx) = crate::gfx::processor::bounded_gfx_frame_channel();
         let gfx_proc = crate::gfx::processor::GfxProcessor::new(
             settings.h264_decoder_preference,
             gfx_tx,
@@ -1976,29 +1976,167 @@ fn send_live_full_frame(
     channel: &DynFrameChannel,
     frame_store: &SharedFrameStoreState,
     frame_accounting: &FrameDeliveryAccounting,
-) -> Result<(), String> {
-    let image_data = est.image.data();
-    let mut payload = Vec::with_capacity(8 + image_data.len());
-    payload.extend_from_slice(&0u16.to_le_bytes());
-    payload.extend_from_slice(&0u16.to_le_bytes());
-    payload.extend_from_slice(&est.desktop_width.to_le_bytes());
-    payload.extend_from_slice(&est.desktop_height.to_le_bytes());
-    payload.extend_from_slice(image_data);
-    send_accounted_frame(
-        frame_accounting,
+    pending_full_sync: &mut Vec<(u16, u16, u16, u16)>,
+) -> Result<RgbaTileDeliveryProgress, String> {
+    send_full_frame_via_channel(
+        session_id,
+        &est.image,
+        est.desktop_width,
+        est.desktop_height,
         channel,
-        FramePayloadKind::FullFrame,
-        payload,
-    )?;
+        frame_store,
+        frame_accounting,
+        pending_full_sync,
+    )
+}
 
-    let slots = frame_store.slots.read().expect("lock poisoned");
-    if let Some(slot_arc) = slots.get(session_id) {
-        let mut slot = slot_arc.inner.write().expect("lock poisoned");
-        if slot.data.len() == image_data.len() {
-            slot.data.copy_from_slice(image_data);
+fn pending_frame_poll_timeout(
+    base_timeout: Duration,
+    has_pending_frames: bool,
+    elapsed_since_emit: Duration,
+    batch_interval: Duration,
+) -> Duration {
+    if !has_pending_frames {
+        return base_timeout;
+    }
+    base_timeout.min(batch_interval.saturating_sub(elapsed_since_emit))
+}
+
+fn promote_full_dirty_marker(
+    dirty_regions: &mut Vec<(u16, u16, u16, u16)>,
+    pending_full_sync: &mut Vec<(u16, u16, u16, u16)>,
+    desktop_width: u16,
+    desktop_height: u16,
+) -> bool {
+    if !pending_full_sync.is_empty() || dirty_regions.is_empty() {
+        return false;
+    }
+    merge_dirty_regions(dirty_regions);
+    if dirty_regions.as_slice() == [(0, 0, desktop_width, desktop_height)] {
+        queue_full_desktop_sync(pending_full_sync, desktop_width, desktop_height);
+        dirty_regions.clear();
+        true
+    } else {
+        false
+    }
+}
+
+fn deliver_pending_dirty_regions(
+    est: &mut EstablishedSession,
+    dirty_regions: &mut Vec<(u16, u16, u16, u16)>,
+    channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
+) -> Result<RgbaTileDeliveryProgress, String> {
+    merge_dirty_regions(dirty_regions);
+    if dirty_regions.is_empty() {
+        return Ok(RgbaTileDeliveryProgress {
+            sent_tiles: 0,
+            complete: true,
+        });
+    }
+
+    // A compositor flush allocates its whole bounding rectangle. Use it only
+    // when that exact allocation fits the 16 MiB frontend-ready budget;
+    // otherwise stream directly from the decoded framebuffer as tiles.
+    let compositor_payload_bytes =
+        bounding_dirty_region(dirty_regions, est.desktop_width, est.desktop_height)
+            .and_then(|(_, _, width, height)| checked_rect_payload_bytes(width, height));
+    let compositor_eligible = est.compositor.is_some()
+        && compositor_payload_bytes.is_some_and(|bytes| bytes <= MAX_RDP_RGBA_TILE_PAYLOAD_BYTES);
+
+    if compositor_eligible {
+        let bytes = compositor_payload_bytes.expect("eligible compositor payload has a size");
+        if !channel.can_send_payload(bytes) {
+            return Ok(RgbaTileDeliveryProgress {
+                sent_tiles: 0,
+                complete: false,
+            });
+        }
+
+        let image_data = est.image.data();
+        let desktop_width = est.desktop_width;
+        let comp = est
+            .compositor
+            .as_mut()
+            .expect("compositor eligibility checked above");
+        for &(x, y, width, height) in dirty_regions.iter() {
+            if width > 0 && height > 0 {
+                comp.update_region(image_data, desktop_width, x, y, width, height);
+            }
+        }
+        if let Some(frame) = comp.flush() {
+            push_compositor_frame_via_channel(frame, channel, accounting)?;
+        }
+        dirty_regions.clear();
+        return Ok(RgbaTileDeliveryProgress {
+            sent_tiles: 1,
+            complete: true,
+        });
+    }
+
+    push_tiled_rects_via_channel(
+        est.image.data(),
+        est.desktop_width,
+        est.desktop_height,
+        dirty_regions,
+        channel,
+        FramePayloadKind::RgbaRects,
+        accounting,
+    )
+}
+
+struct PendingGfxDelivery {
+    output: crate::gfx::processor::GfxOutput,
+    next_rgba_row: u16,
+    frame_recorded: bool,
+}
+
+impl PendingGfxDelivery {
+    fn new(output: crate::gfx::processor::GfxOutput) -> Self {
+        Self {
+            output,
+            next_rgba_row: 0,
+            frame_recorded: false,
         }
     }
-    Ok(())
+
+    fn retained_bytes(&self) -> Option<usize> {
+        match &self.output {
+            crate::gfx::processor::GfxOutput::Rgba(frame) => frame.rgba.len().checked_add(8),
+            crate::gfx::processor::GfxOutput::Nal(frame) => frame.nal_data.len().checked_add(16),
+        }
+    }
+
+    fn next_payload_bytes(&self) -> Option<usize> {
+        match &self.output {
+            crate::gfx::processor::GfxOutput::Rgba(frame) => {
+                if frame.width == 0 || frame.height == 0 || self.next_rgba_row >= frame.height {
+                    return Some(0);
+                }
+                let row_bytes = usize::from(frame.width).checked_mul(4)?;
+                let max_rows = (MAX_RDP_RGBA_TILE_PAYLOAD_BYTES - 8) / row_bytes;
+                let rows = usize::from(frame.height - self.next_rgba_row).min(max_rows);
+                row_bytes.checked_mul(rows)?.checked_add(8)
+            }
+            crate::gfx::processor::GfxOutput::Nal(frame) => frame.nal_data.len().checked_add(16),
+        }
+    }
+
+    fn is_nal(&self) -> bool {
+        matches!(self.output, crate::gfx::processor::GfxOutput::Nal(_))
+    }
+}
+
+fn stage_next_gfx_delivery(
+    receiver: &crate::gfx::processor::GfxFrameReceiver,
+    pending: &mut Option<PendingGfxDelivery>,
+) -> bool {
+    if pending.is_none() {
+        if let Ok(output) = receiver.try_recv() {
+            *pending = Some(PendingGfxDelivery::new(output));
+        }
+    }
+    pending.is_some()
 }
 
 // ---- Layer 2: Active Session Loop ----
@@ -2067,7 +2205,15 @@ fn run_active_session_loop(
     // Frame batching state
     let frame_batching = settings.frame_batching;
     let batch_interval = settings.frame_batch_interval;
-    let mut dirty_regions: Vec<(u16, u16, u16, u16)> = Vec::new();
+    let mut dirty_regions: Vec<(u16, u16, u16, u16)> =
+        Vec::with_capacity(MAX_PENDING_DIRTY_REGIONS);
+    debug_assert_eq!(
+        dirty_regions.capacity() * std::mem::size_of::<(u16, u16, u16, u16)>(),
+        MAX_PENDING_DIRTY_REGION_METADATA_BYTES
+    );
+    // Full-desktop delivery has its own one-rectangle cursor so ordinary
+    // updates cannot interleave with or restart a contiguous tile sequence.
+    let mut pending_full_sync: Vec<(u16, u16, u16, u16)> = Vec::with_capacity(1);
     let mut last_frame_emit = Instant::now();
 
     // Per-session frame-delivery accounting (lock-free atomics, dropped with the
@@ -2084,8 +2230,10 @@ fn run_active_session_loop(
 
     // Reusable buffers
     let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
-    let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
-    let mut gfx_frames: Vec<crate::gfx::processor::GfxOutput> = Vec::new();
+    // Only the current GFX output leaves the producer mailbox. Its RGBA row
+    // cursor survives credit waits; later outputs remain in the count/48 MiB
+    // bounded mailbox until this one is fully delivered.
+    let mut pending_gfx_delivery: Option<PendingGfxDelivery> = None;
 
     /// Maximum input events coalesced per loop iteration.
     const INPUT_BACKLOG_LIMIT: usize = 512;
@@ -2102,7 +2250,13 @@ fn run_active_session_loop(
         if !tls_has_buffered {
             if let Some(ref mut p) = poller {
                 // Event-driven: sleep until TCP data, wake signal, or timer.
-                match p.wait(Some(poll_timeout)) {
+                let wait_timeout = pending_frame_poll_timeout(
+                    poll_timeout,
+                    !pending_full_sync.is_empty() || !dirty_regions.is_empty(),
+                    last_frame_emit.elapsed(),
+                    batch_interval,
+                );
+                match p.wait(Some(wait_timeout)) {
                     Ok(result) => {
                         if result.wake_ready {
                             cmd_rx.drain_wake();
@@ -2177,12 +2331,21 @@ fn run_active_session_loop(
                         let active_channel = attached_channel
                             .as_ref()
                             .expect("attached channel was installed before snapshot delivery");
+                        // A new viewer owns a distinct Channel and must receive
+                        // its own sequence from row zero. Same-channel activity
+                        // refreshes below preserve an existing unsent tail.
+                        queue_full_desktop_sync(
+                            &mut pending_full_sync,
+                            est.desktop_width,
+                            est.desktop_height,
+                        );
                         if let Err(error) = send_live_full_frame(
                             session_id,
                             est,
                             active_channel,
                             frame_store,
                             &frame_accounting,
+                            &mut pending_full_sync,
                         ) {
                             log::warn!(
                                 "RDP session {session_id}: reattach snapshot failed: {error}"
@@ -2234,6 +2397,7 @@ fn run_active_session_loop(
                                     active_channel,
                                     frame_store,
                                     &frame_accounting,
+                                    &mut pending_full_sync,
                                 ) {
                                     log::warn!(
                                         "RDP session {session_id}: activity resume snapshot failed: {error}"
@@ -2570,6 +2734,8 @@ fn run_active_session_loop(
                             frame_store,
                             active_ch,
                             &frame_accounting,
+                            &mut pending_full_sync,
+                            &mut dirty_regions,
                         ) {
                             let err_str = format!("{e}");
                             if is_network_error_str(&err_str) {
@@ -2639,7 +2805,11 @@ fn run_active_session_loop(
             // does not measure — while the backend owns the pipeline counters.
             let average_render_ms = stats.frame_flow_summary().average_render_ms;
             stats.set_frame_flow_summary(FrameFlowSummary {
-                queued_frames: dirty_regions.len().min(u16::MAX as usize) as u16,
+                queued_frames: dirty_regions
+                    .len()
+                    .saturating_add(if pending_full_sync.is_empty() { 0 } else { 1 })
+                    .saturating_add(if pending_gfx_delivery.is_some() { 1 } else { 0 })
+                    .min(u16::MAX as usize) as u16,
                 delivered_frames: stats.frame_count.load(Ordering::Relaxed),
                 dropped_frames: delivery_snapshot.failed_frames,
                 coalesced_frames: flow_snapshot.coalesced_frames,
@@ -2728,106 +2898,172 @@ fn run_active_session_loop(
             }
         }
 
-        // - Flush batched frame updates -
-        if frame_batching
-            && !dirty_regions.is_empty()
+        // - Resume pending full-sync/dirty delivery -
+        // Full-desktop tiles are always drained first and never interleaved
+        // with ordinary updates, allowing the frontend to recognize one
+        // contiguous top-to-bottom refresh sequence.
+        if (!pending_full_sync.is_empty() || !dirty_regions.is_empty())
             && last_frame_emit.elapsed() >= batch_interval
         {
-            merge_dirty_regions(&mut dirty_regions);
+            promote_full_dirty_marker(
+                &mut dirty_regions,
+                &mut pending_full_sync,
+                est.desktop_width,
+                est.desktop_height,
+            );
             if activity_state.should_emit_output(viewer_detached, activity_control) {
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                if let Some(ref mut comp) = est.compositor {
-                    for &(x, y, w, h) in &dirty_regions {
-                        if w > 0 && h > 0 {
-                            comp.update_region(est.image.data(), est.desktop_width, x, y, w, h);
-                        }
+                let delivery_result = if !pending_full_sync.is_empty() {
+                    // A newer full refresh supersedes any partially delivered
+                    // decoded GFX output. Never resume its stale tail after the
+                    // top-to-bottom snapshot completes.
+                    if let Some(stale_gfx) = pending_gfx_delivery.take() {
+                        let nal_chain_broken = stale_gfx.is_nal();
+                        let _ = active_ch.record_delivery_drop(1, nal_chain_broken);
+                        frame_flow.record_dropped();
                     }
-                    if let Some(frame) = comp.flush() {
-                        push_compositor_frame_via_channel(frame, active_ch, &frame_accounting);
-                    }
-                } else {
-                    push_multi_rect_via_channel(
+                    push_tiled_rects_via_channel(
                         est.image.data(),
                         est.desktop_width,
-                        &dirty_regions,
+                        est.desktop_height,
+                        &mut pending_full_sync,
+                        active_ch,
+                        FramePayloadKind::FullFrame,
+                        &frame_accounting,
+                    )
+                } else {
+                    deliver_pending_dirty_regions(
+                        est,
+                        &mut dirty_regions,
                         active_ch,
                         &frame_accounting,
-                    );
+                    )
+                };
+                match delivery_result {
+                    Ok(progress) if progress.complete => frame_flow.record_delivered(),
+                    Ok(_) => frame_flow.record_coalesced(),
+                    Err(error) => {
+                        log::debug!(
+                            "RDP session {session_id}: bounded frame delivery deferred: {error}"
+                        );
+                        frame_flow.record_coalesced();
+                    }
                 }
-                // The whole coalesced backlog was just sent as one frame.
-                frame_flow.record_delivered();
+            } else {
+                pending_full_sync.clear();
+                dirty_regions.clear();
             }
-            dirty_regions.clear();
+            // Do not spin allocating retries while a webview is out of credit.
             last_frame_emit = Instant::now();
         }
 
-        // - Drain GFX decoded frames (H.264 via RDPGFX DVC) -
+        // - Deliver one current GFX output (H.264 via RDPGFX DVC) -
         //
-        // High/low watermark flow control.  When the queue exceeds
-        // HIGH_WATERMARK, older frames are dropped, keeping (count / 3) + 1
-        // of the most recent ones.
+        // Never drain the whole mailbox ahead of transport credit. The current
+        // RGBA output retains a row cursor and later outputs stay in the
+        // count/48 MiB bounded producer mailbox until it completes.
         if let Some(ref gfx_rx) = est.gfx_frame_rx {
-            gfx_frames.clear();
-            while let Ok(gfx_frame) = gfx_rx.try_recv() {
-                gfx_frames.push(gfx_frame);
-            }
-            let queue_len = gfx_frames.len();
-            // NOTE: We no longer drop GFX frames via watermark flow control.
-            // H.264 uses incremental decoding — dropping older frames loses
-            // reference data and causes ghosting/corruption until the next
-            // keyframe.  RGBA dirty rects are also incremental (partial
-            // updates).  Instead, send all frames and let the frontend
-            // pipeline handle queue pressure via its adaptive scheduling.
-            if queue_len > 12 {
-                log::debug!(
-                    "GFX frame queue depth: {queue_len} (high but not dropping — incremental codec)"
-                );
-            }
-            for gfx_output in gfx_frames.drain(..) {
-                stats.record_frame();
-                if !activity_state.should_emit_output(viewer_detached, activity_control) {
-                    continue;
-                }
+            let mailbox_pressure = gfx_rx.take_pressure();
+            if mailbox_pressure.dropped_frames > 0 {
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                match gfx_output {
-                    crate::gfx::processor::GfxOutput::Rgba(gfx_frame) => {
-                        // Pre-reserve 8 bytes at the front of the RGBA buffer so
-                        // we can write the header in-place — zero extra allocation
-                        // and zero extra memcpy of the full RGBA payload.
-                        let mut payload = gfx_frame.rgba;
-                        let hdr_len = 8usize;
-                        let rgba_len = payload.len();
-                        payload.reserve(hdr_len);
-                        // Shift existing RGBA data right by 8 bytes.
-                        // SAFETY: we just reserved hdr_len extra bytes, and the
-                        // source range [0..rgba_len] is valid.
-                        unsafe {
-                            let ptr = payload.as_mut_ptr();
-                            std::ptr::copy(ptr, ptr.add(hdr_len), rgba_len);
-                            payload.set_len(rgba_len + hdr_len);
+                let _ = active_ch.record_delivery_drop(
+                    mailbox_pressure.dropped_frames,
+                    mailbox_pressure.nal_chain_broken,
+                );
+                frame_flow.record_dropped();
+                if !mailbox_pressure.nal_chain_broken {
+                    ensure_full_desktop_sync(
+                        &mut pending_full_sync,
+                        est.desktop_width,
+                        est.desktop_height,
+                    );
+                }
+            }
+
+            if !activity_state.should_emit_output(viewer_detached, activity_control) {
+                pending_gfx_delivery = None;
+                while gfx_rx.try_recv().is_ok() {}
+            } else if pending_full_sync.is_empty()
+                && stage_next_gfx_delivery(gfx_rx, &mut pending_gfx_delivery)
+            {
+                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                let mut completed = false;
+                let mut failed_nal_chain = false;
+                let mut failed_rgba = false;
+
+                if let Some(pending) = pending_gfx_delivery.as_mut() {
+                    let retained_bytes = pending.retained_bytes();
+                    let next_payload_bytes = pending.next_payload_bytes();
+                    let retained_fits = retained_bytes.is_some_and(|bytes| {
+                        bytes <= crate::gfx::processor::MAX_PENDING_GFX_FRAME_BYTES
+                    });
+                    let payload_fits = next_payload_bytes
+                        .is_some_and(|bytes| bytes <= MAX_RDP_FRAME_PAYLOAD_BYTES);
+
+                    if !retained_fits || !payload_fits {
+                        failed_nal_chain = pending.is_nal();
+                        failed_rgba = !failed_nal_chain;
+                        completed = true;
+                    } else if let Some(bytes) = next_payload_bytes {
+                        if bytes == 0 {
+                            completed = true;
+                        } else if active_ch.can_send_payload(bytes) {
+                            if !pending.frame_recorded {
+                                stats.record_frame();
+                                pending.frame_recorded = true;
+                            }
+                            let result = match &mut pending.output {
+                                crate::gfx::processor::GfxOutput::Rgba(frame) => {
+                                    push_tiled_local_rgba_via_channel(
+                                        &frame.rgba,
+                                        frame.width,
+                                        frame.height,
+                                        frame.screen_x,
+                                        frame.screen_y,
+                                        &mut pending.next_rgba_row,
+                                        active_ch,
+                                        &frame_accounting,
+                                    )
+                                    .map(|progress| progress.complete)
+                                }
+                                crate::gfx::processor::GfxOutput::Nal(frame) => {
+                                    push_nal_via_channel(frame, active_ch, &frame_accounting)
+                                        .map(|()| true)
+                                }
+                            };
+                            match result {
+                                Ok(is_complete) => completed = is_complete,
+                                Err(error) => {
+                                    log::debug!(
+                                        "RDP session {session_id}: GFX delivery failed: {error}"
+                                    );
+                                    failed_nal_chain = pending.is_nal();
+                                    failed_rgba = !failed_nal_chain;
+                                    completed = true;
+                                }
+                            }
                         }
-                        payload[0..2].copy_from_slice(&gfx_frame.screen_x.to_le_bytes());
-                        payload[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
-                        payload[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
-                        payload[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
-                        // Route GFX RGBA (the primary H.264 pixel path) through
-                        // delivery accounting so telemetry is not blind to it.
-                        let _ = send_accounted_frame(
-                            &frame_accounting,
-                            active_ch,
-                            FramePayloadKind::RgbaRect,
-                            payload,
-                        );
                     }
-                    crate::gfx::processor::GfxOutput::Nal(nal_frame) => {
-                        push_nal_via_channel(&nal_frame, active_ch, &frame_accounting);
-                    }
+                }
+
+                if completed {
+                    pending_gfx_delivery = None;
+                }
+                if failed_nal_chain || failed_rgba {
+                    let _ = active_ch.record_delivery_drop(1, failed_nal_chain);
+                    frame_flow.record_dropped();
+                }
+                if failed_rgba {
+                    ensure_full_desktop_sync(
+                        &mut pending_full_sync,
+                        est.desktop_width,
+                        est.desktop_height,
+                    );
                 }
             }
         }
 
         // - Read and process PDUs -
-        batch_dirty_rects.clear();
         let mut batch_had_graphics = false;
         let mut batch_should_reactivate: Option<
             Box<crate::ironrdp::connector::connection_activation::ConnectionActivationSequence>,
@@ -2913,33 +3149,37 @@ fn run_active_session_loop(
                                         batch_had_graphics = true;
                                         let rw = region.right.saturating_sub(region.left) + 1;
                                         let rh = region.bottom.saturating_sub(region.top) + 1;
-                                        if frame_batching {
-                                            // A graphics update landing on a
-                                            // non-empty backlog is coalesced into
-                                            // the pending batch; the controller
-                                            // observes queue depth (pressure) and
-                                            // counts the coalesced frame.
-                                            let pending_before =
-                                                dirty_regions.len().min(u16::MAX as usize) as u16;
-                                            let _ =
-                                                frame_flow.account_batched_update(pending_before);
-                                            dirty_regions.push((region.left, region.top, rw, rh));
-                                        } else if let Some(ref mut comp) = est.compositor {
-                                            comp.update_region(
-                                                est.image.data(),
+                                        let frame_count = stats.frame_count.load(Ordering::Relaxed);
+                                        let is_full_sync = frame_count > 0
+                                            && (frame_count == 1
+                                                || frame_count
+                                                    .is_multiple_of(full_frame_sync_interval));
+
+                                        if is_full_sync && pending_full_sync.is_empty() {
+                                            queue_full_desktop_sync(
+                                                &mut pending_full_sync,
                                                 est.desktop_width,
-                                                region.left,
-                                                region.top,
-                                                rw,
-                                                rh,
+                                                est.desktop_height,
                                             );
                                         } else {
-                                            batch_dirty_rects.push((
-                                                region.left,
-                                                region.top,
-                                                rw,
-                                                rh,
-                                            ));
+                                            if frame_batching {
+                                                // A graphics update landing on a
+                                                // non-empty backlog is coalesced into
+                                                // the pending batch; the controller
+                                                // observes queue depth (pressure) and
+                                                // counts the coalesced frame.
+                                                let pending_before =
+                                                    dirty_regions.len().min(u16::MAX as usize)
+                                                        as u16;
+                                                let _ = frame_flow
+                                                    .account_batched_update(pending_before);
+                                            }
+                                            accumulate_dirty_region(
+                                                &mut dirty_regions,
+                                                (region.left, region.top, rw, rh),
+                                                est.desktop_width,
+                                                est.desktop_height,
+                                            );
                                         }
                                     }
                                     ActiveStageOutput::PointerDefault => {
@@ -3293,25 +3533,47 @@ fn run_active_session_loop(
 
         // Flush accumulated dirty rects from this batch.
         if batch_had_graphics && !frame_batching {
-            if let Some(ref mut comp) = est.compositor {
-                if activity_state.should_emit_output(viewer_detached, activity_control) {
-                    if let Some(frame) = comp.flush() {
-                        let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                        push_compositor_frame_via_channel(frame, active_ch, &frame_accounting);
+            promote_full_dirty_marker(
+                &mut dirty_regions,
+                &mut pending_full_sync,
+                est.desktop_width,
+                est.desktop_height,
+            );
+            if activity_state.should_emit_output(viewer_detached, activity_control) {
+                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                let delivering_full = !pending_full_sync.is_empty();
+                let result = if delivering_full {
+                    push_tiled_rects_via_channel(
+                        est.image.data(),
+                        est.desktop_width,
+                        est.desktop_height,
+                        &mut pending_full_sync,
+                        active_ch,
+                        FramePayloadKind::FullFrame,
+                        &frame_accounting,
+                    )
+                } else {
+                    deliver_pending_dirty_regions(
+                        est,
+                        &mut dirty_regions,
+                        active_ch,
+                        &frame_accounting,
+                    )
+                };
+                match result {
+                    Ok(progress) if progress.complete => frame_flow.record_delivered(),
+                    Ok(_) => frame_flow.record_coalesced(),
+                    Err(error) => {
+                        log::debug!(
+                            "RDP session {session_id}: immediate frame delivery deferred: {error}"
+                        );
+                        frame_flow.record_coalesced();
                     }
                 }
-            } else if !batch_dirty_rects.is_empty()
-                && activity_state.should_emit_output(viewer_detached, activity_control)
-            {
-                merge_dirty_regions(&mut batch_dirty_rects);
-                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                push_multi_rect_via_channel(
-                    est.image.data(),
-                    est.desktop_width,
-                    &batch_dirty_rects,
-                    active_ch,
-                    &frame_accounting,
-                );
+                last_frame_emit = Instant::now();
+            } else {
+                pending_full_sync.clear();
+                dirty_regions.clear();
             }
 
             let fc = stats.frame_count.load(Ordering::Relaxed);
@@ -3814,8 +4076,11 @@ fn is_network_error_str(s: &str) -> bool {
 #[cfg(test)]
 mod runner_tests {
     use super::*;
+    use crate::gfx::processor::{bounded_gfx_frame_channel, GfxFrame, GfxOutput};
+    use crate::rdp::frame_channel::FrameChannel;
     use crate::rdp::frame_flow_control::{FrameDisposition, FramePressureState};
     use sorng_core::events::{AppEventEmitter, DynEventEmitter};
+    use std::sync::atomic::{AtomicBool, Ordering as AtomicBoolOrdering};
 
     #[derive(Default)]
     struct RecordingEmitter {
@@ -3830,6 +4095,172 @@ mod runner_tests {
                 .push((event.to_string(), payload));
             Ok(())
         }
+    }
+
+    struct CreditGateChannel {
+        available: AtomicBool,
+    }
+
+    impl FrameChannel for CreditGateChannel {
+        fn send_raw(&self, _data: Vec<u8>) -> Result<(), String> {
+            self.available.store(false, AtomicBoolOrdering::Release);
+            Ok(())
+        }
+
+        fn can_send_payload(&self, _bytes: usize) -> bool {
+            self.available.load(AtomicBoolOrdering::Acquire)
+        }
+    }
+
+    #[test]
+    fn pending_frame_deadline_shortens_the_five_second_poller_wait() {
+        let base = Duration::from_secs(5);
+        let interval = Duration::from_millis(33);
+
+        assert_eq!(
+            pending_frame_poll_timeout(base, true, Duration::from_millis(10), interval),
+            Duration::from_millis(23)
+        );
+        assert_eq!(
+            pending_frame_poll_timeout(base, true, Duration::from_millis(40), interval),
+            Duration::ZERO
+        );
+        assert_eq!(
+            pending_frame_poll_timeout(base, false, Duration::from_millis(10), interval),
+            base
+        );
+    }
+
+    #[test]
+    fn collapsed_dirty_full_marker_moves_to_non_interleaved_sync_cursor() {
+        let mut dirty = vec![(0, 0, 4096, 2160)];
+        let mut pending_full = Vec::new();
+        assert!(promote_full_dirty_marker(
+            &mut dirty,
+            &mut pending_full,
+            4096,
+            2160
+        ));
+        assert!(dirty.is_empty());
+        assert_eq!(pending_full, vec![(0, 0, 4096, 2160)]);
+
+        // Once a full sequence is in progress, a correction remains separate
+        // and cannot restart or reorder the unsent full-width tail.
+        pending_full[0] = (0, 1023, 4096, 1137);
+        dirty.push((4, 4, 10, 10));
+        assert!(!promote_full_dirty_marker(
+            &mut dirty,
+            &mut pending_full,
+            4096,
+            2160
+        ));
+        assert_eq!(pending_full, vec![(0, 1023, 4096, 1137)]);
+        assert_eq!(dirty, vec![(4, 4, 10, 10)]);
+    }
+
+    #[test]
+    fn gfx_consumer_retains_current_output_until_credit_before_dequeueing_next() {
+        let (sender, receiver) = bounded_gfx_frame_channel();
+        for marker in [0x11, 0x22] {
+            sender
+                .send(GfxOutput::Rgba(GfxFrame {
+                    screen_x: 0,
+                    screen_y: 0,
+                    width: 2,
+                    height: 2,
+                    rgba: vec![marker; 16],
+                }))
+                .expect("queue GFX frame");
+        }
+
+        let gate = Arc::new(CreditGateChannel {
+            available: AtomicBool::new(false),
+        });
+        let channel: DynFrameChannel = gate.clone();
+        let accounting = FrameDeliveryAccounting::new();
+        let mut pending = None;
+        assert!(stage_next_gfx_delivery(&receiver, &mut pending));
+        let first_marker = match &pending.as_ref().expect("first pending").output {
+            GfxOutput::Rgba(frame) => frame.rgba[0],
+            GfxOutput::Nal(_) => panic!("expected RGBA"),
+        };
+        assert_eq!(first_marker, 0x11);
+        assert!(!channel.can_send_payload(
+            pending
+                .as_ref()
+                .and_then(PendingGfxDelivery::next_payload_bytes)
+                .expect("first payload size")
+        ));
+
+        // Re-staging while credit is unavailable leaves the first frame in
+        // place; the second remains in the bounded producer mailbox.
+        assert!(stage_next_gfx_delivery(&receiver, &mut pending));
+        let still_first = match &pending.as_ref().expect("still pending").output {
+            GfxOutput::Rgba(frame) => frame.rgba[0],
+            GfxOutput::Nal(_) => panic!("expected RGBA"),
+        };
+        assert_eq!(still_first, 0x11);
+
+        gate.available.store(true, AtomicBoolOrdering::Release);
+        let first_progress = match pending.as_mut().expect("first pending") {
+            PendingGfxDelivery {
+                output: GfxOutput::Rgba(frame),
+                next_rgba_row,
+                ..
+            } => push_tiled_local_rgba_via_channel(
+                &frame.rgba,
+                frame.width,
+                frame.height,
+                frame.screen_x,
+                frame.screen_y,
+                next_rgba_row,
+                &channel,
+                &accounting,
+            )
+            .expect("deliver first after credit"),
+            _ => panic!("expected RGBA"),
+        };
+        assert!(first_progress.complete);
+        assert!(!gate.available.load(AtomicBoolOrdering::Acquire));
+        pending = None;
+
+        assert!(stage_next_gfx_delivery(&receiver, &mut pending));
+        let second_marker = match &pending.as_ref().expect("second pending").output {
+            GfxOutput::Rgba(frame) => frame.rgba[0],
+            GfxOutput::Nal(_) => panic!("expected RGBA"),
+        };
+        assert_eq!(second_marker, 0x22);
+        assert!(!channel.can_send_payload(
+            pending
+                .as_ref()
+                .and_then(PendingGfxDelivery::next_payload_bytes)
+                .expect("second payload size")
+        ));
+
+        // The consumer ACK replenishes credit; only then can the retained
+        // second output be delivered.
+        gate.available.store(true, AtomicBoolOrdering::Release);
+        let second_progress = match pending.as_mut().expect("second pending") {
+            PendingGfxDelivery {
+                output: GfxOutput::Rgba(frame),
+                next_rgba_row,
+                ..
+            } => push_tiled_local_rgba_via_channel(
+                &frame.rgba,
+                frame.width,
+                frame.height,
+                frame.screen_x,
+                frame.screen_y,
+                next_rgba_row,
+                &channel,
+                &accounting,
+            )
+            .expect("deliver second after ACK credit"),
+            _ => panic!("expected RGBA"),
+        };
+        assert!(second_progress.complete);
+        assert_eq!(receiver.take_pressure().dropped_frames, 0);
+        assert_eq!(accounting.snapshot().delivered_frames, 2);
     }
 
     /// The runner-private `merge_channel_summary` accumulates per-channel

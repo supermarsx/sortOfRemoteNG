@@ -8,15 +8,15 @@
 //! Tier-B snapshot (codec/cap/surfaces/frames/acks/errors) round-trips through
 //! the camelCase wire keys the stats event uses. Deterministic / host-independent.
 
-use std::sync::mpsc;
-
 use sorng_rdp::gfx::pdu::{GfxCmdId, CAPVERSION_10, CAPVERSION_101, RDPGFX_HEADER_SIZE};
-use sorng_rdp::gfx::processor::{GfxDvcProcessor, GfxOutput, GfxProcessor};
+use sorng_rdp::gfx::processor::{
+    bounded_gfx_frame_channel, GfxDvcProcessor, GfxFrameReceiver, GfxProcessor,
+};
 use sorng_rdp::h264::H264DecoderPreference;
 use sorng_rdp::rdp::session_state::ChannelSummary;
 
-fn new_processor() -> (GfxProcessor, mpsc::Receiver<GfxOutput>) {
-    let (tx, rx) = mpsc::channel::<GfxOutput>();
+fn new_processor() -> (GfxProcessor, GfxFrameReceiver) {
+    let (tx, rx) = bounded_gfx_frame_channel();
     let proc = GfxProcessor::new(H264DecoderPreference::Auto, tx, false);
     (proc, rx)
 }
@@ -53,8 +53,11 @@ fn gfx_ready_merges_one_enabled_and_ready_channel() {
     let handle = proc.shared_diagnostics();
 
     proc.start(7).expect("gfx start");
-    proc.process(7, &gfx_pdu(GfxCmdId::CapsConfirm, &caps_confirm_body(CAPVERSION_10)))
-        .expect("caps confirm");
+    proc.process(
+        7,
+        &gfx_pdu(GfxCmdId::CapsConfirm, &caps_confirm_body(CAPVERSION_10)),
+    )
+    .expect("caps confirm");
 
     // Runner-side: merge the GFX one-channel summary into the lifecycle summary,
     // alongside (here, on top of) other channels.
@@ -99,8 +102,11 @@ fn gfx_tier_b_snapshot_round_trips_through_wire_keys() {
     let handle = proc.shared_diagnostics();
 
     proc.start(7).expect("start");
-    proc.process(7, &gfx_pdu(GfxCmdId::CapsConfirm, &caps_confirm_body(CAPVERSION_101)))
-        .expect("caps");
+    proc.process(
+        7,
+        &gfx_pdu(GfxCmdId::CapsConfirm, &caps_confirm_body(CAPVERSION_101)),
+    )
+    .expect("caps");
 
     // Create a surface so surfacesActive is non-zero.
     let mut cs = Vec::new();

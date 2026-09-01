@@ -21,8 +21,8 @@ export class RdpFramePayloadError extends Error {
 const objectTag = (value: unknown): string =>
   Object.prototype.toString.call(value);
 
-const isArrayBuffer = (value: unknown): value is ArrayBuffer =>
-  value instanceof ArrayBuffer || objectTag(value) === "[object ArrayBuffer]";
+const isLocalArrayBuffer = (value: unknown): value is ArrayBuffer =>
+  value instanceof ArrayBuffer;
 
 const isSharedArrayBuffer = (value: unknown): value is SharedArrayBuffer =>
   typeof SharedArrayBuffer !== "undefined" &&
@@ -50,7 +50,10 @@ function copyByteWindow(
  *
  * The returned buffer is safe for transfer to the WebCodecs worker:
  *
- * - ArrayBuffers and full, transferable views keep their existing ownership.
+ * - Local ArrayBuffers and full, transferable views keep their ownership.
+ * - Foreign-realm ArrayBuffers are copied into this realm before downstream
+ *   renderer checks; returning them unchanged makes `instanceof ArrayBuffer`
+ *   fail and can send `undefined` into the DataView constructor.
  * - Offset views are copied so transferring the frame cannot detach unrelated
  *   bytes from a larger backing allocation.
  * - Shared buffers are copied because they cannot appear in a transfer list.
@@ -60,7 +63,22 @@ export function normalizeRdpFramePayload(
   payload: unknown,
   maxCopiedBytes = MAX_RDP_FRAME_PAYLOAD_BYTES,
 ): ArrayBuffer {
-  if (isArrayBuffer(payload)) return payload;
+  if (isLocalArrayBuffer(payload)) return payload;
+
+  if (objectTag(payload) === "[object ArrayBuffer]") {
+    // The tag check intentionally accepts ArrayBuffers from another realm.
+    // Keep a local binding because `instanceof` cannot express that shape to
+    // TypeScript's control-flow analysis.
+    const foreignBuffer = payload as ArrayBuffer;
+    if (foreignBuffer.byteLength > maxCopiedBytes) {
+      throw new RdpFramePayloadError(
+        "oversized",
+        `foreign frame payload is ${foreignBuffer.byteLength} bytes (maximum ${maxCopiedBytes})`,
+        foreignBuffer.byteLength,
+      );
+    }
+    return copyByteWindow(foreignBuffer, 0, foreignBuffer.byteLength);
+  }
 
   if (isSharedArrayBuffer(payload)) {
     if (payload.byteLength > maxCopiedBytes) {
@@ -84,7 +102,7 @@ export function normalizeRdpFramePayload(
     }
 
     if (
-      isArrayBuffer(buffer) &&
+      isLocalArrayBuffer(buffer) &&
       byteOffset === 0 &&
       byteLength === buffer.byteLength
     ) {
