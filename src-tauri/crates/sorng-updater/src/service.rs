@@ -3,6 +3,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
+    time::Duration,
 };
 
 use chrono::Utc;
@@ -13,14 +14,21 @@ use tauri::{
     AppHandle, Runtime,
 };
 use tauri_plugin_updater::{Update, Updater, UpdaterExt};
+use updater_reqwest::{ClientBuilder, Proxy};
 use url::Url;
 
 use crate::{
     error::UpdateError,
+    proxy::{validate_updater_proxy, ValidatedUpdaterProxy},
     types::{
         AvailableUpdate, ResolvedUpdaterEndpoint, UpdaterCheckResult, UpdaterEndpointMode,
         UpdaterEndpointSource, UpdaterInstallMode, UpdaterSettings, UpdaterSettingsPatch,
         UpdaterStatusSnapshot, UpdaterStatusValue, PUBLIC_ENDPOINT_URL,
+    },
+    unsigned::{
+        cleanup_stale_unsigned_update_dirs, download_unsigned_artifact, ensure_release_is_unsigned,
+        ensure_unsigned_risk_acknowledged, install_validated_artifact, require_unsigned_version,
+        validate_downloaded_artifact, validate_unsigned_artifact, UnsignedInstallOutcome,
     },
 };
 
@@ -31,6 +39,18 @@ const DEFAULT_CHECK_INTERVAL_HOURS: u64 = 24;
 const MAX_CUSTOM_CHECK_INTERVAL_HOURS: u64 = 24 * 30;
 const ANNUAL_CHECK_INTERVAL_HOURS: u64 = 24 * 365;
 const PORTABLE_MARKER_FILENAME: &str = ".portable";
+const UPDATER_HTTP_TIMEOUTS: UpdaterHttpTimeouts = UpdaterHttpTimeouts {
+    connect: Duration::from_secs(30),
+    read_idle: Duration::from_secs(120),
+    total: Duration::from_secs(6 * 60 * 60),
+};
+
+#[derive(Clone, Copy)]
+struct UpdaterHttpTimeouts {
+    connect: Duration,
+    read_idle: Duration,
+    total: Duration,
+}
 
 pub type UpdaterServiceState = Arc<UpdaterService>;
 
@@ -96,6 +116,7 @@ pub struct UpdaterService {
     install_mode: UpdaterInstallMode,
     settings_path: PathBuf,
     inner: Arc<Mutex<UpdaterState>>,
+    updater_operation: tokio::sync::Mutex<()>,
 }
 
 impl UpdaterService {
@@ -103,6 +124,7 @@ impl UpdaterService {
         current_version: impl Into<String>,
         app_data_dir: impl AsRef<Path>,
     ) -> UpdaterServiceState {
+        cleanup_stale_unsigned_update_dirs();
         Self::new_with_install_mode(current_version, app_data_dir, detect_runtime_install_mode())
     }
 
@@ -128,6 +150,7 @@ impl UpdaterService {
             install_mode,
             settings_path,
             inner: Arc::new(Mutex::new(state)),
+            updater_operation: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -207,8 +230,11 @@ impl UpdaterService {
         &self,
         app: &AppHandle<R>,
         force: bool,
+        proxy_url: Option<String>,
     ) -> Result<UpdaterCheckResult, UpdateError> {
         let _ = force;
+        let _operation_guard = self.try_begin_updater_operation()?;
+        let proxy = validate_updater_proxy(proxy_url.as_deref())?;
         self.ensure_self_update_supported()?;
         self.set_status(UpdaterStatusValue::Checking, None)?;
 
@@ -216,7 +242,10 @@ impl UpdaterService {
         let resolution = self.resolve_endpoints(&settings)?;
         self.set_validation_error(resolution.validation_error.clone())?;
 
-        let update_result = self.build_updater(app, resolution.urls)?.check().await;
+        let update_result = self
+            .build_updater(app, resolution.urls, proxy.as_ref())?
+            .check()
+            .await;
 
         match update_result {
             Ok(Some(update)) => {
@@ -241,7 +270,10 @@ impl UpdaterService {
         &self,
         app: &AppHandle<R>,
         version: Option<String>,
+        proxy_url: Option<String>,
     ) -> Result<UpdaterStatusSnapshot, UpdateError> {
+        let _operation_guard = self.try_begin_updater_operation()?;
+        let proxy = validate_updater_proxy(proxy_url.as_deref())?;
         self.ensure_self_update_supported()?;
         self.set_status(UpdaterStatusValue::Checking, None)?;
 
@@ -249,7 +281,11 @@ impl UpdaterService {
         let resolution = self.resolve_endpoints(&settings)?;
         self.set_validation_error(resolution.validation_error.clone())?;
 
-        let update = match self.build_updater(app, resolution.urls)?.check().await {
+        let update = match self
+            .build_updater(app, resolution.urls, proxy.as_ref())?
+            .check()
+            .await
+        {
             Ok(update) => update,
             Err(error) => {
                 let error = map_plugin_error(error);
@@ -332,6 +368,141 @@ impl UpdaterService {
         }
     }
 
+    /// Downloads and installs an unsigned release only after a per-call risk
+    /// acknowledgement. The signed updater command above deliberately remains
+    /// separate and continues to reject unsigned payloads before download.
+    pub async fn install_unsigned<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        version: Option<String>,
+        acknowledged_risk: Option<bool>,
+        proxy_url: Option<String>,
+    ) -> Result<UpdaterStatusSnapshot, UpdateError> {
+        // This guard must precede state mutation and network I/O so an omitted or
+        // false acknowledgement cannot even refresh the feed as a side effect.
+        ensure_unsigned_risk_acknowledged(acknowledged_risk)?;
+        let requested_version = require_unsigned_version(version.as_deref())?.to_string();
+        let _operation_guard = self.try_begin_updater_operation()?;
+        let proxy = validate_updater_proxy(proxy_url.as_deref())?;
+        self.ensure_self_update_supported()?;
+        self.set_status(UpdaterStatusValue::Checking, None)?;
+
+        let settings = self.settings_clone()?;
+        let resolution = self.resolve_endpoints(&settings)?;
+        self.set_validation_error(resolution.validation_error.clone())?;
+
+        let update = match self
+            .build_updater(app, official_unsigned_endpoint_urls()?, proxy.as_ref())?
+            .check()
+            .await
+        {
+            Ok(update) => update,
+            Err(error) => {
+                let error = map_plugin_error(error);
+                self.record_error(error.to_string())?;
+                return Err(error);
+            }
+        };
+
+        let Some(update) = update else {
+            self.record_no_update()?;
+            return Err(UpdateError::NoUpdateAvailable);
+        };
+
+        if requested_version != update.version {
+            let available = available_update_from_plugin(&update);
+            self.record_available_update(available.clone())?;
+            return Err(UpdateError::VersionMismatch {
+                requested: requested_version,
+                available: available.version,
+            });
+        }
+
+        let available = available_update_from_plugin(&update);
+        if let Err(error) = ensure_release_is_unsigned(&update.signature) {
+            self.record_available_update(available)?;
+            self.record_error(error.to_string())?;
+            return Err(error);
+        }
+        let artifact = match validate_unsigned_artifact(&update, self.install_mode) {
+            Ok(artifact) => artifact,
+            Err(error) => {
+                self.record_available_update(available)?;
+                self.record_error(error.to_string())?;
+                return Err(error);
+            }
+        };
+        self.begin_download(available)?;
+
+        let inner_for_progress = self.inner.clone();
+        let downloaded = match download_unsigned_artifact(
+            &update,
+            &artifact,
+            proxy.as_ref(),
+            move |downloaded_bytes, total_bytes| {
+                if let Ok(mut state) = inner_for_progress.lock() {
+                    state.status = UpdaterStatusValue::Downloading;
+                    state.downloaded_bytes = downloaded_bytes;
+                    if total_bytes.is_some() {
+                        state.total_bytes = total_bytes;
+                    }
+                    state.progress_percent = state.total_bytes.and_then(|total| {
+                        if total == 0 {
+                            None
+                        } else {
+                            Some(((downloaded_bytes as f64 / total as f64) * 100.0).min(100.0))
+                        }
+                    });
+                }
+            },
+        )
+        .await
+        {
+            Ok(downloaded) => downloaded,
+            Err(error) => {
+                self.record_error(error.to_string())?;
+                return Err(error);
+            }
+        };
+
+        let mapped = match validate_downloaded_artifact(downloaded, &artifact) {
+            Ok(mapped) => mapped,
+            Err(error) => {
+                self.record_error(error.to_string())?;
+                return Err(error);
+            }
+        };
+        let downloaded_bytes = mapped.downloaded_bytes;
+        let total_bytes = mapped.total_bytes.or(Some(downloaded_bytes));
+        self.mark_installing(downloaded_bytes, total_bytes)?;
+
+        let outcome = match install_validated_artifact(&update, mapped) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.record_error(error.to_string())?;
+                return Err(error);
+            }
+        };
+
+        let exit_app_after_handoff = outcome.exit_app_after_handoff();
+        let mut state = self.lock_state()?;
+        state.status = status_for_unsigned_outcome(outcome);
+        state.last_error = None;
+        state.downloaded_bytes = downloaded_bytes;
+        state.total_bytes = total_bytes;
+        state.progress_percent = Some(100.0);
+        let snapshot = self.status_snapshot(&state)?;
+        drop(state);
+
+        // External installers cannot replace the running app. Exit only after a
+        // checked OS handoff and after publishing truthful state; a rejected
+        // handoff returns above and leaves the app running.
+        if exit_app_after_handoff {
+            app.exit(0);
+        }
+        Ok(snapshot)
+    }
+
     pub fn relaunch<R: Runtime>(&self, app: &AppHandle<R>) {
         app.request_restart();
     }
@@ -345,8 +516,19 @@ impl UpdaterService {
         &self,
         app: &AppHandle<R>,
         urls: Vec<Url>,
+        proxy: Option<&ValidatedUpdaterProxy>,
     ) -> Result<Updater, UpdateError> {
         let mut builder = app.updater_builder().endpoints(urls)?;
+        // The same configured client is propagated by the plugin from feed
+        // checks to signed artifact downloads. Bound connect, per-read idle,
+        // and total time so a stalled endpoint cannot hold the shared updater
+        // operation guard forever.
+        let transport_proxy = proxy
+            .map(ValidatedUpdaterProxy::to_reqwest_proxy)
+            .transpose()?;
+        builder = builder.configure_client(move |client| {
+            configure_updater_http_client(client, transport_proxy.clone(), UPDATER_HTTP_TIMEOUTS)
+        });
         if let Some(target) = self.pinned_updater_target() {
             debug!("pinning the updater manifest target to {target}");
             builder = builder.target(target);
@@ -375,6 +557,25 @@ impl UpdaterService {
 
     fn settings_clone(&self) -> Result<StoredUpdaterSettings, UpdateError> {
         Ok(self.lock_state()?.settings.clone())
+    }
+
+    fn try_begin_updater_operation(&self) -> Result<tokio::sync::MutexGuard<'_, ()>, UpdateError> {
+        let guard = self
+            .updater_operation
+            .try_lock()
+            .map_err(|_| UpdateError::OperationInProgress)?;
+        let state = self.lock_state()?;
+        if matches!(
+            state.status,
+            UpdaterStatusValue::Checking
+                | UpdaterStatusValue::Downloading
+                | UpdaterStatusValue::Installing
+                | UpdaterStatusValue::RestartRequired
+        ) {
+            return Err(UpdateError::OperationInProgress);
+        }
+        drop(state);
+        Ok(guard)
     }
 
     pub fn ensure_self_update_supported(&self) -> Result<(), UpdateError> {
@@ -458,6 +659,20 @@ impl UpdaterService {
         state.downloaded_bytes = 0;
         state.total_bytes = None;
         state.progress_percent = Some(0.0);
+        Ok(())
+    }
+
+    fn mark_installing(
+        &self,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+    ) -> Result<(), UpdateError> {
+        let mut state = self.lock_state()?;
+        state.status = UpdaterStatusValue::Installing;
+        state.last_error = None;
+        state.downloaded_bytes = downloaded_bytes;
+        state.total_bytes = total_bytes;
+        state.progress_percent = Some(100.0);
         Ok(())
     }
 
@@ -584,6 +799,23 @@ impl UpdaterService {
     }
 }
 
+fn configure_updater_http_client(
+    client: ClientBuilder,
+    proxy: Option<Proxy>,
+    timeouts: UpdaterHttpTimeouts,
+) -> ClientBuilder {
+    let client = client
+        .connect_timeout(timeouts.connect)
+        .read_timeout(timeouts.read_idle)
+        .timeout(timeouts.total);
+    match proxy {
+        // Do not use `UpdaterBuilder::proxy`: the plugin logs that URL.
+        // Credentials remain in reqwest's opaque proxy-auth configuration.
+        Some(proxy) => client.proxy(proxy),
+        None => client,
+    }
+}
+
 fn detect_runtime_install_mode() -> UpdaterInstallMode {
     let flatpak_id = std::env::var_os("FLATPAK_ID");
     let executable = std::env::current_exe().ok();
@@ -680,6 +912,26 @@ fn ensure_installable_signature(signature: &str) -> Result<(), UpdateError> {
     } else {
         Ok(())
     }
+}
+
+fn status_for_unsigned_outcome(outcome: UnsignedInstallOutcome) -> UpdaterStatusValue {
+    match outcome {
+        UnsignedInstallOutcome::Installed => UpdaterStatusValue::RestartRequired,
+        // The external installer handoff is accepted, but replacement finishes
+        // only after the app exits below.
+        UnsignedInstallOutcome::ExternalInstallerLaunched => UpdaterStatusValue::Installing,
+        // Opening a DMG is a checked handoff to Finder, not an application
+        // replacement. Keep reporting the update as available until the user
+        // completes the drag-to-Applications step and launches the new build.
+        UnsignedInstallOutcome::MacOsDmgOpened => UpdaterStatusValue::Available,
+    }
+}
+
+/// The risk acknowledgement applies only to the project's canonical public
+/// feed. Private endpoint ordering remains available to the signed path, but it
+/// cannot influence which unsigned artifact is selected.
+fn official_unsigned_endpoint_urls() -> Result<Vec<Url>, UpdateError> {
+    Ok(vec![Url::parse(PUBLIC_ENDPOINT_URL)?])
 }
 
 fn private_endpoint_validation_error(settings: &StoredUpdaterSettings) -> Option<String> {
@@ -848,7 +1100,45 @@ fn is_valid_check_interval_hours(value: u64) -> bool {
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+    use std::sync::Once;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    const TEST_HTTP_TIMEOUTS: UpdaterHttpTimeouts = UpdaterHttpTimeouts {
+        connect: Duration::from_secs(1),
+        read_idle: Duration::from_millis(30),
+        total: Duration::from_millis(250),
+    };
+
+    fn install_test_crypto_provider() {
+        static INSTALL_PROVIDER: Once = Once::new();
+        INSTALL_PROVIDER.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
+
+    async fn stalled_http_server(
+        response_prefix: Option<&'static [u8]>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind updater timeout fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept fixture request");
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request).await;
+            if let Some(response_prefix) = response_prefix {
+                stream
+                    .write_all(response_prefix)
+                    .await
+                    .expect("write fixture response prefix");
+            }
+            std::future::pending::<()>().await;
+        });
+        (format!("http://{address}/latest.json"), task)
+    }
 
     fn unique_temp_dir(label: &str) -> PathBuf {
         let nonce = SystemTime::now()
@@ -866,6 +1156,97 @@ mod tests {
             check_interval_hours: Some(check_interval_hours),
             ..UpdaterSettingsPatch::default()
         }
+    }
+
+    #[tokio::test]
+    async fn updater_http_client_bounds_stalled_feed_headers() {
+        install_test_crypto_provider();
+        let (url, server) = stalled_http_server(None).await;
+        let client = configure_updater_http_client(
+            updater_reqwest::Client::builder(),
+            None,
+            TEST_HTTP_TIMEOUTS,
+        )
+        .build()
+        .expect("build bounded updater client");
+
+        let error = client
+            .get(url)
+            .send()
+            .await
+            .expect_err("stalled feed headers must time out");
+        server.abort();
+        assert!(error.is_timeout(), "unexpected feed timeout error: {error}");
+    }
+
+    #[tokio::test]
+    async fn updater_http_client_bounds_stalled_signed_payload_bodies() {
+        install_test_crypto_provider();
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\none";
+        let (url, server) = stalled_http_server(Some(response)).await;
+        let client = configure_updater_http_client(
+            updater_reqwest::Client::builder(),
+            None,
+            TEST_HTTP_TIMEOUTS,
+        )
+        .build()
+        .expect("build bounded updater client");
+
+        let response = client.get(url).send().await.expect("receive headers");
+        let error = response
+            .bytes()
+            .await
+            .expect_err("stalled signed payload body must time out");
+        server.abort();
+        assert!(error.is_timeout(), "unexpected body timeout error: {error}");
+    }
+
+    #[tokio::test]
+    async fn updater_http_client_total_timeout_bounds_slow_trickle() {
+        install_test_crypto_provider();
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind slow-trickle fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept fixture request");
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request).await;
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n")
+                .await
+                .expect("write fixture headers");
+            loop {
+                if stream.write_all(b"x").await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        });
+        let timeouts = UpdaterHttpTimeouts {
+            connect: Duration::from_secs(1),
+            read_idle: Duration::from_millis(100),
+            total: Duration::from_millis(35),
+        };
+        let client =
+            configure_updater_http_client(updater_reqwest::Client::builder(), None, timeouts)
+                .build()
+                .expect("build bounded updater client");
+
+        let response = client
+            .get(format!("http://{address}/artifact"))
+            .send()
+            .await
+            .expect("receive trickle headers");
+        let error = response
+            .bytes()
+            .await
+            .expect_err("slow trickle must hit the total deadline");
+        server.abort();
+        assert!(
+            error.is_timeout(),
+            "unexpected total-timeout error: {error}"
+        );
     }
 
     #[test]
@@ -1352,6 +1733,83 @@ mod tests {
     fn signed_discovery_entries_keep_the_existing_install_path() {
         ensure_installable_signature("minisign-payload")
             .expect("a non-empty signature must remain installable");
+    }
+
+    #[test]
+    fn unsigned_install_outcomes_report_truthful_final_status() {
+        assert_eq!(
+            status_for_unsigned_outcome(UnsignedInstallOutcome::Installed),
+            UpdaterStatusValue::RestartRequired
+        );
+        assert_eq!(
+            status_for_unsigned_outcome(UnsignedInstallOutcome::ExternalInstallerLaunched),
+            UpdaterStatusValue::Installing,
+            "an external installer still has to replace the exited app"
+        );
+        assert_eq!(
+            status_for_unsigned_outcome(UnsignedInstallOutcome::MacOsDmgOpened),
+            UpdaterStatusValue::Available,
+            "opening a DMG must not claim that the app is being replaced"
+        );
+    }
+
+    #[test]
+    fn unsigned_install_checks_only_the_canonical_public_feed() {
+        let endpoints = official_unsigned_endpoint_urls().expect("parse public endpoint");
+        assert_eq!(endpoints.len(), 1);
+        assert_eq!(endpoints[0].as_str(), PUBLIC_ENDPOINT_URL);
+        assert_eq!(endpoints[0].scheme(), "https");
+        assert_eq!(endpoints[0].host_str(), Some("github.com"));
+    }
+
+    #[test]
+    fn updater_operation_guard_rejects_concurrency_and_busy_states() {
+        let service = UpdaterService::new_with_install_mode(
+            "26.43.0",
+            unique_temp_dir("unsigned-operation-guard"),
+            UpdaterInstallMode::Nsis,
+        );
+
+        let first = service
+            .try_begin_updater_operation()
+            .expect("first updater operation acquires the guard");
+        assert!(matches!(
+            service.try_begin_updater_operation(),
+            Err(UpdateError::OperationInProgress)
+        ));
+        drop(first);
+
+        for status in [
+            UpdaterStatusValue::Checking,
+            UpdaterStatusValue::Downloading,
+            UpdaterStatusValue::Installing,
+            UpdaterStatusValue::RestartRequired,
+        ] {
+            service.lock_state().expect("updater state").status = status;
+            assert!(matches!(
+                service.try_begin_updater_operation(),
+                Err(UpdateError::OperationInProgress)
+            ));
+        }
+
+        service.lock_state().expect("updater state").status = UpdaterStatusValue::Available;
+        let _available_guard = service
+            .try_begin_updater_operation()
+            .expect("available state may start the acknowledged operation");
+    }
+
+    #[test]
+    fn every_network_updater_entrypoint_acquires_the_shared_operation_guard() {
+        let source = include_str!("service.rs");
+        let guard_call = concat!(
+            "let _operation_guard = self.",
+            "try_begin_updater_operation()?"
+        );
+        assert_eq!(
+            source.matches(guard_call).count(),
+            3,
+            "check, signed install, and unsigned install must share one guard"
+        );
     }
 
     #[test]

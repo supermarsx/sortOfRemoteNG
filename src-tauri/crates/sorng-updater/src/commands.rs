@@ -2,7 +2,10 @@ use tauri::{AppHandle, State};
 
 use crate::{
     service::UpdaterServiceState,
-    types::{UpdaterCheckResult, UpdaterSettings, UpdaterSettingsPatch, UpdaterStatusSnapshot},
+    types::{
+        UnsignedUpdateCommandError, UpdaterCheckResult, UpdaterSettings, UpdaterSettingsPatch,
+        UpdaterStatusSnapshot,
+    },
 };
 
 #[tauri::command]
@@ -34,9 +37,10 @@ pub async fn updater_check(
     app: AppHandle,
     state: State<'_, UpdaterServiceState>,
     force: Option<bool>,
+    proxy_url: Option<String>,
 ) -> Result<UpdaterCheckResult, String> {
     state
-        .check(&app, force.unwrap_or(false))
+        .check(&app, force.unwrap_or(false), proxy_url)
         .await
         .map_err(|error| error.to_string())
 }
@@ -46,11 +50,26 @@ pub async fn updater_download_and_install(
     app: AppHandle,
     state: State<'_, UpdaterServiceState>,
     version: Option<String>,
+    proxy_url: Option<String>,
 ) -> Result<UpdaterStatusSnapshot, String> {
     state
-        .download_and_install(&app, version)
+        .download_and_install(&app, version, proxy_url)
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn updater_install_unsigned(
+    app: AppHandle,
+    state: State<'_, UpdaterServiceState>,
+    version: Option<String>,
+    acknowledged_risk: Option<bool>,
+    proxy_url: Option<String>,
+) -> Result<UpdaterStatusSnapshot, UnsignedUpdateCommandError> {
+    state
+        .install_unsigned(&app, version, acknowledged_risk, proxy_url)
+        .await
+        .map_err(UnsignedUpdateCommandError::from)
 }
 
 #[tauri::command]

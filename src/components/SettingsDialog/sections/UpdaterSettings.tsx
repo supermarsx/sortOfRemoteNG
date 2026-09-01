@@ -41,13 +41,41 @@ import {
 const GITHUB_RELEASES_URL =
   "https://github.com/supermarsx/sortOfRemoteNG/releases/latest";
 
+function safeExternalWebUrl(value: string): string | null {
+  if (
+    value.length > 16_384 ||
+    value.trim() !== value ||
+    [...value].some((character) => /\p{Cc}/u.test(character))
+  ) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      !parsed.hostname ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
 function openExternalUrl(
   event: React.MouseEvent<HTMLAnchorElement>,
   url: string,
 ): void {
   event.preventDefault();
-  void invoke("open_url_external", { url }).catch(() => {
-    window.open(url, "_blank", "noopener,noreferrer");
+  const safeUrl = safeExternalWebUrl(url);
+  if (!safeUrl) return;
+
+  void invoke("open_url_external", { url: safeUrl }).catch(() => {
+    window.open(safeUrl, "_blank", "noopener,noreferrer");
   });
 }
 
@@ -144,6 +172,8 @@ export const UpdaterSettings: React.FC = () => {
   const [endpointLocalError, setEndpointLocalError] = useState<string | null>(
     null,
   );
+  const [unsignedRiskAcknowledged, setUnsignedRiskAcknowledged] =
+    useState(false);
 
   useEffect(() => {
     if (!updater.settings) return;
@@ -169,6 +199,22 @@ export const UpdaterSettings: React.FC = () => {
     ),
   );
   const available = updater.availableUpdate;
+  const availableDownloadUrl = available
+    ? safeExternalWebUrl(available.downloadUrl)
+    : null;
+  const unsignedMacDmg =
+    available?.signaturePresent === false &&
+    updater.installMode === "macos_app" &&
+    available.target.startsWith("darwin-");
+  useEffect(() => {
+    setUnsignedRiskAcknowledged(false);
+  }, [
+    available?.downloadUrl,
+    available?.signaturePresent,
+    available?.target,
+    available?.version,
+    updater.status?.endpointSource,
+  ]);
   const progressPercent = updater.progressPercent ?? 0;
   const totalBytes = updater.status?.totalBytes ?? null;
   const downloadedBytes = updater.status?.downloadedBytes ?? 0;
@@ -431,20 +477,22 @@ export const UpdaterSettings: React.FC = () => {
                     </p>
                   )}
                 </div>
-                <a
-                  href={available.downloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(event) =>
-                    openExternalUrl(event, available.downloadUrl)
-                  }
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  {available.signaturePresent
-                    ? t("updater.artifact", "Artifact")
-                    : t("updater.downloadManually", "Download manually")}
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                {availableDownloadUrl && (
+                  <a
+                    href={availableDownloadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) =>
+                      openExternalUrl(event, availableDownloadUrl)
+                    }
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    {available.signaturePresent
+                      ? t("updater.artifact", "Artifact")
+                      : t("updater.downloadManually", "Download manually")}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
               {available.body && (
                 <p className="mt-2 whitespace-pre-wrap text-xs text-[var(--color-textSecondary)]">
@@ -460,15 +508,64 @@ export const UpdaterSettings: React.FC = () => {
               className="rounded-md border border-warning/40 bg-warning/10 px-3 py-3 text-sm text-[var(--color-textSecondary)]"
               data-testid="updater-unsigned-notice"
             >
-              <p className="font-medium text-[var(--color-text)]">
-                {t("updater.unsigned.title", "Manual download required")}
-              </p>
-              <p className="mt-1 text-xs">
-                {t(
-                  "updater.unsigned.description",
-                  "This release has no updater signature, so it cannot be installed in the app. Download the artifact above and install it manually.",
-                )}
-              </p>
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                <div>
+                  <p className="font-medium text-[var(--color-text)]">
+                    {t(
+                      "updater.unsigned.title",
+                      "Unsigned update — confirmation required",
+                    )}
+                  </p>
+                  <p
+                    id="updater-unsigned-warning-description"
+                    className="mt-1 text-xs"
+                  >
+                    {t(
+                      "updater.unsigned.description",
+                      "This release has no updater signature. sortOfRemoteNG cannot verify who produced this installer or whether it was modified. Only continue if you trust the configured update source.",
+                    )}
+                  </p>
+                </div>
+              </div>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-warning/30 bg-[var(--color-background)]/60 px-3 py-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={unsignedRiskAcknowledged}
+                  onChange={(event) =>
+                    setUnsignedRiskAcknowledged(event.target.checked)
+                  }
+                  disabled={updater.isBusy}
+                  aria-describedby="updater-unsigned-warning-description"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                  data-testid="updater-unsigned-confirmation"
+                />
+                <span>
+                  {t(
+                    "updater.unsigned.confirmation",
+                    "I understand that sortOfRemoteNG cannot cryptographically verify this installer.",
+                  )}
+                </span>
+              </label>
+              {availableDownloadUrl && (
+                <p className="mt-2 text-xs text-[var(--color-textMuted)]">
+                  {t(
+                    "updater.unsigned.manualFallback",
+                    "You can also use the Download manually link above and install the artifact yourself.",
+                  )}
+                </p>
+              )}
+              {unsignedMacDmg && (
+                <p
+                  className="mt-2 text-xs text-[var(--color-textMuted)]"
+                  data-testid="updater-unsigned-macos-manual-step"
+                >
+                  {t(
+                    "updater.unsigned.macManualCompletion",
+                    "On macOS, this action downloads and opens the DMG, then closes sortOfRemoteNG. Drag the app to Applications and reopen it to finish the update.",
+                  )}
+                </p>
+              )}
             </div>
           )}
 
@@ -519,6 +616,32 @@ export const UpdaterSettings: React.FC = () => {
               >
                 <Download className="w-4 h-4" />
                 {t("updater.downloadAndInstall", "Download and install")}
+              </button>
+            )}
+            {updater.canInstallUnsigned && available && (
+              <button
+                type="button"
+                onClick={() =>
+                  void updater.installUnsigned(
+                    available.version,
+                    unsignedRiskAcknowledged,
+                  )
+                }
+                disabled={!unsignedRiskAcknowledged || updater.isBusy}
+                className="inline-flex items-center gap-2 rounded-md bg-warning px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-warning/90 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-describedby="updater-unsigned-warning-description"
+                data-testid="updater-install-unsigned-btn"
+              >
+                <Download className="h-4 w-4" />
+                {unsignedMacDmg
+                  ? t(
+                      "updater.unsigned.openMac",
+                      "Download and open unsigned update",
+                    )
+                  : t(
+                      "updater.unsigned.install",
+                      "Download and install unsigned update",
+                    )}
               </button>
             )}
             {updater.canRelaunch && (

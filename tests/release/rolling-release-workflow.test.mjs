@@ -82,6 +82,10 @@ const updaterSetupDocumentation = readFileSync(
   new URL("../../docs/release/updater-setup.md", import.meta.url),
   "utf8",
 );
+const privateUpdaterDocumentation = readFileSync(
+  new URL("../../docs/release/private-updater-endpoint.md", import.meta.url),
+  "utf8",
+);
 const releaseDocumentation = readFileSync(
   new URL("../../docs/releases.md", import.meta.url),
   "utf8",
@@ -2841,7 +2845,7 @@ test("optional signing states are annotation-clean while partial secrets fail cl
   assert.match(updaterAbsent.stdout, /### Optional updater signing/);
   assert.match(
     updaterAbsent.stdout,
-    /Public installers and a discovery-only latest\.json will be released without updater signatures/,
+    /Public installers and latest\.json will be released without updater signatures\. The in-app unsigned action requires explicit acknowledgement of the warning; the app does not automatically trust or install these artifacts/,
   );
   assert.doesNotMatch(updaterAbsent.stdout, /::(?:notice|warning)::?/);
 
@@ -3216,6 +3220,29 @@ test("updater setup documents the eight canonical updater payload names", () => 
   assert.match(
     updaterSetupDocumentation,
     /flatpak install --user --reinstall \.\/sortOfRemoteNG_<version>_linux-<arch>\.flatpak/,
+  );
+});
+
+test("private updater examples preserve the per-installer Windows keys", () => {
+  for (const arch of ["x86_64", "aarch64"]) {
+    assert.match(
+      privateUpdaterDocumentation,
+      new RegExp(
+        `"windows-${arch}": \\{[\\s\\S]{0,300}?sortOfRemoteNG_26\\.1\\.0_windows-${arch}-setup\\.exe`,
+      ),
+      `the bare windows-${arch} key must select NSIS`,
+    );
+    assert.match(
+      privateUpdaterDocumentation,
+      new RegExp(
+        `"windows-${arch}-msi": \\{[\\s\\S]{0,300}?sortOfRemoteNG_26\\.1\\.0_windows-${arch}\\.msi`,
+      ),
+      `the windows-${arch}-msi key must select MSI`,
+    );
+  }
+  assert.doesNotMatch(
+    privateUpdaterDocumentation,
+    /"windows-(?:x86_64|aarch64)": \{[\s\S]{0,300}?\.msi"/,
   );
 });
 

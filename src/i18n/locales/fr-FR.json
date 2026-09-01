@@ -2462,8 +2462,13 @@
     "artifact": "Artefact",
     "downloadManually": "Télécharger manuellement",
     "unsigned": {
-      "title": "Téléchargement manuel requis",
-      "description": "Cette version ne possède pas de signature de mise à jour et ne peut donc pas être installée depuis l’application. Téléchargez l’artefact ci-dessus et installez-le manuellement."
+      "title": "Mise à jour non signée — confirmation requise",
+      "description": "Cette version ne possède pas de signature de mise à jour. sortOfRemoteNG ne peut pas vérifier qui a produit ce programme d’installation ni s’il a été modifié. Ne continuez que si vous faites confiance à la source de mise à jour configurée.",
+      "confirmation": "Je comprends que ce programme d’installation ne peut pas être vérifié cryptographiquement.",
+      "manualFallback": "Vous pouvez également utiliser le lien « Télécharger manuellement » ci-dessus et installer vous-même l’artefact.",
+      "install": "Télécharger et installer la mise à jour non signée",
+      "openMac": "Télécharger et ouvrir la mise à jour non signée",
+      "macManualCompletion": "Sous macOS, cette action télécharge et ouvre le DMG, puis ferme sortOfRemoteNG. Faites glisser l’application dans Applications et rouvrez-la pour terminer la mise à jour."
     },
     "msiElevation": {
       "title": "Approbation administrateur requise",

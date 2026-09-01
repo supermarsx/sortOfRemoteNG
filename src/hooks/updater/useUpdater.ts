@@ -15,6 +15,8 @@ import type {
   UpdaterStatusSnapshot,
   VersionInfo,
 } from "../../types/updater/updater";
+import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import { SettingsManager } from "../../utils/settings/settingsManager";
 
 type InvokeArgs = Record<string, unknown>;
 
@@ -24,8 +26,35 @@ const SELF_UPDATE_CAPABILITY_LOADING_MESSAGE =
 const SELF_UPDATE_UNSUPPORTED_FALLBACK =
   "This installation cannot be safely updated in the app.";
 const UNSIGNED_UPDATE_INSTALL_MESSAGE =
-  "This release has no updater signature, so it cannot be installed in the app. Download and install the artifact manually.";
+  "This release has no updater signature. Use the separate unsigned install action only after reviewing and accepting the warning.";
+const UNSIGNED_UPDATE_ACKNOWLEDGEMENT_MESSAGE =
+  "Confirm that you understand the unsigned update risk before installing.";
+const SIGNED_UPDATE_INSTALL_MESSAGE =
+  "This update has a valid updater signature. Use the verified download and install action.";
+const OFFICIAL_RELEASE_DOWNLOAD_HOST = "github.com";
+const OFFICIAL_RELEASE_DOWNLOAD_PATH = [
+  "supermarsx",
+  "sortOfRemoteNG",
+  "releases",
+  "download",
+] as const;
+const SAFE_RELEASE_PATH_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const INSTALL_STATUS_POLL_INTERVAL_MS = 500;
 export const UPDATER_SETTINGS_CHANGED_EVENT = "sorng-updater-settings-changed";
+
+function getUpdaterProxyUrl(): string | null {
+  const globalProxy =
+    SettingsManager.getInstance().getSettings().globalProxy ?? null;
+  if (!globalProxy?.enabled) return null;
+
+  const proxyUrl = getGlobalHttpProxyUrl();
+  if (!proxyUrl) {
+    throw new Error(
+      "Updater network access was blocked because the enabled global proxy is not a valid HTTP or HTTPS proxy.",
+    );
+  }
+  return proxyUrl;
+}
 
 async function invokeUpdater<T>(
   command: string,
@@ -49,6 +78,7 @@ function runSharedCheck(force = false): Promise<UpdaterCheckResult> {
   if (sharedCheckPromise) return sharedCheckPromise;
   sharedCheckPromise = invokeUpdater<UpdaterCheckResult>("updater_check", {
     force,
+    proxyUrl: getUpdaterProxyUrl(),
   }).finally(() => {
     sharedCheckPromise = null;
   });
@@ -64,6 +94,13 @@ export const updaterApi = {
   downloadAndInstall: (version?: string) =>
     invokeUpdater<UpdaterStatusSnapshot>("updater_download_and_install", {
       version: version ?? null,
+      proxyUrl: getUpdaterProxyUrl(),
+    }),
+  installUnsigned: (version?: string, acknowledgedRisk = false) =>
+    invokeUpdater<UpdaterStatusSnapshot>("updater_install_unsigned", {
+      version: version ?? null,
+      acknowledgedRisk,
+      proxyUrl: getUpdaterProxyUrl(),
     }),
   relaunch: () => invokeUpdater<void>("updater_relaunch"),
 };
@@ -99,6 +136,7 @@ export interface UseUpdaterResult {
   isUpToDate: boolean;
   canCheck: boolean;
   canInstall: boolean;
+  canInstallUnsigned: boolean;
   canRelaunch: boolean;
   progressPercent: number | null;
   currentVersion: string | null;
@@ -111,6 +149,10 @@ export interface UseUpdaterResult {
   ) => Promise<UpdaterSettings | null>;
   check: (force?: boolean) => Promise<UpdaterCheckResult | null>;
   install: (version?: string) => Promise<UpdaterStatusSnapshot | null>;
+  installUnsigned: (
+    version: string | undefined,
+    acknowledgedRisk: boolean,
+  ) => Promise<UpdaterStatusSnapshot | null>;
   relaunch: () => Promise<boolean>;
   clearError: () => void;
 
@@ -140,7 +182,79 @@ export interface UseUpdaterResult {
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const structured = error as Record<string, unknown>;
+    const message =
+      typeof structured.message === "string" ? structured.message.trim() : "";
+    const rawCode = structured.code;
+    const code =
+      typeof rawCode === "string" || typeof rawCode === "number"
+        ? String(rawCode).trim()
+        : "";
+
+    if (message && code) return `${message} (${code})`;
+    if (message) return message;
+    if (code) return `Updater command failed (${code})`;
+  }
   return "Updater command failed";
+}
+
+function isOfficialUnsignedArtifactUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.hostname !== OFFICIAL_RELEASE_DOWNLOAD_HOST ||
+      (parsed.port !== "" && parsed.port !== "443") ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.search !== "" ||
+      parsed.hash !== ""
+    ) {
+      return false;
+    }
+
+    const segments = parsed.pathname.split("/");
+    if (
+      segments.length !== 7 ||
+      segments[0] !== "" ||
+      !OFFICIAL_RELEASE_DOWNLOAD_PATH.every(
+        (segment, index) => segments[index + 1] === segment,
+      )
+    ) {
+      return false;
+    }
+
+    return segments
+      .slice(5)
+      .every((segment) => SAFE_RELEASE_PATH_SEGMENT.test(segment));
+  } catch {
+    return false;
+  }
+}
+
+function waitForInstallStatusPoll(signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (shouldPoll: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", handleAbort);
+      resolve(shouldPoll);
+    };
+    const handleAbort = () => finish(false);
+    const timeout = setTimeout(
+      () => finish(true),
+      INSTALL_STATUS_POLL_INTERVAL_MS,
+    );
+
+    signal.addEventListener("abort", handleAbort, { once: true });
+    if (signal.aborted) handleAbort();
+  });
 }
 
 function clampIntervalHours(value: number): number {
@@ -271,6 +385,7 @@ function updateToReleaseNotes(
 export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
   const { autoLoad = true } = options;
   const mountedRef = useRef(false);
+  const installPollControllerRef = useRef<AbortController | null>(null);
   const [settings, setSettings] = useState<UpdaterSettings | null>(null);
   const [status, setStatus] = useState<UpdaterStatusSnapshot | null>(null);
   const [checkResult, setCheckResult] = useState<UpdaterCheckResult | null>(
@@ -311,8 +426,46 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      installPollControllerRef.current?.abort();
+      installPollControllerRef.current = null;
     };
   }, []);
+
+  const pollInstallStatus = useCallback(async (signal: AbortSignal) => {
+    while (await waitForInstallStatusPoll(signal)) {
+      if (signal.aborted || !mountedRef.current) return;
+      try {
+        const nextStatus = await updaterApi.getStatus();
+        if (signal.aborted || !mountedRef.current) return;
+        setStatus(nextStatus);
+        setStatusCapabilityLoaded(true);
+      } catch {
+        // Polling is best-effort progress telemetry. The install command owns
+        // the terminal result and error shown to the user.
+      }
+    }
+  }, []);
+
+  const runWithInstallStatusPolling = useCallback(
+    async (
+      request: () => Promise<UpdaterStatusSnapshot>,
+    ): Promise<UpdaterStatusSnapshot> => {
+      installPollControllerRef.current?.abort();
+      const controller = new AbortController();
+      installPollControllerRef.current = controller;
+      void pollInstallStatus(controller.signal).catch(() => undefined);
+
+      try {
+        return await request();
+      } finally {
+        controller.abort();
+        if (installPollControllerRef.current === controller) {
+          installPollControllerRef.current = null;
+        }
+      }
+    },
+    [pollInstallStatus],
+  );
 
   const clearError = useCallback(() => {
     setError(null);
@@ -534,7 +687,9 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
       setInstallingAction(true);
       setError(null);
       try {
-        const nextStatus = await updaterApi.downloadAndInstall(version);
+        const nextStatus = await runWithInstallStatusPolling(() =>
+          updaterApi.downloadAndInstall(version),
+        );
         if (mountedRef.current) {
           setStatus(nextStatus);
           setStatusCapabilityLoaded(true);
@@ -554,11 +709,74 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     [
       refreshStatus,
       relaunch,
+      runWithInstallStatusPolling,
       checkResult?.availableUpdate,
       selfUpdateAllowed,
       selfUpdateCapabilityLoaded,
       selfUpdateMessage,
       status,
+    ],
+  );
+
+  const installUnsigned = useCallback(
+    async (
+      version: string | undefined,
+      acknowledgedRisk: boolean,
+    ): Promise<UpdaterStatusSnapshot | null> => {
+      if (!selfUpdateCapabilityLoaded) {
+        setError(SELF_UPDATE_CAPABILITY_LOADING_MESSAGE);
+        return null;
+      }
+      if (!selfUpdateAllowed) {
+        setError(selfUpdateMessage ?? SELF_UPDATE_UNSUPPORTED_FALLBACK);
+        return null;
+      }
+      if (!acknowledgedRisk) {
+        setError(UNSIGNED_UPDATE_ACKNOWLEDGEMENT_MESSAGE);
+        return null;
+      }
+
+      const discoveredUpdate =
+        status?.availableUpdate ?? checkResult?.availableUpdate ?? null;
+      if (!discoveredUpdate) {
+        setError("No unsigned update is available to install.");
+        return null;
+      }
+      if (discoveredUpdate.signaturePresent) {
+        setError(SIGNED_UPDATE_INSTALL_MESSAGE);
+        return null;
+      }
+
+      setInstallingAction(true);
+      setError(null);
+      try {
+        const nextStatus = await runWithInstallStatusPolling(() =>
+          updaterApi.installUnsigned(version, true),
+        );
+        if (mountedRef.current) {
+          setStatus(nextStatus);
+          setStatusCapabilityLoaded(true);
+        }
+        return nextStatus;
+      } catch (caught) {
+        const message = toErrorMessage(caught);
+        if (mountedRef.current) {
+          setError(message);
+          await refreshStatus();
+        }
+        return null;
+      } finally {
+        if (mountedRef.current) setInstallingAction(false);
+      }
+    },
+    [
+      checkResult?.availableUpdate,
+      refreshStatus,
+      runWithInstallStatusPolling,
+      selfUpdateAllowed,
+      selfUpdateCapabilityLoaded,
+      selfUpdateMessage,
+      status?.availableUpdate,
     ],
   );
 
@@ -606,6 +824,14 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     selfUpdateAllowed &&
     updateAvailable &&
     availableUpdate?.signaturePresent === true &&
+    !isRestartRequired &&
+    !isBusy;
+  const canInstallUnsigned =
+    selfUpdateAllowed &&
+    updateAvailable &&
+    availableUpdate?.signaturePresent === false &&
+    isOfficialUnsignedArtifactUrl(availableUpdate.downloadUrl) &&
+    !isRestartRequired &&
     !isBusy;
   const canRelaunch = isRestartRequired && !relaunching;
 
@@ -722,6 +948,7 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     isUpToDate,
     canCheck,
     canInstall,
+    canInstallUnsigned,
     canRelaunch,
     progressPercent,
     currentVersion: status?.currentVersion ?? null,
@@ -732,6 +959,7 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     saveSettings,
     check,
     install,
+    installUnsigned,
     relaunch,
     clearError,
     updateInfo,

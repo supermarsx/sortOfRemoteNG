@@ -68,7 +68,7 @@ const availableUpdate: AvailableUpdate = {
   body: null,
   target: "windows-x86_64-msi",
   downloadUrl:
-    "https://github.example/releases/download/25.6.0/sortOfRemoteNG_25.6.0_windows-x86_64.msi",
+    "https://github.com/supermarsx/sortOfRemoteNG/releases/download/25.6/sortOfRemoteNG_25.6.0_windows-x86_64.msi",
   signaturePresent: true,
   rawJson: {},
 };
@@ -330,7 +330,7 @@ describe("UpdaterSettings", () => {
     },
   );
 
-  it("shows an unsigned release as a manual download without install controls", async () => {
+  it("requires explicit confirmation before invoking the unsigned native installer", async () => {
     const unsignedUpdate: AvailableUpdate = {
       ...availableUpdate,
       signaturePresent: false,
@@ -341,27 +341,67 @@ describe("UpdaterSettings", () => {
       status: "available",
       availableUpdate: unsignedUpdate,
     };
+    const installingStatus: UpdaterStatusSnapshot = {
+      ...unsignedStatus,
+      status: "installing",
+    };
     const msiSettings: UpdaterSettings = { ...settings, installMode: "msi" };
-    mockInvoke.mockImplementation((cmd: string) =>
-      Promise.resolve(
-        cmd === "updater_get_settings" ? msiSettings : unsignedStatus,
-      ),
-    );
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(msiSettings);
+        case "updater_get_status":
+          return Promise.resolve(unsignedStatus);
+        case "updater_install_unsigned":
+          return Promise.resolve(installingStatus);
+        case "open_url_external":
+          return Promise.resolve(undefined);
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
 
     render(<UpdaterSettingsSection />);
 
     const notice = await screen.findByTestId("updater-unsigned-notice");
-    expect(notice).toHaveTextContent("Manual download required");
+    expect(notice).toHaveTextContent("Unsigned update — confirmation required");
     expect(notice).toHaveTextContent(/no updater signature/i);
-    expect(notice).toHaveTextContent(/install it manually/i);
+    expect(notice).toHaveTextContent(/cannot verify who produced/i);
+    expect(notice).toHaveTextContent(/cannot cryptographically verify/i);
+
     const manualLink = screen.getByRole("link", {
       name: /Download manually/i,
     });
     expect(manualLink).toHaveAttribute("href", unsignedUpdate.downloadUrl);
+    expect(manualLink).toHaveAttribute("target", "_blank");
+    expect(manualLink).toHaveAttribute("rel", "noopener noreferrer");
     fireEvent.click(manualLink);
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("open_url_external", {
         url: unsignedUpdate.downloadUrl,
+      });
+    });
+
+    const confirmation = screen.getByTestId("updater-unsigned-confirmation");
+    const installButton = screen.getByTestId("updater-install-unsigned-btn");
+    expect(confirmation).not.toBeChecked();
+    expect(installButton).toBeDisabled();
+    fireEvent.click(installButton);
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "updater_install_unsigned",
+      expect.anything(),
+    );
+
+    fireEvent.click(confirmation);
+    expect(confirmation).toBeChecked();
+    expect(installButton).not.toBeDisabled();
+    fireEvent.click(installButton);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("updater_install_unsigned", {
+        version: unsignedUpdate.version,
+        acknowledgedRisk: true,
+        proxyUrl: null,
       });
     });
     expect(mockInvoke).not.toHaveBeenCalledWith(
@@ -373,6 +413,263 @@ describe("UpdaterSettings", () => {
       screen.queryByTestId("updater-msi-elevation-notice"),
     ).not.toBeInTheDocument();
   });
+
+  it("resets unsigned acknowledgement when the displayed artifact identity or source changes", async () => {
+    const firstUpdate: AvailableUpdate = {
+      ...availableUpdate,
+      signaturePresent: false,
+      target: "windows-x86_64",
+      downloadUrl:
+        "https://github.com/supermarsx/sortOfRemoteNG/releases/download/25.6/sortOfRemoteNG_25.6.0_windows-x86_64-setup.exe",
+    };
+    const changedUrlUpdate: AvailableUpdate = {
+      ...firstUpdate,
+      downloadUrl:
+        "https://github.com/supermarsx/sortOfRemoteNG/releases/download/25.6.1/sortOfRemoteNG_25.6.0_windows-x86_64-setup.exe",
+    };
+    const changedTargetUpdate: AvailableUpdate = {
+      ...changedUrlUpdate,
+      target: "windows-x86_64-msi",
+    };
+    const statuses: UpdaterStatusSnapshot[] = [
+      {
+        ...idleStatus,
+        status: "available",
+        endpointSource: "public",
+        availableUpdate: firstUpdate,
+      },
+      {
+        ...idleStatus,
+        status: "available",
+        endpointSource: "public",
+        availableUpdate: changedUrlUpdate,
+      },
+      {
+        ...idleStatus,
+        status: "available",
+        endpointSource: "public",
+        availableUpdate: changedTargetUpdate,
+      },
+      {
+        ...idleStatus,
+        status: "available",
+        endpointSource: "private",
+        availableUpdate: changedTargetUpdate,
+      },
+    ];
+    let nextCheck = 1;
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          return Promise.resolve(statuses[0]);
+        case "updater_check": {
+          const status = statuses[nextCheck++]!;
+          return Promise.resolve({
+            updateAvailable: true,
+            availableUpdate: status.availableUpdate,
+            status,
+          });
+        }
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    render(<UpdaterSettingsSection />);
+    await screen.findByTestId("updater-install-unsigned-btn");
+
+    for (const expectedStatus of statuses.slice(1)) {
+      const confirmation = screen.getByTestId("updater-unsigned-confirmation");
+      fireEvent.click(confirmation);
+      expect(confirmation).toBeChecked();
+
+      fireEvent.click(screen.getByTestId("updater-check-btn"));
+      await waitFor(() => expect(confirmation).not.toBeChecked());
+      expect(
+        screen.getByRole("link", { name: /Download manually/i }),
+      ).toHaveAttribute("href", expectedStatus.availableUpdate?.downloadUrl);
+    }
+
+    expect(nextCheck).toBe(statuses.length);
+  });
+
+  it("keeps a non-official unsigned artifact available only as a manual link", async () => {
+    const privateUnsignedUpdate: AvailableUpdate = {
+      ...availableUpdate,
+      signaturePresent: false,
+      downloadUrl:
+        "https://updates.example.com/releases/25.6/sortOfRemoteNG_25.6.0_windows-x86_64.msi",
+    };
+    const privateUnsignedStatus: UpdaterStatusSnapshot = {
+      ...idleStatus,
+      status: "available",
+      endpointSource: "private_then_public",
+      availableUpdate: privateUnsignedUpdate,
+    };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve({
+            ...settings,
+            privateEndpointEnabled: true,
+            privateEndpointUrl: "https://updates.example.com/latest.json",
+          });
+        case "updater_get_status":
+          return Promise.resolve(privateUnsignedStatus);
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    render(<UpdaterSettingsSection />);
+
+    expect(await screen.findByTestId("updater-unsigned-notice")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: /Download manually/i }),
+    ).toHaveAttribute("href", privateUnsignedUpdate.downloadUrl);
+    expect(
+      screen.queryByTestId("updater-install-unsigned-btn"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to browser navigation when the native artifact opener rejects", async () => {
+    const unsignedUpdate: AvailableUpdate = {
+      ...availableUpdate,
+      signaturePresent: false,
+    };
+    const unsignedStatus: UpdaterStatusSnapshot = {
+      ...idleStatus,
+      status: "available",
+      availableUpdate: unsignedUpdate,
+    };
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          return Promise.resolve(unsignedStatus);
+        case "open_url_external":
+          return Promise.reject(new Error("native opener unavailable"));
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    try {
+      render(<UpdaterSettingsSection />);
+      const manualLink = await screen.findByRole("link", {
+        name: /Download manually/i,
+      });
+      fireEvent.click(manualLink);
+
+      await waitFor(() => {
+        expect(openSpy).toHaveBeenCalledWith(
+          unsignedUpdate.downloadUrl,
+          "_blank",
+          "noopener,noreferrer",
+        );
+      });
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("describes unsigned macOS DMG handoff as a manual completion flow", async () => {
+    const macSettings: UpdaterSettings = {
+      ...settings,
+      installMode: "macos_app",
+    };
+    const macUpdate: AvailableUpdate = {
+      ...availableUpdate,
+      signaturePresent: false,
+      target: "darwin-aarch64",
+      downloadUrl:
+        "https://github.com/supermarsx/sortOfRemoteNG/releases/download/25.6/sortOfRemoteNG_25.6.0_darwin-aarch64.dmg",
+    };
+    const macStatus: UpdaterStatusSnapshot = {
+      ...idleStatus,
+      status: "available",
+      installMode: "macos_app",
+      availableUpdate: macUpdate,
+    };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(macSettings);
+        case "updater_get_status":
+          return Promise.resolve(macStatus);
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    render(<UpdaterSettingsSection />);
+
+    expect(
+      await screen.findByTestId("updater-unsigned-macos-manual-step"),
+    ).toHaveTextContent(/opens the DMG.*closes sortOfRemoteNG/i);
+    expect(
+      screen.getByTestId("updater-unsigned-macos-manual-step"),
+    ).toHaveTextContent(/Drag the app to Applications.*reopen it/i);
+    expect(
+      screen.getByTestId("updater-install-unsigned-btn"),
+    ).toHaveTextContent("Download and open unsigned update");
+  });
+
+  it.each([
+    "javascript:alert(document.domain)",
+    "file:///C:/Windows/System32/calc.exe",
+    "https://user:secret@example.test/update.msi",
+    " https://example.test/update.msi",
+  ])(
+    "does not render an unsafe feed artifact link: %s",
+    async (downloadUrl) => {
+      const unsafeUpdate: AvailableUpdate = {
+        ...availableUpdate,
+        signaturePresent: false,
+        downloadUrl,
+      };
+      const unsafeStatus: UpdaterStatusSnapshot = {
+        ...idleStatus,
+        status: "available",
+        availableUpdate: unsafeUpdate,
+      };
+      const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+      mockInvoke.mockImplementation((cmd: string) => {
+        switch (cmd) {
+          case "updater_get_settings":
+            return Promise.resolve(settings);
+          case "updater_get_status":
+            return Promise.resolve(unsafeStatus);
+          default:
+            return Promise.reject(new Error(`unexpected command ${cmd}`));
+        }
+      });
+
+      try {
+        render(<UpdaterSettingsSection />);
+        expect(
+          await screen.findByTestId("updater-unsigned-notice"),
+        ).toBeVisible();
+        expect(
+          screen.queryByRole("link", { name: /Download manually/i }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByTestId("updater-install-unsigned-btn"),
+        ).not.toBeInTheDocument();
+        expect(openSpy).not.toHaveBeenCalled();
+        expect(mockInvoke).not.toHaveBeenCalledWith(
+          "open_url_external",
+          expect.anything(),
+        );
+      } finally {
+        openSpy.mockRestore();
+      }
+    },
+  );
 
   it("opens GitHub Releases through the native browser command", async () => {
     const unsupportedMessage =

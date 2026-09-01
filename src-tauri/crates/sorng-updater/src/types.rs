@@ -182,6 +182,33 @@ pub struct UpdaterCheckResult {
     pub status: UpdaterStatusSnapshot,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnsignedUpdateErrorCode {
+    AcknowledgementRequired,
+    VersionRequired,
+    OperationInProgress,
+    UnsupportedInstallMode,
+    NoUpdateAvailable,
+    VersionMismatch,
+    SignedUpdateRequiresVerifiedInstall,
+    InvalidReleaseUrl,
+    IncompatibleArtifact,
+    DownloadFailed,
+    PayloadTooLarge,
+    LaunchFailed,
+    InvalidProxy,
+    CheckFailed,
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsignedUpdateCommandError {
+    pub code: UnsignedUpdateErrorCode,
+    pub message: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,5 +346,16 @@ mod tests {
                 mode
             );
         }
+    }
+
+    #[test]
+    fn unsigned_errors_use_typed_camel_case_fields() {
+        let error = UnsignedUpdateCommandError {
+            code: UnsignedUpdateErrorCode::AcknowledgementRequired,
+            message: "confirmation required".to_string(),
+        };
+        let value = serde_json::to_value(error).expect("serialize typed unsigned error");
+        assert_eq!(value["code"], json!("acknowledgement_required"));
+        assert_eq!(value["message"], json!("confirmation required"));
     }
 }

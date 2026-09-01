@@ -17,6 +17,7 @@ import {
   useUpdater,
 } from "../../src/hooks/updater/useUpdater";
 import { useUpdaterAutoCheck } from "../../src/hooks/updater/useUpdaterAutoCheck";
+import { SettingsManager } from "../../src/utils/settings/settingsManager";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -52,7 +53,8 @@ const update: AvailableUpdate = {
   date: "2026-03-30T00:00:00Z",
   body: "Bug fixes and improvements",
   target: "x86_64-pc-windows-msvc",
-  downloadUrl: "https://example.test/update-1.6.0.msi",
+  downloadUrl:
+    "https://github.com/supermarsx/sortOfRemoteNG/releases/download/1.6/sortOfRemoteNG_1.6.0_windows-x86_64.msi",
   signaturePresent: true,
   rawJson: {},
 };
@@ -95,6 +97,7 @@ const restartStatus: UpdaterStatusSnapshot = {
 describe("useUpdater", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    SettingsManager.resetInstance();
     mockInvoke.mockImplementation(
       (cmd: string, args?: { patch?: Partial<UpdaterSettings> }) => {
         switch (cmd) {
@@ -111,6 +114,8 @@ describe("useUpdater", () => {
           case "updater_save_settings":
             return Promise.resolve({ ...settings, ...args?.patch });
           case "updater_download_and_install":
+            return Promise.resolve(restartStatus);
+          case "updater_install_unsigned":
             return Promise.resolve(restartStatus);
           case "updater_relaunch":
             return Promise.resolve(undefined);
@@ -329,9 +334,63 @@ describe("useUpdater", () => {
       expect(legacyInfo?.version).toBe("1.6.0");
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith("updater_check", { force: true });
+    expect(mockInvoke).toHaveBeenCalledWith("updater_check", {
+      force: true,
+      proxyUrl: null,
+    });
     expect(result.current.availableUpdate?.version).toBe("1.6.0");
     expect(result.current.updateInfo?.checksum).toBe("signed");
+  });
+
+  it("routes updater checks and downloads through the configured HTTP proxy", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      globalProxy: {
+        type: "http-connect",
+        host: "proxy.internal",
+        port: 8443,
+        username: "proxy-user",
+        password: "p@ss word",
+        enabled: true,
+      },
+    });
+    const proxyUrl = "http://proxy-user:p%40ss%20word@proxy.internal:8443";
+
+    await updaterApi.check(true);
+    await updaterApi.downloadAndInstall("1.6.0");
+    await updaterApi.installUnsigned("1.6.0", true);
+
+    expect(mockInvoke).toHaveBeenCalledWith("updater_check", {
+      force: true,
+      proxyUrl,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("updater_download_and_install", {
+      version: "1.6.0",
+      proxyUrl,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("updater_install_unsigned", {
+      version: "1.6.0",
+      acknowledgedRisk: true,
+      proxyUrl,
+    });
+  });
+
+  it("fails closed instead of bypassing an enabled unsupported proxy", () => {
+    SettingsManager.getInstance().applyInMemory({
+      globalProxy: {
+        type: "socks5",
+        host: "proxy.internal",
+        port: 1080,
+        enabled: true,
+      },
+    });
+
+    expect(() => updaterApi.check(true)).toThrow(
+      "Updater network access was blocked",
+    );
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "updater_check",
+      expect.anything(),
+    );
   });
 
   it("saves updater settings through updater_save_settings", async () => {
@@ -378,6 +437,16 @@ describe("useUpdater", () => {
       await result.current.check(true);
     });
     await waitFor(() => expect(result.current.canInstall).toBe(true));
+    expect(result.current.canInstallUnsigned).toBe(false);
+
+    await act(async () => {
+      expect(await result.current.installUnsigned("1.6.0", true)).toBeNull();
+    });
+    expect(result.current.lastError).toContain("valid updater signature");
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "updater_install_unsigned",
+      expect.anything(),
+    );
 
     await act(async () => {
       await result.current.install("1.6.0");
@@ -385,12 +454,93 @@ describe("useUpdater", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("updater_download_and_install", {
       version: "1.6.0",
+      proxyUrl: null,
     });
     expect(result.current.isRestartRequired).toBe(true);
+    expect(result.current.canInstall).toBe(false);
+    expect(result.current.canInstallUnsigned).toBe(false);
     expect(result.current.canRelaunch).toBe(true);
   });
 
-  it("keeps an unsigned release discoverable but never invokes installation", async () => {
+  it("shows signed-install progress while IPC is pending and stops polling after success", async () => {
+    vi.useFakeTimers();
+    const installResponse = deferred<UpdaterStatusSnapshot>();
+    const progressStatus: UpdaterStatusSnapshot = {
+      ...availableStatus,
+      status: "downloading",
+      downloadedBytes: 150_000_000,
+      totalBytes: 600_000_000,
+      progressPercent: 25,
+    };
+    let statusCalls = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          statusCalls += 1;
+          return Promise.resolve(
+            statusCalls === 1 ? availableStatus : progressStatus,
+          );
+        case "updater_download_and_install":
+          return installResponse.promise;
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    const { result, unmount } = renderHook(() =>
+      useUpdater({ autoLoad: false }),
+    );
+    let installPromise: Promise<UpdaterStatusSnapshot | null> | undefined;
+
+    try {
+      await act(async () => {
+        await result.current.refresh();
+      });
+      expect(result.current.canInstall).toBe(true);
+
+      act(() => {
+        installPromise = result.current.install(update.version);
+      });
+      expect(result.current.isInstalling).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+
+      expect(statusCalls).toBe(2);
+      expect(result.current.isDownloading).toBe(true);
+      expect(result.current.status).toEqual(progressStatus);
+      expect(result.current.progress).toMatchObject({
+        downloadedBytes: 150_000_000,
+        totalBytes: 600_000_000,
+        percent: 25,
+      });
+
+      await act(async () => {
+        installResponse.resolve(restartStatus);
+        await expect(installPromise).resolves.toEqual(restartStatus);
+      });
+
+      const callsAtCompletion = statusCalls;
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(statusCalls).toBe(callsAtCompletion);
+      expect(result.current.status).toEqual(restartStatus);
+    } finally {
+      installResponse.resolve(restartStatus);
+      unmount();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps unsigned-install progress visible without letting polling errors mask terminal failure", async () => {
+    vi.useFakeTimers();
+    const installResponse = deferred<UpdaterStatusSnapshot>();
     const unsignedUpdate: AvailableUpdate = {
       ...update,
       signaturePresent: false,
@@ -398,6 +548,182 @@ describe("useUpdater", () => {
     const unsignedStatus: UpdaterStatusSnapshot = {
       ...availableStatus,
       availableUpdate: unsignedUpdate,
+    };
+    const progressStatus: UpdaterStatusSnapshot = {
+      ...unsignedStatus,
+      status: "downloading",
+      downloadedBytes: 300_000_000,
+      totalBytes: 600_000_000,
+      progressPercent: 50,
+    };
+    let statusCalls = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          statusCalls += 1;
+          if (statusCalls === 1) return Promise.resolve(unsignedStatus);
+          if (statusCalls === 2) return Promise.resolve(progressStatus);
+          if (statusCalls === 3) {
+            return Promise.reject(new Error("progress telemetry unavailable"));
+          }
+          return Promise.resolve(unsignedStatus);
+        case "updater_install_unsigned":
+          return installResponse.promise;
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    const { result, unmount } = renderHook(() =>
+      useUpdater({ autoLoad: false }),
+    );
+    let installPromise: Promise<UpdaterStatusSnapshot | null> | undefined;
+
+    try {
+      await act(async () => {
+        await result.current.refresh();
+      });
+      expect(result.current.canInstallUnsigned).toBe(true);
+
+      act(() => {
+        installPromise = result.current.installUnsigned(update.version, true);
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(result.current.status).toEqual(progressStatus);
+      expect(result.current.progressPercent).toBe(50);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(statusCalls).toBe(3);
+      expect(result.current.lastError).toBeNull();
+
+      await act(async () => {
+        installResponse.reject({
+          message: "Unsigned installer validation failed",
+          code: "unsigned_validation_failed",
+        });
+        await expect(installPromise).resolves.toBeNull();
+      });
+
+      expect(result.current.lastError).toBe(
+        "Unsigned installer validation failed (unsigned_validation_failed)",
+      );
+      const callsAtFailure = statusCalls;
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(statusCalls).toBe(callsAtFailure);
+    } finally {
+      installResponse.resolve(restartStatus);
+      unmount();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops updater status polling when a pending install hook unmounts", async () => {
+    vi.useFakeTimers();
+    const installResponse = deferred<UpdaterStatusSnapshot>();
+    let statusCalls = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          statusCalls += 1;
+          return Promise.resolve(availableStatus);
+        case "updater_download_and_install":
+          return installResponse.promise;
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    const { result, unmount } = renderHook(() =>
+      useUpdater({ autoLoad: false }),
+    );
+    let installPromise: Promise<UpdaterStatusSnapshot | null> | undefined;
+
+    try {
+      await act(async () => {
+        await result.current.refresh();
+      });
+      act(() => {
+        installPromise = result.current.install(update.version);
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(statusCalls).toBe(2);
+
+      unmount();
+      const callsAtUnmount = statusCalls;
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(statusCalls).toBe(callsAtUnmount);
+
+      installResponse.resolve(restartStatus);
+      await expect(installPromise).resolves.toEqual(restartStatus);
+    } finally {
+      installResponse.resolve(restartStatus);
+      unmount();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an unsigned update retained but not installable once restart is required", async () => {
+    const unsignedUpdate: AvailableUpdate = {
+      ...update,
+      signaturePresent: false,
+    };
+    const unsignedRestartStatus: UpdaterStatusSnapshot = {
+      ...restartStatus,
+      availableUpdate: unsignedUpdate,
+    };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          return Promise.resolve(unsignedRestartStatus);
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    const { result } = renderHook(() => useUpdater({ autoLoad: false }));
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.availableUpdate).toEqual(unsignedUpdate);
+    expect(result.current.isRestartRequired).toBe(true);
+    expect(result.current.canInstall).toBe(false);
+    expect(result.current.canInstallUnsigned).toBe(false);
+    expect(result.current.canRelaunch).toBe(true);
+  });
+
+  it("keeps signed installation blocked for an unsigned release and requires explicit risk acknowledgement", async () => {
+    const unsignedUpdate: AvailableUpdate = {
+      ...update,
+      signaturePresent: false,
+    };
+    const unsignedStatus: UpdaterStatusSnapshot = {
+      ...availableStatus,
+      availableUpdate: unsignedUpdate,
+    };
+    const unsignedInstallingStatus: UpdaterStatusSnapshot = {
+      ...unsignedStatus,
+      status: "installing",
     };
     mockInvoke.mockImplementation((cmd: string) => {
       switch (cmd) {
@@ -411,6 +737,8 @@ describe("useUpdater", () => {
             availableUpdate: unsignedUpdate,
             status: unsignedStatus,
           });
+        case "updater_install_unsigned":
+          return Promise.resolve(unsignedInstallingStatus);
         default:
           return Promise.reject(new Error(`unexpected command ${cmd}`));
       }
@@ -429,16 +757,147 @@ describe("useUpdater", () => {
     expect(result.current.updateAvailable).toBe(true);
     expect(result.current.updateInfo?.checksum).toBe("");
     expect(result.current.canInstall).toBe(false);
+    expect(result.current.canInstallUnsigned).toBe(true);
 
     await act(async () => {
       expect(await result.current.install("1.6.0")).toBeNull();
     });
 
     expect(result.current.lastError).toContain("no updater signature");
-    expect(result.current.lastError).toContain("manually");
+    expect(result.current.lastError).toContain("unsigned install action");
+
+    await act(async () => {
+      expect(await result.current.installUnsigned("1.6.0", false)).toBeNull();
+    });
+    expect(result.current.lastError).toContain(
+      "understand the unsigned update risk",
+    );
     const commandNames = mockInvoke.mock.calls.map(([cmd]) => cmd);
     expect(commandNames).not.toContain("updater_download_and_install");
+    expect(commandNames).not.toContain("updater_install_unsigned");
+
+    await act(async () => {
+      expect(await result.current.installUnsigned("1.6.0", true)).toEqual(
+        unsignedInstallingStatus,
+      );
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith("updater_install_unsigned", {
+      version: "1.6.0",
+      acknowledgedRisk: true,
+      proxyUrl: null,
+    });
+    expect(result.current.isInstalling).toBe(true);
+    expect(result.current.canInstallUnsigned).toBe(false);
   });
+
+  it("surfaces structured native unsigned-install rejection details", async () => {
+    const unsignedUpdate: AvailableUpdate = {
+      ...update,
+      signaturePresent: false,
+    };
+    const unsignedStatus: UpdaterStatusSnapshot = {
+      ...availableStatus,
+      availableUpdate: unsignedUpdate,
+    };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          return Promise.resolve(unsignedStatus);
+        case "updater_install_unsigned":
+          return Promise.reject({
+            message: "The downloaded installer could not be launched",
+            code: "unsigned_installer_launch_failed",
+          });
+        default:
+          return Promise.reject(new Error(`unexpected command ${cmd}`));
+      }
+    });
+
+    const { result } = renderHook(() => useUpdater({ autoLoad: false }));
+    await act(async () => {
+      await result.current.refresh();
+    });
+    await waitFor(() => expect(result.current.canInstallUnsigned).toBe(true));
+
+    await act(async () => {
+      expect(
+        await result.current.installUnsigned(unsignedUpdate.version, true),
+      ).toBeNull();
+    });
+
+    expect(result.current.lastError).toBe(
+      "The downloaded installer could not be launched (unsigned_installer_launch_failed)",
+    );
+    expect(mockInvoke).toHaveBeenCalledWith("updater_install_unsigned", {
+      version: unsignedUpdate.version,
+      acknowledgedRisk: true,
+      proxyUrl: null,
+    });
+  });
+
+  it.each([
+    [
+      "a private host",
+      "https://updates.example.com/supermarsx/sortOfRemoteNG/releases/download/1.6/update.msi",
+    ],
+    [
+      "a different repository",
+      "https://github.com/other/sortOfRemoteNG/releases/download/1.6/update.msi",
+    ],
+    [
+      "URL credentials",
+      "https://user@github.com/supermarsx/sortOfRemoteNG/releases/download/1.6/update.msi",
+    ],
+    [
+      "a nonstandard port",
+      "https://github.com:444/supermarsx/sortOfRemoteNG/releases/download/1.6/update.msi",
+    ],
+    [
+      "a query string",
+      "https://github.com/supermarsx/sortOfRemoteNG/releases/download/1.6/update.msi?download=1",
+    ],
+    [
+      "a fragment",
+      "https://github.com/supermarsx/sortOfRemoteNG/releases/download/1.6/update.msi#artifact",
+    ],
+  ])(
+    "does not offer unsigned installation for %s",
+    async (_label, downloadUrl) => {
+      const unsignedUpdate: AvailableUpdate = {
+        ...update,
+        downloadUrl,
+        signaturePresent: false,
+      };
+      const unsignedStatus: UpdaterStatusSnapshot = {
+        ...availableStatus,
+        endpointSource: "private_then_public",
+        availableUpdate: unsignedUpdate,
+      };
+      mockInvoke.mockImplementation((cmd: string) => {
+        switch (cmd) {
+          case "updater_get_settings":
+            return Promise.resolve(settings);
+          case "updater_get_status":
+            return Promise.resolve(unsignedStatus);
+          default:
+            return Promise.reject(new Error(`unexpected command ${cmd}`));
+        }
+      });
+
+      const { result } = renderHook(() => useUpdater({ autoLoad: false }));
+      await act(async () => {
+        await result.current.refresh();
+      });
+
+      expect(result.current.availableUpdate).toEqual(unsignedUpdate);
+      expect(result.current.updateAvailable).toBe(true);
+      expect(result.current.canInstall).toBe(false);
+      expect(result.current.canInstallUnsigned).toBe(false);
+    },
+  );
 
   it("fails closed when check or install is called before capability loading", async () => {
     const { result } = renderHook(() => useUpdater({ autoLoad: false }));
@@ -446,6 +905,7 @@ describe("useUpdater", () => {
     await act(async () => {
       expect(await result.current.check(true)).toBeNull();
       expect(await result.current.install("1.6.0")).toBeNull();
+      expect(await result.current.installUnsigned("1.6.0", true)).toBeNull();
     });
 
     expect(result.current.lastError).toContain(
@@ -454,6 +914,7 @@ describe("useUpdater", () => {
     const commandNames = mockInvoke.mock.calls.map(([cmd]) => cmd);
     expect(commandNames).not.toContain("updater_check");
     expect(commandNames).not.toContain("updater_download_and_install");
+    expect(commandNames).not.toContain("updater_install_unsigned");
   });
 
   it("does not invoke check or install for an externally managed package", async () => {
@@ -495,12 +956,14 @@ describe("useUpdater", () => {
     await act(async () => {
       expect(await result.current.check(true)).toBeNull();
       expect(await result.current.install("1.6.0")).toBeNull();
+      expect(await result.current.installUnsigned("1.6.0", true)).toBeNull();
     });
 
     expect(result.current.lastError).toBe(message);
     const commandNames = mockInvoke.mock.calls.map(([cmd]) => cmd);
     expect(commandNames).not.toContain("updater_check");
     expect(commandNames).not.toContain("updater_download_and_install");
+    expect(commandNames).not.toContain("updater_install_unsigned");
   });
 
   it("skips the automatic check for an externally managed package", async () => {
@@ -540,6 +1003,7 @@ describe("useUpdater", () => {
     expect(result.current.settings?.installMode).toBe("rpm");
     expect(mockInvoke).not.toHaveBeenCalledWith("updater_check", {
       force: false,
+      proxyUrl: null,
     });
   });
 

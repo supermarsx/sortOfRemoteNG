@@ -2462,8 +2462,13 @@
     "artifact": "4r71f4c7",
     "downloadManually": "D0wn104d m4nu411y",
     "unsigned": {
-      "title": "M4nu41 d0wn104d r3qu1r3d",
-      "description": "7h15 r313453 h45 n0 upd473r 516n47ur3, 50 17 c4nn07 83 1n574113d 1n 7h3 4pp. D0wn104d 7h3 4r71f4c7 480v3 4nd 1n57411 17 m4nu411y."
+      "title": "Un516n3d upd473 — c0nf1rm4710n r3qu1r3d",
+      "description": "7h15 r313453 h45 n0 upd473r 516n47ur3. sortOfRemoteNG c4nn07 v3r1fy wh0 pr0duc3d 7h15 1n574113r 0r wh37h3r 17 w45 m0d1f13d. 0n1y c0n71nu3 1f y0u 7ru57 7h3 c0nf16ur3d upd473 50urc3.",
+      "confirmation": "1 und3r574nd 7h47 sortOfRemoteNG c4nn07 cryp706r4ph1c411y v3r1fy 7h15 1n574113r.",
+      "manualFallback": "Y0u c4n 4150 u53 7h3 D0wn104d m4nu411y 11nk 480v3 4nd 1n57411 7h3 4r71f4c7 y0ur531f.",
+      "install": "D0wn104d 4nd 1n57411 un516n3d upd473",
+      "openMac": "D0wn104d 4nd 0p3n un516n3d upd473",
+      "macManualCompletion": "0n macOS, 7h15 4c710n d0wn104d5 4nd 0p3n5 7h3 DM6, 7h3n c10535 sortOfRemoteNG. Dr46 7h3 4pp 70 4pp11c4710n5 4nd r30p3n 17 70 f1n15h 7h3 upd473."
     },
     "msiElevation": {
       "title": "4dm1n157r470r 4ppr0v41 r3qu1r3d",

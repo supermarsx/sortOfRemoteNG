@@ -2462,8 +2462,13 @@
     "artifact": "Artifact",
     "downloadManually": "Haul aboard manually",
     "unsigned": {
-      "title": "Manual haul aboard required",
-      "description": "This release has nay updater signature, so it cannot be installed in the app. Haul aboard the artifact above and install it manually."
+      "title": "Unsigned refit — confirmation required",
+      "description": "This release has nay updater signature. sortOfRemoteNG cannot verify who produced this installer or whether it was modified. Only continue if ye trust the configured refit source.",
+      "confirmation": "I understand that sortOfRemoteNG cannot cryptographically verify this installer.",
+      "manualFallback": "Ye can also use the Haul aboard manually link above and install the artifact yourself.",
+      "install": "Haul aboard and install unsigned refit",
+      "openMac": "Haul aboard and unfurl unsigned refit",
+      "macManualCompletion": "On macOS, this action downloads and opens the DMG, then closes sortOfRemoteNG. Drag the app to Applications and reopen it to finish the refit."
     },
     "msiElevation": {
       "title": "Captain approval required",

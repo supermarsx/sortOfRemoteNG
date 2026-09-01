@@ -2462,8 +2462,13 @@
     "artifact": "构件",
     "downloadManually": "手动下载",
     "unsigned": {
-      "title": "需要手动下载",
-      "description": "此版本没有更新程序签名，因此无法在应用内安装。请下载上方的构件并手动安装。"
+      "title": "未签名更新 — 需要确认",
+      "description": "此版本没有更新程序签名。sortOfRemoteNG 无法验证此安装程序由谁制作，也无法确认它是否遭到修改。仅当你信任所配置的更新源时才继续。",
+      "confirmation": "我了解此安装程序无法通过加密签名验证。",
+      "manualFallback": "你也可以使用上方的“手动下载”链接，自行安装该构件。",
+      "install": "下载并安装未签名更新",
+      "openMac": "下载并打开未签名更新",
+      "macManualCompletion": "在 macOS 上，此操作会下载并打开 DMG，然后关闭 sortOfRemoteNG。请将应用拖到“应用程序”文件夹并重新打开，以完成更新。"
     },
     "msiElevation": {
       "title": "需要管理员授权",

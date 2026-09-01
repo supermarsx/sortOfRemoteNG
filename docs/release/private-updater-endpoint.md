@@ -23,6 +23,17 @@ as for the public feed. If you rotate the pubkey, follow the bridge-
 release procedure in `updater-setup.md` § 5 — both feeds must continue
 to serve artifacts signed by the current private key.
 
+**Unsigned execution boundary:** the warning-gated unsigned command does not
+use this configured endpoint. On every acknowledged invocation it re-resolves
+only the fixed `PUBLIC_ENDPOINT_URL`, checks the requested version and platform
+target there, and accepts only that feed's exact canonical GitHub release
+artifact. An empty-signature private entry can report a version and offer a
+manual link, but the app will not download or execute its artifact. Even if a
+private entry copies the official URL, the command independently fetches the
+public feed rather than trusting that metadata. A future executable
+private-unsigned design would require a separately reviewed, pinned trust
+policy; none exists today.
+
 ---
 
 ## 1. How the two endpoints are combined
@@ -128,8 +139,20 @@ s3://sortofremoteng-updates/
   "updater_signing": true,
   "platforms": {
     "windows-x86_64": {
-      "signature": "<base64 minisign signature of the .msi artifact>",
-      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_x64_en-US.msi",
+      "signature": "<base64 minisign signature of the x64 setup.exe artifact>",
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe",
+    },
+    "windows-x86_64-msi": {
+      "signature": "<base64 minisign signature of the x64 .msi artifact>",
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_windows-x86_64.msi",
+    },
+    "windows-aarch64": {
+      "signature": "<base64 minisign signature of the ARM64 setup.exe artifact>",
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_windows-aarch64-setup.exe",
+    },
+    "windows-aarch64-msi": {
+      "signature": "<base64 minisign signature of the ARM64 .msi artifact>",
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_windows-aarch64.msi",
     },
     "darwin-x86_64": {
       "signature": "<base64 minisign signature>",
@@ -147,12 +170,21 @@ s3://sortofremoteng-updates/
 }
 ```
 
-The private endpoint must serve the signed variant; it is not a place to
-bypass updater verification. The `signature` values are the **same** ones
-you'd publish on a signed public GitHub release — both feeds point at different
-URLs but the bytes at those URLs are byte-identical (or at least both signed by
-the same private key). Public unsigned releases can use empty signatures for
-discovery-only metadata, but private automatic-install feeds cannot.
+The bare `windows-<arch>` entries are always the NSIS `setup.exe` payloads.
+MSI installs are pinned to `windows-<arch>-msi` and do not fall back to the
+bare key, so a private feed supporting Windows must publish both keys for each
+architecture it distributes.
+
+The private endpoint must serve the signed variant to use the verified
+automatic installation path; it is not a place to bypass updater verification.
+The `signature` values are the **same** ones you'd publish on a signed public
+GitHub release — both feeds point at different URLs but the bytes at those URLs
+are byte-identical (or at least both signed by the same private key). An
+official public unsigned release can use the separate per-use warning and
+acknowledgement path. That command always re-resolves the fixed public feed and
+never consults this private endpoint. A private empty-signature entry is
+available only for version discovery and manual download; its artifact remains
+non-executable unless a future app release defines another pinned trust policy.
 
 ---
 
@@ -232,8 +264,9 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
 2. **Assemble `latest.json`** with the base64 `.sig` values and the
    CloudFront URLs for each platform (see § 5 above). Prefer the validated
    feed and artifacts from the automatic release for the same source SHA;
-   never promote or copy a discovery-only unsigned feed into this private
-   automatic-install channel.
+   do not copy unsigned artifacts into this private automatic-install channel.
+   Private unsigned entries remain manual-only; the warning-gated command
+   independently checks the fixed public feed instead.
 3. **Upload to S3** (versioned dir + root `latest.json`):
    ```sh
    aws s3 cp src-tauri/target/release/bundle/ \
@@ -284,6 +317,11 @@ rollback.
 - **Pubkey never changes per-endpoint.** If the private feed needs a
   different trust anchor, that is a new app build — both feeds must
   sign against whatever key is embedded.
+- **Unsigned acknowledgement is not endpoint trust.** It authorizes one exact
+  public-feed artifact attempt. The command ignores the configured private
+  endpoint and rechecks `PUBLIC_ENDPOINT_URL`; private unsigned artifacts must
+  be downloaded and handled manually until a future release provides an
+  additional pinned trust policy.
 - **Settings file is plaintext.** The private endpoint URL is not a
   secret (its hostname is visible on the wire anyway); if you need the
   URL to be confidential, gate access at the CDN / VPN / firewall layer

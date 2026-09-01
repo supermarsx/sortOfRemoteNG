@@ -2462,8 +2462,13 @@
     "artifact": "Artefakt",
     "downloadManually": "Manuell herunterladen",
     "unsigned": {
-      "title": "Manueller Download erforderlich",
-      "description": "Diese Version besitzt keine Updater-Signatur und kann daher nicht in der App installiert werden. Laden Sie das obige Artefakt herunter und installieren Sie es manuell."
+      "title": "Nicht signiertes Update — Bestätigung erforderlich",
+      "description": "Diese Version besitzt keine Updater-Signatur. sortOfRemoteNG kann nicht überprüfen, wer dieses Installationsprogramm erstellt hat oder ob es verändert wurde. Fahren Sie nur fort, wenn Sie der konfigurierten Update-Quelle vertrauen.",
+      "confirmation": "Mir ist bewusst, dass dieses Installationsprogramm nicht kryptografisch verifiziert werden kann.",
+      "manualFallback": "Alternativ können Sie oben den Link „Manuell herunterladen“ verwenden und das Artefakt selbst installieren.",
+      "install": "Nicht signiertes Update herunterladen und installieren",
+      "openMac": "Nicht signiertes Update herunterladen und öffnen",
+      "macManualCompletion": "Unter macOS lädt diese Aktion das DMG herunter, öffnet es und beendet anschließend sortOfRemoteNG. Ziehen Sie die App in den Ordner „Programme“ und öffnen Sie sie erneut, um das Update abzuschließen."
     },
     "msiElevation": {
       "title": "Administratorfreigabe erforderlich",

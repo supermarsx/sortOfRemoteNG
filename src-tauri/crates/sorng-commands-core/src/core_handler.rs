@@ -127,6 +127,7 @@ pub fn is_command(command: &str) -> bool {
             | "updater_get_status"
             | "updater_check"
             | "updater_download_and_install"
+            | "updater_install_unsigned"
             | "updater_relaunch"
             | "connect_ssh"
             | "ssh_respond_to_host_key_prompt"
@@ -1457,6 +1458,7 @@ define_command_group!(
         updater_commands::updater_get_status,
         updater_commands::updater_check,
         updater_commands::updater_download_and_install,
+        updater_commands::updater_install_unsigned,
         updater_commands::updater_relaunch,
         #[cfg(feature = "opkssh")]
         opkssh_inner_commands::opkssh_check_binary,
@@ -3249,6 +3251,16 @@ mod tests {
                 "{command} missing from generate_handler"
             );
         }
+    }
+
+    #[test]
+    fn unsigned_updater_command_is_recognized_and_registered() {
+        let command = "updater_install_unsigned";
+        assert!(is_command(command), "{command} missing from is_command");
+        assert!(
+            include_str!("core_handler.rs").contains("updater_commands::updater_install_unsigned,"),
+            "{command} missing from generate_handler"
+        );
     }
 
     #[test]

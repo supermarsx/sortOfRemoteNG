@@ -182,6 +182,55 @@ pub mod commands {
         require_regular_executable(PathBuf::from(path), label)
     }
 
+    fn validate_external_url(url: &str) -> Result<&str, String> {
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            return Err("Only http and https URLs are supported".into());
+        }
+
+        if url.len() > 16_384 || url.chars().any(char::is_control) {
+            return Err("URL is too long or contains control characters".into());
+        }
+
+        Ok(url)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn open_external_url_with_windows_shell(url: &str) -> Result<(), String> {
+        use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
+        use windows_sys::{
+            w,
+            Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+        };
+
+        let encoded_url = OsStr::new(url)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                w!("open"),
+                encoded_url.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+
+        // Per ShellExecuteW, values greater than 32 indicate that Windows
+        // accepted the request. Explorer.exe can exit successfully without
+        // handing an URL to the registered browser, which is why URLs use the
+        // shell association API directly instead.
+        if result as isize <= 32 {
+            return Err(format!(
+                "Windows could not open the URL with its registered browser (ShellExecuteW code {})",
+                result as isize
+            ));
+        }
+
+        Ok(())
+    }
+
     fn validate_shortcut_name(name: &str) -> Result<String, String> {
         let name = name.trim();
         if name.is_empty() {
@@ -423,27 +472,17 @@ end tell
 
     #[tauri::command]
     pub fn open_url_external(url: String) -> Result<(), String> {
-        if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err("Only http and https URLs are supported".into());
-        }
-
-        if url.len() > 16_384 || url.chars().any(char::is_control) {
-            return Err("URL is too long or contains control characters".into());
-        }
+        let url = validate_external_url(&url)?;
 
         #[cfg(target_os = "windows")]
         {
-            let explorer = windows_system_executable(&["explorer.exe"], "Windows Explorer")?;
-            std::process::Command::new(explorer)
-                .arg(&url)
-                .spawn()
-                .map_err(|e| e.to_string())?;
+            open_external_url_with_windows_shell(url)?;
         }
         #[cfg(target_os = "macos")]
         {
             let open = macos_system_executable("/usr/bin/open", "macOS open")?;
             std::process::Command::new(open)
-                .arg(&url)
+                .arg(url)
                 .spawn()
                 .map_err(|e| e.to_string())?;
         }
@@ -451,7 +490,7 @@ end tell
         {
             let xdg_open = linux_system_executable("/usr/bin/xdg-open", "xdg-open")?;
             std::process::Command::new(xdg_open)
-                .arg(&url)
+                .arg(url)
                 .spawn()
                 .map_err(|e| e.to_string())?;
         }
@@ -1163,7 +1202,28 @@ StartupNotify=false
 
     #[cfg(test)]
     mod process_safety_tests {
-        use super::{validate_shortcut_id, validate_shortcut_name};
+        use super::{validate_external_url, validate_shortcut_id, validate_shortcut_name};
+
+        #[test]
+        fn external_urls_accept_web_links_and_reject_non_web_or_control_input() {
+            for url in [
+                "https://github.com/supermarsx/sortOfRemoteNG/releases/latest",
+                "http://127.0.0.1:3000/update",
+            ] {
+                assert_eq!(
+                    validate_external_url(url).expect("web URL should be accepted"),
+                    url
+                );
+            }
+
+            for url in [
+                "file:///C:/Windows/System32/calc.exe",
+                "javascript:alert(1)",
+                "https://example.test/update\nignored",
+            ] {
+                assert!(validate_external_url(url).is_err(), "{url:?}");
+            }
+        }
 
         #[test]
         fn shortcut_names_reject_traversal_and_script_metacharacters() {

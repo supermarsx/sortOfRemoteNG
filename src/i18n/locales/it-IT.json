@@ -2462,8 +2462,13 @@
     "artifact": "Artefatto",
     "downloadManually": "Scarica manualmente",
     "unsigned": {
-      "title": "Download manuale richiesto",
-      "description": "Questa versione non dispone di una firma dell'aggiornamento, quindi non può essere installata dall'app. Scarica l'artefatto qui sopra e installalo manualmente."
+      "title": "Aggiornamento non firmato — conferma necessaria",
+      "description": "Questa versione non dispone di una firma dell'aggiornamento. sortOfRemoteNG non può verificare chi ha prodotto questo programma di installazione né se è stato modificato. Continua solo se ritieni attendibile l'origine degli aggiornamenti configurata.",
+      "confirmation": "Comprendo che questo programma di installazione non può essere verificato crittograficamente.",
+      "manualFallback": "In alternativa, puoi usare il link «Scarica manualmente» qui sopra e installare personalmente l'artefatto.",
+      "install": "Scarica e installa l'aggiornamento non firmato",
+      "openMac": "Scarica e apri l'aggiornamento non firmato",
+      "macManualCompletion": "Su macOS, questa azione scarica e apre il DMG, quindi chiude sortOfRemoteNG. Trascina l'app in Applicazioni e riaprila per completare l'aggiornamento."
     },
     "msiElevation": {
       "title": "Approvazione amministratore richiesta",

@@ -128,7 +128,10 @@ describe("UpdaterPanel", () => {
     fireEvent.click(checkButton);
 
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("updater_check", { force: true });
+      expect(mockInvoke).toHaveBeenCalledWith("updater_check", {
+        force: true,
+        proxyUrl: null,
+      });
       expect(screen.getByTestId("updater-install-btn")).toBeInTheDocument();
       expect(screen.getByTestId("updater-current-version")).toHaveTextContent(
         "Current version: 25.5",
@@ -148,6 +151,7 @@ describe("UpdaterPanel", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("updater_download_and_install", {
         version: "25.6.0",
+        proxyUrl: null,
       });
     });
   });

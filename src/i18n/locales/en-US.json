@@ -2462,8 +2462,13 @@
     "artifact": "Artifact",
     "downloadManually": "Download manually",
     "unsigned": {
-      "title": "Manual download required",
-      "description": "This release has no updater signature, so it cannot be installed in the app. Download the artifact above and install it manually."
+      "title": "Unsigned update — confirmation required",
+      "description": "This release has no updater signature. sortOfRemoteNG cannot verify who produced this installer or whether it was modified. Only continue if you trust the configured update source.",
+      "confirmation": "I understand that sortOfRemoteNG cannot cryptographically verify this installer.",
+      "manualFallback": "You can also use the Download manually link above and install the artifact yourself.",
+      "install": "Download and install unsigned update",
+      "openMac": "Download and open unsigned update",
+      "macManualCompletion": "On macOS, this action downloads and opens the DMG, then closes sortOfRemoteNG. Drag the app to Applications and reopen it to finish the update."
     },
     "msiElevation": {
       "title": "Administrator approval required",

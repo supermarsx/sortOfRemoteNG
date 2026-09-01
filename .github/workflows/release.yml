@@ -232,7 +232,7 @@ jobs:
             exit 1
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            message="Optional updater signing is disabled because TAURI_SIGNING_PRIVATE_KEY is not configured. Public installers and a discovery-only latest.json will be released without updater signatures."
+            message="Optional updater signing is disabled because TAURI_SIGNING_PRIVATE_KEY is not configured. Public installers and latest.json will be released without updater signatures. The in-app unsigned action requires explicit acknowledgement of the warning; the app does not automatically trust or install these artifacts."
             echo "$message"
             {
               echo "### Optional updater signing"
@@ -2942,7 +2942,7 @@ jobs:
             if [ "$UPDATER_ENABLED" = true ]; then
               echo "Signed automatic-update artifacts and \`latest.json\` are included."
             else
-              echo "Public installers and a discovery-only \`latest.json\` are included. The updater signing key was not configured, so in-app installation is unavailable and no updater signatures are published."
+              echo "Public installers and \`latest.json\` are included without updater signatures. The in-app unsigned action requires explicit acknowledgement of the warning; the app does not automatically trust or install these artifacts."
             fi
             echo
             echo "macOS Developer ID and Windows Authenticode status is recorded in the per-target provenance assets."

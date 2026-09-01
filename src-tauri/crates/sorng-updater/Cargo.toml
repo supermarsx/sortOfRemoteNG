@@ -10,7 +10,25 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
+memmap2 = "0.9"
+percent-encoding = "2.3"
 tauri = { workspace = true }
 tauri-plugin-updater = "2"
+tempfile = { workspace = true }
+tokio = { workspace = true }
 url = { workspace = true }
 sorng-storage = { path = "../sorng-storage" }
+
+# Match the updater plugin's reqwest major and TLS backend. The plugin check
+# installs the ring crypto provider before this guarded artifact request runs.
+updater-reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["stream", "rustls-no-provider"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+  "Win32_System_SystemInformation",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+rustls = { workspace = true, features = ["ring"] }

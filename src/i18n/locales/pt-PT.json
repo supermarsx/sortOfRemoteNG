@@ -2462,8 +2462,13 @@
     "artifact": "Artefacto",
     "downloadManually": "Transferir manualmente",
     "unsigned": {
-      "title": "É necessária uma transferência manual",
-      "description": "Esta versão não tem uma assinatura do atualizador, pelo que não pode ser instalada na aplicação. Transfira o artefacto acima e instale-o manualmente."
+      "title": "Atualização não assinada — confirmação necessária",
+      "description": "Esta versão não tem uma assinatura do atualizador. O sortOfRemoteNG não consegue verificar quem produziu este instalador nem se foi modificado. Continue apenas se confiar na origem de atualização configurada.",
+      "confirmation": "Compreendo que este instalador não pode ser verificado criptograficamente.",
+      "manualFallback": "Também pode utilizar a ligação «Transferir manualmente» acima e instalar o artefacto por si.",
+      "install": "Transferir e instalar a atualização não assinada",
+      "openMac": "Transferir e abrir a atualização não assinada",
+      "macManualCompletion": "No macOS, esta ação transfere e abre o DMG e, em seguida, fecha o sortOfRemoteNG. Arraste a aplicação para Aplicações e volte a abri-la para concluir a atualização."
     },
     "msiElevation": {
       "title": "É necessária aprovação de administrador",

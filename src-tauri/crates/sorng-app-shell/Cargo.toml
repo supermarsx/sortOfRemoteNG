@@ -10,3 +10,9 @@ serde = { workspace = true }
 tauri = { workspace = true }
 dirs = { workspace = true }
 tauri-plugin-autostart = "=2.5.1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = [
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
