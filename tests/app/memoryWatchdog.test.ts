@@ -142,6 +142,101 @@ describe("MemoryWatchdog lifecycle", () => {
     expect(tauri.invoke).toHaveBeenCalledTimes(callsAtDisable);
   });
 
+  it("confirms heap critical twice, keeps heap pressure immediate, and deduplicates active status", async () => {
+    const criticalStatuses: MemoryWatchdogStatus[] = [];
+    const onCritical = vi.fn();
+    heap.usedJSHeapSize = 150 * MB;
+    const watchdog = startMemoryWatchdog({
+      intervalMs: 1000,
+      warningMb: 64,
+      criticalMb: 128,
+      killMb: 256,
+      onCritical,
+      onStatusChange: (status) => criticalStatuses.push(status),
+    });
+
+    await flushImmediateWork();
+    expect(onCritical).not.toHaveBeenCalled();
+    expect(criticalStatuses).toEqual([]);
+    expect(watchdog.getSnapshot().severity).toBe("normal");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect(onCritical).toHaveBeenCalledTimes(1);
+    expect(criticalStatuses).toHaveLength(1);
+    expect(criticalStatuses[0]).toMatchObject({
+      severity: "critical",
+      source: "heap",
+    });
+
+    const firstSnapshotTimestamp = watchdog.getSnapshot().stats.timestamp;
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect(criticalStatuses).toHaveLength(1);
+    expect(watchdog.getSnapshot().stats.timestamp).toBeGreaterThan(
+      firstSnapshotTimestamp,
+    );
+
+    stopMemoryWatchdog(watchdog);
+    heap.usedJSHeapSize = 300 * MB;
+    const pressureStatuses: MemoryWatchdogStatus[] = [];
+    const onKill = vi.fn();
+    startMemoryWatchdog({
+      intervalMs: 1000,
+      warningMb: 64,
+      criticalMb: 128,
+      killMb: 256,
+      onKill,
+      onStatusChange: (status) => pressureStatuses.push(status),
+    });
+    await flushImmediateWork();
+
+    expect(onKill).toHaveBeenCalledTimes(1);
+    expect(pressureStatuses).toHaveLength(1);
+    expect(pressureStatuses[0]).toMatchObject({
+      severity: "pressure",
+      source: "heap",
+    });
+  });
+
+  it("requires hysteresis and two low heap samples before recovery", async () => {
+    const statuses: MemoryWatchdogStatus[] = [];
+    heap.usedJSHeapSize = 150 * MB;
+    const watchdog = startMemoryWatchdog({
+      intervalMs: 1000,
+      warningMb: 64,
+      criticalMb: 128,
+      killMb: 256,
+      onStatusChange: (status) => statuses.push(status),
+    });
+    await flushImmediateWork();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect(watchdog.getSnapshot().severity).toBe("critical");
+
+    // 120 MB is below the 128 MB entry point, but not below the 90% exit
+    // threshold (115.2 MB), so it must not begin recovery.
+    heap.usedJSHeapSize = 120 * MB;
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushImmediateWork();
+    expect(watchdog.getSnapshot().severity).toBe("critical");
+    expect(statuses.filter(({ severity }) => severity === "recovered")).toEqual(
+      [],
+    );
+
+    heap.usedJSHeapSize = 110 * MB;
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect(watchdog.getSnapshot().severity).toBe("critical");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect(watchdog.getSnapshot().severity).toBe("normal");
+    expect(
+      statuses.filter(({ severity }) => severity === "recovered"),
+    ).toHaveLength(1);
+  });
+
   it("does not let a duplicate owner reconfigure or stop the active monitor", async () => {
     heap.usedJSHeapSize = 300 * MB;
     const firstOwner = Symbol("first-owner");
@@ -278,7 +373,11 @@ describe("MemoryWatchdog lifecycle", () => {
   it("signals system pressure and recovery without replacing application DOM", async () => {
     tauri.invoke
       .mockResolvedValueOnce(systemMemory(96))
-      .mockResolvedValueOnce(systemMemory(40));
+      .mockResolvedValueOnce(systemMemory(96))
+      .mockResolvedValueOnce(systemMemory(96))
+      .mockResolvedValueOnce(systemMemory(90))
+      .mockResolvedValueOnce(systemMemory(84))
+      .mockResolvedValueOnce(systemMemory(84));
     const statuses: MemoryWatchdogStatus[] = [];
     const onKill = vi.fn();
     const appRoot = document.createElement("div");
@@ -297,15 +396,39 @@ describe("MemoryWatchdog lifecycle", () => {
     expect(tauri.invoke).toHaveBeenCalledTimes(1);
     expect((await watchdog.getStats())?.system?.usedPct).toBe(96);
     await vi.advanceTimersByTimeAsync(0);
+    expect(onKill).not.toHaveBeenCalled();
+    expect(statuses[0]?.severity).toBe("warning");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
     expect(onKill).toHaveBeenCalledTimes(1);
-    expect(statuses[0]?.severity).toBe("pressure");
+    expect(statuses[statuses.length - 1]?.severity).toBe("pressure");
     expect(document.getElementById("application-root")).toBe(appRoot);
 
     await vi.advanceTimersByTimeAsync(1000);
     await flushImmediateWork();
-    expect((await watchdog.getStats())?.system?.usedPct).toBe(40);
-    await vi.advanceTimersByTimeAsync(0);
+    expect(statuses).toHaveLength(2);
+    expect(watchdog.getSnapshot().stats.system?.usedPct).toBe(96);
+
+    // 90% is below the 95% entry threshold but above its 85.5% hysteresis
+    // exit, so pressure remains active.
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect(watchdog.getSnapshot().stats.system?.usedPct).toBe(90);
+    expect(watchdog.getSnapshot().severity).toBe("pressure");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect(watchdog.getSnapshot().stats.system?.usedPct).toBe(84);
+    expect(watchdog.getSnapshot().severity).toBe("pressure");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushImmediateWork();
+    expect((await watchdog.getStats())?.system?.usedPct).toBe(84);
     expect(statuses[statuses.length - 1]?.severity).toBe("recovered");
+    expect(
+      statuses.filter(({ severity }) => severity === "recovered"),
+    ).toHaveLength(1);
     expect(document.getElementById("application-root")).toBe(appRoot);
     expect(appRoot.textContent).toBe("active session");
     appRoot.remove();
@@ -322,6 +445,8 @@ describe("MemoryWatchdog lifecycle", () => {
       systemKillPct: 95,
       windowLabel: "main",
     });
+    await flushImmediateWork();
+    await vi.advanceTimersByTimeAsync(1000);
     await flushImmediateWork();
 
     const snapshot = watchdog.getSnapshot();

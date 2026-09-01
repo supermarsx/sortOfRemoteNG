@@ -35,7 +35,7 @@ export interface MemoryWatchdogConfig {
   onCritical?: (stats: MemoryStats) => void;
   /** Backward-compatible callback for entering a pressure threshold. */
   onKill?: (stats: MemoryStats) => void;
-  /** Receives pressure transitions and updated active-pressure samples. */
+  /** Receives pressure and recovery transitions. */
   onStatusChange?: (status: MemoryWatchdogStatus) => void;
 }
 
@@ -115,6 +115,7 @@ interface SystemProbeDelivery {
 }
 
 type ActiveSeverity = MemoryWatchdogActiveSeverity;
+type MemorySampleSource = "heap" | "system";
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -129,6 +130,8 @@ const MIN_HEAP_PRESSURE_MB = 256;
 const MAX_HEAP_WARNING_MB = 8192;
 const MAX_HEAP_CRITICAL_MB = 8192;
 const MAX_HEAP_PRESSURE_MB = 16_384;
+const REQUIRED_CONSECUTIVE_SAMPLES = 2;
+const EXIT_HYSTERESIS_RATIO = 0.9;
 
 const noop = () => {};
 
@@ -340,6 +343,12 @@ export class MemoryWatchdog {
   private generation = 0;
   private currentSeverity: ActiveSeverity = "normal";
   private currentSource: MemoryPressureSource = "heap";
+  private heapSeverity: ActiveSeverity = "normal";
+  private systemSeverity: ActiveSeverity = "normal";
+  private heapCriticalSamples = 0;
+  private systemPressureSamples = 0;
+  private heapExitSamples = 0;
+  private systemExitSamples = 0;
   private latestSystemMemory: SystemMemoryInfo | null = null;
   private systemDelivery: SystemProbeDelivery | null = null;
   private systemProbeFailures = 0;
@@ -368,6 +377,7 @@ export class MemoryWatchdog {
 
   updateConfig(config: MemoryWatchdogConfig): void {
     this.config = normalizeMemoryWatchdogConfig(config);
+    this.resetTransitionSamples();
     if (!this.running || this.isDocumentHidden()) return;
     this.clearScheduledHeapProbe();
     this.schedule(0);
@@ -385,6 +395,9 @@ export class MemoryWatchdog {
     this.nextSystemProbeAt = 0;
     this.currentSeverity = "normal";
     this.currentSource = "heap";
+    this.heapSeverity = "normal";
+    this.systemSeverity = "normal";
+    this.resetTransitionSamples();
   }
 
   /** Returns an immediate heap sample plus the latest delivered system sample. */
@@ -499,9 +512,11 @@ export class MemoryWatchdog {
     }
 
     try {
-      this.evaluate(this.sampleStats());
+      this.evaluate(this.sampleStats(), "heap");
       this.startSystemProbe(generation);
     } catch (error) {
+      this.heapCriticalSamples = 0;
+      this.heapExitSamples = 0;
       console.warn("[MemoryWatchdog] heap probe failed", error);
     } finally {
       if (this.running && generation === this.generation) {
@@ -569,10 +584,12 @@ export class MemoryWatchdog {
     this.latestSystemMemory = systemMemory;
     this.systemProbeFailures = 0;
     this.nextSystemProbeAt = Date.now() + this.config.intervalMs;
-    this.evaluate(this.sampleStats(false));
+    this.evaluate(this.sampleStats(false), "system");
   }
 
   private recordSystemProbeFailure(): void {
+    this.systemPressureSamples = 0;
+    this.systemExitSamples = 0;
     this.systemProbeFailures += 1;
     const backoffMs = Math.min(
       MAX_SYSTEM_PROBE_BACKOFF_MS,
@@ -589,25 +606,17 @@ export class MemoryWatchdog {
     this.systemDelivery = null;
   }
 
-  private evaluate(stats: MemoryStats): void {
-    const heapSeverity: ActiveSeverity =
-      stats.usedMb >= this.config.killMb
-        ? "pressure"
-        : stats.usedMb >= this.config.criticalMb
-          ? "critical"
-          : stats.usedMb >= this.config.warningMb && stats.trend === "rising"
-            ? "warning"
-            : "normal";
-    const systemSeverity: ActiveSeverity = !stats.system
-      ? "normal"
-      : stats.system.usedPct >= this.config.systemKillPct
-        ? "pressure"
-        : stats.system.usedPct >= this.config.systemWarningPct
-          ? "warning"
-          : "normal";
-    const heapRank = severityRank(heapSeverity);
-    const systemRank = severityRank(systemSeverity);
-    const severity = heapRank >= systemRank ? heapSeverity : systemSeverity;
+  private evaluate(stats: MemoryStats, sampleSource: MemorySampleSource): void {
+    if (sampleSource === "heap") {
+      this.updateHeapSeverity(stats);
+    } else {
+      this.updateSystemSeverity(stats);
+    }
+
+    const heapRank = severityRank(this.heapSeverity);
+    const systemRank = severityRank(this.systemSeverity);
+    const severity =
+      heapRank >= systemRank ? this.heapSeverity : this.systemSeverity;
     const source: MemoryPressureSource =
       heapRank > 0 && heapRank === systemRank
         ? "both"
@@ -631,7 +640,9 @@ export class MemoryWatchdog {
 
     const changed =
       severity !== this.currentSeverity || source !== this.currentSource;
-    if (changed) this.notifyThreshold(severity, source, stats);
+    if (!changed) return;
+
+    this.notifyThreshold(severity, source, stats);
     this.currentSeverity = severity;
     this.currentSource = source;
     this.notifyStatus({
@@ -640,6 +651,131 @@ export class MemoryWatchdog {
       stats,
       windowLabel: this.config.windowLabel,
     });
+  }
+
+  private updateHeapSeverity(stats: MemoryStats): void {
+    const rawSeverity: ActiveSeverity =
+      stats.usedMb >= this.config.killMb
+        ? "pressure"
+        : stats.usedMb >= this.config.criticalMb
+          ? "critical"
+          : stats.usedMb >= this.config.warningMb && stats.trend === "rising"
+            ? "warning"
+            : "normal";
+
+    const rawRank = severityRank(rawSeverity);
+    const currentRank = severityRank(this.heapSeverity);
+    if (rawRank > currentRank) {
+      this.heapExitSamples = 0;
+      if (rawSeverity === "pressure") {
+        this.heapCriticalSamples = 0;
+        this.heapSeverity = "pressure";
+        return;
+      }
+
+      if (rawSeverity === "critical") {
+        this.heapCriticalSamples += 1;
+        if (this.heapCriticalSamples >= REQUIRED_CONSECUTIVE_SAMPLES) {
+          this.heapCriticalSamples = 0;
+          this.heapSeverity = "critical";
+        } else if (
+          this.heapSeverity === "normal" &&
+          stats.usedMb >= this.config.warningMb &&
+          stats.trend === "rising"
+        ) {
+          this.heapSeverity = "warning";
+        }
+        return;
+      }
+
+      this.heapCriticalSamples = 0;
+      this.heapSeverity = rawSeverity;
+      return;
+    }
+
+    this.heapCriticalSamples = 0;
+    if (rawRank === currentRank) {
+      this.heapExitSamples = 0;
+      return;
+    }
+
+    const exitThreshold =
+      (this.heapSeverity === "pressure"
+        ? this.config.killMb
+        : this.heapSeverity === "critical"
+          ? this.config.criticalMb
+          : this.config.warningMb) * EXIT_HYSTERESIS_RATIO;
+    if (stats.usedMb >= exitThreshold) {
+      this.heapExitSamples = 0;
+      return;
+    }
+
+    this.heapExitSamples += 1;
+    if (this.heapExitSamples >= REQUIRED_CONSECUTIVE_SAMPLES) {
+      this.heapExitSamples = 0;
+      this.heapSeverity = rawSeverity;
+    }
+  }
+
+  private updateSystemSeverity(stats: MemoryStats): void {
+    if (!stats.system) return;
+
+    const rawSeverity: ActiveSeverity =
+      stats.system.usedPct >= this.config.systemKillPct
+        ? "pressure"
+        : stats.system.usedPct >= this.config.systemWarningPct
+          ? "warning"
+          : "normal";
+    const rawRank = severityRank(rawSeverity);
+    const currentRank = severityRank(this.systemSeverity);
+
+    if (rawRank > currentRank) {
+      this.systemExitSamples = 0;
+      if (rawSeverity === "pressure") {
+        this.systemPressureSamples += 1;
+        if (this.systemPressureSamples >= REQUIRED_CONSECUTIVE_SAMPLES) {
+          this.systemPressureSamples = 0;
+          this.systemSeverity = "pressure";
+        } else if (this.systemSeverity === "normal") {
+          // The first pressure sample still satisfies the existing warning
+          // threshold, so retain warning's immediate-entry semantics.
+          this.systemSeverity = "warning";
+        }
+        return;
+      }
+
+      this.systemPressureSamples = 0;
+      this.systemSeverity = rawSeverity;
+      return;
+    }
+
+    this.systemPressureSamples = 0;
+    if (rawRank === currentRank) {
+      this.systemExitSamples = 0;
+      return;
+    }
+
+    const exitThreshold =
+      (this.systemSeverity === "pressure"
+        ? this.config.systemKillPct
+        : this.config.systemWarningPct) * EXIT_HYSTERESIS_RATIO;
+    if (stats.system.usedPct >= exitThreshold) {
+      this.systemExitSamples = 0;
+      return;
+    }
+
+    this.systemExitSamples += 1;
+    if (this.systemExitSamples >= REQUIRED_CONSECUTIVE_SAMPLES) {
+      this.systemExitSamples = 0;
+      this.systemSeverity = rawSeverity;
+    }
+  }
+
+  private resetTransitionSamples(): void {
+    this.heapCriticalSamples = 0;
+    this.systemPressureSamples = 0;
+    this.heapExitSamples = 0;
+    this.systemExitSamples = 0;
   }
 
   private notifyThreshold(
@@ -693,6 +829,7 @@ export class MemoryWatchdog {
     if (this.isDocumentHidden()) {
       this.clearScheduledHeapProbe();
       this.cancelSystemDelivery();
+      this.resetTransitionSamples();
       this.latestSystemMemory = null;
       this.nextSystemProbeAt = 0;
       return;
