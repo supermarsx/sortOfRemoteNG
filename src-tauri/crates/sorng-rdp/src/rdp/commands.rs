@@ -311,7 +311,7 @@ mod binary_ipc_preflight_tests {
     fn probe_payload_forces_tauri_fetch_and_is_deterministic() {
         let payload = build_rdp_binary_ipc_preflight_payload();
 
-        assert!(RDP_BINARY_IPC_PREFLIGHT_PAYLOAD_BYTES > 1_024);
+        const { assert!(RDP_BINARY_IPC_PREFLIGHT_PAYLOAD_BYTES > 1_024) };
         assert_eq!(payload.len(), RDP_BINARY_IPC_PREFLIGHT_PAYLOAD_BYTES);
         assert!(payload.starts_with(RDP_BINARY_IPC_PREFLIGHT_MAGIC));
         assert_eq!(payload, build_rdp_binary_ipc_preflight_payload());

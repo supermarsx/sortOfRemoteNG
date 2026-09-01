@@ -269,6 +269,10 @@ pub fn push_tiled_rects_via_channel(
 
 /// Deliver a local RGBA surface (such as a decoded RDPGFX frame) as
 /// destination-positioned horizontal tiles while retaining only a row cursor.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the hot-path boundary keeps the RGBA surface, destination, resume cursor, transport, and accounting explicit"
+)]
 pub fn push_tiled_local_rgba_via_channel(
     rgba: &[u8],
     width: u16,
@@ -849,6 +853,10 @@ pub fn push_nal_via_channel(
 
 /// Push the entire desktop as a single full-frame through the channel
 /// and update the SharedFrameStore (for the rdp_get_frame_data fallback).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the full-frame boundary keeps source, dimensions, transport, fallback storage, accounting, and resume state explicit"
+)]
 pub fn send_full_frame_via_channel(
     session_id: &str,
     image: &DecodedImage,
@@ -1007,7 +1015,7 @@ mod tests {
 
         assert_eq!(regions, vec![(0, 0, 1920, 1080)]);
         assert!(regions.len() <= MAX_PENDING_DIRTY_REGIONS);
-        assert!(MAX_PENDING_DIRTY_REGION_METADATA_BYTES <= 4 * 1024);
+        const { assert!(MAX_PENDING_DIRTY_REGION_METADATA_BYTES <= 4 * 1024) };
     }
 
     #[test]
