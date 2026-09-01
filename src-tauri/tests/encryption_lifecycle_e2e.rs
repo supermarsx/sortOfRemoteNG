@@ -252,12 +252,7 @@ async fn audit_log_records_lock_with_reason() {
     ];
 
     for r in reasons {
-        audit::record(
-            app_data,
-            AuditEvent::Locked,
-            json!({ "reason": r }),
-        )
-        .unwrap();
+        audit::record(app_data, AuditEvent::Locked, json!({ "reason": r })).unwrap();
     }
 
     let entries = audit::read_tail(app_data, 100).unwrap();
