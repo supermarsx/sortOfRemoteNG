@@ -53,16 +53,14 @@ vi.mock("../../src/hooks/window/useTooltipSystem", () => ({
 }));
 
 let closeRequestedHandler:
-  | ((event: { preventDefault: () => void }) => Promise<void>)
-  | undefined;
+  ((event: { preventDefault: () => void }) => Promise<void>) | undefined;
 let closeResultHandler:
   | ((event: {
       payload: { requestId: string; sessionId: string; success: boolean };
     }) => void)
   | undefined;
 let mainSessionClosedHandler:
-  | ((event: { payload: { sessionId: string } }) => void)
-  | undefined;
+  ((event: { payload: { sessionId: string } }) => void) | undefined;
 type SyncEvent = { payload: WindowSessionSync };
 type SyncHandler = (event: SyncEvent) => void;
 type SyncRegistration = {
@@ -230,6 +228,7 @@ describe("DetachedClient accessibility", () => {
   };
 
   it("owns detached watchdog thresholds, live settings, and cleanup", async () => {
+    vi.useFakeTimers();
     const previousMemory = Object.getOwnPropertyDescriptor(
       performance,
       "memory",
@@ -245,7 +244,10 @@ describe("DetachedClient accessibility", () => {
     const { unmount } = render(<DetachedClient />);
 
     try {
-      const alert = await screen.findByTestId("memory-pressure-alert");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const alert = screen.getByTestId("memory-pressure-alert");
       expect(alert).toHaveAttribute("data-window-label", "detached-1");
       expect(screen.getByText("Memory pressure detected")).toBeInTheDocument();
       expect(getMemoryWatchdog()).not.toBeNull();
@@ -258,6 +260,7 @@ describe("DetachedClient accessibility", () => {
             ...settings,
             memoryWatchdog: {
               ...settings.memoryWatchdog,
+              intervalMs: 1000,
               detached: {
                 heapWarningMb: 1000,
                 heapCriticalMb: 1400,
@@ -267,11 +270,16 @@ describe("DetachedClient accessibility", () => {
           },
         }),
       );
-      await waitFor(() =>
-        expect(
-          screen.queryByTestId("memory-pressure-alert"),
-        ).not.toBeInTheDocument(),
-      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByTestId("memory-pressure-alert")).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(
+        screen.queryByTestId("memory-pressure-alert"),
+      ).not.toBeInTheDocument();
 
       fireEvent(
         window,
@@ -280,6 +288,7 @@ describe("DetachedClient accessibility", () => {
             ...settings,
             memoryWatchdog: {
               ...settings.memoryWatchdog,
+              intervalMs: 1000,
               detached: {
                 heapWarningMb: 64,
                 heapCriticalMb: 128,
@@ -289,11 +298,10 @@ describe("DetachedClient accessibility", () => {
           },
         }),
       );
-      await waitFor(() =>
-        expect(
-          screen.getByText("Memory pressure detected"),
-        ).toBeInTheDocument(),
-      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText("Memory pressure detected")).toBeInTheDocument();
 
       unmount();
       expect(getMemoryWatchdog()).toBeNull();
@@ -304,6 +312,7 @@ describe("DetachedClient accessibility", () => {
       } else {
         Reflect.deleteProperty(performance, "memory");
       }
+      vi.useRealTimers();
     }
   });
 
@@ -653,8 +662,7 @@ describe("DetachedClient accessibility", () => {
     });
 
     let pendingCloseRequest:
-      | { requestId: string; sessionId: string }
-      | undefined;
+      { requestId: string; sessionId: string } | undefined;
     vi.mocked(emit).mockImplementation(async (eventName, payload) => {
       const command = payload as any;
       if (eventName === "wm:command" && command.type === "CLOSE_SESSION") {
