@@ -2,6 +2,59 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { PerformanceMetrics } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 
+export function normalizePerformanceMetric(
+  metric: PerformanceMetrics,
+): PerformanceMetrics {
+  if (
+    metric.source === "browser-measured" ||
+    metric.source === "connection-timing"
+  )
+    return metric;
+  // Older releases mixed simulated values with observations. Keep stored
+  // records intact, but exclude unverifiable values from measured summaries.
+  return {
+    ...metric,
+    source: "legacy-unverified",
+    latency: null,
+    throughput: null,
+    cpuUsage: null,
+    memoryUsage: null,
+    dataTransferred: null,
+  };
+}
+
+export function measuredAverage(values: (number | null)[]): number | null {
+  const measured = values.filter(
+    (value): value is number => value !== null && Number.isFinite(value),
+  );
+  return measured.length
+    ? measured.reduce((sum, value) => sum + value, 0) / measured.length
+    : null;
+}
+
+export function performanceMetricsCsv(metrics: PerformanceMetrics[]): string {
+  return [
+    "Timestamp,Source,Connection Time (ms),Data Transferred (bytes),HTTP request time (ms),Throughput (KB/s),CPU (%),JS heap allocated (%)",
+    ...metrics.map((raw) => {
+      const m = normalizePerformanceMetric(raw);
+      return [
+        m.timestamp >= 946684800000 && Number.isFinite(m.timestamp)
+          ? new Date(m.timestamp).toISOString()
+          : "",
+        m.source,
+        m.connectionTime,
+        m.dataTransferred,
+        m.latency,
+        m.throughput,
+        m.cpuUsage,
+        m.memoryUsage,
+      ]
+        .map((value) => value ?? "")
+        .join(",");
+    }),
+  ].join("\n");
+}
+
 /* ------------------------------------------------------------------ */
 /*  Module-level helpers                                               */
 /* ------------------------------------------------------------------ */
@@ -21,29 +74,48 @@ const measureLatency = async (
 ): Promise<number | null> => {
   const url = normalizeLatencyTarget(target);
   const start = performance.now();
+  const request = new AbortController();
+  const cancel = () => request.abort();
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) request.abort();
+  const timeout = setTimeout(cancel, 5000);
   try {
-    await fetch(url, { mode: "no-cors", cache: "no-store", signal });
-    if (signal.aborted) return null;
+    await fetch(url, {
+      mode: "no-cors",
+      cache: "no-store",
+      signal: request.signal,
+    });
+    if (request.signal.aborted) return null;
     return performance.now() - start;
   } catch {
-    if (signal.aborted) return null;
-    return Math.random() * 50 + 10;
+    return null;
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", cancel);
   }
 };
+
+function normalizePollInterval(interval: number | undefined): number {
+  return interval !== undefined && Number.isFinite(interval)
+    ? Math.max(1000, interval)
+    : 20000;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
 
 export function usePerformanceMonitor(isOpen: boolean) {
-  const settingsManager = SettingsManager.getInstance();
+  const settingsManager = useMemo(() => SettingsManager.getInstance(), []);
 
   /* ---- state ---- */
   const [metrics, setMetrics] = useState<PerformanceMetrics[]>([]);
   const [currentMetrics, setCurrentMetrics] =
     useState<PerformanceMetrics | null>(null);
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(
-    settingsManager.getSettings().performancePollIntervalMs ?? 20000,
+    normalizePollInterval(
+      settingsManager.getSettings().performancePollIntervalMs,
+    ),
   );
   const [latencyTarget, setLatencyTarget] = useState<string>(
     settingsManager.getSettings().performanceLatencyTarget || "1.1.1.1",
@@ -55,26 +127,33 @@ export function usePerformanceMonitor(isOpen: boolean) {
   /* ---- callbacks ---- */
   const loadMetrics = useCallback(() => {
     const storedMetrics = settingsManager.getPerformanceMetrics();
-    setMetrics(storedMetrics);
+    setMetrics(storedMetrics.map(normalizePerformanceMetric));
   }, [settingsManager]);
 
   const updateCurrentMetrics = useCallback(
     async (signal: AbortSignal) => {
-      const now = performance.now();
-      const memoryInfo = (performance as any).memory;
+      const memoryInfo = (
+        performance as Performance & {
+          memory?: { usedJSHeapSize: number; totalJSHeapSize: number };
+        }
+      ).memory;
       const latency = await measureLatency(latencyTarget, signal);
-      if (latency === null || signal.aborted) return false;
+      if (signal.aborted) return false;
 
       const currentMetric: PerformanceMetrics = {
-        connectionTime: 0,
-        dataTransferred: 0,
+        connectionTime: null,
+        dataTransferred: null,
         latency,
-        throughput: Math.random() * 1000 + 500,
-        cpuUsage: Math.random() * 30 + 10,
-        memoryUsage: memoryInfo
-          ? (memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize) * 100
-          : Math.random() * 50 + 20,
-        timestamp: now,
+        throughput: null,
+        cpuUsage: null,
+        memoryUsage:
+          memoryInfo &&
+          memoryInfo.totalJSHeapSize > 0 &&
+          Number.isFinite(memoryInfo.usedJSHeapSize)
+            ? (memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize) * 100
+            : null,
+        timestamp: Date.now(),
+        source: "browser-measured",
       };
 
       setCurrentMetrics(currentMetric);
@@ -86,7 +165,7 @@ export function usePerformanceMonitor(isOpen: boolean) {
 
   const handlePollIntervalChange = useCallback(
     (seconds: number) => {
-      const safeSeconds = Math.max(1, seconds || 0);
+      const safeSeconds = Number.isFinite(seconds) ? Math.max(1, seconds) : 20;
       const intervalMs = safeSeconds * 1000;
       setPollIntervalMs(intervalMs);
       settingsManager
@@ -100,13 +179,7 @@ export function usePerformanceMonitor(isOpen: boolean) {
   );
 
   const exportMetrics = useCallback(() => {
-    const csvContent = [
-      "Timestamp,Connection Time,Data Transferred,Latency,Throughput,CPU Usage,Memory Usage",
-      ...metrics.map(
-        (m) =>
-          `${new Date(m.timestamp).toISOString()},${m.connectionTime},${m.dataTransferred},${m.latency},${m.throughput},${m.cpuUsage},${m.memoryUsage}`,
-      ),
-    ].join("\n");
+    const csvContent = performanceMetricsCsv(metrics);
 
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -150,7 +223,9 @@ export function usePerformanceMonitor(isOpen: boolean) {
       .loadSettings()
       .then((loaded) => {
         if (isMounted) {
-          const interval = loaded.performancePollIntervalMs ?? 20000;
+          const interval = normalizePollInterval(
+            loaded.performancePollIntervalMs,
+          );
           setPollIntervalMs(interval);
           setLatencyTarget(loaded.performanceLatencyTarget || "1.1.1.1");
         }
@@ -165,22 +240,26 @@ export function usePerformanceMonitor(isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return;
 
-    const intervalDuration = pollIntervalMs || 20000;
-    const controller = new AbortController();
-    const refreshMetrics = () =>
-      updateCurrentMetrics(controller.signal)
-        .then((updated) => {
-          if (updated && !controller.signal.aborted) loadMetrics();
-        })
-        .catch(console.error);
-
-    refreshMetrics();
-    const interval = window.setInterval(() => {
-      refreshMetrics();
-    }, intervalDuration);
+    const intervalDuration = normalizePollInterval(pollIntervalMs);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    const refreshMetrics = async () => {
+      controller = new AbortController();
+      try {
+        const updated = await updateCurrentMetrics(controller.signal);
+        if (!stopped && updated) loadMetrics();
+      } catch (error) {
+        console.error(error);
+      } finally {
+        if (!stopped) timer = setTimeout(refreshMetrics, intervalDuration);
+      }
+    };
+    void refreshMetrics();
     return () => {
-      controller.abort();
-      clearInterval(interval);
+      stopped = true;
+      controller?.abort();
+      clearTimeout(timer);
     };
   }, [isOpen, pollIntervalMs, updateCurrentMetrics, loadMetrics]);
 
@@ -209,38 +288,22 @@ export function usePerformanceMonitor(isOpen: boolean) {
   );
 
   const avgLatency = useMemo(
-    () =>
-      filteredMetrics.length > 0
-        ? filteredMetrics.reduce((sum, m) => sum + m.latency, 0) /
-          filteredMetrics.length
-        : 0,
+    () => measuredAverage(filteredMetrics.map((m) => m.latency)),
     [filteredMetrics],
   );
 
   const avgThroughput = useMemo(
-    () =>
-      filteredMetrics.length > 0
-        ? filteredMetrics.reduce((sum, m) => sum + m.throughput, 0) /
-          filteredMetrics.length
-        : 0,
+    () => measuredAverage(filteredMetrics.map((m) => m.throughput)),
     [filteredMetrics],
   );
 
   const avgCpuUsage = useMemo(
-    () =>
-      filteredMetrics.length > 0
-        ? filteredMetrics.reduce((sum, m) => sum + m.cpuUsage, 0) /
-          filteredMetrics.length
-        : 0,
+    () => measuredAverage(filteredMetrics.map((m) => m.cpuUsage)),
     [filteredMetrics],
   );
 
   const avgMemoryUsage = useMemo(
-    () =>
-      filteredMetrics.length > 0
-        ? filteredMetrics.reduce((sum, m) => sum + m.memoryUsage, 0) /
-          filteredMetrics.length
-        : 0,
+    () => measuredAverage(filteredMetrics.map((m) => m.memoryUsage)),
     [filteredMetrics],
   );
 

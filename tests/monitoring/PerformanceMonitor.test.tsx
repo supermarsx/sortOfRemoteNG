@@ -93,6 +93,14 @@ describe("PerformanceMonitor", () => {
     });
   });
 
+  it("shows missing and legacy readings as unavailable without charts pretending they are zero", async () => {
+    render(<PerformanceMonitor isOpen onClose={() => {}} />);
+    expect(await screen.findByText("legacy-unverified")).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(4);
+    expect(screen.queryByText("35.0%")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/JS heap/).length).toBeGreaterThan(0);
+  });
+
   it("does not render when closed", () => {
     render(<PerformanceMonitor isOpen={false} onClose={() => {}} />);
     expect(screen.queryByText("Current Performance")).not.toBeInTheDocument();
@@ -112,14 +120,14 @@ describe("PerformanceMonitor", () => {
     expect(screen.getByText("All Time")).toBeInTheDocument();
     expect(screen.getByText("All Metrics")).toBeInTheDocument();
     expect(screen.getByText("Update:")).toBeInTheDocument();
-    expect(screen.getByText("Avg Latency")).toBeInTheDocument();
+    expect(screen.getByText("Avg HTTP request time")).toBeInTheDocument();
     expect(screen.getByText("Avg Throughput")).toBeInTheDocument();
 
     expect(mocks.translationKeys).toContain("performance.table.time");
     expect(mocks.translationKeys).toContain("performance.timeRange.lastHour");
     expect(mocks.translationKeys).toContain("performance.metricFilter.all");
     expect(mocks.translationKeys).toContain(
-      "performance.summaryStats.avgLatency",
+      "performance.summaryStats.avgHttpRequest",
     );
   });
 

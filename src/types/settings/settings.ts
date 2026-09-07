@@ -80,14 +80,7 @@ export interface QuickConnectHistoryEntry {
 }
 
 export type ExportFormat =
-  | "json"
-  | "xml"
-  | "csv"
-  | "txt"
-  | "markdown"
-  | "html"
-  | "excel"
-  | "mremoteng";
+  "json" | "xml" | "csv" | "txt" | "markdown" | "html" | "excel" | "mremoteng";
 
 export type ExportPasswordScore = 0 | 1 | 2 | 3 | 4;
 
@@ -845,12 +838,7 @@ export interface RdpGlobalDefaultsConfig {
   autoDetect: boolean;
   /** Default negotiation strategy */
   negotiationStrategy:
-    | "auto"
-    | "nla-first"
-    | "tls-first"
-    | "nla-only"
-    | "tls-only"
-    | "plain-only";
+    "auto" | "nla-first" | "tls-first" | "nla-only" | "tls-only" | "plain-only";
   /** Max auto-detect retries */
   maxRetries: number;
   /** Delay between retries in ms */
@@ -1138,12 +1126,14 @@ export interface SecurityConfig {
 }
 
 export interface PerformanceMetrics {
-  connectionTime: number;
-  dataTransferred: number;
-  latency: number;
-  throughput: number;
-  cpuUsage: number;
-  memoryUsage: number;
+  connectionTime: number | null;
+  dataTransferred: number | null;
+  latency: number | null;
+  throughput: number | null;
+  cpuUsage: number | null;
+  /** Used JavaScript heap as a percentage of the browser's allocated heap. */
+  memoryUsage: number | null;
+  source?: "browser-measured" | "connection-timing" | "legacy-unverified";
   packetLoss?: number;
   jitter?: number;
   timestamp: number;

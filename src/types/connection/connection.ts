@@ -1654,9 +1654,9 @@ export interface ConnectionSession {
   // Performance Metrics
   metrics?: {
     connectionTime: number;
-    dataTransferred: number;
-    latency: number;
-    throughput: number;
+    dataTransferred?: number;
+    latency?: number;
+    throughput?: number;
     packetLoss?: number;
     jitter?: number;
   };

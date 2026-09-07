@@ -1,193 +1,83 @@
 import React from "react";
 import { Mgr } from "./types";
-import { useTranslation } from "react-i18next";
 import { Activity, Cpu, HardDrive, Wifi } from "lucide-react";
-import { TrendIndicator, Sparkline, MiniBarChart } from "../../ui/display";
+import { Sparkline } from "../../ui/display";
+import { useTranslation } from "react-i18next";
 
 const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
   if (!mgr.currentMetrics) return null;
-
+  const cards = [
+    {
+      key: "latency" as const,
+      label: t("performance.httpRequestTime", "HTTP request time"),
+      unit: "ms",
+      icon: Wifi,
+    },
+    {
+      key: "throughput" as const,
+      label: t("performance.throughput", "Throughput"),
+      unit: "KB/s",
+      icon: Activity,
+    },
+    {
+      key: "cpuUsage" as const,
+      label: t("performance.cpuUsage", "CPU usage"),
+      unit: "%",
+      icon: Cpu,
+    },
+    {
+      key: "memoryUsage" as const,
+      label: t("performance.jsHeap", "JS heap / allocated heap"),
+      unit: "%",
+      icon: HardDrive,
+    },
+  ];
   return (
     <div className="mb-6">
       <h3 className="sor-perf-heading">
         {t("performance.currentPerformance", "Current Performance")}
       </h3>
+      <p className="text-xs text-[var(--color-textMuted)] mb-3">
+        {t(
+          "performance.measurementScope",
+          "HTTP timing includes connection and server response time. JS heap excludes native memory. Unavailable measurements are not estimated.",
+        )}
+      </p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Latency Card */}
-        <div className="sor-metric-card sor-metric-card-blue">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-primary/20 rounded-lg">
-                <Wifi className="text-primary" size={14} />
+        {cards.map(({ key, label, unit, icon: Icon }) => {
+          const value = mgr.currentMetrics![key];
+          // Stop at the first missing observation instead of drawing across gaps.
+          const data: number[] = [];
+          for (const metric of mgr.filteredMetrics.slice(0, 100)) {
+            const observation = metric[key];
+            if (observation === null || !Number.isFinite(observation)) break;
+            data.push(observation);
+          }
+          return (
+            <div key={key} className="sor-metric-card sor-metric-card-blue">
+              <div className="flex items-center gap-2 mb-3">
+                <Icon size={14} />
+                <span className="text-xs">{label}</span>
               </div>
-              <span className="text-[var(--color-textSecondary)] text-xs font-medium">
-                {t("performance.latency")}
-              </span>
-            </div>
-            {mgr.filteredMetrics.length > 1 && (
-              <TrendIndicator
-                current={mgr.currentMetrics.latency}
-                previous={
-                  mgr.filteredMetrics[1]?.latency ||
-                  mgr.currentMetrics.latency
-                }
-              />
-            )}
-          </div>
-          <div className="text-[var(--color-text)] text-2xl font-bold mb-2">
-            {mgr.currentMetrics.latency.toFixed(1)}
-            <span className="text-sm font-normal text-[var(--color-textMuted)]">
-              ms
-            </span>
-          </div>
-          <Sparkline
-            data={mgr.filteredMetrics
-              .slice(0, 100)
-              .reverse()
-              .map((m) => m.latency)}
-            color="var(--color-primary)"
-            height={32}
-            width={140}
-          />
-        </div>
-
-        {/* Throughput Card */}
-        <div className="sor-metric-card sor-metric-card-green">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-success/20 rounded-lg">
-                <Activity className="text-success" size={14} />
+              <div className="text-2xl font-bold mb-2">
+                {value === null
+                  ? t("performance.unavailable", "Unavailable")
+                  : value.toFixed(1) + " " + unit}
               </div>
-              <span className="text-[var(--color-textSecondary)] text-xs font-medium">
-                {t("performance.throughput")}
-              </span>
+              {data.length > 1 && (
+                <Sparkline
+                  data={data.reverse()}
+                  color="var(--color-primary)"
+                  height={32}
+                  width={140}
+                />
+              )}
             </div>
-            {mgr.filteredMetrics.length > 1 && (
-              <TrendIndicator
-                current={mgr.currentMetrics.throughput}
-                previous={
-                  mgr.filteredMetrics[1]?.throughput ||
-                  mgr.currentMetrics.throughput
-                }
-              />
-            )}
-          </div>
-          <div className="text-[var(--color-text)] text-2xl font-bold mb-2">
-            {mgr.formatBytes(mgr.currentMetrics.throughput * 1024)}
-            <span className="text-sm font-normal text-[var(--color-textMuted)]">
-              /s
-            </span>
-          </div>
-          <MiniBarChart
-            data={mgr.filteredMetrics
-              .slice(0, 100)
-              .reverse()
-              .map((m) => m.throughput)}
-            color="var(--color-success)"
-            height={32}
-            width={140}
-          />
-        </div>
-
-        {/* CPU Usage Card */}
-        <div className="sor-metric-card sor-metric-card-yellow">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-warning/20 rounded-lg">
-                <Cpu className="text-warning" size={14} />
-              </div>
-              <span className="text-[var(--color-textSecondary)] text-xs font-medium">
-                {t("performance.cpuUsage")}
-              </span>
-            </div>
-            {mgr.filteredMetrics.length > 1 && (
-              <TrendIndicator
-                current={mgr.currentMetrics.cpuUsage}
-                previous={
-                  mgr.filteredMetrics[1]?.cpuUsage ||
-                  mgr.currentMetrics.cpuUsage
-                }
-              />
-            )}
-          </div>
-          <div className="flex items-end gap-3 mb-2">
-            <div className="text-[var(--color-text)] text-2xl font-bold">
-              {mgr.currentMetrics.cpuUsage.toFixed(1)}
-              <span className="text-sm font-normal text-[var(--color-textMuted)]">
-                %
-              </span>
-            </div>
-            <div className="flex-1 h-2 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden mb-1.5">
-              <div
-                className="h-full bg-warning rounded-full transition-all duration-300"
-                style={{
-                  width: `${Math.min(mgr.currentMetrics.cpuUsage, 100)}%`,
-                }}
-              />
-            </div>
-          </div>
-          <Sparkline
-            data={mgr.filteredMetrics
-              .slice(0, 100)
-              .reverse()
-              .map((m) => m.cpuUsage)}
-            color="var(--color-warning)"
-            height={32}
-            width={140}
-          />
-        </div>
-
-        {/* Memory Usage Card */}
-        <div className="sor-metric-card sor-metric-card-purple">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-primary/20 rounded-lg">
-                <HardDrive className="text-primary" size={14} />
-              </div>
-              <span className="text-[var(--color-textSecondary)] text-xs font-medium">
-                {t("performance.memoryUsage")}
-              </span>
-            </div>
-            {mgr.filteredMetrics.length > 1 && (
-              <TrendIndicator
-                current={mgr.currentMetrics.memoryUsage}
-                previous={
-                  mgr.filteredMetrics[1]?.memoryUsage ||
-                  mgr.currentMetrics.memoryUsage
-                }
-              />
-            )}
-          </div>
-          <div className="flex items-end gap-3 mb-2">
-            <div className="text-[var(--color-text)] text-2xl font-bold">
-              {mgr.currentMetrics.memoryUsage.toFixed(1)}
-              <span className="text-sm font-normal text-[var(--color-textMuted)]">
-                %
-              </span>
-            </div>
-            <div className="flex-1 h-2 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden mb-1.5">
-              <div
-                className="h-full bg-primary rounded-full transition-all duration-300"
-                style={{
-                  width: `${Math.min(mgr.currentMetrics.memoryUsage, 100)}%`,
-                }}
-              />
-            </div>
-          </div>
-          <Sparkline
-            data={mgr.filteredMetrics
-              .slice(0, 100)
-              .reverse()
-              .map((m) => m.memoryUsage)}
-            color="var(--color-accent)"
-            height={32}
-            width={140}
-          />
-        </div>
+          );
+        })}
       </div>
     </div>
   );
 };
-
 export default CurrentMetricsGrid;

@@ -634,15 +634,16 @@ export const useSessionManager = () => {
         const connectionTime = Date.now() - startTime;
         const metrics = {
           connectionTime,
-          dataTransferred: 0,
-          latency: Math.random() * 50 + 10,
-          throughput: Math.random() * 1000 + 500,
         };
 
         settingsManager.recordPerformanceMetric({
           ...metrics,
-          cpuUsage: Math.random() * 30 + 10,
-          memoryUsage: Math.random() * 50 + 20,
+          dataTransferred: null,
+          latency: null,
+          throughput: null,
+          cpuUsage: null,
+          memoryUsage: null,
+          source: "connection-timing",
           timestamp: Date.now(),
         });
 

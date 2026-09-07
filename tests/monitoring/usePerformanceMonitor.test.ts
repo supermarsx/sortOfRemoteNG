@@ -24,11 +24,17 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
   },
 }));
 
-import { usePerformanceMonitor } from "../../src/hooks/monitoring/usePerformanceMonitor";
+import {
+  usePerformanceMonitor,
+  measuredAverage,
+  normalizePerformanceMetric,
+  performanceMetricsCsv,
+} from "../../src/hooks/monitoring/usePerformanceMonitor";
 
 // ── Helpers ────────────────────────────────────────────
 
 const makeMetric = (overrides: Record<string, unknown> = {}) => ({
+  source: "browser-measured" as const,
   connectionTime: 100,
   dataTransferred: 2048,
   latency: 25,
@@ -47,6 +53,20 @@ const defaultSettings = {
 // ── Tests ──────────────────────────────────────────────
 
 describe("usePerformanceMonitor", () => {
+  it("excludes unverified legacy values without mutating stored records", () => {
+    const old = makeMetric({ source: undefined, timestamp: 12345 });
+    const view = normalizePerformanceMetric(old);
+    expect(view.source).toBe("legacy-unverified");
+    expect(view.latency).toBeNull();
+    expect(view.cpuUsage).toBeNull();
+    expect(view.connectionTime).toBe(100);
+    expect(old.latency).toBe(25);
+    expect(performanceMetricsCsv([old])).toContain(
+      "\n,legacy-unverified,100,,,,,",
+    );
+    expect(measuredAverage([null, 0, 20, null])).toBe(10);
+    expect(measuredAverage([null])).toBeNull();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSettings.mockReturnValue(defaultSettings);
@@ -85,13 +105,13 @@ describe("usePerformanceMonitor", () => {
     expect(result.current.pollIntervalMs).toBe(5000);
   });
 
-  it("returns 0 averages when no metrics exist", () => {
+  it("returns unavailable averages when no metrics exist", () => {
     const { result } = renderHook(() => usePerformanceMonitor(false));
 
-    expect(result.current.avgLatency).toBe(0);
-    expect(result.current.avgThroughput).toBe(0);
-    expect(result.current.avgCpuUsage).toBe(0);
-    expect(result.current.avgMemoryUsage).toBe(0);
+    expect(result.current.avgLatency).toBeNull();
+    expect(result.current.avgThroughput).toBeNull();
+    expect(result.current.avgCpuUsage).toBeNull();
+    expect(result.current.avgMemoryUsage).toBeNull();
   });
 
   it("formatBytes formats byte values correctly", () => {
@@ -206,6 +226,70 @@ describe("usePerformanceMonitor", () => {
     await waitFor(() => {
       expect(mocks.recordPerformanceMetric).toHaveBeenCalled();
     });
+  });
+
+  it("records failed HTTP probes as unavailable with an epoch timestamp and no simulated resource values", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    const start = Date.now();
+    renderHook(() => usePerformanceMonitor(true));
+    await waitFor(() =>
+      expect(mocks.recordPerformanceMetric).toHaveBeenCalledTimes(1),
+    );
+    expect(mocks.recordPerformanceMetric.mock.calls[0][0]).toMatchObject({
+      latency: null,
+      throughput: null,
+      cpuUsage: null,
+      connectionTime: null,
+      dataTransferred: null,
+      source: "browser-measured",
+    });
+    expect(
+      mocks.recordPerformanceMetric.mock.calls[0][0].timestamp,
+    ).toBeGreaterThanOrEqual(start);
+  });
+
+  it("serializes probes and aborts a timed out request before starting another", async () => {
+    vi.useFakeTimers();
+    mocks.getSettings.mockReturnValue({
+      ...defaultSettings,
+      performancePollIntervalMs: 1000,
+    });
+    mocks.loadSettings.mockResolvedValue({
+      ...defaultSettings,
+      performancePollIntervalMs: 1000,
+    });
+    const fetchMock = vi.fn(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            { once: true },
+          );
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const hook = renderHook(() => usePerformanceMonitor(true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(mocks.recordPerformanceMetric).toHaveBeenCalledTimes(1);
+    expect(mocks.recordPerformanceMetric.mock.calls[0][0].latency).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    hook.unmount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("loads settings on open", async () => {

@@ -1614,15 +1614,28 @@ export class SettingsManager {
     void this.savePerformanceMetrics();
   }
 
-  private async savePerformanceMetrics(): Promise<void> {
-    try {
-      await IndexedDbService.setItem(
-        "mremote-performance-metrics",
-        this.performanceMetrics,
-      );
-    } catch (error) {
-      console.error("Failed to save performance metrics:", error);
-    }
+  private performanceMetricsWrite: Promise<void> | null = null;
+  private performanceMetricsDirty = false;
+
+  private savePerformanceMetrics(): Promise<void> {
+    this.performanceMetricsDirty = true;
+    if (this.performanceMetricsWrite) return this.performanceMetricsWrite;
+    this.performanceMetricsWrite = (async () => {
+      while (this.performanceMetricsDirty) {
+        this.performanceMetricsDirty = false;
+        try {
+          await IndexedDbService.setItem("mremote-performance-metrics", [
+            ...this.performanceMetrics,
+          ]);
+        } catch (error) {
+          console.error("Failed to save performance metrics:", error);
+        }
+      }
+    })().finally(() => {
+      this.performanceMetricsWrite = null;
+      if (this.performanceMetricsDirty) void this.savePerformanceMetrics();
+    });
+    return this.performanceMetricsWrite;
   }
 
   private async loadPerformanceMetrics(): Promise<void> {

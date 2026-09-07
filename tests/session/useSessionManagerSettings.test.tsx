@@ -238,7 +238,12 @@ describe("useSessionManager settings effects", () => {
           id: addedSession.id,
           backendSessionId: "backend-current",
           status: "connected",
-          metrics: expect.objectContaining({ dataTransferred: 0 }),
+          metrics: expect.objectContaining({
+            connectionTime: 2000,
+            dataTransferred: 42,
+            latency: 5,
+            throughput: 100,
+          }),
         }),
       });
       expect(connectionMocks.dispatch).toHaveBeenCalledWith({
@@ -249,6 +254,17 @@ describe("useSessionManager settings effects", () => {
           connectionCount: 8,
         }),
       });
+      expect(SettingsManager.getInstance().getPerformanceMetrics()[0]).toEqual(
+        expect.objectContaining({
+          connectionTime: 2000,
+          dataTransferred: null,
+          latency: null,
+          throughput: null,
+          cpuUsage: null,
+          memoryUsage: null,
+          source: "connection-timing",
+        }),
+      );
     } finally {
       vi.useRealTimers();
     }
