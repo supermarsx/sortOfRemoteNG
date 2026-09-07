@@ -117,6 +117,12 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       )
     : rows.length;
 
+  useLayoutEffect(() => {
+    // Small trees scroll entirely in the browser. When growth or expansion
+    // enables virtualization, start its viewport at the current DOM offset.
+    if (virtual) setScrollTop(treeRef.current?.scrollTop ?? 0);
+  }, [virtual]);
+
   useEffect(() => {
     const tree = treeRef.current;
     if (!tree) return;
@@ -405,7 +411,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
         onDragOver={mgr.handlePanelDragOver}
         onDrop={mgr.handlePanelDrop}
         onKeyDown={handleKeyDown}
-        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        onScroll={
+          virtual
+            ? (event) => setScrollTop(event.currentTarget.scrollTop)
+            : undefined
+        }
       >
         {mgr.filteredConnections.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-[var(--color-textMuted)]">

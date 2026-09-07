@@ -67,6 +67,70 @@ function InitConnections({
 }
 
 describe("ConnectionTree", () => {
+  it.each([0, 40])(
+    "does not re-render a %i-row non-virtual tree when it scrolls",
+    (count) => {
+      const connections = Array.from({ length: count }, (_, index) => ({
+        ...mockConnections[1],
+        id: `small-${index}`,
+        name: `Small ${index}`,
+        parentId: undefined,
+      }));
+      const onRender = vi.fn();
+      render(
+        <ToastProvider>
+          <ConnectionProvider>
+            <React.Profiler id="tree" onRender={onRender}>
+              <InitConnections connections={connections} />
+            </React.Profiler>
+          </ConnectionProvider>
+        </ToastProvider>,
+      );
+      const tree = screen.getByRole("tree");
+      const before = onRender.mock.calls.length;
+      for (let i = 1; i <= 5; i++)
+        fireEvent.scroll(tree, { target: { scrollTop: i * 40 } });
+      expect(onRender).toHaveBeenCalledTimes(before);
+    },
+  );
+
+  it("preserves the DOM scroll offset when switching between ordinary and virtual trees", () => {
+    const connections = Array.from({ length: 240 }, (_, index) => ({
+      ...mockConnections[1],
+      id: `threshold-${index}`,
+      name: `Threshold ${String(index).padStart(3, "0")}`,
+      parentId: undefined,
+    }));
+    const content = (rows: Connection[]) => (
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={rows} />
+        </ConnectionProvider>
+      </ToastProvider>
+    );
+    const { rerender } = render(content(connections.slice(0, 200)));
+    const tree = screen.getByRole("tree");
+    expect(screen.getAllByRole("treeitem")).toHaveLength(200);
+    fireEvent.scroll(tree, { target: { scrollTop: 640 } });
+    rerender(content(connections));
+    expect(tree.scrollTop).toBe(640);
+    expect(screen.getByText("Threshold 020")).toBeInTheDocument();
+    expect(screen.queryByText("Threshold 000")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("treeitem").length).toBeLessThan(50);
+
+    // The virtual viewport still follows ordinary user scrolling.
+    fireEvent.scroll(tree, { target: { scrollTop: 1280 } });
+    expect(screen.getByText("Threshold 040")).toBeInTheDocument();
+    expect(screen.queryByText("Threshold 020")).not.toBeInTheDocument();
+
+    rerender(content(connections.slice(0, 200)));
+    fireEvent.scroll(tree, { target: { scrollTop: 1920 } });
+    rerender(content(connections));
+    expect(tree.scrollTop).toBe(1920);
+    expect(screen.getByText("Threshold 060")).toBeInTheDocument();
+    expect(screen.queryByText("Threshold 040")).not.toBeInTheDocument();
+  });
+
   it("bounds a 10,000-connection expanded tree while preserving hierarchy, keyboard navigation and offscreen reveal", async () => {
     const connections: Connection[] = [];
     for (let group = 0; group < 1000; group++) {
