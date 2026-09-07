@@ -118,7 +118,7 @@ mod compositor_tests {
 
         // Create a 64×48 RGBA image (solid red)
         let mut image_data = vec![0u8; 64 * 48 * 4];
-        for pixel in image_data.as_chunks_mut::<4>().0 {
+        for pixel in image_data.chunks_exact_mut(4) {
             pixel[0] = 255; // R
             pixel[1] = 0; // G
             pixel[2] = 0; // B
@@ -178,7 +178,7 @@ mod compositor_tests {
         assert_eq!(frame.rgba.len(), 8 + 10 * 10 * 4);
 
         // All pixels in the frame should be green (skip 8-byte header)
-        for pixel in frame.rgba[8..].as_chunks::<4>().0 {
+        for pixel in frame.rgba[8..].chunks_exact(4) {
             assert_eq!(pixel[0], 0, "R should be 0");
             assert_eq!(pixel[1], 255, "G should be 255");
             assert_eq!(pixel[2], 0, "B should be 0");
