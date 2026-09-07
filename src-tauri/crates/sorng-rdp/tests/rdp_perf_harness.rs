@@ -180,11 +180,11 @@ fn frame_delivery_accounting_microbenchmark() {
     );
     assert_eq!(delivery.attempted_frames, attempted_batches);
     assert_eq!(flow_snap.delivered_frames, delivery.delivered_frames);
-    if drop_every == 0 {
+    if let Some(expected_failures) = attempted_batches.checked_div(drop_every) {
+        assert_eq!(delivery.failed_frames, expected_failures);
+    } else {
         assert_eq!(delivery.failed_frames, 0);
         assert_eq!(delivery.delivered_frames, attempted_batches);
-    } else {
-        assert_eq!(delivery.failed_frames, attempted_batches / drop_every);
     }
 }
 

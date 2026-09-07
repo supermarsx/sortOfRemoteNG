@@ -465,30 +465,6 @@ fn checked_output_layout(
     Ok((out_size, y_stride, uv_stride, y_size, uv_size))
 }
 
-#[cfg(test)]
-mod layout_tests {
-    use super::*;
-    #[test]
-    fn padded_planes_are_sized_by_stride_and_invalid_buffers_fail_closed() {
-        assert_eq!(
-            checked_output_layout(18, 16, 32, false, 768).unwrap(),
-            (1152, 32, 16, 512, 128)
-        );
-        assert_eq!(
-            checked_output_layout(18, 16, 32, true, 768).unwrap(),
-            (1152, 32, 32, 512, 256)
-        );
-        for (w, h, stride, len) in [
-            (18, 16, 32, 767),
-            (18, 16, 16, 1024),
-            (18, 16, u32::MAX, usize::MAX),
-            (65534, 65534, 65534, usize::MAX),
-        ] {
-            assert!(checked_output_layout(w, h, stride, true, len).is_err());
-        }
-    }
-}
-
 impl H264Decoder for MfH264Decoder {
     fn decode(&mut self, nal_data: &[u8], picture_id: u64) -> Result<Vec<DecodedFrame>, H264Error> {
         if nal_data.is_empty() {
@@ -538,6 +514,30 @@ impl Drop for MfH264Decoder {
     fn drop(&mut self) {
         unsafe {
             let _ = self.transform.ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    #[test]
+    fn padded_planes_are_sized_by_stride_and_invalid_buffers_fail_closed() {
+        assert_eq!(
+            checked_output_layout(18, 16, 32, false, 768).unwrap(),
+            (1152, 32, 16, 512, 128)
+        );
+        assert_eq!(
+            checked_output_layout(18, 16, 32, true, 768).unwrap(),
+            (1152, 32, 32, 512, 256)
+        );
+        for (w, h, stride, len) in [
+            (18, 16, 32, 767),
+            (18, 16, 16, 1024),
+            (18, 16, u32::MAX, usize::MAX),
+            (65534, 65534, 65534, usize::MAX),
+        ] {
+            assert!(checked_output_layout(w, h, stride, true, len).is_err());
         }
     }
 }

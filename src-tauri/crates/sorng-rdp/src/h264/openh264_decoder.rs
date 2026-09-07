@@ -276,7 +276,7 @@ mod source_tests {
         )
         .unwrap();
         for row in output.chunks_exact(width * 4) {
-            for (col, pixel) in row.chunks_exact(4).enumerate() {
+            for (col, pixel) in row.as_chunks::<4>().0.iter().enumerate() {
                 let expected = if col < 8 {
                     0
                 } else if col < 16 {
@@ -319,7 +319,7 @@ mod source_tests {
         assert_eq!((frame.width, frame.height), (WIDTH as u32, HEIGHT as u32));
         assert_eq!(frame.rgba.len(), WIDTH * HEIGHT * 4);
 
-        for pixel in frame.rgba.chunks_exact(4) {
+        for pixel in frame.rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[3], 255);
             for (actual, expected) in pixel[..3].iter().zip(EXPECTED_RGB) {
                 assert!(

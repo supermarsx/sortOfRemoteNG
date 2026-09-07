@@ -854,7 +854,7 @@ impl GfxProcessor {
         let mut rgba = wts.bitmap_data[..expected_len].to_vec();
         crate::h264::yuv_convert::bgra_to_rgba_inplace(&mut rgba);
         if wts.pixel_format == 0x20 {
-            for pixel in rgba.chunks_exact_mut(4) {
+            for pixel in rgba.as_chunks_mut::<4>().0 {
                 pixel[3] = 255;
             }
         }

@@ -1421,12 +1421,16 @@ mod tests {
         assert_eq!(u32::from_le_bytes(data[20..24].try_into().unwrap()), 129600);
         assert_eq!(u32::from_le_bytes(data[24..28].try_into().unwrap()), 5);
         for (bytes, rect) in data[28..data.len() - 5]
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .zip(&nal.region_rects)
         {
             let edges: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| u16::from_le_bytes(*b))
                 .collect();
             assert_eq!(edges, [rect.left, rect.top, rect.right, rect.bottom]);
         }
