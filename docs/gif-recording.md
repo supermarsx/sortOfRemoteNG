@@ -1,4 +1,9 @@
-# GIF recording
+---
+title: GIF recording
+eyebrow: Use the app
+description: Record short RDP clips and export SSH sessions as GIFs with bounded resource use and explicit capture limits.
+permalink: /gif-recording/
+---
 
 GIF is intended for short clips. RDP GIF capture runs at up to 10 frames per second and scales the canvas to fit within 1280×720 pixels, preserving its aspect ratio. This only affects the recording; it does not change the remote desktop resolution or frame rate.
 

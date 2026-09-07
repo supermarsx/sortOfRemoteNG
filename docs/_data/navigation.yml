@@ -19,6 +19,8 @@
       url: /behaviors/
     - title: Import, Export & Clone
       url: /import-export-clone/
+    - title: GIF recording
+      url: /gif-recording/
 
 - label: Project guide
   items:
