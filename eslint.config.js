@@ -28,6 +28,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist/**",
+      "out/**",
       "coverage/**",
       "target/**",
       "src-tauri/target/**",

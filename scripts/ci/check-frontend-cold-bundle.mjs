@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
+import { checkGifWorkerExport } from "./check-gif-worker-export.mjs";
 
 const TYPESCRIPT_COMPILER_MARKERS = Object.freeze([
   "versionMajorMinor",
@@ -162,7 +163,7 @@ const argumentValue = (name, fallback) => {
   return value;
 };
 
-const main = () => {
+const main = async () => {
   const outDirectory = resolve(argumentValue("--out-dir", "out"));
   const nextDirectory = resolve(argumentValue("--next-dir", ".next"));
   const htmlPath = join(outDirectory, "index.html");
@@ -193,11 +194,13 @@ const main = () => {
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   assertTypeScriptCompilerLazy(result);
+  const gifWorker = await checkGifWorkerExport(outDirectory);
+  process.stdout.write(`${JSON.stringify({ gifWorker }, null, 2)}\n`);
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
-    main();
+    await main();
   } catch (error) {
     process.stderr.write(
       `${error instanceof Error ? error.stack || error.message : String(error)}\n`,
