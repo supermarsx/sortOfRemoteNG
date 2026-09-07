@@ -1,296 +1,408 @@
-/**
- * GIF encoding utilities for RDP canvas recording and SSH terminal export.
- * Uses the `gifenc` library (pure JS, no Web Workers needed).
- */
-// @ts-expect-error gifenc has no type declarations
-import GIFEncoder, { quantize, applyPalette } from 'gifenc';
+import { GifWorkerClient } from "./gifWorkerClient";
+import {
+  GIF_LIMITS,
+  validateGifOptions,
+  type GifEncoderOptions,
+  type GifResult,
+} from "./gifProtocol";
+export { GIF_LIMITS, type GifEncoderOptions } from "./gifProtocol";
 
-export interface GifEncoderOptions {
-  width: number;
-  height: number;
-  /** Delay between frames in milliseconds (default 100 = 10fps) */
-  delayMs?: number;
-  /** Max colors in palette 2-256 (default 256) */
-  maxColors?: number;
-  /** Loop count: 0 = infinite, -1 = no loop (default 0) */
-  repeat?: number;
-}
-
-/**
- * Create a GIF from an array of canvas ImageData frames.
- * Returns a Blob of the encoded GIF.
- */
-export function encodeGifFromFrames(
+/** Sequential worker export; caller-owned frames are not detached or copied as a batch. */
+export async function encodeGifFromFrames(
   frames: ImageData[],
   options: GifEncoderOptions,
-): Blob {
-  const {
-    width,
-    height,
-    delayMs = 100,
-    maxColors = 256,
-    repeat = 0,
-  } = options;
-
-  const gif = GIFEncoder();
-
-  for (let i = 0; i < frames.length; i++) {
-    const rgba = frames[i].data;
-    const palette = quantize(rgba, maxColors);
-    const index = applyPalette(rgba, palette);
-
-    gif.writeFrame(index, width, height, {
-      palette,
-      delay: delayMs,
-      repeat: i === 0 ? repeat : undefined,
-    });
+  signal?: AbortSignal,
+): Promise<Blob> {
+  validateGifOptions(options);
+  if (!frames.length) throw new Error("No GIF frames were captured.");
+  const delay = options.delayMs ?? 100;
+  if (
+    frames.length * delay >
+    (options.maxDurationMs ?? GIF_LIMITS.maxDurationMs)
+  )
+    throw new Error(
+      "GIF export exceeds the duration limit. Choose WebM or MP4.",
+    );
+  if (signal?.aborted)
+    throw new DOMException("GIF encoding cancelled.", "AbortError");
+  const client = new GifWorkerClient(options);
+  const cancel = () => client.close();
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    await client.ready;
+    for (let i = 0; i < frames.length; i++) {
+      if (
+        frames[i].width !== options.width ||
+        frames[i].height !== options.height
+      )
+        throw new Error("GIF frame dimensions changed.");
+      const result = await client.addFrame(frames[i], i * delay);
+      if (result)
+        throw new Error(
+          "GIF export exceeds the size limit. Choose WebM or MP4.",
+        );
+    }
+    const result = await client.finish(frames.length * delay);
+    if (result.durationMs < frames.length * delay)
+      throw new Error("GIF export exceeds the size limit. Choose WebM or MP4.");
+    return result.blob;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    client.close();
   }
-
-  gif.finish();
-  const bytes = gif.bytesView();
-  return new Blob([bytes], { type: 'image/gif' });
 }
 
-/**
- * Captures a canvas element as a single ImageData frame.
- */
-export function captureCanvasFrame(canvas: HTMLCanvasElement): ImageData | null {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+function captureSize(canvas: HTMLCanvasElement) {
+  const scale = Math.min(
+    1,
+    GIF_LIMITS.maxWidth / canvas.width,
+    GIF_LIMITS.maxHeight / canvas.height,
+  );
+  return {
+    width: Math.max(1, Math.floor(canvas.width * scale)),
+    height: Math.max(1, Math.floor(canvas.height * scale)),
+  };
 }
 
-// ─── GIF Frame Collector ─────────────────────────────────────────────────
+/** The source can be WebGL or worker-owned: never change its rendering context. */
+export function captureCanvasFrame(
+  canvas: HTMLCanvasElement,
+  staging?: HTMLCanvasElement,
+): ImageData | null {
+  if (!canvas.width || !canvas.height) return null;
+  const target = staging ?? document.createElement("canvas");
+  if (!staging) Object.assign(target, captureSize(canvas));
+  const ctx = target.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Unable to create the GIF capture canvas.");
+  ctx.drawImage(canvas, 0, 0, target.width, target.height);
+  return ctx.getImageData(0, 0, target.width, target.height);
+}
 
 export interface GifFrameCollector {
-  /** Capture the current canvas state as a frame */
-  captureFrame: () => void;
-  /** Stop collecting and encode the GIF */
-  encode: () => Blob;
-  /** Get the number of captured frames */
+  /** Busy captures allocate no pixels. */
+  captureFrame: (timestampMs?: number) => boolean;
+  encode: (timestampMs?: number) => Promise<Blob>;
   frameCount: () => number;
-  /** Clear all captured frames */
+  durationMs: () => number | undefined;
+  details: () =>
+    | { width: number; height: number; durationMs: number; limit?: string }
+    | undefined;
   clear: () => void;
 }
 
-/**
- * Creates a frame collector that periodically captures a canvas for GIF encoding.
- * Used for RDP GIF recording mode.
- */
 export function createGifFrameCollector(
   canvas: HTMLCanvasElement,
-  options: Omit<GifEncoderOptions, 'width' | 'height'> = {},
+  options: Omit<GifEncoderOptions, "width" | "height"> & {
+    onError?: (error: Error) => void;
+    onLimit?: (result: GifResult) => void;
+  } = {},
 ): GifFrameCollector {
-  const frames: ImageData[] = [];
-  const { delayMs = 100, maxColors = 256, repeat = 0 } = options;
-
+  const size = captureSize(canvas);
+  validateGifOptions({ ...options, ...size });
+  if (!canvas.width || !canvas.height)
+    throw new Error("Cannot record an empty canvas.");
+  const staging = document.createElement("canvas");
+  Object.assign(staging, size);
+  const client = new GifWorkerClient({
+    ...size,
+    delayMs: options.delayMs,
+    maxColors: options.maxColors,
+    repeat: options.repeat,
+    maxDurationMs: options.maxDurationMs,
+    maxEncodedBytes: options.maxEncodedBytes,
+  });
+  const start = performance.now();
+  let busy: Promise<void> | null = null;
+  let stopping: Promise<Blob> | null = null;
+  let count = 0;
+  let cleared = false;
+  let failure: Error | null = null;
+  let result: GifResult | null = null;
+  const release = () => {
+    staging.width = 0;
+    staging.height = 0;
+    client.close();
+  };
+  const complete = (encoded: GifResult) => {
+    result = encoded;
+    release();
+    if (encoded.limit) options.onLimit?.(encoded);
+  };
+  const fail = (error: unknown) => {
+    if (failure) return;
+    failure = error instanceof Error ? error : new Error(String(error));
+    release();
+    if (!cleared) options.onError?.(failure);
+  };
+  client.onError = fail;
+  void client.ready.catch(fail);
   return {
-    captureFrame() {
-      const frame = captureCanvasFrame(canvas);
-      if (frame) frames.push(frame);
+    captureFrame(timestampMs = performance.now() - start) {
+      if (busy || stopping || cleared || failure || result) return false;
+      busy = (async () => {
+        await client.ready;
+        if (cleared || failure) return;
+        if (
+          timestampMs >= (options.maxDurationMs ?? GIF_LIMITS.maxDurationMs)
+        ) {
+          complete(
+            await client.finish(
+              options.maxDurationMs ?? GIF_LIMITS.maxDurationMs,
+            ),
+          );
+          return;
+        }
+        const frame = captureCanvasFrame(canvas, staging);
+        if (!frame) throw new Error("The recording canvas is empty.");
+        count++;
+        const encoded = await client.addFrame(frame, timestampMs, true);
+        if (encoded) complete(encoded);
+      })()
+        .catch(fail)
+        .finally(() => {
+          busy = null;
+        });
+      return true;
     },
-    encode() {
-      return encodeGifFromFrames(frames, {
-        width: canvas.width,
-        height: canvas.height,
-        delayMs,
-        maxColors,
-        repeat,
-      });
+    encode(timestampMs = performance.now() - start) {
+      if (stopping) return stopping;
+      stopping = (async () => {
+        await busy;
+        if (cleared)
+          throw new DOMException("GIF encoding cancelled.", "AbortError");
+        if (failure) throw failure;
+        if (result) return result.blob;
+        await client.ready;
+        result = await client.finish(timestampMs);
+        return result.blob;
+      })().finally(release);
+      return stopping;
     },
-    frameCount() {
-      return frames.length;
-    },
+    frameCount: () => count,
+    durationMs: () => result?.durationMs,
+    details: () =>
+      result
+        ? { ...size, durationMs: result.durationMs, limit: result.limit }
+        : undefined,
     clear() {
-      frames.length = 0;
+      cleared = true;
+      result = null;
+      release();
     },
   };
 }
 
-// ─── Terminal-to-GIF Renderer ────────────────────────────────────────────
-
 export interface TerminalGifOptions {
-  /** Terminal columns */
   cols: number;
-  /** Terminal rows */
   rows: number;
-  /** Font size in px (default 14) */
   fontSize?: number;
-  /** Font family (default 'monospace') */
   fontFamily?: string;
-  /** Background color (default '#1e1e1e') */
   bgColor?: string;
-  /** Foreground color (default '#cccccc') */
   fgColor?: string;
-  /** Max frames to render (default 300) */
+  /** Sample the entire timeline within this frame budget (default 300). */
   maxFrames?: number;
-  /** Min time between sampled frames in ms (default 100) */
   frameSampleIntervalMs?: number;
-  /** Max colors in palette (default 64 for smaller files) */
   maxColors?: number;
+  signal?: AbortSignal;
 }
-
 interface TerminalEntry {
   timestamp_ms: number;
   data: string;
-  entry_type: 'Output' | 'Input' | { Resize: { cols: number; rows: number } };
+  entry_type: "Output" | "Input" | { Resize: { cols: number; rows: number } };
 }
 
-/**
- * Render SSH recording entries into an animated GIF.
- * Simulates a simple terminal by writing output data into a character grid
- * and rendering each state-change to a canvas, then encoding as GIF.
- */
-export function renderTerminalToGif(
+/** Bounded terminal sampling with timestamp delays and worker encoding. */
+export async function renderTerminalToGif(
   entries: TerminalEntry[],
   options: TerminalGifOptions,
-): Blob {
+): Promise<Blob> {
   const {
     cols,
     rows,
     fontSize = 14,
     fontFamily = 'Consolas, "Courier New", monospace',
-    bgColor = '#1e1e1e',
-    fgColor = '#cccccc',
-    maxFrames = 300,
-    frameSampleIntervalMs = 100,
+    bgColor = "#1e1e1e",
+    fgColor = "#cccccc",
     maxColors = 64,
+    signal,
   } = options;
-
-  // Measure character dimensions
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
+  if (
+    !Number.isInteger(cols) ||
+    !Number.isInteger(rows) ||
+    cols < 1 ||
+    rows < 1 ||
+    cols > 1000 ||
+    rows > 1000 ||
+    !Number.isFinite(fontSize) ||
+    fontSize < 1
+  )
+    throw new Error("Invalid terminal dimensions for GIF export.");
+  let end = 0;
+  let hasOutput = false;
+  const checkAbort = () => {
+    if (signal?.aborted)
+      throw new DOMException("GIF encoding cancelled.", "AbortError");
+  };
+  for (let i = 0; i < entries.length; i++) {
+    if (i % 256 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      checkAbort();
+    }
+    const entry = entries[i];
+    if (entry.entry_type !== "Output") continue;
+    if (!Number.isFinite(entry.timestamp_ms) || entry.timestamp_ms < end)
+      throw new Error("Invalid terminal recording timestamps.");
+    end = entry.timestamp_ms;
+    hasOutput = true;
+  }
+  if (end + 100 > GIF_LIMITS.maxDurationMs)
+    throw new Error(
+      "GIF export is limited to 5 minutes. Export as asciicast instead.",
+    );
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Unable to create the terminal GIF canvas.");
   ctx.font = `${fontSize}px ${fontFamily}`;
-  const charWidth = ctx.measureText('M').width;
+  const charWidth = ctx.measureText("M").width;
   const lineHeight = fontSize * 1.2;
-
-  const canvasWidth = Math.ceil(charWidth * cols) + 16; // 8px padding each side
-  const canvasHeight = Math.ceil(lineHeight * rows) + 16;
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
-
-  // Simple terminal state
+  const nativeWidth = Math.ceil(charWidth * cols) + 16;
+  const nativeHeight = Math.ceil(lineHeight * rows) + 16;
+  const scale = Math.min(
+    1,
+    GIF_LIMITS.maxWidth / nativeWidth,
+    GIF_LIMITS.maxHeight / nativeHeight,
+  );
+  canvas.width = Math.max(1, Math.floor(nativeWidth * scale));
+  canvas.height = Math.max(1, Math.floor(nativeHeight * scale));
+  const client = new GifWorkerClient({
+    width: canvas.width,
+    height: canvas.height,
+    maxColors,
+  });
+  const cancel = () => client.close();
+  signal?.addEventListener("abort", cancel, { once: true });
   const grid: string[][] = Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, () => ' '),
+    Array<string>(cols).fill(" "),
   );
   let cursorRow = 0;
   let cursorCol = 0;
-
-  const frames: ImageData[] = [];
-
-  function renderFrame() {
+  const scroll = () => {
+    if (cursorRow >= rows) {
+      grid.shift();
+      grid.push(Array<string>(cols).fill(" "));
+      cursorRow = rows - 1;
+    }
+  };
+  const render = async (timestampMs: number) => {
+    checkAbort();
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillRect(0, 0, nativeWidth, nativeHeight);
     ctx.font = `${fontSize}px ${fontFamily}`;
     ctx.fillStyle = fgColor;
-    ctx.textBaseline = 'top';
-
-    for (let r = 0; r < rows; r++) {
-      const line = grid[r].join('');
-      ctx.fillText(line, 8, 8 + r * lineHeight);
-    }
-
-    frames.push(ctx.getImageData(0, 0, canvasWidth, canvasHeight));
-  }
-
-  // Filter to output entries only
-  const outputEntries = entries.filter(
-    (e) => e.entry_type === 'Output',
-  );
-
-  if (outputEntries.length === 0) {
-    renderFrame();
-    return encodeGifFromFrames(frames, {
-      width: canvasWidth,
-      height: canvasHeight,
-      delayMs: 1000,
-      maxColors,
-    });
-  }
-
-  // Render initial empty frame
-  renderFrame();
-
-  let lastFrameTime = 0;
-
-  for (const entry of outputEntries) {
-    // Process each character
-    for (const ch of entry.data) {
-      if (ch === '\n') {
-        cursorCol = 0;
-        cursorRow++;
-        if (cursorRow >= rows) {
-          // Scroll up
-          grid.shift();
-          grid.push(Array.from({ length: cols }, () => ' '));
-          cursorRow = rows - 1;
+    ctx.textBaseline = "top";
+    for (let r = 0; r < rows; r++)
+      ctx.fillText(grid[r].join(""), 8, 8 + r * lineHeight);
+    const result = await client.addFrame(
+      ctx.getImageData(0, 0, canvas.width, canvas.height),
+      timestampMs,
+      true,
+    );
+    if (result)
+      throw new Error(
+        "Terminal GIF exceeds the 64 MiB size limit. Export as asciicast instead.",
+      );
+  };
+  try {
+    checkAbort();
+    await client.ready;
+    await render(0);
+    const frameBudget = Math.max(3, Math.min(300, options.maxFrames ?? 300));
+    const interval = Math.max(
+      100,
+      options.frameSampleIntervalMs ?? 100,
+      end / (frameBudget - 2),
+    );
+    let nextFrameTime = 0;
+    let renderedFrames = 1;
+    let lastRenderedTime = 0;
+    let processed = 0;
+    let nextOutputIndex = 0;
+    for (let entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+      const entry = entries[entryIndex];
+      if (entry.entry_type !== "Output") continue;
+      nextOutputIndex = Math.max(nextOutputIndex, entryIndex + 1);
+      while (
+        nextOutputIndex < entries.length &&
+        entries[nextOutputIndex].entry_type !== "Output"
+      ) {
+        if (nextOutputIndex % 256 === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          checkAbort();
         }
-      } else if (ch === '\r') {
-        cursorCol = 0;
-      } else if (ch === '\x08') {
-        // Backspace
-        if (cursorCol > 0) cursorCol--;
-      } else if (ch === '\t') {
-        cursorCol = Math.min(cursorCol + (8 - (cursorCol % 8)), cols - 1);
-      } else if (ch.charCodeAt(0) >= 32) {
-        if (cursorCol >= cols) {
+        nextOutputIndex++;
+      }
+      const beforeIdleGap =
+        (entries[nextOutputIndex]?.timestamp_ms ?? end) - entry.timestamp_ms >=
+        Math.min(interval, 1000);
+      for (const ch of entry.data) {
+        if (++processed % 8192 === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          checkAbort();
+        }
+        if (ch === "\n") {
           cursorCol = 0;
           cursorRow++;
-          if (cursorRow >= rows) {
-            grid.shift();
-            grid.push(Array.from({ length: cols }, () => ' '));
-            cursorRow = rows - 1;
+          scroll();
+        } else if (ch === "\r") cursorCol = 0;
+        else if (ch === "\x08") cursorCol = Math.max(0, cursorCol - 1);
+        else if (ch === "\t")
+          cursorCol = Math.min(cursorCol + (8 - (cursorCol % 8)), cols - 1);
+        else if (ch.charCodeAt(0) >= 32) {
+          if (cursorCol >= cols) {
+            cursorCol = 0;
+            cursorRow++;
+            scroll();
           }
+          grid[cursorRow][cursorCol++] = ch;
         }
-        grid[cursorRow][cursorCol] = ch;
-        cursorCol++;
       }
-      // Skip ANSI escape sequences (simplified)
-      // They'll be rendered as invisible but won't break the grid
+      // Render the initial output at its own timestamp: an idle period must
+      // show that terminal state, not the earlier empty canvas. Reserve one
+      // frame for the final state and coalesce entries sharing a timestamp.
+      if (
+        entry.timestamp_ms < end &&
+        (((entry.timestamp_ms >= nextFrameTime || beforeIdleGap) &&
+          renderedFrames < frameBudget - 1) ||
+          entry.timestamp_ms === lastRenderedTime)
+      ) {
+        await render(entry.timestamp_ms);
+        if (entry.timestamp_ms > lastRenderedTime) renderedFrames++;
+        lastRenderedTime = entry.timestamp_ms;
+        nextFrameTime = entry.timestamp_ms + interval;
+      }
     }
-
-    // Sample frame at interval
-    const elapsed = entry.timestamp_ms - lastFrameTime;
-    if (elapsed >= frameSampleIntervalMs && frames.length < maxFrames) {
-      renderFrame();
-      lastFrameTime = entry.timestamp_ms;
-    }
+    if (hasOutput) await render(end);
+    const result = await client.finish(hasOutput ? end + 100 : 1000);
+    if (result.limit)
+      throw new Error(
+        "Terminal GIF exceeds the export limit. Export as asciicast instead.",
+      );
+    return result.blob;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    client.close();
+    canvas.width = 0;
+    canvas.height = 0;
   }
-
-  // Always render the final frame
-  if (frames.length < maxFrames) {
-    renderFrame();
-  }
-
-  // Calculate per-frame delay from timestamps
-  const totalDurationMs = outputEntries[outputEntries.length - 1].timestamp_ms;
-  const frameDelayMs = frames.length > 1
-    ? Math.max(50, Math.round(totalDurationMs / frames.length))
-    : 1000;
-
-  return encodeGifFromFrames(frames, {
-    width: canvasWidth,
-    height: canvasHeight,
-    delayMs: Math.min(frameDelayMs, 500), // Cap at 500ms per frame
-    maxColors,
-  });
 }
 
-/**
- * Strip ANSI escape sequences from terminal data.
- * This is a simplified version - handles the most common sequences.
- */
 export function stripAnsi(str: string): string {
-  const esc = '\u001b';
-  const bell = '\u0007';
-  const csiPattern = new RegExp(`${esc}\\[[0-9;]*[a-zA-Z]`, 'g');
-  const oscPattern = new RegExp(`${esc}\\][^${bell}]*${bell}`, 'g');
-  const charsetPattern = new RegExp(`${esc}[()][A-Z0-9]`, 'g');
-  const modePattern = new RegExp(`${esc}[>=<]`, 'g');
-
+  const esc = "\u001b";
+  const bell = "\u0007";
   return str
-    .replace(csiPattern, '')
-    .replace(oscPattern, '') // OSC sequences
-    .replace(charsetPattern, '') // Character set
-    .replace(modePattern, ''); // Mode changes
+    .replace(new RegExp(`${esc}\\[[0-9;]*[a-zA-Z]`, "g"), "")
+    .replace(new RegExp(`${esc}\\][^${bell}]*${bell}`, "g"), "")
+    .replace(new RegExp(`${esc}[()][A-Z0-9]`, "g"), "")
+    .replace(new RegExp(`${esc}[>=<]`, "g"), "");
 }

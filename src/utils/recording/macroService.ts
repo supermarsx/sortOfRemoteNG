@@ -468,7 +468,7 @@ export async function exportRecording(
         ...e,
         data: e.entry_type === "Output" ? stripAnsi(e.data) : e.data,
       }));
-      return renderTerminalToGif(cleanedEntries, {
+      return await renderTerminalToGif(cleanedEntries, {
         cols: recording.metadata.cols,
         rows: recording.metadata.rows,
       });

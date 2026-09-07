@@ -353,7 +353,16 @@ export function useRDPClient(session: ConnectionSession) {
     stopRecording,
     pauseRecording,
     resumeRecording,
+    getRecordingDetails,
   } = useSessionRecorder(canvasRef);
+
+  const recordingErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (recState.error && recState.error !== recordingErrorRef.current) {
+      toast.error(recState.error, 5000);
+    }
+    recordingErrorRef.current = recState.error;
+  }, [recState.error, toast]);
 
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const [magnifierZoomOverride, setMagnifierZoomOverride] = useState<
@@ -608,8 +617,7 @@ export function useRDPClient(session: ConnectionSession) {
 
   const handleStartRecording = useCallback(
     (format: string) => {
-      startRecording(format);
-      toast.info("Recording started", 2000);
+      if (startRecording(format)) toast.info("Recording started", 2000);
     },
     [startRecording, toast],
   );
@@ -628,6 +636,13 @@ export function useRDPClient(session: ConnectionSession) {
     const blob = await stopRecording();
     if (!blob) return;
     try {
+      const recorded = getRecordingDetails();
+      if (recorded?.limit && !recState.limitReached) {
+        toast.warning(
+          recorded.limit.replace("was saved", "is being saved"),
+          5000,
+        );
+      }
       const format = recState.format || "webm";
       const connName = connection?.name || session.name || "RDP";
       const host = session.hostname;
@@ -638,10 +653,10 @@ export function useRDPClient(session: ConnectionSession) {
         connectionId: session.connectionId,
         connectionName: connName,
         host,
-        durationMs: recState.duration * 1000,
+        durationMs: recorded?.durationMs ?? recState.duration * 1000,
         format,
-        width: desktopSize.width,
-        height: desktopSize.height,
+        width: recorded?.width ?? desktopSize.width,
+        height: recorded?.height ?? desktopSize.height,
       });
       await macroService.saveRdpRecording(saved);
 
@@ -658,6 +673,8 @@ export function useRDPClient(session: ConnectionSession) {
     }
   }, [
     stopRecording,
+    getRecordingDetails,
+    recState.limitReached,
     recState.format,
     recState.duration,
     session,
@@ -666,6 +683,15 @@ export function useRDPClient(session: ConnectionSession) {
     settings.rdpRecording,
     toast,
   ]);
+
+  useEffect(() => {
+    if (!recState.limitReached) return;
+    toast.warning(
+      recState.limitReached.replace("was saved", "is being saved"),
+      5000,
+    );
+    void handleStopRecording();
+  }, [recState.limitReached, handleStopRecording, toast]);
 
   const handleDisconnect = useCallback(async () => {
     clearH264RecoveryTimers();

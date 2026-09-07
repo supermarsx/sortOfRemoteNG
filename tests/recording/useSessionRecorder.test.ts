@@ -1,37 +1,40 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useSessionRecorder, formatDuration } from "../../src/hooks/recording/useSessionRecorder";
+import {
+  useSessionRecorder,
+  formatDuration,
+} from "../../src/hooks/recording/useSessionRecorder";
 
 // Stub MediaRecorder which jsdom doesn't provide
 class MockMediaRecorder {
-  state: 'inactive' | 'recording' | 'paused' = 'inactive';
+  state: "inactive" | "recording" | "paused" = "inactive";
   ondataavailable: ((e: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
   mimeType: string;
 
   constructor(_stream: MediaStream, opts?: { mimeType?: string }) {
-    this.mimeType = opts?.mimeType ?? 'video/webm';
+    this.mimeType = opts?.mimeType ?? "video/webm";
   }
 
   static isTypeSupported(mime: string): boolean {
-    return mime.startsWith('video/webm');
+    return mime.startsWith("video/webm");
   }
 
   start(_timeslice?: number) {
-    this.state = 'recording';
+    this.state = "recording";
   }
 
   stop() {
-    this.state = 'inactive';
+    this.state = "inactive";
     this.onstop?.();
   }
 
   pause() {
-    this.state = 'paused';
+    this.state = "paused";
   }
 
   resume() {
-    this.state = 'recording';
+    this.state = "recording";
   }
 }
 
@@ -62,6 +65,57 @@ function createCanvasRef(): React.RefObject<HTMLCanvasElement | null> {
 }
 
 describe("useSessionRecorder", () => {
+  it("stops canvas stream tracks after saving video", async () => {
+    const stopTrack = vi.fn();
+    mockCaptureStream.mockReturnValueOnce({
+      getTracks: () => [{ stop: stopTrack }],
+    });
+    const { result } = renderHook(() => useSessionRecorder(createCanvasRef()));
+    act(() => {
+      expect(result.current.startRecording("webm")).toBe(true);
+    });
+    await act(async () => {
+      expect(await result.current.stopRecording()).toBeInstanceOf(Blob);
+    });
+    expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
+  it("releases stream tracks when MediaRecorder construction fails", () => {
+    const stopTrack = vi.fn();
+    mockCaptureStream.mockReturnValueOnce({
+      getTracks: () => [{ stop: stopTrack }],
+    });
+    (globalThis as Record<string, unknown>).MediaRecorder = class extends (
+      MockMediaRecorder
+    ) {
+      constructor(stream: MediaStream) {
+        super(stream);
+        throw new Error("Codec unavailable");
+      }
+    };
+    const { result } = renderHook(() => useSessionRecorder(createCanvasRef()));
+    act(() => {
+      expect(result.current.startRecording("webm")).toBe(false);
+    });
+    expect(result.current.state.error).toBe("Codec unavailable");
+    expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
+  it("releases a video stream when the recorder unmounts", () => {
+    const stopTrack = vi.fn();
+    mockCaptureStream.mockReturnValueOnce({
+      getTracks: () => [{ stop: stopTrack }],
+    });
+    const { result, unmount } = renderHook(() =>
+      useSessionRecorder(createCanvasRef()),
+    );
+    act(() => {
+      result.current.startRecording("webm");
+    });
+    unmount();
+    expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
   it("starts with idle state", () => {
     const ref = createCanvasRef();
     const { result } = renderHook(() => useSessionRecorder(ref));
@@ -108,7 +162,9 @@ describe("useSessionRecorder", () => {
   });
 
   it("handles recording errors when no canvas available", () => {
-    const emptyRef: React.RefObject<HTMLCanvasElement | null> = { current: null };
+    const emptyRef: React.RefObject<HTMLCanvasElement | null> = {
+      current: null,
+    };
     const { result } = renderHook(() => useSessionRecorder(emptyRef));
 
     let ok = false;
@@ -144,8 +200,12 @@ describe("useSessionRecorder", () => {
 
   it("returns false for unsupported format when no MediaRecorder support", () => {
     // Override isTypeSupported to return false for everything
-    (globalThis as Record<string, unknown>).MediaRecorder = class extends MockMediaRecorder {
-      static isTypeSupported(): boolean { return false; }
+    (globalThis as Record<string, unknown>).MediaRecorder = class extends (
+      MockMediaRecorder
+    ) {
+      static isTypeSupported(): boolean {
+        return false;
+      }
     };
 
     const ref = createCanvasRef();

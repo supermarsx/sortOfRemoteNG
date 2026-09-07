@@ -3,7 +3,7 @@ import { RDPClientHeaderProps, btnDefault, formatDuration } from "./helpers";
 import { Circle, Pause, Play, Square } from "lucide-react";
 
 const RecordingControls: React.FC<{
-  recState: RDPClientHeaderProps["recState"];
+  recState: RDPClientHeaderProps["recState"] & { isFinalizing?: boolean };
   startRecording: (fmt: string) => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
@@ -15,7 +15,14 @@ const RecordingControls: React.FC<{
   resumeRecording,
   handleStopRecording,
 }) =>
-  !recState.isRecording ? (
+  recState.isFinalizing ? (
+    <span
+      role="status"
+      className="text-[10px] text-[var(--color-textSecondary)]"
+    >
+      Saving recording…
+    </span>
+  ) : !recState.isRecording ? (
     <button
       onClick={() => startRecording("webm")}
       className={btnDefault}
