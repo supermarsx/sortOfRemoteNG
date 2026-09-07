@@ -69,6 +69,7 @@ export function useSshSessionPanel(isVisible: boolean) {
   const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const autoRefreshRef = useRef(autoRefresh);
+  const fetchInFlightRef = useRef(false);
   const sessionsRef = useRef(sessions);
   const frontendSessionsRef = useRef(state.sessions);
   const retainedCleanupRowsRef = useRef(new Map<string, SshSessionInfo>());
@@ -83,6 +84,8 @@ export function useSshSessionPanel(isVisible: boolean) {
   }, [autoRefresh]);
 
   const fetchData = useCallback(async () => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       const result = await invoke<unknown>("list_sessions");
       const liveSessions = Array.isArray(result)
@@ -100,6 +103,8 @@ export function useSshSessionPanel(isVisible: boolean) {
       if (retainedCleanupRowsRef.current.size === 0) setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      fetchInFlightRef.current = false;
     }
   }, []);
 

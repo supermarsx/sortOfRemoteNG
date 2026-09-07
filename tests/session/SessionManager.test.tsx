@@ -75,8 +75,7 @@ const PROXY_SESSION = {
 };
 
 type InvokeOverride =
-  | unknown
-  | ((command: string) => unknown | Promise<unknown>);
+  unknown | ((command: string) => unknown | Promise<unknown>);
 
 function mockInvoke(overrides: Record<string, InvokeOverride> = {}) {
   vi.mocked(invoke).mockImplementation(async (cmd: string) => {
@@ -288,6 +287,21 @@ function renderManagerWithConnectionState({
 }
 
 describe("SessionManager (unified RDP + internal proxy)", () => {
+  it("does not capture unused thumbnails for the table even when previews are enabled globally", async () => {
+    renderManager({ thumbnailsEnabled: true, thumbnailPolicy: "realtime" });
+    await screen.findByText("Prod RDP");
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("get_rdp_stats", {
+        sessionId: "rdp-1",
+      }),
+    );
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "rdp_get_thumbnail"),
+    ).toBe(false);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.removeItem(SESSION_MANAGER_FILTER_STORAGE_KEY);

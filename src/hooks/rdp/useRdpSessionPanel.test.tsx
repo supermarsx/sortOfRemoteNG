@@ -108,6 +108,40 @@ beforeEach(() => {
 });
 
 describe("useRDPSessionPanel VPN cleanup", () => {
+  it("does not overlap slow refreshes and stops requesting stats once hidden", async () => {
+    vi.useFakeTimers();
+    let resolveList!: (sessions: RDPSessionInfo[]) => void;
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "list_rdp_sessions"
+        ? new Promise<RDPSessionInfo[]>((resolve) => {
+            resolveList = resolve;
+          })
+        : Promise.resolve(stats("a")),
+    );
+    const { rerender, result, unmount } = renderHook(
+      ({ isVisible }) => useRDPSessionPanel({ isVisible, connections: [] }),
+      { initialProps: { isVisible: true } },
+    );
+    try {
+      await act(() => vi.advanceTimersByTimeAsync(12000));
+      act(() => result.current.handleRefresh());
+      expect(mocks.invoke).toHaveBeenCalledTimes(1);
+      rerender({ isVisible: false });
+      await act(async () =>
+        resolveList([nativeSession("a"), nativeSession("b")]),
+      );
+      await act(() => vi.advanceTimersByTimeAsync(12000));
+      expect(mocks.invoke).toHaveBeenCalledTimes(1);
+      expect(result.current.sessions).toHaveLength(2);
+      rerender({ isVisible: true });
+      expect(mocks.invoke).toHaveBeenCalledTimes(2);
+      await act(async () => resolveList([]));
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("uses persisted remount bindings to retry stale A without touching live B", async () => {
     const conn = connection("rdp-remount-connection");
     const stale = nativeSession("rdp-stale-a", conn.id);

@@ -93,6 +93,9 @@ export function useRDPSessionPanel({
   const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const autoRefreshRef = useRef(autoRefresh);
+  const fetchInFlightRef = useRef(false);
+  const visibleRef = useRef(isVisible);
+  visibleRef.current = isVisible;
   const [activeTab, setActiveTab] = useState<PanelTab>("sessions");
   const [rebootConfirmSessionId, setRebootConfirmSessionId] = useState<
     string | null
@@ -233,6 +236,8 @@ export function useRDPSessionPanel({
   );
 
   const fetchData = useCallback(async () => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       setIsLoading(true);
       const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
@@ -245,6 +250,7 @@ export function useRDPSessionPanel({
       ]);
       const newStats: Record<string, RDPStats> = {};
       for (const s of list) {
+        if (!visibleRef.current) break;
         try {
           const st = await invoke<RDPStats>("get_rdp_stats", {
             sessionId: s.id,
@@ -259,6 +265,7 @@ export function useRDPSessionPanel({
     } catch (e) {
       setError(String(e));
     } finally {
+      fetchInFlightRef.current = false;
       setIsLoading(false);
     }
   }, []);

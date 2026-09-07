@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 interface RDPSessionInfo {
   id: string;
@@ -52,24 +52,30 @@ export function useRDPSessionManager(isOpen: boolean) {
   const [sessions, setSessions] = useState<RDPSessionInfo[]>([]);
   const [statsMap, setStatsMap] = useState<Record<string, RDPStats>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const autoRefreshRef = useRef(autoRefresh);
+  const fetchInFlightRef = useRef(false);
+  const visibleRef = useRef(isOpen);
+  visibleRef.current = isOpen;
 
   useEffect(() => {
     autoRefreshRef.current = autoRefresh;
   }, [autoRefresh]);
 
   const fetchData = useCallback(async () => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       setIsLoading(true);
-      const list = await invoke<RDPSessionInfo[]>('list_rdp_sessions');
+      const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
       setSessions(list);
 
       const newStats: Record<string, RDPStats> = {};
       for (const s of list) {
+        if (!visibleRef.current) break;
         try {
-          const st = await invoke<RDPStats>('get_rdp_stats', {
+          const st = await invoke<RDPStats>("get_rdp_stats", {
             sessionId: s.id,
           });
           newStats[s.id] = st;
@@ -78,10 +84,11 @@ export function useRDPSessionManager(isOpen: boolean) {
         }
       }
       setStatsMap(newStats);
-      setError('');
+      setError("");
     } catch (e) {
       setError(String(e));
     } finally {
+      fetchInFlightRef.current = false;
       setIsLoading(false);
     }
   }, []);
@@ -101,7 +108,7 @@ export function useRDPSessionManager(isOpen: boolean) {
 
   const handleDisconnect = useCallback(async (sessionId: string) => {
     try {
-      await invoke('disconnect_rdp', { sessionId });
+      await invoke("disconnect_rdp", { sessionId });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (e) {
       setError(`Disconnect failed: ${String(e)}`);
@@ -111,7 +118,7 @@ export function useRDPSessionManager(isOpen: boolean) {
   const handleDetach = useCallback(
     async (sessionId: string) => {
       try {
-        await invoke('detach_rdp_session', { sessionId });
+        await invoke("detach_rdp_session", { sessionId });
         fetchData();
       } catch (e) {
         setError(`Detach failed: ${String(e)}`);
@@ -123,7 +130,7 @@ export function useRDPSessionManager(isOpen: boolean) {
   const handleDisconnectAll = useCallback(async () => {
     for (const s of sessions) {
       try {
-        await invoke('disconnect_rdp', { sessionId: s.id });
+        await invoke("disconnect_rdp", { sessionId: s.id });
       } catch {
         // best-effort
       }
@@ -132,7 +139,7 @@ export function useRDPSessionManager(isOpen: boolean) {
     setStatsMap({});
   }, [sessions]);
 
-  const clearError = useCallback(() => setError(''), []);
+  const clearError = useCallback(() => setError(""), []);
 
   const totalTraffic = Object.values(statsMap).reduce(
     (sum, s) => sum + s.bytes_received + s.bytes_sent,

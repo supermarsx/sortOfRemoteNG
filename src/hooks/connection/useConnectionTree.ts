@@ -246,15 +246,30 @@ export function useConnectionTree(
 
   /* ── Tree building ── */
 
+  // Each collection is indexed once per sort configuration. Expanding a folder
+  // is then a lookup, rather than a scan of the entire collection per group.
+  const treeIndexes = useMemo(
+    () => new WeakMap<Connection[], Map<string | undefined, Connection[]>>(),
+    // The cached sibling arrays are sorted, so changing the sort invalidates them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [enableReorder, state.filter.sortBy, state.filter.sortDirection],
+  );
   const buildTree = useCallback(
     (connections: Connection[], parentId?: string): Connection[] => {
+      const cached = treeIndexes.get(connections);
+      if (cached) return cached.get(parentId) ?? [];
       const sortBy = state.filter.sortBy || "name";
       const sortDirection = state.filter.sortDirection || "asc";
       const multiplier = sortDirection === "desc" ? -1 : 1;
 
-      return connections
-        .filter((conn) => conn.parentId === parentId)
-        .sort((a, b) => {
+      const index = new Map<string | undefined, Connection[]>();
+      for (const connection of connections) {
+        const siblings = index.get(connection.parentId);
+        if (siblings) siblings.push(connection);
+        else index.set(connection.parentId, [connection]);
+      }
+      for (const siblings of index.values()) {
+        siblings.sort((a, b) => {
           if (a.isGroup && !b.isGroup) return -1;
           if (!a.isGroup && b.isGroup) return 1;
 
@@ -297,8 +312,16 @@ export function useConnectionTree(
               return a.name.localeCompare(b.name) * multiplier;
           }
         });
+      }
+      treeIndexes.set(connections, index);
+      return index.get(parentId) ?? [];
     },
-    [enableReorder, state.filter.sortBy, state.filter.sortDirection],
+    [
+      treeIndexes,
+      enableReorder,
+      state.filter.sortBy,
+      state.filter.sortDirection,
+    ],
   );
 
   const hasActiveConnectionFilter = useMemo(() => {

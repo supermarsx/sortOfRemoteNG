@@ -95,9 +95,12 @@ export function useInternalProxyManager(isOpen: boolean) {
   const [error, setError] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const autoRefreshRef = useRef(autoRefresh);
+  const fetchInFlightRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(async (): Promise<boolean> => {
+    if (fetchInFlightRef.current) return false;
+    fetchInFlightRef.current = true;
     try {
       const [sessionsData, logData] = await Promise.all([
         invoke<ProxySessionDetail[]>("get_proxy_session_details"),
@@ -110,6 +113,8 @@ export function useInternalProxyManager(isOpen: boolean) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return false;
+    } finally {
+      fetchInFlightRef.current = false;
     }
   }, []);
 

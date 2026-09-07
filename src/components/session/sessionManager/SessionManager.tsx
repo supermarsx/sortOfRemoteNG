@@ -1215,7 +1215,6 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
   sessionCloseConcurrency,
   sessionCloseTimeoutMs,
   sessionCloseYieldControl,
-  thumbnailsEnabled = true,
   thumbnailPolicy = "realtime",
   thumbnailInterval = 5,
 }) => {
@@ -1224,7 +1223,9 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     isVisible,
     connections,
     activeBackendSessionIds,
-    thumbnailsEnabled,
+    // This manager renders a table, with no thumbnail consumer. The standalone
+    // RDP panel owns previews; do not capture/encode unused images here.
+    thumbnailsEnabled: false,
     thumbnailPolicy,
     thumbnailInterval,
   });

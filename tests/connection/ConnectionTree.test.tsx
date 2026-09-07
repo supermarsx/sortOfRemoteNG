@@ -67,6 +67,110 @@ function InitConnections({
 }
 
 describe("ConnectionTree", () => {
+  it("bounds a 10,000-connection expanded tree while preserving hierarchy, keyboard navigation and offscreen reveal", async () => {
+    const connections: Connection[] = [];
+    for (let group = 0; group < 1000; group++) {
+      const suffix = String(group).padStart(4, "0");
+      connections.push({
+        ...mockConnections[0],
+        id: `group-${suffix}`,
+        name: `Folder ${suffix}`,
+        expanded: true,
+      });
+      for (let child = 0; child < 10; child++) {
+        connections.push({
+          ...mockConnections[1],
+          id: `item-${suffix}-${child}`,
+          parentId: `group-${suffix}`,
+          name: `Server ${suffix}-${child}`,
+        });
+      }
+    }
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={connections} />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    const tree = screen.getByRole("tree");
+    expect(screen.getAllByRole("treeitem").length).toBeLessThan(50);
+    expect(
+      screen.getByText("Server 0000-0").closest('[role="treeitem"]'),
+    ).toHaveAttribute("aria-level", "2");
+    expect(
+      screen.getByText("Folder 0000").closest('[role="treeitem"]'),
+    ).toHaveAttribute("aria-setsize", "1000");
+    expect(screen.queryByText("Server 0999-9")).not.toBeInTheDocument();
+    fireEvent.keyDown(tree, { key: "End" });
+    const last = await screen.findByText("Server 0999-9");
+    expect(last.closest('[role="treeitem"]')).toHaveFocus();
+    expect(last.closest('[role="treeitem"]')).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getAllByRole("treeitem").length).toBeLessThan(50);
+    fireEvent.keyDown(last.closest('[role="treeitem"]')!, { key: "ArrowLeft" });
+    const parent = screen
+      .getByText("Folder 0999")
+      .closest('[role="treeitem"]')!;
+    expect(parent).toHaveFocus();
+    fireEvent.keyDown(parent, { key: "ArrowLeft" });
+    expect(screen.queryByText("Server 0999-9")).not.toBeInTheDocument();
+    act(() =>
+      window.dispatchEvent(
+        new CustomEvent("reveal-connection", {
+          detail: { connectionId: "item-0500-5" },
+        }),
+      ),
+    );
+    expect(await screen.findByText("Server 0500-5")).toBeInTheDocument();
+    expect(screen.getAllByRole("treeitem").length).toBeLessThan(50);
+  });
+
+  it("keeps custom sibling ordering and drag/drop actions in a virtual viewport", async () => {
+    const connections = Array.from({ length: 1000 }, (_, index) => ({
+      ...mockConnections[1],
+      id: `root-${index}`,
+      name: `Root ${index}`,
+      parentId: undefined,
+      order: 1000 - index,
+    }));
+    const filter = { sortBy: "custom" as const, sortDirection: "asc" as const };
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={connections} filter={filter} />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    expect(screen.getAllByRole("treeitem")[0]).toHaveTextContent("Root 999");
+    const source = screen
+      .getByText("Root 998")
+      .closest("[data-connection-item]")!;
+    const target = screen
+      .getByText("Root 999")
+      .closest("[data-connection-item]")!;
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+    };
+    fireEvent.dragStart(source, { dataTransfer });
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      top: 0,
+      height: 32,
+    } as DOMRect);
+    fireEvent(
+      target,
+      Object.assign(new MouseEvent("drop", { bubbles: true, clientY: 1 }), {
+        dataTransfer,
+      }),
+    );
+    expect(screen.getAllByRole("treeitem")[0]).toHaveTextContent("Root 998");
+    expect(screen.getAllByRole("treeitem").length).toBeLessThan(50);
+  });
+
   beforeEach(() => {
     vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
       if (cmd === "clone_connection") {

@@ -21,7 +21,26 @@ import {
   Star,
 } from "lucide-react";
 
-const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
+interface RowState {
+  dispatch: ReturnType<typeof useConnections>["dispatch"];
+  isSelected: boolean;
+  isMultiSelected: boolean;
+  activeSession?: ReturnType<
+    typeof useConnections
+  >["state"]["sessions"][number];
+  expanded?: boolean;
+  setSize?: number;
+  posInSet?: number;
+}
+
+export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
+  dispatch,
+  isSelected,
+  isMultiSelected,
+  activeSession,
+  expanded,
+  setSize,
+  posInSet,
   connection,
   level,
   onConnect,
@@ -55,9 +74,8 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   doubleClickRename,
   folderSingleClickToggle,
   folderDoubleClickToggle,
-}) => {
+}: ConnectionTreeItemProps & RowState) {
   const { t } = useTranslation();
-  const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
   const [showMultiMenu, setShowMultiMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{
@@ -72,14 +90,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   // changed from outside this component (drag-drop auto-expand,
   // collection reload, cross-window settings sync), so the displayed
   // state was not applied in real time. Read it directly instead.
-  const isExpanded = connection.expanded || false;
+  const isExpanded = expanded ?? connection.expanded ?? false;
 
   const ProtocolIcon = getConnectionIcon(connection);
-  const isSelected = state.selectedConnectionIds.has(connection.id);
-  const isMultiSelected = state.selectedConnectionIds.size > 1;
-  const activeSession = state.sessions.find(
-    (s) => s.connectionId === connection.id && !isToolProtocol(s.protocol),
-  );
 
   const handleToggleExpand = () => {
     if (connection.isGroup) {
@@ -175,6 +188,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
       }
       className="relative"
       role="treeitem"
+      aria-level={level + 1}
+      aria-setsize={setSize}
+      aria-posinset={posInSet}
       aria-expanded={connection.isGroup ? isExpanded : undefined}
       aria-selected={isSelected}
       tabIndex={isSelected ? 0 : -1}
@@ -405,6 +421,24 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         )}
       </div>
     </div>
+  );
+});
+
+// Standalone consumers keep the context adapter. The tree passes indexed row
+// state directly so unrelated session/context changes do not wake every row.
+const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = (props) => {
+  const { state, dispatch } = useConnections();
+  return (
+    <ConnectionTreeRow
+      {...props}
+      dispatch={dispatch}
+      isSelected={state.selectedConnectionIds.has(props.connection.id)}
+      isMultiSelected={state.selectedConnectionIds.size > 1}
+      activeSession={state.sessions.find(
+        (s) =>
+          s.connectionId === props.connection.id && !isToolProtocol(s.protocol),
+      )}
+    />
   );
 };
 

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { getToolKeyFromProtocol, ToolKey } from "./toolSession";
@@ -192,6 +193,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   const { t } = useTranslation();
   const { state } = useConnections();
   const { settings } = useSettings();
+  const { isActive } = useSessionRenderActivity();
   const toolKey = getToolKeyFromProtocol(session.protocol);
 
   const activeRdpBackendIds = useMemo(
@@ -220,7 +222,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       {toolKey === "proxyChain" && <ProxyChainMenu isOpen onClose={onClose} />}
       {toolKey === "internalProxy" && (
         <SessionManager
-          isVisible
+          isVisible={isActive}
           connections={state.connections}
           activeBackendSessionIds={activeRdpBackendIds}
           onClose={onClose}
@@ -315,7 +317,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       )}
       {toolKey === "rdpSessions" && (
         <SessionManager
-          isVisible
+          isVisible={isActive}
           connections={state.connections}
           activeBackendSessionIds={activeRdpBackendIds}
           onClose={onClose}
