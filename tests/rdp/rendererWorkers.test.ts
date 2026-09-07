@@ -33,6 +33,7 @@ const workerBlobs = new Map<string, string>();
 const workers: MockWorker[] = [];
 const decodedChunks: MockEncodedVideoChunk[] = [];
 const videoDecoders: MockVideoDecoder[] = [];
+const offscreenCanvases: MockOffscreenCanvas[] = [];
 const NAL_MAGIC = 0x4e414c48;
 
 let originalCreateObjectURL: typeof URL.createObjectURL | undefined;
@@ -97,6 +98,10 @@ class MockEncodedVideoChunk {
 
 class MockVideoDecoder {
   readonly pendingChunks: MockEncodedVideoChunk[] = [];
+  readonly outputFrames: Array<{
+    timestamp: number;
+    close: ReturnType<typeof vi.fn>;
+  }> = [];
   decodeQueueSize = 0;
   state: "unconfigured" | "configured" | "closed" = "unconfigured";
   private readonly dequeueListeners = new Set<() => void>();
@@ -137,10 +142,12 @@ class MockVideoDecoder {
     this.decodeQueueSize -= 1;
     this.dequeueListeners.forEach((listener) => listener());
     if (output) {
-      this.init.output({
+      const frame = {
         timestamp: chunk.timestamp,
         close: vi.fn(),
-      });
+      };
+      this.outputFrames.push(frame);
+      this.init.output(frame);
     }
   }
 
@@ -178,6 +185,7 @@ class MockOffscreenCanvas {
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
+    offscreenCanvases.push(this);
   }
 
   getContext(kind: string): ReturnType<typeof create2dContext> | null {
@@ -339,6 +347,47 @@ function buildNalBuffer(
   return buffer;
 }
 
+function buildNalV2(
+  regions: Array<[number, number, number, number]>,
+  nalPayload = annexB(
+    [0x67, 0x42, 0, 0x1f],
+    [0x68, 0xce, 6, 0xe2],
+    [0x65, 0x88],
+  ),
+  surfaceId = 1,
+): ArrayBuffer {
+  const buffer = new ArrayBuffer(28 + regions.length * 8 + nalPayload.length);
+  const view = new DataView(buffer);
+  view.setUint32(0, 0x324c414e, true);
+  view.setUint16(4, surfaceId, true);
+  view.setUint16(6, 16, true); // surface origin
+  view.setUint16(10, 16, true);
+  view.setUint16(12, 16, true);
+  view.setUint32(20, regions.length, true);
+  view.setUint32(24, nalPayload.length, true);
+  regions.forEach((rect, index) =>
+    rect.forEach((value, field) =>
+      view.setUint16(28 + index * 8 + field * 2, value, true),
+    ),
+  );
+  new Uint8Array(buffer, 28 + regions.length * 8).set(nalPayload);
+  return buffer;
+}
+
+function wrapRgbaTile(
+  tile: ArrayBuffer,
+  frameId: number,
+  flags: number,
+): ArrayBuffer {
+  const result = new ArrayBuffer(12 + tile.byteLength);
+  const view = new DataView(result);
+  view.setUint32(0, 0x32424752, true);
+  view.setUint32(4, frameId, true);
+  view.setUint16(8, flags, true);
+  new Uint8Array(result, 12).set(new Uint8Array(tile));
+  return result;
+}
+
 function asOffsetUint8View(buffer: ArrayBuffer): Uint8Array {
   const source = new Uint8Array(buffer);
   const outer = new Uint8Array(source.byteLength + 11);
@@ -368,6 +417,7 @@ describe("rdp worker blobs", () => {
     workers.length = 0;
     decodedChunks.length = 0;
     videoDecoders.length = 0;
+    offscreenCanvases.length = 0;
 
     vi.stubGlobal("ImageData", MockImageData as typeof ImageData);
     vi.stubGlobal("Blob", MockBlob as unknown as typeof Blob);
@@ -433,6 +483,7 @@ describe("rdp worker blobs", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     workerBlobs.clear();
@@ -479,6 +530,627 @@ describe("rdp worker blobs", () => {
         }
       ).transferControlToOffscreen;
     }
+  });
+
+  it("advances 120 single-credit deliveries through adaptive tasks and does no idle work", async () => {
+    const tasks: Array<() => void> = [];
+    const post = vi.fn();
+    vi.stubGlobal(
+      "MessageChannel",
+      class {
+        port1 = { onmessage: null as (() => void) | null, close: vi.fn() };
+        port2 = {
+          close: vi.fn(),
+          postMessage: () => {
+            post();
+            tasks.push(() => this.port1.onmessage?.());
+          },
+        };
+      },
+    );
+    const raf = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", raf);
+    const pipeline = new RdpFramePipeline();
+    pipeline.attach(
+      document.createElement("canvas"),
+      16,
+      16,
+      "webcodecs-worker",
+    );
+    await waitForWorkersToDrain();
+    for (let index = 0; index < 120; index++) {
+      const delivery = pipeline.onFrame(
+        buildFullWidthRgbaTile(16, index % 16, 1),
+      );
+      expect(tasks).toHaveLength(1);
+      tasks.shift()!();
+      await waitForWorkersToDrain();
+      await delivery;
+    }
+    expect(raf).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(120);
+    expect(tasks).toHaveLength(0);
+    expect(pipeline.getMetrics()).toMatchObject({
+      receivedFrames: 120,
+      presentedFrames: 120,
+      queuedFrames: 0,
+      droppedFrames: 0,
+    });
+    await waitForWorkersToDrain();
+    expect(post).toHaveBeenCalledTimes(120);
+    pipeline.destroy();
+  });
+
+  it("composes all RGBA rectangles in a delivered batch before one worker presentation", async () => {
+    let tick: FrameRequestCallback = () => {};
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      tick = callback;
+      return 1;
+    });
+    const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+    pipeline.attach(
+      document.createElement("canvas"),
+      16,
+      16,
+      "offscreen-worker",
+    );
+    const first = buildFullWidthRgbaTile(16, 0, 1);
+    const second = buildFullWidthRgbaTile(16, 15, 1);
+    const batch = new Uint8Array(first.byteLength + second.byteLength);
+    batch.set(new Uint8Array(first));
+    batch.set(new Uint8Array(second), first.byteLength);
+    const delivered = pipeline.onFrame(batch.buffer);
+    tick(0);
+    expect(pipeline.getMetrics().presentedFrames).toBe(0);
+    await waitForWorkersToDrain();
+    await delivered;
+    const context =
+      offscreenCanvases[offscreenCanvases.length - 1].getContext("2d")!;
+    expect(context.putImageData).toHaveBeenCalledTimes(2);
+    expect(
+      context.putImageData.mock.calls.map((call) => call.slice(1)),
+    ).toEqual([
+      [0, 0],
+      [0, 15],
+    ]);
+    expect(pipeline.getMetrics()).toMatchObject({
+      receivedFrames: 1,
+      presentedFrames: 1,
+      queuedFrames: 0,
+    });
+    pipeline.destroy();
+  });
+
+  it("withholds credit at decoder capacity and resumes without dropping the reference chain", async () => {
+    const renderer = createFrameRenderer(
+      "webcodecs-worker",
+      document.createElement("canvas"),
+      { width: 16, height: 16 },
+    ) as RawBufferRenderer;
+    renderer.pushRawBuffer(buildNalBuffer(16, 16));
+    await waitForWorkersToDrain();
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    for (let index = 0; index < 3; index++) {
+      renderer.pushRawBuffer(buildNalBuffer(16, 16, annexB([0x41, index])));
+      await waitForWorkersToDrain();
+      await renderer.waitForIdle!();
+    }
+    renderer.pushRawBuffer(buildNalBuffer(16, 16, annexB([0x41, 3])));
+    await waitForWorkersToDrain();
+    let consumed = false;
+    const credit = renderer.waitForIdle!().then(() => {
+      consumed = true;
+    });
+    await Promise.resolve();
+    expect(consumed).toBe(false);
+    expect(videoDecoders[0].decodeQueueSize).toBe(4);
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    await credit;
+    expect(consumed).toBe(true);
+    expect(decodedChunks).toHaveLength(5);
+    expect(videoDecoders[0].state).toBe("configured");
+    renderer.destroy();
+  });
+
+  it("reports worker completion and waiting latency, and settles credit on destruction", async () => {
+    let tick: FrameRequestCallback = () => {};
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      tick = callback;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+    pipeline.attach(
+      document.createElement("canvas"),
+      16,
+      16,
+      "webcodecs-worker",
+    );
+    await waitForWorkersToDrain();
+    const worker = getWorker(pipeline.getRenderer());
+    worker.pauseProcessing();
+    let delivered = false;
+    const credit = pipeline
+      .onFrame(buildFullRgbaFrameBuffer(16, 16))
+      .then(() => {
+        delivered = true;
+      });
+    tick(0);
+    await waitForWorkersToDrain();
+    now = 100;
+    expect(delivered).toBe(false);
+    expect(pipeline.getMetrics()).toMatchObject({
+      presentedFrames: 0,
+      queuedFrames: 1,
+      oldestPendingRenderMs: 100,
+    });
+    worker.resumeProcessing();
+    await waitForWorkersToDrain();
+    await credit;
+    expect(pipeline.getMetrics()).toMatchObject({
+      presentedFrames: 1,
+      averageRenderMs: 100,
+      queuedFrames: 0,
+    });
+    worker.pauseProcessing();
+    const pending = pipeline.onFrame(buildFullRgbaFrameBuffer(16, 16));
+    tick(0);
+    pipeline.destroy();
+    await pending;
+  });
+
+  it("uses a recent processing window after a fast worker deteriorates", async () => {
+    let tick: FrameRequestCallback = () => {};
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      tick = callback;
+      return 1;
+    });
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+    pipeline.attach(
+      document.createElement("canvas"),
+      16,
+      16,
+      "webcodecs-worker",
+    );
+    await waitForWorkersToDrain();
+    for (let index = 0; index < 360; index++) {
+      const delivery = pipeline.onFrame(buildFullRgbaFrameBuffer(16, 16));
+      tick(now);
+      now += index < 240 ? 1 : 50;
+      await waitForWorkersToDrain();
+      await delivery;
+    }
+    expect(pipeline.getMetrics().averageRenderMs).toBeCloseTo(50);
+    expect(pipeline.getMetrics().p95RenderMs).toBeCloseTo(50);
+    pipeline.destroy();
+  });
+
+  it.each([undefined, 0])(
+    "presents every decoded output when the cap is %s",
+    async (targetFps) => {
+      const onPresented = vi.fn();
+      const renderer = createFrameRenderer(
+        "webcodecs-worker",
+        document.createElement("canvas"),
+        { width: 16, height: 16, targetFps, onPresented },
+      ) as RawBufferRenderer;
+      renderer.pushRawBuffer(buildNalBuffer(16, 16));
+      await waitForWorkersToDrain();
+      expect(onPresented).not.toHaveBeenCalled();
+      videoDecoders[0].dequeue();
+      await waitForWorkersToDrain();
+      for (let index = 0; index < 8; index++) {
+        renderer.pushRawBuffer(buildNalBuffer(16, 16, annexB([0x41, index])));
+        await waitForWorkersToDrain();
+        videoDecoders[0].dequeue();
+        await waitForWorkersToDrain();
+      }
+      expect(onPresented).toHaveBeenCalledTimes(9);
+      expect(decodedChunks).toHaveLength(9);
+      renderer.destroy();
+    },
+  );
+
+  it("caps composite presentation while decoding every disjoint update and preserving RGBA tiles", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const onPresented = vi.fn();
+    const renderer = createFrameRenderer(
+      "webcodecs-worker",
+      document.createElement("canvas"),
+      { width: 32, height: 16, targetFps: 10, onPresented },
+    ) as RawBufferRenderer;
+    renderer.pushRawBuffer(buildNalBuffer(16, 16));
+    await waitForWorkersToDrain();
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    for (let index = 0; index < 4; index++) {
+      await vi.advanceTimersByTimeAsync(10);
+      const buffer = buildNalBuffer(16, 16, annexB([0x41, index]));
+      new DataView(buffer).setUint16(6, index % 2 === 0 ? 16 : 0, true);
+      renderer.pushRawBuffer(buffer);
+      await waitForWorkersToDrain();
+      videoDecoders[0].dequeue();
+      await waitForWorkersToDrain();
+    }
+    expect(onPresented).toHaveBeenCalledTimes(1);
+    expect(decodedChunks).toHaveLength(5);
+    expect(
+      videoDecoders[0].outputFrames.every(
+        (frame) => frame.close.mock.calls.length === 1,
+      ),
+    ).toBe(true);
+    const composite = offscreenCanvases.find(
+      (canvas) => canvas.getContext("2d")!.drawImage.mock.calls.length === 5,
+    )!;
+    expect(
+      composite
+        .getContext("2d")!
+        .drawImage.mock.calls.map((call) => call.slice(-4)),
+    ).toEqual([
+      [0, 0, 16, 16],
+      [16, 0, 16, 16],
+      [0, 0, 16, 16],
+      [16, 0, 16, 16],
+      [0, 0, 16, 16],
+    ]);
+    await vi.advanceTimersByTimeAsync(60);
+    await waitForWorkersToDrain();
+    expect(onPresented).toHaveBeenCalledTimes(2);
+    expect(onPresented.mock.calls[1][1]).toBe(3);
+    expect(onPresented.mock.calls[1][0]).toBeLessThan(10); // excludes deliberate cap wait
+    for (let y = 0; y < 16; y++) {
+      renderer.pushRawBuffer(buildFullWidthRgbaTile(32, y, 1));
+      await waitForWorkersToDrain();
+      await renderer.waitForIdle!();
+    }
+    expect(onPresented).toHaveBeenCalledTimes(18); // RGBA continuations have no second cap
+    renderer.pushRawBuffer(buildNalBuffer(16, 16, annexB([0x41, 5])));
+    await waitForWorkersToDrain();
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    expect(vi.getTimerCount()).toBe(1);
+    renderer.resize(32, 16);
+    await waitForWorkersToDrain();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onPresented).toHaveBeenCalledTimes(18);
+    expect(vi.getTimerCount()).toBe(0);
+    renderer.destroy();
+  });
+
+  it("presents capped video with legacy RGBA and keeps an unfinished RGBA frame atomic", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const onPresented = vi.fn();
+    const renderer = createFrameRenderer(
+      "webcodecs-worker",
+      document.createElement("canvas"),
+      { width: 32, height: 16, targetFps: 10, onPresented },
+    ) as RawBufferRenderer;
+    await waitForWorkersToDrain();
+    const visible = offscreenCanvases[0].getContext("2d")!;
+    const composite = offscreenCanvases[1].getContext("2d")!;
+    const visiblePixels = new Uint8Array(32 * 16);
+    const compositePixels = new Uint8Array(32 * 16);
+    const fillRegion = (
+      pixels: Uint8Array,
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      value: number,
+    ) => {
+      for (let row = y; row < y + height; row++) {
+        pixels.fill(value, row * 32 + x, row * 32 + x + width);
+      }
+    };
+    // Track representative pixel values through the real generated worker's
+    // composition and presentation calls, including the old direct-paint path.
+    composite.drawImage.mockImplementation(
+      (frame, _sx, _sy, width, height, x, y) => {
+        fillRegion(compositePixels, x, y, width, height, frame.timestamp + 1);
+      },
+    );
+    composite.putImageData.mockImplementation((data, x, y) => {
+      fillRegion(compositePixels, x, y, data.width, data.height, data.data[0]);
+    });
+    visible.putImageData.mockImplementation((data, x, y) => {
+      fillRegion(visiblePixels, x, y, data.width, data.height, data.data[0]);
+    });
+    visible.drawImage.mockImplementation(() =>
+      visiblePixels.set(compositePixels),
+    );
+
+    renderer.pushRawBuffer(buildNalBuffer(16, 16));
+    await waitForWorkersToDrain();
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    expect(visiblePixels[0]).toBe(1);
+    expect(visiblePixels[16]).toBe(0);
+    await vi.advanceTimersByTimeAsync(10);
+    const queueRightHalf = async (index: number) => {
+      const buffer = buildNalBuffer(16, 16, annexB([0x41, index]));
+      new DataView(buffer).setUint16(6, 16, true);
+      renderer.pushRawBuffer(buffer);
+      await waitForWorkersToDrain();
+      videoDecoders[0].dequeue();
+      await waitForWorkersToDrain();
+    };
+    await queueRightHalf(1);
+    expect(compositePixels[16]).toBe(2);
+    expect(visiblePixels[16]).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
+
+    renderer.pushRawBuffer(buildRgbaRectBuffer());
+    await waitForWorkersToDrain();
+    await renderer.waitForIdle!();
+    expect(visiblePixels[16]).toBe(2);
+    expect(visiblePixels[2 * 32 + 1]).toBe(0x7f);
+    expect(onPresented).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+
+    await queueRightHalf(2);
+    const beforeSnapshot = visiblePixels.slice();
+    renderer.pushRawBuffer(
+      wrapRgbaTile(buildFullWidthRgbaTile(16, 0, 1), 42, 1),
+    );
+    await waitForWorkersToDrain();
+    await renderer.waitForIdle!();
+    await vi.advanceTimersByTimeAsync(100);
+    await waitForWorkersToDrain();
+    expect(visiblePixels).toEqual(beforeSnapshot);
+    expect(onPresented).toHaveBeenCalledTimes(2);
+    renderer.pushRawBuffer(
+      wrapRgbaTile(buildFullWidthRgbaTile(16, 1, 1), 42, 2),
+    );
+    await waitForWorkersToDrain();
+    await renderer.waitForIdle!();
+    expect(visiblePixels[16]).toBe(3);
+    expect(visiblePixels[0]).toBe(0x7f);
+    expect(visiblePixels[32]).toBe(0x7f);
+    expect(onPresented).toHaveBeenCalledTimes(3);
+    expect(visible.putImageData).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(getWorker(renderer).errors).toEqual([]);
+    renderer.destroy();
+  });
+
+  it("isolates interleaved surface decoders and bounds and closes abandoned contexts", async () => {
+    const renderer = createFrameRenderer(
+      "webcodecs-worker",
+      document.createElement("canvas"),
+      { width: 32, height: 16 },
+    ) as RawBufferRenderer;
+    for (let surface = 1; surface <= 10; surface++) {
+      const key = buildNalBuffer(16, 16);
+      new DataView(key).setUint16(4, surface, true);
+      renderer.pushRawBuffer(key);
+      await waitForWorkersToDrain();
+      videoDecoders[surface - 1].dequeue();
+      await waitForWorkersToDrain();
+    }
+    expect(
+      videoDecoders.filter((decoder) => decoder.state !== "closed"),
+    ).toHaveLength(8);
+    expect(videoDecoders[0].state).toBe("closed");
+    const delta = buildNalBuffer(16, 16, annexB([0x41, 1]));
+    new DataView(delta).setUint16(4, 9, true);
+    renderer.pushRawBuffer(delta);
+    await waitForWorkersToDrain();
+    expect(
+      videoDecoders[8].pendingChunks[videoDecoders[8].pendingChunks.length - 1]
+        ?.type,
+    ).toBe("delta");
+    expect(videoDecoders[9].pendingChunks).toHaveLength(0);
+    renderer.resetH264Recovery!("background");
+    await waitForWorkersToDrain();
+    expect(
+      videoDecoders.every((decoder) => decoder.pendingChunks.length === 0),
+    ).toBe(true);
+    renderer.destroy();
+  });
+
+  it("keeps Canvas2D snapshots atomic without OffscreenCanvas support", async () => {
+    vi.stubGlobal("OffscreenCanvas", undefined);
+    const contexts = new Map<
+      HTMLCanvasElement,
+      ReturnType<typeof create2dContext>
+    >();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      function (this: HTMLCanvasElement, kind: string) {
+        if (kind !== "2d") return null;
+        if (!contexts.has(this))
+          contexts.set(
+            this,
+            create2dContext(this as unknown as MockOffscreenCanvas),
+          );
+        return contexts.get(this) as never;
+      },
+    );
+    let tick: FrameRequestCallback = () => {};
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      tick = callback;
+      return 1;
+    });
+    const canvas = document.createElement("canvas");
+    const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+    pipeline.attach(canvas, 16, 16, "canvas2d");
+    const first = pipeline.onFrame(
+      wrapRgbaTile(buildFullWidthRgbaTile(16, 0, 8), 7, 1),
+    );
+    tick(0);
+    await first;
+    expect(contexts.get(canvas)!.drawImage).not.toHaveBeenCalled();
+    expect(contexts.get(canvas)!.putImageData).not.toHaveBeenCalled();
+    const last = pipeline.onFrame(
+      wrapRgbaTile(buildFullWidthRgbaTile(16, 8, 8), 7, 2),
+    );
+    tick(0);
+    await last;
+    expect(contexts.get(canvas)!.drawImage).toHaveBeenCalledTimes(1);
+    expect(pipeline.getMetrics().presentedFrames).toBe(1);
+    pipeline.destroy();
+  });
+
+  it.each(["webcodecs-worker", "offscreen-worker"] as const)(
+    "composes a full snapshot tile by tile but only presents its end (%s)",
+    async (rendererType) => {
+      let tick: FrameRequestCallback = () => {};
+      vi.stubGlobal(
+        "requestAnimationFrame",
+        (callback: FrameRequestCallback) => {
+          tick = callback;
+          return 1;
+        },
+      );
+      const pipeline = new RdpFramePipeline({ scheduling: "vsync" });
+      pipeline.attach(document.createElement("canvas"), 16, 16, rendererType);
+      await waitForWorkersToDrain();
+      for (let y = 0; y < 16; y++) {
+        const credit = pipeline.onFrame(
+          wrapRgbaTile(
+            buildFullWidthRgbaTile(16, y, 1),
+            7,
+            y === 0 ? 1 : y === 15 ? 2 : 0,
+          ),
+        );
+        tick(0);
+        await waitForWorkersToDrain();
+        await credit;
+        expect(pipeline.getMetrics().queuedFrames).toBe(0);
+        expect(pipeline.getMetrics().presentedFrames).toBe(y === 15 ? 1 : 0);
+      }
+      const composed = offscreenCanvases.find(
+        (canvas) =>
+          canvas.getContext("2d")!.putImageData.mock.calls.length === 16,
+      )!;
+      expect(
+        composed
+          .getContext("2d")!
+          .putImageData.mock.calls.map((call) => call[2]),
+      ).toEqual(Array.from({ length: 16 }, (_, y) => y));
+      pipeline.destroy();
+    },
+  );
+
+  it("uploads decoded video once then copies exact odd-pixel masks before a single GPU presentation", async () => {
+    const glCalls = {
+      texImage2D: vi.fn(),
+      copyTexSubImage2D: vi.fn(),
+      drawArrays: vi.fn(),
+      createProgram: vi.fn(() => ({})),
+    };
+    const gl = new Proxy(glCalls, {
+      get: (target, key) =>
+        key in target
+          ? target[key as keyof typeof target]
+          : typeof key === "string" && key.toUpperCase() === key
+            ? 0
+            : vi.fn(),
+    });
+    const getContext = MockOffscreenCanvas.prototype.getContext;
+    vi.spyOn(MockOffscreenCanvas.prototype, "getContext").mockImplementation(
+      function (this: MockOffscreenCanvas, kind: string) {
+        return kind === "webgl2" ? (gl as never) : getContext.call(this, kind);
+      },
+    );
+    const renderer = createFrameRenderer(
+      "webcodecs-worker",
+      document.createElement("canvas"),
+      { width: 32, height: 16 },
+    ) as RawBufferRenderer;
+    renderer.pushRawBuffer(
+      buildNalV2([
+        [1, 1, 3, 3],
+        [8, 8, 11, 11],
+      ]),
+    );
+    await waitForWorkersToDrain();
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    expect(glCalls.texImage2D).toHaveBeenCalledTimes(2); // initial desktop + one decoded upload
+    expect(glCalls.copyTexSubImage2D.mock.calls).toEqual([
+      [0, 0, 17, 1, 1, 1, 2, 2],
+      [0, 0, 24, 8, 8, 8, 3, 3],
+    ]);
+    expect(glCalls.drawArrays).toHaveBeenCalledTimes(1);
+    expect(glCalls.drawArrays.mock.invocationCallOrder[0]).toBeGreaterThan(
+      glCalls.copyTexSubImage2D.mock.invocationCallOrder[1],
+    );
+    expect(videoDecoders[0].outputFrames[0].close).toHaveBeenCalledTimes(1);
+    renderer.destroy();
+  });
+
+  it("uses NAL2 surface masks and origin, and decodes empty masks without painting", async () => {
+    const onPresented = vi.fn();
+    const renderer = createFrameRenderer(
+      "webcodecs-worker",
+      document.createElement("canvas"),
+      { width: 32, height: 16, onPresented },
+    ) as RawBufferRenderer;
+    renderer.pushRawBuffer(
+      buildNalV2([
+        [0, 0, 4, 4],
+        [8, 8, 12, 12],
+      ]),
+    );
+    await waitForWorkersToDrain();
+    expect(decodedChunks).toHaveLength(1);
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    const composite = offscreenCanvases.find(
+      (canvas) => canvas.getContext("2d")!.drawImage.mock.calls.length === 2,
+    )!;
+    expect(
+      composite
+        .getContext("2d")!
+        .drawImage.mock.calls.map((call) => call.slice(1)),
+    ).toEqual([
+      [0, 0, 4, 4, 16, 0, 4, 4],
+      [8, 8, 4, 4, 24, 8, 4, 4],
+    ]);
+    expect(onPresented).toHaveBeenCalledTimes(1);
+    renderer.pushRawBuffer(buildNalV2([], annexB([0x41, 1])));
+    await waitForWorkersToDrain();
+    videoDecoders[0].dequeue();
+    await waitForWorkersToDrain();
+    expect(decodedChunks).toHaveLength(2);
+    expect(onPresented).toHaveBeenCalledTimes(1);
+    expect(videoDecoders[0].outputFrames[1].close).toHaveBeenCalledTimes(1);
+    renderer.destroy();
+  });
+
+  it("rejects orphan RGBA snapshot continuations and malformed NAL2 masks without presenting", async () => {
+    const onPresented = vi.fn();
+    const recovery = vi.fn();
+    const renderer = createFrameRenderer(
+      "webcodecs-worker",
+      document.createElement("canvas"),
+      {
+        width: 32,
+        height: 16,
+        onPresented,
+        onH264RecoveryStateChange: recovery,
+      },
+    ) as RawBufferRenderer;
+    renderer.pushRawBuffer(
+      wrapRgbaTile(buildFullWidthRgbaTile(32, 15, 1), 9, 2),
+    );
+    renderer.pushRawBuffer(buildNalV2([[0, 0, 17, 16]]));
+    await waitForWorkersToDrain();
+    await renderer.waitForIdle!();
+    expect(onPresented).not.toHaveBeenCalled();
+    expect(decodedChunks).toHaveLength(0);
+    expect(recovery).toHaveBeenCalledWith(
+      "awaitingRecovery",
+      "malformed-access-unit",
+    );
+    expect(getWorker(renderer).errors).toEqual([]);
+    renderer.destroy();
   });
 
   it("probes mutually exclusive 2D and WebGL contexts on fresh canvases", async () => {

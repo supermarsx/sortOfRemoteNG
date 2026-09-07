@@ -65,6 +65,9 @@ pub struct RdpStatsEvent {
     pub pdus_sent: u64,
     pub frame_count: u64,
     pub fps: f64,
+    /// Completed frontend presentations, independent of decoded rectangles.
+    pub presented_fps: Option<f64>,
+    pub presented_frames: Option<u64>,
     pub input_events: u64,
     pub errors_recovered: u64,
     pub reactivations: u64,
@@ -88,6 +91,16 @@ pub struct RdpFrameTelemetryEvent {
     pub coalesced_frames: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub average_render_ms: Option<f64>,
+    #[serde(default)]
+    pub presented_frames: Option<u64>,
+    #[serde(default)]
+    pub presentation_epoch: Option<String>,
+    #[serde(default)]
+    pub sample_sequence: Option<u64>,
+    #[serde(default)]
+    pub sample_time_ms: Option<f64>,
+    #[serde(default)]
+    pub is_visible: Option<bool>,
 }
 
 // ---- Input events from the frontend ----

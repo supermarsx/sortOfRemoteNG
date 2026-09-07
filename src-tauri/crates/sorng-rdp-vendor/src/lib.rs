@@ -16,9 +16,13 @@ pub extern crate ironrdp_svc;
 pub use ironrdp::displaycontrol as ironrdp_displaycontrol;
 
 pub mod yuv_convert;
+pub extern crate yuv;
 
 #[cfg(all(feature = "software-decode", feature = "software-decode-dynamic"))]
 compile_error!("`software-decode` and `software-decode-dynamic` are mutually exclusive");
 
 #[cfg(any(feature = "software-decode", feature = "software-decode-dynamic"))]
 pub extern crate openh264;
+
+#[cfg(any(feature = "software-decode", feature = "software-decode-dynamic"))]
+pub extern crate openh264_sys2;

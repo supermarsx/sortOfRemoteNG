@@ -22,79 +22,12 @@ import {
   Toggle,
   SettingsSelectRow,
   SettingsSliderRow,
+  SettingsNumberRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import { SettingsSubGroupHeader as SubGroupHeader } from "../../../ui/settings/NetworkPrimitives";
+import { normalizeRdpTargetFps } from "../../../../utils/rdp/rdpSettingsMerge";
 
-const SPEED_PRESETS: Record<
-  string,
-  {
-    disableWallpaper: boolean;
-    disableFullWindowDrag: boolean;
-    disableMenuAnimations: boolean;
-    disableTheming: boolean;
-    disableCursorShadow: boolean;
-    enableFontSmoothing: boolean;
-    enableDesktopComposition: boolean;
-    targetFps: number;
-    frameBatchIntervalMs: number;
-  }
-> = {
-  modem: {
-    disableWallpaper: true,
-    disableFullWindowDrag: true,
-    disableMenuAnimations: true,
-    disableTheming: true,
-    disableCursorShadow: true,
-    enableFontSmoothing: false,
-    enableDesktopComposition: false,
-    targetFps: 15,
-    frameBatchIntervalMs: 66,
-  },
-  "broadband-low": {
-    disableWallpaper: true,
-    disableFullWindowDrag: true,
-    disableMenuAnimations: true,
-    disableTheming: false,
-    disableCursorShadow: true,
-    enableFontSmoothing: true,
-    enableDesktopComposition: false,
-    targetFps: 24,
-    frameBatchIntervalMs: 42,
-  },
-  "broadband-high": {
-    disableWallpaper: true,
-    disableFullWindowDrag: true,
-    disableMenuAnimations: true,
-    disableTheming: false,
-    disableCursorShadow: true,
-    enableFontSmoothing: true,
-    enableDesktopComposition: false,
-    targetFps: 30,
-    frameBatchIntervalMs: 33,
-  },
-  wan: {
-    disableWallpaper: false,
-    disableFullWindowDrag: false,
-    disableMenuAnimations: false,
-    disableTheming: false,
-    disableCursorShadow: false,
-    enableFontSmoothing: true,
-    enableDesktopComposition: true,
-    targetFps: 60,
-    frameBatchIntervalMs: 16,
-  },
-  lan: {
-    disableWallpaper: false,
-    disableFullWindowDrag: false,
-    disableMenuAnimations: false,
-    disableTheming: false,
-    disableCursorShadow: false,
-    enableFontSmoothing: true,
-    enableDesktopComposition: true,
-    targetFps: 60,
-    frameBatchIntervalMs: 16,
-  },
-};
+import { RDP_VISUAL_PRESETS as SPEED_PRESETS } from "../../../../utils/rdp/rdpPerformancePresets";
 
 const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const frameBatchOn = rdp.frameBatching ?? true;
@@ -110,7 +43,7 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           settingKey="connectionSpeed"
           icon={<Gauge size={16} />}
           label="Connection speed preset"
-          description="Selecting a preset adjusts the visual experience and frame delivery options below."
+          description="Selecting a preset adjusts the visual experience. Your frame rate limit is preserved."
           value={rdp.connectionSpeed ?? "broadband-high"}
           options={[
             { value: "modem", label: "Modem (56 Kbps)" },
@@ -131,7 +64,7 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
               update({ connectionSpeed: v as typeof rdp.connectionSpeed });
             }
           }}
-          infoTooltip="Selects a predefined set of visual and frame delivery settings optimized for your network speed."
+          infoTooltip="Selects visual settings for your network speed. Frame rate limits are configured separately."
         />
 
         <SubGroupHeader icon={<Eye size={11} />} label="Visual experience" />
@@ -216,18 +149,46 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
         <SubGroupHeader icon={<Timer size={11} />} label="Frame delivery" />
 
-        <SettingsSliderRow
-          settingKey="targetFps"
+        <Toggle
+          settingKey="frameRateLimitEnabled"
+          checked={rdp.frameRateLimitEnabled === true}
+          onChange={(v) =>
+            update({
+              frameRateLimitEnabled: v,
+              ...(v
+                ? { targetFps: normalizeRdpTargetFps(rdp.targetFps) || 60 }
+                : {}),
+            })
+          }
           icon={<Gauge size={16} />}
-          label="Target FPS"
-          description="0 = unlimited."
-          value={rdp.targetFps ?? 30}
-          min={0}
-          max={60}
-          unit=" fps"
-          onChange={(v) => update({ targetFps: v })}
-          infoTooltip="Maximum frames per second the remote session will deliver. Set to 0 for unlimited."
+          label="Limit frame rate"
+          description="Off: uncapped delivery adapts to activity and capacity. Idle sessions do not redraw."
+          infoTooltip="Enable an optional maximum FPS. Existing saved FPS preferences only apply after enabling this limit."
         />
+
+        <fieldset
+          disabled={rdp.frameRateLimitEnabled !== true}
+          className={
+            rdp.frameRateLimitEnabled === true ? undefined : "opacity-50"
+          }
+        >
+          <SettingsNumberRow
+            settingKey="targetFps"
+            icon={<Gauge size={16} />}
+            label="Maximum FPS"
+            description="Optional presentation limit, including high refresh rates such as 144 or 240 FPS. 0 leaves delivery uncapped."
+            value={
+              rdp.frameRateLimitEnabled === true
+                ? normalizeRdpTargetFps(rdp.targetFps)
+                : 0
+            }
+            min={0}
+            max={4294967295}
+            unit=" fps"
+            onChange={(v) => update({ targetFps: normalizeRdpTargetFps(v) })}
+            infoTooltip="Caps frame presentation. The default is uncapped; network presets do not change this limit."
+          />
+        </fieldset>
 
         <Toggle
           settingKey="frameBatching"
@@ -235,28 +196,9 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           onChange={(v) => update({ frameBatching: v })}
           icon={<Boxes size={16} />}
           label="Frame batching"
-          description="Accumulate dirty regions on the Rust side and emit them in batches (off = each region pushed immediately, lower latency with JS rAF pacing)."
-          infoTooltip="Accumulates changed screen regions and sends them in batches to reduce IPC overhead."
+          description="Combines pending changed regions without a timed wait. Legacy batch intervals are ignored."
+          infoTooltip="Coalesces pending screen changes to reduce delivery overhead without setting a frame rate limit."
         />
-
-        <div
-          className={
-            frameBatchOn ? undefined : "opacity-50 pointer-events-none"
-          }
-        >
-          <SettingsSliderRow
-            settingKey="frameBatchIntervalMs"
-            icon={<Timer size={16} />}
-            label="Batch interval"
-            description={`Approximately ${Math.round(1000 / (rdp.frameBatchIntervalMs || 33))} fps max. Lower values give smoother updates at the cost of CPU.`}
-            value={rdp.frameBatchIntervalMs ?? 33}
-            min={8}
-            max={100}
-            unit="ms"
-            onChange={(v) => update({ frameBatchIntervalMs: v })}
-            infoTooltip="Time between batch flushes. Lower values mean smoother updates but higher CPU usage."
-          />
-        </div>
 
         <SettingsSliderRow
           settingKey="fullFrameSyncInterval"

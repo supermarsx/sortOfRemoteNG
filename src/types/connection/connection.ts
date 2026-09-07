@@ -843,11 +843,13 @@ export interface RdpPerformanceSettings {
     | "auto-detect";
 
   // ─── Frame Delivery ───────────────────────────────────────────────
-  /** Target frame rate limit (0 = unlimited) */
+  /** Explicitly enable a frame rate cap. Missing inherits the global opt-in. */
+  frameRateLimitEnabled?: boolean;
+  /** Optional maximum FPS; effective runtime value is 0 unless the limit is enabled. */
   targetFps?: number;
   /** Frame batching: accumulate dirty regions and emit combined updates */
   frameBatching?: boolean;
-  /** Frame batch interval in ms (16 = ~60fps, 33 = ~30fps) */
+  /** Legacy saved preference, accepted for compatibility but no longer delays delivery. */
   frameBatchIntervalMs?: number;
 
   // ─── Bitmap Codec Negotiation ─────────────────────────────────────
@@ -859,8 +861,8 @@ export interface RdpPerformanceSettings {
    * Which server-side compositor to use for frame accumulation.
    * - `webview` — no compositor, stream each dirty region directly
    * - `softbuffer` — CPU shadow buffer, batch dirty regions
-   * - `wgpu` — GPU compositor (CPU fallback currently)
-   * - `auto` — try wgpu → softbuffer → webview
+   * - `wgpu` — compatibility alias for the CPU compositor
+   * - `auto` — direct streaming without an additional CPU shadow buffer
    */
   renderBackend?: "inherit" | "auto" | "softbuffer" | "wgpu" | "webview";
 
@@ -1145,7 +1147,7 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     lossyCompression: true,
     magnifierEnabled: false,
     magnifierZoom: 3,
-    smartSizing: true,
+    smartSizing: false,
   },
   audio: {
     playbackMode: "local",
@@ -1193,7 +1195,8 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     enableDesktopComposition: false,
     persistentBitmapCaching: false,
     connectionSpeed: "broadband-high",
-    targetFps: 30,
+    frameRateLimitEnabled: false,
+    targetFps: 0,
     frameBatching: true,
     frameBatchIntervalMs: 33,
     codecs: {

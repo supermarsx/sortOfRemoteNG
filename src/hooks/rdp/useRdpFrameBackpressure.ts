@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   RdpFrameBackpressureUpdate,
   RdpFramePipelineMetrics,
   RdpFramePressureState,
   RdpFrameTelemetrySender,
-} from '../../types/rdp/rdpEvents';
+} from "../../types/rdp/rdpEvents";
 
 export interface RdpFrameBackpressureWatermarks {
   highQueueDepth: number;
@@ -48,12 +48,13 @@ interface NormalizedBackpressureOptions {
   nowMs: () => number;
 }
 
-export const DEFAULT_RDP_FRAME_BACKPRESSURE_WATERMARKS: RdpFrameBackpressureWatermarks = {
-  highQueueDepth: 9,
-  lowQueueDepth: 3,
-  highAverageRenderMs: 32,
-  lowAverageRenderMs: 20,
-};
+export const DEFAULT_RDP_FRAME_BACKPRESSURE_WATERMARKS: RdpFrameBackpressureWatermarks =
+  {
+    highQueueDepth: 9,
+    lowQueueDepth: 3,
+    highAverageRenderMs: 32,
+    lowAverageRenderMs: 20,
+  };
 
 const DEFAULT_ACTIVE_CADENCE_MS = 250;
 const DEFAULT_QUIET_CADENCE_MS = 1000;
@@ -65,22 +66,31 @@ export function resolveRdpFramePressureState(
   currentState: RdpFramePressureState,
   watermarks: RdpFrameBackpressureWatermarks = DEFAULT_RDP_FRAME_BACKPRESSURE_WATERMARKS,
 ): RdpFramePressureState {
-  if (currentState === 'backpressured') {
+  if (currentState === "backpressured") {
     const queueRecovered = metrics.queuedFrames <= watermarks.lowQueueDepth;
-    const renderRecovered = metrics.averageRenderMs <= watermarks.lowAverageRenderMs;
-    return queueRecovered && renderRecovered ? 'healthy' : 'backpressured';
+    const renderRecovered =
+      metrics.averageRenderMs <= watermarks.lowAverageRenderMs &&
+      (metrics.oldestPendingRenderMs ?? 0) <
+        Math.max(100, watermarks.highAverageRenderMs * 3);
+    return queueRecovered && renderRecovered ? "healthy" : "backpressured";
   }
 
   const queuePressured = metrics.queuedFrames >= watermarks.highQueueDepth;
-  const renderPressured = metrics.averageRenderMs >= watermarks.highAverageRenderMs;
-  return queuePressured || renderPressured ? 'backpressured' : 'healthy';
+  const renderPressured =
+    metrics.averageRenderMs >= watermarks.highAverageRenderMs ||
+    (metrics.oldestPendingRenderMs ?? 0) >=
+      Math.max(100, watermarks.highAverageRenderMs * 3);
+  return queuePressured || renderPressured ? "backpressured" : "healthy";
 }
 
 export function buildRdpFrameBackpressureUpdate(
   sessionId: string,
   metrics: RdpFramePipelineMetrics,
   pressureState: RdpFramePressureState,
-  options: Pick<NormalizedBackpressureOptions, 'renderer' | 'isVisible' | 'isDetached' | 'nowMs'>,
+  options: Pick<
+    NormalizedBackpressureOptions,
+    "renderer" | "isVisible" | "isDetached" | "nowMs"
+  >,
 ): RdpFrameBackpressureUpdate {
   return {
     sessionId,
@@ -94,6 +104,7 @@ export function buildRdpFrameBackpressureUpdate(
     lastFrameRenderMs: metrics.lastFrameRenderMs,
     p95RenderMs: metrics.p95RenderMs,
     presentedFrames: metrics.presentedFrames,
+    presentationEpoch: metrics.presentationEpoch,
     isVisible: options.isVisible,
     isDetached: options.isDetached,
     pressureState,
@@ -104,14 +115,25 @@ export function buildRdpFrameBackpressureUpdate(
 export function useRdpFrameBackpressure(
   options: UseRdpFrameBackpressureOptions,
 ): UseRdpFrameBackpressureResult {
-  const [pressureState, setPressureState] = useState<RdpFramePressureState>('healthy');
-  const [lastUpdate, setLastUpdate] = useState<RdpFrameBackpressureUpdate | null>(null);
-  const pressureStateRef = useRef<RdpFramePressureState>('healthy');
+  const [pressureState, setPressureState] =
+    useState<RdpFramePressureState>("healthy");
+  const [lastUpdate, setLastUpdate] =
+    useState<RdpFrameBackpressureUpdate | null>(null);
+  const pressureStateRef = useRef<RdpFramePressureState>("healthy");
   const lastSentAtMsRef = useRef(0);
+  const lastSignatureRef = useRef<string | null>(null);
+  const sendingRef = useRef(false);
+  const sampleSequenceRef = useRef(0);
   const optionsRef = useRef<NormalizedBackpressureOptions | null>(null);
 
-  const activeCadenceMs = normalizeCadence(options.activeCadenceMs, DEFAULT_ACTIVE_CADENCE_MS);
-  const quietCadenceMs = normalizeCadence(options.quietCadenceMs, DEFAULT_QUIET_CADENCE_MS);
+  const activeCadenceMs = normalizeCadence(
+    options.activeCadenceMs,
+    DEFAULT_ACTIVE_CADENCE_MS,
+  );
+  const quietCadenceMs = normalizeCadence(
+    options.quietCadenceMs,
+    DEFAULT_QUIET_CADENCE_MS,
+  );
   const watermarks = normalizeWatermarks(options.watermarks);
   const enabled = options.enabled ?? true;
   const isVisible = options.isVisible ?? true;
@@ -134,6 +156,7 @@ export function useRdpFrameBackpressure(
   const sampleTelemetry = useCallback(async (force: boolean) => {
     const currentOptions = optionsRef.current;
     if (!currentOptions?.enabled || !currentOptions.sessionId) return null;
+    if (sendingRef.current) return null;
 
     const metrics = currentOptions.getMetrics();
     if (!metrics) return null;
@@ -153,43 +176,97 @@ export function useRdpFrameBackpressure(
       currentOptions.sessionId,
       metrics,
       nextPressureState,
-      currentOptions,
+      {
+        ...currentOptions,
+        isVisible:
+          currentOptions.isVisible &&
+          (typeof document === "undefined" ||
+            document.visibilityState !== "hidden"),
+      },
     );
-    const cadenceMs = currentOptions.isDetached || nextPressureState === 'backpressured'
-      ? currentOptions.quietCadenceMs
-      : currentOptions.activeCadenceMs;
-    const canSend = force || pressureChanged || update.timestampMs - lastSentAtMsRef.current >= cadenceMs;
+    const cadenceMs =
+      !update.isVisible ||
+      currentOptions.isDetached ||
+      nextPressureState === "backpressured"
+        ? currentOptions.quietCadenceMs
+        : currentOptions.activeCadenceMs;
+    const canSend =
+      force ||
+      pressureChanged ||
+      update.timestampMs - lastSentAtMsRef.current >= cadenceMs;
     if (!canSend) return null;
+    const { timestampMs: _timestamp, ...sample } = update;
+    const signature = JSON.stringify(sample);
+    // Visible idle samples are necessary to distinguish 0 FPS from a stale
+    // last moving frame. Hidden sessions publish only their visibility edge.
+    if (
+      !force &&
+      signature === lastSignatureRef.current &&
+      update.timestampMs - lastSentAtMsRef.current <
+        currentOptions.quietCadenceMs
+    )
+      return null;
+
+    update.sampleSequence = ++sampleSequenceRef.current;
+    update.sampleTimeMs = performance.now();
 
     lastSentAtMsRef.current = update.timestampMs;
+    lastSignatureRef.current = signature;
     setLastUpdate(update);
-    await currentOptions.sender(update);
+    sendingRef.current = true;
+    try {
+      await currentOptions.sender(update);
+    } catch (error) {
+      lastSignatureRef.current = null;
+      throw error;
+    } finally {
+      sendingRef.current = false;
+    }
     return update;
   }, []);
 
   useEffect(() => {
-    if (!enabled || !options.sessionId || typeof window === 'undefined') return;
+    if (!enabled || !options.sessionId || typeof window === "undefined") return;
 
-    let cancelled = false;
-    const intervalMs = Math.min(activeCadenceMs, quietCadenceMs);
-    const intervalId = window.setInterval(() => {
-      if (!cancelled) {
-        void sampleTelemetry(false).catch(() => undefined);
-      }
-    }, intervalMs);
+    let intervalId: number | undefined;
+    const updateCadence = () => {
+      if (intervalId !== undefined) window.clearInterval(intervalId);
+      intervalId = undefined;
+      void sampleTelemetry(true).catch(() => undefined);
+      // Native activity control pauses display output separately. Publish the
+      // visibility edge, then stop all polling and React churn for hidden tabs.
+      if (!isVisible || document.visibilityState === "hidden") return;
+      intervalId = window.setInterval(
+        () => {
+          void sampleTelemetry(false).catch(() => undefined);
+        },
+        isDetached ? quietCadenceMs : activeCadenceMs,
+      );
+    };
+    updateCadence();
+    document.addEventListener("visibilitychange", updateCadence);
 
     return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
+      if (intervalId !== undefined) window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", updateCadence);
     };
-  }, [activeCadenceMs, enabled, options.sessionId, quietCadenceMs, sampleTelemetry]);
+  }, [
+    activeCadenceMs,
+    enabled,
+    options.sessionId,
+    quietCadenceMs,
+    sampleTelemetry,
+    isVisible,
+    isDetached,
+  ]);
 
   const sampleNow = useCallback(() => sampleTelemetry(true), [sampleTelemetry]);
 
   const reset = useCallback(() => {
-    pressureStateRef.current = 'healthy';
+    pressureStateRef.current = "healthy";
     lastSentAtMsRef.current = 0;
-    setPressureState('healthy');
+    lastSignatureRef.current = null;
+    setPressureState("healthy");
     setLastUpdate(null);
   }, []);
 
@@ -210,9 +287,15 @@ function normalizeWatermarks(
   };
   return {
     highQueueDepth: Math.max(1, Math.floor(merged.highQueueDepth)),
-    lowQueueDepth: Math.max(0, Math.floor(Math.min(merged.lowQueueDepth, merged.highQueueDepth))),
+    lowQueueDepth: Math.max(
+      0,
+      Math.floor(Math.min(merged.lowQueueDepth, merged.highQueueDepth)),
+    ),
     highAverageRenderMs: Math.max(1, merged.highAverageRenderMs),
-    lowAverageRenderMs: Math.max(0, Math.min(merged.lowAverageRenderMs, merged.highAverageRenderMs)),
+    lowAverageRenderMs: Math.max(
+      0,
+      Math.min(merged.lowAverageRenderMs, merged.highAverageRenderMs),
+    ),
   };
 }
 

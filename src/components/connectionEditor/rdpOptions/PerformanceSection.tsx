@@ -6,7 +6,8 @@ import {
   RDPConnectionSettings,
 } from "../../../types/connection/connection";
 import { PERFORMANCE_PRESETS, CSS } from "../../../hooks/rdp/useRDPOptions";
-import { Checkbox, Select, Slider } from "../../ui/forms";
+import { Checkbox, Select } from "../../ui/forms";
+import { normalizeRdpTargetFps } from "../../../utils/rdp/rdpSettingsMerge";
 
 const PerformanceSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
   const nalPassthrough = rdp.performance?.codecs?.nalPassthrough ?? false;
@@ -115,7 +116,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
       <p className="text-xs text-[var(--color-textMuted)] mb-1">
         {backendBypassed
           ? "Disabled — WebCodecs decoding bypasses the backend render pipeline entirely."
-          : "Controls how decoded RDP frames are displayed. Native renderers bypass JS entirely for lowest latency."}
+          : "Controls CPU precomposition before decoded pixels reach the Webview renderer."}
       </p>
       <div className={backendBypassed ? "opacity-50 pointer-events-none" : ""}>
         <Select
@@ -135,13 +136,13 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
             },
             {
               value: "softbuffer",
-              label: "Softbuffer (CPU) — native Win32 child window, zero JS",
+              label: "Softbuffer — CPU precomposition → Webview",
             },
             {
               value: "wgpu",
-              label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput",
+              label: "Wgpu — CPU compatibility fallback",
             },
-            { value: "auto", label: "Auto — try GPU → CPU → Webview" },
+            { value: "auto", label: "Auto — direct stream → Webview" },
           ]}
           className={CSS.select}
         />
@@ -223,25 +224,64 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
       </div>
       <div>
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-          Target FPS: {rdp.performance?.targetFps ?? 30}
+          Frame rate limit
           <Info
             size={12}
             className="text-[var(--color-textMuted)] cursor-help"
-            data-tooltip="Maximum frames per second to request from the server. 0 = unlimited. Lower values reduce bandwidth and CPU usage."
+            data-tooltip="Uncapped delivery adapts to activity and available capacity. Idle sessions do not redraw. Enable an optional maximum FPS to reduce presentation work."
           />
         </label>
-        <Slider
-          value={rdp.performance?.targetFps ?? 30}
-          onChange={(v: number) => updateRdp("performance", { targetFps: v })}
-          min={0}
-          max={60}
-          variant="full"
-          step={5}
+        <Select
+          value={
+            rdp.performance?.frameRateLimitEnabled === undefined
+              ? "inherit"
+              : rdp.performance.frameRateLimitEnabled
+                ? "limited"
+                : "uncapped"
+          }
+          label="Frame rate limit"
+          onChange={(v: string) =>
+            updateRdp("performance", {
+              frameRateLimitEnabled:
+                v === "inherit" ? undefined : v === "limited",
+              ...(v === "limited"
+                ? {
+                    targetFps:
+                      normalizeRdpTargetFps(rdp.performance?.targetFps) || 60,
+                  }
+                : {}),
+            })
+          }
+          options={[
+            { value: "inherit", label: "Inherit from global settings" },
+            { value: "uncapped", label: "Uncapped (adaptive)" },
+            { value: "limited", label: "Set maximum FPS" },
+          ]}
+          className={CSS.select}
         />
-        <div className="flex justify-between text-xs text-[var(--color-textMuted)]">
-          <span>Unlimited</span>
-          <span>60</span>
-        </div>
+        {rdp.performance?.frameRateLimitEnabled && (
+          <label className="block text-xs text-[var(--color-textSecondary)] mt-2">
+            Maximum FPS
+            <input
+              type="number"
+              min={1}
+              max={4294967295}
+              step={1}
+              value={normalizeRdpTargetFps(rdp.performance.targetFps) || ""}
+              onChange={(event) =>
+                updateRdp("performance", {
+                  targetFps: normalizeRdpTargetFps(
+                    event.currentTarget.valueAsNumber,
+                  ),
+                })
+              }
+              className={CSS.input}
+            />
+          </label>
+        )}
+        <p className="text-xs text-[var(--color-textMuted)] mt-1">
+          Uncapped adapts to activity and capacity. Idle sessions do not redraw.
+        </p>
       </div>
 
       <label className={CSS.label}>
@@ -255,26 +295,10 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
         <span>Frame batching (combine dirty regions)</span>
       </label>
 
-      {rdp.performance?.frameBatching && (
-        <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-            Batch Interval: {rdp.performance?.frameBatchIntervalMs ?? 33}ms (
-            {Math.round(1000 / (rdp.performance?.frameBatchIntervalMs || 33))}{" "}
-            fps max)
-          </label>
-          <Slider
-            value={rdp.performance?.frameBatchIntervalMs ?? 33}
-            onChange={(v: number) =>
-              updateRdp("performance", {
-                frameBatchIntervalMs: v,
-              })
-            }
-            min={8}
-            max={100}
-            variant="full"
-          />
-        </div>
-      )}
+      <p className="text-xs text-[var(--color-textMuted)]">
+        Combines pending changes without a timed wait. Legacy batch intervals
+        are ignored.
+      </p>
 
       <label className={CSS.label}>
         <Checkbox

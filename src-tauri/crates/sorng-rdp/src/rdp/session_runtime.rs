@@ -131,7 +131,6 @@ impl RdpWorkerRuntime {
         self.completion.is_complete()
     }
 
-    #[cfg(test)]
     pub(crate) fn completion(&self) -> RdpWorkerCompletion {
         self.completion.clone()
     }

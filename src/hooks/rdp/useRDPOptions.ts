@@ -44,66 +44,7 @@ export const KEYBOARD_LAYOUTS: { label: string; value: number }[] = [
   { label: "Turkish", value: 0x041f },
 ];
 
-export const PERFORMANCE_PRESETS: Record<
-  string,
-  Partial<NonNullable<RDPConnectionSettings["performance"]>>
-> = {
-  modem: {
-    disableWallpaper: true,
-    disableFullWindowDrag: true,
-    disableMenuAnimations: true,
-    disableTheming: true,
-    disableCursorShadow: true,
-    enableFontSmoothing: false,
-    enableDesktopComposition: false,
-    targetFps: 15,
-    frameBatchIntervalMs: 66,
-  },
-  "broadband-low": {
-    disableWallpaper: true,
-    disableFullWindowDrag: true,
-    disableMenuAnimations: true,
-    disableTheming: false,
-    disableCursorShadow: true,
-    enableFontSmoothing: true,
-    enableDesktopComposition: false,
-    targetFps: 24,
-    frameBatchIntervalMs: 42,
-  },
-  "broadband-high": {
-    disableWallpaper: true,
-    disableFullWindowDrag: true,
-    disableMenuAnimations: true,
-    disableTheming: false,
-    disableCursorShadow: true,
-    enableFontSmoothing: true,
-    enableDesktopComposition: false,
-    targetFps: 30,
-    frameBatchIntervalMs: 33,
-  },
-  wan: {
-    disableWallpaper: false,
-    disableFullWindowDrag: false,
-    disableMenuAnimations: false,
-    disableTheming: false,
-    disableCursorShadow: false,
-    enableFontSmoothing: true,
-    enableDesktopComposition: true,
-    targetFps: 60,
-    frameBatchIntervalMs: 16,
-  },
-  lan: {
-    disableWallpaper: false,
-    disableFullWindowDrag: false,
-    disableMenuAnimations: false,
-    disableTheming: false,
-    disableCursorShadow: false,
-    enableFontSmoothing: true,
-    enableDesktopComposition: true,
-    targetFps: 60,
-    frameBatchIntervalMs: 16,
-  },
-};
+export { RDP_VISUAL_PRESETS as PERFORMANCE_PRESETS } from "../../utils/rdp/rdpPerformancePresets";
 
 export const CSS = {
   select: "sor-form-select text-sm",
@@ -135,7 +76,7 @@ export function useRDPOptions(
       setFormData((prev) => ({
         ...prev,
         rdpSettings: {
-          ...(prev.rdpSettings ?? DEFAULT_RDP_SETTINGS),
+          ...prev.rdpSettings,
           input: {
             ...(prev.rdpSettings ?? DEFAULT_RDP_SETTINGS).input,
             keyboardLayout: langId,
@@ -176,8 +117,13 @@ export function useRDPOptions(
   }, [formData.isGroup, formData.protocol, formData.id]);
 
   /* Derived */
-  const rdp: RDPConnectionSettings =
-    formData.rdpSettings ?? DEFAULT_RDP_SETTINGS;
+  const rdp: RDPConnectionSettings = formData.rdpSettings ?? {
+    ...DEFAULT_RDP_SETTINGS,
+    performance: {
+      ...DEFAULT_RDP_SETTINGS.performance,
+      frameRateLimitEnabled: undefined,
+    },
+  };
 
   const updateRdp = useCallback(
     <K extends keyof RDPConnectionSettings>(
@@ -191,6 +137,13 @@ export function useRDPOptions(
           [section]: {
             ...(prev.rdpSettings?.[section] ??
               (DEFAULT_RDP_SETTINGS[section] as Record<string, unknown>)),
+            // Editing another performance option must preserve global cap inheritance.
+            ...(section === "performance"
+              ? {
+                  frameRateLimitEnabled:
+                    prev.rdpSettings?.performance?.frameRateLimitEnabled,
+                }
+              : {}),
             ...patch,
           },
         },

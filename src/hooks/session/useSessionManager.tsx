@@ -159,6 +159,7 @@ type SessionCloseAttempt = {
   readonly startedAt: number;
   readonly originalActor?: SessionCloseActorSnapshot;
   readonly waiters: Set<(outcome: SessionCloseWaitOutcome) => void>;
+  readonly stateWaiters: Set<() => void>;
   resultPromise: Promise<boolean>;
   resolveResult: (value: boolean) => void;
   cleanupPromise?: Promise<boolean>;
@@ -210,6 +211,42 @@ const isSameSessionCloseActor = (
     original.lifecycleActorReservationId ===
       current.lifecycleActorReservationId,
   );
+
+/**
+ * The direct handle is cleared only after the RDP actor has ended. A
+ * `disconnected` row can still carry backend-closed VPN bindings while owner
+ * release settles, so actor termination and completed cleanup are distinct.
+ * Viewer-detached rows retain their direct backend handle and are not terminal.
+ */
+const isTerminalRdpActor = (session: ConnectionSession): boolean =>
+  session.protocol === "rdp" &&
+  session.status === "disconnected" &&
+  !session.backendSessionId;
+
+const isCleanlyEndedRdpSession = (session: ConnectionSession): boolean =>
+  isTerminalRdpActor(session) &&
+  sessionVpnBackendIds(session, "rdp").length === 0 &&
+  sessionVpnLeaseOwnerIds(session).length === 0 &&
+  !hasSessionVpnCleanupQuarantine(session);
+
+/**
+ * Legacy owner arrays can outlive the exact backend binding introduced later.
+ * They are cleanup evidence, but without a binding they do not prove which
+ * native actor may be closed or which route may be released safely.
+ */
+const sessionVpnUncorrelatedOwnerIds = (
+  session: ConnectionSession,
+): string[] => {
+  const boundOwnerIds = new Set([
+    ...(session.vpnLeaseBindings ?? []).map((binding) => binding.ownerId),
+    ...(session.vpnLeaseCleanupQuarantine?.proofs ?? [])
+      .filter((proof) => proof.kind === "binding")
+      .map((proof) => proof.ownerId),
+  ]);
+  return sessionVpnLeaseOwnerIds(session).filter(
+    (ownerId) => !boundOwnerIds.has(ownerId),
+  );
+};
 
 /**
  * Manages connection sessions and exposes helpers for session workflows.
@@ -321,6 +358,124 @@ export const useSessionManager = () => {
     );
     activeSessionIdRef.current = nextSession?.id;
     setActiveSessionId(nextSession?.id);
+  };
+
+  /**
+   * Remove an RDP tab whose backend already emitted its terminal disconnect
+   * and completed VPN cleanup. This is also re-checked after an in-flight
+   * detach call, because the backend can end while the user is closing it.
+   */
+  const removeCleanlyEndedRdpSession = (
+    sessionId: string,
+    attempt: SessionCloseAttempt,
+  ): boolean => {
+    const endedSession = stateRef.current.sessions.find(
+      (candidate) => candidate.id === sessionId,
+    );
+    if (
+      !endedSession ||
+      !isCleanlyEndedRdpSession(endedSession) ||
+      !isCurrentCloseAttempt(attempt)
+    ) {
+      return false;
+    }
+
+    markSessionEnding(sessionId);
+    lifecycle.beginEnding(sessionId);
+
+    const connection = resolveRuntimeConnection(
+      stateRef.current.connections,
+      endedSession.connectionId,
+    );
+    const now = new Date();
+    const durationSecs = endedSession.startTime
+      ? Math.round(
+          (now.getTime() - new Date(endedSession.startTime).getTime()) / 1000,
+        )
+      : 0;
+    recordRdpSessionHistory({
+      connectionId: endedSession.connectionId || "",
+      connectionName:
+        endedSession.name || connection?.name || endedSession.hostname,
+      hostname: endedSession.hostname,
+      port: connection?.port || 3389,
+      username: connection?.username || "",
+      lastConnected: endedSession.startTime
+        ? new Date(endedSession.startTime).toISOString()
+        : now.toISOString(),
+      disconnectedAt: now.toISOString(),
+      duration: durationSecs,
+      desktopWidth: 0,
+      desktopHeight: 0,
+    });
+
+    dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+    releaseRuntimeConnection(endedSession.connectionId);
+    if (connection) {
+      statusChecker.stopChecking(connection.id);
+      settingsManager.logAction(
+        "info",
+        "Session closed",
+        connection.id,
+        `Session "${endedSession.name}" closed`,
+      );
+      void lifecycle
+        .emitEnded(endedSession, connection, { reason: "user" })
+        .catch((error) =>
+          console.error("Failed to emit ended session lifecycle:", error),
+        );
+    }
+    moveSelectionAfterSessionClose(sessionId);
+    return true;
+  };
+
+  const waitForSessionStateChange = (
+    attempt: SessionCloseAttempt,
+    observedSession: ConnectionSession,
+    timeoutMs: number,
+  ): Promise<void> =>
+    new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        attempt.stateWaiters.delete(finish);
+        resolve();
+      };
+      const timeout = setTimeout(finish, timeoutMs);
+      attempt.stateWaiters.add(finish);
+      const latest = stateRef.current.sessions.find(
+        (candidate) => candidate.id === attempt.sessionId,
+      );
+      if (latest !== observedSession) finish();
+    });
+
+  /**
+   * A native detach can finish concurrently with terminal VPN cleanup. Keep
+   * the original close attempt pending until that authoritative cleanup either
+   * settles cleanly (remove once) or publishes a fail-closed error row.
+   */
+  const waitForTerminalRdpSettlement = async (
+    sessionId: string,
+    attempt: SessionCloseAttempt,
+  ): Promise<boolean> => {
+    const deadline = Date.now() + DEFAULT_SESSION_CLOSE_TIMEOUT_MS * 2;
+    while (isCurrentCloseAttempt(attempt)) {
+      const current = stateRef.current.sessions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      if (!current) return true;
+      if (isCleanlyEndedRdpSession(current)) {
+        return removeCleanlyEndedRdpSession(sessionId, attempt);
+      }
+      if (!isTerminalRdpActor(current)) return false;
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await waitForSessionStateChange(attempt, current, remaining);
+    }
+    return false;
   };
 
   const publishSessionCloseState = (
@@ -449,6 +604,8 @@ export const useSessionManager = () => {
         attempt.forced = true;
         attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
         attempt.waiters.clear();
+        attempt.stateWaiters.forEach((resolve) => resolve());
+        attempt.stateWaiters.clear();
         attempt.resolveResult(false);
       }
       closeAttempts.clear();
@@ -462,6 +619,13 @@ export const useSessionManager = () => {
       pendingDialogs.forEach((request) => request.resolve(false));
     };
   }, []);
+
+  useEffect(() => {
+    for (const attempt of closeAttemptsRef.current.values()) {
+      attempt.stateWaiters.forEach((resolve) => resolve());
+      attempt.stateWaiters.clear();
+    }
+  }, [state.sessions]);
 
   const showNotification = useCallback(
     (notification: SessionLifecycleNotification) => {
@@ -1172,6 +1336,15 @@ export const useSessionManager = () => {
       return true;
     }
 
+    // A natural RDP disconnect already closed the exact native actor. Applying
+    // the normal "detach and preserve" policy here would target a missing
+    // backend and keep the terminal "Session ended" tab open forever.
+    if (isCleanlyEndedRdpSession(session)) {
+      return runBoundedSessionCleanup(attempt, async () =>
+        removeCleanlyEndedRdpSession(sessionId, attempt),
+      );
+    }
+
     const connection = resolveRuntimeConnection(
       currentState.connections,
       session.connectionId,
@@ -1289,6 +1462,11 @@ export const useSessionManager = () => {
         // A panel already closed the native backend. Retry only its retained
         // owners, regardless of the normal tab close/detach preference.
         disconnectRdpBackend = true;
+      } else if (isTerminalRdpActor(session)) {
+        // The worker already ended and cleared the direct actor. Any retained
+        // backend-closed binding belongs to VPN cleanup, not to a detachable
+        // RDP session; route it through the fail-closed cleanup path below.
+        disconnectRdpBackend = true;
       } else {
         const perConn = connection?.rdpSettings?.advanced?.sessionClosePolicy;
         const closePolicy =
@@ -1341,6 +1519,17 @@ export const useSessionManager = () => {
               : { connectionId: session.connectionId }),
           });
         } catch (error) {
+          // The native actor may have emitted its terminal disconnect while
+          // detach was in flight. In that case the failed detach is obsolete:
+          // close the now-clean frontend row instead of converting it to an
+          // error tab that requires another close attempt.
+          if (removeCleanlyEndedRdpSession(sessionId, attempt)) return true;
+          const latest = stateRef.current.sessions.find(
+            (candidate) => candidate.id === sessionId,
+          );
+          if (latest && isTerminalRdpActor(latest)) {
+            return waitForTerminalRdpSettlement(sessionId, attempt);
+          }
           if (!isCurrentCloseAttempt(attempt)) return false;
           const message = `RDP detach failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
           dispatch({
@@ -1348,6 +1537,16 @@ export const useSessionManager = () => {
             payload: { ...session, status: "error", errorMessage: message },
           });
           return false;
+        }
+
+        // A successful detach response can race the same terminal event. The
+        // latest lifecycle state wins over the stale preserve decision.
+        if (removeCleanlyEndedRdpSession(sessionId, attempt)) return true;
+        const latest = stateRef.current.sessions.find(
+          (candidate) => candidate.id === sessionId,
+        );
+        if (latest && isTerminalRdpActor(latest)) {
+          return waitForTerminalRdpSettlement(sessionId, attempt);
         }
 
         if (!isCurrentCloseAttempt(attempt)) return false;
@@ -1400,6 +1599,17 @@ export const useSessionManager = () => {
           workingSessions.find((candidate) => candidate.id === session.id) ??
           session;
         const backendSessionIds = sessionVpnBackendIds(targetSession, protocol);
+        // cleanupSessionVpnBackend intentionally persists only owners that have
+        // exact bindings while a binding ledger exists. Preserve any older,
+        // uncorrelated RDP owners across the loop so a successful cleanup of
+        // actor A cannot silently erase unrelated owner evidence. This applies
+        // whether A enters cleanup as active, cleanup-pending, or already
+        // backend-closed: none of those states correlates the orphan owners.
+        const retainedUncorrelatedRdpOwnerIds =
+          protocol === "rdp" && backendSessionIds.length > 0
+            ? sessionVpnUncorrelatedOwnerIds(targetSession)
+            : [];
+        let reportedOwnerOnlyEvidence = false;
 
         // An old owner-only cleanup row has no durable proof that its actor was
         // closed. Releasing it would risk tearing down a live replacement route.
@@ -1410,6 +1620,7 @@ export const useSessionManager = () => {
           const message = `${protocol.toUpperCase()} VPN ownership is from an older uncorrelated session record and cannot be released automatically. Verify the route in the VPN manager and remove it manually.`;
           if (abandoned) {
             reportAbandonedCleanupIncomplete(message);
+            reportedOwnerOnlyEvidence = true;
           } else {
             if (!isCurrentCloseAttempt(attempt)) return false;
             dispatch({
@@ -1471,6 +1682,56 @@ export const useSessionManager = () => {
             cleanup.blockedReason
           ) {
             cleanupFailed = true;
+          }
+        }
+
+        const remainingBackendSessionIds = sessionVpnBackendIds(
+          targetSession,
+          protocol,
+        );
+        const remainingOwnerIds = sessionVpnLeaseOwnerIds(targetSession);
+        const uncorrelatedOwnerIds = [
+          ...new Set([
+            ...retainedUncorrelatedRdpOwnerIds,
+            ...sessionVpnUncorrelatedOwnerIds(targetSession),
+          ]),
+        ];
+
+        // Re-evaluate the post-cleanup shape before removing the tab. In
+        // particular, releasing a proven backend binding must not turn older
+        // owner-only evidence into an apparently clean row. Those owners were
+        // never released because no exact actor correlation exists, so retain
+        // them and fail closed for a manual cleanup decision.
+        if (
+          remainingBackendSessionIds.length === 0 &&
+          (remainingOwnerIds.length > 0 || uncorrelatedOwnerIds.length > 0)
+        ) {
+          const retainedOwnerIds = [
+            ...new Set([...remainingOwnerIds, ...uncorrelatedOwnerIds]),
+          ];
+          const message = `${protocol.toUpperCase()} VPN ownership is from an older uncorrelated session record and cannot be released automatically. Verify the route in the VPN manager and remove it manually.`;
+          targetSession = {
+            ...targetSession,
+            vpnLeaseOwnerId:
+              targetSession.vpnLeaseOwnerId &&
+              retainedOwnerIds.includes(targetSession.vpnLeaseOwnerId)
+                ? targetSession.vpnLeaseOwnerId
+                : retainedOwnerIds[0],
+            vpnLeaseOwnerIds: retainedOwnerIds,
+            status: "error",
+            errorMessage: message,
+            lastActivity: new Date(),
+          };
+          workingSessions = workingSessions.map((candidate) =>
+            candidate.id === targetSession.id ? targetSession : candidate,
+          );
+          if (!isCurrentCloseAttempt(attempt)) return false;
+          if (!abandoned || retainedUncorrelatedRdpOwnerIds.length > 0) {
+            dispatch({ type: "UPDATE_SESSION", payload: targetSession });
+            return false;
+          }
+          if (!reportedOwnerOnlyEvidence) {
+            reportAbandonedCleanupIncomplete(message);
           }
         }
 
@@ -1763,6 +2024,7 @@ export const useSessionManager = () => {
       startedAt: Date.now(),
       originalActor: captureSessionCloseActor(originalSession),
       waiters: new Set(),
+      stateWaiters: new Set(),
       resultPromise,
       resolveResult,
       cleanupSettled: false,
@@ -1891,6 +2153,8 @@ export const useSessionManager = () => {
       attempt.forced = true;
       attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
       attempt.waiters.clear();
+      attempt.stateWaiters.forEach((resolve) => resolve());
+      attempt.stateWaiters.clear();
       endingSessionIdsRef.current.delete(sessionId);
       retireSessionCloseAttempt(attempt);
 
@@ -1914,6 +2178,8 @@ export const useSessionManager = () => {
     attempt.forced = true;
     attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
     attempt.waiters.clear();
+    attempt.stateWaiters.forEach((resolve) => resolve());
+    attempt.stateWaiters.clear();
     clearSessionCloseState(attempt);
 
     markSessionEnding(sessionId);

@@ -14,8 +14,8 @@ import {
   Unplug,
 } from "lucide-react";
 import { Modal } from "../ui/overlays/Modal";
-import { DialogHeader } from '../ui/overlays/DialogHeader';
-import { ErrorBanner, EmptyState } from '../ui/display';
+import { DialogHeader } from "../ui/overlays/DialogHeader";
+import { ErrorBanner, EmptyState } from "../ui/display";
 import {
   useRDPSessionManager,
   formatUptime,
@@ -23,7 +23,7 @@ import {
   RDPSessionInfo,
   RDPStats,
 } from "../../hooks/rdp/useRdpSessionManager";
-import { Checkbox } from '../ui/forms';
+import { Checkbox } from "../ui/forms";
 
 type Mgr = ReturnType<typeof useRDPSessionManager>;
 
@@ -39,17 +39,21 @@ const SessionManagerHeader: React.FC<{
     iconColor="text-primary"
     iconBg="bg-primary/20"
     title="RDP Sessions"
-    subtitle={`${sessionCount} active session${sessionCount !== 1 ? 's' : ''}`}
+    subtitle={`${sessionCount} active session${sessionCount !== 1 ? "s" : ""}`}
     onClose={onClose}
     actions={
       <>
         <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
-          <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary w-3.5 h-3.5" />
+          <Checkbox
+            checked={mgr.autoRefresh}
+            onChange={(v: boolean) => mgr.setAutoRefresh(v)}
+            className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary w-3.5 h-3.5"
+          />
           <span>Auto-refresh</span>
         </label>
         <button
           onClick={mgr.handleRefresh}
-          className={`p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? 'animate-spin' : ''}`}
+          className={`p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? "animate-spin" : ""}`}
           title="Refresh"
         >
           <RefreshCw size={14} />
@@ -58,8 +62,6 @@ const SessionManagerHeader: React.FC<{
     }
   />
 );
-
-
 
 const SessionInfoGrid: React.FC<{
   session: RDPSessionInfo;
@@ -96,7 +98,7 @@ const SessionInfoGrid: React.FC<{
             <Activity size={10} /> FPS
           </span>
           <span className="text-[var(--color-textSecondary)] font-mono">
-            {stats.fps.toFixed(1)}
+            {stats.presented_fps?.toFixed(1) ?? "Unavailable"}
           </span>
         </div>
         <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
@@ -112,7 +114,9 @@ const SessionInfoGrid: React.FC<{
           </span>
         </div>
         <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
-          <span className="text-[var(--color-textMuted)] block">Frames</span>
+          <span className="text-[var(--color-textMuted)] block">
+            Decoded updates
+          </span>
           <span className="text-[var(--color-textSecondary)] font-mono">
             {stats.frame_count.toLocaleString()}
           </span>
@@ -129,7 +133,9 @@ const SessionInfoGrid: React.FC<{
     )}
     {session.connection_id && (
       <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5 col-span-2">
-        <span className="text-[var(--color-textMuted)] block">Connection ID</span>
+        <span className="text-[var(--color-textMuted)] block">
+          Connection ID
+        </span>
         <span
           className="text-[var(--color-textSecondary)] font-mono truncate block"
           title={session.connection_id}
@@ -157,7 +163,9 @@ const SessionRow: React.FC<{
           {session.host}:{session.port}
         </span>
         {session.username && (
-          <span className="text-xs text-[var(--color-textMuted)]">({session.username})</span>
+          <span className="text-xs text-[var(--color-textMuted)]">
+            ({session.username})
+          </span>
         )}
       </div>
       <div className="flex items-center space-x-1">

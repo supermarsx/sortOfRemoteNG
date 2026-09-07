@@ -139,7 +139,7 @@ describe("RDP frame pipeline backpressure / telemetry surface", () => {
         }),
       });
       expect(valueFor("Frames Queued")).toBe("12");
-      expect(valueFor("Frames Delivered")).toBe("287");
+      expect(valueFor("Transport Payloads Delivered")).toBe("287");
       expect(valueFor("Frames Dropped")).toBe("5");
     });
 
@@ -208,7 +208,7 @@ describe("RDP frame pipeline backpressure / telemetry surface", () => {
       expect(valueFor("Avg Render")).toBe(DASH);
       // queued/delivered/dropped still render normally.
       expect(valueFor("Frames Queued")).toBe("0");
-      expect(valueFor("Frames Delivered")).toBe("250");
+      expect(valueFor("Transport Payloads Delivered")).toBe("250");
     });
   });
 

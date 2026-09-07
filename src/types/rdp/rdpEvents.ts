@@ -28,6 +28,10 @@ export interface RDPStatsEvent {
   pdus_sent: number;
   frame_count: number;
   fps: number;
+  /** Actual completed frontend presentations; null before sampling/while hidden. */
+  presented_fps?: number | null;
+  presented_frames?: number | null;
+  /** Legacy fps counts decoded updates, which can be rectangles. */
   input_events: number;
   errors_recovered: number;
   reactivations: number;
@@ -124,13 +128,21 @@ export interface RdpFrameTelemetryEvent {
   droppedFrames: number;
   coalescedFrames: number;
   averageRenderMs?: number;
+  presentedFrames?: number;
+  presentationEpoch?: string;
+  sampleSequence?: number;
+  sampleTimeMs?: number;
+  isVisible?: boolean;
 }
 
 export type RdpFrameTelemetryRequest = RdpFrameTelemetryEvent;
 
 export interface RdpFramePipelineMetrics {
+  presentationEpoch?: string;
   queuedFrames: number;
   queuedBytes: number;
+  /** Age of outstanding worker work, including a stalled decoder/paint. */
+  oldestPendingRenderMs?: number;
   preAttachFrames: number;
   preAttachBytes: number;
   receivedFrames: number;

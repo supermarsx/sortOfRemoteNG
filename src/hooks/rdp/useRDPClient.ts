@@ -36,6 +36,10 @@ import {
   type FrameSchedulingMode,
 } from "../../components/rdp/rdpFramePipeline";
 import { useRdpFrameBackpressure } from "./useRdpFrameBackpressure";
+import {
+  RdpInputBackpressureError,
+  RdpInputScheduler,
+} from "../../utils/rdp/rdpInputScheduler";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { mapClientPointToCanvas } from "../../utils/session/canvasCoordinates";
 import { useSessionRecorder } from "../recording/useSessionRecorder";
@@ -70,6 +74,7 @@ import {
   withoutSessionVpnLeaseOwner,
 } from "../../utils/network/sessionVpnLeaseCleanup";
 import {
+  advanceSessionLifecycleAuthorityIfCurrent,
   cancelSessionLifecycleActorAttempts,
   finishSessionLifecycleActorAttempt,
   getSessionLifecycleActorGeneration,
@@ -87,6 +92,45 @@ const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
 const H264_RECOVERY_RETRY_MS = 2_000;
 const H264_RECOVERY_RECONNECT_MS = 5_000;
 const H264_RECOVERY_TERMINAL_MS = 5_000;
+const MIN_RDP_VIEWPORT_DIMENSION = 100;
+
+const resolveInitialDesktopSize = (
+  display: NonNullable<RDPConnectionSettings["display"]> | undefined,
+  container: HTMLDivElement | null,
+): { width: number; height: number } => {
+  const configured = {
+    width: display?.width ?? 1920,
+    height: display?.height ?? 1080,
+  };
+  if (!display?.resizeToWindow || !container) return configured;
+
+  const rect = container.getBoundingClientRect();
+  const width = Math.round(container.clientWidth || rect.width);
+  const height = Math.round(container.clientHeight || rect.height);
+  if (
+    width <= MIN_RDP_VIEWPORT_DIMENSION ||
+    height <= MIN_RDP_VIEWPORT_DIMENSION
+  ) {
+    return configured;
+  }
+
+  return { width, height };
+};
+
+interface RdpDesktopResizeRequest {
+  backendSessionId: string;
+  logicalSessionId: string;
+  width: number;
+  height: number;
+  mode: "adaptive" | "fixed";
+  generation: number;
+}
+
+interface RdpDesktopResizeCoordinator {
+  inFlight: RdpDesktopResizeRequest | null;
+  pending: RdpDesktopResizeRequest | null;
+  awaitingNegotiation: RdpDesktopResizeRequest | null;
+}
 
 const createRdpFramePipeline = (
   settings: RDPConnectionSettings,
@@ -97,6 +141,7 @@ const createRdpFramePipeline = (
   const pipeline = new RdpFramePipeline({
     scheduling: (perf?.frameScheduling ?? "adaptive") as FrameSchedulingMode,
     tripleBuffering: perf?.tripleBuffering ?? true,
+    targetFps: perf?.targetFps,
     onH264RecoveryStateChange,
   });
   pipeline.setVisibility(initiallyVisible);
@@ -235,6 +280,8 @@ export function useRDPClient(session: ConnectionSession) {
   const [showSettings, setShowSettings] = useState(false);
   const [rdpSessionId, setRdpSessionId] = useState<string | null>(null);
   const [desktopSize, setDesktopSize] = useState({ width: 1920, height: 1080 });
+  const desktopSizeRef = useRef(desktopSize);
+  desktopSizeRef.current = desktopSize;
   const [pointerStyle, setPointerStyle] = useState<string>("default");
   const [showInternals, setShowInternals] = useState(false);
   const [stats, setStats] = useState<RDPStatsEvent | null>(null);
@@ -267,7 +314,8 @@ export function useRDPClient(session: ConnectionSession) {
     enabled: isConnected && !!rdpSessionId,
     getMetrics: () => pipelineRef.current?.getMetrics() ?? null,
     renderer: activeFrontendRenderer,
-    isDetached: !isConnected,
+    isVisible: isRenderActive,
+    isDetached: !pipelineRef.current?.getCanvas(),
     sender: async (update) => {
       await invoke("rdp_report_frame_telemetry", {
         payload: {
@@ -276,6 +324,11 @@ export function useRDPClient(session: ConnectionSession) {
           droppedFrames: update.droppedFrames,
           coalescedFrames: update.coalescedFrames,
           averageRenderMs: update.averageRenderMs,
+          presentedFrames: update.presentedFrames,
+          presentationEpoch: update.presentationEpoch,
+          sampleSequence: update.sampleSequence,
+          sampleTimeMs: update.sampleTimeMs,
+          isVisible: update.isVisible,
         },
       });
     },
@@ -345,6 +398,43 @@ export function useRDPClient(session: ConnectionSession) {
   // Each initializeRDPConnection call increments this; after every await, we check
   // if it still matches to avoid overwriting state from a newer init.
   const initGenRef = useRef(0);
+  const desktopResizeEffectGenerationRef = useRef(0);
+  const desktopResizeCoordinatorRef = useRef<RdpDesktopResizeCoordinator>({
+    inFlight: null,
+    pending: null,
+    awaitingNegotiation: null,
+  });
+  const desktopResizePumpRef = useRef<() => void>(() => undefined);
+  desktopResizePumpRef.current = () => {
+    const coordinator = desktopResizeCoordinatorRef.current;
+    if (coordinator.inFlight || !coordinator.pending) return;
+
+    const request = coordinator.pending;
+    coordinator.pending = null;
+    coordinator.inFlight = request;
+    void invoke("rdp_set_desktop_size", {
+      sessionId: request.backendSessionId,
+      width: request.width,
+      height: request.height,
+    })
+      .then(() => {
+        // The command only acknowledges queueing. A later connected status is
+        // authoritative for the dimensions negotiated during reactivation.
+        if (sessionIdRef.current === request.backendSessionId) {
+          desktopResizeCoordinatorRef.current.awaitingNegotiation = request;
+        }
+      })
+      .catch((error) => {
+        if (sessionIdRef.current === request.backendSessionId) {
+          debugLog(`Desktop resize sync error: ${error}`);
+        }
+      })
+      .finally(() => {
+        const current = desktopResizeCoordinatorRef.current;
+        if (current.inFlight === request) current.inFlight = null;
+        if (current.pending) desktopResizePumpRef.current();
+      });
+  };
 
   // Session recording
   const {
@@ -382,6 +472,10 @@ export function useRDPClient(session: ConnectionSession) {
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
   const sessionRef = useRef(session);
+  const activeRdpActorSessionRef = useRef<{
+    backendSessionId: string;
+    session: ConnectionSession;
+  } | null>(null);
   const incomingCleanupQuarantineRef = useRef(
     session.vpnLeaseCleanupQuarantine,
   );
@@ -415,7 +509,7 @@ export function useRDPClient(session: ConnectionSession) {
         : current.vpnLeaseOwnerId && ownerIds.includes(current.vpnLeaseOwnerId)
           ? current.vpnLeaseOwnerId
           : ownerIds[0];
-    sessionRef.current = {
+    const mergedSession: ConnectionSession = {
       ...current,
       ...session,
       backendSessionId:
@@ -425,6 +519,17 @@ export function useRDPClient(session: ConnectionSession) {
       vpnLeaseOwnerIds: ownerIds.length > 0 ? ownerIds : undefined,
       vpnLeaseBindings: bindings.length > 0 ? bindings : undefined,
     };
+    sessionRef.current = mergedSession;
+    const activeActor = activeRdpActorSessionRef.current;
+    if (
+      activeActor &&
+      session.backendSessionId === activeActor.backendSessionId
+    ) {
+      activeRdpActorSessionRef.current = {
+        backendSessionId: activeActor.backendSessionId,
+        session: mergedSession,
+      };
+    }
   }, [session]);
   const rdpSettingsRef = useRef(rdpSettings);
   rdpSettingsRef.current = rdpSettings;
@@ -1479,6 +1584,10 @@ export function useRDPClient(session: ConnectionSession) {
             lifecycleAttempt,
           );
           sessionRef.current = updatedSession;
+          activeRdpActorSessionRef.current = {
+            backendSessionId: sessionInfo.id,
+            session: updatedSession,
+          };
           dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
           return;
         } catch (attachErr) {
@@ -1548,8 +1657,12 @@ export function useRDPClient(session: ConnectionSession) {
       }
 
       const display = effectiveSettings.display ?? DEFAULT_RDP_SETTINGS.display;
-      const resW = display?.width ?? 1920;
-      const resH = display?.height ?? 1080;
+      const initialDesktopSize = resolveInitialDesktopSize(
+        display,
+        containerRef.current,
+      );
+      const resW = initialDesktopSize.width;
+      const resH = initialDesktopSize.height;
 
       // A supported socket path for RDP always terminates in an SSH bastion;
       // the adapter has already rejected paths that cannot be represented.
@@ -1702,6 +1815,10 @@ export function useRDPClient(session: ConnectionSession) {
         lifecycleAttempt,
       );
       sessionRef.current = updatedSession;
+      activeRdpActorSessionRef.current = {
+        backendSessionId: sessionId,
+        session: updatedSession,
+      };
       dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
       attemptRdpBackendSessionId = null;
 
@@ -2214,13 +2331,22 @@ export function useRDPClient(session: ConnectionSession) {
         const status = event.payload;
         if (status.session_id !== sessionIdRef.current) return;
 
-        setStatusMessage(status.message);
+        if (status.status !== "disconnected") {
+          setStatusMessage(status.message);
+        }
 
         switch (status.status) {
           case "connected":
             setIsConnected(true);
             setConnectionStatus("connected");
             if (status.desktop_width && status.desktop_height) {
+              const resizeCoordinator = desktopResizeCoordinatorRef.current;
+              if (
+                resizeCoordinator.awaitingNegotiation?.backendSessionId ===
+                status.session_id
+              ) {
+                resizeCoordinator.awaitingNegotiation = null;
+              }
               setDesktopSize({
                 width: status.desktop_width,
                 height: status.desktop_height,
@@ -2263,51 +2389,250 @@ export function useRDPClient(session: ConnectionSession) {
             setConnectionStatus("error");
             break;
           case "disconnected":
-            setIsConnected(false);
-            void (async () => {
+            {
               const backendSessionId = status.session_id;
-              await teardownRdpTunnelRef.current();
-              const cleanup = await cleanupSessionVpnBackend({
-                sessions: [sessionRef.current],
-                protocol: "rdp",
-                backendSessionId,
-                backendAlreadyClosed: true,
-                closeBackend: async () => undefined,
-                onSessionsUpdated: ([updatedSession]) => {
-                  if (!updatedSession) return;
-                  sessionRef.current = updatedSession;
-                  const ownerIds = sessionVpnLeaseOwnerIds(updatedSession);
-                  const primary =
-                    updatedSession.vpnLeaseOwnerId ?? ownerIds[0] ?? null;
-                  vpnLeaseOwnersRef.current = {
-                    current: primary,
-                    persisted: primary,
-                    pending: new Set(
-                      ownerIds.filter((ownerId) => ownerId !== primary),
-                    ),
-                  };
-                  dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+              const activeActor = activeRdpActorSessionRef.current;
+              const actorSnapshot =
+                activeActor?.backendSessionId === backendSessionId
+                  ? activeActor.session
+                  : sessionRef.current.backendSessionId === backendSessionId
+                    ? sessionRef.current
+                    : null;
+              if (!actorSnapshot) break;
+              // Publish the terminal row before VPN/tunnel cleanup. Cleanup may
+              // need retries, but it must not leave the tab manager observing a
+              // live backend actor after the backend has already ended it.
+              let backendClosedActorSnapshot = withSessionVpnBackendStatus(
+                {
+                  ...actorSnapshot,
+                  backendSessionId,
                 },
-              });
-              cleanup.releasedOwnerIds.forEach((ownerId) => {
-                settledVpnLeaseOwnersRef.current.add(ownerId);
-                safeBackendlessVpnLeaseOwnersRef.current.delete(ownerId);
-              });
-              if (cleanup.failures.length > 0 || cleanup.blockedReason) {
-                setConnectionStatus("error");
-                setStatusMessage(
-                  cleanup.sessions[0]?.errorMessage ??
-                    cleanup.blockedReason ??
-                    "RDP VPN cleanup needs attention.",
+                "rdp",
+                backendSessionId,
+                "backend-closed",
+              );
+              const boundOwnerIds = new Set([
+                ...(actorSnapshot.vpnLeaseBindings ?? []).map(
+                  (binding) => binding.ownerId,
+                ),
+                ...(actorSnapshot.vpnLeaseCleanupQuarantine?.proofs ?? [])
+                  .filter((proof) => proof.kind === "binding")
+                  .map((proof) => proof.ownerId),
+              ]);
+              const uncorrelatedOwnerIds = sessionVpnLeaseOwnerIds(
+                actorSnapshot,
+              ).filter((ownerId) => !boundOwnerIds.has(ownerId));
+              if (
+                actorSnapshot.backendSessionId === backendSessionId &&
+                uncorrelatedOwnerIds.length === 1 &&
+                !actorSnapshot.vpnLeaseCleanupQuarantine
+              ) {
+                // Legacy rows could carry one owner without an exact binding.
+                // Materialize that unambiguous correlation synchronously so
+                // every terminal publication has monotonic close proof.
+                backendClosedActorSnapshot = withSessionVpnLeaseBinding(
+                  backendClosedActorSnapshot,
+                  {
+                    ownerId: uncorrelatedOwnerIds[0],
+                    backendSessionId,
+                    protocol: "rdp",
+                    status: "backend-closed",
+                  },
                 );
               }
-            })();
-            setConnectionStatus((prev) => {
-              if (prev === "error") return "error";
-              setRdpSessionId(null);
-              sessionIdRef.current = null;
-              return "disconnected";
-            });
+              const cleanupSeed: ConnectionSession = {
+                ...backendClosedActorSnapshot,
+                // Preserve legacy owner-only evidence until
+                // prepareBackendCleanup correlates it with this exact actor.
+                vpnLeaseOwnerId: actorSnapshot.vpnLeaseOwnerId,
+                vpnLeaseOwnerIds: actorSnapshot.vpnLeaseOwnerIds,
+                backendSessionId,
+              };
+              const expectedCleanupAuthority = {
+                generation: getSessionLifecycleActorGeneration(cleanupSeed),
+                writerId: getSessionLifecycleWriterId(cleanupSeed),
+              };
+              const currentSession = sessionRef.current;
+              const currentActorStillOwnsBackend =
+                currentSession.id === cleanupSeed.id &&
+                currentSession.backendSessionId === backendSessionId &&
+                getSessionLifecycleActorGeneration(currentSession) ===
+                  expectedCleanupAuthority.generation &&
+                getSessionLifecycleWriterId(currentSession) ===
+                  expectedCleanupAuthority.writerId;
+              const terminalProjection: ConnectionSession = {
+                ...cleanupSeed,
+                status: "disconnected",
+                backendSessionId: undefined,
+              };
+              const terminalSession = currentActorStillOwnsBackend
+                ? advanceSessionLifecycleAuthorityIfCurrent(
+                    terminalProjection,
+                    expectedCleanupAuthority,
+                    expectedCleanupAuthority.writerId,
+                  )
+                : null;
+              const cleanupAuthority = {
+                generation: terminalSession
+                  ? getSessionLifecycleActorGeneration(terminalSession)
+                  : expectedCleanupAuthority.generation,
+                writerId: terminalSession
+                  ? getSessionLifecycleWriterId(terminalSession)
+                  : expectedCleanupAuthority.writerId,
+              };
+              let terminalCleanupRevision = getSessionLifecycleRevision(
+                terminalSession ?? cleanupSeed,
+              );
+              const terminalCleanupIsAuthoritative = () => {
+                const current = sessionRef.current;
+                return (
+                  terminalSession != null &&
+                  current.id === terminalSession.id &&
+                  current.backendSessionId == null &&
+                  getSessionLifecycleActorGeneration(current) ===
+                    cleanupAuthority.generation &&
+                  getSessionLifecycleWriterId(current) ===
+                    cleanupAuthority.writerId
+                );
+              };
+              if (terminalSession) {
+                setStatusMessage(status.message);
+                sessionRef.current = terminalSession;
+                dispatch({ type: "UPDATE_SESSION", payload: terminalSession });
+
+                setRdpSessionId(null);
+                sessionIdRef.current = null;
+                const resizeCoordinator = desktopResizeCoordinatorRef.current;
+                if (
+                  resizeCoordinator.pending?.backendSessionId ===
+                  backendSessionId
+                ) {
+                  resizeCoordinator.pending = null;
+                }
+                if (
+                  resizeCoordinator.awaitingNegotiation?.backendSessionId ===
+                  backendSessionId
+                ) {
+                  resizeCoordinator.awaitingNegotiation = null;
+                }
+                setConnectionStatus((prev) =>
+                  prev === "error" ? "error" : "disconnected",
+                );
+                setIsConnected(false);
+              }
+              void (async () => {
+                await teardownRdpTunnelRef.current();
+                const cleanup = await cleanupSessionVpnBackend({
+                  // Keep the backend correlation only in the cleanup seed. Every
+                  // row published to React/store remains a terminal projection.
+                  sessions: [cleanupSeed],
+                  protocol: "rdp",
+                  backendSessionId,
+                  backendAlreadyClosed: true,
+                  closeBackend: async () => undefined,
+                  onSessionsUpdated: ([updatedSession]) => {
+                    if (!updatedSession) return;
+                    const releasedCleanupOwnerIds = new Set([
+                      ...(updatedSession.vpnLeaseReleaseTombstones ?? []).map(
+                        (proof) => proof.ownerId,
+                      ),
+                      ...(
+                        updatedSession.vpnLeaseCleanupQuarantine?.proofs ?? []
+                      )
+                        .filter((proof) => proof.kind === "release-tombstone")
+                        .map((proof) => proof.ownerId),
+                    ]);
+                    const projectedOwnerIds = [
+                      ...new Set([
+                        ...sessionVpnLeaseOwnerIds(updatedSession),
+                        ...sessionVpnLeaseOwnerIds(cleanupSeed),
+                      ]),
+                    ].filter(
+                      (ownerId) => !releasedCleanupOwnerIds.has(ownerId),
+                    );
+                    const projectedPrimaryOwnerId =
+                      (updatedSession.vpnLeaseOwnerId &&
+                      projectedOwnerIds.includes(updatedSession.vpnLeaseOwnerId)
+                        ? updatedSession.vpnLeaseOwnerId
+                        : undefined) ??
+                      (cleanupSeed.vpnLeaseOwnerId &&
+                      projectedOwnerIds.includes(cleanupSeed.vpnLeaseOwnerId)
+                        ? cleanupSeed.vpnLeaseOwnerId
+                        : projectedOwnerIds[0]);
+                    const terminalUpdate: ConnectionSession = {
+                      ...updatedSession,
+                      // Ambiguous legacy owners are fail-closed by cleanup.
+                      // Preserve their evidence until an exact release
+                      // tombstone proves that an owner was settled.
+                      vpnLeaseOwnerId: projectedPrimaryOwnerId,
+                      vpnLeaseOwnerIds:
+                        projectedOwnerIds.length > 0
+                          ? projectedOwnerIds
+                          : undefined,
+                      status: terminalSession
+                        ? updatedSession.status === "error"
+                          ? "error"
+                          : "disconnected"
+                        : cleanupSeed.status,
+                      backendSessionId: terminalSession
+                        ? undefined
+                        : cleanupSeed.backendSessionId,
+                      errorMessage: terminalSession
+                        ? updatedSession.errorMessage
+                        : cleanupSeed.errorMessage,
+                      lastActivity: terminalSession
+                        ? updatedSession.lastActivity
+                        : cleanupSeed.lastActivity,
+                      lifecycleActorGeneration: cleanupAuthority.generation,
+                      lifecycleWriterId: cleanupAuthority.writerId,
+                      lifecycleRevision:
+                        Math.max(
+                          terminalCleanupRevision,
+                          getSessionLifecycleRevision(updatedSession),
+                        ) + 1,
+                    };
+                    delete terminalUpdate.lifecycleActorReservationId;
+                    terminalCleanupRevision =
+                      getSessionLifecycleRevision(terminalUpdate);
+                    if (terminalCleanupIsAuthoritative()) {
+                      sessionRef.current = terminalUpdate;
+                      const ownerIds = sessionVpnLeaseOwnerIds(terminalUpdate);
+                      const primary =
+                        terminalUpdate.vpnLeaseOwnerId ?? ownerIds[0] ?? null;
+                      vpnLeaseOwnersRef.current = {
+                        current: primary,
+                        persisted: primary,
+                        pending: new Set(
+                          ownerIds.filter((ownerId) => ownerId !== primary),
+                        ),
+                      };
+                    }
+                    // Always publish the fenced cleanup ledger. A replacement
+                    // generation rejects this terminal epoch's actor fields but
+                    // can still merge safe release proofs/tombstones.
+                    dispatch({
+                      type: "UPDATE_SESSION",
+                      payload: terminalUpdate,
+                    });
+                  },
+                });
+                cleanup.releasedOwnerIds.forEach((ownerId) => {
+                  settledVpnLeaseOwnersRef.current.add(ownerId);
+                  safeBackendlessVpnLeaseOwnersRef.current.delete(ownerId);
+                });
+                if (
+                  terminalCleanupIsAuthoritative() &&
+                  (cleanup.failures.length > 0 || cleanup.blockedReason)
+                ) {
+                  setConnectionStatus("error");
+                  setStatusMessage(
+                    cleanup.sessions[0]?.errorMessage ??
+                      cleanup.blockedReason ??
+                      "RDP VPN cleanup needs attention.",
+                  );
+                }
+              })();
+            }
             break;
         }
       }),
@@ -2697,161 +3022,173 @@ export function useRDPClient(session: ConnectionSession) {
   // ─── Resize to window ──────────────────────────────────────────────
 
   useEffect(() => {
-    if (!rdpSettings.display?.resizeToWindow) return;
+    const effectGeneration = ++desktopResizeEffectGenerationRef.current;
+    const coordinator = desktopResizeCoordinatorRef.current;
+    if (coordinator.pending?.logicalSessionId === session.id) {
+      coordinator.pending = null;
+    }
+    if (!isConnected || !rdpSessionId) {
+      return;
+    }
+
+    const queueResize = (
+      width: number,
+      height: number,
+      mode: RdpDesktopResizeRequest["mode"],
+    ) => {
+      coordinator.pending = {
+        backendSessionId: rdpSessionId,
+        logicalSessionId: session.id,
+        width,
+        height,
+        mode,
+        generation: effectGeneration,
+      };
+      desktopResizePumpRef.current();
+    };
+
+    if (!rdpSettings.display?.resizeToWindow) {
+      const width = rdpSettings.display?.width ?? 1920;
+      const height = rdpSettings.display?.height ?? 1080;
+      const hasOutstandingAdaptiveRequest = [
+        coordinator.inFlight,
+        coordinator.awaitingNegotiation,
+      ].some(
+        (request) =>
+          request?.backendSessionId === rdpSessionId &&
+          request.logicalSessionId === session.id &&
+          request.mode === "adaptive",
+      );
+      if (
+        hasOutstandingAdaptiveRequest ||
+        desktopSizeRef.current.width !== width ||
+        desktopSizeRef.current.height !== height
+      ) {
+        // An in-flight adaptive IPC cannot be cancelled. Serialize the fixed
+        // request behind it so the newly selected mode is the final backend
+        // command as well as the final frontend state.
+        queueResize(width, height, "fixed");
+      }
+
+      return () => {
+        if (coordinator.pending?.generation === effectGeneration) {
+          coordinator.pending = null;
+        }
+      };
+    }
+
     const container = containerRef.current;
     if (!container) return;
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
+    let debouncedSize: { width: number; height: number } | null = null;
+
+    const isCurrentEffect = () =>
+      !disposed &&
+      desktopResizeEffectGenerationRef.current === effectGeneration &&
+      sessionIdRef.current === rdpSessionId &&
+      rdpSettingsRef.current.display?.resizeToWindow === true;
 
     const observer = new ResizeObserver((entries) => {
+      if (!isCurrentEffect()) return;
       cachedRectRef.current = null;
       const entry = entries[0];
-      if (!entry || !isConnected) return;
+      if (!entry) return;
       const { width, height } = entry.contentRect;
       const w = Math.round(width);
       const h = Math.round(height);
-      if (w <= 100 || h <= 100) return;
+      if (w <= MIN_RDP_VIEWPORT_DIMENSION || h <= MIN_RDP_VIEWPORT_DIMENSION)
+        return;
 
-      const canvas = canvasRef.current;
-      const fb = frameBufferRef.current;
-      const transferred = pipelineRef.current?.isCanvasTransferred();
-      if (canvas && fb && fb.hasPainted && !transferred) {
-        if (rendererRef.current && rendererRef.current.type !== "canvas2d") {
-          canvas.width = w;
-          canvas.height = h;
-        } else {
-          fb.syncFromVisible(canvas);
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.drawImage(
-              fb.offscreen,
-              0,
-              0,
-              fb.offscreen.width,
-              fb.offscreen.height,
-              0,
-              0,
-              w,
-              h,
-            );
-          }
+      const matches = (request: RdpDesktopResizeRequest | null): boolean =>
+        request?.backendSessionId === rdpSessionId &&
+        request.logicalSessionId === session.id &&
+        request.width === w &&
+        request.height === h;
+      if (
+        matches(coordinator.inFlight) ||
+        matches(coordinator.awaitingNegotiation)
+      ) {
+        if (coordinator.pending?.logicalSessionId === session.id) {
+          coordinator.pending = null;
         }
+        debouncedSize = null;
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = null;
+        return;
       }
+      if (matches(coordinator.pending)) return;
+      if (
+        !coordinator.inFlight &&
+        !coordinator.pending &&
+        !coordinator.awaitingNegotiation &&
+        desktopSizeRef.current.width === w &&
+        desktopSizeRef.current.height === h
+      ) {
+        return;
+      }
+
+      debouncedSize = { width: w, height: h };
 
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        const applyResize = (nextWidth: number, nextHeight: number) => {
-          setDesktopSize({ width: nextWidth, height: nextHeight });
-
-          const pipeline = pipelineRef.current;
-          if (!pipeline) return;
-
-          pipeline.resize(nextWidth, nextHeight);
-          if (!pipeline.isCanvasTransferred()) {
-            const c = canvasRef.current;
-            const fb = pipeline.getFrameBuffer();
-            if (c && fb) fb.blitFull(c);
-          }
-        };
-
-        const sid = sessionIdRef.current;
-        if (!sid) {
-          applyResize(w, h);
-          return;
+        resizeTimer = null;
+        const nextSize = debouncedSize;
+        debouncedSize = null;
+        if (nextSize && isCurrentEffect()) {
+          queueResize(nextSize.width, nextSize.height, "adaptive");
         }
-
-        invoke<{ width?: number; height?: number }>("rdp_set_desktop_size", {
-          sessionId: sid,
-          width: w,
-          height: h,
-        })
-          .then((normalized) => {
-            applyResize(normalized.width ?? w, normalized.height ?? h);
-          })
-          .catch((error) => {
-            debugLog(`Desktop resize sync error: ${error}`);
-            applyResize(w, h);
-          });
       }, 150);
     });
 
     observer.observe(container);
 
     return () => {
+      disposed = true;
       observer.disconnect();
       if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = null;
+      debouncedSize = null;
+      if (coordinator.pending?.generation === effectGeneration) {
+        coordinator.pending = null;
+      }
     };
   }, [
     isConnected,
+    rdpSessionId,
+    rdpSettings.display?.height,
     rdpSettings.display?.resizeToWindow,
-    frameBufferRef,
-    rendererRef,
+    rdpSettings.display?.width,
+    session.id,
   ]);
 
   // ─── Input buffering ───────────────────────────────────────────────
 
-  const inputBufferRef = useRef<Record<string, unknown>[]>([]);
-  const pendingMoveIdxRef = useRef(-1);
-  const flushScheduledRef = useRef(false);
+  const inputSchedulerRef = useRef<RdpInputScheduler | null>(null);
+  inputSchedulerRef.current ??= new RdpInputScheduler(
+    (sessionId, events) => invoke("rdp_send_input", { sessionId, events }),
+    (error) => {
+      debugLog(`Input send error: ${error}`);
+      if (error instanceof RdpInputBackpressureError) {
+        setStatusMessage(error.message);
+        toast.error(error.message);
+      }
+    },
+  );
 
-  const flushInputBuffer = useCallback(() => {
-    flushScheduledRef.current = false;
-    const sid = sessionIdRef.current;
-    const buf = inputBufferRef.current;
-    if (!sid || buf.length === 0) return;
-    inputBufferRef.current = [];
-    pendingMoveIdxRef.current = -1;
-    invoke("rdp_send_input", { sessionId: sid, events: buf }).catch((e) => {
-      debugLog(`Input send error: ${e}`);
-    });
-  }, []);
+  useEffect(() => {
+    inputSchedulerRef.current?.setSession(isConnected ? rdpSessionId : null);
+    return () => inputSchedulerRef.current?.setSession(null);
+  }, [isConnected, rdpSessionId]);
 
   const sendInput = useCallback(
     (events: Record<string, unknown>[], immediate = false) => {
       if (!isConnected || !sessionIdRef.current) return;
-      if (immediate) {
-        flushScheduledRef.current = false;
-        const buf = inputBufferRef.current;
-        inputBufferRef.current = [];
-        pendingMoveIdxRef.current = -1;
-        const sid = sessionIdRef.current;
-        if (buf.length > 0) {
-          for (let i = 0; i < events.length; i++) buf.push(events[i]);
-          invoke("rdp_send_input", { sessionId: sid!, events: buf }).catch(
-            (e) => {
-              debugLog(`Input send error: ${e}`);
-            },
-          );
-        } else {
-          invoke("rdp_send_input", { sessionId: sid!, events }).catch((e) => {
-            debugLog(`Input send error: ${e}`);
-          });
-        }
-        return;
-      }
-      const buf = inputBufferRef.current;
-      for (let i = 0; i < events.length; i++) {
-        const ev = events[i];
-        if (ev.type === "MouseMove") {
-          const idx = pendingMoveIdxRef.current;
-          if (idx >= 0) {
-            buf[idx] = ev;
-          } else {
-            pendingMoveIdxRef.current = buf.length;
-            buf.push(ev);
-          }
-        } else {
-          buf.push(ev);
-        }
-      }
-      if (!flushScheduledRef.current) {
-        flushScheduledRef.current = true;
-        queueMicrotask(flushInputBuffer);
-      }
+      inputSchedulerRef.current?.setSession(sessionIdRef.current);
+      inputSchedulerRef.current?.enqueue(events, immediate);
     },
-    [isConnected, flushInputBuffer],
+    [isConnected],
   );
 
   /** Cached canvas bounding rect — invalidated on resize/scroll/fullscreen. */

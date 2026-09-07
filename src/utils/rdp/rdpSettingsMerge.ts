@@ -2,9 +2,21 @@ import {
   DEFAULT_RDP_SETTINGS,
   RDPConnectionSettings,
   type RdpDriveRedirection,
-} from '../../types/connection/connection';
+} from "../../types/connection/connection";
 
-type FrontendRendererType = NonNullable<RDPConnectionSettings['performance']>['frontendRenderer'];
+type FrontendRendererType = NonNullable<
+  RDPConnectionSettings["performance"]
+>["frontendRenderer"];
+
+/** Only values representable by the native u32 FPS contract can enable a cap. */
+export function normalizeRdpTargetFps(value: unknown): number {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= 0xffffffff
+    ? value
+    : 0;
+}
 
 /** Remove keys whose value is undefined so they don't overwrite resolved values via spread. */
 function defined<T extends object>(obj: T | undefined): Partial<T> {
@@ -30,16 +42,40 @@ export function mergeRdpSettings(
   const base = DEFAULT_RDP_SETTINGS;
   const conn = connSettings;
   const g = globalDefaults;
+  const frameRateLimitEnabled =
+    (conn?.performance?.frameRateLimitEnabled ?? g.frameRateLimitEnabled) ===
+    true;
+  // Legacy numeric preferences were never enforced. Only a connection with an
+  // explicit opt-in may override the global cap; missing flags inherit both.
+  const requestedTargetFps =
+    conn?.performance?.frameRateLimitEnabled === true
+      ? (conn.performance.targetFps ?? g.targetFps)
+      : g.targetFps;
+  const targetFps = frameRateLimitEnabled
+    ? normalizeRdpTargetFps(requestedTargetFps)
+    : 0;
+  const resizeToWindow =
+    conn?.display?.resizeToWindow ??
+    g.resizeToWindow ??
+    base.display?.resizeToWindow ??
+    false;
+  const requestedSmartSizing =
+    conn?.display?.smartSizing ??
+    g.smartSizing ??
+    base.display?.smartSizing ??
+    false;
 
   // Build merged codec settings
   const mergedCodecs = {
     ...base.performance?.codecs,
     enableCodecs: g.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
     remoteFx: g.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
-    remoteFxEntropy: g.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
+    remoteFxEntropy:
+      g.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
     enableGfx: g.gfxEnabled ?? base.performance?.codecs?.enableGfx,
     h264Decoder: g.h264Decoder ?? base.performance?.codecs?.h264Decoder,
-    nalPassthrough: g.nalPassthrough ?? base.performance?.codecs?.nalPassthrough,
+    nalPassthrough:
+      g.nalPassthrough ?? base.performance?.codecs?.nalPassthrough,
     ...defined(conn?.performance?.codecs),
   };
 
@@ -49,11 +85,15 @@ export function mergeRdpSettings(
       width: g.defaultWidth ?? base.display?.width,
       height: g.defaultHeight ?? base.display?.height,
       colorDepth: g.defaultColorDepth ?? base.display?.colorDepth,
-      smartSizing: g.smartSizing ?? base.display?.smartSizing,
-      resizeToWindow: g.resizeToWindow ?? base.display?.resizeToWindow,
-      desktopScaleFactor: g.desktopScaleFactor ?? base.display?.desktopScaleFactor,
+      desktopScaleFactor:
+        g.desktopScaleFactor ?? base.display?.desktopScaleFactor,
       lossyCompression: g.lossyCompression ?? base.display?.lossyCompression,
       ...defined(conn?.display),
+      // Dynamic resolution and smart sizing are mutually exclusive. Older
+      // persisted settings may contain both flags, so normalize the effective
+      // runtime settings instead of relying on every stored row being migrated.
+      resizeToWindow,
+      smartSizing: resizeToWindow ? false : requestedSmartSizing,
     },
     audio: {
       ...base.audio,
@@ -65,8 +105,10 @@ export function mergeRdpSettings(
     input: {
       ...base.input,
       mouseMode: g.mouseMode ?? base.input?.mouseMode,
-      enableUnicodeInput: g.enableUnicodeInput ?? base.input?.enableUnicodeInput,
-      autoDetectLayout: g.autoDetectKeyboardLayout ?? base.input?.autoDetectLayout,
+      enableUnicodeInput:
+        g.enableUnicodeInput ?? base.input?.enableUnicodeInput,
+      autoDetectLayout:
+        g.autoDetectKeyboardLayout ?? base.input?.autoDetectLayout,
       scrollSpeed: g.scrollSpeed ?? base.input?.scrollSpeed,
       smoothScroll: g.smoothScroll ?? base.input?.smoothScroll,
       localCursor: g.localCursor ?? base.input?.localCursor,
@@ -74,59 +116,95 @@ export function mergeRdpSettings(
       batchIntervalMs: g.batchIntervalMs ?? base.input?.batchIntervalMs,
       keyboardLayout: g.keyboardLayout ?? base.input?.keyboardLayout,
       keyboardType: g.keyboardType ?? base.input?.keyboardType,
-      keyboardFunctionKeys: g.keyboardFunctionKeys ?? base.input?.keyboardFunctionKeys,
+      keyboardFunctionKeys:
+        g.keyboardFunctionKeys ?? base.input?.keyboardFunctionKeys,
       ...defined(conn?.input),
     },
     deviceRedirection: {
       ...base.deviceRedirection,
       clipboard: g.clipboardRedirection ?? base.deviceRedirection?.clipboard,
-      clipboardDirection: g.clipboardDirection ?? base.deviceRedirection?.clipboardDirection,
-      printerOutputMode: g.printerOutputMode ?? base.deviceRedirection?.printerOutputMode,
+      clipboardDirection:
+        g.clipboardDirection ?? base.deviceRedirection?.clipboardDirection,
+      printerOutputMode:
+        g.printerOutputMode ?? base.deviceRedirection?.printerOutputMode,
       printers: g.printerRedirection ?? base.deviceRedirection?.printers,
       ports: g.portRedirection ?? base.deviceRedirection?.ports,
       smartCards: g.smartCardRedirection ?? base.deviceRedirection?.smartCards,
       webAuthn: g.webAuthnRedirection ?? base.deviceRedirection?.webAuthn,
-      videoCapture: g.videoCaptureRedirection ?? base.deviceRedirection?.videoCapture,
+      videoCapture:
+        g.videoCaptureRedirection ?? base.deviceRedirection?.videoCapture,
       usbDevices: g.usbRedirection ?? base.deviceRedirection?.usbDevices,
       audioInput: g.audioInputRedirection ?? base.deviceRedirection?.audioInput,
-      driveRedirection: g.driveRedirection ?? base.deviceRedirection?.driveRedirection,
+      driveRedirection:
+        g.driveRedirection ?? base.deviceRedirection?.driveRedirection,
       drives: (() => {
-        const globalDrives: RdpDriveRedirection[] = g.driveRedirections ?? base.deviceRedirection?.drives ?? [];
+        const globalDrives: RdpDriveRedirection[] =
+          g.driveRedirections ?? base.deviceRedirection?.drives ?? [];
         const connDrives = conn?.deviceRedirection?.drives ?? [];
-        if (conn?.deviceRedirection?.inheritGlobalDrives === false) return connDrives;
-        const excluded = new Set(conn?.deviceRedirection?.excludedGlobalDrives ?? []);
-        const inherited = globalDrives.filter((d) => !excluded.has(`${d.name}:${d.path}`));
+        if (conn?.deviceRedirection?.inheritGlobalDrives === false)
+          return connDrives;
+        const excluded = new Set(
+          conn?.deviceRedirection?.excludedGlobalDrives ?? [],
+        );
+        const inherited = globalDrives.filter(
+          (d) => !excluded.has(`${d.name}:${d.path}`),
+        );
         return [...inherited, ...connDrives];
       })(),
       ...(() => {
-        const { drives: _d, excludedGlobalDrives: _e, inheritGlobalDrives: _i, ...rest } =
-          defined(conn?.deviceRedirection) as Record<string, unknown>;
+        const {
+          drives: _d,
+          excludedGlobalDrives: _e,
+          inheritGlobalDrives: _i,
+          ...rest
+        } = defined(conn?.deviceRedirection) as Record<string, unknown>;
         return rest;
       })(),
     },
     performance: {
       ...base.performance,
       connectionSpeed: g.connectionSpeed ?? base.performance?.connectionSpeed,
-      disableWallpaper: g.disableWallpaper ?? base.performance?.disableWallpaper,
-      disableFullWindowDrag: g.disableFullWindowDrag ?? base.performance?.disableFullWindowDrag,
-      disableMenuAnimations: g.disableMenuAnimations ?? base.performance?.disableMenuAnimations,
+      disableWallpaper:
+        g.disableWallpaper ?? base.performance?.disableWallpaper,
+      disableFullWindowDrag:
+        g.disableFullWindowDrag ?? base.performance?.disableFullWindowDrag,
+      disableMenuAnimations:
+        g.disableMenuAnimations ?? base.performance?.disableMenuAnimations,
       disableTheming: g.disableTheming ?? base.performance?.disableTheming,
-      disableCursorShadow: g.disableCursorShadow ?? base.performance?.disableCursorShadow,
-      disableCursorSettings: g.disableCursorSettings ?? base.performance?.disableCursorSettings,
-      enableFontSmoothing: g.enableFontSmoothing ?? base.performance?.enableFontSmoothing,
-      enableDesktopComposition: g.enableDesktopComposition ?? base.performance?.enableDesktopComposition,
-      persistentBitmapCaching: g.persistentBitmapCaching ?? base.performance?.persistentBitmapCaching,
-      targetFps: g.targetFps ?? base.performance?.targetFps,
+      disableCursorShadow:
+        g.disableCursorShadow ?? base.performance?.disableCursorShadow,
+      disableCursorSettings:
+        g.disableCursorSettings ?? base.performance?.disableCursorSettings,
+      enableFontSmoothing:
+        g.enableFontSmoothing ?? base.performance?.enableFontSmoothing,
+      enableDesktopComposition:
+        g.enableDesktopComposition ??
+        base.performance?.enableDesktopComposition,
+      persistentBitmapCaching:
+        g.persistentBitmapCaching ?? base.performance?.persistentBitmapCaching,
       frameBatching: g.frameBatching ?? base.performance?.frameBatching,
-      frameBatchIntervalMs: g.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
+      frameBatchIntervalMs:
+        g.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
       renderBackend: g.renderBackend ?? base.performance?.renderBackend,
-      frontendRenderer: (g.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType,
+      frontendRenderer: (g.frontendRenderer ??
+        base.performance?.frontendRenderer ??
+        "auto") as FrontendRendererType,
       frameScheduling: g.frameScheduling ?? base.performance?.frameScheduling,
       tripleBuffering: g.tripleBuffering ?? base.performance?.tripleBuffering,
       ...defined(conn?.performance),
+      frameRateLimitEnabled,
+      targetFps,
       // Resolve 'inherit': replace with global default
-      ...(conn?.performance?.renderBackend === 'inherit' ? { renderBackend: g.renderBackend ?? base.performance?.renderBackend } : {}),
-      ...(conn?.performance?.frontendRenderer === 'inherit' ? { frontendRenderer: (g.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType } : {}),
+      ...(conn?.performance?.renderBackend === "inherit"
+        ? { renderBackend: g.renderBackend ?? base.performance?.renderBackend }
+        : {}),
+      ...(conn?.performance?.frontendRenderer === "inherit"
+        ? {
+            frontendRenderer: (g.frontendRenderer ??
+              base.performance?.frontendRenderer ??
+              "auto") as FrontendRendererType,
+          }
+        : {}),
       // Preserve codec merge after conn spread
       codecs: { ...mergedCodecs, ...defined(conn?.performance?.codecs) },
     },
@@ -136,7 +214,8 @@ export function mergeRdpSettings(
       enableTls: g.enableTls ?? base.security?.enableTls,
       enableNla: g.enableNla ?? base.security?.enableNla,
       autoLogon: g.autoLogon ?? base.security?.autoLogon,
-      credsspOracleRemediation: g.credsspOracleRemediation ?? base.security?.credsspOracleRemediation,
+      credsspOracleRemediation:
+        g.credsspOracleRemediation ?? base.security?.credsspOracleRemediation,
       allowHybridEx: g.allowHybridEx ?? base.security?.allowHybridEx,
       nlaFallbackToTls: g.nlaFallbackToTls ?? base.security?.nlaFallbackToTls,
       tlsMinVersion: g.tlsMinVersion ?? base.security?.tlsMinVersion,
@@ -144,12 +223,18 @@ export function mergeRdpSettings(
       kerberosEnabled: g.kerberosEnabled ?? base.security?.kerberosEnabled,
       pku2uEnabled: g.pku2uEnabled ?? base.security?.pku2uEnabled,
       restrictedAdmin: g.restrictedAdmin ?? base.security?.restrictedAdmin,
-      remoteCredentialGuard: g.remoteCredentialGuard ?? base.security?.remoteCredentialGuard,
-      enforceServerPublicKeyValidation: g.enforceServerPublicKeyValidation ?? base.security?.enforceServerPublicKeyValidation,
+      remoteCredentialGuard:
+        g.remoteCredentialGuard ?? base.security?.remoteCredentialGuard,
+      enforceServerPublicKeyValidation:
+        g.enforceServerPublicKeyValidation ??
+        base.security?.enforceServerPublicKeyValidation,
       credsspVersion: g.credsspVersion ?? base.security?.credsspVersion,
-      serverCertValidation: g.serverCertValidation ?? base.security?.serverCertValidation,
-      enableServerPointer: g.enableServerPointer ?? base.security?.enableServerPointer,
-      pointerSoftwareRendering: g.pointerSoftwareRendering ?? base.security?.pointerSoftwareRendering,
+      serverCertValidation:
+        g.serverCertValidation ?? base.security?.serverCertValidation,
+      enableServerPointer:
+        g.enableServerPointer ?? base.security?.enableServerPointer,
+      pointerSoftwareRendering:
+        g.pointerSoftwareRendering ?? base.security?.pointerSoftwareRendering,
       sspiPackageList: g.sspiPackageList || base.security?.sspiPackageList,
       ...defined(conn?.security),
     },
@@ -165,7 +250,8 @@ export function mergeRdpSettings(
     },
     hyperv: {
       ...base.hyperv,
-      enhancedSessionMode: g.enhancedSessionMode ?? base.hyperv?.enhancedSessionMode,
+      enhancedSessionMode:
+        g.enhancedSessionMode ?? base.hyperv?.enhancedSessionMode,
       ...defined(conn?.hyperv),
     },
     negotiation: {
@@ -178,21 +264,27 @@ export function mergeRdpSettings(
     },
     advanced: {
       ...base.advanced,
-      fullFrameSyncInterval: g.fullFrameSyncInterval ?? base.advanced?.fullFrameSyncInterval,
+      fullFrameSyncInterval:
+        g.fullFrameSyncInterval ?? base.advanced?.fullFrameSyncInterval,
       readTimeoutMs: g.readTimeoutMs ?? base.advanced?.readTimeoutMs,
-      sessionClosePolicy: g.sessionClosePolicy ?? base.advanced?.sessionClosePolicy,
+      sessionClosePolicy:
+        g.sessionClosePolicy ?? base.advanced?.sessionClosePolicy,
       clientName: g.clientName || base.advanced?.clientName,
       clientBuild: g.clientBuild ?? base.advanced?.clientBuild,
-      maxConsecutiveErrors: g.maxConsecutiveErrors ?? base.advanced?.maxConsecutiveErrors,
-      statsIntervalSecs: g.statsIntervalSecs ?? base.advanced?.statsIntervalSecs,
+      maxConsecutiveErrors:
+        g.maxConsecutiveErrors ?? base.advanced?.maxConsecutiveErrors,
+      statsIntervalSecs:
+        g.statsIntervalSecs ?? base.advanced?.statsIntervalSecs,
       ...defined(conn?.advanced),
     },
     tcp: {
       ...base.tcp,
-      connectTimeoutSecs: g.tcpConnectTimeoutSecs ?? base.tcp?.connectTimeoutSecs,
+      connectTimeoutSecs:
+        g.tcpConnectTimeoutSecs ?? base.tcp?.connectTimeoutSecs,
       nodelay: g.tcpNodelay ?? base.tcp?.nodelay,
       keepAlive: g.tcpKeepAlive ?? base.tcp?.keepAlive,
-      keepAliveIntervalSecs: g.tcpKeepAliveIntervalSecs ?? base.tcp?.keepAliveIntervalSecs,
+      keepAliveIntervalSecs:
+        g.tcpKeepAliveIntervalSecs ?? base.tcp?.keepAliveIntervalSecs,
       recvBufferSize: g.tcpRecvBufferSize ?? base.tcp?.recvBufferSize,
       sendBufferSize: g.tcpSendBufferSize ?? base.tcp?.sendBufferSize,
       ...defined(conn?.tcp),

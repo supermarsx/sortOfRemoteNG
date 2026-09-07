@@ -8,8 +8,13 @@ pub use sorng_rdp_vendor::yuv_convert;
 
 use std::fmt;
 
+/// One decoded 8K RGBA picture, including common codec padding.
+pub const MAX_DECODED_FRAME_BYTES: usize = 8192 * 4320 * 4;
+
 /// A single decoded video frame.
 pub struct DecodedFrame {
+    /// Input picture identity returned by the decoder, including reordered output.
+    pub picture_id: u64,
     pub width: u32,
     pub height: u32,
     /// RGBA32 pixel data, length = width * height * 4.
@@ -42,7 +47,7 @@ pub trait H264Decoder: Send {
     /// Feed one or more NAL units (Annex B format with start codes).
     /// Returns zero or more decoded frames.  H.264 decoders may buffer
     /// frames, so the output count may differ from the input count.
-    fn decode(&mut self, nal_data: &[u8]) -> Result<Vec<DecodedFrame>, H264Error>;
+    fn decode(&mut self, nal_data: &[u8], picture_id: u64) -> Result<Vec<DecodedFrame>, H264Error>;
 
     /// Flush any buffered frames (e.g. at end of stream).
     fn flush(&mut self) -> Result<Vec<DecodedFrame>, H264Error> {

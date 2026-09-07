@@ -434,7 +434,7 @@ export const defaultSettings: GlobalSettings = {
     defaultWidth: 1920,
     defaultHeight: 1080,
     defaultColorDepth: 32,
-    smartSizing: true,
+    smartSizing: false,
     tcpConnectTimeoutSecs: 10,
     tcpNodelay: true,
     tcpKeepAlive: true,
@@ -488,7 +488,8 @@ export const defaultSettings: GlobalSettings = {
     enableDesktopComposition: false,
     persistentBitmapCaching: false,
     // Performance / Frame Delivery
-    targetFps: 30,
+    frameRateLimitEnabled: false,
+    targetFps: 0,
     frameBatching: true,
     frameBatchIntervalMs: 33,
     fullFrameSyncInterval: 300,

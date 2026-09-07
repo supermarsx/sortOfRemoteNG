@@ -5,7 +5,74 @@ use super::session_state::{
     ChannelSummary, FailureClass, FrameFlowSummary, LifecycleStateMachine, SessionState,
     SessionStateSnapshot,
 };
-use super::types::RdpStatsEvent;
+use super::types::{RdpFrameTelemetryEvent, RdpStatsEvent};
+
+#[derive(Debug, Default)]
+struct PresentationSamples {
+    epoch: Option<String>,
+    retired_epochs: std::collections::VecDeque<String>,
+    sequence: u64,
+    sample_ms: f64,
+    count: u64,
+    visible: bool,
+    fps: Option<f64>,
+    received_at: Option<Instant>,
+}
+
+impl PresentationSamples {
+    fn record(&mut self, sample: &RdpFrameTelemetryEvent, now: Instant) {
+        let (Some(epoch), Some(sequence), Some(sample_ms), Some(count), Some(visible)) = (
+            sample.presentation_epoch.as_ref(),
+            sample.sample_sequence,
+            sample.sample_time_ms,
+            sample.presented_frames,
+            sample.is_visible,
+        ) else {
+            return;
+        };
+        if epoch.is_empty() || epoch.len() > 128 || !sample_ms.is_finite() || sample_ms < 0.0 {
+            return;
+        }
+        let new_epoch = self.epoch.as_ref() != Some(epoch);
+        if new_epoch {
+            if self.retired_epochs.contains(epoch) {
+                return;
+            }
+            if let Some(previous) = self.epoch.replace(epoch.clone()) {
+                self.retired_epochs.push_back(previous);
+                if self.retired_epochs.len() > 32 {
+                    self.retired_epochs.pop_front();
+                }
+            }
+        } else if sequence <= self.sequence || sample_ms <= self.sample_ms {
+            return;
+        }
+        self.fps = if !new_epoch && visible && self.visible && count >= self.count {
+            Some((count - self.count) as f64 * 1000.0 / (sample_ms - self.sample_ms))
+        } else {
+            None
+        };
+        self.sequence = sequence;
+        self.sample_ms = sample_ms;
+        self.count = count;
+        self.visible = visible;
+        self.received_at = Some(now);
+    }
+
+    fn snapshot(&self, now: Instant) -> (Option<f64>, Option<u64>) {
+        let fresh = self
+            .received_at
+            .is_some_and(|at| now.saturating_duration_since(at) <= Duration::from_secs(3));
+        (
+            if fresh && self.visible {
+                self.fps
+            } else {
+                None
+            },
+            self.epoch.as_ref().map(|_| self.count),
+        )
+    }
+}
 
 // ---- Connection phase state machine ----
 //
@@ -103,6 +170,7 @@ pub struct RdpSessionStats {
     fps_snapshot_count: AtomicU64,
     fps_snapshot_time: std::sync::Mutex<Instant>,
     fps_cached: std::sync::Mutex<f64>,
+    presentation_samples: std::sync::Mutex<PresentationSamples>,
     pub alive: AtomicBool,
 
     // -- Health tracking --
@@ -159,6 +227,7 @@ impl RdpSessionStats {
             fps_snapshot_count: AtomicU64::new(0),
             fps_snapshot_time: std::sync::Mutex::new(now),
             fps_cached: std::sync::Mutex::new(0.0),
+            presentation_samples: std::sync::Mutex::new(PresentationSamples::default()),
             alive: AtomicBool::new(true),
             // Health tracking — all start at 0 (= connected_at)
             last_data_time_ms: AtomicU64::new(0),
@@ -250,6 +319,18 @@ impl RdpSessionStats {
             .lock()
             .map(|lifecycle| lifecycle.frame_flow_summary())
             .unwrap_or_default()
+    }
+
+    pub fn record_frontend_telemetry(&self, sample: &RdpFrameTelemetryEvent) {
+        if let Ok(mut samples) = self.presentation_samples.lock() {
+            samples.record(sample, Instant::now());
+        }
+        // Frontend telemetry must not overwrite backend transport counters.
+        if let Ok(mut lifecycle) = self.lifecycle.lock() {
+            let mut flow = lifecycle.frame_flow_summary();
+            flow.average_render_ms = sample.average_render_ms;
+            lifecycle.set_frame_flow_summary(flow);
+        }
     }
 
     /// Record a frame.  Lock-free: just an atomic increment.
@@ -353,7 +434,8 @@ impl RdpSessionStats {
         true
     }
 
-    /// Compute approximate FPS from the delta between the current
+    /// Legacy decoded-update rate (rectangles are not presented frames).
+    /// Compute the delta between the current
     /// frame count and a snapshot taken ~1 s ago.  Only the periodic
     /// stats emitter calls this (once per second), so the two Mutex
     /// locks are completely off the hot path.
@@ -390,6 +472,11 @@ impl RdpSessionStats {
     }
 
     pub fn to_event(&self, session_id: &str) -> RdpStatsEvent {
+        let (presented_fps, presented_frames) = self
+            .presentation_samples
+            .lock()
+            .map(|samples| samples.snapshot(Instant::now()))
+            .unwrap_or_default();
         RdpStatsEvent {
             session_id: session_id.to_string(),
             uptime_secs: self.connected_at.elapsed().as_secs(),
@@ -399,6 +486,8 @@ impl RdpSessionStats {
             pdus_sent: self.pdus_sent.load(Ordering::Relaxed),
             frame_count: self.frame_count.load(Ordering::Relaxed),
             fps: self.current_fps(),
+            presented_fps,
+            presented_frames,
             input_events: self.input_events.load(Ordering::Relaxed),
             errors_recovered: self.errors_recovered.load(Ordering::Relaxed),
             reactivations: self.reactivations.load(Ordering::Relaxed),
@@ -412,12 +501,7 @@ impl RdpSessionStats {
     pub fn lifecycle_snapshot(&self, session_id: &str) -> SessionStateSnapshot {
         self.lifecycle
             .lock()
-            .map(|mut lifecycle| {
-                let mut frame_flow_summary = lifecycle.frame_flow_summary();
-                frame_flow_summary.delivered_frames = self.frame_count.load(Ordering::Relaxed);
-                lifecycle.set_frame_flow_summary(frame_flow_summary);
-                lifecycle.snapshot_for_session(session_id)
-            })
+            .map(|lifecycle| lifecycle.snapshot_for_session(session_id))
             .unwrap_or_else(|_| {
                 let mut lifecycle = LifecycleStateMachine::with_state(
                     session_id,
@@ -426,7 +510,7 @@ impl RdpSessionStats {
                 );
                 lifecycle.set_frame_flow_summary(FrameFlowSummary {
                     queued_frames: 0,
-                    delivered_frames: self.frame_count.load(Ordering::Relaxed),
+                    delivered_frames: 0,
                     dropped_frames: 0,
                     coalesced_frames: 0,
                     average_render_ms: None,
@@ -439,6 +523,86 @@ impl RdpSessionStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn presentation_sample(
+        epoch: &str,
+        sequence: u64,
+        time: f64,
+        count: u64,
+        visible: bool,
+    ) -> RdpFrameTelemetryEvent {
+        RdpFrameTelemetryEvent {
+            session_id: "session".into(),
+            queued_frames: 9,
+            dropped_frames: 99,
+            coalesced_frames: 0,
+            average_render_ms: Some(2.0),
+            presented_frames: Some(count),
+            presentation_epoch: Some(epoch.into()),
+            sample_sequence: Some(sequence),
+            sample_time_ms: Some(time),
+            is_visible: Some(visible),
+        }
+    }
+
+    #[test]
+    fn presentation_samples_measure_completed_work_then_idle_and_expire() {
+        let mut samples = PresentationSamples::default();
+        let now = Instant::now();
+        samples.record(&presentation_sample("one", 1, 100.0, 0, true), now);
+        assert_eq!(samples.snapshot(now), (None, Some(0)));
+        samples.record(&presentation_sample("one", 2, 1100.0, 60, true), now);
+        assert_eq!(samples.snapshot(now), (Some(60.0), Some(60)));
+        samples.record(&presentation_sample("one", 3, 2100.0, 60, true), now);
+        assert_eq!(samples.snapshot(now), (Some(0.0), Some(60)));
+        assert_eq!(
+            samples.snapshot(now + Duration::from_secs(4)),
+            (None, Some(60))
+        );
+    }
+
+    #[test]
+    fn presentation_samples_reject_stale_duplicates_and_reset_across_visibility_epochs() {
+        let mut samples = PresentationSamples::default();
+        let now = Instant::now();
+        samples.record(&presentation_sample("one", 1, 100.0, 0, true), now);
+        samples.record(&presentation_sample("one", 2, 1100.0, 30, true), now);
+        samples.record(&presentation_sample("one", 2, 2100.0, 999, true), now);
+        assert_eq!(samples.snapshot(now), (Some(30.0), Some(30)));
+        samples.record(&presentation_sample("one", 3, 2100.0, 30, false), now);
+        assert_eq!(samples.snapshot(now).0, None);
+        samples.record(&presentation_sample("one", 4, 12100.0, 31, true), now);
+        assert_eq!(samples.snapshot(now).0, None);
+        samples.record(&presentation_sample("two", 1, 1.0, 0, true), now);
+        samples.record(&presentation_sample("one", 5, 13100.0, 90, true), now);
+        assert_eq!(samples.snapshot(now), (None, Some(0)));
+        samples.record(&presentation_sample("two", 2, 1001.0, 20, true), now);
+        assert_eq!(samples.snapshot(now), (Some(20.0), Some(20)));
+        samples.record(&presentation_sample("two", 3, 2001.0, 1, true), now);
+        assert_eq!(samples.snapshot(now).0, None);
+    }
+
+    #[test]
+    fn frontend_observations_do_not_overwrite_transport_or_decoded_counters() {
+        let stats = RdpSessionStats::new();
+        stats.record_frame();
+        stats.set_frame_flow_summary(FrameFlowSummary {
+            queued_frames: 2,
+            delivered_frames: 7,
+            dropped_frames: 3,
+            coalesced_frames: 4,
+            average_render_ms: None,
+        });
+        stats.record_frontend_telemetry(&presentation_sample("one", 1, 1.0, 0, true));
+        let event = stats.to_event("session");
+        let flow = event.lifecycle.unwrap().frame_flow_summary;
+        assert_eq!(event.frame_count, 1);
+        assert_eq!(event.presented_frames, Some(0));
+        assert_eq!(event.presented_fps, None);
+        assert_eq!(flow.delivered_frames, 7);
+        assert_eq!(flow.queued_frames, 2);
+        assert_eq!(flow.dropped_frames, 3);
+    }
 
     #[test]
     fn new_stats_defaults() {
@@ -520,7 +684,7 @@ mod tests {
         assert_eq!(active.channel_summary.ready_count, 1);
         assert_eq!(active.channel_summary.failed_count, 1);
         assert_eq!(active.frame_flow_summary.queued_frames, 3);
-        assert_eq!(active.frame_flow_summary.delivered_frames, 1);
+        assert_eq!(active.frame_flow_summary.delivered_frames, 0);
         assert_eq!(active.frame_flow_summary.dropped_frames, 2);
         assert_eq!(active.frame_flow_summary.coalesced_frames, 5);
         assert_eq!(active.frame_flow_summary.average_render_ms, Some(4.5));

@@ -325,15 +325,19 @@ test("Windows hard-import retention survives release dead-code elimination", () 
 test("dynamic OpenH264 builds do not compile the crate's bundled C++ source", () => {
   assert.match(
     rdpVendorManifest,
-    /^software-decode = \["dep:openh264", "openh264\/source"\]$/mu,
+    /^software-decode = \["dep:openh264", "dep:openh264-sys2", "openh264\/source"\]$/mu,
   );
   assert.match(
     rdpVendorManifest,
-    /^software-decode-dynamic = \["dep:openh264", "openh264\/libloading"\]$/mu,
+    /^software-decode-dynamic = \["dep:openh264", "dep:openh264-sys2", "openh264\/libloading"\]$/mu,
   );
   assert.match(
     rdpVendorManifest,
     /^openh264 = \{ version = "=0\.9\.8", optional = true, default-features = false \}$/mu,
+  );
+  assert.match(
+    rdpVendorManifest,
+    /^openh264-sys2 = \{ version = "=0\.9\.8", optional = true, default-features = false \}$/mu,
   );
   for (const crate of ["openh264", "openh264-sys2"]) {
     assert.match(

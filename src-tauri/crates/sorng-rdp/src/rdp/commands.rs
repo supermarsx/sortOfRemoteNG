@@ -108,6 +108,27 @@ pub async fn remove_completed_rdp_worker(
     }
 }
 
+/// Reap one concrete worker as soon as it completes, including when the remote
+/// endpoint ends the session without a frontend disconnect command.
+///
+/// The generation check in [`remove_completed_rdp_worker`] prevents a late
+/// completion from deleting a newer worker that has reused the same session
+/// identifier. Callers may register this while holding the service mutex before
+/// publishing the connection; the task cannot observe the registry until that
+/// guard is released.
+pub fn spawn_rdp_worker_completion_reaper(
+    state: RdpServiceState,
+    session_id: String,
+    worker: &RdpWorkerRuntime,
+) {
+    let generation = worker.generation();
+    let completion = worker.completion();
+    tokio::spawn(async move {
+        completion.wait().await;
+        remove_completed_rdp_worker(&state, &session_id, generation).await;
+    });
+}
+
 /// Mark one worker as closing, signal it, and wait outside the service mutex.
 /// A generation-scoped reaper keeps a timed-out record observable until the
 /// worker genuinely exits and releases its admission permit.
@@ -378,6 +399,7 @@ mod worker_lifecycle_tests {
             worker_count.fetch_sub(1, Ordering::AcqRel);
         });
         let completion = worker.completion();
+        spawn_rdp_worker_completion_reaper(Arc::clone(state), session_id.to_string(), &worker);
 
         let (cmd_tx, cmd_rx) = crate::rdp::wake_channel::create_wake_channel()
             .expect("fake worker wake channel should be created");
@@ -445,6 +467,59 @@ mod worker_lifecycle_tests {
         })
         .await
         .expect("worker registry and permits should fully recover");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn spontaneous_worker_completion_reaps_the_discoverable_session() {
+        let state = RdpService::new_test_state(TEST_CAPACITY);
+        let live_workers = Arc::new(AtomicUsize::new(0));
+        let worker = insert_blocked_worker(
+            &state,
+            "remote-ended-session",
+            "remote-ended-slot",
+            Arc::clone(&live_workers),
+        )
+        .await;
+        wait_for_live_workers(&live_workers, 1).await;
+
+        {
+            let service = state.lock().await;
+            assert_eq!(service.connections.len(), 1);
+            assert_eq!(
+                find_rdp_connection_id(
+                    &service,
+                    &RdpConnectionSelector::SessionId("remote-ended-session".to_string()),
+                )
+                .as_deref(),
+                Some("remote-ended-session")
+            );
+            assert_eq!(
+                find_rdp_connection_id(
+                    &service,
+                    &RdpConnectionSelector::ConnectionId("remote-ended-slot".to_string()),
+                )
+                .as_deref(),
+                Some("remote-ended-session")
+            );
+        }
+
+        // Model a clean server-side end: no close_rdp_connection call occurs.
+        worker.gate.open();
+        worker.completion.wait().await;
+        wait_for_full_cleanup(&state).await;
+
+        let service = state.lock().await;
+        assert!(service.connections.is_empty());
+        assert!(find_rdp_connection_id(
+            &service,
+            &RdpConnectionSelector::SessionId("remote-ended-session".to_string()),
+        )
+        .is_none());
+        assert!(find_rdp_connection_id(
+            &service,
+            &RdpConnectionSelector::ConnectionId("remote-ended-slot".to_string()),
+        )
+        .is_none());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

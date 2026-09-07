@@ -1,6 +1,6 @@
 //! RDPGFX DVC processor — core state machine implementing the Graphics Pipeline Extension.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -67,6 +67,90 @@ pub struct GfxDiagnostics {
 /// publishes on every channel-state transition.
 pub type SharedGfxDiagnostics = Arc<Mutex<GfxDiagnostics>>;
 
+fn rect_fits(rect: &GfxRect16, width: u32, height: u32) -> bool {
+    rect.left < rect.right
+        && rect.top < rect.bottom
+        && u32::from(rect.right) <= width
+        && u32::from(rect.bottom) <= height
+}
+
+fn annex_b_has_nal(data: &[u8], kind: impl Fn(u8) -> bool) -> bool {
+    data.windows(4)
+        .any(|bytes| bytes[..3] == [0, 0, 1] && kind(bytes[3] & 0x1f))
+}
+
+/// AVC420 pictures are surface-relative, including codec padding. Only the
+/// metadata mask changes the persistent surface; destRect is a bounding box,
+/// not a request to scale or shift the decoded image.
+fn apply_avc420_regions(
+    surface: &mut super::surfaces::GfxSurface,
+    frame: &DecodedFrame,
+    regions: &[GfxRect16],
+) -> Result<Option<GfxFrame>, &'static str> {
+    let expected = (frame.width as usize)
+        .checked_mul(frame.height as usize)
+        .and_then(|n| n.checked_mul(4));
+    if expected != Some(frame.rgba.len()) || regions.len() > MAX_AVC420_REGIONS {
+        return Err("h264_frame_dimensions_invalid");
+    }
+    if regions.iter().any(|rect| {
+        !rect_fits(rect, frame.width, frame.height)
+            || !rect_fits(rect, u32::from(surface.width), u32::from(surface.height))
+    }) {
+        return Err("avc420_mask_out_of_bounds");
+    }
+    let Some(first) = regions.first() else {
+        return Ok(None);
+    };
+    let bounds = regions.iter().fold(*first, |mut bounds, rect| {
+        bounds.left = bounds.left.min(rect.left);
+        bounds.top = bounds.top.min(rect.top);
+        bounds.right = bounds.right.max(rect.right);
+        bounds.bottom = bounds.bottom.max(rect.bottom);
+        bounds
+    });
+    let origin = surface
+        .output_origin
+        .map(|(x, y)| {
+            let x = u16::try_from(x).map_err(|_| "gfx_output_origin_out_of_bounds")?;
+            let y = u16::try_from(y).map_err(|_| "gfx_output_origin_out_of_bounds")?;
+            x.checked_add(bounds.right)
+                .ok_or("gfx_output_origin_out_of_bounds")?;
+            y.checked_add(bounds.bottom)
+                .ok_or("gfx_output_origin_out_of_bounds")?;
+            Ok::<_, &'static str>((x + bounds.left, y + bounds.top))
+        })
+        .transpose()?;
+    let source_stride = frame.width as usize * 4;
+    let surface_stride = usize::from(surface.width) * 4;
+    for rect in regions {
+        let bytes = usize::from(rect.right - rect.left) * 4;
+        for y in usize::from(rect.top)..usize::from(rect.bottom) {
+            let source = y * source_stride + usize::from(rect.left) * 4;
+            let target = y * surface_stride + usize::from(rect.left) * 4;
+            surface.rgba[target..target + bytes]
+                .copy_from_slice(&frame.rgba[source..source + bytes]);
+        }
+    }
+    let Some((screen_x, screen_y)) = origin else {
+        return Ok(None);
+    };
+    let width = bounds.right - bounds.left;
+    let height = bounds.bottom - bounds.top;
+    let mut rgba = Vec::with_capacity(usize::from(width) * usize::from(height) * 4);
+    for row in usize::from(bounds.top)..usize::from(bounds.bottom) {
+        let start = row * surface_stride + usize::from(bounds.left) * 4;
+        rgba.extend_from_slice(&surface.rgba[start..start + usize::from(width) * 4]);
+    }
+    Ok(Some(GfxFrame {
+        screen_x,
+        screen_y,
+        width,
+        height,
+        rgba,
+    }))
+}
+
 /// Derive the single-channel `ChannelSummary` from a GFX channel state.
 fn channel_summary_for_state(state: VirtualChannelState) -> ChannelSummary {
     ChannelSummary {
@@ -102,7 +186,7 @@ pub struct GfxFrame {
 }
 
 /// A raw H.264 NAL unit for frontend WebCodecs decode.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GfxNalFrame {
     /// Surface ID (for multi-surface tracking).
     pub surface_id: u16,
@@ -110,12 +194,27 @@ pub struct GfxNalFrame {
     pub screen_x: u16,
     /// Screen Y coordinate.
     pub screen_y: u16,
-    /// Destination width of the decoded frame region.
+    /// Logical surface width; AVC mask coordinates are surface-relative.
     pub dest_w: u16,
-    /// Destination height of the decoded frame region.
+    /// Logical surface height (independent of the codec's padded row stride).
     pub dest_h: u16,
+    /// Zero/zero means unknown until the bitstream is decoded.
+    pub coded_width: u16,
+    pub coded_height: u16,
+    /// Exclusive surface-relative rectangles to copy from the decoded picture.
+    pub region_rects: Vec<GfxRect16>,
     /// Raw H.264 NAL unit bytes (not decoded).
     pub nal_data: Vec<u8>,
+}
+
+impl GfxNalFrame {
+    pub fn payload_bytes(&self) -> Option<usize> {
+        self.region_rects
+            .len()
+            .checked_mul(8)?
+            .checked_add(28)?
+            .checked_add(self.nal_data.len())
+    }
 }
 
 /// Output from the GFX processor — either decoded RGBA or raw NAL passthrough.
@@ -137,7 +236,7 @@ impl GfxOutput {
     fn retained_bytes(&self) -> usize {
         match self {
             Self::Rgba(frame) => frame.rgba.len().saturating_add(8),
-            Self::Nal(frame) => frame.nal_data.len().saturating_add(16),
+            Self::Nal(frame) => frame.payload_bytes().unwrap_or(usize::MAX),
         }
     }
 
@@ -252,13 +351,25 @@ impl Drop for GfxFrameReceiver {
 }
 
 /// GFX processor state.
+const MAX_SURFACE_DECODERS: usize = 8;
+const MAX_PENDING_DECODE_MASKS: usize = 8;
+
+struct SurfaceDecoder {
+    decoder: Box<dyn H264Decoder>,
+    masks: HashMap<u64, Vec<GfxRect16>>,
+    next_picture_id: u64,
+    last_used: u64,
+    needs_keyframe: bool,
+}
+
 pub struct GfxProcessor {
     surfaces: SurfaceManager,
-    h264_decoder: Option<Box<dyn H264Decoder>>,
+    h264_decoders: HashMap<u16, SurfaceDecoder>,
+    decoder_use: u64,
     /// Prevent a missing optional decoder from triggering filesystem/hash/load
     /// work and error logging for every incoming AVC frame. Reset/close clears
     /// this flag so a deliberately restarted graphics channel may retry.
-    decoder_init_attempted: bool,
+    decoder_initialization_failed: bool,
     decoder_preference: H264DecoderPreference,
     /// Negotiated capability version.
     cap_version: Option<u32>,
@@ -307,8 +418,9 @@ impl GfxProcessor {
         }));
         Self {
             surfaces: SurfaceManager::new(),
-            h264_decoder: None,
-            decoder_init_attempted: false,
+            h264_decoders: HashMap::new(),
+            decoder_use: 0,
+            decoder_initialization_failed: false,
             decoder_preference,
             cap_version: None,
             frame_tx,
@@ -383,26 +495,50 @@ impl GfxProcessor {
         self.last_error_class = Some(class.to_string());
     }
 
-    fn ensure_decoder(&mut self) {
-        self.ensure_decoder_with(h264::create_decoder);
+    fn ensure_decoder(&mut self, surface_id: u16) {
+        self.ensure_decoder_with(surface_id, h264::create_decoder);
     }
 
-    fn ensure_decoder_with<F>(&mut self, create: F)
+    fn ensure_decoder_with<F>(&mut self, surface_id: u16, create: F)
     where
         F: FnOnce(
             H264DecoderPreference,
         ) -> Result<(Box<dyn H264Decoder>, &'static str), h264::H264Error>,
     {
-        if self.h264_decoder.is_some() || self.decoder_init_attempted {
+        self.decoder_use = self.decoder_use.saturating_add(1);
+        if let Some(decoder) = self.h264_decoders.get_mut(&surface_id) {
+            decoder.last_used = self.decoder_use;
             return;
         }
-        self.decoder_init_attempted = true;
+        if self.decoder_initialization_failed {
+            return;
+        }
+        if self.h264_decoders.len() >= MAX_SURFACE_DECODERS {
+            if let Some(oldest) = self
+                .h264_decoders
+                .iter()
+                .min_by_key(|(_, slot)| slot.last_used)
+                .map(|(&id, _)| id)
+            {
+                self.h264_decoders.remove(&oldest);
+            }
+        }
         match create(self.decoder_preference) {
             Ok((dec, name)) => {
-                log::info!("GFX: H.264 decoder initialized: {name}");
-                self.h264_decoder = Some(dec);
+                log::info!("GFX: surface {surface_id} H.264 decoder initialized: {name}");
+                self.h264_decoders.insert(
+                    surface_id,
+                    SurfaceDecoder {
+                        decoder: dec,
+                        masks: HashMap::new(),
+                        next_picture_id: 0,
+                        last_used: self.decoder_use,
+                        needs_keyframe: true,
+                    },
+                );
             }
             Err(e) => {
+                self.decoder_initialization_failed = true;
                 log::error!("GFX: H.264 decoder init failed: {e}");
             }
         }
@@ -433,6 +569,7 @@ impl GfxProcessor {
     fn handle_create_surface(&mut self, body: &[u8]) -> Vec<DvcMessage> {
         match CreateSurface::parse(body) {
             Ok(cs) => {
+                self.h264_decoders.remove(&cs.surface_id);
                 self.surfaces
                     .create_surface(cs.surface_id, cs.width, cs.height);
                 // Surface count changed — refresh the snapshot.
@@ -449,6 +586,7 @@ impl GfxProcessor {
     fn handle_delete_surface(&mut self, body: &[u8]) -> Vec<DvcMessage> {
         match DeleteSurface::parse(body) {
             Ok(ds) => {
+                self.h264_decoders.remove(&ds.surface_id);
                 self.surfaces.delete_surface(ds.surface_id);
                 self.publish();
             }
@@ -522,8 +660,8 @@ impl GfxProcessor {
                     rg.monitor_count
                 );
                 self.surfaces.reset();
-                self.h264_decoder = None;
-                self.decoder_init_attempted = false;
+                self.h264_decoders.clear();
+                self.decoder_initialization_failed = false;
                 // Surfaces were dropped; refresh the snapshot (stay Ready).
                 self.publish();
             }
@@ -545,8 +683,23 @@ impl GfxProcessor {
             }
         };
 
+        let valid_surface = self
+            .surfaces
+            .get_surface(wts.surface_id)
+            .is_some_and(|surface| {
+                rect_fits(
+                    &wts.dest_rect,
+                    u32::from(surface.width),
+                    u32::from(surface.height),
+                )
+            });
+        if !valid_surface {
+            self.record_pipeline_error("wire_to_surface_bounds_invalid");
+            return Vec::new();
+        }
+
         match wts.codec_id {
-            CODEC_CAVIDEO => {
+            CODEC_AVC420 => {
                 // Surface the in-use codec from the first AVC420 frame if caps
                 // negotiation didn't already label it.
                 if self.codec.is_none() {
@@ -584,38 +737,78 @@ impl GfxProcessor {
             return;
         }
 
-        let dest_w = wts.dest_rect.right.saturating_sub(wts.dest_rect.left);
-        let dest_h = wts.dest_rect.bottom.saturating_sub(wts.dest_rect.top);
+        let Some(surface) = self.surfaces.get_surface(wts.surface_id) else {
+            return;
+        };
+        if avc
+            .region_rects
+            .iter()
+            .any(|rect| !rect_fits(rect, u32::from(surface.width), u32::from(surface.height)))
+        {
+            self.record_pipeline_error("avc420_mask_out_of_bounds");
+            return;
+        }
 
         // ── NAL passthrough: send raw H.264 to frontend for WebCodecs decode ──
         if self.nal_passthrough {
-            if let Some(surface) = self.surfaces.get_surface(wts.surface_id) {
-                if let Some((ox, oy)) = surface.output_origin {
-                    let screen_x = ox as u16 + wts.dest_rect.left;
-                    let screen_y = oy as u16 + wts.dest_rect.top;
+            if let Some((ox, oy)) = surface.output_origin {
+                if let (Ok(screen_x), Ok(screen_y)) = (u16::try_from(ox), u16::try_from(oy)) {
+                    if avc.region_rects.iter().any(|rect| {
+                        screen_x.checked_add(rect.right).is_none()
+                            || screen_y.checked_add(rect.bottom).is_none()
+                    }) {
+                        self.record_pipeline_error("gfx_output_origin_out_of_bounds");
+                        return;
+                    }
                     let _ = self.frame_tx.send(GfxOutput::Nal(GfxNalFrame {
                         surface_id: wts.surface_id,
                         screen_x,
                         screen_y,
-                        dest_w,
-                        dest_h,
-                        nal_data: avc.h264_data.to_vec(),
+                        dest_w: surface.width,
+                        dest_h: surface.height,
+                        coded_width: 0,
+                        coded_height: 0,
+                        region_rects: avc.region_rects,
+                        nal_data: avc.h264_data,
                     }));
+                } else {
+                    self.record_pipeline_error("gfx_output_origin_out_of_bounds");
                 }
             }
             return;
         }
 
         // ── Legacy path: decode H.264 on backend, send RGBA ──
-        self.ensure_decoder();
-        let decoder = match self.h264_decoder.as_mut() {
+        self.ensure_decoder(wts.surface_id);
+        let slot = match self.h264_decoders.get_mut(&wts.surface_id) {
             Some(d) => d,
             None => return,
         };
 
-        let frames: Vec<DecodedFrame> = match decoder.decode(&avc.h264_data) {
+        let contains_picture = annex_b_has_nal(&avc.h264_data, |kind| (1..=5).contains(&kind));
+        let keyframe = annex_b_has_nal(&avc.h264_data, |kind| kind == 5);
+        if contains_picture && slot.needs_keyframe && !keyframe {
+            return;
+        }
+        if keyframe {
+            slot.needs_keyframe = false;
+        }
+        slot.next_picture_id = slot.next_picture_id.wrapping_add(1).max(1);
+        let picture_id = slot.next_picture_id;
+        if contains_picture {
+            if slot.masks.len() >= MAX_PENDING_DECODE_MASKS {
+                slot.masks.clear();
+                slot.needs_keyframe = true;
+                self.record_pipeline_error("h264_pending_mask_limit");
+                return;
+            }
+            slot.masks.insert(picture_id, avc.region_rects);
+        }
+        let frames: Vec<DecodedFrame> = match slot.decoder.decode(&avc.h264_data, picture_id) {
             Ok(f) => f,
             Err(e) => {
+                slot.masks.clear();
+                slot.needs_keyframe = true;
                 log::warn!("GFX: H.264 decode error: {e}");
                 self.record_pipeline_error("h264_decode_error");
                 return;
@@ -623,29 +816,21 @@ impl GfxProcessor {
         };
 
         for frame in frames {
-            // Blit decoded RGBA into the target surface
-            self.surfaces.blit_to_surface(
-                wts.surface_id,
-                &frame.rgba,
-                frame.width,
-                wts.dest_rect.left,
-                wts.dest_rect.top,
-                dest_w,
-                dest_h,
-            );
-
-            // If this surface is mapped to the output, send the frame
-            if let Some(surface) = self.surfaces.get_surface(wts.surface_id) {
-                if let Some((ox, oy)) = surface.output_origin {
-                    let screen_x = ox as u16 + wts.dest_rect.left;
-                    let screen_y = oy as u16 + wts.dest_rect.top;
-                    let _ = self.frame_tx.send(GfxOutput::Rgba(GfxFrame {
-                        screen_x,
-                        screen_y,
-                        width: dest_w,
-                        height: dest_h,
-                        rgba: frame.rgba,
-                    }));
+            let regions = self
+                .h264_decoders
+                .get_mut(&wts.surface_id)
+                .and_then(|slot| slot.masks.remove(&frame.picture_id));
+            let Some(regions) = regions else {
+                self.record_pipeline_error("h264_output_without_mask");
+                continue;
+            };
+            if let Some(surface) = self.surfaces.get_surface_mut(wts.surface_id) {
+                match apply_avc420_regions(surface, &frame, &regions) {
+                    Ok(Some(output)) => {
+                        let _ = self.frame_tx.send(GfxOutput::Rgba(output));
+                    }
+                    Ok(None) => {}
+                    Err(class) => self.record_pipeline_error(class),
                 }
             }
         }
@@ -668,6 +853,11 @@ impl GfxProcessor {
         // Convert BGRX/BGRA -> RGBA using SIMD-dispatched conversion.
         let mut rgba = wts.bitmap_data[..expected_len].to_vec();
         crate::h264::yuv_convert::bgra_to_rgba_inplace(&mut rgba);
+        if wts.pixel_format == 0x20 {
+            for pixel in rgba.chunks_exact_mut(4) {
+                pixel[3] = 255;
+            }
+        }
 
         self.surfaces.blit_to_surface(
             wts.surface_id,
@@ -681,8 +871,20 @@ impl GfxProcessor {
 
         if let Some(surface) = self.surfaces.get_surface(wts.surface_id) {
             if let Some((ox, oy)) = surface.output_origin {
-                let screen_x = ox as u16 + wts.dest_rect.left;
-                let screen_y = oy as u16 + wts.dest_rect.top;
+                let Some(screen_x) = u16::try_from(ox)
+                    .ok()
+                    .and_then(|x| x.checked_add(wts.dest_rect.left))
+                else {
+                    self.record_pipeline_error("gfx_output_origin_out_of_bounds");
+                    return;
+                };
+                let Some(screen_y) = u16::try_from(oy)
+                    .ok()
+                    .and_then(|y| y.checked_add(wts.dest_rect.top))
+                else {
+                    self.record_pipeline_error("gfx_output_origin_out_of_bounds");
+                    return;
+                };
                 let _ = self.frame_tx.send(GfxOutput::Rgba(GfxFrame {
                     screen_x,
                     screen_y,
@@ -762,8 +964,8 @@ impl DvcProcessor for GfxProcessor {
     fn close(&mut self, channel_id: u32) {
         log::info!("GFX: DVC channel closed (id={channel_id})");
         self.surfaces.reset();
-        self.h264_decoder = None;
-        self.decoder_init_attempted = false;
+        self.h264_decoders.clear();
+        self.decoder_initialization_failed = false;
         // Channel closed but re-openable → back to Registered (mirrors AUDIN).
         self.set_channel_state(VirtualChannelState::Registered);
     }
@@ -800,6 +1002,7 @@ mod tests {
             dest_w: 1,
             dest_h: 1,
             nal_data: vec![0; bytes],
+            ..GfxNalFrame::default()
         })
     }
 
@@ -892,24 +1095,265 @@ mod tests {
 
         let (mut proc, _rx) = new_processor();
         let calls = Cell::new(0);
-        proc.ensure_decoder_with(|_| {
+        proc.ensure_decoder_with(1, |_| {
             calls.set(calls.get() + 1);
             Err(h264::H264Error::InitFailed(
                 "missing optional module".into(),
             ))
         });
-        proc.ensure_decoder_with(|_| {
+        proc.ensure_decoder_with(2, |_| {
             calls.set(calls.get() + 1);
             Err(h264::H264Error::InitFailed("must not run".into()))
         });
         assert_eq!(calls.get(), 1);
 
         proc.close(7);
-        proc.ensure_decoder_with(|_| {
+        proc.ensure_decoder_with(1, |_| {
             calls.set(calls.get() + 1);
             Err(h264::H264Error::InitFailed("retry after close".into()))
         });
         assert_eq!(calls.get(), 2);
+    }
+
+    struct ReorderingDecoder {
+        held: Option<u64>,
+    }
+    impl H264Decoder for ReorderingDecoder {
+        fn decode(
+            &mut self,
+            _: &[u8],
+            picture_id: u64,
+        ) -> Result<Vec<DecodedFrame>, h264::H264Error> {
+            if let Some(first) = self.held.take() {
+                Ok(vec![
+                    DecodedFrame {
+                        picture_id,
+                        width: 4,
+                        height: 2,
+                        rgba: vec![22; 32],
+                    },
+                    DecodedFrame {
+                        picture_id: first,
+                        width: 4,
+                        height: 2,
+                        rgba: vec![11; 32],
+                    },
+                ])
+            } else {
+                self.held = Some(picture_id);
+                Ok(Vec::new())
+            }
+        }
+        fn name(&self) -> &'static str {
+            "reordering-test"
+        }
+    }
+
+    fn avc_update(surface_id: u16, rect: GfxRect16, keyframe: bool) -> WireToSurface1 {
+        let mut bitmap_data = 1u32.to_le_bytes().to_vec();
+        for edge in [rect.left, rect.top, rect.right, rect.bottom] {
+            bitmap_data.extend_from_slice(&edge.to_le_bytes());
+        }
+        bitmap_data.extend_from_slice(&[0, 0]); // quantization metadata
+        bitmap_data.extend_from_slice(&[0, 0, 0, 1, if keyframe { 0x65 } else { 0x41 }, 0]);
+        WireToSurface1 {
+            surface_id,
+            codec_id: CODEC_AVC420,
+            pixel_format: 0x20,
+            dest_rect: rect,
+            bitmap_data,
+        }
+    }
+
+    #[test]
+    fn independent_surface_decoders_correlate_reordered_picture_masks() {
+        let (mut proc, rx) = new_processor();
+        for id in [1, 2] {
+            proc.surfaces.create_surface(id, 4, 2);
+            proc.surfaces
+                .map_surface_to_output(id, u32::from(id) * 10, 0);
+            proc.ensure_decoder_with(id, |_| {
+                Ok((Box::new(ReorderingDecoder { held: None }), "test"))
+            });
+        }
+        let left = GfxRect16 {
+            left: 0,
+            top: 0,
+            right: 1,
+            bottom: 1,
+        };
+        let right = GfxRect16 {
+            left: 3,
+            top: 1,
+            right: 4,
+            bottom: 2,
+        };
+        proc.decode_avc420(&avc_update(1, left, true));
+        proc.decode_avc420(&avc_update(2, right, true));
+        assert!(
+            rx.try_recv().is_err(),
+            "each independent decoder must hold its first picture"
+        );
+        proc.decode_avc420(&avc_update(1, right, false));
+        let GfxOutput::Rgba(second) = rx.try_recv().unwrap() else {
+            panic!()
+        };
+        let GfxOutput::Rgba(first) = rx.try_recv().unwrap() else {
+            panic!()
+        };
+        assert_eq!(
+            (second.screen_x, second.screen_y, second.rgba),
+            (13, 1, vec![22; 4])
+        );
+        assert_eq!(
+            (first.screen_x, first.screen_y, first.rgba),
+            (10, 0, vec![11; 4])
+        );
+        assert!(proc
+            .surfaces
+            .get_surface(2)
+            .unwrap()
+            .rgba
+            .iter()
+            .all(|&b| b == 0));
+        assert_eq!(proc.h264_decoders[&2].masks.len(), 1);
+        assert!(proc.h264_decoders[&1].masks.is_empty());
+    }
+
+    #[test]
+    fn decoder_surface_lru_is_bounded_and_reused_ids_reset_references() {
+        let (mut proc, _) = new_processor();
+        for id in 0..MAX_SURFACE_DECODERS as u16 {
+            proc.ensure_decoder_with(id, |_| {
+                Ok((Box::new(ReorderingDecoder { held: None }), "test"))
+            });
+        }
+        proc.ensure_decoder_with(0, |_| panic!("live surface decoder must be reused"));
+        proc.ensure_decoder_with(100, |_| {
+            Ok((Box::new(ReorderingDecoder { held: None }), "test"))
+        });
+        assert_eq!(proc.h264_decoders.len(), MAX_SURFACE_DECODERS);
+        assert!(proc.h264_decoders.contains_key(&0));
+        assert!(!proc.h264_decoders.contains_key(&1));
+        assert!(proc.h264_decoders[&100].needs_keyframe);
+        let mut body = 0u16.to_le_bytes().to_vec();
+        body.extend_from_slice(&4u16.to_le_bytes());
+        body.extend_from_slice(&2u16.to_le_bytes());
+        body.push(0x20);
+        proc.process(7, &gfx_pdu(GfxCmdId::CreateSurface, &body))
+            .unwrap();
+        assert!(!proc.h264_decoders.contains_key(&0));
+    }
+
+    #[test]
+    fn padded_avc_picture_uses_decoded_stride_and_preserves_unmasked_surface_pixels() {
+        let mut surfaces = SurfaceManager::new();
+        surfaces.create_surface(1, 5, 3);
+        surfaces.map_surface_to_output(1, 100, 200);
+        let surface = surfaces.get_surface_mut(1).unwrap();
+        surface.rgba.fill(99);
+        let rgba = (0..8 * 4 * 4).map(|i| (i % 251) as u8).collect();
+        let frame = DecodedFrame {
+            picture_id: 1,
+            width: 8,
+            height: 4,
+            rgba,
+        };
+        let rects = [
+            GfxRect16 {
+                left: 1,
+                top: 1,
+                right: 2,
+                bottom: 3,
+            },
+            GfxRect16 {
+                left: 4,
+                top: 2,
+                right: 5,
+                bottom: 3,
+            },
+        ];
+        let output = apply_avc420_regions(surface, &frame, &rects)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (
+                output.screen_x,
+                output.screen_y,
+                output.width,
+                output.height
+            ),
+            (101, 201, 4, 2)
+        );
+        for y in 0..3 {
+            for x in 0..5 {
+                let target = (y * 5 + x) * 4;
+                let changed = (x == 1 && y >= 1) || (x == 4 && y == 2);
+                let expected = if changed {
+                    &frame.rgba[(y * 8 + x) * 4..(y * 8 + x) * 4 + 4]
+                } else {
+                    &[99; 4]
+                };
+                assert_eq!(&surface.rgba[target..target + 4], expected);
+                if x >= 1 && y >= 1 {
+                    let packed = ((y - 1) * 4 + x - 1) * 4;
+                    assert_eq!(&output.rgba[packed..packed + 4], expected);
+                }
+            }
+        }
+        assert!(apply_avc420_regions(surface, &frame, &[])
+            .unwrap()
+            .is_none());
+        let before = surface.rgba.clone();
+        assert!(apply_avc420_regions(
+            surface,
+            &frame,
+            &[GfxRect16 {
+                left: 4,
+                top: 0,
+                right: 6,
+                bottom: 1
+            }]
+        )
+        .is_err());
+        assert_eq!(surface.rgba, before, "invalid masks never partially apply");
+        surface.output_origin = Some((65535, 0));
+        assert!(apply_avc420_regions(surface, &frame, &rects).is_err());
+    }
+
+    #[test]
+    fn spec_wire_layout_routes_avc420_mask_and_surface_origin_to_passthrough() {
+        let (mut proc, rx) = new_processor();
+        proc.nal_passthrough = true;
+        proc.surfaces.create_surface(7, 16, 16);
+        proc.surfaces.map_surface_to_output(7, 200, 300);
+        let rect = GfxRect16 {
+            left: 5,
+            top: 6,
+            right: 9,
+            bottom: 10,
+        };
+        let update = avc_update(7, rect, true);
+        let mut body = 7u16.to_le_bytes().to_vec();
+        body.extend_from_slice(&CODEC_AVC420.to_le_bytes());
+        body.push(0x20);
+        for edge in [rect.left, rect.top, rect.right, rect.bottom] {
+            body.extend_from_slice(&edge.to_le_bytes());
+        }
+        body.extend_from_slice(&(update.bitmap_data.len() as u32).to_le_bytes());
+        body.extend_from_slice(&update.bitmap_data);
+        proc.process(7, &gfx_pdu(GfxCmdId::WireToSurface1, &body))
+            .unwrap();
+        let GfxOutput::Nal(nal) = rx.try_recv().unwrap() else {
+            panic!()
+        };
+        assert_eq!(
+            (nal.screen_x, nal.screen_y, nal.dest_w, nal.dest_h),
+            (200, 300, 16, 16)
+        );
+        assert_eq!(nal.region_rects, vec![rect]);
+        assert_eq!(nal.coded_width, 0);
+        assert_eq!(nal.nal_data, [0, 0, 0, 1, 0x65, 0]);
     }
 
     #[test]

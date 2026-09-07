@@ -51,6 +51,7 @@ impl SurfaceManager {
         let mut rgba = self.buffer_pool.acquire(size);
         // Zero-fill (pool buffers may contain stale data).
         rgba.resize(size, 0);
+        rgba.fill(0);
         self.surfaces.insert(
             surface_id,
             GfxSurface {
@@ -80,6 +81,10 @@ impl SurfaceManager {
 
     pub fn get_surface(&self, surface_id: u16) -> Option<&GfxSurface> {
         self.surfaces.get(&surface_id)
+    }
+
+    pub fn get_surface_mut(&mut self, surface_id: u16) -> Option<&mut GfxSurface> {
+        self.surfaces.get_mut(&surface_id)
     }
 
     /// Number of currently-allocated surfaces. Surfaced into the GFX

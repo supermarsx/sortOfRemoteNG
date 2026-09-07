@@ -33,6 +33,12 @@ Sensitive keys—passwords, tokens, private keys, passphrases, secrets, recovery
 
 RDP groups connection identity, authentication, display/input, resources, security, Network Path, network transport, advanced settings, and recovery. SSH groups authentication, terminal overrides, Network Path, connection networking, and recovery.
 
+### RDP frame delivery
+
+RDP delivery is uncapped by default and adapts to session activity and available capacity. Idle sessions do not redraw. In **Settings → RDP Defaults → Performance**, enable **Limit frame rate** to set an optional maximum FPS, including values such as 144 or 240. Each connection can inherit this limit, disable it with **Uncapped (adaptive)**, or specify its own maximum. Network speed presets only adjust visual options.
+
+Older saved FPS numbers do not enable a limit automatically; opt in explicitly to apply them. Frame batching combines pending screen changes without a timed wait, and saved batch intervals are retained only for compatibility. The native **Wgpu** option currently uses a CPU compatibility fallback; frontend WebGL and WebCodecs GPU capabilities are separate.
+
 The dedicated [Network Paths]({{ '/network-paths/' | relative_url }}) page explains why routing is separate from ordinary TCP, gateway, and terminal settings.
 
 Cloud connections use a provider subtab whose visible fields map directly to

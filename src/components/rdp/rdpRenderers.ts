@@ -28,6 +28,11 @@ import type {
   RdpH264RecoveryReason,
   RdpH264RecoveryState,
 } from "../../types/rdp/rdpEvents";
+import {
+  NAL_V2_MAGIC,
+  parseRdpNalEnvelope,
+  parseRdpRgbaEnvelope,
+} from "./rdpFrameProtocol";
 
 // ─── ArrayBuffer normalization ─────────────────────────────────────────────
 // Tauri channels may deliver typed arrays (Uint8Array) instead of raw ArrayBuffer.
@@ -97,7 +102,14 @@ export interface FrameRenderer {
    * WebGPU / Worker renderers need an explicit present step after the
    * paint-region loop so they can issue a single draw-call per vsync.
    */
-  present(): void;
+  present(display?: boolean): void;
+  /** Settles when submitted worker work has been consumed (native credit). */
+  waitForIdle?(): Promise<void>;
+  getPendingMetrics?(): {
+    frames: number;
+    bytes: number;
+    oldestPendingMs: number;
+  };
   /** Reset any stateful H.264 decoder after transport discontinuity. */
   resetH264Recovery?(reason: RdpH264RecoveryReason): void;
   /** Release all GPU / worker resources. */
@@ -107,6 +119,9 @@ export interface FrameRenderer {
 /** Options for renderer creation. */
 export interface RendererOptions {
   tripleBuffering?: boolean;
+  targetFps?: number;
+  /** Actual canvas presentation; never called for message submission alone. */
+  onPresented?: (durationMs: number, coalescedFrames?: number) => void;
   onH264RecoveryStateChange?: (
     state: RdpH264RecoveryState,
     reason?: RdpH264RecoveryReason,
@@ -265,8 +280,9 @@ class Canvas2DRenderer implements FrameRenderer {
   readonly tripleBuffered = false;
   private visCtx: CanvasRenderingContext2D;
   /** Off-screen back-buffer (null when OffscreenCanvas is unavailable). */
-  private backBuffer: OffscreenCanvas | null = null;
-  private backCtx: OffscreenCanvasRenderingContext2D | null = null;
+  private backBuffer: OffscreenCanvas | HTMLCanvasElement | null = null;
+  private backCtx:
+    OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
   /** Cached ImageData to avoid per-frame allocation. Reused when (w,h) matches. */
   private cachedImg: ImageData | null = null;
   private cachedW = 0;
@@ -294,6 +310,13 @@ class Canvas2DRenderer implements FrameRenderer {
       } catch {
         // OffscreenCanvas may exist but fail in some environments.
       }
+    }
+    if (!this.backCtx) {
+      const back = document.createElement("canvas");
+      back.width = canvas.width;
+      back.height = canvas.height;
+      this.backCtx = back.getContext("2d");
+      if (this.backCtx) this.backBuffer = back;
     }
   }
 
@@ -335,7 +358,12 @@ class Canvas2DRenderer implements FrameRenderer {
       const oldH = this.backBuffer.height;
       if (width === oldW && height === oldH) return;
 
-      const tmp = new OffscreenCanvas(oldW, oldH);
+      const tmp =
+        typeof OffscreenCanvas !== "undefined"
+          ? new OffscreenCanvas(oldW, oldH)
+          : document.createElement("canvas");
+      tmp.width = oldW;
+      tmp.height = oldH;
       const tmpCtx = tmp.getContext("2d");
       if (tmpCtx && this.dirty) {
         tmpCtx.drawImage(this.backBuffer, 0, 0);
@@ -353,8 +381,8 @@ class Canvas2DRenderer implements FrameRenderer {
     }
   }
 
-  present(): void {
-    if (!this.dirty) return;
+  present(display = true): void {
+    if (!display || !this.dirty) return;
     if (this.backBuffer) {
       // Single, atomic blit from back-buffer to visible canvas.
       // drawImage is composited as one operation by the browser, so the
@@ -411,6 +439,7 @@ class WebGLRenderer implements FrameRenderer {
   private fboPair: [WebGLFramebuffer, WebGLFramebuffer] | null = null;
   private writeIdx = 0; // index into texPair: which texture receives uploads
   private isWebGL2 = false;
+  private dirtyBounds: [number, number, number, number] | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -561,6 +590,7 @@ class WebGLRenderer implements FrameRenderer {
     }
     this.texW = w;
     this.texH = h;
+    this.dirtyBounds = null;
   }
 
   // ── FrameRenderer interface ──
@@ -594,10 +624,21 @@ class WebGLRenderer implements FrameRenderer {
       rgba,
     );
     this.dirty = true;
+    if (this.tripleBuffered) {
+      const bounds = this.dirtyBounds;
+      this.dirtyBounds = bounds
+        ? [
+            Math.min(bounds[0], x),
+            Math.min(bounds[1], y),
+            Math.max(bounds[2], x + w),
+            Math.max(bounds[3], y + h),
+          ]
+        : [x, y, x + w, y + h];
+    }
   }
 
-  present(): void {
-    if (!this.dirty) return;
+  present(display = true): void {
+    if (!display || !this.dirty) return;
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 
@@ -613,20 +654,21 @@ class WebGLRenderer implements FrameRenderer {
       const prevWrite = this.writeIdx;
       this.writeIdx = 1 - this.writeIdx;
 
-      // 3. Blit prevWrite → newWrite so the new write texture starts with
-      //    the full current desktop state (needed for incremental dirty rects).
-      //    This is a pure GPU-to-GPU copy — no CPU involvement.
+      // Both textures matched after the previous present. Copy only this
+      // batch's changed bounds to preserve that invariant, avoiding a desktop
+      // sized copy for a blinking caret or a small cursor update.
       gl2.bindFramebuffer(gl2.READ_FRAMEBUFFER, this.fboPair[prevWrite]);
       gl2.bindFramebuffer(gl2.DRAW_FRAMEBUFFER, this.fboPair[this.writeIdx]);
+      const [left, top, right, bottom] = this.dirtyBounds!;
       gl2.blitFramebuffer(
-        0,
-        0,
-        this.texW,
-        this.texH,
-        0,
-        0,
-        this.texW,
-        this.texH,
+        left,
+        top,
+        right,
+        bottom,
+        left,
+        top,
+        right,
+        bottom,
         gl.COLOR_BUFFER_BIT,
         gl.NEAREST,
       );
@@ -644,6 +686,7 @@ class WebGLRenderer implements FrameRenderer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     this.dirty = false;
+    this.dirtyBounds = null;
   }
 
   resize(width: number, height: number): void {
@@ -702,6 +745,7 @@ const WEBGPU_MAX_PENDING_PAINTS = 4;
 const WEBGPU_MAX_PENDING_PAINT_BYTES = 16 * 1024 * 1024;
 
 class WebGPURenderer implements FrameRenderer {
+  private presentationRequested = false;
   readonly name = "WebGPU";
   readonly type: FrontendRendererType = "webgpu";
   readonly tripleBuffered = false; // WebGPU manages its own swap chain
@@ -818,7 +862,7 @@ class WebGPURenderer implements FrameRenderer {
           ),
         );
       }
-      this.fallback.present();
+      if (this.presentationRequested) this.fallback.present();
       window.dispatchEvent(
         new CustomEvent("rdp:webgpu-fallback", {
           detail: {
@@ -917,7 +961,7 @@ class WebGPURenderer implements FrameRenderer {
       );
     }
     const hadPending = pendingPaints.length;
-    if (hadPending > 0) {
+    if (hadPending > 0 && this.presentationRequested) {
       this.present();
       console.log(
         `[WebGPU] flushed ${hadPending} pending paints, dirty=${this.dirty}`,
@@ -1019,7 +1063,9 @@ class WebGPURenderer implements FrameRenderer {
     this.dirty = true;
   }
 
-  present(): void {
+  present(display = true): void {
+    this.presentationRequested = display;
+    if (!display) return;
     if (this.fallback) {
       this.fallback.present();
       return;
@@ -1100,6 +1146,8 @@ class WebGPURenderer implements FrameRenderer {
 function createPaintWorkerBlob(): Blob {
   const code = `
     let ctx = null;
+    let visibleCtx = null;
+    let backCanvas = null;
     let w = 0, h = 0;
 
     function toDataView(data) {
@@ -1124,7 +1172,9 @@ function createPaintWorkerBlob(): Blob {
         const canvas = msg.canvas;
         w = canvas.width;
         h = canvas.height;
-        ctx = canvas.getContext('2d', { desynchronized: false });
+        visibleCtx = canvas.getContext('2d', { desynchronized: false });
+        backCanvas = new OffscreenCanvas(w, h);
+        ctx = backCanvas.getContext('2d');
         return;
       }
 
@@ -1137,13 +1187,20 @@ function createPaintWorkerBlob(): Blob {
           ctx.canvas.width = w;
           ctx.canvas.height = h;
         }
+        if (visibleCtx) {
+          visibleCtx.canvas.width = w;
+          visibleCtx.canvas.height = h;
+        }
         return;
       }
 
       // Frame batch: { type: 'frames', batchId, buffers: ArrayBuffer[] }
       if (msg.type === 'frames') {
         const buffers = msg.buffers;
-        let failed = !ctx;
+        const startedAt = Number.isFinite(msg.sentAt)
+          ? msg.sentAt - performance.timeOrigin : performance.now();
+        let failed = !ctx || !visibleCtx;
+        let painted = false;
         try {
           if (ctx) {
             for (let i = 0; i < buffers.length; i++) {
@@ -1161,13 +1218,16 @@ function createPaintWorkerBlob(): Blob {
               const rgba = toUint8ClampedArray(data, 8, pixelBytes);
               const imgData = new ImageData(rgba, rw, rh);
               ctx.putImageData(imgData, x, y);
+              painted = true;
             }
+            if (msg.display !== false && painted && visibleCtx) visibleCtx.drawImage(backCanvas, 0, 0);
           }
         } catch (error) {
           failed = true;
           console.error('[Offscreen paint worker] frame batch failed:', error);
         } finally {
-          self.postMessage({ type: 'frames-consumed', batchId: msg.batchId, failed });
+          self.postMessage({ type: 'frames-consumed', batchId: msg.batchId, failed,
+            presented: msg.display !== false && painted && !failed, durationMs: performance.now() - startedAt });
         }
       }
     };
@@ -1190,6 +1250,7 @@ class OffscreenWorkerRenderer implements FrameRenderer {
   private ready = false;
   private pendingFrames: ArrayBuffer[] = [];
   private pendingBytes = 0;
+  private pendingDisplay = false;
   private inFlightBatches = new Map<
     number,
     { frameCount: number; byteLength: number; recoveryEpoch?: number }
@@ -1197,6 +1258,8 @@ class OffscreenWorkerRenderer implements FrameRenderer {
   private inFlightFrames = 0;
   private inFlightBytes = 0;
   private nextBatchId = 1;
+  private idleWaiters = new Set<() => void>();
+  private pendingSince: number | null = null;
   private recoveryPending = false;
   private recoveryEpoch = 0;
   private recoveryNextY = 0;
@@ -1218,6 +1281,12 @@ class OffscreenWorkerRenderer implements FrameRenderer {
 
     this.worker.onmessage = (event) => {
       if (this.destroyed || event.data?.type !== "frames-consumed") return;
+      if (
+        event.data.presented === true &&
+        this.inFlightBatches.has(event.data.batchId)
+      ) {
+        this.options?.onPresented?.(event.data.durationMs);
+      }
       this.handleBatchConsumed(event.data.batchId, event.data.failed === true);
     };
 
@@ -1270,11 +1339,35 @@ class OffscreenWorkerRenderer implements FrameRenderer {
     new Uint8ClampedArray(buf, 8).set(rgba.subarray(0, pixelBytes));
     this.pendingFrames.push(buf);
     this.pendingBytes += byteLen;
+    this.pendingSince ??= performance.now();
   }
 
   /** Flush all queued paints to the worker (called once per rAF). */
-  present(): void {
+  present(display = true): void {
+    this.pendingDisplay = display;
     this.dispatchPendingBatch();
+  }
+
+  getPendingMetrics() {
+    return {
+      frames: this.pendingFrames.length + this.inFlightFrames,
+      bytes: this.pendingBytes + this.inFlightBytes,
+      oldestPendingMs:
+        this.pendingSince === null ? 0 : performance.now() - this.pendingSince,
+    };
+  }
+
+  waitForIdle(): Promise<void> {
+    if (this.destroyed || this.getPendingMetrics().frames === 0)
+      return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.add(resolve));
+  }
+
+  private notifyIdle(): void {
+    if (!this.destroyed && this.getPendingMetrics().frames > 0) return;
+    this.pendingSince = null;
+    for (const resolve of this.idleWaiters) resolve();
+    this.idleWaiters.clear();
   }
 
   private dispatchPendingBatch(): void {
@@ -1295,6 +1388,7 @@ class OffscreenWorkerRenderer implements FrameRenderer {
     const bufs = this.pendingFrames;
     const frameCount = bufs.length;
     const byteLength = this.pendingBytes;
+    const display = this.pendingDisplay;
     this.pendingFrames = [];
     this.pendingBytes = 0;
     const batchId = this.nextBatchId;
@@ -1310,7 +1404,16 @@ class OffscreenWorkerRenderer implements FrameRenderer {
 
     // Transfer ownership of the ArrayBuffers for zero-copy
     try {
-      this.worker.postMessage({ type: "frames", batchId, buffers: bufs }, bufs);
+      this.worker.postMessage(
+        {
+          type: "frames",
+          batchId,
+          buffers: bufs,
+          display,
+          sentAt: performance.timeOrigin + performance.now(),
+        },
+        bufs,
+      );
     } catch (error) {
       this.inFlightBatches.delete(batchId);
       this.inFlightFrames = Math.max(0, this.inFlightFrames - frameCount);
@@ -1372,6 +1475,7 @@ class OffscreenWorkerRenderer implements FrameRenderer {
     // was retained while the worker was saturated without waiting for another
     // native frame or animation tick.
     this.dispatchPendingBatch();
+    this.notifyIdle();
   }
 
   private requestFullRefreshAfterLoss(
@@ -1384,6 +1488,7 @@ class OffscreenWorkerRenderer implements FrameRenderer {
     // invalidated by the epoch; pre-dispatch buffers must be discarded now.
     this.pendingFrames = [];
     this.pendingBytes = 0;
+    this.notifyIdle();
     if (this.recoveryPending) return;
     this.recoveryPending = true;
     this.options?.onH264RecoveryStateChange?.("awaitingRecovery", reason);
@@ -1428,6 +1533,7 @@ class OffscreenWorkerRenderer implements FrameRenderer {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.notifyIdle();
     this.ready = false;
     this.pendingFrames = [];
     this.pendingBytes = 0;
@@ -1457,8 +1563,9 @@ const NAL_HEADER_SIZE = 16;
 
 /** Check if an ArrayBuffer starts with the NAL magic prefix. */
 export function isNalPayload(data: ArrayBuffer | ArrayBufferView): boolean {
-  if (toByteLength(data) < NAL_HEADER_SIZE) return false;
-  return toDataView(data).getUint32(0, true) === NAL_MAGIC;
+  if (toByteLength(data) < 4) return false;
+  const magic = toDataView(data).getUint32(0, true);
+  return magic === NAL_MAGIC || magic === NAL_V2_MAGIC;
 }
 
 function fullWidthRgbaCoverage(
@@ -1470,7 +1577,12 @@ function fullWidthRgbaCoverage(
     return null;
   }
   const view = new DataView(data);
-  let offset = 0;
+  let offset: number;
+  try {
+    offset = parseRdpRgbaEnvelope(data).offset;
+  } catch {
+    return null;
+  }
   let startY: number | undefined;
   let endY = 0;
   while (offset + 8 <= data.byteLength) {
@@ -1506,14 +1618,14 @@ export function parseNalHeader(data: ArrayBuffer | ArrayBufferView): {
   destH: number;
   nalData: Uint8Array;
 } {
-  const view = toDataView(data);
+  const metadata = parseRdpNalEnvelope(data, false);
   return {
-    surfaceId: view.getUint16(4, true),
-    screenX: view.getUint16(6, true),
-    screenY: view.getUint16(8, true),
-    destW: view.getUint16(10, true),
-    destH: view.getUint16(12, true),
-    nalData: toUint8Array(data, NAL_HEADER_SIZE),
+    surfaceId: metadata.surfaceId,
+    screenX: metadata.x,
+    screenY: metadata.y,
+    destW: metadata.width,
+    destH: metadata.height,
+    nalData: toUint8Array(data, metadata.offset),
   };
 }
 
@@ -1530,32 +1642,51 @@ function createWebCodecsWorkerBlob(
 ): Blob {
   const code = `
     'use strict';
+    const parseRdpNalEnvelope = ${parseRdpNalEnvelope.toString()};
+    const parseRdpRgbaEnvelope = ${parseRdpRgbaEnvelope.toString()};
 
     // ── State ──────────────────────────────────────────────────────────
     let canvas = null;
     let gl = null;           // WebGL2RenderingContext
     let ctx2d = null;        // fallback Canvas2D (for RGBA rects when WebGL unavailable)
-    let decoder = null;      // VideoDecoder
     let program = null;
     let texture = null;
+    let decodedTexture = null;
+    let decodedFramebuffer = null;
     let vao = null;
     let w = 0, h = 0;
-    let decoderConfigured = false;
-    let decoderWidth = 0;
-    let decoderHeight = 0;
     let nextInputTimestamp = 0;
-    let acceptedTimestampFloor = 0;
-    let awaitingRecovery = true;
-    let recoveryKeyTimestamp = null;
-    let recoveryNotified = false;
-    let recoveryReason = null;
-    let cachedSps = null;
-    let cachedPps = null;
+    const surfaceDecoders = new Map();
+    const MAX_SURFACE_DECODERS = 8;
+    let presentationIntervalMs = 0;
+    let lastVideoPresentedAt = -Infinity;
+    let videoPresentationPending = false;
+    let pendingVideoWorkMs = 0;
+    let compositeCanvas = null;
+    let compositeCtx = null;
+    let presentationTimer = null;
+    let coalescedPresentations = 0;
+    const decodeStartedAt = new Map();
+    let decodeMetadataBytes = 0;
+    const MAX_DECODE_METADATA_BYTES = 16 * 1024 * 1024;
+    const pendingAcknowledgements = [];
+    let currentFrameStartedAt = 0;
+    let currentFrameRegion = null;
+    let rgbaFrameId = null;
     const HW_ACCEL = '${hwAccel}';
     const NAL_MAGIC = 0x4E414C48;
     const NAL_HEADER_SIZE = 16;
     const MAX_DECODER_PENDING = 4;
     const MAX_PARAMETER_SET_BYTES = 256 * 1024;
+
+    function takeDecodeWork(timestamp) {
+      const work = decodeStartedAt.get(timestamp);
+      if (work) {
+        decodeMetadataBytes -= work.region.regionData ? work.region.regionData.byteLength : 0;
+        decodeStartedAt.delete(timestamp);
+      }
+      return work;
+    }
 
     function toDataView(data) {
       if (data instanceof ArrayBuffer) return new DataView(data);
@@ -1698,6 +1829,16 @@ function createWebCodecsWorkerBlob(
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       // Allocate initial texture
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      decodedTexture = gl.createTexture();
+      decodedFramebuffer = gl.createFramebuffer();
+      gl.bindTexture(gl.TEXTURE_2D, decodedTexture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, decodedFramebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, decodedTexture, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
       gl.viewport(0, 0, w, h);
       return true;
@@ -1713,8 +1854,25 @@ function createWebCodecsWorkerBlob(
 
     // ── VideoDecoder (WebCodecs) ───────────────────────────────────────
     function publishRecovery(state, reason) {
+      if (state === 'healthy' && [...surfaceDecoders.values()].some((surface) => surface.isAwaitingRecovery())) return;
       self.postMessage({ type: 'h264-recovery', state, reason });
     }
+
+    // RDPGFX AVC420 reference state belongs to a surface. Interleaving surfaces
+    // through one VideoDecoder mixes SPS/PPS and dependent-frame histories.
+    function createSurfaceDecoder(surfaceId) {
+    let decoder = null;
+    let decoderConfigured = false;
+    let decoderWidth = 0;
+    let decoderHeight = 0;
+    let acceptedTimestampFloor = nextInputTimestamp;
+    let awaitingRecovery = true;
+    let recoveryKeyTimestamp = null;
+    let recoveryNotified = false;
+    let recoveryReason = null;
+    let cachedSps = null;
+    let cachedPps = null;
+    let closed = false;
 
     function clearParameterSets() {
       cachedSps = null;
@@ -1722,6 +1880,9 @@ function createWebCodecsWorkerBlob(
     }
 
     function enterRecovery(reason, clearCache = true) {
+      for (const [timestamp, work] of decodeStartedAt) {
+        if (work.surfaceId === surfaceId) takeDecodeWork(timestamp);
+      }
       if (decoder && decoder.state !== 'closed') {
         try {
           decoder.reset();
@@ -1735,6 +1896,8 @@ function createWebCodecsWorkerBlob(
       acceptedTimestampFloor = nextInputTimestamp;
       awaitingRecovery = true;
       recoveryKeyTimestamp = null;
+      flushAcknowledgements();
+      publishDecodePressure();
       if (clearCache) clearParameterSets();
       if (!recoveryNotified || recoveryReason !== reason) {
         recoveryNotified = true;
@@ -1753,21 +1916,20 @@ function createWebCodecsWorkerBlob(
         output: (frame) => {
           const outputTimestamp = Number(frame.timestamp);
           if (
-            !Number.isFinite(outputTimestamp) ||
+            closed || !Number.isFinite(outputTimestamp) ||
             outputTimestamp < acceptedTimestampFloor
           ) {
             frame.close();
             return;
           }
-          if (gl) {
-            // Upload VideoFrame directly as WebGL texture (GPU→GPU, zero CPU copy)
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-            presentGL();
-          } else if (ctx2d) {
-            ctx2d.drawImage(frame, 0, 0);
+          const work = takeDecodeWork(outputTimestamp);
+          publishDecodePressure();
+          try {
+            queueVideoPresentation(frame, work);
+          } catch (error) {
+            enterRecovery('malformed-access-unit');
+            return;
           }
-          frame.close();
           if (
             recoveryKeyTimestamp !== null &&
             outputTimestamp === recoveryKeyTimestamp
@@ -1786,6 +1948,7 @@ function createWebCodecsWorkerBlob(
       });
       if (typeof decoder.addEventListener === 'function') {
         decoder.addEventListener('dequeue', () => {
+          flushAcknowledgements();
           self.postMessage({
             type: 'h264-dequeue',
             pending: Number(decoder.decodeQueueSize) || 0,
@@ -1794,8 +1957,89 @@ function createWebCodecsWorkerBlob(
       }
     }
 
+    function publishDecodePressure() {
+      const oldest = decodeStartedAt.values().next().value;
+      self.postMessage({ type: 'decode-pressure', pending: decodeStartedAt.size,
+        oldestPendingMs: oldest === undefined ? 0 : performance.now() - oldest.startedAt });
+    }
+
+    function presentPendingVideo() {
+      presentationTimer = null;
+      if (rgbaFrameId !== null) return;
+      if (!videoPresentationPending) return;
+      videoPresentationPending = false;
+      const paintStartedAt = performance.now();
+      if (gl) presentGL();
+      else if (ctx2d && compositeCanvas) ctx2d.drawImage(compositeCanvas, 0, 0);
+      if (gl || ctx2d) {
+        lastVideoPresentedAt = performance.now();
+        self.postMessage({ type: 'presented', durationMs: pendingVideoWorkMs + lastVideoPresentedAt - paintStartedAt,
+          coalescedFrames: coalescedPresentations });
+      }
+      pendingVideoWorkMs = 0;
+      coalescedPresentations = 0;
+    }
+
+    function queueVideoPresentation(frame, work) {
+      const region = work && work.region;
+      const startedAt = work ? work.startedAt : performance.now();
+      // Preserve every decoded region in one bounded desktop composite. A
+      // latest-VideoFrame policy would lose disjoint RDPGFX region updates.
+      try {
+        if (!region || region.regionCount === 0) return;
+        const decodedWidth = frame.displayWidth || frame.codedWidth || region.codedWidth || region.width;
+        const decodedHeight = frame.displayHeight || frame.codedHeight || region.codedHeight || region.height;
+        if (gl) {
+          // One VideoFrame upload; exact mask rectangles copy GPU-to-GPU into
+          // the persistent desktop. This also supports odd pixel masks without
+          // requiring chroma-aligned VideoFrame visibleRect wrappers.
+          gl.bindTexture(gl.TEXTURE_2D, decodedTexture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+          gl.bindFramebuffer(gl.READ_FRAMEBUFFER, decodedFramebuffer);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+        }
+        const mask = region.regionData;
+        for (let index = 0; index < region.regionCount; index++) {
+          const right = mask ? mask.getUint16(index * 8 + 4, true) : region.width;
+          const bottom = mask ? mask.getUint16(index * 8 + 6, true) : region.height;
+          if (right > decodedWidth || bottom > decodedHeight ||
+              region.x + right > w || region.y + bottom > h) {
+            throw new Error('Decoded H264 region exceeds frame or desktop');
+          }
+        }
+        for (let index = 0; index < region.regionCount; index++) {
+          const left = mask ? mask.getUint16(index * 8, true) : 0;
+          const top = mask ? mask.getUint16(index * 8 + 2, true) : 0;
+          const right = mask ? mask.getUint16(index * 8 + 4, true) : region.width;
+          const bottom = mask ? mask.getUint16(index * 8 + 6, true) : region.height;
+          const rw = right - left, rh = bottom - top;
+          if (gl) {
+            gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, region.x + left, region.y + top,
+              left, top, rw, rh);
+          } else {
+            const target = compositeCtx || ctx2d;
+            if (target) target.drawImage(frame, left, top, rw, rh,
+              region.x + left, region.y + top, rw, rh);
+          }
+        }
+      } finally {
+        if (gl) gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+        frame.close();
+      }
+      if (videoPresentationPending) coalescedPresentations++;
+      videoPresentationPending = true;
+      pendingVideoWorkMs = Math.max(pendingVideoWorkMs, performance.now() - startedAt);
+      const delay = presentationIntervalMs - (performance.now() - lastVideoPresentedAt);
+      if (delay <= 0) {
+        if (presentationTimer !== null) clearTimeout(presentationTimer);
+        presentPendingVideo();
+      } else if (presentationTimer === null) {
+        presentationTimer = setTimeout(presentPendingVideo, Math.ceil(delay));
+      }
+    }
+
     function configureDecoder(width, height) {
-      if (!decoder || width <= 0 || height <= 0) return false;
+      if (!decoder) return false;
       if (decoderConfigured && decoderWidth === width && decoderHeight === height) {
         return true;
       }
@@ -1808,8 +2052,7 @@ function createWebCodecsWorkerBlob(
       }
       decoder.configure({
         codec: 'avc1.42001f', // Baseline profile, level 3.1
-        codedWidth: width,
-        codedHeight: height,
+        ...(width > 0 && height > 0 ? { codedWidth: width, codedHeight: height } : {}),
         hardwareAcceleration: HW_ACCEL,
         optimizeForLatency: true,
       });
@@ -1843,7 +2086,9 @@ function createWebCodecsWorkerBlob(
         return false;
       }
       const pending = Number(decoder.decodeQueueSize) || 0;
-      if (pending >= MAX_DECODER_PENDING) {
+      const metadataBytes = currentFrameRegion.regionData ? currentFrameRegion.regionData.byteLength : 0;
+      if (pending >= MAX_DECODER_PENDING || decodeStartedAt.size >= 32 ||
+          decodeMetadataBytes + metadataBytes > MAX_DECODE_METADATA_BYTES) {
         enterRecovery('decoder-overflow');
         return false;
       }
@@ -1857,7 +2102,17 @@ function createWebCodecsWorkerBlob(
         data,
       });
       try {
+        // Retain only compact mask bytes until output, never the whole encoded
+        // payload or one allocated JS object for each mask rectangle.
+        const region = { ...currentFrameRegion };
+        if (region.regionData) {
+          const source = region.regionData;
+          region.regionData = new DataView(new Uint8Array(source.buffer, source.byteOffset, source.byteLength).slice().buffer);
+        }
+        decodeMetadataBytes += metadataBytes;
+        decodeStartedAt.set(timestamp, { startedAt: currentFrameStartedAt, region, surfaceId });
         decoder.decode(chunk);
+        publishDecodePressure();
         return true;
       } catch (error) {
         console.error('[WebCodecs worker] decode submission failed:', error);
@@ -1876,10 +2131,11 @@ function createWebCodecsWorkerBlob(
         return;
       }
 
-      const view = toDataView(data);
-      const destW = view.getUint16(10, true);
-      const destH = view.getUint16(12, true);
-      const nalData = toUint8Array(data, NAL_HEADER_SIZE);
+      const metadata = parseRdpNalEnvelope(data);
+      const destW = metadata.codedWidth;
+      const destH = metadata.codedHeight;
+      currentFrameRegion = metadata;
+      const nalData = toUint8Array(data, metadata.offset);
       const parsed = parseAccessUnit(nalData);
       if (!parsed.valid || (parsed.hasIdr && parsed.hasDelta)) {
         enterRecovery('malformed-access-unit');
@@ -1923,13 +2179,46 @@ function createWebCodecsWorkerBlob(
       submitChunk('delta', nalData);
     }
 
+    initDecoder();
+    return {
+      process: processNalPayload,
+      reset: enterRecovery,
+      pending: () => decoder ? Number(decoder.decodeQueueSize) || 0 : 0,
+      isAwaitingRecovery: () => awaitingRecovery,
+      destroy: () => {
+        closed = true;
+        enterRecovery('renderer-reset');
+        if (decoder && decoder.state !== 'closed') decoder.close();
+      },
+    };
+    }
+
+    function resetAllDecoders(reason) {
+      rgbaFrameId = null;
+      if (presentationTimer !== null) clearTimeout(presentationTimer);
+      presentationTimer = null;
+      videoPresentationPending = false;
+      pendingVideoWorkMs = 0;
+      coalescedPresentations = 0;
+      lastVideoPresentedAt = -Infinity;
+      for (const surface of surfaceDecoders.values()) surface.reset(reason);
+      if (surfaceDecoders.size === 0) publishRecovery('awaitingRecovery', reason);
+    }
+
     // ── RGBA dirty-rect fallback (for uncompressed/bitmap frames) ─────
     let rgbaImgCache = null;
 
     function paintRgbaRect(data) {
+      const startedAt = currentFrameStartedAt;
       const view = toDataView(data);
       const dataLen = toByteLength(data);
-      let offset = 0;
+      const envelope = parseRdpRgbaEnvelope(data);
+      if (envelope.frameId !== null) {
+        if (envelope.begin) rgbaFrameId = envelope.frameId;
+        if (rgbaFrameId !== envelope.frameId) throw new Error('RGBA snapshot continuation without begin');
+      } else if (rgbaFrameId !== null) throw new Error('Unframed RGBA interrupted snapshot');
+      let offset = envelope.offset;
+      let painted = false;
       while (offset + 8 <= dataLen) {
         const x = view.getUint16(offset, true);
         const y = view.getUint16(offset + 2, true);
@@ -1943,23 +2232,49 @@ function createWebCodecsWorkerBlob(
           gl.bindTexture(gl.TEXTURE_2D, texture);
           gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE,
             new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength));
+          painted = true;
         } else if (ctx2d && rw > 0 && rh > 0) {
           if (!rgbaImgCache || rgbaImgCache.width !== rw || rgbaImgCache.height !== rh) {
             rgbaImgCache = new ImageData(rw, rh);
           }
           rgbaImgCache.data.set(rgba);
-          ctx2d.putImageData(rgbaImgCache, x, y);
+          if (compositeCtx) compositeCtx.putImageData(rgbaImgCache, x, y);
+          painted = true;
         }
         offset += 8 + pixelBytes;
       }
-      if (gl) presentGL();
+      if (envelope.end) {
+        rgbaFrameId = null;
+        if (presentationTimer !== null) clearTimeout(presentationTimer);
+        presentationTimer = null;
+        videoPresentationPending = false;
+        pendingVideoWorkMs = 0;
+        coalescedPresentations = 0;
+        if (gl) presentGL();
+        // Legacy RGBA also completes the pending video composite. Blit once
+        // after all rectangles so disjoint capped video pixels become visible.
+        else if (compositeCanvas) ctx2d.drawImage(compositeCanvas, 0, 0);
+        if (painted) self.postMessage({ type: 'presented', durationMs: performance.now() - startedAt });
+      }
     }
 
     function processFrameBuffer(data) {
       if (toByteLength(data) < 4) return;
       const magic = toDataView(data).getUint32(0, true);
-      if (magic === NAL_MAGIC) {
-        processNalPayload(data);
+      if (magic === NAL_MAGIC || magic === 0x324c414e) {
+        const surfaceId = toDataView(data).getUint16(4, true);
+        let surface = surfaceDecoders.get(surfaceId);
+        if (!surface) {
+          if (surfaceDecoders.size >= MAX_SURFACE_DECODERS) {
+            const oldestId = surfaceDecoders.keys().next().value;
+            surfaceDecoders.get(oldestId).destroy();
+            surfaceDecoders.delete(oldestId);
+          }
+          surface = createSurfaceDecoder(surfaceId);
+        }
+        surfaceDecoders.delete(surfaceId);
+        surfaceDecoders.set(surfaceId, surface);
+        surface.process(data);
       } else {
         // RGBA is an independent fallback path. It must never complete an
         // H.264 recovery episode.
@@ -1967,9 +2282,22 @@ function createWebCodecsWorkerBlob(
       }
     }
 
-    function acknowledgeFrame(frameId) {
+    function acknowledgeFrame(frameId, failed = false) {
       if (!Number.isSafeInteger(frameId)) return;
-      self.postMessage({ type: 'frame-consumed', frameId });
+      // Delay transport credit only while the decoder submission queue is full.
+      // Waiting for output itself can deadlock codecs needing another input.
+      if ([...surfaceDecoders.values()].some((surface) => surface.pending() >= MAX_DECODER_PENDING)) {
+        pendingAcknowledgements.push({ frameId, failed });
+        return;
+      }
+      self.postMessage({ type: 'frame-consumed', frameId, failed });
+    }
+
+    function flushAcknowledgements() {
+      if ([...surfaceDecoders.values()].some((surface) => surface.pending() >= MAX_DECODER_PENDING)) return;
+      for (const acknowledgement of pendingAcknowledgements.splice(0)) {
+        self.postMessage({ type: 'frame-consumed', ...acknowledgement });
+      }
     }
 
     // ── Message handler ────────────────────────────────────────────────
@@ -1981,15 +2309,18 @@ function createWebCodecsWorkerBlob(
         canvas = msg.canvas;
         w = msg.width;
         h = msg.height;
+        presentationIntervalMs = Number.isFinite(msg.targetFps) && msg.targetFps > 0
+          ? 1000 / msg.targetFps : 0;
         canvas.width = w;
         canvas.height = h;
 
         if (!initGL(canvas)) {
           console.warn('[WebCodecs worker] WebGL2 unavailable, falling back to Canvas2D');
           ctx2d = canvas.getContext('2d');
+          compositeCanvas = new OffscreenCanvas(w, h);
+          compositeCtx = compositeCanvas.getContext('2d');
         }
 
-        initDecoder();
         self.postMessage({ type: 'ready' });
         return;
       }
@@ -1999,27 +2330,37 @@ function createWebCodecsWorkerBlob(
         h = msg.height;
         canvas.width = w;
         canvas.height = h;
+        if (compositeCanvas) {
+          compositeCanvas.width = w;
+          compositeCanvas.height = h;
+        }
         if (gl) {
           gl.viewport(0, 0, w, h);
           gl.bindTexture(gl.TEXTURE_2D, texture);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         }
-        enterRecovery('resize');
+        resetAllDecoders('resize');
         return;
       }
 
       if (msg.type === 'reset-h264') {
         const reason = msg.reason || 'renderer-reset';
-        enterRecovery(reason);
+        resetAllDecoders(reason);
         self.postMessage({ type: 'h264-reset-consumed', reason });
         return;
       }
 
       if (msg.type === 'frame') {
+        currentFrameStartedAt = Number.isFinite(msg.sentAt)
+          ? msg.sentAt - performance.timeOrigin : performance.now();
+        let failed = false;
         try {
           processFrameBuffer(msg.data);
+        } catch (error) {
+          failed = true;
+          resetAllDecoders('malformed-access-unit');
         } finally {
-          acknowledgeFrame(msg.frameId);
+          acknowledgeFrame(msg.frameId, failed);
         }
         return;
       }
@@ -2028,10 +2369,15 @@ function createWebCodecsWorkerBlob(
         // Batch of frame ArrayBuffers
         const buffers = msg.buffers;
         for (let i = 0; i < buffers.length; i++) {
+          currentFrameStartedAt = performance.now();
+          let failed = false;
           try {
             processFrameBuffer(buffers[i]);
+          } catch (error) {
+            failed = true;
+            resetAllDecoders('malformed-access-unit');
           } finally {
-            acknowledgeFrame(msg.frameIds && msg.frameIds[i]);
+            acknowledgeFrame(msg.frameIds && msg.frameIds[i], failed);
           }
         }
         return;
@@ -2071,6 +2417,10 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
   private inFlightBytes = 0;
   private deferredRgba: ArrayBuffer | null = null;
   private nextFrameId = 1;
+  private idleWaiters = new Set<() => void>();
+  private pendingSince: number | null = null;
+  private decodePending = 0;
+  private decodePendingSince: number | null = null;
   private queueOverflowResetPending = false;
   private preReadyOverflowResetPending = false;
   private sawNalPayload = false;
@@ -2116,7 +2466,23 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
         return;
       }
       if (e.data.type === "frame-consumed") {
-        this.handleFrameConsumed(e.data.frameId);
+        this.handleFrameConsumed(e.data.frameId, e.data.failed === true);
+        return;
+      }
+      if (e.data.type === "presented") {
+        this.options?.onPresented?.(
+          e.data.durationMs,
+          e.data.coalescedFrames ?? 0,
+        );
+        return;
+      }
+      if (e.data.type === "decode-pressure") {
+        this.decodePending = Math.max(0, Number(e.data.pending) || 0);
+        this.decodePendingSince =
+          this.decodePending > 0
+            ? performance.now() -
+              Math.max(0, Number(e.data.oldestPendingMs) || 0)
+            : null;
         return;
       }
       if (e.data.type === "h264-reset-consumed") {
@@ -2137,7 +2503,13 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
     };
 
     this.worker.postMessage(
-      { type: "init", canvas: offscreen, width, height },
+      {
+        type: "init",
+        canvas: offscreen,
+        width,
+        height,
+        targetFps: options?.targetFps,
+      },
       [offscreen],
     );
   }
@@ -2149,6 +2521,7 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
    */
   pushRawBuffer(data: ArrayBuffer): void {
     if (this.destroyed) return;
+    this.pendingSince ??= performance.now();
     const nalPayload = isNalPayload(data);
     if (nalPayload) {
       this.sawNalPayload = true;
@@ -2275,7 +2648,15 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
     // Transfer ownership for zero-copy. The worker returns a consumed ack only
     // after parsing/painting or submitting the encoded access unit.
     try {
-      this.worker.postMessage({ type: "frame", frameId, data }, [data]);
+      this.worker.postMessage(
+        {
+          type: "frame",
+          frameId,
+          data,
+          sentAt: performance.timeOrigin + performance.now(),
+        },
+        [data],
+      );
     } catch (error) {
       this.inFlightFrames.delete(frameId);
       this.inFlightBytes = Math.max(0, this.inFlightBytes - byteLength);
@@ -2315,13 +2696,15 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
     return this.rgbaRefreshEpoch;
   }
 
-  private handleFrameConsumed(frameId: unknown): void {
+  private handleFrameConsumed(frameId: unknown, failed = false): void {
     if (!Number.isSafeInteger(frameId)) return;
     const frame = this.inFlightFrames.get(frameId as number);
     if (!frame) return;
     this.inFlightFrames.delete(frameId as number);
     this.inFlightBytes = Math.max(0, this.inFlightBytes - frame.byteLength);
+    if (failed) this.requestFullRefreshAfterRgbaLoss();
     if (
+      !failed &&
       this.rgbaRefreshPending &&
       frame.rgbaRefreshEpoch !== undefined &&
       frame.rgbaRefreshEpoch === this.rgbaRefreshEpoch
@@ -2330,6 +2713,52 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
       this.options?.onH264RecoveryStateChange?.("healthy");
     }
     this.flushDeferredRgba();
+    this.notifyIdle();
+  }
+
+  getPendingMetrics() {
+    const now = performance.now();
+    return {
+      frames:
+        this.pendingBuffers.length +
+        this.inFlightFrames.size +
+        (this.deferredRgba ? 1 : 0) +
+        this.decodePending,
+      bytes:
+        this.pendingBytes +
+        this.inFlightBytes +
+        (this.deferredRgba?.byteLength ?? 0),
+      oldestPendingMs: Math.max(
+        this.pendingSince === null ? 0 : now - this.pendingSince,
+        this.decodePendingSince === null ? 0 : now - this.decodePendingSince,
+      ),
+    };
+  }
+
+  waitForIdle(): Promise<void> {
+    if (
+      this.destroyed ||
+      (this.pendingBuffers.length === 0 &&
+        this.inFlightFrames.size === 0 &&
+        !this.deferredRgba)
+    ) {
+      this.pendingSince = null;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.idleWaiters.add(resolve));
+  }
+
+  private notifyIdle(): void {
+    if (
+      !this.destroyed &&
+      (this.pendingBuffers.length > 0 ||
+        this.inFlightFrames.size > 0 ||
+        this.deferredRgba)
+    )
+      return;
+    this.pendingSince = null;
+    for (const resolve of this.idleWaiters) resolve();
+    this.idleWaiters.clear();
   }
 
   private requestPreReadyOverflowRecovery(): void {
@@ -2418,6 +2847,7 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
     this.pendingBuffers = [];
     this.pendingBytes = 0;
     this.deferredRgba = null;
+    this.notifyIdle();
     this.rgbaRefreshNextY = 0;
     if (!this.sawNalPayload) {
       // Pure RGBA streams also require an acknowledged, contiguous full
@@ -2453,6 +2883,7 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
 
   destroy(): void {
     this.destroyed = true;
+    this.notifyIdle();
     this.pendingBuffers = [];
     this.pendingBytes = 0;
     this.inFlightFrames.clear();

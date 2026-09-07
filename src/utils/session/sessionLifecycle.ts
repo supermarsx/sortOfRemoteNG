@@ -374,6 +374,48 @@ export const advanceSessionLifecycleAuthority = (
   return advanced;
 };
 
+/**
+ * Advance one actor-scoped terminal transition only while both the supplied
+ * snapshot and the process-local allocator still hold the expected authority.
+ * Unlike an unconditional window handoff, a stale actor event must never mint
+ * a generation above a replacement that already won ownership.
+ */
+export const advanceSessionLifecycleAuthorityIfCurrent = (
+  session: ConnectionSession,
+  expectedAuthority: { generation: number; writerId: string },
+  writerId: string,
+): ConnectionSession | null => {
+  const sessionAuthority = {
+    generation: getSessionLifecycleActorGeneration(session),
+    writerId: getSessionLifecycleWriterId(session),
+  };
+  const allocatedAuthority = lifecycleAuthorities.get(session.id);
+  const highWater = lifecycleHighWater.get(session.id) ?? 0;
+  if (
+    sessionAuthority.generation !== expectedAuthority.generation ||
+    sessionAuthority.writerId !== expectedAuthority.writerId ||
+    !allocatedAuthority ||
+    allocatedAuthority.generation !== expectedAuthority.generation ||
+    allocatedAuthority.writerId !== expectedAuthority.writerId ||
+    highWater > expectedAuthority.generation
+  ) {
+    return null;
+  }
+
+  const generation = expectedAuthority.generation + 1;
+  lifecycleHighWater.set(session.id, generation);
+  lifecycleAuthorities.set(session.id, { generation, writerId });
+  lifecycleCancelledAuthorities.delete(session.id);
+  const advanced: ConnectionSession = {
+    ...session,
+    lifecycleActorGeneration: generation,
+    lifecycleWriterId: writerId,
+    lifecycleRevision: getSessionLifecycleRevision(session) + 1,
+  };
+  delete advanced.lifecycleActorReservationId;
+  return advanced;
+};
+
 export const withSessionLifecycleAttempt = (
   session: ConnectionSession,
   attempt: SessionLifecycleActorAttempt | null | undefined,

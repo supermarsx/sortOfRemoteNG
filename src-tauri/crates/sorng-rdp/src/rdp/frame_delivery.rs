@@ -15,7 +15,47 @@ use super::stats::RdpSessionStats;
 use super::RdpTlsStream;
 use sorng_core::native_renderer;
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+pub const RGBA_V2_MAGIC: u32 = 0x3242_4752;
+pub const RGBA_SEQUENCE_HEADER_BYTES: usize = 12;
+static NEXT_RGBA_FRAME_ID: AtomicU32 = AtomicU32::new(1);
+
+/// Constant-size refresh identity. Credit retries retain the same sequence;
+/// only successful sends advance begin/end state.
+#[derive(Default)]
+pub struct RgbaFrameSequence {
+    id: Option<u32>,
+    started: bool,
+}
+
+impl RgbaFrameSequence {
+    pub fn is_started(&self) -> bool {
+        self.started
+    }
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn header(&mut self, complete: bool) -> [u8; RGBA_SEQUENCE_HEADER_BYTES] {
+        let id = *self
+            .id
+            .get_or_insert_with(|| NEXT_RGBA_FRAME_ID.fetch_add(1, Ordering::Relaxed));
+        let flags = u16::from(!self.started) | (u16::from(complete) << 1);
+        let mut header = [0; RGBA_SEQUENCE_HEADER_BYTES];
+        header[..4].copy_from_slice(&RGBA_V2_MAGIC.to_le_bytes());
+        header[4..8].copy_from_slice(&id.to_le_bytes());
+        header[8..10].copy_from_slice(&flags.to_le_bytes());
+        header
+    }
+
+    fn sent(&mut self, complete: bool) {
+        self.started = true;
+        if complete {
+            self.reset();
+        }
+    }
+}
 
 pub const MAX_PENDING_DIRTY_REGIONS: usize = 256;
 pub const MAX_PENDING_DIRTY_REGION_METADATA_BYTES: usize =
@@ -158,9 +198,11 @@ fn build_rgba_tile_payload(
     image_data: &[u8],
     fb_width: u16,
     region: (u16, u16, u16, u16),
+    prefix: &[u8],
 ) -> Result<Vec<u8>, String> {
     let (x, y, width, height) = region;
     let total = checked_rect_payload_bytes(width, height)
+        .and_then(|bytes| bytes.checked_add(prefix.len()))
         .ok_or_else(|| "RDP tile payload size overflow".to_string())?;
     if total > MAX_RDP_RGBA_TILE_PAYLOAD_BYTES {
         return Err(format!(
@@ -175,6 +217,7 @@ fn build_rgba_tile_payload(
         .checked_mul(4)
         .ok_or_else(|| "RDP tile row size overflow".to_string())?;
     let mut payload = Vec::with_capacity(total);
+    payload.extend_from_slice(prefix);
     payload.extend_from_slice(&x.to_le_bytes());
     payload.extend_from_slice(&y.to_le_bytes());
     payload.extend_from_slice(&width.to_le_bytes());
@@ -194,12 +237,109 @@ fn build_rgba_tile_payload(
     Ok(payload)
 }
 
+#[derive(Default)]
+struct RgbaPayloadPlan {
+    rects: Vec<(u16, u16, u16, u16)>,
+    consumed: usize,
+    remainder: Option<(u16, u16, u16, u16)>,
+    bytes: usize,
+}
+
+fn regions_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
+    u32::from(a.0) < u32::from(b.0) + u32::from(b.2)
+        && u32::from(b.0) < u32::from(a.0) + u32::from(a.2)
+        && u32::from(a.1) < u32::from(b.1) + u32::from(b.3)
+        && u32::from(b.1) < u32::from(a.1) + u32::from(a.3)
+}
+
+/// Plan only metadata. Small, nonoverlapping rectangles share one credit;
+/// a large rectangle uses a horizontal tile and retains its unsent tail.
+fn plan_rgba_payload(
+    image_data_len: usize,
+    fb_width: u16,
+    fb_height: u16,
+    pending_rects: &[(u16, u16, u16, u16)],
+    budget: usize,
+) -> RgbaPayloadPlan {
+    let mut plan = RgbaPayloadPlan::default();
+    for &region in pending_rects.iter().take(MAX_PENDING_DIRTY_REGIONS) {
+        let Some((x, y, width, height)) =
+            clamp_rgba_region(region, fb_width, fb_height, image_data_len)
+        else {
+            plan.consumed += 1;
+            continue;
+        };
+        let region = (x, y, width, height);
+        let bytes =
+            checked_rect_payload_bytes(width, height).expect("u16 RGBA dimensions fit usize");
+        if plan.rects.is_empty() && bytes > budget {
+            let rows = ((budget - 8) / (usize::from(width) * 4)) as u16;
+            plan.rects.push((x, y, width, rows));
+            plan.bytes = checked_rect_payload_bytes(width, rows).expect("bounded tile size");
+            plan.remainder = Some((x, y + rows, width, height - rows));
+            break;
+        }
+        if plan.bytes + bytes > budget
+            || plan
+                .rects
+                .iter()
+                .any(|&previous| regions_overlap(previous, region))
+        {
+            break;
+        }
+        plan.rects.push(region);
+        plan.bytes += bytes;
+        plan.consumed += 1;
+    }
+    plan
+}
+
+/// Exact credit requirement for the next packed payload, without copying pixels.
+#[cfg(test)]
+pub fn next_rgba_payload_bytes(
+    image_data_len: usize,
+    fb_width: u16,
+    fb_height: u16,
+    pending_rects: &[(u16, u16, u16, u16)],
+) -> usize {
+    plan_rgba_payload(
+        image_data_len,
+        fb_width,
+        fb_height,
+        pending_rects,
+        MAX_RDP_RGBA_TILE_PAYLOAD_BYTES,
+    )
+    .bytes
+}
+
+pub fn next_sequenced_rgba_payload_bytes(
+    image_data_len: usize,
+    fb_width: u16,
+    fb_height: u16,
+    pending_rects: &[(u16, u16, u16, u16)],
+) -> usize {
+    let bytes = plan_rgba_payload(
+        image_data_len,
+        fb_width,
+        fb_height,
+        pending_rects,
+        MAX_RDP_RGBA_TILE_PAYLOAD_BYTES - RGBA_SEQUENCE_HEADER_BYTES,
+    )
+    .bytes;
+    if bytes == 0 {
+        0
+    } else {
+        bytes + RGBA_SEQUENCE_HEADER_BYTES
+    }
+}
+
 /// Deliver pending RGBA rectangles as framebuffer-clamped horizontal tiles.
 ///
 /// The queue is mutated only after a successful send. A partially delivered
 /// rectangle becomes its unsent tail in-place, so even a 65K-high desktop
 /// retains constant-size metadata rather than materializing every tile. At
 /// most the transport's two in-flight messages are produced per call.
+#[cfg(test)]
 pub fn push_tiled_rects_via_channel(
     image_data: &[u8],
     fb_width: u16,
@@ -209,55 +349,112 @@ pub fn push_tiled_rects_via_channel(
     payload_kind: FramePayloadKind,
     accounting: &FrameDeliveryAccounting,
 ) -> Result<RgbaTileDeliveryProgress, String> {
+    push_tiled_rects_impl(
+        image_data,
+        fb_width,
+        fb_height,
+        pending_rects,
+        frame_channel,
+        payload_kind,
+        accounting,
+        None,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a bounded logical refresh adds sequence state to the existing explicit delivery boundary"
+)]
+pub fn push_sequenced_tiled_rects_via_channel(
+    image_data: &[u8],
+    fb_width: u16,
+    fb_height: u16,
+    pending_rects: &mut Vec<(u16, u16, u16, u16)>,
+    frame_channel: &DynFrameChannel,
+    payload_kind: FramePayloadKind,
+    accounting: &FrameDeliveryAccounting,
+    sequence: &mut RgbaFrameSequence,
+) -> Result<RgbaTileDeliveryProgress, String> {
+    push_tiled_rects_impl(
+        image_data,
+        fb_width,
+        fb_height,
+        pending_rects,
+        frame_channel,
+        payload_kind,
+        accounting,
+        Some(sequence),
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "shared delivery implementation retains optional constant-size sequence state"
+)]
+fn push_tiled_rects_impl(
+    image_data: &[u8],
+    fb_width: u16,
+    fb_height: u16,
+    pending_rects: &mut Vec<(u16, u16, u16, u16)>,
+    frame_channel: &DynFrameChannel,
+    payload_kind: FramePayloadKind,
+    accounting: &FrameDeliveryAccounting,
+    mut sequence: Option<&mut RgbaFrameSequence>,
+) -> Result<RgbaTileDeliveryProgress, String> {
     let mut sent_tiles = 0usize;
 
     while !pending_rects.is_empty() && sent_tiles < MAX_RDP_IN_FLIGHT_FRAME_COUNT {
-        let Some((x, y, width, height)) =
-            clamp_rgba_region(pending_rects[0], fb_width, fb_height, image_data.len())
-        else {
-            pending_rects.remove(0);
-            continue;
+        let prefix_bytes = if sequence.is_some() {
+            RGBA_SEQUENCE_HEADER_BYTES
+        } else {
+            0
         };
-        pending_rects[0] = (x, y, width, height);
-
-        let row_bytes = usize::from(width)
-            .checked_mul(4)
-            .ok_or_else(|| "RDP tile row size overflow".to_string())?;
-        let max_pixel_bytes = MAX_RDP_RGBA_TILE_PAYLOAD_BYTES
-            .checked_sub(8)
-            .ok_or_else(|| "RDP tile budget is smaller than its header".to_string())?;
-        let max_rows = max_pixel_bytes / row_bytes;
-        if max_rows == 0 {
-            return Err(format!(
-                "RDP framebuffer row is {row_bytes} bytes and cannot fit the tile budget"
-            ));
+        let plan = plan_rgba_payload(
+            image_data.len(),
+            fb_width,
+            fb_height,
+            pending_rects,
+            MAX_RDP_RGBA_TILE_PAYLOAD_BYTES - prefix_bytes,
+        );
+        if plan.rects.is_empty() {
+            pending_rects.drain(..plan.consumed);
+            continue;
         }
-        let tile_height = usize::from(height).min(max_rows) as u16;
-        let tile_bytes = checked_rect_payload_bytes(width, tile_height)
-            .ok_or_else(|| "RDP tile payload size overflow".to_string())?;
 
         // Capacity is checked before allocating or copying any pixel data.
-        if !frame_channel.can_send_payload(tile_bytes) {
+        if !frame_channel.can_send_payload(plan.bytes + prefix_bytes) {
             return Ok(RgbaTileDeliveryProgress {
                 sent_tiles,
                 complete: false,
             });
         }
 
-        let payload = build_rgba_tile_payload(image_data, fb_width, (x, y, width, tile_height))?;
-        send_accounted_frame(accounting, frame_channel, payload_kind, payload)?;
+        let complete = plan.consumed == pending_rects.len() && plan.remainder.is_none();
+        let header = sequence
+            .as_deref_mut()
+            .map(|sequence| sequence.header(complete));
+        let prefix = header.as_ref().map_or(&[][..], |header| header.as_slice());
+        if plan.rects.len() > 1 {
+            push_multi_rect_with_prefix(
+                image_data,
+                fb_width,
+                &plan.rects,
+                frame_channel,
+                accounting,
+                prefix,
+            )?;
+        } else {
+            let payload = build_rgba_tile_payload(image_data, fb_width, plan.rects[0], prefix)?;
+            send_accounted_frame(accounting, frame_channel, payload_kind, payload)?;
+        }
+        if let Some(sequence) = sequence.as_deref_mut() {
+            sequence.sent(complete);
+        }
         sent_tiles += 1;
 
-        if tile_height == height {
-            pending_rects.remove(0);
-        } else {
-            pending_rects[0] = (
-                x,
-                y.checked_add(tile_height)
-                    .ok_or_else(|| "RDP tile coordinate overflow".to_string())?,
-                width,
-                height - tile_height,
-            );
+        pending_rects.drain(..plan.consumed);
+        if let Some(remainder) = plan.remainder {
+            pending_rects[0] = remainder;
         }
     }
 
@@ -273,6 +470,7 @@ pub fn push_tiled_rects_via_channel(
     clippy::too_many_arguments,
     reason = "the hot-path boundary keeps the RGBA surface, destination, resume cursor, transport, and accounting explicit"
 )]
+#[cfg(test)]
 pub fn push_tiled_local_rgba_via_channel(
     rgba: &[u8],
     width: u16,
@@ -282,6 +480,62 @@ pub fn push_tiled_local_rgba_via_channel(
     next_row: &mut u16,
     frame_channel: &DynFrameChannel,
     accounting: &FrameDeliveryAccounting,
+) -> Result<RgbaTileDeliveryProgress, String> {
+    push_tiled_local_rgba_impl(
+        rgba,
+        width,
+        height,
+        screen_x,
+        screen_y,
+        next_row,
+        frame_channel,
+        accounting,
+        None,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "logical RGBA delivery keeps source geometry and sequence explicit"
+)]
+pub fn push_sequenced_tiled_local_rgba_via_channel(
+    rgba: &[u8],
+    width: u16,
+    height: u16,
+    screen_x: u16,
+    screen_y: u16,
+    next_row: &mut u16,
+    frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
+    sequence: &mut RgbaFrameSequence,
+) -> Result<RgbaTileDeliveryProgress, String> {
+    push_tiled_local_rgba_impl(
+        rgba,
+        width,
+        height,
+        screen_x,
+        screen_y,
+        next_row,
+        frame_channel,
+        accounting,
+        Some(sequence),
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "shared RGBA tiler accepts optional constant-size logical frame state"
+)]
+fn push_tiled_local_rgba_impl(
+    rgba: &[u8],
+    width: u16,
+    height: u16,
+    screen_x: u16,
+    screen_y: u16,
+    next_row: &mut u16,
+    frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
+    mut sequence: Option<&mut RgbaFrameSequence>,
 ) -> Result<RgbaTileDeliveryProgress, String> {
     if width == 0 || height == 0 || *next_row >= height {
         return Ok(RgbaTileDeliveryProgress {
@@ -301,7 +555,12 @@ pub fn push_tiled_local_rgba_via_channel(
             rgba.len()
         ));
     }
-    let max_rows = (MAX_RDP_RGBA_TILE_PAYLOAD_BYTES - 8) / stride;
+    let prefix_bytes = if sequence.is_some() {
+        RGBA_SEQUENCE_HEADER_BYTES
+    } else {
+        0
+    };
+    let max_rows = (MAX_RDP_RGBA_TILE_PAYLOAD_BYTES - 8 - prefix_bytes) / stride;
     if max_rows == 0 {
         return Err(format!(
             "RDPGFX RGBA row is {stride} bytes and cannot fit the tile budget"
@@ -313,6 +572,7 @@ pub fn push_tiled_local_rgba_via_channel(
         let remaining_rows = usize::from(height - *next_row);
         let tile_height = remaining_rows.min(max_rows) as u16;
         let tile_bytes = checked_rect_payload_bytes(width, tile_height)
+            .and_then(|bytes| bytes.checked_add(prefix_bytes))
             .ok_or_else(|| "RDPGFX tile payload size overflow".to_string())?;
         if !frame_channel.can_send_payload(tile_bytes) {
             break;
@@ -324,6 +584,10 @@ pub fn push_tiled_local_rgba_via_channel(
         let source_start = usize::from(*next_row) * stride;
         let source_end = source_start + usize::from(tile_height) * stride;
         let mut payload = Vec::with_capacity(tile_bytes);
+        let complete = *next_row + tile_height == height;
+        if let Some(sequence) = sequence.as_deref_mut() {
+            payload.extend_from_slice(&sequence.header(complete));
+        }
         payload.extend_from_slice(&screen_x.to_le_bytes());
         payload.extend_from_slice(&destination_y.to_le_bytes());
         payload.extend_from_slice(&width.to_le_bytes());
@@ -336,6 +600,9 @@ pub fn push_tiled_local_rgba_via_channel(
             FramePayloadKind::RgbaRect,
             payload,
         )?;
+        if let Some(sequence) = sequence.as_deref_mut() {
+            sequence.sent(complete);
+        }
         *next_row += tile_height;
         sent_tiles += 1;
     }
@@ -367,7 +634,6 @@ pub fn ensure_full_desktop_sync(
     }
 }
 
-#[allow(dead_code)]
 pub fn checked_multi_rect_payload_bytes(rects: &[(u16, u16, u16, u16)]) -> Option<usize> {
     rects
         .iter()
@@ -391,8 +657,6 @@ pub fn process_outputs(
     stats: &RdpSessionStats,
     full_frame_sync_interval: u64,
     frame_store: &SharedFrameStore,
-    frame_channel: &DynFrameChannel,
-    accounting: &FrameDeliveryAccounting,
     pending_full_sync: &mut Vec<(u16, u16, u16, u16)>,
     dirty_regions: &mut Vec<(u16, u16, u16, u16)>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -413,15 +677,19 @@ pub fn process_outputs(
                 let is_sync = fc > 0 && (fc == 1 || fc.is_multiple_of(full_frame_sync_interval));
                 if is_sync {
                     if pending_full_sync.is_empty() {
-                        let _ = send_full_frame_via_channel(
+                        // Input-driven graphics use the same credit/cap
+                        // scheduler as network-driven updates.
+                        queue_full_desktop_sync(pending_full_sync, desktop_width, desktop_height);
+                        frame_store.update_region(
                             session_id,
-                            image,
+                            image.data(),
                             desktop_width,
-                            desktop_height,
-                            frame_channel,
-                            frame_store,
-                            accounting,
-                            pending_full_sync,
+                            &crate::ironrdp::pdu::geometry::InclusiveRectangle {
+                                left: 0,
+                                top: 0,
+                                right: desktop_width.saturating_sub(1),
+                                bottom: desktop_height.saturating_sub(1),
+                            },
                         );
                     } else {
                         // Never restart an in-progress full-desktop tile chain
@@ -587,13 +855,24 @@ pub fn merge_dirty_regions(regions: &mut Vec<(u16, u16, u16, u16)>) {
 /// This reduces IPC overhead dramatically -- one `Channel.send()` and one
 /// `ArrayBuffer` allocation instead of N.
 #[inline]
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn push_multi_rect_via_channel(
     image_data: &[u8],
     fb_width: u16,
     rects: &[(u16, u16, u16, u16)],
     frame_channel: &DynFrameChannel,
     accounting: &FrameDeliveryAccounting,
+) -> Result<(), String> {
+    push_multi_rect_with_prefix(image_data, fb_width, rects, frame_channel, accounting, &[])
+}
+
+fn push_multi_rect_with_prefix(
+    image_data: &[u8],
+    fb_width: u16,
+    rects: &[(u16, u16, u16, u16)],
+    frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
+    prefix: &[u8],
 ) -> Result<(), String> {
     if rects.is_empty() {
         return Ok(());
@@ -604,6 +883,7 @@ pub fn push_multi_rect_via_channel(
 
     // Pre-calculate total size for a single allocation.
     let total = checked_multi_rect_payload_bytes(rects)
+        .and_then(|bytes| bytes.checked_add(prefix.len()))
         .ok_or_else(|| "RDP multi-rectangle payload size overflow".to_string())?;
     if total == 0 {
         return Ok(());
@@ -613,12 +893,25 @@ pub fn push_multi_rect_via_channel(
             "RDP multi-rectangle payload is {total} bytes (maximum {MAX_RDP_FRAME_PAYLOAD_BYTES})"
         ));
     }
+    for &(x, y, width, height) in rects {
+        if width == 0 || height == 0 {
+            continue;
+        }
+        let right = usize::from(x) + usize::from(width);
+        let end = (usize::from(y) + usize::from(height) - 1)
+            .checked_mul(stride)
+            .and_then(|start| start.checked_add(right * bpp));
+        if right > usize::from(fb_width) || end.is_none_or(|end| end > image_data.len()) {
+            return Err("RDP multi-rectangle region exceeds the framebuffer".to_string());
+        }
+    }
     if !frame_channel.can_send_payload(total) {
         let _ = frame_channel.record_delivery_drop(1, false);
         return Err("RDP frame delivery credits exhausted before payload allocation".to_string());
     }
 
     let mut payload = Vec::with_capacity(total);
+    payload.extend_from_slice(prefix);
     for &(x, y, w, h) in rects {
         if w == 0 || h == 0 {
             continue;
@@ -642,25 +935,14 @@ pub fn push_multi_rect_via_channel(
         payload.extend_from_slice(&header);
 
         // Pixel data
-        let last_row_end = bottom * stride + left * bpp + row_bytes;
-        if last_row_end <= image_data.len() {
-            if left == 0 && rw == fb_width as usize {
-                let start = top * stride;
-                let end = (bottom + 1) * stride;
-                payload.extend_from_slice(&image_data[start..end]);
-            } else {
-                for row in top..=bottom {
-                    let row_start = row * stride + left * bpp;
-                    payload.extend_from_slice(&image_data[row_start..row_start + row_bytes]);
-                }
-            }
+        if left == 0 && rw == fb_width as usize {
+            let start = top * stride;
+            let end = (bottom + 1) * stride;
+            payload.extend_from_slice(&image_data[start..end]);
         } else {
             for row in top..=bottom {
                 let row_start = row * stride + left * bpp;
-                let row_end = row_start + row_bytes;
-                if row_end <= image_data.len() {
-                    payload.extend_from_slice(&image_data[row_start..row_end]);
-                }
+                payload.extend_from_slice(&image_data[row_start..row_start + row_bytes]);
             }
         }
     }
@@ -808,29 +1090,52 @@ pub fn push_compositor_frame_via_channel(
 /// The JS side checks the first 4 bytes of each IPC message: if they match
 /// this magic, it's an H.264 NAL passthrough payload; otherwise it's the
 /// standard RGBA dirty-rect format.
+#[allow(dead_code)] // Frontend still accepts this legacy envelope.
 pub const NAL_MAGIC: u32 = 0x4E41_4C48;
+pub const NAL_V2_MAGIC: u32 = 0x324C_414E;
 
 /// Push a raw H.264 NAL unit through the frame channel for frontend WebCodecs decode.
 ///
-/// Binary protocol (16-byte header + NAL data):
+/// Version 2: 28-byte header, bounded surface-relative mask, then Annex B.
 /// ```text
 /// [magic:u32LE][surface_id:u16LE][screen_x:u16LE][screen_y:u16LE]
-/// [dest_w:u16LE][dest_h:u16LE][reserved:u16LE][NAL bytes...]
+/// [surface_w:u16LE][surface_h:u16LE][coded_w:u16LE][coded_h:u16LE]
+/// [reserved:u16LE][rect_count:u32LE][nal_length:u32LE]
+/// [left:u16LE,top:u16LE,right:u16LE,bottom:u16LE] * rect_count
+/// [NAL bytes...]
 /// ```
+/// Zero coded dimensions mean unknown; the decoder's actual output bounds
+/// are authoritative. An empty mask still decodes reference pictures.
 #[inline]
 pub fn push_nal_via_channel(
     nal: &crate::gfx::processor::GfxNalFrame,
     frame_channel: &DynFrameChannel,
     accounting: &FrameDeliveryAccounting,
 ) -> Result<(), String> {
-    let hdr_len = 16usize;
-    let total = hdr_len
-        .checked_add(nal.nal_data.len())
+    let total = nal
+        .payload_bytes()
         .ok_or_else(|| "RDP NAL payload size overflow".to_string())?;
     if total > MAX_RDP_FRAME_PAYLOAD_BYTES {
         return Err(format!(
             "RDP NAL payload is {total} bytes (maximum {MAX_RDP_FRAME_PAYLOAD_BYTES})"
         ));
+    }
+    if nal.dest_w == 0
+        || nal.dest_h == 0
+        || nal.region_rects.len() > crate::gfx::pdu::MAX_AVC420_REGIONS
+        || (nal.coded_width == 0) != (nal.coded_height == 0)
+        || nal.region_rects.iter().any(|rect| {
+            rect.left >= rect.right
+                || rect.top >= rect.bottom
+                || rect.right > nal.dest_w
+                || rect.bottom > nal.dest_h
+                || nal.screen_x.checked_add(rect.right).is_none()
+                || nal.screen_y.checked_add(rect.bottom).is_none()
+                || (nal.coded_width > 0
+                    && (rect.right > nal.coded_width || rect.bottom > nal.coded_height))
+        })
+    {
+        return Err("RDP NAL surface or mask dimensions are invalid".to_string());
     }
     if !frame_channel.can_send_payload(total) {
         let _ = frame_channel.record_delivery_drop(1, true);
@@ -838,15 +1143,24 @@ pub fn push_nal_via_channel(
     }
     let mut payload = Vec::with_capacity(total);
 
-    // 16-byte header
-    payload.extend_from_slice(&NAL_MAGIC.to_le_bytes()); // [0..4]  magic
+    payload.extend_from_slice(&NAL_V2_MAGIC.to_le_bytes()); // [0..4]  magic
     payload.extend_from_slice(&nal.surface_id.to_le_bytes()); // [4..6]  surface_id
     payload.extend_from_slice(&nal.screen_x.to_le_bytes()); // [6..8]  screen_x
     payload.extend_from_slice(&nal.screen_y.to_le_bytes()); // [8..10] screen_y
     payload.extend_from_slice(&nal.dest_w.to_le_bytes()); // [10..12] dest_w
     payload.extend_from_slice(&nal.dest_h.to_le_bytes()); // [12..14] dest_h
-    payload.extend_from_slice(&0u16.to_le_bytes()); // [14..16] reserved
-    payload.extend_from_slice(&nal.nal_data); // [16..]  NAL data
+    payload.extend_from_slice(&nal.coded_width.to_le_bytes()); // [14..16]
+    payload.extend_from_slice(&nal.coded_height.to_le_bytes()); // [16..18]
+    payload.extend_from_slice(&0u16.to_le_bytes()); // [18..20]
+    payload.extend_from_slice(&(nal.region_rects.len() as u32).to_le_bytes()); // [20..24]
+    payload.extend_from_slice(&(nal.nal_data.len() as u32).to_le_bytes()); // [24..28]
+    for rect in &nal.region_rects {
+        payload.extend_from_slice(&rect.left.to_le_bytes());
+        payload.extend_from_slice(&rect.top.to_le_bytes());
+        payload.extend_from_slice(&rect.right.to_le_bytes());
+        payload.extend_from_slice(&rect.bottom.to_le_bytes());
+    }
+    payload.extend_from_slice(&nal.nal_data);
 
     send_accounted_frame(accounting, frame_channel, FramePayloadKind::Nal, payload)
 }
@@ -866,6 +1180,7 @@ pub fn send_full_frame_via_channel(
     frame_store: &SharedFrameStore,
     accounting: &FrameDeliveryAccounting,
     pending_full_sync: &mut Vec<(u16, u16, u16, u16)>,
+    sequence: &mut RgbaFrameSequence,
 ) -> Result<RgbaTileDeliveryProgress, String> {
     let region = crate::ironrdp::pdu::geometry::InclusiveRectangle {
         left: 0,
@@ -878,7 +1193,7 @@ pub fn send_full_frame_via_channel(
     // Queue a constant-size cursor before any payload allocation. The tiler
     // mutates it to the unsent tail as credits are consumed.
     ensure_full_desktop_sync(pending_full_sync, width, height);
-    push_tiled_rects_via_channel(
+    push_sequenced_tiled_rects_via_channel(
         image.data(),
         width,
         height,
@@ -886,6 +1201,7 @@ pub fn send_full_frame_via_channel(
         frame_channel,
         FramePayloadKind::FullFrame,
         accounting,
+        sequence,
     )
 }
 
@@ -966,6 +1282,242 @@ mod tests {
         tiles: Mutex<Vec<RecordedTile>>,
     }
 
+    struct EnvelopeChannel {
+        remaining: AtomicUsize,
+        payloads: Mutex<Vec<Vec<u8>>>,
+    }
+    impl FrameChannel for EnvelopeChannel {
+        fn can_send_payload(&self, bytes: usize) -> bool {
+            bytes <= MAX_RDP_FRAME_PAYLOAD_BYTES && self.remaining.load(AtomicOrdering::Acquire) > 0
+        }
+        fn send_raw(&self, payload: Vec<u8>) -> Result<(), String> {
+            assert!(self.remaining.fetch_sub(1, AtomicOrdering::AcqRel) > 0);
+            self.payloads.lock().unwrap().push(payload);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn rgba2_four_k_snapshot_has_atomic_boundaries_and_exact_pixels_across_credit_waits() {
+        let (width, height) = (4096u16, 2160u16);
+        let image: Vec<u8> = (0..usize::from(width) * usize::from(height) * 4)
+            .map(|i| (i % 251) as u8)
+            .collect();
+        let sink = Arc::new(EnvelopeChannel {
+            remaining: AtomicUsize::new(0),
+            payloads: Mutex::new(Vec::new()),
+        });
+        let channel: DynFrameChannel = sink.clone();
+        let accounting = FrameDeliveryAccounting::new();
+        let mut pending = vec![(0, 0, width, height)];
+        let mut sequence = RgbaFrameSequence::default();
+        let blocked = push_sequenced_tiled_rects_via_channel(
+            &image,
+            width,
+            height,
+            &mut pending,
+            &channel,
+            FramePayloadKind::FullFrame,
+            &accounting,
+            &mut sequence,
+        )
+        .unwrap();
+        assert_eq!(blocked.sent_tiles, 0);
+        assert!(!sequence.started);
+        let mut frame_id = None;
+        let mut next_row = 0;
+        let mut tiles = 0;
+        while !pending.is_empty() {
+            let expected = next_sequenced_rgba_payload_bytes(image.len(), width, height, &pending);
+            sink.remaining.store(1, AtomicOrdering::Release);
+            let progress = push_sequenced_tiled_rects_via_channel(
+                &image,
+                width,
+                height,
+                &mut pending,
+                &channel,
+                FramePayloadKind::FullFrame,
+                &accounting,
+                &mut sequence,
+            )
+            .unwrap();
+            assert_eq!(progress.sent_tiles, 1);
+            let payload = sink.payloads.lock().unwrap().pop().unwrap();
+            assert_eq!(payload.len(), expected);
+            assert!(payload.len() <= MAX_RDP_RGBA_TILE_PAYLOAD_BYTES);
+            let read16 =
+                |offset| u16::from_le_bytes(payload[offset..offset + 2].try_into().unwrap());
+            let read32 =
+                |offset| u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap());
+            assert_eq!(read32(0), RGBA_V2_MAGIC);
+            assert_eq!(*frame_id.get_or_insert(read32(4)), read32(4));
+            assert_eq!(
+                read16(8),
+                u16::from(tiles == 0) | (u16::from(progress.complete) << 1)
+            );
+            assert_eq!(read16(10), 0);
+            assert_eq!((read16(12), read16(14), read16(16)), (0, next_row, width));
+            let rows = read16(18);
+            let start = usize::from(next_row) * usize::from(width) * 4;
+            let bytes = usize::from(rows) * usize::from(width) * 4;
+            assert_eq!(&payload[20..], &image[start..start + bytes]);
+            next_row += rows;
+            tiles += 1;
+            assert_eq!(progress.complete, next_row == height);
+        }
+        assert!(tiles > 1);
+        assert_eq!(next_row, height);
+        assert!(!sequence.started);
+        assert_eq!(
+            accounting.snapshot().delivered_bytes,
+            image.len() as u64 + tiles * 20
+        );
+    }
+
+    #[test]
+    fn nal2_envelope_preserves_large_masks_dimensions_and_decode_only_updates() {
+        use crate::gfx::{pdu::GfxRect16, processor::GfxNalFrame};
+        let sink = Arc::new(EnvelopeChannel {
+            remaining: AtomicUsize::new(3),
+            payloads: Mutex::new(Vec::new()),
+        });
+        let channel: DynFrameChannel = sink.clone();
+        let accounting = FrameDeliveryAccounting::new();
+        let mut nal = GfxNalFrame {
+            surface_id: 9,
+            screen_x: 11,
+            screen_y: 12,
+            dest_w: 7680,
+            dest_h: 4320,
+            region_rects: (0..4320)
+                .step_by(16)
+                .flat_map(|top| {
+                    (0..7680).step_by(16).map(move |left| GfxRect16 {
+                        left,
+                        top,
+                        right: left + 16,
+                        bottom: top + 16,
+                    })
+                })
+                .collect(),
+            nal_data: vec![0, 0, 0, 1, 0x65],
+            ..Default::default()
+        };
+        assert_eq!(
+            nal.region_rects.len(),
+            129600,
+            "normal 8K macroblock masks fit the explicit budget"
+        );
+        push_nal_via_channel(&nal, &channel, &accounting).unwrap();
+        let data = sink.payloads.lock().unwrap().pop().unwrap();
+        assert_eq!(
+            u32::from_le_bytes(data[..4].try_into().unwrap()),
+            NAL_V2_MAGIC
+        );
+        assert_eq!(
+            &data[4..20],
+            &[9, 0, 11, 0, 12, 0, 0, 30, 224, 16, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(u32::from_le_bytes(data[20..24].try_into().unwrap()), 129600);
+        assert_eq!(u32::from_le_bytes(data[24..28].try_into().unwrap()), 5);
+        for (bytes, rect) in data[28..data.len() - 5]
+            .chunks_exact(8)
+            .zip(&nal.region_rects)
+        {
+            let edges: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+                .collect();
+            assert_eq!(edges, [rect.left, rect.top, rect.right, rect.bottom]);
+        }
+        assert_eq!(&data[data.len() - 5..], &nal.nal_data);
+        nal.region_rects.clear();
+        push_nal_via_channel(&nal, &channel, &accounting).unwrap();
+        assert_eq!(sink.payloads.lock().unwrap().pop().unwrap().len(), 33);
+        nal.coded_width = 16;
+        assert!(push_nal_via_channel(&nal, &channel, &accounting).is_err());
+        nal.coded_height = 16;
+        nal.region_rects.push(GfxRect16 {
+            left: 0,
+            top: 0,
+            right: 17,
+            bottom: 1,
+        });
+        assert!(push_nal_via_channel(&nal, &channel, &accounting).is_err());
+    }
+
+    #[test]
+    fn rgba2_large_partial_rect_is_atomic_and_disjoint_small_rects_stay_packed() {
+        let (width, height) = (2060u16, 2164u16);
+        let image: Vec<u8> = (0..usize::from(width) * usize::from(height) * 4)
+            .map(|i| (i % 251) as u8)
+            .collect();
+        let sink = Arc::new(EnvelopeChannel {
+            remaining: AtomicUsize::new(1),
+            payloads: Mutex::new(Vec::new()),
+        });
+        let channel: DynFrameChannel = sink.clone();
+        let accounting = FrameDeliveryAccounting::new();
+        let mut pending = vec![(3, 2, 2048, 2160)];
+        let mut sequence = RgbaFrameSequence::default();
+        let mut seen_rows = 0;
+        let mut id = None;
+        while !pending.is_empty() {
+            sink.remaining.store(1, AtomicOrdering::Release);
+            let progress = push_sequenced_tiled_rects_via_channel(
+                &image,
+                width,
+                height,
+                &mut pending,
+                &channel,
+                FramePayloadKind::RgbaRects,
+                &accounting,
+                &mut sequence,
+            )
+            .unwrap();
+            let payload = sink.payloads.lock().unwrap().pop().unwrap();
+            let read = |at| u16::from_le_bytes(payload[at..at + 2].try_into().unwrap());
+            let frame_id = u32::from_le_bytes(payload[4..8].try_into().unwrap());
+            assert_eq!(*id.get_or_insert(frame_id), frame_id);
+            assert_eq!(
+                read(8),
+                u16::from(seen_rows == 0) | (u16::from(progress.complete) << 1)
+            );
+            assert_eq!((read(12), read(14), read(16)), (3, 2 + seen_rows, 2048));
+            let rows = read(18);
+            for row in 0..rows {
+                let source = (usize::from(2 + seen_rows + row) * usize::from(width) + 3) * 4;
+                let target = 20 + usize::from(row) * 2048 * 4;
+                assert_eq!(
+                    &payload[target..target + 2048 * 4],
+                    &image[source..source + 2048 * 4]
+                );
+            }
+            seen_rows += rows;
+        }
+        assert_eq!(seen_rows, 2160);
+        pending.extend_from_slice(&[(1, 1, 2, 2), (20, 10, 3, 1)]);
+        sink.remaining.store(1, AtomicOrdering::Release);
+        let progress = push_sequenced_tiled_rects_via_channel(
+            &image,
+            width,
+            height,
+            &mut pending,
+            &channel,
+            FramePayloadKind::RgbaRects,
+            &accounting,
+            &mut sequence,
+        )
+        .unwrap();
+        assert!(progress.complete);
+        assert_eq!(progress.sent_tiles, 1);
+        let payload = sink.payloads.lock().unwrap().pop().unwrap();
+        assert_eq!(payload.len(), 12 + 8 + 16 + 8 + 12);
+        assert_eq!(&payload[8..12], &[3, 0, 0, 0]);
+        assert_eq!(&payload[12..20], &[1, 0, 1, 0, 2, 0, 2, 0]);
+        assert_eq!(&payload[36..44], &[20, 0, 10, 0, 3, 0, 1, 0]);
+    }
+
     impl RecordingTileChannel {
         fn new(remaining: usize) -> Self {
             Self {
@@ -1002,6 +1554,184 @@ mod tests {
             bytes <= MAX_RDP_RGBA_TILE_PAYLOAD_BYTES
                 && self.remaining.load(AtomicOrdering::Acquire) > 0
         }
+    }
+
+    struct PixelVerifyingChannel {
+        image: Arc<Vec<u8>>,
+        width: u16,
+        remaining: AtomicUsize,
+        rects: Mutex<Vec<RecordedTile>>,
+        payload_bytes: Mutex<Vec<usize>>,
+    }
+
+    impl FrameChannel for PixelVerifyingChannel {
+        fn can_send_payload(&self, bytes: usize) -> bool {
+            bytes <= MAX_RDP_RGBA_TILE_PAYLOAD_BYTES
+                && self.remaining.load(AtomicOrdering::Acquire) > 0
+        }
+
+        fn send_raw(&self, data: Vec<u8>) -> Result<(), String> {
+            assert!(self.remaining.fetch_sub(1, AtomicOrdering::AcqRel) > 0);
+            assert!(data.len() <= MAX_RDP_RGBA_TILE_PAYLOAD_BYTES);
+            self.payload_bytes.lock().unwrap().push(data.len());
+            let mut offset = 0;
+            while offset < data.len() {
+                assert!(offset + 8 <= data.len());
+                let read = |i| u16::from_le_bytes([data[offset + i], data[offset + i + 1]]);
+                let (x, y, width, height) = (read(0), read(2), read(4), read(6));
+                let bytes = checked_rect_payload_bytes(width, height).unwrap();
+                self.rects.lock().unwrap().push(RecordedTile {
+                    x,
+                    y,
+                    width,
+                    height,
+                    byte_len: bytes,
+                });
+                offset += 8;
+                for row in usize::from(y)..usize::from(y) + usize::from(height) {
+                    let start = (row * usize::from(self.width) + usize::from(x)) * 4;
+                    let row_bytes = usize::from(width) * 4;
+                    assert_eq!(
+                        &data[offset..offset + row_bytes],
+                        &self.image[start..start + row_bytes]
+                    );
+                    offset += row_bytes;
+                }
+            }
+            assert_eq!(
+                offset,
+                data.len(),
+                "every packed header must match its pixels"
+            );
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn small_disjoint_rectangles_share_one_credit_with_exact_clamped_pixels() {
+        let width = 64;
+        let height = 64;
+        let image = Arc::new(
+            (0..usize::from(width) * usize::from(height) * 4)
+                .map(|i| (i % 251) as u8)
+                .collect(),
+        );
+        let recorder = Arc::new(PixelVerifyingChannel {
+            image: Arc::clone(&image),
+            width,
+            remaining: AtomicUsize::new(1),
+            rects: Mutex::new(Vec::new()),
+            payload_bytes: Mutex::new(Vec::new()),
+        });
+        let channel: DynFrameChannel = recorder.clone();
+        let accounting = FrameDeliveryAccounting::new();
+        let mut pending = vec![
+            (1, 2, 7, 5),
+            (30, 40, 4, 3),
+            (60, 60, 20, 20),
+            (100, 0, 1, 1),
+        ];
+        let expected_bytes = next_rgba_payload_bytes(image.len(), width, height, &pending);
+        let progress = push_tiled_rects_via_channel(
+            &image,
+            width,
+            height,
+            &mut pending,
+            &channel,
+            FramePayloadKind::RgbaRects,
+            &accounting,
+        )
+        .unwrap();
+        assert!(progress.complete);
+        assert_eq!(progress.sent_tiles, 1);
+        assert!(pending.is_empty());
+        let rects = recorder.rects.lock().unwrap();
+        assert_eq!(rects.len(), 3);
+        assert_eq!((rects[2].width, rects[2].height), (4, 4));
+        assert_eq!(
+            *recorder.payload_bytes.lock().unwrap(),
+            vec![expected_bytes]
+        );
+        assert_eq!(accounting.snapshot().multi_rect_batches, 1);
+    }
+
+    #[test]
+    fn four_k_full_frame_pixels_survive_bounded_tiles_and_one_credit_acknowledgements() {
+        let width = 4096;
+        let height = 2160;
+        let image = Arc::new(
+            (0..usize::from(width) * usize::from(height) * 4)
+                .map(|i| (i % 251) as u8)
+                .collect(),
+        );
+        let recorder = Arc::new(PixelVerifyingChannel {
+            image: Arc::clone(&image),
+            width,
+            remaining: AtomicUsize::new(1),
+            rects: Mutex::new(Vec::new()),
+            payload_bytes: Mutex::new(Vec::new()),
+        });
+        let channel: DynFrameChannel = recorder.clone();
+        let accounting = FrameDeliveryAccounting::new();
+        let mut pending = vec![(0, 0, width, height)];
+        for _ in 0..16 {
+            let expected = next_rgba_payload_bytes(image.len(), width, height, &pending);
+            let progress = push_tiled_rects_via_channel(
+                &image,
+                width,
+                height,
+                &mut pending,
+                &channel,
+                FramePayloadKind::FullFrame,
+                &accounting,
+            )
+            .unwrap();
+            assert_eq!(progress.sent_tiles, 1);
+            assert_eq!(
+                recorder.payload_bytes.lock().unwrap().last(),
+                Some(&expected)
+            );
+            if progress.complete {
+                break;
+            }
+            let unchanged = pending.clone();
+            assert_eq!(
+                push_tiled_rects_via_channel(
+                    &image,
+                    width,
+                    height,
+                    &mut pending,
+                    &channel,
+                    FramePayloadKind::FullFrame,
+                    &accounting
+                )
+                .unwrap()
+                .sent_tiles,
+                0
+            );
+            assert_eq!(pending, unchanged);
+            recorder.remaining.store(1, AtomicOrdering::Release);
+        }
+        assert!(pending.is_empty());
+        let rects = recorder.rects.lock().unwrap();
+        let mut next_y = 0;
+        for rect in rects.iter() {
+            assert_eq!(rect.y, next_y);
+            next_y += rect.height;
+        }
+        assert_eq!(next_y, height);
+    }
+
+    #[test]
+    fn multi_rect_rejects_truncated_and_cross_row_sources_before_sending() {
+        let channel: DynFrameChannel = Arc::new(NoopFrameChannel);
+        let accounting = FrameDeliveryAccounting::new();
+        for (image, region) in [(vec![0; 16], (0, 0, 2, 3)), (vec![0; 32], (1, 0, 2, 1))] {
+            assert!(
+                push_multi_rect_via_channel(&image, 2, &[region], &channel, &accounting).is_err()
+            );
+        }
+        assert_eq!(accounting.snapshot().attempted_frames, 0);
     }
 
     #[test]

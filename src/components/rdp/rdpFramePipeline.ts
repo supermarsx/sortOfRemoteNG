@@ -11,8 +11,8 @@
  * |---------------|----------|--------------------------------|---------------------|
  * | `vsync`       | ~16ms    | requestAnimationFrame          | Battery / idle      |
  * | `low-latency` | ~1ms     | MessageChannel.postMessage     | Fast animations     |
- * | `adaptive`    | dynamic  | Starts vsync, escalates on     | Default — balances  |
- * |               |          | queue pressure, relaxes back   | latency vs. power   |
+ * | `adaptive`    | demand   | MessageChannel on arrival,    | Default; follows    |
+ * |               |          | worker capacity on completion | actual frame demand |
  *
  * Triple buffering:
  * When the WebGL renderer is created with `tripleBuffering: true`, it uses
@@ -21,6 +21,7 @@
  */
 
 import { FrameBuffer } from "./rdpCanvas";
+import { parseRdpRgbaEnvelope } from "./rdpFrameProtocol";
 import {
   createFrameRenderer,
   isNalPayload,
@@ -43,10 +44,13 @@ import {
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type FrameSchedulingMode = "vsync" | "low-latency" | "adaptive";
+let nextPipelineEpoch = 0;
 
 export interface PipelineOptions {
   scheduling?: FrameSchedulingMode;
   tripleBuffering?: boolean;
+  /** Optional presentation cap; zero/missing leaves decoded video uncapped. */
+  targetFps?: number;
   onH264RecoveryStateChange?: (event: RdpH264RecoveryEvent) => void;
 }
 
@@ -58,6 +62,11 @@ interface QueuedRdpFrame {
 // ─── Pipeline ───────────────────────────────────────────────────────────────
 
 export class RdpFramePipeline {
+  readonly telemetryEpoch =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${++nextPipelineEpoch}`;
+  private rgbaFrameId: number | null = null;
   // ── Queue & scheduling ──────────────────────────────────────────────
   private queue: QueuedRdpFrame[] = [];
   private queueBytes = 0;
@@ -73,7 +82,6 @@ export class RdpFramePipeline {
   private coalescedFrameCount = 0;
   private lastFrameRenderMs = 0;
   private averageFrameRenderMs = 0;
-  private renderSampleCount = 0;
   private renderSamplesMs: number[] = [];
   private lastFrameReceivedAtMs: number | undefined;
   private lastFramePresentedAtMs: number | undefined;
@@ -92,16 +100,7 @@ export class RdpFramePipeline {
   // ── Scheduling ──────────────────────────────────────────────────────
   private readonly scheduleMode: FrameSchedulingMode;
   private readonly msgChannel: MessageChannel | null = null;
-  private usingLowLatency = false; // current state for adaptive mode
-
-  // Adaptive mode: tracks queue depth to decide when to escalate/relax.
-  // Escalation requires ESCALATE_COUNT consecutive high-queue ticks to avoid
-  // oscillation from transient spikes.
-  private static readonly ADAPTIVE_ESCALATE_THRESHOLD = 2;
-  private static readonly ADAPTIVE_ESCALATE_COUNT = 3; // require 3 consecutive high ticks
-  private static readonly ADAPTIVE_RELAX_FRAMES = 60; // relax after N consecutive low-queue ticks
-  private adaptiveRelaxCounter = 0;
-  private adaptiveEscalateCounter = 0;
+  private usingLowLatency = false;
 
   // ── Rendering ───────────────────────────────────────────────────────
   private canvas: HTMLCanvasElement | null = null;
@@ -133,22 +132,31 @@ export class RdpFramePipeline {
   private readonly tick = () => this.renderFrames();
 
   constructor(opts?: PipelineOptions) {
-    this.scheduleMode = opts?.scheduling ?? "vsync";
+    this.scheduleMode = opts?.scheduling ?? "adaptive";
     this.onH264RecoveryStateChange = opts?.onH264RecoveryStateChange;
     this.rendererOpts = {
       tripleBuffering: opts?.tripleBuffering ?? false,
+      targetFps: opts?.targetFps,
       onH264RecoveryStateChange: this.handleRendererRecoveryState,
+      onPresented: (durationMs, coalescedFrames = 0) => {
+        if (this.destroyed || !this.visible) return;
+        this.recordRenderDuration(durationMs);
+        this.presentedFrameCount += 1;
+        this.coalescedFrameCount += coalescedFrames;
+        this.lastFramePresentedAtMs = performance.now();
+      },
     };
 
     // Create the MessageChannel for low-latency / adaptive scheduling.
-    // The channel fires a micro-task on port1 when port2.postMessage() is
-    // called — ~0.5-1ms latency vs rAF's ~16ms.
+    // MessageChannel yields a task, allowing input and browser work between
+    // arrivals. It schedules nothing while idle. Native credit follows worker
+    // consumption, so adaptive throughput follows capacity even at depth one.
     if (this.scheduleMode !== "vsync") {
       this.msgChannel = new MessageChannel();
       this.msgChannel.port1.onmessage = this.tick;
     }
 
-    if (this.scheduleMode === "low-latency") {
+    if (this.scheduleMode !== "vsync") {
       this.usingLowLatency = true;
     }
   }
@@ -493,34 +501,6 @@ export class RdpFramePipeline {
     }
   }
 
-  /** Adaptive mode: check queue pressure and switch scheduling strategy. */
-  private adaptiveCheck(): void {
-    if (this.scheduleMode !== "adaptive") return;
-
-    if (this.queue.length >= RdpFramePipeline.ADAPTIVE_ESCALATE_THRESHOLD) {
-      // Queue is building up — require sustained pressure before escalating
-      this.adaptiveEscalateCounter++;
-      this.adaptiveRelaxCounter = 0;
-      if (
-        !this.usingLowLatency &&
-        this.adaptiveEscalateCounter >= RdpFramePipeline.ADAPTIVE_ESCALATE_COUNT
-      ) {
-        this.usingLowLatency = true;
-      }
-    } else {
-      // Queue is healthy — count towards relaxing back to vsync
-      this.adaptiveEscalateCounter = 0;
-      this.adaptiveRelaxCounter++;
-      if (
-        this.usingLowLatency &&
-        this.adaptiveRelaxCounter >= RdpFramePipeline.ADAPTIVE_RELAX_FRAMES
-      ) {
-        this.usingLowLatency = false;
-        this.adaptiveRelaxCounter = 0;
-      }
-    }
-  }
-
   // ── Lifecycle ───────────────────────────────────────────────────────
 
   /** Attach a visible canvas and create the renderer. */
@@ -679,6 +659,7 @@ export class RdpFramePipeline {
     const dimensionsChanged =
       this.surfaceWidth !== width || this.surfaceHeight !== height;
     if (!dimensionsChanged) return;
+    this.rgbaFrameId = null;
     this.surfaceWidth = width;
     this.surfaceHeight = height;
 
@@ -716,6 +697,7 @@ export class RdpFramePipeline {
     }
     this.visible = visible;
     if (!visible) {
+      this.rgbaFrameId = null;
       this.recoveryNotifiedWhileVisible = false;
       if (this.pending) {
         cancelAnimationFrame(this.rafId);
@@ -808,9 +790,12 @@ export class RdpFramePipeline {
   /** Render and queue metrics for diagnostics / backpressure telemetry. */
   getMetrics(): RdpFramePipelineMetrics {
     const renderer = this.renderer;
+    const worker = renderer?.getPendingMetrics?.();
     return {
-      queuedFrames: this.queue.length,
-      queuedBytes: this.getQueuedBytes(),
+      presentationEpoch: this.telemetryEpoch,
+      queuedFrames: this.queue.length + (worker?.frames ?? 0),
+      queuedBytes: this.getQueuedBytes() + (worker?.bytes ?? 0),
+      oldestPendingRenderMs: worker?.oldestPendingMs,
       preAttachFrames: this.preAttachBuffer.length,
       preAttachBytes: this.preAttachBytes,
       receivedFrames: this.receivedFrameCount,
@@ -864,9 +849,6 @@ export class RdpFramePipeline {
     const canvas = this.canvas;
     const renderer = this.renderer;
 
-    // Adaptive scheduling decision (before we drain)
-    this.adaptiveCheck();
-
     if (this.queue.length === 0) return;
 
     if (!fb || !canvas || !renderer) {
@@ -896,6 +878,7 @@ export class RdpFramePipeline {
 
     const frameBatchSize = queue.length;
     const renderStartMs = performance.now();
+    let synchronousPresentations = 0;
 
     try {
       // ── WebCodecs fast path: forward raw buffers directly to the worker ──
@@ -915,7 +898,7 @@ export class RdpFramePipeline {
       } else {
         // ── Standard RGBA dirty-rect rendering path ──
         const needsOffscreen = this.magnifierActive;
-        const offCtx = needsOffscreen ? fb.offscreen.getContext("2d") : null;
+        const offCtx = needsOffscreen ? fb.ctx : null;
 
         for (let i = 0; i < queue.length; i++) {
           const data = queue[i].data;
@@ -934,7 +917,16 @@ export class RdpFramePipeline {
               ? data.byteLength
               : ((data as any).byteLength ?? 0);
           const view = new DataView(buf, baseOff, byteLen);
-          let offset = 0;
+          const envelope = parseRdpRgbaEnvelope(data);
+          if (envelope.frameId !== null) {
+            if (envelope.begin) this.rgbaFrameId = envelope.frameId;
+            if (this.rgbaFrameId !== envelope.frameId)
+              throw new Error("RGBA snapshot continuation without begin");
+          } else if (this.rgbaFrameId !== null) {
+            throw new Error("Unframed RGBA update interrupted snapshot");
+          }
+          let offset = envelope.offset;
+          let painted = false;
           while (offset + 8 <= byteLen) {
             const x = view.getUint16(offset, true);
             const y = view.getUint16(offset + 2, true);
@@ -948,6 +940,7 @@ export class RdpFramePipeline {
               pixelBytes,
             );
             renderer.paintRegion(x, y, w, h, rgba);
+            painted ||= w > 0 && h > 0;
             if (offCtx && w > 0 && h > 0) {
               let cache = this.offImgCache;
               if (!cache || cache.w !== w || cache.h !== h) {
@@ -960,14 +953,23 @@ export class RdpFramePipeline {
             }
             offset += 8 + pixelBytes;
           }
+          // Worker renderers compose even when display=false, then acknowledge
+          // this tile. No raw pixel queue is held until the final tile arrives.
+          if (painted) renderer.present(envelope.end);
+          if (painted && envelope.end) synchronousPresentations++;
+          if (envelope.end) this.rgbaFrameId = null;
         }
-        renderer.present();
       }
-      const renderEndMs = performance.now();
-      this.recordRenderDuration(renderEndMs - renderStartMs);
-      this.presentedFrameCount += frameBatchSize;
-      this.lastFramePresentedAtMs = renderEndMs;
+      // Worker postMessage is submission, not presentation. Worker renderers
+      // report actual decode/paint completion through onPresented instead.
+      if (!this.isCanvasTransferred() && synchronousPresentations > 0) {
+        const renderEndMs = performance.now();
+        this.recordRenderDuration(renderEndMs - renderStartMs);
+        this.presentedFrameCount += synchronousPresentations;
+        this.lastFramePresentedAtMs = renderEndMs;
+      }
     } catch (error) {
+      this.rgbaFrameId = null;
       console.error(
         `[RDP pipeline] renderer failed while consuming ${frameBatchSize} queued frame(s):`,
         error,
@@ -981,7 +983,14 @@ export class RdpFramePipeline {
         );
       }
     } finally {
-      for (const frame of queue) frame.completeDelivery();
+      // Keep native's one credit until the bounded worker consumes its work.
+      // This prevents a fast event loop from repeatedly overflowing the worker.
+      const consumed = renderer.waitForIdle?.();
+      for (const frame of queue) {
+        if (consumed)
+          void consumed.then(frame.completeDelivery, frame.completeDelivery);
+        else frame.completeDelivery();
+      }
       queue.length = 0;
 
       // In low-latency mode, if new frames arrived while we were rendering,
@@ -1000,13 +1009,13 @@ export class RdpFramePipeline {
   private recordRenderDuration(durationMs: number): void {
     const safeDurationMs = Math.max(0, durationMs);
     this.lastFrameRenderMs = safeDurationMs;
-    this.renderSampleCount++;
-    this.averageFrameRenderMs +=
-      (safeDurationMs - this.averageFrameRenderMs) / this.renderSampleCount;
     this.renderSamplesMs.push(safeDurationMs);
     if (this.renderSamplesMs.length > RdpFramePipeline.MAX_RENDER_SAMPLES) {
       this.renderSamplesMs.shift();
     }
+    this.averageFrameRenderMs =
+      this.renderSamplesMs.reduce((total, sample) => total + sample, 0) /
+      this.renderSamplesMs.length;
   }
 
   private getRenderPercentile(percentile: number): number | undefined {

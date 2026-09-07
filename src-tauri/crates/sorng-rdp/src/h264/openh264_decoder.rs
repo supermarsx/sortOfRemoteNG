@@ -17,9 +17,9 @@ use super::{DecodedFrame, FrameBufferPool, H264Decoder, H264Error};
 use crate::openh264::decoder::Decoder;
 #[cfg(feature = "software-decode-dynamic")]
 use crate::openh264::decoder::DecoderConfig;
-use crate::openh264::formats::YUVSource;
 #[cfg(feature = "software-decode-dynamic")]
 use crate::openh264::OpenH264API;
+use sorng_rdp_vendor::openh264_sys2::{videoFormatI420, SBufferInfo};
 
 #[cfg(all(feature = "software-decode-dynamic", target_os = "windows"))]
 const DYNAMIC_OPENH264_LIBRARY_NAME: &str = "openh264-8.dll";
@@ -115,27 +115,82 @@ impl OpenH264SoftDecoder {
 }
 
 impl H264Decoder for OpenH264SoftDecoder {
-    fn decode(&mut self, nal_data: &[u8]) -> Result<Vec<DecodedFrame>, H264Error> {
-        match self.decoder.decode(nal_data) {
-            Ok(Some(yuv)) => {
-                let (w, h) = yuv.dimensions();
-                let width = w as u32;
-                let height = h as u32;
-                let out_size = w * h * 4;
-
-                let mut rgba = self.pool.acquire(out_size);
-                rgba.resize(out_size, 0);
-                yuv.write_rgba8(&mut rgba);
-
-                Ok(vec![DecodedFrame {
-                    width,
-                    height,
-                    rgba,
-                }])
-            }
-            Ok(None) => Ok(Vec::new()),
-            Err(e) => Err(H264Error::DecodeFailed(format!("openh264: {e}"))),
+    fn decode(&mut self, nal_data: &[u8], picture_id: u64) -> Result<Vec<DecodedFrame>, H264Error> {
+        let length = i32::try_from(nal_data.len())
+            .map_err(|_| H264Error::DecodeFailed("NAL length overflow".into()))?;
+        let mut planes = [std::ptr::null_mut(); 3];
+        let mut info = SBufferInfo {
+            uiInBsTimeStamp: picture_id,
+            ..Default::default()
+        };
+        // The high-level 0.9.8 wrapper discards input identities and reads the
+        // input rather than output timestamp. Use the same no-delay entry point
+        // without changing decoder configuration, and consume its planes before
+        // the next decoder call invalidates them.
+        let status = unsafe {
+            self.decoder.raw_api().decode_frame_no_delay(
+                nal_data.as_ptr(),
+                length,
+                planes.as_mut_ptr(),
+                &mut info,
+            )
+        };
+        if status != 0 {
+            return Err(H264Error::DecodeFailed(format!("openh264: {status}")));
         }
+        if info.iBufferStatus == 0 {
+            return Ok(Vec::new());
+        }
+        // SAFETY: a successful output uses the system-memory member of SBufferInfo.
+        let layout = unsafe { info.UsrData.sSystemBuffer };
+        if planes.iter().any(|p| p.is_null())
+            || layout.iFormat != videoFormatI420
+            || layout.iWidth <= 0
+            || layout.iHeight <= 0
+            || layout.iStride[0] < layout.iWidth
+            || layout.iStride[1] < layout.iWidth / 2 + layout.iWidth % 2
+        {
+            return Err(H264Error::ConversionFailed(
+                "invalid OpenH264 I420 layout".into(),
+            ));
+        }
+        let (w, h) = (layout.iWidth as usize, layout.iHeight as usize);
+        let (ys, uvs) = (layout.iStride[0] as usize, layout.iStride[1] as usize);
+        let out_size = w
+            .checked_mul(h)
+            .and_then(|n| n.checked_mul(4))
+            .filter(|&n| n <= super::MAX_DECODED_FRAME_BYTES)
+            .ok_or_else(|| {
+                H264Error::ConversionFailed("decoded picture exceeds byte budget".into())
+            })?;
+        let y_len = ys
+            .checked_mul(h)
+            .ok_or_else(|| H264Error::ConversionFailed("Y stride overflow".into()))?;
+        let uv_len = uvs
+            .checked_mul(h.div_ceil(2))
+            .ok_or_else(|| H264Error::ConversionFailed("UV stride overflow".into()))?;
+        let mut rgba = self.pool.acquire(out_size);
+        // SAFETY: OpenH264 owns these successful I420 output planes; their row
+        // strides and decoded height define their allocated readable lengths.
+        unsafe {
+            write_limited_i420_rgba(
+                std::slice::from_raw_parts(planes[0], y_len),
+                std::slice::from_raw_parts(planes[1], uv_len),
+                std::slice::from_raw_parts(planes[2], uv_len),
+                ys,
+                uvs,
+                uvs,
+                w,
+                h,
+                &mut rgba,
+            )?;
+        }
+        Ok(vec![DecodedFrame {
+            picture_id: info.uiOutYuvTimeStamp,
+            width: w as u32,
+            height: h as u32,
+            rgba,
+        }])
     }
 
     fn name(&self) -> &'static str {
@@ -143,11 +198,99 @@ impl H264Decoder for OpenH264SoftDecoder {
     }
 }
 
+/// Preserve OpenH264's limited-range BT.601 conversion using the existing
+/// YUV dependency's runtime-dispatched SIMD kernels, including padded strides.
+#[allow(clippy::too_many_arguments)]
+fn write_limited_i420_rgba(
+    y: &[u8],
+    u: &[u8],
+    v: &[u8],
+    ys: usize,
+    us: usize,
+    vs: usize,
+    width: usize,
+    height: usize,
+    rgba: &mut Vec<u8>,
+) -> Result<(), H264Error> {
+    rgba.resize(width * height * 4, 0);
+    use sorng_rdp_vendor::yuv::{yuv420_to_rgba, YuvPlanarImage, YuvRange, YuvStandardMatrix};
+    yuv420_to_rgba(
+        &YuvPlanarImage {
+            y_plane: y,
+            u_plane: u,
+            v_plane: v,
+            y_stride: ys as u32,
+            u_stride: us as u32,
+            v_stride: vs as u32,
+            width: width as u32,
+            height: height as u32,
+        },
+        rgba,
+        (width * 4) as u32,
+        YuvRange::Limited,
+        YuvStandardMatrix::Bt601,
+    )
+    .map_err(|error| H264Error::ConversionFailed(error.to_string()))
+}
+
 #[cfg(all(test, feature = "software-decode"))]
 mod source_tests {
     use super::*;
     use crate::openh264::encoder::Encoder;
     use crate::openh264::formats::{RgbaSliceU8, YUVBuffer};
+
+    #[test]
+    fn simd_limited_range_conversion_preserves_padded_rows_and_color_range() {
+        let (width, height, stride) = (18, 16, 32);
+        let mut y = vec![0; stride * height];
+        let mut u = vec![0; stride / 2 * height / 2];
+        let mut v = u.clone();
+        for row in 0..height {
+            for col in 0..width {
+                y[row * stride + col] = if col < 8 {
+                    16
+                } else if col < 16 {
+                    235
+                } else {
+                    128
+                };
+            }
+        }
+        for row in 0..height / 2 {
+            for col in 0..width / 2 {
+                u[row * stride / 2 + col] = 128;
+                v[row * stride / 2 + col] = 128;
+            }
+        }
+        let mut output = Vec::new();
+        write_limited_i420_rgba(
+            &y,
+            &u,
+            &v,
+            stride,
+            stride / 2,
+            stride / 2,
+            width,
+            height,
+            &mut output,
+        )
+        .unwrap();
+        for row in output.chunks_exact(width * 4) {
+            for (col, pixel) in row.chunks_exact(4).enumerate() {
+                let expected = if col < 8 {
+                    0
+                } else if col < 16 {
+                    255
+                } else {
+                    130
+                };
+                assert!(pixel[..3]
+                    .iter()
+                    .all(|&value| value.abs_diff(expected) <= 1));
+                assert_eq!(pixel[3], 255);
+            }
+        }
+    }
 
     #[test]
     fn encoded_frame_round_trips_through_the_rgba_pipeline() {
@@ -168,10 +311,11 @@ mod source_tests {
 
         let frames = OpenH264SoftDecoder::new()
             .expect("the bundled development decoder must initialize")
-            .decode(&encoded)
+            .decode(&encoded, 12345)
             .expect("the synthetic frame must decode");
         assert_eq!(frames.len(), 1);
         let frame = &frames[0];
+        assert_eq!(frame.picture_id, 12345);
         assert_eq!((frame.width, frame.height), (WIDTH as u32, HEIGHT as u32));
         assert_eq!(frame.rgba.len(), WIDTH * HEIGHT * 4);
 

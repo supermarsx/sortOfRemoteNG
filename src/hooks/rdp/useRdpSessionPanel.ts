@@ -41,6 +41,8 @@ export interface RDPStats {
   pdus_sent: number;
   frame_count: number;
   fps: number;
+  presented_fps?: number | null;
+  presented_frames?: number | null;
   input_events: number;
   errors_recovered: number;
   reactivations: number;

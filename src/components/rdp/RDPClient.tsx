@@ -144,8 +144,14 @@ const CanvasArea: React.FC<{
   // Smart sizing: scale the canvas to fit via CSS objectFit.
   // Resize to window: canvas buffer matches container — no CSS scaling needed.
   // Neither: fixed size, may overflow (scrollbars handled by container).
-  const smartSizing = mgr.rdpSettings?.display?.smartSizing !== false;
   const resizeToWindow = mgr.rdpSettings?.display?.resizeToWindow === true;
+  const smartSizing =
+    !resizeToWindow && mgr.rdpSettings?.display?.smartSizing === true;
+  const resolutionMode = resizeToWindow
+    ? "adaptive"
+    : smartSizing
+      ? "smart"
+      : "fixed";
 
   // File drag-drop state
   const [dragOver, setDragOver] = React.useState(false);
@@ -450,8 +456,10 @@ const CanvasArea: React.FC<{
   return (
     <div
       ref={mgr.containerRef}
-      className={`flex-1 flex items-center justify-center bg-black relative min-h-0 ${mgr.isFullscreen ? "p-0" : "p-1"}`}
-      style={{ overflow: smartSizing || resizeToWindow ? "hidden" : "auto" }}
+      data-testid="rdp-canvas-viewport"
+      data-resolution-mode={resolutionMode}
+      className={`flex-1 flex w-full min-w-0 max-w-full items-center justify-center bg-black relative min-h-0 ${mgr.isFullscreen || resizeToWindow ? "p-0" : "p-1"}`}
+      style={{ overflow: resolutionMode === "fixed" ? "auto" : "hidden" }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -544,6 +552,7 @@ const CanvasArea: React.FC<{
         style={{
           cursor: !mgr.mouseEnabled ? "not-allowed" : mgr.pointerStyle,
           imageRendering: "auto",
+          boxSizing: "border-box",
           // Smart sizing: constrain canvas to container and scale with objectFit
           ...((smartSizing && !resizeToWindow) || mgr.isFullscreen
             ? {
@@ -557,6 +566,8 @@ const CanvasArea: React.FC<{
             ? {
                 width: "100%",
                 height: "100%",
+                maxWidth: "100%",
+                maxHeight: "100%",
               }
             : {}),
           // Display rotation. Pure CSS transform — the underlying canvas pixel
@@ -629,7 +640,7 @@ const RDPClient: React.FC<RDPClientProps> = ({
 
   return (
     <div
-      className={`flex flex-col bg-[var(--color-background)] ${mgr.isFullscreen ? "fixed inset-0 z-[1200] overflow-hidden" : "h-full overflow-hidden"}`}
+      className={`flex w-full min-w-0 max-w-full flex-col bg-[var(--color-background)] ${mgr.isFullscreen ? "fixed inset-0 z-[1200] overflow-hidden" : "h-full overflow-hidden"}`}
       data-session-fullscreen-root={session.id}
       tabIndex={-1}
     >

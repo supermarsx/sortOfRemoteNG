@@ -12114,6 +12114,8 @@ dependencies = [
  "ironrdp-svc",
  "log",
  "openh264",
+ "openh264-sys2",
+ "yuv",
 ]
 
 [[package]]

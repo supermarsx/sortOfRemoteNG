@@ -5,6 +5,7 @@ import {
 } from "../../src/types/connection/connection";
 import {
   advanceSessionLifecycleAuthority,
+  advanceSessionLifecycleAuthorityIfCurrent,
   applySessionLifecyclePatch,
   cancelSessionLifecycleActorAttempts,
   finishSessionLifecycleActorAttempt,
@@ -120,6 +121,60 @@ describe("session lifecycle IPC patches", () => {
 
     finishSessionLifecycleActorAttempt(reservation.attempt);
     expect(hasSessionLifecycleActorAttempt(initial.id)).toBe(false);
+  });
+
+  it("atomically advances only the allocator's current lifecycle authority", () => {
+    const currentInitial = { ...makeSession(), id: "atomic-current" };
+    const currentA = reserveSessionLifecycleActorAttempt(currentInitial);
+    const currentTerminal = advanceSessionLifecycleAuthorityIfCurrent(
+      currentA.session,
+      {
+        generation: currentA.attempt.generation,
+        writerId: currentA.attempt.writerId,
+      },
+      "terminal-current-a",
+    );
+    expect(currentTerminal).toEqual(
+      expect.objectContaining({
+        lifecycleActorGeneration: currentA.attempt.generation + 1,
+        lifecycleWriterId: "terminal-current-a",
+      }),
+    );
+
+    const overlappingInitial = { ...makeSession(), id: "atomic-overlap" };
+    const actorA = reserveSessionLifecycleActorAttempt(overlappingInitial);
+    const replacementB = advanceSessionLifecycleAuthority(
+      {
+        ...actorA.session,
+        backendSessionId: "backend-b",
+      },
+      "replacement-b",
+    );
+    const staleTerminal = advanceSessionLifecycleAuthorityIfCurrent(
+      actorA.session,
+      {
+        generation: actorA.attempt.generation,
+        writerId: actorA.attempt.writerId,
+      },
+      "terminal-stale-a",
+    );
+    expect(staleTerminal).toBeNull();
+
+    const replacementTerminal = advanceSessionLifecycleAuthorityIfCurrent(
+      replacementB,
+      {
+        generation: replacementB.lifecycleActorGeneration!,
+        writerId: replacementB.lifecycleWriterId!,
+      },
+      "terminal-replacement-b",
+    );
+    expect(replacementTerminal).toEqual(
+      expect.objectContaining({
+        lifecycleActorGeneration: replacementB.lifecycleActorGeneration! + 1,
+        lifecycleWriterId: "terminal-replacement-b",
+        backendSessionId: "backend-b",
+      }),
+    );
   });
 
   it("refreshes a settled allocator from a strictly newer returned authority", () => {

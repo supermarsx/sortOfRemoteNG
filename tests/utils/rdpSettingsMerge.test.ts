@@ -39,7 +39,7 @@ describe("mergeRdpSettings", () => {
       expect(result.display?.colorDepth).toBe(32);
       expect(result.display?.desktopScaleFactor).toBe(100);
       expect(result.display?.lossyCompression).toBe(true);
-      expect(result.display?.smartSizing).toBe(true);
+      expect(result.display?.smartSizing).toBe(false);
     });
 
     it("audio matches compile-time defaults", () => {
@@ -87,7 +87,8 @@ describe("mergeRdpSettings", () => {
       expect(result.performance?.enableFontSmoothing).toBe(true);
       expect(result.performance?.enableDesktopComposition).toBe(false);
       expect(result.performance?.persistentBitmapCaching).toBe(false);
-      expect(result.performance?.targetFps).toBe(30);
+      expect(result.performance?.targetFps).toBe(0);
+      expect(result.performance?.frameRateLimitEnabled).toBe(false);
       expect(result.performance?.frameBatching).toBe(true);
       expect(result.performance?.frameBatchIntervalMs).toBe(33);
       expect(result.performance?.renderBackend).toBe("webview");
@@ -250,6 +251,7 @@ describe("mergeRdpSettings", () => {
         {
           performance: {
             targetFps: 60,
+            frameRateLimitEnabled: true,
             frameBatching: true,
             connectionSpeed: "lan",
           },
@@ -441,6 +443,21 @@ describe("mergeRdpSettings", () => {
 
     it("smartSizing global override", () => {
       const result = mergeRdpSettings(undefined, { smartSizing: false });
+      expect(result.display?.smartSizing).toBe(false);
+    });
+
+    it("normalizes legacy settings that enable both dynamic resize and smart sizing", () => {
+      const result = mergeRdpSettings(
+        {
+          display: {
+            resizeToWindow: true,
+            smartSizing: true,
+          },
+        },
+        {},
+      );
+
+      expect(result.display?.resizeToWindow).toBe(true);
       expect(result.display?.smartSizing).toBe(false);
     });
 
@@ -772,6 +789,7 @@ describe("mergeRdpSettings", () => {
         enableDesktopComposition: true,
         persistentBitmapCaching: true,
         targetFps: 60,
+        frameRateLimitEnabled: true,
         frameBatching: true,
         frameBatchIntervalMs: 16,
         renderBackend: "wgpu",
@@ -910,7 +928,13 @@ describe("mergeRdpSettings", () => {
         // The merge function has a second `codecs:` assignment after the spread
         // to restore the merged codecs. This tests that.
         const result = mergeRdpSettings(
-          { performance: { targetFps: 60, codecs: { enableCodecs: false } } },
+          {
+            performance: {
+              frameRateLimitEnabled: true,
+              targetFps: 60,
+              codecs: { enableCodecs: false },
+            },
+          },
           { codecsEnabled: true, remoteFxEnabled: true },
         );
         expect(result.performance?.targetFps).toBe(60);
@@ -1596,7 +1620,7 @@ describe("mergeRdpSettings", () => {
           display: { width: 3840 },
           audio: { playbackMode: "disabled" },
           input: { mouseMode: "relative" },
-          performance: { targetFps: 144 },
+          performance: { frameRateLimitEnabled: true, targetFps: 144 },
           security: { useCredSsp: false },
           gateway: { enabled: true },
           negotiation: { strategy: "plain-only" },

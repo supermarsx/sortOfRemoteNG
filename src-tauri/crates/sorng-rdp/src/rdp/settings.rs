@@ -3,8 +3,6 @@ use std::time::Duration;
 use crate::ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use serde::{Deserialize, Serialize};
 
-pub const MIN_RDP_FRAME_BATCH_INTERVAL_MS: u64 = 8;
-pub const MAX_RDP_FRAME_BATCH_INTERVAL_MS: u64 = 250;
 pub const MIN_RDP_FULL_FRAME_SYNC_INTERVAL: u64 = 1;
 pub const MAX_RDP_FULL_FRAME_SYNC_INTERVAL: u64 = 1_000_000;
 
@@ -142,8 +140,7 @@ impl ClipboardDirection {
 mod tests {
     use super::{
         build_bitmap_codecs, ClipboardDirection, RdpSettingsPayload, ResolvedSettings,
-        MAX_RDP_FRAME_BATCH_INTERVAL_MS, MAX_RDP_FULL_FRAME_SYNC_INTERVAL,
-        MIN_RDP_FRAME_BATCH_INTERVAL_MS, MIN_RDP_FULL_FRAME_SYNC_INTERVAL,
+        MAX_RDP_FULL_FRAME_SYNC_INTERVAL, MIN_RDP_FULL_FRAME_SYNC_INTERVAL,
     };
     use std::time::Duration;
 
@@ -192,11 +189,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_performance_settings_enable_frame_batching_at_33ms() {
+    fn missing_performance_settings_batch_without_a_frame_rate_limit() {
         let settings = ResolvedSettings::from_payload(&RdpSettingsPayload::default(), 1280, 720);
 
         assert!(settings.frame_batching);
-        assert_eq!(settings.frame_batch_interval, Duration::from_millis(33));
+        assert_eq!(settings.frame_interval, None);
     }
 
     #[test]
@@ -212,27 +209,29 @@ mod tests {
         let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
 
         assert!(!settings.frame_batching);
-        assert_eq!(settings.frame_batch_interval, Duration::from_millis(16));
+        assert_eq!(settings.frame_interval, None);
     }
 
     #[test]
-    fn frame_batch_interval_is_clamped_to_native_safety_range() {
-        for (requested, expected) in [
-            (0, MIN_RDP_FRAME_BATCH_INTERVAL_MS),
-            (u64::MAX, MAX_RDP_FRAME_BATCH_INTERVAL_MS),
+    fn only_an_explicit_positive_fps_enables_a_frame_rate_limit() {
+        for (fps, expected) in [
+            (0, None),
+            (1, Some(Duration::from_secs(1))),
+            (60, Some(Duration::from_nanos(16_666_667))),
+            (144, Some(Duration::from_nanos(6_944_445))),
+            (u32::MAX, Some(Duration::from_nanos(1))),
         ] {
             let payload = serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
                 "performance": {
-                    "frameBatchIntervalMs": requested
+                    "targetFps": fps,
+                    "frameBatchIntervalMs": 250,
+                    "frameBatching": false
                 }
             }))
             .expect("frame batch interval payload");
 
             let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
-            assert_eq!(
-                settings.frame_batch_interval,
-                Duration::from_millis(expected)
-            );
+            assert_eq!(settings.frame_interval, expected);
         }
     }
 
@@ -335,6 +334,7 @@ pub struct RdpPerformancePayload {
     pub connection_speed: Option<String>,
     pub target_fps: Option<u32>,
     pub frame_batching: Option<bool>,
+    /// Accepted for old saved profiles; batching no longer imposes a timer.
     pub frame_batch_interval_ms: Option<u64>,
     pub codecs: Option<RdpCodecPayload>,
     pub render_backend: Option<String>,
@@ -596,7 +596,8 @@ pub struct ResolvedSettings {
     pub use_routing_token: bool,
     // Frame delivery
     pub frame_batching: bool,
-    pub frame_batch_interval: Duration,
+    /// None means demand-driven delivery with no artificial FPS ceiling.
+    pub frame_interval: Option<Duration>,
     pub full_frame_sync_interval: u64,
     // Render backend
     pub render_backend: String,
@@ -674,13 +675,10 @@ impl ResolvedSettings {
                 | PerformanceFlags::ENABLE_FONT_SMOOTHING
         });
 
-        let batch_ms = perf
-            .and_then(|p| p.frame_batch_interval_ms)
-            .unwrap_or(33)
-            .clamp(
-                MIN_RDP_FRAME_BATCH_INTERVAL_MS,
-                MAX_RDP_FRAME_BATCH_INTERVAL_MS,
-            );
+        let frame_interval = perf
+            .and_then(|p| p.target_fps)
+            .filter(|fps| *fps > 0)
+            .map(|fps| Duration::from_nanos(1_000_000_000u64.div_ceil(u64::from(fps))));
 
         // Master CredSSP toggle: if useCredSsp is false, force credssp off
         let use_credssp_master = sec.and_then(|s| s.use_credssp).unwrap_or(true);
@@ -773,7 +771,7 @@ impl ResolvedSettings {
             use_routing_token: nego.and_then(|n| n.use_routing_token).unwrap_or(false),
             // Frame delivery
             frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(true),
-            frame_batch_interval: Duration::from_millis(batch_ms),
+            frame_interval,
             full_frame_sync_interval: adv
                 .and_then(|a| a.full_frame_sync_interval)
                 .unwrap_or(1000)

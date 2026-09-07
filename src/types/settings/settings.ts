@@ -973,11 +973,13 @@ export interface RdpGlobalDefaultsConfig {
   persistentBitmapCaching: boolean;
 
   // ─── Performance / Frame Delivery defaults ─────────────────
-  /** Target frame rate limit (0 = unlimited) */
+  /** Explicit opt-in; old saved numeric FPS values do not enable a cap. */
+  frameRateLimitEnabled?: boolean;
+  /** Optional maximum FPS; effective runtime value is 0 unless the limit is enabled. */
   targetFps: number;
   /** Frame batching: accumulate dirty regions and emit combined updates */
   frameBatching: boolean;
-  /** Frame batch interval in ms (16 = ~60fps, 33 = ~30fps) */
+  /** Legacy saved preference, accepted for compatibility but no longer delays delivery. */
   frameBatchIntervalMs: number;
   /** Full-frame sync interval (emit complete framebuffer every N frames) */
   fullFrameSyncInterval: number;
@@ -1015,8 +1017,8 @@ export interface RdpGlobalDefaultsConfig {
    * Default server-side compositor for RDP frame accumulation.
    * - `webview` — no compositor, direct per-region streaming
    * - `softbuffer` — CPU shadow buffer compositor
-   * - `wgpu` — GPU compositor (CPU fallback currently)
-   * - `auto` — try wgpu → softbuffer → webview
+   * - `wgpu` — compatibility alias for the CPU compositor
+   * - `auto` — direct streaming without an additional CPU shadow buffer
    */
   renderBackend: "auto" | "softbuffer" | "wgpu" | "webview";
 

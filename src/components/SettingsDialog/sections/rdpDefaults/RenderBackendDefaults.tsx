@@ -12,7 +12,8 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
   const currentFrontend = rdp.frontendRenderer ?? "auto";
   const isWebCodecsFrontend =
-    currentFrontend === "webcodecs-worker" || currentFrontend === "webcodecs-cpu";
+    currentFrontend === "webcodecs-worker" ||
+    currentFrontend === "webcodecs-cpu";
   const backendBypassed = nalPassthrough || isWebCodecsFrontend;
 
   return (
@@ -24,9 +25,9 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
       <Card>
         <p className="text-xs text-[var(--color-textMuted)]">
-          Controls how decoded RDP frames are displayed. Native renderers bypass
-          JS entirely by blitting pixels straight to a Win32 child window — zero
-          IPC, zero canvas overhead.
+          Controls CPU precomposition before decoded pixels reach the Webview
+          renderer. Auto streams updates directly; Softbuffer and the Wgpu
+          compatibility option use a CPU compositor before delivery.
         </p>
 
         <div
@@ -42,7 +43,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
                 ? "Default render backend (bypassed by WebCodecs)"
                 : "Default render backend"
             }
-            description="Per-connection settings override this default. Auto tries wgpu → softbuffer → webview."
+            description="Per-connection settings override this default. Wgpu currently uses the CPU compatibility fallback."
             value={rdp.renderBackend ?? "webview"}
             options={[
               {
@@ -51,24 +52,20 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
               },
               {
                 value: "softbuffer",
-                label: "Softbuffer (CPU) — native Win32, zero JS overhead",
+                label: "Softbuffer — CPU precomposition → Webview",
               },
               {
                 value: "wgpu",
-                label: "Wgpu (GPU) — DX12/Vulkan, best at high res",
+                label: "Wgpu — CPU compatibility fallback",
               },
-              { value: "auto", label: "Auto — try GPU → CPU → Webview" },
+              { value: "auto", label: "Auto — direct stream → Webview" },
             ]}
             onChange={(v) =>
               update({
-                renderBackend: v as
-                  | "auto"
-                  | "softbuffer"
-                  | "wgpu"
-                  | "webview",
+                renderBackend: v as "auto" | "softbuffer" | "wgpu" | "webview",
               })
             }
-            infoTooltip="Controls how decoded RDP frames are rendered. Native backends bypass JavaScript for maximum performance."
+            infoTooltip="Controls CPU precomposition and delivery to the Webview. The frontend renderer performs screen presentation."
           />
         </div>
 
@@ -96,7 +93,10 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
               value: "webgl",
               label: "WebGL — texSubImage2D (GPU texture upload)",
             },
-            { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" },
+            {
+              value: "webgpu",
+              label: "WebGPU — writeTexture (modern GPU API)",
+            },
             {
               value: "offscreen-worker",
               label: "OffscreenCanvas Worker — off-main-thread rendering",
@@ -131,11 +131,11 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           label="Default frame scheduling"
           value={rdp.frameScheduling ?? "adaptive"}
           options={[
-            { value: "vsync", label: "VSync (~16ms, synced to display refresh)" },
-            { value: "low-latency", label: "Low-Latency (~1ms, unbound from vsync)" },
+            { value: "vsync", label: "VSync — synced to display refresh" },
+            { value: "low-latency", label: "Low-Latency — present when ready" },
             {
               value: "adaptive",
-              label: "Adaptive — start vsync, escalate under pressure",
+              label: "Adaptive — follow activity and capacity",
             },
           ]}
           onChange={(v) =>

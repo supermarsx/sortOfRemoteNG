@@ -498,6 +498,577 @@ describe("handleSessionClose — sessions with no live transport", () => {
     );
   });
 
+  it.each(["detach", "ask", "disconnect"] as const)(
+    "closes a cleanly ended RDP tab under the %s policy without targeting the missing backend",
+    async (policy) => {
+      mocks.settings.rdpSessionClosePolicy = policy;
+      const conn = makeConnection("rdp-ended", {
+        protocol: "rdp",
+        port: 3389,
+      });
+      const session = makeSession("s-rdp-ended", conn.id, {
+        protocol: "rdp",
+        status: "disconnected",
+        backendSessionId: undefined,
+        vpnLeaseOwnerId: undefined,
+        vpnLeaseOwnerIds: undefined,
+        vpnLeaseBindings: undefined,
+      });
+      seed([conn], [session]);
+
+      const { result } = renderHook(() => useSessionManager());
+      act(() => result.current.setActiveSessionId(session.id));
+      const outcome = await closeOrPending(() =>
+        result.current.handleSessionClose(session.id),
+      );
+
+      expect(outcome).toBe(true);
+      expect(removeDispatched(session.id)).toBe(true);
+      expect(sessions()).toEqual([]);
+      expect(invokedCommands()).not.toContain("detach_rdp_session");
+      expect(invokedCommands()).not.toContain("disconnect_rdp");
+      expect(result.current.confirmDialog).toBeNull();
+      expect(mocks.beginEnding).toHaveBeenCalledWith(session.id);
+      expect(mocks.emitEnded).toHaveBeenCalledWith(
+        expect.objectContaining({ id: session.id, status: "disconnected" }),
+        conn,
+        { reason: "user" },
+      );
+    },
+  );
+
+  it("does not confuse a viewer-detached RDP marker with an ended backend", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-detached-viewer", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const session = makeSession("s-rdp-detached-viewer", conn.id, {
+      protocol: "rdp",
+      status: "disconnected",
+      backendSessionId: "native-rdp-live",
+    });
+    seed([conn], [session]);
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("detach_rdp_session", {
+      sessionId: "native-rdp-live",
+    });
+    expect(removeDispatched(session.id)).toBe(false);
+    expect(sessions()[0]?.layout?.isDetached).toBe(true);
+  });
+
+  it("routes an ended RDP actor with retained VPN evidence through fail-closed cleanup, never detach", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-ended-vpn", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const session = makeSession("s-rdp-ended-vpn", conn.id, {
+      protocol: "rdp",
+      status: "disconnected",
+      backendSessionId: undefined,
+      vpnLeaseOwnerId: "owner-rdp-ended",
+      vpnLeaseOwnerIds: ["owner-rdp-ended"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-rdp-ended",
+          backendSessionId: "native-rdp-ended",
+          protocol: "rdp",
+          status: "backend-closed",
+        },
+      ],
+    });
+    seed([conn], [session]);
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "release_vpn_leases"
+        ? Promise.resolve({
+            owner_id: "owner-rdp-ended",
+            released: [],
+            errors: ["provider still stopping"],
+          })
+        : Promise.resolve(undefined),
+    );
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(false);
+    expect(invokedCommands()).not.toContain("detach_rdp_session");
+    expect(invokedCommands()).not.toContain("disconnect_rdp");
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-rdp-ended",
+    });
+    expect(removeDispatched(session.id)).toBe(false);
+    expect(sessions()[0]).toEqual(
+      expect.objectContaining({
+        status: "error",
+        vpnLeaseOwnerIds: ["owner-rdp-ended"],
+        errorMessage: expect.stringMatching(/VPN cleanup needs attention/i),
+      }),
+    );
+  });
+
+  it("uses backend-scoped close proof when a terminal row retains an older pending RDP actor", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-ended-multi", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const session = makeSession("s-rdp-ended-multi", conn.id, {
+      protocol: "rdp",
+      status: "disconnected",
+      backendSessionId: undefined,
+      vpnLeaseOwnerId: "owner-ended-a",
+      vpnLeaseOwnerIds: ["owner-ended-a", "owner-pending-c"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-ended-a",
+          backendSessionId: "native-ended-a",
+          protocol: "rdp",
+          status: "backend-closed",
+        },
+        {
+          ownerId: "owner-pending-c",
+          backendSessionId: "native-pending-c",
+          protocol: "rdp",
+          status: "cleanup-pending",
+        },
+      ],
+    });
+    seed([conn], [session]);
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "release_vpn_leases") {
+        const ownerId = (args as { ownerId: string }).ownerId;
+        return Promise.resolve({ owner_id: ownerId, released: [], errors: [] });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(true);
+    expect(invokedCommands()).not.toContain("detach_rdp_session");
+    expect(mocks.invoke).not.toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: "native-ended-a",
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: "native-pending-c",
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-ended-a",
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-pending-c",
+    });
+    expect(removeDispatched(session.id)).toBe(true);
+    expect(sessions()).toEqual([]);
+  });
+
+  it("keeps a terminal RDP tab when backend cleanup leaves uncorrelated owner-only evidence", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-ended-owner-only", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const session = makeSession("s-rdp-ended-owner-only", conn.id, {
+      protocol: "rdp",
+      // Async terminal cleanup reports ambiguous legacy evidence as an error,
+      // while the absent direct backend and closed A binding still prove the
+      // native actor has ended.
+      status: "error",
+      backendSessionId: undefined,
+      errorMessage:
+        "RDP backend closed, but this older session has multiple uncorrelated lease owners.",
+      vpnLeaseOwnerId: "owner-ended-a",
+      vpnLeaseOwnerIds: ["owner-ended-a", "owner-legacy-b", "owner-legacy-c"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-ended-a",
+          backendSessionId: "native-ended-a",
+          protocol: "rdp",
+          status: "backend-closed",
+        },
+      ],
+    });
+    seed([conn], [session]);
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "release_vpn_leases") {
+        const ownerId = (args as { ownerId: string }).ownerId;
+        return Promise.resolve({ owner_id: ownerId, released: [], errors: [] });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(false);
+    expect(invokedCommands()).not.toContain("detach_rdp_session");
+    expect(invokedCommands()).not.toContain("disconnect_rdp");
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-ended-a",
+    });
+    expect(removeDispatched(session.id)).toBe(false);
+    expect(sessions()).toEqual([
+      expect.objectContaining({
+        id: session.id,
+        status: "error",
+        vpnLeaseOwnerId: "owner-legacy-b",
+        vpnLeaseOwnerIds: ["owner-legacy-b", "owner-legacy-c"],
+        vpnLeaseBindings: undefined,
+        errorMessage: expect.stringMatching(/uncorrelated session record/i),
+      }),
+    ]);
+  });
+
+  it("does not treat an error RDP row with only cleanup-pending proof as an ended actor", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-pending-owner-only", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const session = makeSession("s-rdp-pending-owner-only", conn.id, {
+      protocol: "rdp",
+      status: "error",
+      backendSessionId: undefined,
+      vpnLeaseOwnerId: "owner-pending-a",
+      vpnLeaseOwnerIds: ["owner-pending-a"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-pending-a",
+          backendSessionId: "native-pending-a",
+          protocol: "rdp",
+          status: "cleanup-pending",
+        },
+      ],
+    });
+    seed([conn], [session]);
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "release_vpn_leases") {
+        const ownerId = (args as { ownerId: string }).ownerId;
+        return Promise.resolve({ owner_id: ownerId, released: [], errors: [] });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: "native-pending-a",
+    });
+    expect(invokedCommands()).not.toContain("detach_rdp_session");
+    expect(removeDispatched(session.id)).toBe(true);
+    expect(sessions()).toEqual([]);
+  });
+
+  it("disconnects a cleanup-pending RDP actor but keeps its uncorrelated owners fail-closed", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-pending-orphans", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const session = makeSession("s-rdp-pending-orphans", conn.id, {
+      protocol: "rdp",
+      status: "error",
+      backendSessionId: undefined,
+      vpnLeaseOwnerId: "owner-pending-a",
+      vpnLeaseOwnerIds: ["owner-pending-a", "owner-legacy-b", "owner-legacy-c"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-pending-a",
+          backendSessionId: "native-pending-a",
+          protocol: "rdp",
+          status: "cleanup-pending",
+        },
+      ],
+    });
+    seed([conn], [session]);
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "release_vpn_leases") {
+        const ownerId = (args as { ownerId: string }).ownerId;
+        return Promise.resolve({ owner_id: ownerId, released: [], errors: [] });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(session.id),
+    );
+
+    expect(outcome).toBe(false);
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: "native-pending-a",
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-pending-a",
+    });
+    expect(invokedCommands()).not.toContain("detach_rdp_session");
+    expect(removeDispatched(session.id)).toBe(false);
+    expect(sessions()).toEqual([
+      expect.objectContaining({
+        id: session.id,
+        status: "error",
+        vpnLeaseOwnerId: "owner-legacy-b",
+        vpnLeaseOwnerIds: ["owner-legacy-b", "owner-legacy-c"],
+        vpnLeaseBindings: undefined,
+        errorMessage: expect.stringMatching(/uncorrelated session record/i),
+      }),
+    ]);
+  });
+
+  it("does not let one terminal row suppress disconnect when an associated row still has pending proof", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-associated-proof", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const terminal = makeSession("s-rdp-associated-terminal", conn.id, {
+      protocol: "rdp",
+      status: "disconnected",
+      backendSessionId: undefined,
+      vpnLeaseOwnerId: "owner-associated-closed",
+      vpnLeaseOwnerIds: ["owner-associated-closed"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-associated-closed",
+          backendSessionId: "native-associated",
+          protocol: "rdp",
+          status: "backend-closed",
+        },
+      ],
+    });
+    const associatedPending = makeSession("s-rdp-associated-pending", conn.id, {
+      protocol: "rdp",
+      status: "error",
+      backendSessionId: "native-associated",
+      vpnLeaseOwnerId: "owner-associated-pending",
+      vpnLeaseOwnerIds: ["owner-associated-pending"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-associated-pending",
+          backendSessionId: "native-associated",
+          protocol: "rdp",
+          status: "cleanup-pending",
+        },
+      ],
+    });
+    seed([conn], [terminal, associatedPending]);
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "release_vpn_leases") {
+        const ownerId = (args as { ownerId: string }).ownerId;
+        return Promise.resolve({ owner_id: ownerId, released: [], errors: [] });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useSessionManager());
+    const outcome = await closeOrPending(() =>
+      result.current.handleSessionClose(terminal.id),
+    );
+
+    expect(outcome).toBe(true);
+    expect(invokedCommands()).not.toContain("detach_rdp_session");
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: "native-associated",
+    });
+    expect(removeDispatched(terminal.id)).toBe(true);
+  });
+
+  it("closes the tab when RDP ends while its detach request is in flight", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-close-race", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const connected = makeSession("s-rdp-close-race", conn.id, {
+      protocol: "rdp",
+      status: "connected",
+      backendSessionId: "native-rdp-race",
+    });
+    seed([conn], [connected]);
+
+    let rejectDetach!: (reason: Error) => void;
+    const detachPending = new Promise<never>((_resolve, reject) => {
+      rejectDetach = reject;
+    });
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "detach_rdp_session"
+        ? detachPending
+        : Promise.resolve(undefined),
+    );
+
+    const { result, rerender } = renderHook(() => useSessionManager());
+    let closePromise!: Promise<boolean>;
+    act(() => {
+      closePromise = result.current.handleSessionClose(connected.id);
+    });
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("detach_rdp_session", {
+        sessionId: "native-rdp-race",
+      }),
+    );
+
+    seed(
+      [conn],
+      [
+        {
+          ...connected,
+          status: "disconnected",
+          backendSessionId: undefined,
+          vpnLeaseOwnerId: undefined,
+          vpnLeaseOwnerIds: undefined,
+          vpnLeaseBindings: undefined,
+        },
+      ],
+    );
+    rerender();
+    rejectDetach(new Error("RDP session no longer exists"));
+
+    let outcome = false;
+    await act(async () => {
+      outcome = await closePromise;
+    });
+
+    expect(outcome).toBe(true);
+    expect(removeDispatched(connected.id)).toBe(true);
+    expect(sessions()).toEqual([]);
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) =>
+          action.type === "UPDATE_SESSION" &&
+          (action.payload as ConnectionSession).errorMessage?.includes(
+            "RDP detach failed",
+          ),
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps the first close pending until terminal RDP VPN cleanup settles", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    const conn = makeConnection("rdp-close-vpn-race", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const connected = makeSession("s-rdp-close-vpn-race", conn.id, {
+      protocol: "rdp",
+      status: "connected",
+      backendSessionId: "native-rdp-vpn-race",
+      vpnLeaseOwnerId: "owner-rdp-vpn-race",
+      vpnLeaseOwnerIds: ["owner-rdp-vpn-race"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-rdp-vpn-race",
+          backendSessionId: "native-rdp-vpn-race",
+          protocol: "rdp",
+          status: "active",
+        },
+      ],
+    });
+    seed([conn], [connected]);
+
+    let resolveDetach!: () => void;
+    const detachPending = new Promise<void>((resolve) => {
+      resolveDetach = resolve;
+    });
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "detach_rdp_session"
+        ? detachPending
+        : Promise.resolve(undefined),
+    );
+
+    const { result, rerender } = renderHook(() => useSessionManager());
+    let closePromise!: Promise<boolean>;
+    act(() => {
+      closePromise = result.current.handleSessionClose(connected.id);
+    });
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("detach_rdp_session", {
+        sessionId: "native-rdp-vpn-race",
+      }),
+    );
+
+    const terminalWithCleanup: ConnectionSession = {
+      ...connected,
+      status: "disconnected",
+      backendSessionId: undefined,
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-rdp-vpn-race",
+          backendSessionId: "native-rdp-vpn-race",
+          protocol: "rdp",
+          status: "backend-closed",
+        },
+      ],
+    };
+    seed([conn], [terminalWithCleanup]);
+    rerender();
+    await act(async () => {
+      resolveDetach();
+      await detachPending;
+      await Promise.resolve();
+    });
+
+    let closeSettled = false;
+    void closePromise.then(() => {
+      closeSettled = true;
+    });
+    await act(async () => Promise.resolve());
+    expect(closeSettled).toBe(false);
+    expect(removeDispatched(connected.id)).toBe(false);
+
+    seed(
+      [conn],
+      [
+        {
+          ...terminalWithCleanup,
+          vpnLeaseOwnerId: undefined,
+          vpnLeaseOwnerIds: undefined,
+          vpnLeaseBindings: undefined,
+        },
+      ],
+    );
+    rerender();
+
+    let outcome = false;
+    await act(async () => {
+      outcome = await closePromise;
+    });
+
+    expect(outcome).toBe(true);
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) =>
+          action.type === "REMOVE_SESSION" && action.payload === connected.id,
+      ),
+    ).toHaveLength(1);
+    expect(sessions()).toEqual([]);
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) =>
+          action.type === "UPDATE_SESSION" &&
+          (action.payload as ConnectionSession).layout?.isDetached === true,
+      ),
+    ).toBe(false);
+  });
+
   it("integration panel in error state is removed even when provider cleanup rejects", async () => {
     const conn = makeConnection("grafana", {
       protocol: "integration:grafana",

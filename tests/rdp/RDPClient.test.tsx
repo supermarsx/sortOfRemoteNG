@@ -24,7 +24,9 @@ import {
 } from "../../src/utils/auth/trustStore";
 import { useRDPClient } from "../../src/hooks/rdp/useRDPClient";
 import {
+  advanceSessionLifecycleAuthority,
   hasSessionLifecycleActorAttempt,
+  mergeLocalSessionUpdate,
   resetSessionLifecycleAllocatorForTests,
 } from "../../src/utils/session/sessionLifecycle";
 
@@ -255,7 +257,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
   }),
 }));
 
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 
 const mockInvoke = vi.mocked(tauriInvoke);
 
@@ -491,6 +493,11 @@ describe("RDPClient", () => {
     delete (mockConnection as any).proxyChainId;
     delete (mockConnection as any).tunnelChainId;
     delete (mockConnection as any).connectionChainId;
+    (mockConnection as any).rdpSettings = {
+      performance: {
+        frontendRenderer: "canvas2d",
+      },
+    };
     // Default mock: list_rdp_sessions returns empty array (no existing session),
     // then connect_rdp returns a session ID.
     mockInvoke.mockImplementation(async (cmd: string) => {
@@ -513,6 +520,72 @@ describe("RDPClient", () => {
   });
 
   describe("RDP Connection", () => {
+    it("shows an input-stall error without disconnecting video and releases keys once the stalled call settles", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      let completeInput!: () => void;
+      let inputCalls = 0;
+      mockInvoke.mockImplementation((command: string, args?: InvokeArgs) => {
+        if (command === "rdp_send_input") {
+          inputCalls++;
+          if (inputCalls === 1)
+            return new Promise<void>((resolve) => {
+              completeInput = resolve;
+            });
+          return Promise.resolve(undefined);
+        }
+        return fallbackInvoke?.(command, args) ?? Promise.resolve(undefined);
+      });
+      const view = renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        ),
+      );
+      await act(async () => {
+        emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      });
+      const canvas = screen.getByTestId("rdp-canvas");
+      act(() => {
+        for (let index = 0; index < 600; index++) {
+          fireEvent.keyDown(canvas, { key: "a", code: "KeyA", keyCode: 65 });
+        }
+      });
+      const message =
+        "Remote input is stalled and has been paused. Disconnect and reconnect to resume input.";
+      await waitFor(() =>
+        expect(screen.getAllByText(message).length).toBeGreaterThanOrEqual(2),
+      );
+      expect(inputCalls).toBe(1);
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "disconnect_rdp",
+        expect.anything(),
+      );
+      expect(canvas).toBeInTheDocument();
+      await act(async () => {
+        completeInput();
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(inputCalls).toBe(2));
+      const inputs = mockInvoke.mock.calls.filter(
+        ([command]) => command === "rdp_send_input",
+      );
+      expect(inputs[1][1]).toMatchObject({
+        sessionId: "rdp-session-123",
+        events: [
+          {
+            type: "KeyboardKey",
+            scancode: 0x1e,
+            extended: false,
+            pressed: false,
+          },
+        ],
+      });
+      fireEvent.keyDown(canvas, { key: "b", code: "KeyB", keyCode: 66 });
+      expect(inputCalls).toBe(2);
+      view.unmount();
+    });
+
     it("fails closed before session discovery when binary IPC preflight fails", async () => {
       rdpBinaryIpcPreflightMocks.assert.mockRejectedValueOnce(
         new Error("binary channel fetch path is unavailable"),
@@ -1072,6 +1145,32 @@ describe("RDPClient", () => {
       expect(releaseCalls).toEqual([oldOwnerId]);
 
       emitStatus("disconnected", "Remote session closed", "rdp-session-123");
+      const terminalPayload = connectionContextMocks.dispatch.mock.calls
+        .map(([action]) => action.payload as ConnectionSession)
+        .find(
+          (payload) =>
+            payload?.status === "disconnected" &&
+            payload.backendSessionId == null,
+        )!;
+      expect(terminalPayload.vpnLeaseOwnerIds).toEqual(
+        expect.arrayContaining([oldOwnerId, currentOwnerId]),
+      );
+      expect(terminalPayload.vpnLeaseBindings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            ownerId: oldOwnerId,
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+            status: "backend-closed",
+          }),
+          expect.objectContaining({
+            ownerId: currentOwnerId,
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+            status: "backend-closed",
+          }),
+        ]),
+      );
       await waitFor(() => {
         expect(releaseCalls).toHaveLength(3);
       });
@@ -1500,6 +1599,545 @@ describe("RDPClient", () => {
       });
     });
 
+    it("publishes a terminal session row before asynchronous disconnect cleanup", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
+        if (cmd === "release_vpn_leases") {
+          return Promise.resolve({
+            owner_id: (args as { ownerId: string }).ownerId,
+            released: [],
+            errors: [],
+          });
+        }
+        return fallbackInvoke!(cmd, args);
+      });
+      const view = renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+      const actorA = [...connectionContextMocks.dispatch.mock.calls]
+        .reverse()
+        .map(([action]) => action.payload as ConnectionSession)
+        .find((updated) => updated.backendSessionId === "rdp-session-123")!;
+      const multiBindingSession: ConnectionSession = {
+        ...actorA,
+        status: "connected",
+        vpnLeaseOwnerId: "owner-a",
+        vpnLeaseOwnerIds: ["owner-a", "owner-c"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-a",
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+            status: "active",
+          },
+          {
+            ownerId: "owner-c",
+            backendSessionId: "rdp-session-older",
+            protocol: "rdp",
+            status: "cleanup-pending",
+          },
+        ],
+      };
+      await act(async () => {
+        view.rerender(
+          <ToastProvider>
+            <ConnectionProvider>
+              <RDPClient session={multiBindingSession} />
+            </ConnectionProvider>
+          </ToastProvider>,
+        );
+        await Promise.resolve();
+      });
+      connectionContextMocks.dispatch.mockClear();
+
+      emitStatus("disconnected", "Session ended", "rdp-session-123");
+
+      expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          id: mockSession.id,
+          status: "disconnected",
+          backendSessionId: undefined,
+        }),
+      });
+      expect(screen.getByText("Disconnected")).toBeInTheDocument();
+
+      const terminalPayload = connectionContextMocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find(
+          (action) =>
+            action.type === "UPDATE_SESSION" &&
+            action.payload.status === "disconnected" &&
+            action.payload.backendSessionId == null,
+        )?.payload as ConnectionSession;
+      const terminalRevision = terminalPayload.lifecycleRevision!;
+      const terminalGeneration = terminalPayload.lifecycleActorGeneration!;
+      const terminalWriter = terminalPayload.lifecycleWriterId!;
+      expect(terminalRevision).toBeGreaterThan(0);
+      expect(terminalGeneration).toBeGreaterThan(0);
+      expect(terminalWriter).toBeTruthy();
+      expect(terminalPayload.lifecycleActorReservationId).toBeUndefined();
+      expect(terminalPayload.vpnLeaseBindings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            ownerId: "owner-a",
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+            status: "backend-closed",
+          }),
+          expect.objectContaining({
+            ownerId: "owner-c",
+            backendSessionId: "rdp-session-older",
+            protocol: "rdp",
+            status: "cleanup-pending",
+          }),
+        ]),
+      );
+
+      const reducerResult = mergeLocalSessionUpdate(
+        {
+          ...mockSession,
+          status: "connected",
+          backendSessionId: "rdp-session-123",
+          lifecycleRevision: terminalRevision - 1,
+          lifecycleActorGeneration: terminalGeneration - 1,
+          lifecycleWriterId: terminalWriter,
+        },
+        terminalPayload,
+      );
+      expect(reducerResult.status).toBe("disconnected");
+      expect(reducerResult.backendSessionId).toBeUndefined();
+      expect(reducerResult.lifecycleRevision).toBe(terminalRevision);
+    });
+
+    it("correlates and releases a legacy owner-only lease from a private terminal cleanup seed", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
+        if (cmd === "release_vpn_leases") {
+          return Promise.resolve({
+            owner_id: (args as { ownerId: string }).ownerId,
+            released: [],
+            errors: [],
+          });
+        }
+        return fallbackInvoke!(cmd, args);
+      });
+      const view = renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+
+      const legacyOwnerSession: ConnectionSession = {
+        ...mockSession,
+        status: "connected",
+        backendSessionId: "rdp-session-123",
+        vpnLeaseOwnerId: "legacy-owner-only",
+        vpnLeaseOwnerIds: ["legacy-owner-only"],
+      };
+      await act(async () => {
+        view.rerender(
+          <ToastProvider>
+            <ConnectionProvider>
+              <RDPClient session={legacyOwnerSession} />
+            </ConnectionProvider>
+          </ToastProvider>,
+        );
+        await Promise.resolve();
+      });
+      connectionContextMocks.dispatch.mockClear();
+
+      emitStatus("disconnected", "Session ended", "rdp-session-123");
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("release_vpn_leases", {
+          ownerId: "legacy-owner-only",
+        });
+      });
+      const terminalUpdates = connectionContextMocks.dispatch.mock.calls
+        .filter(([action]) => action.type === "UPDATE_SESSION")
+        .map(([action]) => action.payload as ConnectionSession);
+      expect(terminalUpdates.length).toBeGreaterThan(0);
+      expect(
+        terminalUpdates.every((updated) => updated.backendSessionId == null),
+      ).toBe(true);
+    });
+
+    it("keeps ambiguous legacy terminal owners visible and fails closed", async () => {
+      const view = renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+
+      const actorA = [...connectionContextMocks.dispatch.mock.calls]
+        .reverse()
+        .map(([action]) => action.payload as ConnectionSession)
+        .find((updated) => updated.backendSessionId === "rdp-session-123")!;
+      const ambiguousOwnerSession: ConnectionSession = {
+        ...actorA,
+        status: "connected",
+        vpnLeaseOwnerId: "bound-owner",
+        vpnLeaseOwnerIds: [
+          "bound-owner",
+          "legacy-owner-one",
+          "legacy-owner-two",
+        ],
+        vpnLeaseBindings: [
+          {
+            ownerId: "bound-owner",
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+            status: "active",
+          },
+        ],
+      };
+      await act(async () => {
+        view.rerender(
+          <ToastProvider>
+            <ConnectionProvider>
+              <RDPClient session={ambiguousOwnerSession} />
+            </ConnectionProvider>
+          </ToastProvider>,
+        );
+        await Promise.resolve();
+      });
+      connectionContextMocks.dispatch.mockClear();
+      mockInvoke.mockClear();
+
+      emitStatus("disconnected", "Session ended", "rdp-session-123");
+
+      const terminalPayload = connectionContextMocks.dispatch.mock.calls
+        .map(([action]) => action.payload as ConnectionSession)
+        .find(
+          (payload) =>
+            payload?.status === "disconnected" &&
+            payload.backendSessionId == null,
+        )!;
+      expect(terminalPayload.vpnLeaseOwnerIds).toEqual(
+        expect.arrayContaining([
+          "bound-owner",
+          "legacy-owner-one",
+          "legacy-owner-two",
+        ]),
+      );
+      expect(terminalPayload.vpnLeaseBindings).toEqual([
+        expect.objectContaining({
+          ownerId: "bound-owner",
+          backendSessionId: "rdp-session-123",
+          protocol: "rdp",
+          status: "backend-closed",
+        }),
+      ]);
+      await waitFor(() => {
+        expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({
+            status: "error",
+            backendSessionId: undefined,
+            errorMessage: expect.stringMatching(
+              /multiple uncorrelated lease owners/i,
+            ),
+            vpnLeaseOwnerIds: expect.arrayContaining([
+              "bound-owner",
+              "legacy-owner-one",
+              "legacy-owner-two",
+            ]),
+          }),
+        });
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "release_vpn_leases",
+        expect.anything(),
+      );
+    });
+
+    it("cleans stale actor A without terminalizing replacement B", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
+        if (cmd === "release_vpn_leases") {
+          return Promise.resolve({
+            owner_id: (args as { ownerId: string }).ownerId,
+            released: [],
+            errors: [],
+          });
+        }
+        return fallbackInvoke!(cmd, args);
+      });
+      const view = renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+
+      const actorA = [...connectionContextMocks.dispatch.mock.calls]
+        .reverse()
+        .map(([action]) => action.payload as ConnectionSession)
+        .find((updated) => updated.backendSessionId === "rdp-session-123")!;
+      const actorAWithOwner: ConnectionSession = {
+        ...actorA,
+        status: "connected",
+        vpnLeaseOwnerId: "stale-owner",
+        vpnLeaseOwnerIds: ["stale-owner"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "stale-owner",
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+            status: "active",
+          },
+        ],
+      };
+      await act(async () => {
+        view.rerender(
+          <ToastProvider>
+            <ConnectionProvider>
+              <RDPClient session={actorAWithOwner} />
+            </ConnectionProvider>
+          </ToastProvider>,
+        );
+        await Promise.resolve();
+      });
+      const replacementB = advanceSessionLifecycleAuthority(
+        {
+          ...actorAWithOwner,
+          status: "connected",
+          backendSessionId: "rdp-session-replacement",
+          vpnLeaseOwnerId: "replacement-owner",
+          vpnLeaseOwnerIds: ["replacement-owner"],
+          vpnLeaseBindings: [
+            {
+              ownerId: "replacement-owner",
+              backendSessionId: "rdp-session-replacement",
+              protocol: "rdp",
+              status: "active",
+            },
+          ],
+        },
+        "replacement-writer",
+      );
+      await act(async () => {
+        view.rerender(
+          <ToastProvider>
+            <ConnectionProvider>
+              <RDPClient session={replacementB} />
+            </ConnectionProvider>
+          </ToastProvider>,
+        );
+        await Promise.resolve();
+      });
+      connectionContextMocks.dispatch.mockClear();
+      mockInvoke.mockClear();
+
+      emitStatus("disconnected", "Stale actor ended", "rdp-session-123");
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("release_vpn_leases", {
+          ownerId: "stale-owner",
+        });
+      });
+      await waitFor(() => {
+        expect(
+          connectionContextMocks.dispatch.mock.calls.some(
+            ([action]) =>
+              action.type === "UPDATE_SESSION" &&
+              action.payload.vpnLeaseReleaseTombstones?.some(
+                (proof: { ownerId: string }) => proof.ownerId === "stale-owner",
+              ),
+          ),
+        ).toBe(true);
+      });
+      const terminalUpdates = connectionContextMocks.dispatch.mock.calls
+        .filter(([action]) => action.type === "UPDATE_SESSION")
+        .map(([action]) => action.payload as ConnectionSession);
+      const reducerResult = terminalUpdates.reduce(
+        (current, update) => mergeLocalSessionUpdate(current, update),
+        replacementB,
+      );
+      expect(terminalUpdates.length).toBeGreaterThan(0);
+      expect(
+        terminalUpdates.every(
+          (updated) =>
+            updated.lifecycleActorGeneration ===
+              actorAWithOwner.lifecycleActorGeneration &&
+            updated.lifecycleWriterId === actorAWithOwner.lifecycleWriterId,
+        ),
+      ).toBe(true);
+      expect(
+        terminalUpdates.some(
+          (updated) =>
+            updated.status === "disconnected" ||
+            updated.backendSessionId == null,
+        ),
+      ).toBe(false);
+      expect(reducerResult.status).toBe("connected");
+      expect(reducerResult.backendSessionId).toBe("rdp-session-replacement");
+      expect(reducerResult.lifecycleActorGeneration).toBe(
+        replacementB.lifecycleActorGeneration,
+      );
+      expect(reducerResult.vpnLeaseReleaseTombstones).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            ownerId: "stale-owner",
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+          }),
+        ]),
+      );
+      expect(screen.getByText("connected")).toBeInTheDocument();
+    });
+
+    it("does not let deferred terminal cleanup overwrite a replacement lifecycle actor", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      let resolveRelease!: (result: {
+        owner_id: string;
+        released: never[];
+        errors: never[];
+      }) => void;
+      const deferredRelease = new Promise<{
+        owner_id: string;
+        released: never[];
+        errors: never[];
+      }>((resolve) => {
+        resolveRelease = resolve;
+      });
+      mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
+        if (cmd === "release_vpn_leases") return deferredRelease;
+        return fallbackInvoke!(cmd, args);
+      });
+      const view = renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+
+      const closingActor: ConnectionSession = {
+        ...mockSession,
+        status: "connected",
+        backendSessionId: "rdp-session-123",
+        vpnLeaseOwnerId: "closing-owner",
+        vpnLeaseOwnerIds: ["closing-owner"],
+      };
+      await act(async () => {
+        view.rerender(
+          <ToastProvider>
+            <ConnectionProvider>
+              <RDPClient session={closingActor} />
+            </ConnectionProvider>
+          </ToastProvider>,
+        );
+        await Promise.resolve();
+      });
+      emitStatus("disconnected", "Session ended", "rdp-session-123");
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("release_vpn_leases", {
+          ownerId: "closing-owner",
+        });
+      });
+
+      const terminalEpoch = connectionContextMocks.dispatch.mock.calls
+        .filter(([action]) => action.type === "UPDATE_SESSION")
+        .map(([action]) => action.payload as ConnectionSession)
+        .find(
+          (updated) =>
+            updated.status === "disconnected" &&
+            updated.backendSessionId == null,
+        )!;
+      const replacementActor: ConnectionSession = {
+        ...mockSession,
+        status: "connected",
+        backendSessionId: "rdp-session-replacement",
+        lifecycleActorGeneration: terminalEpoch.lifecycleActorGeneration! + 1,
+        lifecycleWriterId: "replacement-writer",
+        lifecycleRevision: terminalEpoch.lifecycleRevision! + 1,
+      };
+      connectionContextMocks.dispatch.mockClear();
+
+      await act(async () => {
+        resolveRelease({
+          owner_id: "closing-owner",
+          released: [],
+          errors: [],
+        });
+        await deferredRelease;
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const lateCleanupPayloads = connectionContextMocks.dispatch.mock.calls
+        .filter(([action]) => action.type === "UPDATE_SESSION")
+        .map(([action]) => action.payload as ConnectionSession);
+      const lateCleanupPayload =
+        lateCleanupPayloads[lateCleanupPayloads.length - 1]!;
+      expect(lateCleanupPayload.lifecycleActorGeneration).toBe(
+        terminalEpoch.lifecycleActorGeneration,
+      );
+      expect(lateCleanupPayload.lifecycleRevision).toBeGreaterThan(
+        terminalEpoch.lifecycleRevision!,
+      );
+      expect(lateCleanupPayload.vpnLeaseReleaseTombstones).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            ownerId: "closing-owner",
+            backendSessionId: "rdp-session-123",
+            protocol: "rdp",
+          }),
+        ]),
+      );
+
+      // Simulate the real context having accepted a reconnect before this hook
+      // receives the rerender. The reducer rejects the older terminal epoch.
+      const reducerResult = mergeLocalSessionUpdate(
+        replacementActor,
+        lateCleanupPayload,
+      );
+      expect(reducerResult.backendSessionId).toBe("rdp-session-replacement");
+      expect(reducerResult.status).toBe("connected");
+      expect(reducerResult.lifecycleActorGeneration).toBe(
+        replacementActor.lifecycleActorGeneration,
+      );
+      expect(reducerResult.vpnLeaseReleaseTombstones).toEqual(
+        lateCleanupPayload.vpnLeaseReleaseTombstones,
+      );
+    });
+
     it("should display error status when backend emits error event", async () => {
       renderWithProviders(mockSession);
 
@@ -1716,6 +2354,271 @@ describe("RDPClient", () => {
       });
     });
 
+    it("uses the embedded viewport for initial adaptive resolution and bounds the canvas", async () => {
+      (mockConnection as any).rdpSettings = {
+        performance: { frontendRenderer: "canvas2d" },
+        display: {
+          width: 1920,
+          height: 1080,
+          resizeToWindow: true,
+          smartSizing: true,
+        },
+      };
+      const widthSpy = vi
+        .spyOn(HTMLElement.prototype, "clientWidth", "get")
+        .mockReturnValue(1280);
+      const heightSpy = vi
+        .spyOn(HTMLElement.prototype, "clientHeight", "get")
+        .mockReturnValue(720);
+
+      try {
+        renderWithProviders(mockSession);
+
+        await waitFor(() => {
+          expect(mockInvoke).toHaveBeenCalledWith(
+            "connect_rdp",
+            expect.objectContaining({
+              width: 1280,
+              height: 720,
+              rdpSettings: expect.objectContaining({
+                display: expect.objectContaining({
+                  resizeToWindow: true,
+                  smartSizing: false,
+                }),
+              }),
+            }),
+          );
+        });
+
+        const viewport = screen.getByTestId("rdp-canvas-viewport");
+        const canvas = screen.getByTestId("rdp-canvas");
+        expect(viewport).toHaveAttribute("data-resolution-mode", "adaptive");
+        expect(viewport).toHaveClass("w-full", "min-w-0", "max-w-full");
+        expect(viewport).toHaveStyle({ overflow: "hidden" });
+        expect(canvas).toHaveStyle({
+          width: "100%",
+          height: "100%",
+          maxWidth: "100%",
+          maxHeight: "100%",
+          boxSizing: "border-box",
+        });
+      } finally {
+        widthSpy.mockRestore();
+        heightSpy.mockRestore();
+      }
+    });
+
+    it("keeps fixed resolution independent from viewport resize observations", async () => {
+      (mockConnection as any).rdpSettings = {
+        performance: { frontendRenderer: "canvas2d" },
+        display: {
+          width: 1600,
+          height: 900,
+          resizeToWindow: false,
+          smartSizing: false,
+        },
+      };
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.objectContaining({ width: 1600, height: 900 }),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1600, 900);
+      await waitFor(() => {
+        expect(screen.getByTestId("rdp-canvas")).toHaveAttribute(
+          "width",
+          "1600",
+        );
+      });
+      mockInvoke.mockClear();
+
+      act(() => {
+        MockResizeObserver.emitAll(1024, 640);
+      });
+      await act(async () => Promise.resolve());
+
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "rdp_set_desktop_size",
+        expect.anything(),
+      );
+      expect(screen.getByTestId("rdp-canvas-viewport")).toHaveAttribute(
+        "data-resolution-mode",
+        "fixed",
+      );
+      expect(screen.getByTestId("rdp-canvas")).toHaveAttribute("width", "1600");
+    });
+
+    it("debounces adaptive resize requests and waits for negotiated status dimensions", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+      mockInvoke.mockClear();
+      vi.useFakeTimers();
+
+      try {
+        act(() => {
+          MockResizeObserver.emitAll(1400, 800);
+          MockResizeObserver.emitAll(1280, 720);
+          vi.advanceTimersByTime(149);
+        });
+        expect(mockInvoke).not.toHaveBeenCalledWith(
+          "rdp_set_desktop_size",
+          expect.anything(),
+        );
+
+        await act(async () => {
+          vi.advanceTimersByTime(1);
+          await Promise.resolve();
+        });
+        expect(mockInvoke).toHaveBeenCalledTimes(1);
+        expect(mockInvoke).toHaveBeenCalledWith("rdp_set_desktop_size", {
+          sessionId: "rdp-session-123",
+          width: 1280,
+          height: 720,
+        });
+
+        // The command acknowledges queueing only. The canvas keeps the last
+        // negotiated size until the backend completes RDP reactivation.
+        expect(screen.getByTestId("rdp-canvas")).toHaveAttribute(
+          "width",
+          "1920",
+        );
+        emitStatus("connected", "Reconnected", "rdp-session-123", 1280, 720);
+        expect(screen.getByTestId("rdp-canvas")).toHaveAttribute(
+          "width",
+          "1280",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("serializes a corrective fixed resize behind an in-flight adaptive request", async () => {
+      const view = renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      let resolveAdaptive!: () => void;
+      const adaptiveResize = new Promise<void>((resolve) => {
+        resolveAdaptive = resolve;
+      });
+      mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
+        if (cmd === "rdp_set_desktop_size") {
+          const width = (args as { width: number }).width;
+          if (width === 1200) {
+            return adaptiveResize.then(() => ({ width: 1200, height: 700 }));
+          }
+          return Promise.resolve(args);
+        }
+        return fallbackInvoke!(cmd, args);
+      });
+      mockInvoke.mockClear();
+      vi.useFakeTimers();
+
+      try {
+        await act(async () => {
+          MockResizeObserver.emitAll(1200, 700);
+          vi.advanceTimersByTime(150);
+          await Promise.resolve();
+        });
+        expect(mockInvoke).toHaveBeenCalledTimes(1);
+        expect(mockInvoke).toHaveBeenNthCalledWith(1, "rdp_set_desktop_size", {
+          sessionId: "rdp-session-123",
+          width: 1200,
+          height: 700,
+        });
+
+        (mockConnection as any).rdpSettings = {
+          performance: { frontendRenderer: "canvas2d" },
+          display: {
+            width: 1600,
+            height: 900,
+            resizeToWindow: false,
+            smartSizing: false,
+          },
+        };
+        await act(async () => {
+          view.rerender(
+            <ToastProvider>
+              <ConnectionProvider>
+                <RDPClient session={mockSession} />
+              </ConnectionProvider>
+            </ToastProvider>,
+          );
+          await Promise.resolve();
+        });
+
+        // Fixed is queued, not sent concurrently with the adaptive request.
+        expect(mockInvoke).toHaveBeenCalledTimes(1);
+        await act(async () => {
+          resolveAdaptive();
+          await Promise.resolve();
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(mockInvoke).toHaveBeenNthCalledWith(2, "rdp_set_desktop_size", {
+          sessionId: "rdp-session-123",
+          width: 1600,
+          height: 900,
+        });
+        expect(screen.getByTestId("rdp-canvas-viewport")).toHaveAttribute(
+          "data-resolution-mode",
+          "fixed",
+        );
+
+        // Width/height changes in fixed mode are effect dependencies and queue
+        // a new fixed request without requiring a mode toggle.
+        (mockConnection as any).rdpSettings = {
+          performance: { frontendRenderer: "canvas2d" },
+          display: {
+            width: 1366,
+            height: 768,
+            resizeToWindow: false,
+            smartSizing: false,
+          },
+        };
+        await act(async () => {
+          view.rerender(
+            <ToastProvider>
+              <ConnectionProvider>
+                <RDPClient session={mockSession} />
+              </ConnectionProvider>
+            </ToastProvider>,
+          );
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(mockInvoke).toHaveBeenNthCalledWith(3, "rdp_set_desktop_size", {
+          sessionId: "rdp-session-123",
+          width: 1366,
+          height: 768,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("should release canvas focus on Ctrl+Alt+End without sending input", () => {
       renderWithProviders(mockSession);
 
@@ -1856,6 +2759,7 @@ describe("RDPClient", () => {
             pdus_sent: 100,
             frame_count: 300,
             fps: 25.0,
+            presented_fps: 25.0,
             input_events: 150,
             errors_recovered: 2,
             reactivations: 1,
@@ -2015,7 +2919,9 @@ describe("RDPClient", () => {
         // Frame-flow rows, including the new coalesced + avg-render fields
         expect(screen.getByText("Frames Queued")).toBeInTheDocument();
         expect(screen.getByText("12")).toBeInTheDocument();
-        expect(screen.getByText("Frames Delivered")).toBeInTheDocument();
+        expect(
+          screen.getByText("Transport Payloads Delivered"),
+        ).toBeInTheDocument();
         expect(screen.getByText("287")).toBeInTheDocument();
         expect(screen.getByText("Frames Dropped")).toBeInTheDocument();
         expect(screen.getByText("Frames Coalesced")).toBeInTheDocument();

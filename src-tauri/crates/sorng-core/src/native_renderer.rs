@@ -25,7 +25,8 @@ pub enum RenderBackend {
     Softbuffer,
     /// GPU compositor (currently CPU fallback).
     Wgpu,
-    /// Auto-select: softbuffer (CPU compositor).
+    /// Auto-select direct streaming; the RDP delivery layer already coalesces
+    /// and tiles updates without a second desktop-sized CPU shadow buffer.
     Auto,
 }
 
@@ -51,7 +52,7 @@ impl RenderBackend {
     /// Returns ``true`` when the backend uses server-side frame compositing
     /// (as opposed to direct per-region streaming).
     pub fn is_composited(&self) -> bool {
-        matches!(self, Self::Softbuffer | Self::Wgpu | Self::Auto)
+        matches!(self, Self::Softbuffer | Self::Wgpu)
     }
 
     /// Backward-compatible alias for ``is_composited()``.
@@ -275,7 +276,7 @@ impl FrameCompositor for WgpuCompositor {
     }
 
     fn name(&self) -> &'static str {
-        "wgpu"
+        "softbuffer"
     }
 
     fn is_dirty(&self) -> bool {
@@ -293,26 +294,39 @@ impl FrameCompositor for WgpuCompositor {
 
 /// Create a frame compositor for the given backend.
 ///
-/// Returns ``None`` for ``Webview`` (direct streaming, no compositor needed).
+/// Returns ``None`` for ``Webview`` or ``Auto`` (direct streaming).
 pub fn create_compositor(
     backend: &RenderBackend,
     desktop_width: u16,
     desktop_height: u16,
 ) -> Option<(Box<dyn FrameCompositor>, String)> {
     match backend {
-        RenderBackend::Webview => None,
+        RenderBackend::Webview | RenderBackend::Auto => None,
         RenderBackend::Softbuffer => {
             let c = SoftbufferCompositor::new(desktop_width, desktop_height);
             Some((Box::new(c), "softbuffer".to_string()))
         }
         RenderBackend::Wgpu => {
             let c = WgpuCompositor::new(desktop_width, desktop_height);
-            Some((Box::new(c), "wgpu".to_string()))
-        }
-        RenderBackend::Auto => {
-            // Auto-select softbuffer (CPU compositor) — reliable everywhere
-            let c = SoftbufferCompositor::new(desktop_width, desktop_height);
             Some((Box::new(c), "softbuffer".to_string()))
         }
+    }
+}
+
+#[cfg(test)]
+mod compositor_backend_tests {
+    use super::*;
+
+    #[test]
+    fn wgpu_request_reports_the_actual_cpu_fallback() {
+        let (compositor, resolved_name) = create_compositor(&RenderBackend::Wgpu, 2, 2).unwrap();
+        assert_eq!(resolved_name, "softbuffer");
+        assert_eq!(compositor.name(), "softbuffer");
+    }
+
+    #[test]
+    fn automatic_backend_uses_direct_streaming_without_a_cpu_shadow() {
+        assert!(!RenderBackend::Auto.is_composited());
+        assert!(create_compositor(&RenderBackend::Auto, 3840, 2160).is_none());
     }
 }

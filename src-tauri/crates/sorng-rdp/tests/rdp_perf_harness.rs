@@ -1,22 +1,18 @@
-//! t40-f3 — gated RDP frame-pipeline performance harness.
+//! Delivery-accounting microbenchmark and opt-in connection diagnostics smoke.
 //!
-//! This measures the frame delivery + backpressure/coalescing hot path that the
-//! active session loop actually runs: `FrameFlowController::account_batched_update`
-//! (the per-graphics-update coalescing decision) feeding `send_accounted_frame`
-//! (the per-session lock-free delivery accounting) through a `FrameChannel`. It
-//! reports throughput (delivered frames/sec), coalesced and dropped counts, and
-//! per-frame delivery latency (mean / p95) plus payload size — the exact signals
-//! the mission asks a perf test to guard.
+//! The microbenchmark allocates synthetic bytes and sends them to a discard
+//! sink. It does not include protocol decode, framebuffer copies, IPC, worker
+//! execution, or screen presentation, and cannot estimate desktop FPS.
 //!
 //! Both tests are `#[ignore]`d so the default `cargo test -p sorng-rdp` stays
 //! fast and host-independent. The live test is *additionally* gated on the
 //! `RDP_PERF_HOST` env var so it is a no-op unless a target is supplied.
 //!
-//! # Running the deterministic pipeline benchmark
+//! # Running the deterministic accounting microbenchmark
 //!
 //! ```bash
 //! cargo test -p sorng-rdp --test rdp_perf_harness \
-//!     frame_pipeline_throughput -- --ignored --nocapture
+//!     frame_delivery_accounting_microbenchmark -- --ignored --nocapture
 //! ```
 //!
 //! Tunables (env vars, all optional):
@@ -26,7 +22,7 @@
 //! - `RDP_PERF_BATCH`    updates coalesced per flush            (default 8)
 //! - `RDP_PERF_DROP_EVERY` fail every Nth send (0 = never)      (default 0)
 //!
-//! # Running the live xrdp connection benchmark
+//! # Running the live xrdp connection diagnostics smoke
 //!
 //! Uses the Docker xrdp recipe already shipped in `e2e/docker-compose.yml`
 //! (`danielguerra/ubuntu-xrdp`, mapped to 127.0.0.1:13389):
@@ -35,7 +31,7 @@
 //! cd e2e && docker compose up -d test-rdp
 //! RDP_PERF_HOST=127.0.0.1 RDP_PERF_PORT=13389 \
 //!     cargo test -p sorng-rdp --test rdp_perf_harness \
-//!     live_xrdp_connect_throughput -- --ignored --nocapture
+//!     live_xrdp_connection_diagnostics -- --ignored --nocapture
 //! ```
 //!
 //! Tunables: `RDP_PERF_HOST` (required to run), `RDP_PERF_PORT` (default 13389),
@@ -80,7 +76,7 @@ impl FrameChannel for BenchFrameChannel {
 
 #[test]
 #[ignore = "perf: run explicitly with --ignored --nocapture"]
-fn frame_pipeline_throughput() {
+fn frame_delivery_accounting_microbenchmark() {
     let total_frames = env_usize("RDP_PERF_FRAMES", 20_000);
     let width = env_usize("RDP_PERF_WIDTH", 1920);
     let rect_h = env_usize("RDP_PERF_RECT_H", 64);
@@ -88,7 +84,20 @@ fn frame_pipeline_throughput() {
     let drop_every = env_usize("RDP_PERF_DROP_EVERY", 0) as u64;
 
     // One merged batch payload mirrors push_multi_rect: 8-byte header + RGBA.
-    let payload_bytes = 8 + width * rect_h * 4;
+    assert!(
+        total_frames > 0 && total_frames <= 10_000_000,
+        "RDP_PERF_FRAMES must be 1..=10000000"
+    );
+    assert!(width > 0 && rect_h > 0, "dimensions must be positive");
+    let payload_bytes = width
+        .checked_mul(rect_h)
+        .and_then(|n| n.checked_mul(4))
+        .and_then(|n| n.checked_add(8))
+        .expect("payload size overflow");
+    assert!(
+        payload_bytes <= 16 * 1024 * 1024,
+        "synthetic payload exceeds 16 MiB"
+    );
 
     let channel: DynFrameChannel = Arc::new(BenchFrameChannel {
         sends: AtomicU64::new(0),
@@ -98,7 +107,7 @@ fn frame_pipeline_throughput() {
     let accounting = FrameDeliveryAccounting::new();
     let mut flow = FrameFlowController::new(FrameFlowBudget::default());
 
-    let mut delivered_batches: u64 = 0;
+    let mut attempted_batches: u64 = 0;
     let mut latencies_ns: Vec<u128> = Vec::with_capacity(total_frames / batch + 1);
 
     let start = Instant::now();
@@ -112,17 +121,15 @@ fn frame_pipeline_throughput() {
         produced += this_batch;
 
         // One flush: the whole coalesced backlog is sent as a single frame.
-        let payload = vec![0u8; payload_bytes];
         let send_start = Instant::now();
-        let _ = send_accounted_frame(
-            &accounting,
-            &channel,
-            FramePayloadKind::RgbaRects,
-            payload,
-        );
+        let payload = vec![0u8; payload_bytes];
+        let delivered =
+            send_accounted_frame(&accounting, &channel, FramePayloadKind::RgbaRects, payload);
         latencies_ns.push(send_start.elapsed().as_nanos());
-        flow.record_delivered();
-        delivered_batches += 1;
+        if delivered.is_ok() {
+            flow.record_delivered();
+        }
+        attempted_batches += 1;
     }
     let elapsed = start.elapsed();
 
@@ -140,19 +147,26 @@ fn frame_pipeline_throughput() {
     } else {
         latencies_ns[(latencies_ns.len() * 95 / 100).min(latencies_ns.len() - 1)]
     };
-    let fps = delivered_batches as f64 / elapsed.as_secs_f64().max(f64::EPSILON);
+    let batches_per_second =
+        delivery.delivered_frames as f64 / elapsed.as_secs_f64().max(f64::EPSILON);
 
-    eprintln!("── RDP frame-pipeline perf ─────────────────────────────");
+    eprintln!("── RDP delivery-accounting microbenchmark ─────────────────────────────");
     eprintln!("graphics updates driven : {total_frames}");
     eprintln!("batch (coalesce) size   : {batch}");
     eprintln!("payload / frame         : {payload_bytes} bytes ({width}x{rect_h} RGBA + 8B hdr)");
-    eprintln!("wall time               : {:.3} ms", elapsed.as_secs_f64() * 1e3);
-    eprintln!("delivered frames        : {delivered_batches}  ({fps:.0} fps)");
+    eprintln!(
+        "wall time               : {:.3} ms",
+        elapsed.as_secs_f64() * 1e3
+    );
+    eprintln!("successful synthetic batches/s: {batches_per_second:.0} (not desktop FPS)");
     eprintln!("coalesced frames        : {}", flow_snap.coalesced_frames);
-    eprintln!("attempted / delivered   : {} / {}", delivery.attempted_frames, delivery.delivered_frames);
+    eprintln!(
+        "attempted / delivered   : {} / {}",
+        delivery.attempted_frames, delivery.delivered_frames
+    );
     eprintln!("dropped (send failures) : {}", delivery.failed_frames);
     eprintln!("bytes delivered         : {}", delivery.delivered_bytes);
-    eprintln!("per-send latency        : mean {mean_ns} ns, p95 {p95_ns} ns");
+    eprintln!("allocation + discard-send : mean {mean_ns} ns, p95 {p95_ns} ns");
     eprintln!("────────────────────────────────────────────────────────");
 
     // Sanity: the wired controller must report the real coalesced count
@@ -164,22 +178,25 @@ fn frame_pipeline_throughput() {
         "coalesced {} should be >= {expected_min_coalesced}",
         flow_snap.coalesced_frames
     );
-    assert_eq!(delivery.attempted_frames, delivered_batches);
+    assert_eq!(delivery.attempted_frames, attempted_batches);
+    assert_eq!(flow_snap.delivered_frames, delivery.delivered_frames);
     if drop_every == 0 {
         assert_eq!(delivery.failed_frames, 0);
-        assert_eq!(delivery.delivered_frames, delivered_batches);
+        assert_eq!(delivery.delivered_frames, attempted_batches);
     } else {
-        assert!(delivery.failed_frames > 0, "expected simulated drops");
+        assert_eq!(delivery.failed_frames, attempted_batches / drop_every);
     }
 }
 
 #[test]
 #[ignore = "perf+live: needs RDP_PERF_HOST and a reachable xrdp; run with --ignored --nocapture"]
-fn live_xrdp_connect_throughput() {
+fn live_xrdp_connection_diagnostics() {
     let host = match std::env::var("RDP_PERF_HOST") {
         Ok(h) if !h.is_empty() => h,
         _ => {
-            eprintln!("live_xrdp_connect_throughput: RDP_PERF_HOST unset — skipping live benchmark");
+            eprintln!(
+                "live_xrdp_connection_diagnostics: RDP_PERF_HOST unset — skipping live benchmark"
+            );
             return;
         }
     };
@@ -205,16 +222,21 @@ fn live_xrdp_connect_throughput() {
         let ms = start.elapsed().as_secs_f64() * 1e3;
         latencies_ms.push(ms);
         assert!(
-            !report.steps.is_empty(),
-            "connect cycle {i} produced no diagnostic steps"
+            !report.steps.is_empty()
+                && !report.steps.iter().any(|step| step.status == "fail")
+                && report
+                    .steps
+                    .iter()
+                    .any(|step| step.name == "Server Capabilities" && step.status == "info"),
+            "diagnostic cycle {i} failed to verify an RDP connection"
         );
     }
 
     latencies_ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let mean = latencies_ms.iter().sum::<f64>() / latencies_ms.len() as f64;
     let p95 = latencies_ms[(latencies_ms.len() * 95 / 100).min(latencies_ms.len() - 1)];
-    eprintln!("── live xrdp connect perf ({host}:{port}) ─────────────");
+    eprintln!("── live xrdp connection diagnostics smoke ({host}:{port}) ─────────────");
     eprintln!("connect cycles          : {connects}");
-    eprintln!("connect latency         : mean {mean:.1} ms, p95 {p95:.1} ms");
+    eprintln!("diagnostic run duration : mean {mean:.1} ms, p95 {p95:.1} ms");
     eprintln!("────────────────────────────────────────────────────────");
 }

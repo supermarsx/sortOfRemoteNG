@@ -360,6 +360,7 @@ pub async fn connect_rdp(
                 worker_activity_control,
             );
         });
+        spawn_rdp_worker_completion_reaper(Arc::clone(&*state), session_id.clone(), &worker);
 
         let connection = RdpActiveConnection {
             session,
@@ -810,16 +811,7 @@ pub async fn rdp_report_frame_telemetry(
             .ok_or_else(|| format!("RDP session {} not found", payload.session_id))?
     };
 
-    let mut frame_flow_summary = stats
-        .lifecycle_snapshot(&payload.session_id)
-        .frame_flow_summary;
-    frame_flow_summary.queued_frames = payload.queued_frames;
-    frame_flow_summary.dropped_frames = payload.dropped_frames;
-    // `coalesced_frames` is now owned by the backend `FrameFlowController`
-    // (which actually measures coalescing on the frame path); the frontend does
-    // not, so do not let its report clobber the authoritative backend count.
-    frame_flow_summary.average_render_ms = payload.average_render_ms;
-    stats.set_frame_flow_summary(frame_flow_summary);
+    stats.record_frontend_telemetry(&payload);
 
     Ok(())
 }

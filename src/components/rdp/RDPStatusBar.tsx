@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   MousePointer,
   Keyboard,
@@ -17,13 +17,15 @@ import {
   FolderInput,
   HardDrive,
   type LucideIcon,
-} from 'lucide-react';
-import { formatBytes } from '../../utils/core/formatters';
-import { StatusBar } from '../ui/display';
-import type { RDPStatsEvent } from '../../types/rdp/rdpEvents';
-import type { RDPConnectionSettings } from '../../types/connection/connection';
+} from "lucide-react";
+import { formatBytes } from "../../utils/core/formatters";
+import { StatusBar } from "../ui/display";
+import type { RDPStatsEvent } from "../../types/rdp/rdpEvents";
+import type { RDPConnectionSettings } from "../../types/connection/connection";
 
-type RedirectionKey = keyof NonNullable<RDPConnectionSettings['deviceRedirection']>;
+type RedirectionKey = keyof NonNullable<
+  RDPConnectionSettings["deviceRedirection"]
+>;
 
 interface RDPStatusBarProps {
   rdpSessionId: string | null;
@@ -38,7 +40,10 @@ interface RDPStatusBarProps {
   mouseEnabled: boolean;
   keyboardEnabled: boolean;
   rdpSettings?: RDPConnectionSettings;
-  onToggleInput: (key: 'mouseEnabled' | 'keyboardEnabled', value: boolean) => void;
+  onToggleInput: (
+    key: "mouseEnabled" | "keyboardEnabled",
+    value: boolean,
+  ) => void;
   onToggleRedirection: (key: RedirectionKey, value: boolean) => void;
   onToggleAudio: (enabled: boolean) => void;
 }
@@ -50,16 +55,16 @@ interface RedirectionItem {
 }
 
 const REDIRECTIONS: RedirectionItem[] = [
-  { key: 'clipboard', label: 'Clipboard', icon: Copy },
-  { key: 'audioInput', label: 'Microphone', icon: Mic },
-  { key: 'printers', label: 'Printers', icon: Printer },
-  { key: 'ports', label: 'Ports', icon: Cable },
-  { key: 'smartCards', label: 'Smart Cards', icon: CreditCard },
-  { key: 'usbDevices', label: 'USB Devices', icon: Usb },
-  { key: 'videoCapture', label: 'Video Capture', icon: Video },
-  { key: 'webAuthn', label: 'WebAuthn', icon: ShieldCheck },
-  { key: 'fileDragDrop', label: 'File Drag & Drop', icon: FolderInput },
-  { key: 'driveRedirection', label: 'Drive Redirection', icon: HardDrive },
+  { key: "clipboard", label: "Clipboard", icon: Copy },
+  { key: "audioInput", label: "Microphone", icon: Mic },
+  { key: "printers", label: "Printers", icon: Printer },
+  { key: "ports", label: "Ports", icon: Cable },
+  { key: "smartCards", label: "Smart Cards", icon: CreditCard },
+  { key: "usbDevices", label: "USB Devices", icon: Usb },
+  { key: "videoCapture", label: "Video Capture", icon: Video },
+  { key: "webAuthn", label: "WebAuthn", icon: ShieldCheck },
+  { key: "fileDragDrop", label: "File Drag & Drop", icon: FolderInput },
+  { key: "driveRedirection", label: "Drive Redirection", icon: HardDrive },
 ];
 
 const ToggleButton: React.FC<{
@@ -72,20 +77,30 @@ const ToggleButton: React.FC<{
     onClick={onToggle}
     className={`p-0.5 rounded transition-colors ${
       enabled
-        ? 'text-[var(--color-text)] hover:text-[var(--color-textSecondary)]'
-        : 'text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] opacity-40'
+        ? "text-[var(--color-text)] hover:text-[var(--color-textSecondary)]"
+        : "text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] opacity-40"
     }`}
-    data-tooltip={`${label}: ${enabled ? 'On' : 'Off'} (click to toggle)`}
+    data-tooltip={`${label}: ${enabled ? "On" : "Off"} (click to toggle)`}
   >
     <Icon size={12} />
   </button>
 );
 
 export const RDPStatusBar: React.FC<RDPStatusBarProps> = ({
-  rdpSessionId, sessionId, isConnected, desktopSize, stats,
-  certFingerprint, audioEnabled, magnifierActive,
-  mouseEnabled, keyboardEnabled,
-  rdpSettings, onToggleInput, onToggleRedirection, onToggleAudio,
+  rdpSessionId,
+  sessionId,
+  isConnected,
+  desktopSize,
+  stats,
+  certFingerprint,
+  audioEnabled,
+  magnifierActive,
+  mouseEnabled,
+  keyboardEnabled,
+  rdpSettings,
+  onToggleInput,
+  onToggleRedirection,
+  onToggleAudio,
 }) => {
   const deviceRedirection = rdpSettings?.deviceRedirection;
 
@@ -98,18 +113,34 @@ export const RDPStatusBar: React.FC<RDPStatusBarProps> = ({
           <span>Protocol: RDP</span>
           {isConnected && (
             <>
-              <span>Desktop: {desktopSize.width}x{desktopSize.height}</span>
+              <span>
+                Desktop: {desktopSize.width}x{desktopSize.height}
+              </span>
               <span>Encryption: TLS/NLA</span>
               {stats && (
                 <>
-                  <span className="text-success">{stats.fps.toFixed(0)} FPS</span>
-                  <span>{'\u2193'}{formatBytes(stats.bytes_received)}</span>
-                  <span>{'\u2191'}{formatBytes(stats.bytes_sent)}</span>
+                  <span title="Completed frontend presentations per second">
+                    {stats.presented_fps == null
+                      ? "FPS unavailable"
+                      : `${stats.presented_fps.toFixed(0)} FPS`}
+                  </span>
+                  <span>
+                    {"\u2193"}
+                    {formatBytes(stats.bytes_received)}
+                  </span>
+                  <span>
+                    {"\u2191"}
+                    {formatBytes(stats.bytes_sent)}
+                  </span>
                 </>
               )}
               {certFingerprint && (
-                <span className="text-info" data-tooltip={`SHA256:${certFingerprint}`}>
-                  Cert: {certFingerprint.slice(0, 11)}{'\u2026'}
+                <span
+                  className="text-info"
+                  data-tooltip={`SHA256:${certFingerprint}`}
+                >
+                  Cert: {certFingerprint.slice(0, 11)}
+                  {"\u2026"}
                 </span>
               )}
             </>
@@ -123,13 +154,13 @@ export const RDPStatusBar: React.FC<RDPStatusBarProps> = ({
             enabled={mouseEnabled}
             label="Mouse"
             icon={MousePointer}
-            onToggle={() => onToggleInput('mouseEnabled', !mouseEnabled)}
+            onToggle={() => onToggleInput("mouseEnabled", !mouseEnabled)}
           />
           <ToggleButton
             enabled={keyboardEnabled}
             label="Keyboard"
             icon={Keyboard}
-            onToggle={() => onToggleInput('keyboardEnabled', !keyboardEnabled)}
+            onToggle={() => onToggleInput("keyboardEnabled", !keyboardEnabled)}
           />
 
           <span className="mx-0.5 w-px h-3 bg-[var(--color-border)]" />
@@ -150,7 +181,7 @@ export const RDPStatusBar: React.FC<RDPStatusBarProps> = ({
                 key={key}
                 enabled={!!enabled}
                 label={label}
-                icon={key === 'audioInput' ? (enabled ? Mic : MicOff) : icon}
+                icon={key === "audioInput" ? (enabled ? Mic : MicOff) : icon}
                 onToggle={() => onToggleRedirection(key, !enabled)}
               />
             );

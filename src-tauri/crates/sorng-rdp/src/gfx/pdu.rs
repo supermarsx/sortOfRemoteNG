@@ -26,10 +26,10 @@ pub enum GfxCmdId {
     EndFrame = 0x000C,
     FrameAcknowledge = 0x000D,
     ResetGraphics = 0x000E,
-    MapSurfaceToOutput = 0x0015,
+    MapSurfaceToOutput = 0x000F,
     CapsAdvertise = 0x0012,
     CapsConfirm = 0x0013,
-    MapSurfaceToScaled = 0x0077,
+    MapSurfaceToScaled = 0x0017,
 }
 
 #[derive(Debug)]
@@ -65,8 +65,9 @@ pub const CAPVERSION_104: u32 = 0x000A0400;
 // ─── Codec IDs ──────────────────────────────────────────────────────────
 
 pub const CODEC_UNCOMPRESSED: u16 = 0x0000;
-pub const CODEC_PLANAR: u16 = 0x0001;
-pub const CODEC_CAVIDEO: u16 = 0x0003; // AVC420
+pub const CODEC_PLANAR: u16 = 0x000A;
+pub const CODEC_CAVIDEO: u16 = 0x0003; // RemoteFX
+pub const CODEC_AVC420: u16 = 0x000B;
 pub const CODEC_CLEARCODEC: u16 = 0x0008;
 pub const CODEC_ALPHA: u16 = 0x000C;
 pub const CODEC_AVC444: u16 = 0x000E;
@@ -74,7 +75,7 @@ pub const CODEC_AVC444V2: u16 = 0x000F;
 
 // ─── Rect ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GfxRect16 {
     pub left: u16,
     pub top: u16,
@@ -246,15 +247,20 @@ pub struct WireToSurface1 {
 
 impl WireToSurface1 {
     pub fn parse(body: &[u8]) -> Result<Self, GfxParseError> {
-        // surfaceId(2) + codecId(2) + pixelFormat(1) + destRect(8) = 13 bytes header
-        if body.len() < 13 {
+        // MS-RDPEGFX 2.2.2.1: the rectangle is followed by bitmapDataLength.
+        if body.len() < 17 {
             return Err(GfxParseError("WireToSurface1 too short"));
         }
         let surface_id = u16::from_le_bytes([body[0], body[1]]);
         let codec_id = u16::from_le_bytes([body[2], body[3]]);
         let pixel_format = body[4];
         let dest_rect = GfxRect16::parse(&body[5..13])?;
-        let bitmap_data = body[13..].to_vec();
+        let bitmap_len =
+            u32::from_le_bytes(body[13..17].try_into().expect("length checked")) as usize;
+        if bitmap_len != body.len() - 17 {
+            return Err(GfxParseError("WireToSurface1 bitmap length mismatch"));
+        }
+        let bitmap_data = body[17..].to_vec();
         Ok(WireToSurface1 {
             surface_id,
             codec_id,
@@ -266,6 +272,10 @@ impl WireToSurface1 {
 }
 
 // ─── AVC420 Bitmap Stream ───────────────────────────────────────────────
+
+/// 2 MiB of rectangle metadata; accommodates dense 4K/8K macroblock masks while
+/// rejecting malicious region counts before allocating.
+pub const MAX_AVC420_REGIONS: usize = 2 * 1024 * 1024 / 8;
 
 #[derive(Debug)]
 pub struct Avc420QuantQuality {
@@ -287,6 +297,16 @@ impl Avc420BitmapStream {
         }
 
         let num_regions = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+        if num_regions > MAX_AVC420_REGIONS {
+            return Err(GfxParseError("Avc420 region count exceeds limit"));
+        }
+        let metadata_len = num_regions
+            .checked_mul(10)
+            .and_then(|bytes| bytes.checked_add(4))
+            .ok_or(GfxParseError("Avc420 metadata length overflow"))?;
+        if metadata_len > data.len() {
+            return Err(GfxParseError("Avc420 metadata truncated"));
+        }
         let mut offset = 4;
 
         // Parse region rects (8 bytes each)
@@ -642,6 +662,7 @@ mod tests {
             // dest_rect (8 bytes)
             0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x30, 0x00,
         ];
+        body.extend_from_slice(&4u32.to_le_bytes());
         body.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]); // bitmap data
         let wts = WireToSurface1::parse(&body).unwrap();
         assert_eq!(wts.surface_id, 1);
@@ -653,7 +674,8 @@ mod tests {
     #[test]
     fn wire_to_surface1_parse_empty_bitmap() {
         let body = [
-            0x01, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
+            0x01, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0, 0, 0,
+            0,
         ];
         let wts = WireToSurface1::parse(&body).unwrap();
         assert!(wts.bitmap_data.is_empty());
@@ -661,7 +683,28 @@ mod tests {
 
     #[test]
     fn wire_to_surface1_parse_too_short() {
-        assert!(WireToSurface1::parse(&[0; 12]).is_err());
+        assert!(WireToSurface1::parse(&[0; 16]).is_err());
+    }
+
+    #[test]
+    fn protocol_ids_and_bitmap_lengths_follow_ms_rdpegfx() {
+        assert_eq!(GfxCmdId::MapSurfaceToOutput as u16, 0x000F);
+        assert_eq!(GfxCmdId::MapSurfaceToScaled as u16, 0x0017);
+        assert_eq!(CODEC_AVC420, 0x000B);
+        assert_ne!(CODEC_CAVIDEO, CODEC_AVC420);
+        let mut body = vec![0; 17];
+        body[13..17].copy_from_slice(&1u32.to_le_bytes());
+        assert!(WireToSurface1::parse(&body).is_err());
+        body.extend_from_slice(&[7, 8]);
+        assert!(WireToSurface1::parse(&body).is_err());
+    }
+
+    #[test]
+    fn avc420_region_count_is_bounded_before_allocation() {
+        assert!(Avc420BitmapStream::parse(&u32::MAX.to_le_bytes()).is_err());
+        let mut body = ((MAX_AVC420_REGIONS + 1) as u32).to_le_bytes().to_vec();
+        body.resize(4 + (MAX_AVC420_REGIONS + 1) * 10, 0);
+        assert!(Avc420BitmapStream::parse(&body).is_err());
     }
 
     // ── Avc420BitmapStream ──────────────────────────────────────────────

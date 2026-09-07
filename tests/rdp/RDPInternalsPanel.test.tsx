@@ -12,8 +12,7 @@ const i18nMock = vi.hoisted(() => {
     (
       key: string,
       fallbackOrOptions?:
-        | string
-        | ({ defaultValue?: string } & Record<string, unknown>),
+        string | ({ defaultValue?: string } & Record<string, unknown>),
       interpolation?: Record<string, unknown>,
     ) => {
       const options =
@@ -84,6 +83,27 @@ const gfx = (
 });
 
 describe("RDPInternalsPanel — RDPGFX row", () => {
+  it("distinguishes presented FPS from decoded updates and leaves idle FPS neutral", () => {
+    const view = render(
+      <RDPInternalsPanel
+        {...baseProps}
+        stats={{ ...baseStats, presented_fps: null }}
+      />,
+    );
+    const fpsCell = screen.getByText("Presented FPS").parentElement!;
+    expect(fpsCell).toHaveTextContent("Unavailable");
+    expect(screen.getByText("Decoded updates").parentElement).toHaveTextContent(
+      "30.0 updates/s",
+    );
+    view.rerender(
+      <RDPInternalsPanel
+        {...baseProps}
+        stats={{ ...baseStats, presented_fps: 0 }}
+      />,
+    );
+    expect(fpsCell).toHaveTextContent("0.0");
+    expect(fpsCell.querySelector(".text-error")).toBeNull();
+  });
   it("renders the GFX diagnostics row from a stats event carrying gfx", () => {
     render(
       <RDPInternalsPanel {...baseProps} stats={{ ...baseStats, gfx: gfx() }} />,

@@ -208,7 +208,10 @@ impl MfH264Decoder {
         ))
     }
 
-    unsafe fn create_input_sample(nal_data: &[u8]) -> Result<IMFSample, H264Error> {
+    unsafe fn create_input_sample(
+        nal_data: &[u8],
+        picture_id: u64,
+    ) -> Result<IMFSample, H264Error> {
         let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(nal_data.len() as u32)
             .map_err(|e| H264Error::DecodeFailed(format!("MFCreateMemoryBuffer: {e}")))?;
 
@@ -229,6 +232,12 @@ impl MfH264Decoder {
         sample
             .AddBuffer(&buffer)
             .map_err(|e| H264Error::DecodeFailed(format!("AddBuffer: {e}")))?;
+        sample
+            .SetSampleTime(
+                i64::try_from(picture_id)
+                    .map_err(|_| H264Error::DecodeFailed("picture identity overflow".into()))?,
+            )
+            .map_err(|e| H264Error::DecodeFailed(format!("SetSampleTime: {e}")))?;
 
         Ok(sample)
     }
@@ -342,6 +351,11 @@ impl MfH264Decoder {
         &mut self,
         sample: &IMFSample,
     ) -> Result<Option<DecodedFrame>, H264Error> {
+        let picture_id = sample.GetSampleTime().map_err(|e| {
+            H264Error::DecodeFailed(format!("missing output picture identity: {e}"))
+        })?;
+        let picture_id = u64::try_from(picture_id)
+            .map_err(|_| H264Error::DecodeFailed("negative output picture identity".into()))?;
         let buffer: IMFMediaBuffer = sample
             .ConvertToContiguousBuffer()
             .map_err(|e| H264Error::DecodeFailed(format!("ConvertToContiguousBuffer: {e}")))?;
@@ -352,18 +366,27 @@ impl MfH264Decoder {
             .Lock(&mut buf_ptr, None, Some(&mut cur_len))
             .map_err(|e| H264Error::DecodeFailed(format!("output Lock: {e}")))?;
 
-        let data = std::slice::from_raw_parts(buf_ptr, cur_len as usize);
-
         let w = self.width;
         let h = self.height;
-
-        if w == 0 || h == 0 {
-            buffer.Unlock().ok();
-            return Ok(None);
-        }
-
-        // Acquire a pooled buffer — avoids heap allocation on the hot path.
-        let out_size = w as usize * h as usize * 4;
+        // Validate before creating any slices, and always unlock before
+        // propagating a malformed decoder-buffer error.
+        let checked_layout = checked_output_layout(
+            w,
+            h,
+            self.output_stride,
+            self.output_subtype == MFVideoFormat_NV12,
+            cur_len as usize,
+        );
+        let (out_size, y_stride, uv_stride, y_size, uv_size) = match checked_layout {
+            Ok(layout) if !buf_ptr.is_null() => layout,
+            result => {
+                buffer.Unlock().ok();
+                return Err(result.err().unwrap_or_else(|| {
+                    H264Error::ConversionFailed("null MF output plane".into())
+                }));
+            }
+        };
+        let data = std::slice::from_raw_parts(buf_ptr, cur_len as usize);
         let mut rgba = self.pool.acquire(out_size);
 
         if self.output_subtype == MFVideoFormat_NV12 {
@@ -380,27 +403,13 @@ impl MfH264Decoder {
             }
         } else {
             // I420 / IYUV
-            let y_size = w as usize * h as usize;
-            let uv_size = (w as usize / 2) * (h as usize / 2);
-            if data.len() >= y_size + uv_size * 2 {
-                let y_plane = &data[..y_size];
-                let u_plane = &data[y_size..y_size + uv_size];
-                let v_plane = &data[y_size + uv_size..];
-                yuv_convert::yuv420_planar_to_rgba_inner_into(
-                    y_plane,
-                    u_plane,
-                    v_plane,
-                    w as usize,
-                    w as usize / 2,
-                    w as usize / 2,
-                    w as usize,
-                    h as usize,
-                    &mut rgba,
-                );
-            } else {
-                rgba.resize(out_size, 0);
-                rgba.fill(0);
-            }
+            let y_plane = &data[..y_size];
+            let u_plane = &data[y_size..y_size + uv_size];
+            let v_plane = &data[y_size + uv_size..];
+            yuv_convert::yuv420_planar_to_rgba_inner_into(
+                y_plane, u_plane, v_plane, y_stride, uv_stride, uv_stride, w as usize, h as usize,
+                &mut rgba,
+            );
         }
 
         buffer
@@ -408,6 +417,7 @@ impl MfH264Decoder {
             .map_err(|e| H264Error::DecodeFailed(format!("output Unlock: {e}")))?;
 
         Ok(Some(DecodedFrame {
+            picture_id,
             width: w,
             height: h,
             rgba,
@@ -415,14 +425,78 @@ impl MfH264Decoder {
     }
 }
 
+fn checked_output_layout(
+    width: u32,
+    height: u32,
+    stride: u32,
+    nv12: bool,
+    bytes: usize,
+) -> Result<(usize, usize, usize, usize, usize), H264Error> {
+    let invalid = || H264Error::ConversionFailed("invalid or truncated MF output layout".into());
+    // The selected 4:2:0 formats use even picture and row dimensions.
+    if width == 0 || height == 0 || !width.is_multiple_of(2) || !height.is_multiple_of(2) {
+        return Err(invalid());
+    }
+    let y_stride = if stride == 0 {
+        width as usize
+    } else {
+        stride as usize
+    };
+    if y_stride < width as usize || y_stride % 2 != 0 {
+        return Err(invalid());
+    }
+    let out_size = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .filter(|&n| n <= super::MAX_DECODED_FRAME_BYTES)
+        .ok_or_else(invalid)?;
+    let uv_stride = if nv12 { y_stride } else { y_stride / 2 };
+    let y_size = y_stride.checked_mul(height as usize).ok_or_else(invalid)?;
+    let uv_size = uv_stride
+        .checked_mul(height as usize / 2)
+        .ok_or_else(invalid)?;
+    let needed = uv_size
+        .checked_mul(if nv12 { 1 } else { 2 })
+        .and_then(|n| y_size.checked_add(n))
+        .ok_or_else(invalid)?;
+    if bytes < needed {
+        return Err(invalid());
+    }
+    Ok((out_size, y_stride, uv_stride, y_size, uv_size))
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    #[test]
+    fn padded_planes_are_sized_by_stride_and_invalid_buffers_fail_closed() {
+        assert_eq!(
+            checked_output_layout(18, 16, 32, false, 768).unwrap(),
+            (1152, 32, 16, 512, 128)
+        );
+        assert_eq!(
+            checked_output_layout(18, 16, 32, true, 768).unwrap(),
+            (1152, 32, 32, 512, 256)
+        );
+        for (w, h, stride, len) in [
+            (18, 16, 32, 767),
+            (18, 16, 16, 1024),
+            (18, 16, u32::MAX, usize::MAX),
+            (65534, 65534, 65534, usize::MAX),
+        ] {
+            assert!(checked_output_layout(w, h, stride, true, len).is_err());
+        }
+    }
+}
+
 impl H264Decoder for MfH264Decoder {
-    fn decode(&mut self, nal_data: &[u8]) -> Result<Vec<DecodedFrame>, H264Error> {
+    fn decode(&mut self, nal_data: &[u8], picture_id: u64) -> Result<Vec<DecodedFrame>, H264Error> {
         if nal_data.is_empty() {
             return Ok(Vec::new());
         }
 
         unsafe {
-            let sample = Self::create_input_sample(nal_data)?;
+            let sample = Self::create_input_sample(nal_data, picture_id)?;
 
             match self.transform.ProcessInput(0, &sample, 0) {
                 Ok(()) => {}
