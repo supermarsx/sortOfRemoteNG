@@ -455,6 +455,10 @@ jobs:
       # compiling the root app for more than three hours. LTO remains off. Both
       # macOS runners use 32 unoptimized units after the arm64 final app crate
       # was SIGKILLed with opt-level 1 and 16 units.
+      # These are defaults for the app and command crates. Named RDP runtime
+      # package overrides in src-tauri/Cargo.toml retain opt-level 2 for pixel
+      # conversion, graphics decoding, and packet processing. They inherit
+      # these job, LTO, and codegen-unit limits on every release target.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}

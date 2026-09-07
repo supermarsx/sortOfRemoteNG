@@ -313,6 +313,54 @@ test("RDP vendor builds only the rlib consumed by the application", () => {
   );
 });
 
+test("RDP runtime packages retain optimization inside bounded release profiles", () => {
+  const runtimePackages = [
+    "sorng-core",
+    "sorng-rdp",
+    "sorng-rdp-vendor",
+    "ironrdp-core",
+    "ironrdp-pdu",
+    "ironrdp-graphics",
+    "ironrdp-session",
+    "ironrdp-blocking",
+    "ironrdp-input",
+    "ironrdp-dvc",
+    "ironrdp-svc",
+    "yuv",
+    "openh264",
+    "openh264-sys2",
+  ];
+  for (const profile of ["dev", "release"]) {
+    for (const name of runtimePackages) {
+      const sectionName = `profile.${profile}.package.${name}`;
+      assert.equal(
+        activeTomlSection(cargoManifest, sectionName),
+        `[${sectionName}]\nopt-level = 2`,
+        `${name} must optimize runtime code and inherit memory controls`,
+      );
+    }
+    for (const name of ["app", "sorng-commands-core", "*"]) {
+      assert.doesNotMatch(
+        activeTomlSection(cargoManifest, `profile.${profile}.package.${name}`),
+        /^opt-level = [23]$/m,
+      );
+    }
+  }
+  assert.doesNotMatch(cargoManifest, /^\[profile\.release\.package\."\*"\]$/m);
+  assert.match(
+    activeTomlSection(cargoManifest, 'profile.dev.package."*"'),
+    /^opt-level = 1$/m,
+  );
+  assert.doesNotMatch(
+    activeTomlSection(cargoManifest, "profile.dev"),
+    /^opt-level = [123]$/m,
+  );
+  assert.match(
+    releaseWorkflow,
+    /# These are defaults for the app and command crates\. Named RDP runtime\n\s+# package overrides in src-tauri\/Cargo\.toml retain opt-level 2/,
+  );
+});
+
 test("rolling releases are reusable, explicit, serialized, and not tag-triggered", () => {
   assert.match(workflowCall, /source_sha:/);
   assert.match(workflowCall, /mode:/);
@@ -2705,10 +2753,7 @@ test("platform resource inspection is exact and immediately precedes native buil
       "]",
     ].join("\n"),
   );
-  const releaseProfile = cargoManifest.slice(
-    cargoManifest.indexOf("[profile.release]"),
-    cargoManifest.indexOf("[patch.crates-io]"),
-  );
+  const releaseProfile = activeTomlSection(cargoManifest, "profile.release");
   assert.match(releaseProfile, /^lto = "thin"$/m);
   assert.match(releaseProfile, /^codegen-units = 1$/m);
   assert.match(releaseProfile, /^opt-level = "z"$/m);

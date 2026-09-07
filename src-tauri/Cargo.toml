@@ -510,6 +510,53 @@ opt-level = 1
 [profile.dev.build-override]
 opt-level = 2
 
+# Optimize RDP pixel loops and their protocol/decoder consumers in dev too.
+# Named overrides include the first-party crates where generic code is
+# instantiated. Other workspace crates keep the unoptimized dev default.
+# Keep this list aligned with the release runtime overrides below.
+[profile.dev.package.sorng-core]
+opt-level = 2
+
+[profile.dev.package.sorng-rdp]
+opt-level = 2
+
+[profile.dev.package.sorng-rdp-vendor]
+opt-level = 2
+
+[profile.dev.package.ironrdp-core]
+opt-level = 2
+
+[profile.dev.package.ironrdp-pdu]
+opt-level = 2
+
+[profile.dev.package.ironrdp-graphics]
+opt-level = 2
+
+[profile.dev.package.ironrdp-session]
+opt-level = 2
+
+[profile.dev.package.ironrdp-blocking]
+opt-level = 2
+
+[profile.dev.package.ironrdp-input]
+opt-level = 2
+
+[profile.dev.package.ironrdp-dvc]
+opt-level = 2
+
+[profile.dev.package.ironrdp-svc]
+opt-level = 2
+
+[profile.dev.package.yuv]
+opt-level = 2
+
+[profile.dev.package.openh264]
+opt-level = 2
+
+# The source decoder's cc build also receives this OPT_LEVEL in dev builds.
+[profile.dev.package.openh264-sys2]
+opt-level = 2
+
 # ── Per-crate overrides for memory-hungry deps ───────────────────────
 # These crates have extreme generic expansion during typeck/codegen.
 # A single codegen unit forces sequential LLVM work on one thread,
@@ -569,14 +616,62 @@ opt-level = 1
 debug = 0
 
 [profile.release]
-# Optimise the installed application for size. Hosted release jobs may widen
-# codegen units and disable LTO per platform to stay within runner memory.
+# Default to size optimization outside the RDP runtime packages below. Hosted
+# jobs use opt-level 0, wider codegen units, and LTO off for runner memory.
 opt-level = "z"
 lto = "thin"
 codegen-units = 1
 strip = true
 debug = 0
 incremental = false
+
+# Runtime pixel conversion / frame assembly: avoid size-only optimization
+# ("z" disables loop vectorization) and hosted jobs' global opt-level 0.
+# Named package overrides take precedence over CARGO_PROFILE_RELEASE_OPT_LEVEL.
+# Inherit platform codegen-unit and LTO limits; the huge app/command crates
+# retain the hosted defaults that avoid their previous LLVM OOM failures.
+[profile.release.package.sorng-core]
+opt-level = 2
+
+[profile.release.package.sorng-rdp]
+opt-level = 2
+
+[profile.release.package.sorng-rdp-vendor]
+opt-level = 2
+
+# Per-frame protocol parsing, graphics decoding, channel and input processing.
+[profile.release.package.ironrdp-core]
+opt-level = 2
+
+[profile.release.package.ironrdp-pdu]
+opt-level = 2
+
+[profile.release.package.ironrdp-graphics]
+opt-level = 2
+
+[profile.release.package.ironrdp-session]
+opt-level = 2
+
+[profile.release.package.ironrdp-blocking]
+opt-level = 2
+
+[profile.release.package.ironrdp-input]
+opt-level = 2
+
+[profile.release.package.ironrdp-dvc]
+opt-level = 2
+
+[profile.release.package.ironrdp-svc]
+opt-level = 2
+
+[profile.release.package.yuv]
+opt-level = 2
+
+[profile.release.package.openh264]
+opt-level = 2
+
+[profile.release.package.openh264-sys2]
+opt-level = 2
 
 [patch.crates-io]
 ironrdp-connector = { path = "patches/ironrdp-connector" }

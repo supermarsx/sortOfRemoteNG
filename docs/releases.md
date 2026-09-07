@@ -89,6 +89,31 @@ current package layout.
 
 OS-level code signing and updater signing solve different problems. Unsigned public bundles may prompt platform warnings. Every release has validated version metadata in `latest.json`, but automatic installation is available only when its updater artifacts are signed with the protected Tauri key. The backend refuses an empty-signature entry before downloading it and leaves the public artifact link available for manual installation.
 
+## Native runtime optimization
+
+The named `profile.dev.package` and `profile.release.package` overrides in
+`src-tauri/Cargo.toml` compile the RDP pixel conversion, graphics, packet, and
+decoder wrapper crates at `opt-level = 2`. This includes the first-party
+`sorng-rdp`, `sorng-rdp-vendor`, and `sorng-core` crates where frame processing
+and generic code are instantiated. Other development dependencies retain their
+existing optimization and memory settings.
+
+Hosted releases keep the large app and command crates at `opt-level = 0`, one
+Cargo job, LTO off, and 16 codegen units on Windows/Linux or 32 on macOS. Earlier
+attempts to optimize the final app crate exhausted runner memory. The named
+RDP overrides take precedence over the global release optimization environment
+variable and inherit the other release limits. Local release builds retain the
+size-oriented default for other crates. See Cargo's
+[profile overrides](https://doc.rust-lang.org/cargo/reference/profiles.html#overrides).
+
+Run `npm run release:test` for the release contract guards. With Rust installed,
+run `node --test tests/release/rdp-build-profile-flags.check.mjs` to compile small
+isolated packages using the checked-in profile tables and assert the actual
+`rustc` flags for development, local release, and both hosted codegen settings.
+This check uses two jobs and does not rebuild the app. It verifies Cargo's
+override behavior; actual release memory use and end-to-end RDP latency still
+require native builds and session measurements on the target platforms.
+
 ## Recovery and rollback
 
 Normal releases are automatic. If a run stops before reserving its identity,
