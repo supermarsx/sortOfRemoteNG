@@ -66,7 +66,10 @@ fn render_backend_is_native_classification() {
         "softbuffer should be native"
     );
     assert!(RenderBackend::Wgpu.is_native(), "wgpu should be native");
-    assert!(RenderBackend::Auto.is_native(), "auto should be native");
+    assert!(
+        !RenderBackend::Auto.is_native(),
+        "auto streams directly without a native compositor"
+    );
 }
 
 #[test]
@@ -80,7 +83,10 @@ fn render_backend_is_composited() {
         "softbuffer is composited"
     );
     assert!(RenderBackend::Wgpu.is_composited(), "wgpu is composited");
-    assert!(RenderBackend::Auto.is_composited(), "auto is composited");
+    assert!(
+        !RenderBackend::Auto.is_composited(),
+        "auto streams directly without a second shadow buffer"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -112,7 +118,7 @@ mod compositor_tests {
 
         // Create a 64×48 RGBA image (solid red)
         let mut image_data = vec![0u8; 64 * 48 * 4];
-        for pixel in image_data.chunks_exact_mut(4) {
+        for pixel in image_data.as_chunks_mut::<4>().0 {
             pixel[0] = 255; // R
             pixel[1] = 0; // G
             pixel[2] = 0; // B
@@ -172,7 +178,7 @@ mod compositor_tests {
         assert_eq!(frame.rgba.len(), 8 + 10 * 10 * 4);
 
         // All pixels in the frame should be green (skip 8-byte header)
-        for pixel in frame.rgba[8..].chunks_exact(4) {
+        for pixel in frame.rgba[8..].as_chunks::<4>().0 {
             assert_eq!(pixel[0], 0, "R should be 0");
             assert_eq!(pixel[1], 255, "G should be 255");
             assert_eq!(pixel[2], 0, "B should be 0");
@@ -254,17 +260,18 @@ mod compositor_tests {
             "wgpu compositor should be created (CPU fallback)"
         );
         let (comp, name) = result.unwrap();
-        // Currently WgpuCompositor delegates to softbuffer
-        assert!(name == "wgpu" || name == "softbuffer");
-        assert!(!comp.name().is_empty());
+        // The compatibility request must report its actual CPU implementation.
+        assert_eq!(name, "softbuffer");
+        assert_eq!(comp.name(), "softbuffer");
     }
 
     #[test]
-    fn create_compositor_auto() {
+    fn create_compositor_auto_streams_directly() {
         let result = native_renderer::create_compositor(&RenderBackend::Auto, 320, 240);
-        assert!(result.is_some(), "auto compositor should be created");
-        let (_comp, name) = result.unwrap();
-        assert!(!name.is_empty());
+        assert!(
+            result.is_none(),
+            "auto must stream directly without allocating a second shadow buffer"
+        );
     }
 
     #[test]
