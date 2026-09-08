@@ -47,6 +47,8 @@ export type SetupMethod =
 
 /** What the Settings → Security panel needs to render its status badge. */
 export interface EncryptionStatus {
+  /** Encrypted/unverifiable profile evidence requires original-key recovery, never fresh setup. */
+  recoveryRequired?: boolean;
   schemaVersion: 0 | 2;
   masterKeyStorage: MasterKeyStorage | null;
   unlocked: boolean;

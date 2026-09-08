@@ -107,6 +107,8 @@ function makeInvoke(impl: (cmd: string, args?: any) => Promise<any>) {
 }
 
 let invokeImpl = vi.fn();
+const portableDialog = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => portableDialog);
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: any) => invokeImpl(cmd, args),
@@ -151,11 +153,55 @@ async function waitForSubscribers(name: string, count: number) {
 beforeEach(() => {
   invokeImpl = vi.fn();
   eventSubscribers.clear();
+  portableDialog.open.mockReset();
+  portableDialog.save.mockReset();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────
 
 describe("EncryptionAtRestSection", () => {
+  it("grants the selected portable export destination and ignores picker cancellation", async () => {
+    invokeImpl = makeInvoke(async (command) => {
+      if (command === "encryption_status") return unlockedVaultStatus;
+      if (command === "encryption_export_portable_dek") return 128;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    portableDialog.save
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("/granted/master.dek");
+    render(<EncryptionAtRestSection />);
+    const choose = await screen.findByRole("button", {
+      name: "Choose portable key destination",
+    });
+    fireEvent.click(choose);
+    await waitFor(() => expect(portableDialog.save).toHaveBeenCalledTimes(1));
+    expect(
+      invokeImpl.mock.calls.some(
+        ([name]) => name === "encryption_export_portable_dek",
+      ),
+    ).toBe(false);
+    fireEvent.click(choose);
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("/granted/master.dek"),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.change(
+      screen.getByPlaceholderText("Used to wrap the DEK at export time"),
+      { target: { value: "export-password" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export key" }));
+    await waitFor(() =>
+      expect(invokeImpl).toHaveBeenCalledWith(
+        "encryption_export_portable_dek",
+        {
+          destinationPath: "/granted/master.dek",
+          password: "export-password",
+          argon2: null,
+        },
+      ),
+    );
+  });
   it("renders the section header in the common unlocked + vault state", async () => {
     invokeImpl = makeInvoke(async (cmd) => {
       if (cmd === "encryption_status") return unlockedVaultStatus;
@@ -165,9 +211,9 @@ describe("EncryptionAtRestSection", () => {
     // The status card transitions from "Probing…" to the populated
     // grid once the mount fetch resolves. Wait for that.
     await waitFor(() => {
-      expect(screen.getAllByText(/Encryption at rest/i).length).toBeGreaterThan(
-        0,
-      );
+      expect(
+        screen.getAllByText(/Global master-key protection/i).length,
+      ).toBeGreaterThan(0);
     });
     // The mount fetch should also have surfaced the vault backend
     // line, which confirms `status` is populated (not stuck loading).

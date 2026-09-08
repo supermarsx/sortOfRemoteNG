@@ -13,7 +13,7 @@
  * formatting and ships its labels in English with a hook for the
  * caller to override per language.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Eye,
@@ -28,6 +28,7 @@ import { useEncryption } from "../../hooks/settings/useEncryption";
 import type { UnlockResult } from "../../types/encryption/encryption";
 import { describeStorage } from "../../types/encryption/encryption";
 import { shouldShowUnlockScreen } from "./unlockScreenVisibility";
+import { useUnlockIsolation } from "./useUnlockIsolation";
 
 interface UnlockScreenProps {
   /** Called once the state is unlocked. Optional — the overlay
@@ -44,6 +45,8 @@ interface UnlockScreenProps {
 interface Labels {
   title: string;
   vaultUnlocking: string;
+  vaultUnlockButton: string;
+  vaultUnlockNotice: string;
   passwordPrompt: string;
   passwordPlaceholder: string;
   unlockButton: string;
@@ -61,6 +64,9 @@ interface Labels {
 const DEFAULT_LABELS: Labels = {
   title: "Encrypted storage is locked",
   vaultUnlocking: "Unlocking from your OS vault…",
+  vaultUnlockButton: "Unlock from OS vault",
+  vaultUnlockNotice:
+    "Uses your current OS session's vault access. This is not a separate master-password challenge.",
   passwordPrompt:
     "Enter your master password to decrypt application data on disk.",
   passwordPlaceholder: "Master password",
@@ -117,46 +123,55 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   const [importPassword, setImportPassword] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const operationBusy = useRef(false);
+  const wasUnlocked = useRef(false);
+  const onUnlockedRef = useRef(onUnlocked);
+  const busy = submitting || importBusy || enc.loading;
 
   const status = enc.status;
+  const isolationRef = useRef<HTMLDivElement | null>(null);
+  const isolateKeyboard = useUnlockIsolation(
+    isolationRef,
+    shouldShowUnlockScreen(status),
+  );
   const lockout = enc.lockout;
   const remainingMs = lockout?.remainingCooldownMs ?? 0;
   const cooldownActive = remainingMs > 0;
 
-  const passwordMode =
-    !!status &&
-    (status.masterKeyStorage === "password" ||
-      status.masterKeyStorage === "vault-and-password" ||
-      status.passwordWrapPresent);
+  const passwordMode = !!status?.passwordWrapPresent;
 
-  // Attempt silent vault unlock once on mount if no password wrap is
-  // on disk (pure vault mode). That's the path that should always
-  // succeed and let the unlock screen vanish without any user
-  // interaction.
+  // Startup vault loading belongs to the native startup path. Never
+  // automatically undo a manual/idle lock when this overlay appears.
   useEffect(() => {
-    if (!status) return;
-    if (status.unlocked) {
-      onUnlocked?.();
-      return;
-    }
-    if (
-      !status.passwordWrapPresent &&
-      status.vaultHasMasterDek &&
-      status.vaultAvailable
-    ) {
-      void enc.unlock();
-    }
-  }, [status, enc, onUnlocked]);
+    onUnlockedRef.current = onUnlocked;
+  }, [onUnlocked]);
 
   // Auto-dismiss the instant the state flips to unlocked, regardless of
   // which window or method triggered it.
   useEffect(() => {
-    if (status?.unlocked) onUnlocked?.();
-  }, [status?.unlocked, onUnlocked]);
+    if (!status) return;
+    if (status.unlocked && !wasUnlocked.current) {
+      wasUnlocked.current = true;
+      setPassword("");
+      setImportPassword("");
+      setShowPassword(false);
+      setLastResult(null);
+      setError(null);
+      onUnlockedRef.current?.();
+    } else if (!status.unlocked) {
+      wasUnlocked.current = false;
+    }
+  }, [status]);
 
   const handleImportDek = async () => {
-    if (importBusy || importPath.length === 0 || importPassword.length === 0)
+    if (
+      operationBusy.current ||
+      busy ||
+      importPath.length === 0 ||
+      importPassword.length === 0
+    )
       return;
+    operationBusy.current = true;
     setImportBusy(true);
     setImportError(null);
     try {
@@ -169,26 +184,58 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
     } catch (e) {
       setImportError(e instanceof Error ? e.message : String(e));
     } finally {
+      operationBusy.current = false;
       setImportBusy(false);
     }
   };
 
+  const choosePortableKey = async () => {
+    if (busy || operationBusy.current) return;
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const path = await open({
+        title: "Choose portable master key",
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Portable master key", extensions: ["dek"] }],
+      });
+      if (typeof path === "string") {
+        setImportPath(path);
+        setImportError(null);
+      }
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const handleSubmit = async () => {
-    if (submitting || cooldownActive || password.length === 0) return;
+    if (
+      operationBusy.current ||
+      busy ||
+      cooldownActive ||
+      (passwordMode && password.length === 0)
+    )
+      return;
+    operationBusy.current = true;
     setSubmitting(true);
     setError(null);
     try {
-      const result = await enc.unlock(password);
+      const result = passwordMode
+        ? await enc.unlock(password)
+        : await enc.unlock();
       setLastResult(result);
-      if (
-        result !== "unlocked-from-password" &&
-        result !== "unlocked-from-vault"
-      ) {
-        setPassword("");
-      }
+      if (result === "vault-unavailable") setError(labels.vaultUnavailable);
+      if (result === "needs-setup")
+        setError(
+          "The master key is unavailable. Recover the existing key before continuing.",
+        );
+      if (result === "password-required") setError(labels.passwordPrompt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      setPassword("");
+      setShowPassword(false);
+      operationBusy.current = false;
       setSubmitting(false);
     }
   };
@@ -202,11 +249,16 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
 
   return (
     <div
+      ref={isolationRef}
+      tabIndex={-1}
+      onKeyDown={isolateKeyboard}
+      onKeyUp={isolateKeyboard}
+      onKeyPress={isolateKeyboard}
       role="dialog"
       aria-modal="true"
       aria-labelledby="unlock-screen-title"
       data-testid="encryption-unlock-screen"
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+      className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/85 backdrop-blur-sm"
     >
       <div className="bg-[var(--color-surface)] rounded-xl p-6 max-w-md w-full mx-4 border border-[var(--color-border)] shadow-2xl">
         <div className="flex items-center gap-3 mb-4">
@@ -252,7 +304,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void handleSubmit();
                   }}
-                  disabled={submitting || cooldownActive}
+                  disabled={busy || cooldownActive}
                   placeholder={labels.passwordPlaceholder}
                   aria-label={labels.passwordPlaceholder}
                   className="w-full px-3 py-2 pr-9 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
@@ -275,7 +327,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || cooldownActive || password.length === 0}
+                disabled={busy || cooldownActive || password.length === 0}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
               >
                 {submitting ? (
@@ -306,27 +358,39 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
                 <span>{labels.wrongPassword}</span>
               </div>
             )}
-
-            {error && (
-              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs mt-2">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
           </>
         ) : status?.vaultAvailable && status.vaultHasMasterDek ? (
-          <div className="flex items-center gap-2 text-sm text-[var(--color-textMuted)]">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>{labels.vaultUnlocking}</span>
+          <div className="space-y-3 text-sm text-[var(--color-textMuted)]">
+            <p>{labels.vaultUnlockNotice}</p>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={busy || cooldownActive}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-primary text-[var(--color-text)] disabled:opacity-50"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {submitting ? labels.vaultUnlocking : labels.vaultUnlockButton}
+            </button>
           </div>
         ) : (
           <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
             <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <span>
-              {status?.vaultAvailable
-                ? labels.needsSetup
-                : labels.vaultUnavailable}
+              {status?.settingsEncryptedOnDisk || status?.recoveryRequired
+                ? "Encrypted data exists, but its master key is missing. Recover the original vault or import its portable master key; a new key cannot decrypt it."
+                : status?.vaultAvailable
+                  ? labels.needsSetup
+                  : labels.vaultUnavailable}
             </span>
+          </div>
+        )}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs mt-2"
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -339,7 +403,10 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
               import, while password / hybrid users can swap in a
               fresh `.dek` from removable media.
         */}
-        {(status?.passwordWrapPresent || !status?.vaultAvailable) && (
+        {(status?.passwordWrapPresent ||
+          !status?.vaultAvailable ||
+          status?.settingsEncryptedOnDisk ||
+          status?.recoveryRequired) && (
           <div className="mt-3 pt-3 border-t border-[var(--color-border)]/40">
             <button
               type="button"
@@ -363,15 +430,23 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
                   value={importPath}
                   onChange={(e) => setImportPath(e.target.value)}
                   placeholder="/secure/backup/sorng-master.dek"
-                  disabled={importBusy}
+                  disabled={busy}
                   className="w-full px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 font-mono"
                 />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void choosePortableKey()}
+                  className="text-xs underline"
+                >
+                  Choose portable master key file
+                </button>
                 <input
                   type="password"
                   value={importPassword}
                   onChange={(e) => setImportPassword(e.target.value)}
                   placeholder="Export password"
-                  disabled={importBusy}
+                  disabled={busy}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void handleImportDek();
                   }}
@@ -387,7 +462,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
                   type="button"
                   onClick={handleImportDek}
                   disabled={
-                    importBusy ||
+                    busy ||
                     importPath.length === 0 ||
                     importPassword.length === 0
                   }

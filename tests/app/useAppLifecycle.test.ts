@@ -114,8 +114,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -144,8 +142,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -170,8 +166,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -197,8 +191,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -237,8 +229,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel,
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -272,8 +262,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -295,8 +283,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -318,8 +304,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -372,8 +356,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -454,8 +436,6 @@ describe("useAppLifecycle", () => {
       useAppLifecycle({
         handleConnect: vi.fn(),
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -552,8 +532,6 @@ describe("useAppLifecycle", () => {
         handleConnect: vi.fn(),
         restoreSession,
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
 
@@ -597,8 +575,6 @@ describe("useAppLifecycle", () => {
         handleConnect: vi.fn(),
         restoreSession,
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
     await waitFor(
@@ -652,8 +628,6 @@ describe("useAppLifecycle", () => {
         handleConnect: vi.fn(),
         restoreSession,
         setShowDatabasePanel: vi.fn(),
-        setShowPasswordDialog: vi.fn(),
-        setPasswordDialogMode: vi.fn(),
       }),
     );
     await waitFor(() => {

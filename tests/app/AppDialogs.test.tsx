@@ -68,23 +68,17 @@ function makeProps(overrides: Record<string, any> = {}) {
     appSettings: defaultAppSettings as any,
     showDatabasePanel: false,
     showQuickConnect: false,
-    showPasswordDialog: false,
     showSettings: false,
     showDiagnostics: false,
     setShowDatabasePanel: vi.fn(),
     setShowQuickConnect: vi.fn(),
     setShowSettings: vi.fn(),
     setShowDiagnostics: vi.fn(),
-    passwordDialogMode: "unlock" as const,
-    passwordError: "",
     diagnosticsConnection: null,
     setDiagnosticsConnection: vi.fn(),
-    hasStoragePassword: false,
     dialogState: { isOpen: false, message: "", onConfirm: vi.fn() },
     closeConfirmDialog: vi.fn(),
     confirmDialog: <div />,
-    handlePasswordSubmit: vi.fn(),
-    handlePasswordCancel: vi.fn(),
     handleQuickConnectWithHistory: vi.fn(),
     clearQuickConnectHistory: vi.fn(),
     handleDatabaseSelect: vi.fn(),
@@ -118,23 +112,17 @@ describe("AppDialogs", () => {
         }
         showDatabasePanel={false}
         showQuickConnect={false}
-        showPasswordDialog={false}
         showSettings={false}
         showDiagnostics={false}
         setShowDatabasePanel={() => {}}
         setShowQuickConnect={() => {}}
         setShowSettings={() => {}}
         setShowDiagnostics={() => {}}
-        passwordDialogMode="unlock"
-        passwordError=""
         diagnosticsConnection={null}
         setDiagnosticsConnection={() => {}}
-        hasStoragePassword={true}
         dialogState={{ isOpen: false, message: "", onConfirm: () => {} }}
         closeConfirmDialog={() => {}}
         confirmDialog={<div />}
-        handlePasswordSubmit={() => {}}
-        handlePasswordCancel={() => {}}
         handleQuickConnectWithHistory={() => {}}
         clearQuickConnectHistory={() => {}}
         handleDatabaseSelect={async () => {}}
@@ -189,7 +177,7 @@ describe("AppDialogs", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows AutoLockManager when autoLock.enabled and hasStoragePassword", async () => {
+  it("does not mount the legacy auto-lock manager even when auto-lock is enabled", () => {
     const settings = {
       ...defaultAppSettings,
       autoLock: { ...defaultAppSettings.autoLock, enabled: true },
@@ -199,7 +187,7 @@ describe("AppDialogs", () => {
         {...makeProps({ appSettings: settings, hasStoragePassword: true })}
       />,
     );
-    expect(await screen.findByTestId("auto-lock")).toBeInTheDocument();
+    expect(screen.queryByTestId("auto-lock")).not.toBeInTheDocument();
   });
 
   it("does not show AutoLockManager when autoLock is disabled", () => {

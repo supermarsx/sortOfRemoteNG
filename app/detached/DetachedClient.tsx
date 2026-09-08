@@ -82,6 +82,11 @@ import {
   type BehaviorActivateSessionPayload,
 } from "../../src/utils/behavior/windowActions";
 import { MemoryWatchdogController } from "../../src/components/app/MemoryWatchdogController";
+import { UnlockScreen } from "../../src/components/encryption/UnlockScreen";
+import { SettingsStorageNotice } from "../../src/components/encryption/SettingsStorageNotice";
+import { useGlobalEncryptionGuard } from "../../src/hooks/settings/useGlobalEncryptionGuard";
+import { useLockShortcut } from "../../src/hooks/settings/useLockShortcut";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 
 /** Protocol → Icon mapping matching main window SessionTabs. */
 const SessionIcon: React.FC<{ protocol: string }> = ({ protocol }) => {
@@ -2280,6 +2285,29 @@ const DetachedMemoryWatchdog: React.FC = () => {
   );
 };
 
+const DetachedSecurityBoundary: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const { dispatch } = useConnections();
+  const clearViews = useCallback(async () => {
+    dispatch({ type: "SET_CONNECTIONS", payload: [] });
+    dispatch({ type: "SET_TAB_GROUPS", payload: [] });
+    dispatch({ type: "CLEAR_SELECTION" });
+    dispatch({ type: "SET_SESSIONS", payload: [] });
+    await DatabaseManager.getInstance().closeCurrentDatabase("lock");
+  }, [dispatch]);
+  const locked = useGlobalEncryptionGuard({ clearViews });
+  // No second auto-lock policy controller: requests go to main's durable lock queue.
+  useLockShortcut();
+  return (
+    <>
+      {!locked && children}
+      <SettingsStorageNotice />
+      <UnlockScreen />
+    </>
+  );
+};
+
 const DetachedClient: React.FC = () => {
   const [closeRegistration, setCloseRegistration] =
     useState<DetachedWindowCloseRegistration | null>(null);
@@ -2294,15 +2322,17 @@ const DetachedClient: React.FC = () => {
       <DetachedMemoryWatchdog />
       <ConnectionProvider>
         <ToastProvider>
-          {closeRegistration && (
-            <DetachedWindowLifecycle
-              onBeforeClose={closeRegistration.onBeforeClose}
-              onCloseAttemptFailed={closeRegistration.onCloseAttemptFailed}
+          <DetachedSecurityBoundary>
+            {closeRegistration && (
+              <DetachedWindowLifecycle
+                onBeforeClose={closeRegistration.onBeforeClose}
+                onCloseAttemptFailed={closeRegistration.onCloseAttemptFailed}
+              />
+            )}
+            <DetachedSessionContent
+              onRegisterDisconnect={handleRegisterDisconnect}
             />
-          )}
-          <DetachedSessionContent
-            onRegisterDisconnect={handleRegisterDisconnect}
-          />
+          </DetachedSecurityBoundary>
         </ToastProvider>
       </ConnectionProvider>
     </SettingsProvider>

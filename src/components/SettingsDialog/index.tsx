@@ -13,6 +13,7 @@ import LanguageSettings from "./sections/LanguageSettings";
 import ThemeSettings from "./sections/ThemeSettings";
 import LayoutSettings from "./sections/LayoutSettings";
 import SecuritySettings from "./sections/SecuritySettings";
+import type { DatabaseSecurityCallbacks } from "./sections/security/CurrentDatabaseSecuritySection";
 import PerformanceSettings from "./sections/PerformanceSettings";
 import ProxySettings from "./sections/ProxySettings";
 import VpnSettings from "./sections/VpnSettings";
@@ -52,7 +53,7 @@ import {
    Types
    ═══════════════════════════════════════════════════════════════ */
 
-interface SettingsDialogProps {
+interface SettingsDialogProps extends DatabaseSecurityCallbacks {
   isOpen: boolean;
   onClose: () => void;
   /** Deep-link target; applied on every open, not only the first. */
@@ -169,7 +170,9 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
    ContentPanel — tab-switched settings panels
    ═══════════════════════════════════════════════════════════════ */
 
-const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
+const ContentPanel: React.FC<
+  { mgr: SettingsDialogMgr } & DatabaseSecurityCallbacks
+> = ({ mgr, ...securityCallbacks }) => {
   if (!mgr.settings) return null;
   const s = mgr.settings;
   const u = mgr.updateSettings;
@@ -198,6 +201,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         )}
         {mgr.activeTab === "security" && (
           <SecuritySettings
+            {...securityCallbacks}
             settings={s}
             updateSettings={u}
             handleBenchmark={mgr.handleBenchmark}
@@ -353,6 +357,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onClose,
   initialTab,
   initialTabNonce,
+  ...securityCallbacks
 }) => {
   const mgr = useSettingsDialog(isOpen, onClose, initialTab, initialTabNonce);
 
@@ -381,7 +386,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
         <div className="flex flex-1 min-h-0">
           <Sidebar mgr={mgr} />
-          <ContentPanel mgr={mgr} />
+          <ContentPanel mgr={mgr} {...securityCallbacks} />
         </div>
       </div>
 
@@ -405,7 +410,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
    a session tab instead of a modal overlay.
    ═══════════════════════════════════════════════════════════════ */
 
-interface SettingsTabContentProps {
+interface SettingsTabContentProps extends DatabaseSecurityCallbacks {
   onClose: () => void;
   /**
    * Deep-link target. This variant is always mounted once its tab exists, so
@@ -419,6 +424,7 @@ export const SettingsTabContent: React.FC<SettingsTabContentProps> = ({
   onClose,
   initialTab,
   initialTabNonce,
+  ...securityCallbacks
 }) => {
   const mgr = useSettingsDialog(true, onClose, initialTab, initialTabNonce);
 
@@ -428,7 +434,7 @@ export const SettingsTabContent: React.FC<SettingsTabContentProps> = ({
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
       <div className="flex flex-1 min-h-0">
         <Sidebar mgr={mgr} />
-        <ContentPanel mgr={mgr} />
+        <ContentPanel mgr={mgr} {...securityCallbacks} />
       </div>
 
       <ConfirmDialog

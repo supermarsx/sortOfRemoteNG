@@ -4,7 +4,18 @@
  * error capture, unavailable-runtime fallback) is verified
  * deterministically.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { registerGlobalLockExecutor } from "../../src/utils/security/globalEncryptionLock";
+
+let releaseLockExecutor: (() => void) | undefined;
+beforeEach(() => {
+  releaseLockExecutor = registerGlobalLockExecutor(async (nativeLock) =>
+    nativeLock(),
+  );
+});
+afterEach(() => {
+  releaseLockExecutor?.();
+});
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
@@ -121,6 +132,28 @@ describe("useEncryption", () => {
     });
     expect(result.current.status).toEqual(sampleStatus);
     expect(result.current.error).toBeNull();
+  });
+
+  it("does not overwrite a newer status with a deferred earlier request", async () => {
+    let release!: (value: EncryptionStatus) => void;
+    let requests = 0;
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") {
+        requests += 1;
+        if (requests === 1)
+          return new Promise<EncryptionStatus>((resolve) => {
+            release = resolve;
+          });
+        return setupStatus;
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(requests).toBe(1));
+    await act(async () => result.current.refresh());
+    expect(result.current.status).toEqual(setupStatus);
+    await act(async () => release(sampleStatus));
+    expect(result.current.status).toEqual(setupStatus);
   });
 
   it("captures errors from the status query", async () => {

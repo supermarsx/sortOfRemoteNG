@@ -186,6 +186,7 @@ interface ToolTabViewerProps {
   ) => Promise<void> | void;
   /** Close the currently-open database (and lock its cached password). */
   onDatabaseClose?: () => Promise<void> | void;
+  onBeforeCurrentLock?: () => Promise<void>;
   /** Settings tab to deep-link to when this is the `tool:settings` tab. */
   settingsInitialTab?: SettingsTabId;
   /** Bump to re-apply an unchanged `settingsInitialTab`. */
@@ -207,6 +208,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   onEditConnection,
   onDatabaseSelect,
   onDatabaseClose,
+  onBeforeCurrentLock,
   settingsInitialTab,
   settingsInitialTabNonce,
 }) => {
@@ -298,6 +300,9 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         })()}
       {toolKey === "settings" && (
         <SettingsTabContent
+          onDatabaseSelect={onDatabaseSelect}
+          onDatabaseClose={onDatabaseClose}
+          onBeforeCurrentLock={onBeforeCurrentLock}
           onClose={onClose}
           initialTab={settingsInitialTab}
           initialTabNonce={settingsInitialTabNonce}
@@ -319,6 +324,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           onClose={onClose}
           onDatabaseSelect={onDatabaseSelect}
           onDatabaseClose={onDatabaseClose}
+          onBeforeCurrentLock={onBeforeCurrentLock}
         />
       )}
       {toolKey === "bulkEditor" && (

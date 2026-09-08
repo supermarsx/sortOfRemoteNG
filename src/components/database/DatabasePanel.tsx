@@ -20,6 +20,7 @@ interface DatabasePanelProps {
    * auto-open-last pointer, and surface the empty-library view.
    */
   onDatabaseClose?: () => Promise<void> | void;
+  onBeforeCurrentLock?: () => Promise<void>;
 }
 
 /**
@@ -33,11 +34,13 @@ export const DatabasePanel: React.FC<DatabasePanelProps> = ({
   onClose,
   onDatabaseSelect,
   onDatabaseClose,
+  onBeforeCurrentLock,
 }) => {
   const mgr = useDatabaseSelector(
     true,
     onDatabaseSelect ?? (() => Promise.resolve()),
     onDatabaseClose,
+    onBeforeCurrentLock,
   );
 
   return (

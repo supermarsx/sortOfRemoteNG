@@ -5,13 +5,19 @@
  *   - the overlay is only shown when a master key exists on disk
  *     and the state is locked,
  *   - password mode shows the input + Unlock button,
- *   - vault-only mode renders the silent "unlocking…" branch,
+ *   - vault-only mode requires an intentional unlock action,
  *   - cool-down disables the Unlock button and renders the countdown,
  *   - wrong-password results surface the error band,
  *   - the screen self-dismisses when status.unlocked flips to true.
  */
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { UnlockScreen } from "../../src/components/encryption/UnlockScreen";
 import { shouldShowUnlockScreen } from "../../src/components/encryption/unlockScreenVisibility";
 import type {
@@ -61,6 +67,8 @@ interface HookOverride {
 }
 
 let hookOverride: HookOverride;
+const portableDialog = vi.hoisted(() => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: portableDialog.open }));
 
 vi.mock("../../src/hooks/settings/useEncryption", () => ({
   useEncryption: () => ({
@@ -94,6 +102,7 @@ describe("shouldShowUnlockScreen", () => {
         ...baseStatus,
         passwordWrapPresent: false,
         vaultHasMasterDek: false,
+        settingsEncryptedOnDisk: false,
       }),
     ).toBe(false);
   });
@@ -116,6 +125,47 @@ describe("shouldShowUnlockScreen", () => {
 });
 
 describe("UnlockScreen", () => {
+  it("uses the native selected portable key path and cancellation changes nothing", async () => {
+    const importPortableDek = vi.fn().mockResolvedValue(undefined);
+    hookOverride = {
+      status: baseStatus,
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+      importPortableDek,
+    };
+    portableDialog.open
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("/granted/recovery.dek");
+    render(<UnlockScreen />);
+    fireEvent.click(screen.getByTestId("unlock-import-toggle"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose portable master key file" }),
+    );
+    await waitFor(() => expect(portableDialog.open).toHaveBeenCalledTimes(1));
+    expect(importPortableDek).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose portable master key file" }),
+    );
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByPlaceholderText(
+            "/secure/backup/sorng-master.dek",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("/granted/recovery.dek"),
+    );
+    fireEvent.change(screen.getByPlaceholderText("Export password"), {
+      target: { value: "recovery-password" },
+    });
+    fireEvent.click(screen.getByTestId("unlock-import-submit"));
+    await waitFor(() =>
+      expect(importPortableDek).toHaveBeenCalledWith(
+        "/granted/recovery.dek",
+        "recovery-password",
+      ),
+    );
+  });
   it("renders nothing when status is null", () => {
     hookOverride = {
       status: null,
@@ -153,8 +203,8 @@ describe("UnlockScreen", () => {
 
   it("calls unlock with the typed password and dismisses on success", async () => {
     const onUnlocked = vi.fn();
-    const unlock = vi.fn(
-      (): Promise<UnlockResult> => Promise.resolve("unlocked-from-password"),
+    const unlock = vi.fn((): Promise<UnlockResult> =>
+      Promise.resolve("unlocked-from-password"),
     );
     hookOverride = {
       status: baseStatus,
@@ -166,6 +216,7 @@ describe("UnlockScreen", () => {
     fireEvent.change(input, { target: { value: "p" } });
     fireEvent.click(screen.getByRole("button", { name: /^Unlock/ }));
     await waitFor(() => expect(unlock).toHaveBeenCalledWith("p"));
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe(""));
 
     // Flip status to unlocked and rerender — onUnlocked should fire.
     hookOverride = {
@@ -173,7 +224,15 @@ describe("UnlockScreen", () => {
       status: { ...baseStatus, unlocked: true },
     };
     rerender(<UnlockScreen onUnlocked={onUnlocked} />);
-    await waitFor(() => expect(onUnlocked).toHaveBeenCalled());
+    await waitFor(() => expect(onUnlocked).toHaveBeenCalledTimes(1));
+    rerender(<UnlockScreen onUnlocked={() => onUnlocked()} />);
+    expect(onUnlocked).toHaveBeenCalledTimes(1);
+    hookOverride = { ...hookOverride, status: baseStatus };
+    rerender(<UnlockScreen onUnlocked={onUnlocked} />);
+    expect(
+      (screen.getByPlaceholderText("Master password") as HTMLInputElement)
+        .value,
+    ).toBe("");
   });
 
   it("shows the cool-down banner when remainingCooldownMs > 0", () => {
@@ -192,8 +251,8 @@ describe("UnlockScreen", () => {
   });
 
   it("shows the wrong-password banner after a failed attempt", async () => {
-    const unlock = vi.fn(
-      (): Promise<UnlockResult> => Promise.resolve("wrong-password"),
+    const unlock = vi.fn((): Promise<UnlockResult> =>
+      Promise.resolve("wrong-password"),
     );
     hookOverride = {
       status: baseStatus,
@@ -210,7 +269,7 @@ describe("UnlockScreen", () => {
     });
   });
 
-  it("renders the silent vault branch when only vault holds the DEK", () => {
+  it("keeps a vault lock in place across status refreshes until intentional unlock", async () => {
     const unlock = vi.fn(() =>
       Promise.resolve("unlocked-from-vault" as UnlockResult),
     );
@@ -225,8 +284,18 @@ describe("UnlockScreen", () => {
       lockout: zeroLockout,
       unlock,
     };
-    render(<UnlockScreen onUnlocked={() => {}} />);
-    expect(screen.getByText(/Unlocking from your OS vault/i)).toBeTruthy();
+    const { rerender } = render(<UnlockScreen onUnlocked={() => {}} />);
+    hookOverride = { ...hookOverride, status: { ...hookOverride.status! } };
+    rerender(<UnlockScreen onUnlocked={() => {}} />);
+    expect(unlock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/not a separate master-password challenge/i),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlock from OS vault" }),
+    );
+    await waitFor(() => expect(unlock).toHaveBeenCalledTimes(1));
+    expect(unlock).toHaveBeenCalledWith();
   });
 
   it("toggles show/hide password", () => {
@@ -247,8 +316,8 @@ describe("UnlockScreen", () => {
   });
 
   it("submits on Enter", async () => {
-    const unlock = vi.fn(
-      (): Promise<UnlockResult> => Promise.resolve("wrong-password"),
+    const unlock = vi.fn((): Promise<UnlockResult> =>
+      Promise.resolve("wrong-password"),
     );
     hookOverride = {
       status: baseStatus,
@@ -281,12 +350,7 @@ describe("UnlockScreen", () => {
     expect(screen.getByRole("button", { name: /^Unlock/ })).toBeTruthy();
   });
 
-  it("shows the silent vault-unlocking spinner while the unlock call is pending", () => {
-    // Pure vault mode: no password wrap, only the vault holds the DEK.
-    // The mount effect fires a silent unlock; while it's still pending
-    // we render the "Unlocking from your OS vault…" branch instead of
-    // the password prompt. Use a Promise that never resolves so the
-    // spinner stays visible for the assertion.
+  it("does not retry a pending vault unlock on click or status refresh", () => {
     const unlock = vi.fn(() => new Promise<UnlockResult>(() => {}));
     hookOverride = {
       status: {
@@ -299,9 +363,128 @@ describe("UnlockScreen", () => {
       lockout: zeroLockout,
       unlock,
     };
-    render(<UnlockScreen onUnlocked={() => {}} />);
-    // DEFAULT_LABELS.vaultUnlocking
+    const { rerender } = render(<UnlockScreen onUnlocked={() => {}} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlock from OS vault" }),
+    );
     expect(screen.getByText(/Unlocking from your OS vault/i)).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Unlocking from your OS vault/ }),
+    );
+    rerender(<UnlockScreen onUnlocked={() => {}} />);
+    expect(unlock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows vault failures without automatically retrying", async () => {
+    const unlock = vi.fn().mockRejectedValue(new Error("Vault access denied"));
+    hookOverride = {
+      status: {
+        ...baseStatus,
+        passwordWrapPresent: false,
+        vaultAvailable: true,
+        vaultHasMasterDek: true,
+        masterKeyStorage: "vault",
+      },
+      lockout: zeroLockout,
+      unlock,
+    };
+    const { rerender } = render(<UnlockScreen />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlock from OS vault" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Vault access denied",
+      ),
+    );
+    rerender(<UnlockScreen />);
+    expect(unlock).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Unlock from OS vault",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+
+  it("serializes password unlock and portable recovery while an operation is pending", async () => {
+    let finish!: (result: UnlockResult) => void;
+    const unlock = vi.fn(
+      () =>
+        new Promise<UnlockResult>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const importPortableDek = vi.fn();
+    hookOverride = {
+      status: baseStatus,
+      lockout: zeroLockout,
+      unlock,
+      importPortableDek,
+    };
+    render(<UnlockScreen />);
+    fireEvent.click(screen.getByTestId("unlock-import-toggle"));
+    fireEvent.change(
+      screen.getByPlaceholderText("/secure/backup/sorng-master.dek"),
+      { target: { value: "/key.dek" } },
+    );
+    fireEvent.change(screen.getByPlaceholderText("Export password"), {
+      target: { value: "export-secret" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Master password"), {
+      target: { value: "master-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    fireEvent.keyDown(screen.getByPlaceholderText("Master password"), {
+      key: "Enter",
+    });
+    fireEvent.keyDown(screen.getByPlaceholderText("Export password"), {
+      key: "Enter",
+    });
+    fireEvent.click(screen.getByTestId("unlock-import-submit"));
+    expect(unlock).toHaveBeenCalledTimes(1);
+    expect(importPortableDek).not.toHaveBeenCalled();
+    await act(async () => finish("unlocked-from-password"));
+    expect(
+      (screen.getByPlaceholderText("Master password") as HTMLInputElement)
+        .value,
+    ).toBe("");
+  });
+
+  it("clears both password fields and notifies once when another window unlocks", () => {
+    const onUnlocked = vi.fn();
+    hookOverride = {
+      status: baseStatus,
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+    };
+    const { rerender } = render(<UnlockScreen onUnlocked={onUnlocked} />);
+    fireEvent.change(screen.getByPlaceholderText("Master password"), {
+      target: { value: "secret" },
+    });
+    fireEvent.click(screen.getByTestId("unlock-import-toggle"));
+    fireEvent.change(screen.getByPlaceholderText("Export password"), {
+      target: { value: "export-secret" },
+    });
+    hookOverride = {
+      ...hookOverride,
+      status: { ...baseStatus, unlocked: true },
+    };
+    rerender(<UnlockScreen onUnlocked={onUnlocked} />);
+    rerender(<UnlockScreen onUnlocked={() => onUnlocked()} />);
+    expect(onUnlocked).toHaveBeenCalledTimes(1);
+    hookOverride = { ...hookOverride, status: baseStatus };
+    rerender(<UnlockScreen onUnlocked={onUnlocked} />);
+    expect(
+      (screen.getByPlaceholderText("Master password") as HTMLInputElement)
+        .value,
+    ).toBe("");
+    expect(
+      (screen.getByPlaceholderText("Export password") as HTMLInputElement)
+        .value,
+    ).toBe("");
+    expect(hookOverride.unlock).not.toHaveBeenCalled();
   });
 
   it("renders the portable-dek import toggle when a password wrap is present", () => {
@@ -419,6 +602,7 @@ describe("UnlockScreen", () => {
         vaultHasMasterDek: false,
         vaultAvailable: true,
         unlocked: false,
+        settingsEncryptedOnDisk: false,
       },
       lockout: zeroLockout,
       unlock: vi.fn(),

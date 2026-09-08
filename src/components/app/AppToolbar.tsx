@@ -75,7 +75,6 @@ interface AppToolbarProps {
   handleMaximize: () => void;
   handleClose: () => void;
   handleOpenDevtools: () => void;
-  handleShowPasswordDialog: () => void;
   performCloudSync: (provider?: CloudSyncProvider) => Promise<void>;
   setShowDebugPanel: (v: boolean) => void;
   setShowTagManager: (v: boolean) => void;
@@ -114,7 +113,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   handleMaximize,
   handleClose,
   handleOpenDevtools,
-  handleShowPasswordDialog,
   performCloudSync,
   setShowDebugPanel,
   setShowTagManager,
@@ -438,7 +436,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           )}
           {appSettings.showSecurityIcon && (
             <button
-              onClick={handleShowPasswordDialog}
+              onClick={() => openSettings("security")}
               className="app-bar-button p-2"
               title={t("toolbar.security", "Security")}
             >

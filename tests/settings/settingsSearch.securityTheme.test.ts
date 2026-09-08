@@ -79,9 +79,9 @@ describe("security search — algorithms and ciphers", () => {
     expect(searchOwned("Serpent-256-CBC")[0].key).toBe("encryptionAlgorithm");
   });
 
-  it("resolves the block cipher modes by their spelled-out names", () => {
-    expect(search("galois")).toContain("blockCipherMode");
-    expect(search("cipher block chaining")).toContain("blockCipherMode");
+  it("does not advertise an editable legacy block cipher mode", () => {
+    expect(keysOf(OWNED_ENTRIES)).not.toContain("blockCipherMode");
+    expect(search("AES-256-GCM")).toContain("encryptionAlgorithm");
   });
 
   it("resolves `pbkdf2` to both the storage and the export iteration counts", () => {
@@ -256,8 +256,6 @@ describe("index hygiene for the owned tabs", () => {
     // The user's exact complaint. These are the rows the app renders as a
     // dropdown; each must carry both halves of every `{ value, label }` pair.
     const optionBacked = [
-      "encryptionAlgorithm",
-      "blockCipherMode",
       "exportSecurity.defaultFormat",
       "exportSecurity.minimumPasswordScore",
       "sshKeyType",

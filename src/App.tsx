@@ -42,7 +42,6 @@ import {
   DatabaseNotFoundError,
   InvalidPasswordError,
 } from "./utils/core/errors";
-import { SecureStorage } from "./utils/storage/storage";
 import { useSessionManager } from "./hooks/session/useSessionManager";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
@@ -52,6 +51,8 @@ import { SettingsProvider } from "./contexts/SettingsContext";
 import { SessionFullscreenProvider } from "./contexts/SessionFullscreenProvider";
 import { useSessionFullscreenController } from "./hooks/session/useSessionFullscreen";
 import { UnlockScreen } from "./components/encryption/UnlockScreen";
+import { useGlobalEncryptionGuard } from "./hooks/settings/useGlobalEncryptionGuard";
+import { SettingsStorageNotice } from "./components/encryption/SettingsStorageNotice";
 import { AutoLockController } from "./components/encryption/AutoLockController";
 import { Sidebar } from "./components/connection/Sidebar";
 import { SessionTabs } from "./components/session/SessionTabs";
@@ -115,7 +116,6 @@ const AppContent: React.FC = () => {
   const isSessionFullscreen = sessionFullscreen?.activeSessionId != null;
   const settingsManager = SettingsManager.getInstance();
   const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showDatabasePanel, setShowDatabasePanel] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
   // Deep-link target for the settings tab/dialog. `nonce` distinguishes two
@@ -151,10 +151,6 @@ const AppContent: React.FC = () => {
       customRows: persisted?.customRows,
     });
   });
-  const [passwordDialogMode, setPasswordDialogMode] = useState<
-    "setup" | "unlock"
-  >("setup"); // current mode for password dialog
-  const [passwordError, setPasswordError] = useState(""); // password dialog error message
   const [sidebarWidth, setSidebarWidth] = useState(320); // sidebar width in pixels
   // isResizing state is in useResizeHandlers hook
   const [sidebarPosition, setSidebarPosition] = useState<"left" | "right">(
@@ -190,7 +186,6 @@ const AppContent: React.FC = () => {
   // windowSaveTimeout and sidebarSaveTimeout are in useWindowPersistence hook
   const lastWorkAtRef = useRef<number>(Date.now());
   const hasUnsavedWorkRef = useRef(false);
-  const [hasStoragePassword, setHasStoragePassword] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [appReady, setAppReady] = useState(false);
   const closingMainRef = useRef(false);
@@ -248,8 +243,6 @@ const AppContent: React.FC = () => {
       handleConnect,
       restoreSession,
       setShowDatabasePanel,
-      setShowPasswordDialog,
-      setPasswordDialogMode,
     });
 
   // Extracted hooks
@@ -785,6 +778,52 @@ const AppContent: React.FC = () => {
     }
   }, [dispatch, settingsManager]);
 
+  const beforeCurrentDatabaseLock = useCallback(async () => {
+    setShowQuickConnect(false);
+    setShowDiagnostics(false);
+    setDiagnosticsConnection(null);
+    dispatch({ type: "CLEAR_SELECTION" });
+    const sensitiveSessions = state.sessions.filter(
+      (session) =>
+        session.protocol !== "tool:settings" &&
+        session.protocol !== "tool:database",
+    );
+    const results = await Promise.all(
+      sensitiveSessions.map((session) =>
+        handleSessionClose(session.id, session),
+      ),
+    );
+    if (results.some((closed) => !closed))
+      throw new Error(
+        "Some sessions could not be closed. Resolve their close errors before locking this database.",
+      );
+  }, [state.sessions, handleSessionClose, dispatch]);
+
+  const clearGloballyLockedViews = useCallback(async () => {
+    setShowSettings(false);
+    setDialogState((previous) => ({ ...previous, isOpen: false }));
+    // Native lock already happened: fence first (in the guard), then stop
+    // sessions without pretending an old-key pending snapshot was saved.
+    const closing = beforeCurrentDatabaseLock();
+    dispatch({ type: "SET_CONNECTIONS", payload: [] });
+    dispatch({ type: "SET_TAB_GROUPS", payload: [] });
+    await databaseManager.closeCurrentDatabase("lock");
+    await closing;
+    dispatch({ type: "SET_SESSIONS", payload: [] });
+    await handleDatabaseClose();
+  }, [
+    beforeCurrentDatabaseLock,
+    databaseManager,
+    dispatch,
+    handleDatabaseClose,
+  ]);
+  const globallyLocked = useGlobalEncryptionGuard({
+    primary: true,
+    flushCurrent: flushPendingSave,
+    prepareViews: beforeCurrentDatabaseLock,
+    clearViews: clearGloballyLockedViews,
+  });
+
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (): void => {
     const session = createToolSession("connectionEditor", {
@@ -1045,79 +1084,6 @@ const AppContent: React.FC = () => {
 
   // handleSessionDetach and handleReattachRdpSession are in useSessionDetach hook
 
-  /**
-   * Process a submitted password for unlocking or securing data storage.
-   *
-   * @param password - User provided password.
-   */
-  const handlePasswordSubmit = async (password: string): Promise<void> => {
-    try {
-      setPasswordError("");
-      SecureStorage.setPassword(password);
-
-      if (passwordDialogMode === "unlock") {
-        await loadData();
-      } else {
-        await saveData();
-      }
-
-      setShowPasswordDialog(false);
-      settingsManager.logAction(
-        "info",
-        t("security.storageUnlocked", "Storage unlocked"),
-        undefined,
-        t(
-          "security.storageUnlockedDetail",
-          "Data storage unlocked successfully",
-        ),
-      );
-    } catch (error) {
-      setPasswordError(
-        passwordDialogMode === "unlock"
-          ? t("dialogs.invalidPassword")
-          : t("security.storageSecureFailed", "Failed to secure data"),
-      );
-      SecureStorage.clearPassword();
-      settingsManager.logAction(
-        "error",
-        t("security.storageUnlockFailed", "Storage unlock failed"),
-        undefined,
-        error instanceof Error
-          ? error.message
-          : t("common.unknownError", "Unknown error"),
-      );
-    }
-  };
-
-  const handlePasswordCancel = () => {
-    if (passwordDialogMode === "setup") {
-      if (!databaseManager.getCurrentDatabase()) {
-        showAlert(
-          t("databaseCenter.errors.noneSelected", "No collection selected."),
-        );
-        setShowPasswordDialog(false);
-        setPasswordError("");
-        return;
-      }
-      saveData().catch(console.error);
-    }
-    setShowPasswordDialog(false);
-    setPasswordError("");
-  };
-
-  const handleShowPasswordDialog = async () => {
-    if (await SecureStorage.isStorageEncrypted()) {
-      if (SecureStorage.isStorageUnlocked()) {
-        setPasswordDialogMode("setup");
-      } else {
-        setPasswordDialogMode("unlock");
-      }
-    } else {
-      setPasswordDialogMode("setup");
-    }
-    setShowPasswordDialog(true);
-  };
-
   const showConfirm = (
     message: string,
     onConfirm: () => void,
@@ -1254,20 +1220,6 @@ const AppContent: React.FC = () => {
     },
     [appSettings, settingsManager],
   );
-
-  useEffect(() => {
-    let isMounted = true;
-    SecureStorage.isStorageEncrypted()
-      .then((encrypted) => {
-        if (isMounted) {
-          setHasStoragePassword(encrypted);
-        }
-      })
-      .catch(console.error);
-    return () => {
-      isMounted = false;
-    };
-  }, [showPasswordDialog]);
 
   useEffect(() => {
     hasUnsavedWorkRef.current = true;
@@ -1701,7 +1653,7 @@ const AppContent: React.FC = () => {
           onDiagnostics={handleDiagnostics}
           onSessionDetach={handleSessionDetach}
           onActivateSession={setActiveSessionId}
-          onShowPasswordDialog={handleShowPasswordDialog}
+          onShowPasswordDialog={() => handleOpenSettings("security")}
           enableConnectionReorder={appSettings.enableConnectionReorder}
           onOpenBulkEditor={() => toolShowSetters.current.bulkEditor(true)}
           onOpenImport={() => toolShowSetters.current.importExport(true)}
@@ -1718,314 +1670,319 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div
-      data-testid="app-shell"
-      className={`relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden text-[var(--color-text)] app-shell ${
-        appSettings.backgroundGlowEnabled ? "app-glow" : ""
-      } ${
-        appSettings.windowTransparencyEnabled
-          ? "app-transparent bg-transparent"
-          : "bg-background"
-      } ${!appSettings.animationsEnabled ? "animations-disabled" : ""} ${
-        appSettings.reduceMotion ? "reduce-motion" : ""
-      }`}
-      style={
-        {
-          "--animation-duration": `${appSettings.animationDuration || 200}ms`,
-        } as React.CSSProperties
-      }
-    >
-      {/* Critical Error BSOD */}
-      {criticalError && (
-        <CriticalErrorScreen
-          title={criticalError.title}
-          detail={criticalError.detail}
-        />
-      )}
-      <MemoryWatchdogController
-        settings={appSettings.memoryWatchdog}
-        windowLabel="main"
-      />
-      {/* Splash Screen */}
-      {!criticalError && showSplash && (
-        <SplashScreen
-          isLoading={!isInitialized}
-          progress={initProgress}
-          status={initStatus}
-          onLoadComplete={() => setShowSplash(false)}
-        />
-      )}
-      {!isSessionFullscreen && (
-        <AppToolbar
-          appSettings={appSettings}
-          isAlwaysOnTop={isAlwaysOnTop}
-          rdpPanelOpen={false}
-          showErrorLog={showErrorLog}
-          databaseManager={databaseManager}
-          connections={state.connections}
-          setShowQuickConnect={setShowQuickConnect}
-          setShowDatabasePanel={(v) => {
-            if (v) {
-              setDatabasePanelInitialTab("collections");
-              toolShowSetters.current.database(true);
-            } else {
-              toolShowSetters.current.database(false);
-            }
-            // Legacy modal flag — keep in sync for any other consumers
-            // that still read it until they're migrated off.
-            setShowDatabasePanel(v);
-          }}
-          openImportExport={() => {
-            toolShowSetters.current.importExport(true);
-          }}
-          openSettings={handleOpenSettings}
-          setRdpPanelOpen={toolShowSetters.current.rdpSessions}
-          setShowProxyMenu={toolShowSetters.current.proxyChain}
-          setShowShortcutManager={toolShowSetters.current.shortcutManager}
-          setShowWol={toolShowSetters.current.wol}
-          setShowBulkSSH={toolShowSetters.current.bulkSsh}
-          setShowServerStats={toolShowSetters.current.serverStats}
-          setShowOpkssh={toolShowSetters.current.opkssh}
-          setShowMcpServer={toolShowSetters.current.mcpServer}
-          setShowScriptManager={toolShowSetters.current.scriptManager}
-          setShowMacroManager={toolShowSetters.current.macroManager}
-          setShowRecordingManager={toolShowSetters.current.recordingManager}
-          setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
-          setShowActionLog={toolShowSetters.current.actionLog}
-          setShowErrorLog={setShowErrorLog}
-          handleToggleTransparency={handleToggleTransparency}
-          handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-          handleRepatriateWindow={handleRepatriateWindow}
-          handleMinimize={handleMinimize}
-          handleMaximize={handleMaximize}
-          handleClose={handleClose}
-          handleOpenDevtools={handleOpenDevtools}
-          handleShowPasswordDialog={handleShowPasswordDialog}
-          performCloudSync={performCloudSync}
-          setShowDebugPanel={setShowDebugPanel}
-          setShowTagManager={toolShowSetters.current.tagManager}
-          setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
-        />
-      )}
-
+    <>
       <div
-        className="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden"
-        ref={layoutRef}
+        data-testid="app-shell"
+        inert={globallyLocked}
+        aria-hidden={globallyLocked || undefined}
+        hidden={globallyLocked}
+        className={`relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden text-[var(--color-text)] app-shell ${
+          appSettings.backgroundGlowEnabled ? "app-glow" : ""
+        } ${
+          appSettings.windowTransparencyEnabled
+            ? "app-transparent bg-transparent"
+            : "bg-background"
+        } ${!appSettings.animationsEnabled ? "animations-disabled" : ""} ${
+          appSettings.reduceMotion ? "reduce-motion" : ""
+        }`}
+        style={
+          {
+            "--animation-duration": `${appSettings.animationDuration || 200}ms`,
+            display: globallyLocked ? "none" : undefined,
+          } as React.CSSProperties
+        }
       >
-        {!isSessionFullscreen && renderSidebar("left")}
-
-        <div className="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
-          {!isSessionFullscreen && (
-            <SessionTabs
-              activeSessionId={activeSessionId}
-              onSessionSelect={setActiveSessionId}
-              onSessionClose={handleSessionClose}
-              sessionCloseStates={sessionCloseStates}
-              onSessionRetryClose={retrySessionClose}
-              onSessionForceClose={forceSessionClose}
-              onSessionDetach={handleSessionDetach}
-              enableReorder={appSettings.enableTabReorder}
-              middleClickCloseTab={appSettings.middleClickCloseTab}
-              tabLayout={tabLayout}
-              onAssignSessionToSlot={(sessionId, slotIndex) => {
-                setTabLayout((current) => {
-                  if (slotIndex < 0 || slotIndex >= current.sessions.length)
-                    return current;
-                  const existingSlot = current.sessions.findIndex(
-                    (s) => s.sessionId === sessionId,
-                  );
-                  const next = [...current.sessions];
-                  const prevOccupant = next[slotIndex].sessionId;
-                  next[slotIndex] = { ...next[slotIndex], sessionId };
-                  if (existingSlot >= 0 && existingSlot !== slotIndex) {
-                    next[existingSlot] = {
-                      ...next[existingSlot],
-                      sessionId: prevOccupant,
-                    };
-                  }
-                  return { ...current, sessions: next };
-                });
-                setActiveSessionId(sessionId);
-              }}
-            />
-          )}
-
-          {/* Session viewer */}
-          <div
-            className="relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden"
-            id="session-main-panel"
-            role="tabpanel"
-            aria-labelledby={
-              activeSessionId ? `session-tab-${activeSessionId}` : undefined
+        {/* Critical Error BSOD */}
+        {criticalError && (
+          <CriticalErrorScreen
+            title={criticalError.title}
+            detail={criticalError.detail}
+          />
+        )}
+        <MemoryWatchdogController
+          settings={appSettings.memoryWatchdog}
+          windowLabel="main"
+        />
+        {/* Splash Screen */}
+        {!criticalError && showSplash && (
+          <SplashScreen
+            isLoading={!isInitialized}
+            progress={initProgress}
+            status={initStatus}
+            onLoadComplete={() => setShowSplash(false)}
+          />
+        )}
+        {!isSessionFullscreen && (
+          <AppToolbar
+            appSettings={appSettings}
+            isAlwaysOnTop={isAlwaysOnTop}
+            rdpPanelOpen={false}
+            showErrorLog={showErrorLog}
+            databaseManager={databaseManager}
+            connections={state.connections}
+            setShowQuickConnect={setShowQuickConnect}
+            setShowDatabasePanel={(v) => {
+              if (v) {
+                setDatabasePanelInitialTab("collections");
+                toolShowSetters.current.database(true);
+              } else {
+                toolShowSetters.current.database(false);
+              }
+              // Legacy modal flag — keep in sync for any other consumers
+              // that still read it until they're migrated off.
+              setShowDatabasePanel(v);
+            }}
+            openImportExport={() => {
+              toolShowSetters.current.importExport(true);
+            }}
+            openSettings={handleOpenSettings}
+            setRdpPanelOpen={toolShowSetters.current.rdpSessions}
+            setShowProxyMenu={toolShowSetters.current.proxyChain}
+            setShowShortcutManager={toolShowSetters.current.shortcutManager}
+            setShowWol={toolShowSetters.current.wol}
+            setShowBulkSSH={toolShowSetters.current.bulkSsh}
+            setShowServerStats={toolShowSetters.current.serverStats}
+            setShowOpkssh={toolShowSetters.current.opkssh}
+            setShowMcpServer={toolShowSetters.current.mcpServer}
+            setShowScriptManager={toolShowSetters.current.scriptManager}
+            setShowMacroManager={toolShowSetters.current.macroManager}
+            setShowRecordingManager={toolShowSetters.current.recordingManager}
+            setShowPerformanceMonitor={
+              toolShowSetters.current.performanceMonitor
             }
-          >
-            {visibleSessions.length > 0 ? (
-              <TabLayoutManager
-                sessions={visibleSessions}
+            setShowActionLog={toolShowSetters.current.actionLog}
+            setShowErrorLog={setShowErrorLog}
+            handleToggleTransparency={handleToggleTransparency}
+            handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+            handleRepatriateWindow={handleRepatriateWindow}
+            handleMinimize={handleMinimize}
+            handleMaximize={handleMaximize}
+            handleClose={handleClose}
+            handleOpenDevtools={handleOpenDevtools}
+            performCloudSync={performCloudSync}
+            setShowDebugPanel={setShowDebugPanel}
+            setShowTagManager={toolShowSetters.current.tagManager}
+            setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
+          />
+        )}
+
+        <div
+          className="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden"
+          ref={layoutRef}
+        >
+          {!isSessionFullscreen && renderSidebar("left")}
+
+          <div className="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
+            {!isSessionFullscreen && (
+              <SessionTabs
                 activeSessionId={activeSessionId}
-                layout={tabLayout}
-                onLayoutChange={setTabLayout}
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
+                sessionCloseStates={sessionCloseStates}
+                onSessionRetryClose={retrySessionClose}
+                onSessionForceClose={forceSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => (
-                  <SessionViewer
-                    session={session}
-                    onCloseSession={handleSessionClose}
-                    onActivateSession={setActiveSessionId}
-                    onReattachSession={handleReattachRdpSession}
-                    onDetachToWindow={handleSessionDetach}
-                    onReconnect={handleConnect}
-                    onEditConnection={handleEditConnection}
-                    onDatabaseSelect={handleDatabaseSelect}
-                    onDatabaseClose={handleDatabaseClose}
-                    onIntegrationStateChange={handleIntegrationSessionState}
-                    settingsInitialTab={settingsTabRequest.tab}
-                    settingsInitialTabNonce={settingsTabRequest.nonce}
-                  />
-                )}
+                enableReorder={appSettings.enableTabReorder}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
+                tabLayout={tabLayout}
+                onAssignSessionToSlot={(sessionId, slotIndex) => {
+                  setTabLayout((current) => {
+                    if (slotIndex < 0 || slotIndex >= current.sessions.length)
+                      return current;
+                    const existingSlot = current.sessions.findIndex(
+                      (s) => s.sessionId === sessionId,
+                    );
+                    const next = [...current.sessions];
+                    const prevOccupant = next[slotIndex].sessionId;
+                    next[slotIndex] = { ...next[slotIndex], sessionId };
+                    if (existingSlot >= 0 && existingSlot !== slotIndex) {
+                      next[existingSlot] = {
+                        ...next[existingSlot],
+                        sessionId: prevOccupant,
+                      };
+                    }
+                    return { ...current, sessions: next };
+                  });
+                  setActiveSessionId(sessionId);
+                }}
               />
-            ) : (
-              <div
-                data-testid="welcome-screen"
-                className="welcome-screen h-full flex flex-col items-center justify-center text-[var(--color-textSecondary)] relative overflow-hidden"
-              >
-                {/* Accent background glow */}
-                <div className="welcome-glow pointer-events-none absolute inset-0" />
-                {!appSettings.hideQuickStartMessage && (
-                  <>
-                    <Monitor
-                      size={64}
-                      className="mb-4 text-primary relative z-10"
-                    />
-                    <h2 className="text-xl font-medium mb-2 text-[var(--color-text)] relative z-10">
-                      {appSettings.welcomeScreenTitle ||
-                        t("app.welcomeTitle", "Welcome to {{appName}}", {
-                          appName: t("app.title"),
-                        })}
-                    </h2>
-                    <p className="text-center max-w-md mb-6 whitespace-pre-wrap text-[var(--color-textMuted)] relative z-10">
-                      {appSettings.welcomeScreenMessage ||
-                        (databaseManager.getCurrentDatabase()
-                          ? t(
-                              "app.welcomeWithDatabase",
-                              "Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.",
-                            )
-                          : t(
-                              "app.welcomeNoDatabase",
-                              "No database is open yet. Select or create a database to start adding and managing connections.",
-                            ))}
-                    </p>
-                  </>
-                )}
-                {!appSettings.hideQuickStartButtons && (
-                  <div className="flex space-x-4 relative z-10">
-                    {databaseManager.getCurrentDatabase() ? (
-                      <button
-                        onClick={handleNewConnection}
-                        className="sor-btn sor-btn-primary flex items-center space-x-2"
-                      >
-                        <Plus size={16} />
-                        <span>
-                          {t("connections.newConnection", "New Connection")}
-                        </span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          // Match the AppToolbar wrapper at line ~1215:
-                          // open the database tool tab AND set the
-                          // legacy modal flag so every consumer agrees
-                          // the panel is visible. Calling the raw
-                          // `setShowDatabasePanel(true)` here only
-                          // flipped the legacy flag and never opened
-                          // the tool tab — the visible no-op the user
-                          // reported.
-                          setDatabasePanelInitialTab("collections");
-                          toolShowSetters.current.database(true);
-                          setShowDatabasePanel(true);
-                        }}
-                        className="sor-btn sor-btn-primary flex items-center space-x-2"
-                      >
-                        <Database size={16} />
-                        <span>
-                          {t("collections.select", "Select Database")}
-                        </span>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setShowQuickConnect(true)}
-                      className="sor-btn sor-btn-ghost flex items-center space-x-2"
-                    >
-                      <Zap size={16} />
-                      <span>{t("connections.quickConnect")}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
             )}
+
+            {/* Session viewer */}
+            <div
+              className="relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden"
+              id="session-main-panel"
+              role="tabpanel"
+              aria-labelledby={
+                activeSessionId ? `session-tab-${activeSessionId}` : undefined
+              }
+            >
+              {visibleSessions.length > 0 ? (
+                <TabLayoutManager
+                  sessions={visibleSessions}
+                  activeSessionId={activeSessionId}
+                  layout={tabLayout}
+                  onLayoutChange={setTabLayout}
+                  onSessionSelect={setActiveSessionId}
+                  onSessionClose={handleSessionClose}
+                  onSessionDetach={handleSessionDetach}
+                  renderSession={(session) => (
+                    <SessionViewer
+                      session={session}
+                      onCloseSession={handleSessionClose}
+                      onActivateSession={setActiveSessionId}
+                      onReattachSession={handleReattachRdpSession}
+                      onDetachToWindow={handleSessionDetach}
+                      onReconnect={handleConnect}
+                      onEditConnection={handleEditConnection}
+                      onDatabaseSelect={handleDatabaseSelect}
+                      onDatabaseClose={handleDatabaseClose}
+                      onBeforeCurrentLock={beforeCurrentDatabaseLock}
+                      onIntegrationStateChange={handleIntegrationSessionState}
+                      settingsInitialTab={settingsTabRequest.tab}
+                      settingsInitialTabNonce={settingsTabRequest.nonce}
+                    />
+                  )}
+                  middleClickCloseTab={appSettings.middleClickCloseTab}
+                />
+              ) : (
+                <div
+                  data-testid="welcome-screen"
+                  className="welcome-screen h-full flex flex-col items-center justify-center text-[var(--color-textSecondary)] relative overflow-hidden"
+                >
+                  {/* Accent background glow */}
+                  <div className="welcome-glow pointer-events-none absolute inset-0" />
+                  {!appSettings.hideQuickStartMessage && (
+                    <>
+                      <Monitor
+                        size={64}
+                        className="mb-4 text-primary relative z-10"
+                      />
+                      <h2 className="text-xl font-medium mb-2 text-[var(--color-text)] relative z-10">
+                        {appSettings.welcomeScreenTitle ||
+                          t("app.welcomeTitle", "Welcome to {{appName}}", {
+                            appName: t("app.title"),
+                          })}
+                      </h2>
+                      <p className="text-center max-w-md mb-6 whitespace-pre-wrap text-[var(--color-textMuted)] relative z-10">
+                        {appSettings.welcomeScreenMessage ||
+                          (databaseManager.getCurrentDatabase()
+                            ? t(
+                                "app.welcomeWithDatabase",
+                                "Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.",
+                              )
+                            : t(
+                                "app.welcomeNoDatabase",
+                                "No database is open yet. Select or create a database to start adding and managing connections.",
+                              ))}
+                      </p>
+                    </>
+                  )}
+                  {!appSettings.hideQuickStartButtons && (
+                    <div className="flex space-x-4 relative z-10">
+                      {databaseManager.getCurrentDatabase() ? (
+                        <button
+                          onClick={handleNewConnection}
+                          className="sor-btn sor-btn-primary flex items-center space-x-2"
+                        >
+                          <Plus size={16} />
+                          <span>
+                            {t("connections.newConnection", "New Connection")}
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            // Match the AppToolbar wrapper at line ~1215:
+                            // open the database tool tab AND set the
+                            // legacy modal flag so every consumer agrees
+                            // the panel is visible. Calling the raw
+                            // `setShowDatabasePanel(true)` here only
+                            // flipped the legacy flag and never opened
+                            // the tool tab — the visible no-op the user
+                            // reported.
+                            setDatabasePanelInitialTab("collections");
+                            toolShowSetters.current.database(true);
+                            setShowDatabasePanel(true);
+                          }}
+                          className="sor-btn sor-btn-primary flex items-center space-x-2"
+                        >
+                          <Database size={16} />
+                          <span>
+                            {t("collections.select", "Select Database")}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowQuickConnect(true)}
+                        className="sor-btn sor-btn-ghost flex items-center space-x-2"
+                      >
+                        <Zap size={16} />
+                        <span>{t("connections.quickConnect")}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+
+          {!isSessionFullscreen && renderSidebar("right")}
         </div>
 
-        {!isSessionFullscreen && renderSidebar("right")}
+        <AppBottomBars
+          showStatusBar={!isSessionFullscreen}
+          showErrorLog={showErrorLog || appSettings.showErrorLogBar}
+          onToggleErrorLog={() => setShowErrorLog(!showErrorLog)}
+          connections={state.connections}
+          sessions={state.sessions}
+          databaseManager={databaseManager}
+          isInitialized={isInitialized}
+        />
+
+        <AppDialogs
+          appSettings={appSettings}
+          showDatabasePanel={showDatabasePanel}
+          showQuickConnect={showQuickConnect}
+          showSettings={showSettings}
+          showDiagnostics={showDiagnostics}
+          setShowDatabasePanel={setShowDatabasePanel}
+          setShowQuickConnect={setShowQuickConnect}
+          setShowSettings={setShowSettings}
+          settingsInitialTab={settingsTabRequest.tab}
+          settingsInitialTabNonce={settingsTabRequest.nonce}
+          setShowDiagnostics={setShowDiagnostics}
+          databasePanelInitialTab={databasePanelInitialTab}
+          diagnosticsConnection={diagnosticsConnection}
+          setDiagnosticsConnection={setDiagnosticsConnection}
+          dialogState={dialogState}
+          closeConfirmDialog={closeConfirmDialog}
+          confirmDialog={confirmDialog}
+          handleQuickConnectWithHistory={handleQuickConnectWithHistory}
+          clearQuickConnectHistory={clearQuickConnectHistory}
+          handleDatabaseSelect={handleDatabaseSelect}
+          handleDatabaseClose={handleDatabaseClose}
+          onBeforeCurrentLock={beforeCurrentDatabaseLock}
+          handleConnect={handleConnect}
+          settingsManager={settingsManager}
+          databaseManager={databaseManager}
+        />
+
+        <DebugPanel
+          isOpen={showDebugPanel}
+          onClose={() => setShowDebugPanel(false)}
+          dispatch={dispatch}
+          setActiveSessionId={setActiveSessionId}
+          sessions={state.sessions}
+          handleOpenDevtools={handleOpenDevtools}
+        />
+
+        {/* t5-e4: global reachability-check modal (one mount site). */}
+        <CheckConnectionsModalMount />
       </div>
-
-      <AppBottomBars
-        showStatusBar={!isSessionFullscreen}
-        showErrorLog={showErrorLog || appSettings.showErrorLogBar}
-        onToggleErrorLog={() => setShowErrorLog(!showErrorLog)}
-        connections={state.connections}
-        sessions={state.sessions}
-        databaseManager={databaseManager}
-        isInitialized={isInitialized}
-      />
-
-      <AppDialogs
-        appSettings={appSettings}
-        showDatabasePanel={showDatabasePanel}
-        showQuickConnect={showQuickConnect}
-        showPasswordDialog={showPasswordDialog}
-        showSettings={showSettings}
-        showDiagnostics={showDiagnostics}
-        setShowDatabasePanel={setShowDatabasePanel}
-        setShowQuickConnect={setShowQuickConnect}
-        setShowSettings={setShowSettings}
-        settingsInitialTab={settingsTabRequest.tab}
-        settingsInitialTabNonce={settingsTabRequest.nonce}
-        setShowDiagnostics={setShowDiagnostics}
-        passwordDialogMode={passwordDialogMode}
-        passwordError={passwordError}
-        databasePanelInitialTab={databasePanelInitialTab}
-        diagnosticsConnection={diagnosticsConnection}
-        setDiagnosticsConnection={setDiagnosticsConnection}
-        hasStoragePassword={hasStoragePassword}
-        dialogState={dialogState}
-        closeConfirmDialog={closeConfirmDialog}
-        confirmDialog={confirmDialog}
-        handlePasswordSubmit={handlePasswordSubmit}
-        handlePasswordCancel={handlePasswordCancel}
-        handleQuickConnectWithHistory={handleQuickConnectWithHistory}
-        clearQuickConnectHistory={clearQuickConnectHistory}
-        handleDatabaseSelect={handleDatabaseSelect}
-        handleDatabaseClose={handleDatabaseClose}
-        handleConnect={handleConnect}
-        settingsManager={settingsManager}
-        databaseManager={databaseManager}
-      />
-
-      <DebugPanel
-        isOpen={showDebugPanel}
-        onClose={() => setShowDebugPanel(false)}
-        dispatch={dispatch}
-        setActiveSessionId={setActiveSessionId}
-        sessions={state.sessions}
-        handleOpenDevtools={handleOpenDevtools}
-      />
-
-      {/* t5-e4: global reachability-check modal (one mount site). */}
-      <CheckConnectionsModalMount />
-    </div>
+      <SettingsStorageNotice />
+      <UnlockScreen />
+    </>
   );
 };
 
@@ -2036,15 +1993,6 @@ const App: React.FC = () => (
         <SessionFullscreenProvider>
           <ErrorBoundary>
             <AppContent />
-            {/*
-            Encryption-at-rest unlock overlay. Self-hides when no master
-            key exists on disk yet (the vast majority of users today) or
-            when the state is already unlocked. Renders above the main
-            app via `fixed inset-0 z-[200]` so users can't interact with
-            anything underneath while it's open. See
-            `shouldShowUnlockScreen` for the exact predicate.
-          */}
-            <UnlockScreen />
             {/*
             Auto-lock policy enforcer. Watches `settings.autoLock` and
             attaches idle / blur / minimise / visibility-hidden

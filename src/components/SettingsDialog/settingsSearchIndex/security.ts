@@ -36,10 +36,47 @@ const CREDSSP_TAGS = [
 ] as const;
 
 export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  {
+    key: "currentDatabaseSecurity",
+    label: "Current database password",
+    description:
+      "Enable, change, remove, lock or unlock the separate current database password without changing global security settings.",
+    tags: [
+      "database",
+      "collection",
+      "password",
+      "encrypt",
+      "lock",
+      "unlock",
+      "current",
+      "per database",
+    ],
+    section: "security",
+    sectionLabel: "Security",
+  },
+  {
+    key: "encryptionAtRest.databaseStatus",
+    label: "Database files on disk",
+    description:
+      "Read-only native envelope and plaintext inspection, separate from master-key configuration and database password protection.",
+    tags: [
+      "database",
+      "at rest",
+      "disk",
+      "plaintext",
+      "envelope",
+      "protection",
+      "status",
+      "trust",
+      "index",
+    ],
+    section: "security",
+    sectionLabel: "Security",
+  },
   // ─── Encryption at rest ─────────────────────────────────────────
   {
     key: "encryptionAtRest",
-    label: "Encryption at rest",
+    label: "Global master-key protection",
     description:
       "Application-wide master key and per-artifact codecs for settings, recordings, backups, macros and logs. Shows the master key location, OS vault backend, on-disk state and schema version.",
     tags: [
@@ -267,10 +304,9 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   // ─── Encryption algorithm ───────────────────────────────────────
   {
     key: "encryptionAlgorithm",
-    label: "Algorithm",
-    labelKey: "security.algorithm",
+    label: "Encryption formats (read-only)",
     description:
-      "The symmetric cipher used to encrypt stored credentials and connection files. AES-256-GCM is widely supported; ChaCha20-Poly1305 is the modern alternative.",
+      "Actual native and database formats use AES-256-GCM. Legacy algorithm preferences are inactive and do not re-encrypt stored data.",
     tags: [
       "encryption",
       "algorithm",
@@ -296,30 +332,13 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     section: "security",
     sectionLabel: "Security",
   },
-  {
-    key: "blockCipherMode",
-    label: "Cipher mode",
-    description:
-      "Block cipher mode of operation — determines how plaintext blocks are chained together during encryption.",
-    tags: ["cipher", "mode", "gcm", "cbc", "encryption", "block"],
-    synonyms: ["galois counter mode", "cipher block chaining", "aead mode"],
-    values: [
-      "GCM",
-      "GCM (Galois/Counter Mode)",
-      "CBC",
-      "CBC (Cipher Block Chaining)",
-    ],
-    section: "security",
-    sectionLabel: "Security",
-  },
 
   // ─── Key derivation (PBKDF2) ────────────────────────────────────
   {
     key: "keyDerivationIterations",
-    label: "Iterations",
-    labelKey: "security.iterations",
+    label: "Key derivation (read-only)",
     description:
-      "Number of PBKDF2 hashing rounds used to derive the encryption key from the master password. Higher values increase security but slow down unlock.",
+      "Native master passwords use Argon2id; individual database passwords use envelope-specific PBKDF2-SHA256. Export KDF defaults are separate. Legacy iteration preferences are inactive.",
     tags: [
       "pbkdf2",
       "iterations",
@@ -332,29 +351,6 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     ],
     synonyms: ["key stretching", "hash rounds", "work factor"],
     values: ["10000", "1000000"],
-    section: "security",
-    sectionLabel: "Security",
-  },
-  {
-    key: "benchmarkTimeSeconds",
-    label: "Benchmark time",
-    labelKey: "security.benchmarkTime",
-    description:
-      "Target duration in seconds the benchmark should run to determine the optimal iteration count for this hardware.",
-    tags: ["benchmark", "pbkdf2", "iterations", "seconds", "tuning", "cpu"],
-    synonyms: ["calibrate iterations", "kdf benchmark"],
-    values: ["0.5", "10", "s", "seconds"],
-    section: "security",
-    sectionLabel: "Security",
-  },
-  {
-    key: "autoBenchmarkIterations",
-    label: "Auto benchmark",
-    labelKey: "security.autoBenchmark",
-    description:
-      "Re-run the iteration benchmark on each launch to keep the count optimal for the current machine.",
-    tags: ["benchmark", "automatic", "startup", "pbkdf2", "iterations"],
-    synonyms: ["auto calibrate", "benchmark on launch"],
     section: "security",
     sectionLabel: "Security",
   },
@@ -696,7 +692,7 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     key: "databaseKeyLength",
     label: "Key Strength",
     description:
-      "Bit length of the generated database encryption key file — 256-bit suits most uses, 512-bit gives extra margin for high-security environments.",
+      "Length of standalone random secret material for external use. Does not encrypt or unlock databases; database key-file import is not implemented.",
     tags: [
       "database",
       "key file",
@@ -706,8 +702,8 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "512-bit",
       "generate",
     ],
-    synonyms: ["collection key", "key file instead of password", "keyfile"],
-    values: ["32", "256-bit (Standard)", "64", "512-bit (High Security)"],
+    synonyms: ["collection key", "random material", "keyfile"],
+    values: ["32", "32 bytes (256 bits)", "64", "64 bytes (512 bits)"],
     section: "security",
     sectionLabel: "Security",
   },

@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { GlobalSettings } from "../../types/settings/settings";
-import { SecureStorage } from "../../utils/storage/storage";
+import { useEncryption } from "./useEncryption";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
@@ -69,9 +69,13 @@ export const ENCRYPTION_ALGORITHMS = [
 
 export function useSecuritySettings(
   settings: GlobalSettings,
-  updateSettings: (updates: Partial<GlobalSettings>) => void,
+  _updateSettings: (updates: Partial<GlobalSettings>) => void,
 ) {
-  const [hasPassword, setHasPassword] = useState(false);
+  const encryption = useEncryption();
+  const hasMasterKey = !!(
+    encryption.status?.vaultHasMasterDek ||
+    encryption.status?.passwordWrapPresent
+  );
   const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [keyGenSuccess, setKeyGenSuccess] = useState<string | null>(null);
   const [keyGenError, setKeyGenError] = useState<string | null>(null);
@@ -90,32 +94,6 @@ export function useSecuritySettings(
   const validModes = useMemo(() => {
     return VALID_CIPHER_MODES[settings.encryptionAlgorithm] || [];
   }, [settings.encryptionAlgorithm]);
-
-  // Auto-update block cipher mode when algorithm changes
-  useEffect(() => {
-    const modes = VALID_CIPHER_MODES[settings.encryptionAlgorithm] || [];
-    if (modes.length > 0) {
-      const currentModeValid = modes.some(
-        (m) => m.value === settings.blockCipherMode,
-      );
-      if (!currentModeValid) {
-        updateSettings({ blockCipherMode: modes[0].value as any });
-      }
-    }
-  }, [settings.encryptionAlgorithm, settings.blockCipherMode, updateSettings]);
-
-  // Check storage encryption status
-  useEffect(() => {
-    let isMounted = true;
-    SecureStorage.isStorageEncrypted()
-      .then((encrypted) => {
-        if (isMounted) setHasPassword(encrypted);
-      })
-      .catch(console.error);
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   // ── SSH key generation ──
 
@@ -169,7 +147,7 @@ export function useSecuritySettings(
     setCollectionKeySuccess(null);
     try {
       const selectedPath = await save({
-        title: "Save Collection Encryption Key",
+        title: "Save Standalone Random Material",
         defaultPath: "collection.key",
         filters: [
           { name: "Key File", extensions: ["key"] },
@@ -188,7 +166,7 @@ export function useSecuritySettings(
       const keyFileContent = [
         "-----BEGIN SORTOFREMOTENG COLLECTION KEY-----",
         `Version: 1`,
-        `Algorithm: AES-256`,
+        `Purpose: Standalone random material; not an application database or master key`,
         `Bits: ${collectionKeyLength * 8}`,
         `Generated: ${new Date().toISOString()}`,
         "",
@@ -210,7 +188,7 @@ export function useSecuritySettings(
   };
 
   return {
-    hasPassword,
+    hasMasterKey,
     validModes,
 
     // SSH key gen

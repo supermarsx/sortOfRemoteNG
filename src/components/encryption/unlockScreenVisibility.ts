@@ -11,5 +11,10 @@ export function shouldShowUnlockScreen(
 ): boolean {
   if (!status || status.unlocked) return false;
 
-  return status.vaultHasMasterDek || status.passwordWrapPresent;
+  return (
+    status.vaultHasMasterDek ||
+    status.passwordWrapPresent ||
+    status.settingsEncryptedOnDisk ||
+    !!status.recoveryRequired
+  );
 }

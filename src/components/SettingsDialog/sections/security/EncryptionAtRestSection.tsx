@@ -69,6 +69,8 @@ import {
   type MigrationReport,
   type SetupMethod,
 } from "../../../../types/encryption/encryption";
+import { useDatabaseEncryptionStatus } from "../../../../hooks/settings/useDatabaseEncryptionStatus";
+import DatabaseProtectionStatus from "./DatabaseProtectionStatus";
 
 function pad(n: number): string {
   return n.toString().padStart(2, "0");
@@ -167,11 +169,29 @@ const EncryptionAtRestSection: React.FC = () => {
   const [portableImportPassword, setPortableImportPassword] = useState("");
 
   const status = enc.status;
+  const diskProbe = useDatabaseEncryptionStatus(status);
   const isUnavailable = !enc.loading && status === null;
+  const strandedArtifacts =
+    !!status?.recoveryRequired ||
+    !!status?.settingsEncryptedOnDisk ||
+    (diskProbe.status?.summary.encrypted ?? 0) > 0;
 
   const needsSetup = useMemo(
-    () => !!status && !status.vaultHasMasterDek && !status.passwordWrapPresent,
-    [status],
+    () =>
+      !!status &&
+      !status.vaultHasMasterDek &&
+      !status.passwordWrapPresent &&
+      !strandedArtifacts &&
+      !!diskProbe.status &&
+      !diskProbe.loading &&
+      !diskProbe.error,
+    [
+      status,
+      strandedArtifacts,
+      diskProbe.status,
+      diskProbe.loading,
+      diskProbe.error,
+    ],
   );
 
   const passwordModeActive =
@@ -379,12 +399,45 @@ const EncryptionAtRestSection: React.FC = () => {
     }
   };
 
+  const choosePortablePath = async (purpose: "import" | "export") => {
+    try {
+      const { open, save } = await import("@tauri-apps/plugin-dialog");
+      const filters = [{ name: "Portable master key", extensions: ["dek"] }];
+      const path =
+        purpose === "export"
+          ? await save({
+              title: "Export portable master key",
+              defaultPath: "sorng-master.dek",
+              filters,
+            })
+          : await open({
+              title: "Import portable master key",
+              multiple: false,
+              directory: false,
+              filters,
+            });
+      if (typeof path === "string") {
+        if (purpose === "export") {
+          setPortableExportPath(path);
+          setPortableExportError(null);
+        } else {
+          setPortableImportPath(path);
+          setPortableImportError(null);
+        }
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (purpose === "export") setPortableExportError(message);
+      else setPortableImportError(message);
+    }
+  };
+
   if (isUnavailable) {
     return (
       <div className="space-y-4">
         <SectionHeader
           icon={<Shield className="w-4 h-4 text-primary" />}
-          title="Encryption at rest"
+          title="Global master-key protection"
         />
         <Card>
           <p className="text-xs text-[var(--color-textMuted)]">
@@ -404,7 +457,7 @@ const EncryptionAtRestSection: React.FC = () => {
           icon={<Shield className="w-4 h-4 text-primary" />}
           title={
             <span className="flex items-center gap-2">
-              Encryption at rest
+              Global master-key protection
               <InfoTooltip text="Manages the application-wide encryption key and per-artifact codecs (settings, recordings, backups, macros, logs)." />
             </span>
           }
@@ -490,6 +543,20 @@ const EncryptionAtRestSection: React.FC = () => {
         </Card>
       </div>
 
+      <DatabaseProtectionStatus probe={diskProbe} />
+      {status &&
+        !status.vaultHasMasterDek &&
+        !status.passwordWrapPresent &&
+        strandedArtifacts && (
+          <Card>
+            <p role="alert" className="text-xs text-warning">
+              Encrypted artifacts exist but the master key is unavailable.
+              Recover the original vault or portable master key; creating a new
+              key cannot decrypt existing data.
+            </p>
+          </Card>
+        )}
+
       {/* ── Lock now (manual trigger, visible only when unlocked) ─── */}
       {status?.unlocked && (
         <div className="space-y-4" data-setting-key="encryptionAtRest.lockNow">
@@ -551,9 +618,9 @@ const EncryptionAtRestSection: React.FC = () => {
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
               No master key found. Choose how the application's master
-              data-encryption key should be stored. Both options can be switched
-              later via the change-password / migrate flows; defaults are tuned
-              for current OWASP guidance.
+              data-encryption key should be stored. The choice controls how this
+              key is recovered; these controls do not promise a later
+              vault/password mode conversion.
             </p>
 
             <SettingsToggleRow
@@ -580,7 +647,7 @@ const EncryptionAtRestSection: React.FC = () => {
               icon={<KeyRound size={16} />}
               label="Wrap with a password"
               description="Stores the master key Argon2id-wrapped in dek.enc. Useful when no OS vault is available or you want portability."
-              infoTooltip="Master key is randomly generated, then encrypted under a key derived from your password via Argon2id (OWASP defaults)."
+              infoTooltip="Master key is randomly generated, then encrypted under a key derived from your password via Argon2id (application defaults)."
             />
 
             {setupChoice === "password" && (
@@ -605,7 +672,7 @@ const EncryptionAtRestSection: React.FC = () => {
                   onChange={(v) =>
                     setSetupArgon2({ ...setupArgon2, memoryKib: v })
                   }
-                  infoTooltip="Memory cost for the password KDF. Higher values dramatically slow offline guessing. OWASP recommends ≥ 64 MiB."
+                  infoTooltip="Memory cost for the password KDF. Higher values dramatically slow offline guessing. The application default is 64 MiB."
                 />
                 <SettingsNumberRow
                   icon={<RefreshCw size={16} />}
@@ -617,7 +684,7 @@ const EncryptionAtRestSection: React.FC = () => {
                   onChange={(v) =>
                     setSetupArgon2({ ...setupArgon2, timeCost: v })
                   }
-                  infoTooltip="Time cost. 3 is the OWASP default; raise if you can tolerate slower unlocks."
+                  infoTooltip="Time cost. 3 is the application default; raise if you can tolerate slower unlocks."
                 />
                 <SettingsNumberRow
                   icon={<RefreshCw size={16} />}
@@ -629,7 +696,7 @@ const EncryptionAtRestSection: React.FC = () => {
                   onChange={(v) =>
                     setSetupArgon2({ ...setupArgon2, parallelism: v })
                   }
-                  infoTooltip="Number of parallel lanes. 4 is the OWASP default and matches typical CPU thread counts."
+                  infoTooltip="Number of parallel lanes. 4 is the application default and matches typical CPU thread counts."
                 />
               </>
             )}
@@ -666,7 +733,10 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Migrate plaintext settings ───────────────────────────── */}
       {status?.settingsPlaintextPresent && status.unlocked && (
-        <div className="space-y-4" data-setting-key="encryptionAtRest.migratePlaintext">
+        <div
+          className="space-y-4"
+          data-setting-key="encryptionAtRest.migratePlaintext"
+        >
           <SectionHeader
             icon={<FileWarning className="w-4 h-4 text-warning" />}
             title="Migrate plaintext settings"
@@ -840,7 +910,10 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Change password ──────────────────────────────────────── */}
       {passwordModeActive && (
-        <div className="space-y-4" data-setting-key="encryptionAtRest.changePassword">
+        <div
+          className="space-y-4"
+          data-setting-key="encryptionAtRest.changePassword"
+        >
           <SectionHeader
             icon={<KeyRound className="w-4 h-4 text-primary" />}
             title="Change master password"
@@ -902,18 +975,23 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Rotate master key ─────────────────────────────────────── */}
       {status?.unlocked && (
-        <div className="space-y-4" data-setting-key="encryptionAtRest.rotateMasterKey">
+        <div
+          className="space-y-4"
+          data-setting-key="encryptionAtRest.rotateMasterKey"
+        >
           <SectionHeader
             icon={<RefreshCw className="w-4 h-4 text-primary" />}
             title="Rotate master key"
           />
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
-              Generates a fresh 32-byte master DEK, re-encrypts every artifact
-              on disk under freshly-derived sub-keys, then swaps the vault entry
-              and/or <code>dek.enc</code> to match. Use after a suspected
-              password or vault leak. The old ciphertext is rendered unreadable
-              on success — keep a recent backup if you're nervous.
+              Generates a fresh 32-byte master DEK, re-encrypts managed
+              artifacts under freshly-derived sub-keys, then swaps the vault
+              entry and/or <code>dek.enc</code> to match. Use after a suspected
+              password or vault leak. Managed artifacts are re-encrypted, but up
+              to five previous master keys are retained for recovery. Older
+              external copies can remain decryptable. The full multi-file
+              rotation is not a single power-loss-atomic transaction.
             </p>
             {passwordModeActive && (
               <SettingsPasswordRow
@@ -961,7 +1039,10 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Portable key export ──────────────────────────────────── */}
       {status?.unlocked && (
-        <div className="space-y-4" data-setting-key="encryptionAtRest.exportPortableKey">
+        <div
+          className="space-y-4"
+          data-setting-key="encryptionAtRest.exportPortableKey"
+        >
           <SectionHeader
             icon={<Download className="w-4 h-4 text-primary" />}
             title="Export portable master key"
@@ -982,6 +1063,14 @@ const EncryptionAtRestSection: React.FC = () => {
               placeholder="/secure/backup/sorng-master.dek"
               infoTooltip="Absolute path on disk. The file is overwritten if it exists. Place it on removable media for offline backup."
             />
+            <button
+              type="button"
+              disabled={portableExportBusy}
+              onClick={() => void choosePortablePath("export")}
+              className="text-xs underline"
+            >
+              Choose portable key destination
+            </button>
             <SettingsPasswordRow
               icon={<KeyRound size={16} />}
               label="Export password"
@@ -1027,7 +1116,10 @@ const EncryptionAtRestSection: React.FC = () => {
 
       {/* ── Portable key import ──────────────────────────────────── */}
       {!status?.unlocked && (
-        <div className="space-y-4" data-setting-key="encryptionAtRest.importPortableKey">
+        <div
+          className="space-y-4"
+          data-setting-key="encryptionAtRest.importPortableKey"
+        >
           <SectionHeader
             icon={<Upload className="w-4 h-4 text-primary" />}
             title="Import portable master key"
@@ -1047,6 +1139,14 @@ const EncryptionAtRestSection: React.FC = () => {
               placeholder="/secure/backup/sorng-master.dek"
               infoTooltip="Path to the .dek file produced by 'Export portable master key' on another machine."
             />
+            <button
+              type="button"
+              disabled={portableImportBusy}
+              onClick={() => void choosePortablePath("import")}
+              className="text-xs underline"
+            >
+              Choose portable key source
+            </button>
             <SettingsPasswordRow
               icon={<KeyRound size={16} />}
               label="Import password"
@@ -1096,9 +1196,9 @@ const EncryptionAtRestSection: React.FC = () => {
               <code>settings.json</code> and deletes the encrypted file. The
               master key stays alive so other artifacts (recordings, backups, …)
               keep their encryption — this is a per-artifact opt-out, not a full
-              disable. To remove encryption from the entire app, run this on
-              every artifact and then delete <code>dek.enc</code> + the vault
-              entry manually.
+              disable. Do not delete master-key files or vault entries to
+              disable protection: remaining encrypted artifacts can become
+              unrecoverable.
             </p>
             {disableError && (
               <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
@@ -1135,15 +1235,15 @@ const EncryptionAtRestSection: React.FC = () => {
       <div className="space-y-4" data-setting-key="encryptionAtRest.artifacts">
         <SectionHeader
           icon={<Database className="w-4 h-4 text-primary" />}
-          title="Encrypted artifacts"
+          title="Artifact codecs and inspected status"
         />
         <Card>
           <p className="text-xs text-[var(--color-textMuted)]">
             Each artifact derives its own AES-256-GCM sub-key from the master
             key via HKDF-SHA256 with the label shown below. Sub-keys are
             domain-separated: a settings ciphertext cannot be decrypted with the
-            recordings key, and vice versa. Per-artifact migrate buttons land in
-            a follow-up phase alongside the recordings-encryption rollout.
+            recordings key, and vice versa. An available codec does not prove
+            every corresponding file is encrypted on disk.
           </p>
           <div className="text-xs">
             <table className="w-full">

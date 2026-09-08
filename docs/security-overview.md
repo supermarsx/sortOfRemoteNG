@@ -9,15 +9,15 @@ sortOfRemoteNG handles credentials and opens privileged remote sessions. Securit
 
 ## Core expectations
 
-| Area              | Default posture                                                                                                                                      |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Secrets at rest   | Authenticated encryption with password-derived or OS-vault-backed key handling                                                                       |
-| Live secrets      | Kept out of general renderer state and logs where the backend contract permits                                                                       |
-| TLS               | Certificate chain and hostname verification enabled; insecure exceptions are explicit and per connection                                             |
-| Remote host trust | Host or certificate changes require a visible trust decision rather than silent downgrade, and the decision is stored with the database that made it |
-| Tauri IPC         | Commands accept validated, typed inputs and delegate privileged work to Rust                                                                         |
-| REST automation   | Disabled by default and loopback-oriented unless remote access is deliberately configured                                                            |
-| Updates           | Bundles must pass the updater’s pinned Ed25519/minisign verification                                                                                 |
+| Area              | Default posture                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Secrets at rest   | Separate native global master-key envelopes, optional database passwords, and export passwords; inspect actual disk state rather than assuming configuration encrypted every file |
+| Live secrets      | Decrypted values exist in memory while unlocked; settings logs record changed field names rather than credential-bearing old/new values                                           |
+| TLS               | Certificate chain and hostname verification enabled; insecure exceptions are explicit and per connection                                                                          |
+| Remote host trust | Host or certificate changes require a visible trust decision rather than silent downgrade, and the decision is stored with the database that made it                              |
+| Tauri IPC         | Commands accept validated, typed inputs and delegate privileged work to Rust                                                                                                      |
+| REST automation   | Disabled by default and loopback-oriented unless remote access is deliberately configured                                                                                         |
+| Updates           | Bundles must pass the updater’s pinned Ed25519/minisign verification                                                                                                              |
 
 ## Trust decisions are database state
 
@@ -46,7 +46,17 @@ Accepted SSH, SFTP, and SCP host keys are Trust Center records too, keyed by `ho
 
 The encryption design primarily protects against offline access to application data and backups. It does not protect plaintext already available to an attacker controlling the unlocked process or operating system account.
 
+Settings → Security distinguishes application-wide master-key/vault controls, the current database's separate password, and global policy/export defaults. A database password does not protect database names, the index, trust records, or global preferences. Opening a database does not restore global security configuration from its snapshot.
+
+Configuring a master key is not a migration audit. The database disk-status card reports native envelope/plaintext evidence and explicitly distinguishes unverified decryption. Password changes use coordinated payload/index transactions; cleanup-pending outcomes can be committed successes with warnings. External copies are not rewritten or securely erased by a password change.
+
+Global lock preparation belongs to the primary window; detached requests wait for its save/cleanup acknowledgement. A vault-only lock requires an intentional vault-unlock action, but does not add a separate application password challenge. Global settings are reloaded after unlock before the interface/policies resume. Browser previews do not have native global at-rest protection.
+
+Full master-key rotation retains up to five previous keys in an encrypted recovery ring. This preserves recoverability but means older ciphertext may remain readable with retained keys; it is not forward secrecy or a single atomic transaction across all profile files. Keep appropriate key backups, and never delete encrypted files or key receipts merely to clear an error.
+
 Read [Encryption at rest]({{ '/security/encryption-at-rest/' | relative_url }}) before changing the vault, artifact codecs, backup behavior, recordings, or key lifecycle. That document defines envelope formats, tamper expectations, unlock behavior, and explicit out-of-scope attackers.
+
+The implementation's current receipt and crash-recovery limits are documented in [Master-key recovery and locking](master-key-recovery.md).
 
 ## Operational hygiene
 

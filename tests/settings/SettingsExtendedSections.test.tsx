@@ -413,10 +413,11 @@ describe("Extended settings section centralization", () => {
     // Generate button must no longer be full-width.
     expect(generateSshKeyButton.className).not.toContain("w-full");
 
-    const algorithmSelect = container.querySelector(
-      '[data-setting-key="encryptionAlgorithm"] [role="combobox"]',
+    const encryptionFormats = container.querySelector(
+      '[data-setting-key="encryptionAlgorithm"]',
     ) as HTMLElement;
-    expect(algorithmSelect.className).toContain("sor-settings-select");
+    expect(encryptionFormats).toHaveTextContent("AES-256-GCM");
+    expect(within(encryptionFormats).queryByRole("combobox")).toBeNull();
 
     const totpEnabled = container.querySelector(
       '[data-setting-key="totpEnabled"] input[type="checkbox"]',

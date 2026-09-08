@@ -10,21 +10,11 @@ import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { ProtocolRepairNotice } from "../connection/ProtocolRepairDialog";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 
-const AutoLockManager = dynamic(
-  () =>
-    import("../security/AutoLockManager").then(
-      (module) => module.AutoLockManager,
-    ),
-  { ssr: false },
-);
 const QuickConnect = dynamic(
   () =>
     import("../connection/QuickConnect").then((module) => module.QuickConnect),
   { ssr: false },
 );
-const PasswordDialog = dynamic(() => import("../security/PasswordDialog"), {
-  ssr: false,
-});
 const SettingsDialog = dynamic(
   () => import("../SettingsDialog").then((module) => module.SettingsDialog),
   { ssr: false },
@@ -48,7 +38,6 @@ interface AppDialogsProps {
   appSettings: GlobalSettings;
   showDatabasePanel: boolean;
   showQuickConnect: boolean;
-  showPasswordDialog: boolean;
   showSettings: boolean;
   showDiagnostics: boolean;
   setShowDatabasePanel: (v: boolean) => void;
@@ -59,12 +48,9 @@ interface AppDialogsProps {
   /** Bump to re-apply an unchanged `settingsInitialTab`. */
   settingsInitialTabNonce?: number;
   setShowDiagnostics: (v: boolean) => void;
-  passwordDialogMode: "setup" | "unlock";
-  passwordError: string;
   databasePanelInitialTab?: "collections";
   diagnosticsConnection: Connection | null;
   setDiagnosticsConnection: (c: Connection | null) => void;
-  hasStoragePassword: boolean;
   dialogState: {
     isOpen: boolean;
     message: string;
@@ -82,11 +68,10 @@ interface AppDialogsProps {
   };
   closeConfirmDialog: () => void;
   confirmDialog: React.ReactNode;
-  handlePasswordSubmit: (password: string) => void;
-  handlePasswordCancel: () => void;
   handleQuickConnectWithHistory: (...args: any[]) => void;
   clearQuickConnectHistory: () => void;
-  handleDatabaseSelect: (id: string) => Promise<void>;
+  handleDatabaseSelect: (id: string, password?: string) => Promise<void>;
+  onBeforeCurrentLock?: () => Promise<void>;
   /**
    * Inverse of `handleDatabaseSelect` — closes the currently-open
    * database and clears the connection panel + auto-open pointer.
@@ -106,7 +91,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     appSettings,
     showDatabasePanel,
     showQuickConnect,
-    showPasswordDialog,
     showSettings,
     showDiagnostics,
     setShowDatabasePanel,
@@ -115,17 +99,12 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     settingsInitialTab,
     settingsInitialTabNonce,
     setShowDiagnostics,
-    passwordDialogMode,
-    passwordError,
     databasePanelInitialTab,
     diagnosticsConnection,
     setDiagnosticsConnection,
-    hasStoragePassword,
     dialogState,
     closeConfirmDialog,
     confirmDialog,
-    handlePasswordSubmit,
-    handlePasswordCancel,
     handleQuickConnectWithHistory,
     clearQuickConnectHistory,
     handleDatabaseSelect,
@@ -136,25 +115,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
 
   return (
     <>
-      {appSettings.autoLock.enabled && hasStoragePassword && (
-        <AutoLockManager
-          config={appSettings.autoLock}
-          onConfigChange={(config) =>
-            settingsManager
-              .saveSettings({ autoLock: config }, { silent: true })
-              .catch(console.error)
-          }
-          onLock={() => {
-            settingsManager.logAction(
-              "info",
-              "Auto lock",
-              undefined,
-              "Session locked due to inactivity",
-            );
-          }}
-        />
-      )}
-
       {/* The legacy modal Collection Selector has been replaced by the
           tool-tab DatabasePanel; it now mounts inside the ToolPanel via
           the 'database' tool key. */}
@@ -166,15 +126,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         history={appSettings.quickConnectHistory ?? []}
         onClearHistory={clearQuickConnectHistory}
         onConnect={handleQuickConnectWithHistory}
-      />
-
-      <PasswordDialog
-        isOpen={showPasswordDialog}
-        mode={passwordDialogMode}
-        onSubmit={handlePasswordSubmit}
-        onCancel={handlePasswordCancel}
-        error={passwordError}
-        noCollectionSelected={!databaseManager.getCurrentDatabase()}
       />
 
       <ConfirmDialog
@@ -221,6 +172,9 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         )}
       >
         <SettingsDialog
+          onDatabaseSelect={handleDatabaseSelect}
+          onDatabaseClose={props.handleDatabaseClose}
+          onBeforeCurrentLock={props.onBeforeCurrentLock}
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
           initialTab={settingsInitialTab}

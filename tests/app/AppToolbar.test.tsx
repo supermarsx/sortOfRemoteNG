@@ -86,7 +86,6 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
   handleMaximize: vi.fn(),
   handleClose: vi.fn(),
   handleOpenDevtools: vi.fn(),
-  handleShowPasswordDialog: vi.fn(),
   performCloudSync: vi.fn(),
   setShowDebugPanel: vi.fn(),
   setShowTagManager: vi.fn(),

@@ -5,7 +5,6 @@ import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { ThemeManager } from "../../utils/settings/themeManager";
-import { SecureStorage } from "../../utils/storage/storage";
 import {
   Connection,
   ConnectionSession,
@@ -64,8 +63,6 @@ function consumeSafeMode(): "once" | "permanent" | null {
  * @property handleConnect - Invoked to initiate a connection.
  * @property restoreSession - Invoked to restore a saved session.
  * @property setShowDatabasePanel - Toggles the collection selector dialog.
- * @property setShowPasswordDialog - Toggles the password dialog visibility.
- * @property setPasswordDialogMode - Sets the password dialog mode.
  */
 interface Options {
   handleConnect: (connection: Connection) => void;
@@ -74,8 +71,6 @@ interface Options {
     connection: Connection,
   ) => Promise<void>;
   setShowDatabasePanel: (value: boolean) => void;
-  setShowPasswordDialog: (value: boolean) => void;
-  setPasswordDialogMode: (mode: "setup" | "unlock") => void;
 }
 
 /**
@@ -93,8 +88,6 @@ export const useAppLifecycle = ({
   handleConnect,
   restoreSession,
   setShowDatabasePanel,
-  setShowPasswordDialog,
-  setPasswordDialogMode,
 }: Options) => {
   const { t, i18n } = useTranslation();
   const { state, loadData } = useConnections();
@@ -428,19 +421,14 @@ export const useAppLifecycle = ({
         setShowDatabasePanel(true);
       } else if (
         currentDatabase.isEncrypted &&
-        !SecureStorage.isStorageUnlocked()
+        !databaseManager.isDatabaseUnlocked(currentDatabase.id)
       ) {
-        setPasswordDialogMode("unlock");
-        setShowPasswordDialog(true);
+        // Collection passwords belong to the database picker; native master
+        // encryption is independently handled by the root UnlockScreen.
+        setShowDatabasePanel(true);
       }
     }
-  }, [
-    isInitialized,
-    databaseManager,
-    setShowDatabasePanel,
-    setShowPasswordDialog,
-    setPasswordDialogMode,
-  ]);
+  }, [isInitialized, databaseManager, setShowDatabasePanel]);
 
   useEffect(() => {
     const delayedRestoreCancels = delayedRestoreCancelsRef.current;

@@ -14,8 +14,9 @@
  * placeholder.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getInvoke } from "../../utils/tauri/invoke";
+import { executeGlobalLock } from "../../utils/security/globalEncryptionLock";
 import type {
   Argon2Params,
   AuditEntry,
@@ -84,12 +85,7 @@ export interface RecordingMigrationProgressEvent {
  *  Rust side accepts any string but the frontend should stick to
  *  this closed set so the audit-log viewer can render labels. */
 export type LockReason =
-  | "manual"
-  | "shortcut"
-  | "idle"
-  | "blur"
-  | "minimize"
-  | "visibility-hidden";
+  "manual" | "shortcut" | "idle" | "blur" | "minimize" | "visibility-hidden";
 
 /** Full-artifact rotation report. Mirrors the Rust
  *  `FullRotateReport` returned by
@@ -167,10 +163,7 @@ export interface UseEncryption {
   ) => Promise<number>;
   /** Read a portable wrapped DEK at `sourcePath`, unwrap with
    *  `password`, install as the local master key. */
-  importPortableDek: (
-    sourcePath: string,
-    password: string,
-  ) => Promise<void>;
+  importPortableDek: (sourcePath: string, password: string) => Promise<void>;
   /** Latest audit entries (newest last). Fetched on mount and after
    *  every mutating action. Empty array outside Tauri. */
   audit: AuditEntry[];
@@ -187,26 +180,30 @@ export function useEncryption(): UseEncryption {
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const statusGeneration = useRef(0);
 
   const refresh = useCallback(async () => {
+    const generation = ++statusGeneration.current;
     setLoading(true);
     setError(null);
     try {
       const inv = await getInvoke();
       if (!inv) {
-        setStatus(null);
+        if (generation === statusGeneration.current) setStatus(null);
         return;
       }
       const next = await (inv as InvokeFn)<EncryptionStatus>(
         "encryption_status",
       );
-      setStatus(next);
+      if (generation === statusGeneration.current) setStatus(next);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      setStatus(null);
+      if (generation === statusGeneration.current) {
+        setError(msg);
+        setStatus(null);
+      }
     } finally {
-      setLoading(false);
+      if (generation === statusGeneration.current) setLoading(false);
     }
   }, []);
 
@@ -217,8 +214,9 @@ export function useEncryption(): UseEncryption {
         setLockout(null);
         return;
       }
-      const next =
-        await (inv as InvokeFn)<LockoutSnapshot>("encryption_lockout_state");
+      const next = await (inv as InvokeFn)<LockoutSnapshot>(
+        "encryption_lockout_state",
+      );
       setLockout(next);
     } catch {
       // Lockout file errors are non-fatal; surface as "no cooldown".
@@ -233,9 +231,12 @@ export function useEncryption(): UseEncryption {
         setAudit([]);
         return;
       }
-      const next = await (inv as InvokeFn)<AuditEntry[]>("encryption_audit_read", {
-        limit: 100,
-      });
+      const next = await (inv as InvokeFn)<AuditEntry[]>(
+        "encryption_audit_read",
+        {
+          limit: 100,
+        },
+      );
       setAudit(next);
     } catch {
       // Audit-log errors are non-fatal; surface as empty.
@@ -264,9 +265,14 @@ export function useEncryption(): UseEncryption {
           void refresh();
           void refreshLockout();
         });
+        if (cancelled) {
+          unlistenUnlocked();
+          return;
+        }
         unlistenLocked = await mod.listen(ENCRYPTION_EVENT_LOCKED, () => {
           void refresh();
         });
+        if (cancelled) unlistenLocked();
       } catch {
         // Outside Tauri — broadcast unavailable; that's fine.
       }
@@ -315,7 +321,19 @@ export function useEncryption(): UseEncryption {
   const lock = useCallback(
     async (reason?: LockReason): Promise<void> => {
       const inv = await invokeOrThrow();
-      await inv<void>("encryption_lock", { reason: reason ?? null });
+      try {
+        await executeGlobalLock(reason, () =>
+          inv<void>("encryption_lock", { reason: reason ?? null }),
+        );
+      } catch (error) {
+        if (typeof window !== "undefined")
+          window.dispatchEvent(
+            new CustomEvent("global-lock-failed", {
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        throw error;
+      }
       await refresh();
     },
     [refresh],
@@ -385,17 +403,15 @@ export function useEncryption(): UseEncryption {
     await inv<void>("rec_cancel_migration");
   }, []);
 
-  const disableSettings = useCallback(
-    async (): Promise<DisableSettingsReport> => {
+  const disableSettings =
+    useCallback(async (): Promise<DisableSettingsReport> => {
       const inv = await invokeOrThrow();
       const report = await inv<DisableSettingsReport>(
         "encryption_disable_settings",
       );
       await refresh();
       return report;
-    },
-    [refresh],
-  );
+    }, [refresh]);
 
   const rotateMasterKeyFull = useCallback(
     async (password?: string): Promise<FullRotateReport> => {

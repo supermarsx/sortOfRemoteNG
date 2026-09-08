@@ -1,4 +1,12 @@
-import { Lock, Key, Loader2, FileKey, CheckCircle, Database, AlertTriangle } from "lucide-react";
+import {
+  Lock,
+  Key,
+  Loader2,
+  FileKey,
+  CheckCircle,
+  Database,
+  AlertTriangle,
+} from "lucide-react";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
@@ -14,38 +22,38 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
         icon={<Database className="w-4 h-4 text-primary" />}
         title={
           <span className="flex items-center gap-1">
-            Generate Database Encryption Key File{" "}
-            <InfoTooltip text="Create a cryptographic key file that can encrypt and decrypt your databases instead of using a password." />
+            Generate standalone random secret material{" "}
+            <InfoTooltip text="Exports random bytes for external use. This app does not import this file as a database password or master key." />
           </span>
         }
       />
 
       <Card>
         <p className="text-xs text-[var(--color-textMuted)]">
-          Generate a secure encryption key file that can be used to encrypt
-          your databases. This key file can be used instead of a password
-          when creating or opening encrypted databases.
+          Generate random secret bytes for an external workflow. This does not
+          encrypt, unlock, or change any database or the global master key.
+          Database key-file import is not implemented.
         </p>
 
         <div className="flex items-start gap-2 px-3 py-2 bg-warning/10 border border-warning/40 rounded-md text-xs text-warning">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <span>
-            Keep this file secure — anyone with access to it can decrypt your
-            databases.
+            Keep this file secure if you use its contents as secret material
+            elsewhere.
           </span>
         </div>
 
         <SettingsSelectRow
           settingKey="databaseKeyLength"
           icon={<Key size={16} />}
-          label="Key Strength"
+          label="Random material length"
           value={String(mgr.collectionKeyLength)}
           options={[
-            { value: "32", label: "256-bit (Standard)" },
-            { value: "64", label: "512-bit (High Security)" },
+            { value: "32", label: "32 bytes (256 bits)" },
+            { value: "64", label: "64 bytes (512 bits)" },
           ]}
           onChange={(v) => mgr.setCollectionKeyLength(Number(v) as 32 | 64)}
-          infoTooltip="Bit length of the generated key — 256-bit is sufficient for most uses, 512-bit provides extra margin for high-security environments."
+          infoTooltip="Output length only, not an AES key size or an active database security setting."
         />
 
         <div className="flex justify-end">
@@ -62,7 +70,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
             ) : (
               <>
                 <FileKey className="w-4 h-4" />
-                <span>Generate &amp; Save Database Key File</span>
+                <span>Generate &amp; Save Random Material</span>
               </>
             )}
           </button>
