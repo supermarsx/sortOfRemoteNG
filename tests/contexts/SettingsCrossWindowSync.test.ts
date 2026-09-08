@@ -56,6 +56,46 @@ const withRestApiSecrets = (
   }) as GlobalSettings;
 
 describe("SettingsManager cross-window synchronization", () => {
+  it.each([false, true])(
+    "does not revive or broadcast a deferred pre-lock snapshot (unlock=%s)",
+    async (unlock) => {
+      let release!: (source: string) => void;
+      let started!: () => void;
+      const reached = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const emitted = vi.fn();
+      const manager = new SettingsManager({
+        settingsSyncRuntime: {
+          getSource: () => {
+            started();
+            return new Promise<string>((resolve) => {
+              release = resolve;
+            });
+          },
+          emit: emitted,
+          listen: async () => () => {},
+        },
+      });
+      await manager.loadSettings();
+      const save = manager.saveSettings({ language: "de" });
+      await reached;
+      manager.invalidateLoadedSettings(true);
+      if (unlock) {
+        manager.invalidateLoadedSettings(false);
+        await manager.loadSettings();
+      }
+      const afterInvalidation = manager.getSettings();
+      release("main");
+      await save;
+      expect(manager.getSettings()).toBe(afterInvalidation);
+      expect(emitted).not.toHaveBeenCalled();
+      if (!unlock)
+        await expect(
+          manager.saveSettings({ language: "fr" }),
+        ).rejects.toThrow();
+    },
+  );
   beforeEach(() => {
     _resetInMemorySettingsStore();
     SettingsManager.resetInstance();

@@ -995,6 +995,8 @@ export class SettingsManager {
    * any save would persist defaults and clobber the user's stored config.
    */
   private loaded = false;
+  private loadEpoch = 0;
+  private storageLocked = false;
   /** The in-flight (or last) load promise, awaited by `ensureLoaded()`. */
   private loadPromise: Promise<GlobalSettings> | null = null;
 
@@ -1019,12 +1021,21 @@ export class SettingsManager {
 
   /**
    * Loads settings from persistent storage.
-   * @returns {Promise<GlobalSettings>} Resolves with the merged settings; returns defaults if retrieval fails.
+   * @returns {Promise<GlobalSettings>} Resolves with saved settings; rejects locked or failed reads.
    */
   async loadSettings(): Promise<GlobalSettings> {
     const promise = this.doLoadSettings();
     this.loadPromise = promise;
     return promise;
+  }
+
+  /** Drop decrypted global preferences and fence stale loads at a native lock boundary. */
+  invalidateLoadedSettings(locked: boolean): void {
+    this.loadEpoch++;
+    this.storageLocked = locked;
+    this.loaded = false;
+    this.loadPromise = null;
+    this.settings = { ...DEFAULT_SETTINGS };
   }
 
   /**
@@ -1034,12 +1045,11 @@ export class SettingsManager {
    */
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
-    try {
-      await (this.loadPromise ?? this.loadSettings());
-    } catch {
-      // Load genuinely failed (e.g. storage unavailable) — allow the save
-      // to proceed rather than hang forever.
-    }
+    await (this.loadPromise ?? this.loadSettings());
+    if (!this.loaded || this.storageLocked)
+      throw new Error(
+        "Global settings are locked or have not loaded. Unlock and retry before saving.",
+      );
   }
 
   /**
@@ -1259,8 +1269,11 @@ export class SettingsManager {
   private async persistSettings(
     patch: Partial<GlobalSettings>,
   ): Promise<number | undefined> {
+    const epoch = this.loadEpoch;
     const safePatch = this.sanitizeSettingsPatch(patch);
     const invoke = await tauriInvoke();
+    if (epoch !== this.loadEpoch || this.storageLocked)
+      throw new Error("Global settings changed lock state before persistence.");
     if (!invoke) {
       // No Tauri disk — retain the full blob in the module-level store so
       // a subsequent read in the same session round-trips.
@@ -1273,6 +1286,10 @@ export class SettingsManager {
 
     let sawFailure = false;
     for (let attempt = 1; attempt <= SETTINGS_WRITE_MAX_ATTEMPTS; attempt++) {
+      if (epoch !== this.loadEpoch || this.storageLocked)
+        throw new Error(
+          "Global settings changed lock state; stale write retry cancelled.",
+        );
       try {
         const result = await invoke<unknown>("write_app_settings", {
           patch: safePatch,
@@ -1294,6 +1311,10 @@ export class SettingsManager {
         }
         return undefined;
       } catch (error) {
+        if (epoch !== this.loadEpoch || this.storageLocked)
+          throw new Error(
+            "Global settings changed lock state; stale write cancelled.",
+          );
         sawFailure = true;
         const message = error instanceof Error ? error.message : String(error);
         const willRetry = attempt < SETTINGS_WRITE_MAX_ATTEMPTS;
@@ -1333,8 +1354,12 @@ export class SettingsManager {
   }
 
   private async doLoadSettings(): Promise<GlobalSettings> {
+    const epoch = this.loadEpoch;
     try {
+      if (this.storageLocked) throw new Error("Global settings are locked.");
       const stored = await this.readPersistedSettings();
+      if (epoch !== this.loadEpoch || this.storageLocked)
+        throw new Error("Global settings changed lock state while loading.");
       if (stored) {
         this.settings = this.normalizeSettingsSnapshot(stored);
       }
@@ -1342,8 +1367,8 @@ export class SettingsManager {
       return this.settings;
     } catch (error) {
       console.error("Failed to load settings:", error);
-      this.loaded = true;
-      return DEFAULT_SETTINGS;
+      if (epoch === this.loadEpoch) this.loaded = false;
+      throw error;
     }
   }
 
@@ -1357,6 +1382,7 @@ export class SettingsManager {
     settings: Partial<GlobalSettings>,
     options?: { silent?: boolean },
   ): Promise<void> {
+    const epoch = this.loadEpoch;
     try {
       // Guard against the startup race: if a caller (e.g. window-geometry
       // persistence) saves before the initial load has finished,
@@ -1364,11 +1390,15 @@ export class SettingsManager {
       // here would persist defaults over the user's stored config. Wait
       // for the load to complete first.
       await this.ensureLoaded();
+      if (epoch !== this.loadEpoch || this.storageLocked)
+        throw new Error("Global settings changed lock state before saving.");
       const safeSettings = this.sanitizeSettingsPatch(settings);
       this.settings = { ...this.settings, ...safeSettings };
       // Write only the patch: the backend shallow-merges it into
       // settings.json, so partial saves never drop sibling keys.
       const commitGeneration = await this.persistSettings(safeSettings);
+      if (epoch !== this.loadEpoch || this.storageLocked)
+        throw new Error("Global settings changed lock state while saving.");
       // Only log explicit user-initiated saves, not auto-saves or intermediate changes
       if (!options?.silent) {
         this.logAction(
@@ -1393,6 +1423,7 @@ export class SettingsManager {
    * the latest toggle state even before the debounced save fires.
    */
   applyInMemory(settings: Partial<GlobalSettings>): void {
+    if (this.storageLocked) return;
     this.settings = { ...this.settings, ...settings };
   }
 
@@ -1401,6 +1432,7 @@ export class SettingsManager {
    * This is strictly in-memory: no persistence and no Tauri emission.
    */
   applySettingsSnapshot(settings: unknown): GlobalSettings | null {
+    if (this.storageLocked) return null;
     const validated = this.validateCompleteSettingsSnapshot(settings);
     if (!validated) return null;
     this.settings = validated;
@@ -1413,6 +1445,8 @@ export class SettingsManager {
    * the current logical stamp. Accepted snapshots are applied in memory only.
    */
   async applySyncedSettings(payload: unknown): Promise<GlobalSettings | null> {
+    if (this.storageLocked) return null;
+    const epoch = this.loadEpoch;
     const decision = this.settingsSyncRevisions.accept(payload, (settings) =>
       this.validateCompleteSettingsSnapshot(settings),
     );
@@ -1420,6 +1454,7 @@ export class SettingsManager {
 
     const apply = this.settingsSyncApplyChain.then(async () => {
       await this.ensureLoaded();
+      if (epoch !== this.loadEpoch || this.storageLocked) return null;
       if (!this.settingsSyncRevisions.isCurrent(decision.payload)) return null;
       this.settings = decision.settings;
       this.loaded = true;
@@ -1442,13 +1477,17 @@ export class SettingsManager {
     patch: Partial<GlobalSettings>,
     commitGeneration?: number,
   ): Promise<void> {
+    const epoch = this.loadEpoch;
     const broadcast = this.settingsSyncEmitChain.then(async () => {
+      if (this.storageLocked || epoch !== this.loadEpoch) return;
       let source = "unknown";
       try {
         source = await this.settingsSyncRuntime.getSource();
       } catch {
         // The writer token, not the diagnostic label, suppresses self-echoes.
       }
+
+      if (this.storageLocked || epoch !== this.loadEpoch) return;
 
       const safePatch = this.sanitizeSettingsPatch(patch);
       const safeKnownSettings = this.sliceKnownSettings({
@@ -1475,6 +1514,7 @@ export class SettingsManager {
       }
 
       try {
+        if (this.storageLocked || epoch !== this.loadEpoch) return;
         await this.settingsSyncRuntime.emit(payload);
       } catch {
         // Browser/single-window runtimes do not provide a Tauri event bus.

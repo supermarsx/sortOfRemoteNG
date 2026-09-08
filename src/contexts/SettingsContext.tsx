@@ -21,11 +21,18 @@ import {
 import { SettingsManager } from "../utils/settings/settingsManager";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../components/ui/display/loadingElement/defaults";
 import { DEFAULT_MCP_CONFIG } from "../types/mcp/mcpServer";
+import {
+  ENCRYPTION_EVENT_LOCKED,
+  ENCRYPTION_EVENT_UNLOCKED,
+} from "../types/encryption/encryption";
+import { getInvoke } from "../utils/tauri/invoke";
 
 interface SettingsContextType {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => Promise<void>;
   reloadSettings: () => Promise<void>;
+  settingsReady?: boolean;
+  settingsLoadError?: string | null;
 }
 
 export const defaultSettings: GlobalSettings = {
@@ -581,6 +588,12 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [settings, setSettings] = useState<GlobalSettings>(defaultSettings);
+  const [settingsReady, setSettingsReady] = useState(false);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(
+    null,
+  );
+  const loadEpoch = useRef(0);
+  const nativeLocked = useRef(false);
   const settingsManager = SettingsManager.getInstance();
 
   // Use a ref so updateSettings has a stable identity
@@ -593,10 +606,26 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
   const loadPromiseRef = useRef<Promise<GlobalSettings> | null>(null);
 
   const reloadSettings = useCallback(async () => {
+    const epoch = ++loadEpoch.current;
+    loadedRef.current = false;
+    setSettingsReady(false);
+    setSettingsLoadError(null);
     const promise = settingsManager.loadSettings();
     loadPromiseRef.current = promise;
-    const loadedSettings = await promise;
+    let loadedSettings: GlobalSettings;
+    try {
+      loadedSettings = await promise;
+    } catch (error) {
+      if (epoch === loadEpoch.current)
+        setSettingsLoadError(
+          error instanceof Error ? error.message : String(error),
+        );
+      throw error;
+    }
+    if (epoch !== loadEpoch.current || nativeLocked.current)
+      throw new Error("Global settings changed lock state while loading.");
     loadedRef.current = true;
+    setSettingsReady(true);
     settingsRef.current = loadedSettings;
     setSettings(loadedSettings);
     if (typeof window !== "undefined") {
@@ -611,36 +640,32 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
       // Before the initial load completes, settingsRef.current is still the
       // defaults. Merging onto it would persist a full defaults-based object
       // and wipe the user's stored settings. Wait for the load first.
-      if (!loadedRef.current && loadPromiseRef.current) {
-        try {
+      if (nativeLocked.current) throw new Error("Global settings are locked.");
+      if (!loadedRef.current) {
+        if (!loadPromiseRef.current) await reloadSettings();
+        else {
           const loaded = await loadPromiseRef.current;
+          if (nativeLocked.current)
+            throw new Error("Global settings are locked.");
           settingsRef.current = loaded;
-        } catch {
-          // Load failed — fall through and merge onto whatever we have.
         }
       }
-      // Capture old values BEFORE mutating the ref
-      const previous = settingsRef.current;
-      const merged = { ...previous, ...updates };
+      // Commit only the changed keys. Never advertise a failed policy save
+      // as active, and never publish an old completion after a native lock.
+      const epoch = loadEpoch.current;
+      await settingsManager.saveSettings(updates);
+      if (nativeLocked.current || epoch !== loadEpoch.current)
+        throw new Error(
+          "Global settings changed lock state while saving. Reload before retrying.",
+        );
+      const merged = { ...settingsRef.current, ...updates };
       settingsRef.current = merged;
       setSettings(merged);
-      await settingsManager.saveSettings(merged);
 
       // Log each changed setting
       const changedKeys = Object.keys(updates) as (keyof GlobalSettings)[];
       if (changedKeys.length > 0) {
-        const settingDetails = changedKeys
-          .map((key) => {
-            const oldVal = previous[key];
-            const newVal = updates[key];
-            const formatVal = (v: unknown): string => {
-              if (v === null || v === undefined) return "null";
-              if (typeof v === "object") return JSON.stringify(v);
-              return String(v);
-            };
-            return `${key}: ${formatVal(oldVal)} → ${formatVal(newVal)}`;
-          })
-          .join(", ");
+        const settingDetails = `Changed keys: ${changedKeys.join(", ")}`;
 
         settingsManager.logAction(
           "info",
@@ -650,12 +675,48 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       }
     },
-    [settingsManager],
+    [settingsManager, reloadSettings],
   );
 
   useEffect(() => {
-    reloadSettings();
+    void reloadSettings().catch(() => {
+      /* State exposes the actionable load error. */
+    });
   }, [reloadSettings]);
+
+  useEffect(() => {
+    let disposed = false;
+    const unlisten: (() => void)[] = [];
+    void (async () => {
+      if (!(await getInvoke())) return;
+      const { listen } = await import("@tauri-apps/api/event");
+      for (const event of [
+        ENCRYPTION_EVENT_LOCKED,
+        ENCRYPTION_EVENT_UNLOCKED,
+      ]) {
+        const off = await listen(event, () => {
+          if (disposed) return;
+          nativeLocked.current = event === ENCRYPTION_EVENT_LOCKED;
+          loadEpoch.current++;
+          loadedRef.current = false;
+          loadPromiseRef.current = null;
+          setSettingsReady(false);
+          settingsManager.invalidateLoadedSettings(nativeLocked.current);
+          settingsRef.current = defaultSettings;
+          setSettings(defaultSettings);
+          if (!nativeLocked.current) void reloadSettings().catch(() => {});
+        });
+        if (disposed) off();
+        else unlisten.push(off);
+      }
+    })().catch(() => {
+      /* No event bridge outside desktop. */
+    });
+    return () => {
+      disposed = true;
+      unlisten.forEach((off) => off());
+    };
+  }, [settingsManager, reloadSettings]);
 
   // Every Tauri window consumes the same validated settings channel. The
   // manager rejects self/stale/malformed envelopes and applies accepted
@@ -666,7 +727,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     settingsManager
       .listenForSettingsSync((incoming) => {
-        if (mounted) {
+        if (mounted && !nativeLocked.current) {
           let changed = true;
           try {
             changed =
@@ -717,6 +778,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onUpdated = (event: Event) => {
+      if (nativeLocked.current) return;
       const detail = (event as CustomEvent<GlobalSettings>).detail;
       const incoming = settingsManager.applySettingsSnapshot(detail);
       if (!incoming) return;
@@ -739,8 +801,20 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [settingsManager]);
 
   const contextValue = useMemo(
-    () => ({ settings, updateSettings, reloadSettings }),
-    [settings, updateSettings, reloadSettings],
+    () => ({
+      settings,
+      updateSettings,
+      reloadSettings,
+      settingsReady,
+      settingsLoadError,
+    }),
+    [
+      settings,
+      updateSettings,
+      reloadSettings,
+      settingsReady,
+      settingsLoadError,
+    ],
   );
 
   return (
