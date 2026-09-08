@@ -5,6 +5,7 @@ import { COMMUNICATION_ICONS } from "./catalog/communication";
 import { DATABASE_ICONS } from "./catalog/databases";
 import { DEVOPS_MONITORING_ICONS } from "./catalog/devopsMonitoring";
 import { FILES_ICONS } from "./catalog/files";
+import { FOLDER_ICONS } from "./catalog/folders";
 import { GENERIC_SHAPE_ICONS } from "./catalog/genericShapes";
 import { NETWORK_ICONS } from "./catalog/network";
 import { OPERATING_SYSTEM_ICONS } from "./catalog/operatingSystems";
@@ -48,6 +49,7 @@ export const CONNECTION_ICON_CATALOG = [
   ...DATABASE_ICONS,
   ...DEVOPS_MONITORING_ICONS,
   ...SECURITY_ICONS,
+  ...FOLDER_ICONS,
   ...FILES_ICONS,
   ...COMMUNICATION_ICONS,
   ...GENERIC_SHAPE_ICONS,

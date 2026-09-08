@@ -1,6 +1,6 @@
 import {
   ConnectionTreeItemProps,
-  getConnectionIcon,
+  getConnectionIconResolution,
   getStatusColor,
 } from "./helpers";
 import TreeItemMenu from "./TreeItemMenu";
@@ -92,7 +92,8 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
   // state was not applied in real time. Read it directly instead.
   const isExpanded = expanded ?? connection.expanded ?? false;
 
-  const ProtocolIcon = getConnectionIcon(connection);
+  const iconResolution = getConnectionIconResolution(connection);
+  const ProtocolIcon = iconResolution.icon;
 
   const handleToggleExpand = () => {
     if (connection.isGroup) {
@@ -285,7 +286,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
         )}
 
         <div className="flex items-center min-w-0 flex-1">
-          {connection.isGroup ? (
+          {connection.isGroup && iconResolution.source !== "override" ? (
             isExpanded ? (
               <FolderOpen size={16} className="mr-2 text-warning" />
             ) : (
@@ -294,7 +295,8 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
           ) : (
             <ProtocolIcon
               size={16}
-              className={`mr-2 ${getStatusColor(activeSession?.status)}`}
+              aria-label={iconResolution.ariaLabel}
+              className={`mr-2 ${connection.isGroup ? "text-warning" : getStatusColor(activeSession?.status)}`}
             />
           )}
           {connection.favorite && (

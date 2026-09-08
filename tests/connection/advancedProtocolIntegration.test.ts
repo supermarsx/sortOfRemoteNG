@@ -272,15 +272,15 @@ describe("advanced protocol connection integration", () => {
     expect(getDefaultPort("xdmcp")).toBe(177);
     expect(getDefaultPort("x2go")).toBe(22);
     expect(getDefaultPort("nx")).toBe(4000);
-    expect(getProtocolDefaultIconKey("raw")).toBe("cable");
-    expect(getProtocolDefaultIconKey("rlogin")).toBe("phone");
+    expect(getProtocolDefaultIconKey("raw")).toBe("raw-socket");
+    expect(getProtocolDefaultIconKey("rlogin")).toBe("rlogin");
     expect(getProtocolDefaultIconKey("winrm")).toBe("powershell");
-    expect(getProtocolDefaultIconKey("ard")).toBe("eye");
+    expect(getProtocolDefaultIconKey("ard")).toBe("apple-rd");
     expect(getProtocolDefaultIconKey("postgresql")).toBe("postgresql");
-    expect(getProtocolDefaultIconKey("spice")).toBe("monitor");
-    expect(getProtocolDefaultIconKey("xdmcp")).toBe("monitor");
-    expect(getProtocolDefaultIconKey("x2go")).toBe("monitor");
-    expect(getProtocolDefaultIconKey("nx")).toBe("monitor");
+    expect(getProtocolDefaultIconKey("spice")).toBe("spice");
+    expect(getProtocolDefaultIconKey("xdmcp")).toBe("xdmcp");
+    expect(getProtocolDefaultIconKey("x2go")).toBe("x2go");
+    expect(getProtocolDefaultIconKey("nx")).toBe("nomachine");
   });
 
   it("initializes native display handoffs with only supported safe defaults", () => {

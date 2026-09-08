@@ -3,20 +3,20 @@ import type { Connection } from "../../../types/connection/connection";
 import { findDescriptor } from "../../../types/integrations/registry";
 import {
   CONNECTION_ICON_REGISTRY,
-  getConnectionIconDefinition,
   type ConnectionIconKey,
 } from "../../../utils/icons/connectionIconCatalog";
 import {
-  GENERIC_CONNECTION_ICON_KEY,
   getConnectionIntegrationKey,
-  getProtocolDefaultIconKey,
+  getProtocolDefaultIcon,
   resolveEffectiveConnectionIcon,
 } from "../../../utils/icons/resolveConnectionIcon";
 
 export const getProtocolIcon = (protocol: string): LucideIcon => {
-  const key =
-    getProtocolDefaultIconKey(protocol) ?? GENERIC_CONNECTION_ICON_KEY;
-  return getConnectionIconDefinition(key)!.icon;
+  const integrationKey = getConnectionIntegrationKey({ protocol });
+  return getProtocolDefaultIcon(
+    protocol,
+    integrationKey ? findDescriptor(integrationKey) : undefined,
+  );
 };
 
 /** Backward-compatible component registry, now backed by the full catalog. */

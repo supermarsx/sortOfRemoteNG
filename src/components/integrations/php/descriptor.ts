@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.web.ts`:
 //   import { phpDescriptor } from "../../components/integrations/php/descriptor";
 
-import { FileCode2 } from "lucide-react";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 
 export const phpDescriptor: IntegrationDescriptor = {
   key: "php",
   label: "PHP-FPM",
   category: "web-server",
-  icon: FileCode2,
-  defaultConnectionIconKey: "file-code",
+  icon: getConnectionIconDefinition("php")!.icon,
+  defaultConnectionIconKey: "php",
   importPanel: () => import("./PhpPanel"),
 };

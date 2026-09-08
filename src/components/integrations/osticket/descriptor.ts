@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.appservice.ts`:
 //   import { osticketDescriptor } from "../../components/integrations/osticket/descriptor";
 
-import { LifeBuoy } from "lucide-react";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 
 export const osticketDescriptor: IntegrationDescriptor = {
   key: "osticket",
   label: "osTicket",
   category: "business-app",
-  icon: LifeBuoy,
-  defaultConnectionIconKey: "life-buoy",
+  icon: getConnectionIconDefinition("osticket")!.icon,
+  defaultConnectionIconKey: "osticket",
   importPanel: () => import("./OsticketPanel"),
 };

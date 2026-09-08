@@ -15,47 +15,47 @@ export const GENERIC_CONNECTION_ICON_KEY: ConnectionIconKey = "monitor";
 export const PROTOCOL_ICON_DEFAULTS: Readonly<
   Record<BuiltInConnectionProtocol, ConnectionIconKey>
 > = Object.freeze({
-  rdp: "monitor",
-  ssh: "terminal",
-  ard: "eye",
-  serial: "cable",
-  vnc: "eye",
+  rdp: "microsoft-rdp",
+  ssh: "ssh",
+  ard: "apple-rd",
+  serial: "serial",
+  vnc: "vnc",
   anydesk: "anydesk",
   http: "globe",
-  https: "globe",
-  telnet: "phone",
-  raw: "cable",
-  rlogin: "phone",
-  mysql: "database",
+  https: "https",
+  telnet: "telnet",
+  raw: "raw-socket",
+  rlogin: "rlogin",
+  mysql: "mysql",
   mongodb: "mongodb",
   postgresql: "postgresql",
-  spice: "monitor",
-  xdmcp: "monitor",
-  x2go: "monitor",
-  nx: "monitor",
-  ftp: "folder",
-  sftp: "folder",
-  scp: "folder",
+  spice: "spice",
+  xdmcp: "xdmcp",
+  x2go: "x2go",
+  nx: "nomachine",
+  ftp: "ftp",
+  sftp: "sftp",
+  scp: "scp",
   winrm: "powershell",
   rustdesk: "rustdesk",
-  smb: "folder",
+  smb: "smb",
   gcp: "googlecloud",
   azure: "azure",
-  "ibm-csp": "cloud",
-  "digital-ocean": "cloud",
-  heroku: "cloud",
-  scaleway: "cloud",
-  linode: "cloud",
-  ovhcloud: "cloud",
-  idrac: "dell",
-  ilo: "hp",
-  lenovo: "server-cog",
-  supermicro: "supermicro",
-  "voip-phone": "phone",
+  "ibm-csp": "ibm-cloud",
+  "digital-ocean": "digitalocean",
+  heroku: "heroku",
+  scaleway: "scaleway",
+  linode: "linode",
+  ovhcloud: "ovh",
+  idrac: "dell-idrac",
+  ilo: "ilo",
+  lenovo: "lenovo-xclarity",
+  supermicro: "supermicro-bmc",
+  "voip-phone": "voip",
 });
 
 export type EffectiveConnectionIconSource =
-  "override" | "integration" | "protocol" | "fallback";
+  "override" | "folder" | "integration" | "protocol" | "fallback";
 
 export type ConnectionIconOverrideState = "unset" | "valid" | "unknown";
 
@@ -80,6 +80,7 @@ export interface EffectiveConnectionIcon {
 }
 
 export type ConnectionIconInput = Pick<Connection, "icon" | "integration"> & {
+  isGroup?: boolean;
   /** Accept unknown future protocol strings so callers can reach the fallback. */
   protocol: string;
 };
@@ -96,6 +97,14 @@ export function getConnectionIntegrationKey(
     : undefined;
 }
 
+/** Shared automatic icon for selectors, history and protocol-only columns. */
+export function getProtocolDefaultIcon(
+  protocol: string,
+  descriptor?: ConnectionIconDescriptor,
+): EffectiveConnectionIcon["icon"] {
+  return resolveEffectiveConnectionIcon({ protocol }, descriptor).icon;
+}
+
 export function getProtocolDefaultIconKey(
   protocol: string | undefined,
 ): ConnectionIconKey | undefined {
@@ -106,7 +115,7 @@ export function getProtocolDefaultIconKey(
 
 /**
  * Resolve one effective connection icon with a deterministic precedence:
- * valid explicit override → matching integration descriptor default → built-in
+ * valid explicit override → folder default → matching integration default → built-in
  * protocol default → generic monitor fallback.
  *
  * Unknown persisted keys are retained only as diagnostic metadata and never
@@ -134,6 +143,15 @@ export function resolveEffectiveConnectionIcon(
   const overrideState: ConnectionIconOverrideState = savedOverride
     ? "unknown"
     : "unset";
+  if (connection.isGroup) {
+    return buildResult(
+      "folder",
+      "folder",
+      overrideState,
+      undefined,
+      savedOverride || undefined,
+    );
+  }
   // Compared case-insensitively: connections persisted before the normaliser
   // stopped case-folding integration protocols carry a lowercased descriptor
   // key, and the registry now resolves those to the real descriptor. A strict

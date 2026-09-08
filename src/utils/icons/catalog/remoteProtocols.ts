@@ -8,8 +8,12 @@ import {
   Terminal,
 } from "lucide-react";
 
-import { anydesk, powershell, rustdesk } from "../brand";
+import { anydesk, apple, microsoft, powershell, rustdesk } from "../brand";
 import { defineIcon } from "./types";
+
+import { createRoleIcon } from "../createRoleIcon";
+import { REMOTE_TOOL_ICONS } from "./remoteTools";
+import { NATIVE_PROTOCOL_ICONS } from "./nativeProtocols";
 
 export const REMOTE_PROTOCOL_ICONS = [
   defineIcon("monitor", "Desktop", "remote-protocols", Monitor, [
@@ -65,4 +69,27 @@ export const REMOTE_PROTOCOL_ICONS = [
     "wsman",
     "remoting",
   ]),
+  defineIcon(
+    "microsoft-rdp",
+    "Microsoft RDP",
+    "remote-protocols",
+    createRoleIcon("MicrosoftRDP", "remote-desktop", microsoft),
+    [
+      "microsoft rdp",
+      "rdp",
+      "remote desktop protocol",
+      "windows remote desktop",
+    ],
+    "Microsoft brand mark inside an app-authored remote-desktop frame; not an official RDP product logo.",
+  ),
+  defineIcon(
+    "apple-rd",
+    "Apple Remote Desktop",
+    "remote-protocols",
+    createRoleIcon("AppleRemoteDesktop", "remote-desktop", apple),
+    ["apple rd", "apple remote desktop", "ard", "macos screen sharing"],
+    "Apple brand mark inside an app-authored remote-desktop frame; not the Apple Remote Desktop app logo.",
+  ),
+  ...REMOTE_TOOL_ICONS,
+  ...NATIVE_PROTOCOL_ICONS,
 ] as const;

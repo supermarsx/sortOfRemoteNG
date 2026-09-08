@@ -3,8 +3,7 @@ import {
   Download,
   File,
   FileText,
-  Folder,
-  FolderOpen,
+  ReceiptText,
   Save,
   Upload,
 } from "lucide-react";
@@ -12,11 +11,6 @@ import {
 import { defineIcon } from "./types";
 
 export const FILES_ICONS = [
-  defineIcon("folder", "Folder", "files", Folder, ["group", "directory"]),
-  defineIcon("folder-open", "Open folder", "files", FolderOpen, [
-    "directory",
-    "browse",
-  ]),
   defineIcon("file", "File", "files", File, ["document"]),
   defineIcon("file-text", "Text file", "files", FileText, [
     "document",
@@ -28,5 +22,14 @@ export const FILES_ICONS = [
   defineIcon("download", "Download", "files", Download, [
     "transfer",
     "receive",
+  ]),
+  defineIcon("invoice", "Invoice", "files", ReceiptText, [
+    "invoice",
+    "invoices",
+    "receipt",
+    "billing",
+    "bill",
+    "accounting",
+    "fatura",
   ]),
 ] as const;

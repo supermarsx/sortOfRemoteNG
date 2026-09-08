@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.infra.ts`:
 //   import { netboxDescriptor } from "../../components/integrations/netbox/descriptor";
 
-import { Network } from "lucide-react";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 
 export const netboxDescriptor: IntegrationDescriptor = {
   key: "netbox",
   label: "NetBox",
   category: "networking",
-  icon: Network,
-  defaultConnectionIconKey: "network",
+  icon: getConnectionIconDefinition("netbox")!.icon,
+  defaultConnectionIconKey: "netbox",
   importPanel: () => import("./NetboxPanel"),
 };

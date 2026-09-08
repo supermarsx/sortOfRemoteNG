@@ -1,7 +1,40 @@
-import { AppWindowMac, Hammer, SquareCode } from "lucide-react";
+import { AppWindowMac, Hammer, Route, SquareCode } from "lucide-react";
 
-import { cpanel, grafana, nginx, traefikproxy } from "../brand";
+import { haproxy } from "../brand";
+import {
+  apache,
+  apachetomcat,
+  budibase,
+  caddy,
+  cpanel,
+  directus,
+  drupal,
+  envoyproxy,
+  esphome,
+  ghost,
+  google,
+  googledrive,
+  grafana,
+  homeassistant,
+  java,
+  joomla,
+  microsoftoffice,
+  nextcloud,
+  nginx,
+  nginxproxymanager,
+  nodedotjs,
+  payloadcms,
+  php,
+  phpmyadmin,
+  strapi,
+  tasmota,
+  traefikproxy,
+  wordpress,
+} from "../brand";
+import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
+
+import { BUSINESS_APPLICATION_ICONS } from "./businessApplications";
 
 /**
  * Web and application icons. Seeded with generic Lucide entries so the category
@@ -9,6 +42,14 @@ import { defineIcon } from "./types";
  * by later work without touching the entries below.
  */
 export const WEB_APPLICATION_ICONS = [
+  defineIcon(
+    "haproxy",
+    "HAProxy",
+    "web-applications",
+    haproxy,
+    ["haproxy", "ha proxy", "load balancer", "reverse proxy"],
+    "Distinct app-authored HA routing identifier, not an official HAProxy logo.",
+  ),
   defineIcon("web-server", "Web server", "web-applications", AppWindowMac, [
     "web server",
     "http",
@@ -53,5 +94,223 @@ export const WEB_APPLICATION_ICONS = [
     "whm",
     "hosting",
     "control panel",
+  ]),
+  defineIcon(
+    "nginx-server",
+    "NGINX server",
+    "web-applications",
+    createRoleIcon("NginxServer", "server", nginx),
+    ["nginx", "web server", "reverse proxy", "http"],
+  ),
+  defineIcon("envoy", "Envoy Proxy", "web-applications", envoyproxy, [
+    "envoy",
+    "envoyproxy",
+    "envoy proxy",
+    "service mesh",
+  ]),
+  defineIcon(
+    "envoy-server",
+    "Envoy server",
+    "web-applications",
+    createRoleIcon("EnvoyServer", "server", envoyproxy),
+    ["envoy", "proxy server", "service mesh", "gateway"],
+  ),
+  defineIcon("google", "Google", "web-applications", google, [
+    "google",
+    "workspace",
+    "search",
+    "g suite",
+  ]),
+  defineIcon(
+    "microsoft365",
+    "Microsoft 365",
+    "web-applications",
+    microsoftoffice,
+    [
+      "microsoft365",
+      "microsoft 365",
+      "office365",
+      "office 365",
+      "m365",
+      "office",
+    ],
+    "Microsoft 365 connection icon using the historical Microsoft Office mark, not the current Microsoft 365 logo.",
+  ),
+  defineIcon("phpmyadmin", "phpMyAdmin", "web-applications", phpmyadmin, [
+    "phpmyadmin",
+    "php my admin",
+    "mysql admin",
+    "database administration",
+  ]),
+  defineIcon("wordpress", "WordPress", "web-applications", wordpress, [
+    "wordpress",
+    "word press",
+    "cms",
+    "wp admin",
+  ]),
+  defineIcon("joomla", "Joomla", "web-applications", joomla, [
+    "joomla",
+    "cms",
+    "content management",
+  ]),
+  defineIcon(
+    "website-backend",
+    "Website backend",
+    "web-applications",
+    createRoleIcon("WebsiteBackend", "server", SquareCode),
+    ["website backend", "web backend", "backend", "admin", "api server"],
+  ),
+  defineIcon("apache", "Apache HTTP Server", "web-applications", apache, [
+    "apache",
+    "apache http server",
+    "httpd",
+    "web server",
+  ]),
+  defineIcon(
+    "reverse-proxy",
+    "Reverse proxy",
+    "web-applications",
+    createRoleIcon("ReverseProxy", "server", Route),
+    [
+      "reverse proxy",
+      "reverseproxy",
+      "load balancer",
+      "ingress",
+      "proxy server",
+    ],
+  ),
+  defineIcon(
+    "home-assistant",
+    "Home Assistant",
+    "web-applications",
+    homeassistant,
+    ["home assistant", "homeassistant", "hass", "home automation", "iot"],
+  ),
+  defineIcon("esphome", "ESPHome", "web-applications", esphome, [
+    "esphome",
+    "esp home",
+    "esp32",
+    "esp8266",
+    "iot",
+    "firmware",
+  ]),
+  defineIcon("tasmota", "Tasmota", "web-applications", tasmota, [
+    "tasmota",
+    "iot",
+    "mqtt",
+    "home automation",
+    "firmware",
+  ]),
+  defineIcon("payload-cms", "Payload CMS", "web-applications", payloadcms, [
+    "payload cms",
+    "payloadcms",
+    "headless cms",
+    "content management",
+  ]),
+  defineIcon("drupal", "Drupal", "web-applications", drupal, [
+    "drupal",
+    "cms",
+    "content management",
+  ]),
+  defineIcon("ghost", "Ghost", "web-applications", ghost, [
+    "ghost",
+    "cms",
+    "blog",
+    "publishing",
+  ]),
+  defineIcon("strapi", "Strapi", "web-applications", strapi, [
+    "strapi",
+    "headless cms",
+    "api",
+  ]),
+  defineIcon("directus", "Directus", "web-applications", directus, [
+    "directus",
+    "headless cms",
+    "data platform",
+  ]),
+  defineIcon("nextcloud", "Nextcloud", "web-applications", nextcloud, [
+    "nextcloud",
+    "next cloud",
+    "file sync",
+    "self hosted",
+    "cloud",
+  ]),
+  defineIcon(
+    "nextcloud-server",
+    "Nextcloud server",
+    "web-applications",
+    createRoleIcon("NextcloudServer", "server", nextcloud),
+    ["nextcloud server", "nextcloud", "file sync", "private cloud"],
+  ),
+  defineIcon("caddy", "Caddy web server", "web-applications", caddy, [
+    "caddy",
+    "caddy web server",
+    "caddywebserver",
+    "https",
+    "reverse proxy",
+  ]),
+  defineIcon("php", "PHP", "web-applications", php, [
+    "php",
+    "web",
+    "scripting",
+  ]),
+  defineIcon(
+    "php-fpm",
+    "PHP-FPM",
+    "web-applications",
+    createRoleIcon("PHPFPM", "server", php),
+    ["php fpm", "php-fpm", "fastcgi process manager", "fastcgi"],
+  ),
+  defineIcon(
+    "nginx-proxy-manager",
+    "Nginx Proxy Manager",
+    "web-applications",
+    nginxproxymanager,
+    ["nginx proxy manager", "nginxproxymanager", "npm", "reverse proxy"],
+  ),
+  defineIcon(
+    "nginx-proxy-manager-server",
+    "Nginx Proxy Manager server",
+    "web-applications",
+    createRoleIcon("NginxProxyManagerServer", "server", nginxproxymanager),
+    ["nginx proxy manager server", "nginx proxy manager", "reverse proxy"],
+  ),
+  defineIcon("google-drive", "Google Drive", "web-applications", googledrive, [
+    "google drive",
+    "googledrive",
+    "cloud storage",
+  ]),
+  defineIcon("budibase", "Budibase", "web-applications", budibase, [
+    "budibase",
+    "low code",
+    "app builder",
+    "internal tools",
+  ]),
+  ...BUSINESS_APPLICATION_ICONS,
+  defineIcon("tomcat", "Apache Tomcat", "web-applications", apachetomcat, [
+    "tomcat",
+    "apache tomcat",
+    "java servlet",
+    "application server",
+  ]),
+  defineIcon(
+    "tomcat-server",
+    "Apache Tomcat server",
+    "web-applications",
+    createRoleIcon("TomcatServer", "server", apachetomcat),
+    ["tomcat server", "tomcat", "apache tomcat", "java servlet"],
+  ),
+  defineIcon("java", "Java", "web-applications", java, [
+    "java",
+    "jvm",
+    "jdk",
+    "jre",
+  ]),
+  defineIcon("nodejs", "Node.js", "web-applications", nodedotjs, [
+    "nodejs",
+    "node js",
+    "node.js",
+    "javascript runtime",
+    "node server",
   ]),
 ] as const;

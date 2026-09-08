@@ -2,16 +2,14 @@ import type { LucideIcon } from "lucide-react";
 import { createBrandIcon } from "./createBrandIcon";
 
 /**
- * Brand marks drawn by hand because simple-icons does not carry them.
+ * Locally maintained brand marks absent from the installed simple-icons package.
  *
  * simple-icons has removed the Microsoft, Amazon and Oracle families entirely,
  * so there is no `windows`, `microsoft`, `azure`, `aws` or `powershell` slug to
- * vendor. These four are hand-authored because each is (a) geometrically simple
- * enough to stay faithful as a single 24x24 path, (b) genuinely recognisable as a
- * silhouette, and (c) high-frequency in a connection manager. Every other missing
- * mark falls back to a distinctive Lucide glyph plus a strong keyword alias,
- * because those logos are wordmarks with no compact symbol and inventing a mark
- * reads worse than a good generic.
+ * vendor. The original four hand-authored silhouettes are preserved below.
+ * Additional marks use verified publisher geometry and a uniform transform to
+ * the 24x24 grid. Publisher assets are NOT relicensed under Simple Icons' CC0;
+ * see docs/connection-icon-brands.md for exact sources and fallback limitations.
  *
  * Authored on the same 24x24 grid and in the same solid-fill shape as the
  * vendored marks, so they are indistinguishable from them to every consumer.
@@ -72,12 +70,36 @@ export const powershell = createBrandIcon(
   "M6.9 4.2 15 12l-8.1 7.8-2.2-2.3L10.44 12 4.7 6.5ZM11.7 17.4h8.7V20h-8.7Z",
 );
 
+/** Four squares from Microsoft's official 21x21 symbol SVG, recolored uniformly. */
+export const microsoft = createBrandIcon(
+  "Microsoft",
+  "M1 1h9v9H1ZM1 11h9v9H1ZM11 1h9v9h-9ZM11 11h9v9h-9Z",
+  "scale(1.142857143)",
+);
+
+/** Exact HPE Element path from hpe-design/logos; 56x17 source centered uniformly. */
+export const hpe = createBrandIcon(
+  "HPE",
+  "M0.617,0.327 L0.617,16.188 L55.835,16.188 L55.835,0.327 L0.617,0.327 Z M52.384,12.737 L4.068,12.737 L4.068,3.778 L52.384,3.778 L52.384,12.737 Z",
+  "translate(0 8.357142857) scale(0.428571429)",
+);
+
+/** Cloud symbol subpath from Tencent Cloud's official header SVG (wordmark omitted). */
+export const tencentcloud = createBrandIcon(
+  "TencentCloud",
+  "M13.267 1.4a8.25 8.25 0 0 1 7.66 5.198l.114.297c.025.073-.006.116-.084.11a7.1 7.1 0 0 0-2.327.243c-.025.007-.05-.004-.065-.037-.92-1.992-2.966-3.398-5.297-3.398a5.84 5.84 0 0 0-5.71 4.64l-.028-.006-.057-.013a6.2 6.2 0 0 1 2.15.97l.205.146c.675.502 1.794 1.503 2.584 2.216.027.027.028.064 0 .091L10.77 13.46a.06.06 0 0 1-.08 0 97 97 0 0 0-2.004-1.748c-1-.829-1.886-1.019-2.54-1.015a3.78 3.78 0 0 0-2.666 1.12c-1.448 1.482-1.413 3.848.06 5.306.47.468 1.315.997 2.697 1.046.49.015 1.042.022 1.428.022l7.201-6.985c.643-.625 1.155-1.1 1.643-1.497 1.117-.911 2.398-1.424 3.886-1.424 1.613 0 3.075.627 4.166 1.64l.213.205a6.157 6.157 0 0 1-.094 8.713c-1.098 1.079-2.456 1.605-3.894 1.71-.626.046-1.21.046-2.106.046-.445 0-11.089.003-11.648 0-.595-.004-1.262-.026-1.748-.096v.002c-1.264-.176-2.452-.699-3.43-1.66a6.157 6.157 0 0 1-.094-8.713 6.13 6.13 0 0 1 3.377-1.764l-.018.003C5.737 4.427 9.15 1.4 13.267 1.4m7.117 9.295c-.664-.007-1.603.184-2.648 1.123-.475.429-1.027.955-1.272 1.193l-5.332 5.179h7.433c.342 0 1.09-.002 1.728-.023 1.212-.043 2.008-.454 2.505-.87l.193-.176c1.474-1.458 1.507-3.824.059-5.305a3.8 3.8 0 0 0-2.666-1.121M6.863 8.327l-.046-.004zm-.348-.031-.03-.002zm-.376-.011",
+  "translate(0 2.222222222) scale(0.888888889)",
+);
+
 /** Names of every hand-authored mark, in the order they are declared above. */
 export const HAND_AUTHORED_BRAND_ICON_NAMES = [
   "windows",
   "aws",
   "azure",
   "powershell",
+  "microsoft",
+  "hpe",
+  "tencentcloud",
 ] as const;
 
 /** A mark drawn by hand rather than vendored from simple-icons. */
@@ -97,4 +119,7 @@ export const HAND_AUTHORED_BRAND_ICONS: Readonly<
   aws,
   azure,
   powershell,
+  microsoft,
+  hpe,
+  tencentcloud,
 };

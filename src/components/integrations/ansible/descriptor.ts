@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.infra.ts`:
 //   import { ansibleDescriptor } from "../../components/integrations/ansible/descriptor";
 
-import { ServerCog } from "lucide-react";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 
 export const ansibleDescriptor: IntegrationDescriptor = {
   key: "ansible",
   label: "Ansible",
   category: "management",
-  icon: ServerCog,
-  defaultConnectionIconKey: "server-cog",
+  icon: getConnectionIconDefinition("ansible")!.icon,
+  defaultConnectionIconKey: "ansible",
   importPanel: () => import("./AnsiblePanel"),
 };

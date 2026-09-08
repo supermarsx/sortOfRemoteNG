@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.appservice.ts`:
 //   import { exchangeDescriptor } from "../../components/integrations/exchange/descriptor";
 
-import { Mail } from "lucide-react";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 
 export const exchangeDescriptor: IntegrationDescriptor = {
   key: "exchange",
   label: "Exchange",
   category: "mail-server",
-  icon: Mail,
-  defaultConnectionIconKey: "mail",
+  icon: getConnectionIconDefinition("exchange")!.icon,
+  defaultConnectionIconKey: "exchange",
   importPanel: () => import("./ExchangePanel"),
 };

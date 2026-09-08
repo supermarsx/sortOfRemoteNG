@@ -27,6 +27,7 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
   databases: "Databases",
   "devops-monitoring": "DevOps & monitoring",
   security: "Security",
+  folders: "Folders",
   files: "Files & storage",
   communication: "Communication",
   "generic-shapes": "Markers & shapes",
@@ -40,7 +41,7 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
 export type ConnectionIconPickerConnection = Pick<
   Connection,
   "icon" | "integration"
-> & { protocol: string };
+> & { protocol: string; isGroup?: boolean };
 
 type CatalogDefinition = ConnectionIconDefinition<ConnectionIconKey>;
 
@@ -141,6 +142,16 @@ export function getRecommendedConnectionIconKeys(
   connection: ConnectionIconPickerConnection,
   descriptors: readonly IntegrationDescriptor[] = integrationRegistry,
 ): readonly ConnectionIconKey[] {
+  if (connection.isGroup) {
+    return [
+      "folder",
+      "folder-cog",
+      "folder-tree",
+      "folder-lock",
+      "folder-archive",
+      "folder-code",
+    ];
+  }
   const automatic = resolveEditorConnectionIcon(
     { ...connection, icon: undefined },
     descriptors,

@@ -141,7 +141,7 @@ describe("resolveEffectiveConnectionIcon", () => {
   });
 
   it("maps ARD and macOS Screen Sharing searches to the viewer icon", () => {
-    expect(getProtocolDefaultIconKey("ard")).toBe("eye");
+    expect(getProtocolDefaultIconKey("ard")).toBe("apple-rd");
     expect(getConnectionIconDefinition("eye")?.keywords).toEqual(
       expect.arrayContaining([
         "ard",
@@ -192,7 +192,7 @@ describe("resolveEffectiveConnectionIcon", () => {
       makeConnection("ssh", { icon: "removed-plugin-icon" }),
     );
     expect(builtIn).toMatchObject({
-      key: "terminal",
+      key: "ssh",
       source: "protocol",
       overrideState: "unknown",
       unknownOverrideKey: "removed-plugin-icon",

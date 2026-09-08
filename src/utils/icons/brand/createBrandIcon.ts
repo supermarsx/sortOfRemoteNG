@@ -20,8 +20,22 @@ import { createLucideIcon, type IconNode, type LucideIcon } from "lucide-react";
  *
  * @param name Display name used as the component's `displayName`.
  * @param d The single SVG path data string for the mark.
+ * @param transform Optional uniform source-viewBox normalization for a verified asset.
  */
-export const createBrandIcon = (name: string, d: string): LucideIcon =>
+export const createBrandIcon = (
+  name: string,
+  d: string,
+  transform?: string,
+): LucideIcon =>
   createLucideIcon(name, [
-    ["path", { d, fill: "currentColor", stroke: "none" }],
+    [
+      "path",
+      {
+        d,
+        key: "brand-path",
+        fill: "currentColor",
+        stroke: "none",
+        ...(transform ? { transform } : {}),
+      },
+    ],
   ] satisfies IconNode);

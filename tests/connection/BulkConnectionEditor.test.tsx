@@ -1,4 +1,6 @@
 import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { getConnectionIconDefinition } from "../../src/utils/icons/connectionIconCatalog";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
@@ -69,6 +71,38 @@ function Harness() {
 }
 
 describe("BulkConnectionEditor", () => {
+  it("renders canonical native protocol geometry in real bulk rows", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    for (const [name, protocol, key] of [
+      ["Alpha", "ssh", "ssh"],
+      ["Beta", "rdp", "microsoft-rdp"],
+    ]) {
+      const row = (await screen.findByText(name)).closest("tr")!;
+      const cell = Array.from(row.querySelectorAll("td")).find(
+        (td) => td.textContent === protocol,
+      )!;
+      const actual = cell.querySelector("svg")!;
+      const expected = document.createElement("div");
+      expected.innerHTML = renderToStaticMarkup(
+        React.createElement(getConnectionIconDefinition(key)!.icon),
+      );
+      const fingerprint = (svg: Element) => {
+        const clone = svg.cloneNode(true) as Element;
+        for (const node of Array.from(clone.querySelectorAll("[class]")))
+          node.removeAttribute("class");
+        return clone.innerHTML;
+      };
+      expect(fingerprint(actual)).toBe(
+        fingerprint(expected.querySelector("svg")!),
+      );
+    }
+  });
   beforeEach(() => {
     SettingsManager.resetInstance();
   });

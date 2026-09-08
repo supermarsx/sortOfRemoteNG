@@ -67,6 +67,43 @@ function InitConnections({
 }
 
 describe("ConnectionTree", () => {
+  it.each([
+    { icon: "folder-lock", selector: ".lucide-folder-lock" },
+    { icon: "server", selector: ".lucide-server" },
+    { icon: undefined, selector: ".lucide-folder" },
+    { icon: "unknown-folder-icon", selector: ".lucide-folder" },
+  ])(
+    "preserves the saved $icon folder icon through expansion",
+    async ({ icon, selector }) => {
+      const connections = [{ ...mockConnections[0], icon }];
+      render(
+        <ToastProvider>
+          <ConnectionProvider>
+            <InitConnections connections={connections} />
+          </ConnectionProvider>
+        </ToastProvider>,
+      );
+      const folderRow = await screen.findByTestId("connection-group");
+      expect(folderRow.querySelector(selector)).toBeInTheDocument();
+      fireEvent.click(within(folderRow).getAllByRole("button")[0]);
+      await waitFor(() =>
+        expect(folderRow).toHaveAttribute("aria-expanded", "true"),
+      );
+      expect(
+        folderRow.querySelector(
+          icon === "folder-lock" || icon === "server"
+            ? selector
+            : ".lucide-folder-open",
+        ),
+      ).toBeInTheDocument();
+      fireEvent.click(within(folderRow).getAllByRole("button")[0]);
+      await waitFor(() =>
+        expect(folderRow).toHaveAttribute("aria-expanded", "false"),
+      );
+      expect(folderRow.querySelector(selector)).toBeInTheDocument();
+    },
+  );
+
   it.each([0, 40])(
     "does not re-render a %i-row non-virtual tree when it scrolls",
     (count) => {

@@ -6,12 +6,6 @@ import {
   Copy,
   ChevronDown,
   ChevronUp,
-  FolderOpen,
-  Server,
-  Globe,
-  Database,
-  Terminal,
-  Monitor,
   CheckSquare,
   Square,
   Minus,
@@ -26,6 +20,7 @@ import {
   type BulkConnectionEditorMgr,
 } from "../../hooks/connection/useBulkConnectionEditor";
 import { Checkbox } from "../ui/forms";
+import { getProtocolIcon } from "./connectionTree/helpers";
 
 interface BulkConnectionEditorProps {
   isOpen: boolean;
@@ -35,17 +30,22 @@ interface BulkConnectionEditorProps {
 
 type EditableField = "name" | "hostname" | "port" | "username";
 
-const protocolIcons: Record<string, React.ReactNode> = {
-  rdp: <Monitor size={14} className="text-primary" />,
-  ssh: <Terminal size={14} className="text-success" />,
-  vnc: <Server size={14} className="text-primary" />,
-  http: <Globe size={14} className="text-warning" />,
-  https: <Globe size={14} className="text-warning" />,
-  mysql: <Database size={14} className="text-info" />,
-  ftp: <FolderOpen size={14} className="text-warning" />,
-  sftp: <FolderOpen size={14} className="text-warning" />,
-  winrm: <Server size={14} className="text-amber-400" />,
+const protocolColors: Record<string, string> = {
+  rdp: "text-primary",
+  ssh: "text-success",
+  vnc: "text-primary",
+  http: "text-warning",
+  https: "text-warning",
+  mysql: "text-info",
+  ftp: "text-warning",
+  sftp: "text-warning",
+  winrm: "text-amber-400",
 };
+
+function ProtocolIcon({ protocol }: { protocol: string }) {
+  const Icon = getProtocolIcon(protocol);
+  return <Icon size={14} className={protocolColors[protocol]} />;
+}
 
 // ── Sub-components ─────────────────────────────────────────────────
 
@@ -287,7 +287,7 @@ function ConnectionRow({
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center space-x-1.5">
-          {protocolIcons[connection.protocol] || <Server size={14} />}
+          <ProtocolIcon protocol={connection.protocol} />
           <span className="text-[var(--color-textSecondary)] uppercase text-xs font-medium">
             {connection.protocol}
           </span>

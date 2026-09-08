@@ -17,8 +17,7 @@ const i18nMock = vi.hoisted(() => {
     (
       key: string,
       fallbackOrOptions?:
-        | string
-        | ({ defaultValue?: string } & Record<string, unknown>),
+        string | ({ defaultValue?: string } & Record<string, unknown>),
       interpolation?: Record<string, unknown>,
     ) => {
       const options =
@@ -107,6 +106,63 @@ describe("ConnectionEditor icon persistence", () => {
     vi.clearAllMocks();
   });
 
+  it("saves and restores a folder-specific icon without treating the folder as RDP", async () => {
+    const folder: Connection = {
+      id: "folder-icon-test",
+      name: "Infrastructure",
+      protocol: "rdp",
+      hostname: "",
+      port: 0,
+      isGroup: true,
+      createdAt: "2026-07-15T00:00:00.000Z",
+      updatedAt: "2026-07-15T00:00:00.000Z",
+    };
+    let latest: Connection[] = [];
+    const onClose = vi.fn();
+    const first = await renderEditor(
+      { connection: folder, isOpen: true, onClose },
+      (connections) => {
+        latest = connections;
+      },
+      [folder],
+    );
+    fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
+    expect(screen.getByText("Folder Icon")).toBeInTheDocument();
+    expect(screen.getByText("Automatic · Folder")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("option", { name: /Network folder \(folder-tree\)/ }),
+    );
+    fireEvent.click(screen.getByTestId("connection-editor-tab-notes"));
+    fireEvent.change(
+      screen.getByPlaceholderText("Add notes about this folder..."),
+      { target: { value: "Managed sites" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(latest[0]).toMatchObject({
+        isGroup: true,
+        icon: "folder-tree",
+        description: "Managed sites",
+      }),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    const saved = latest[0];
+    first.unmount();
+    const reopened = await renderEditor(
+      { connection: saved, isOpen: true, onClose: vi.fn() },
+      () => {},
+      [saved],
+    );
+    fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
+    expect(
+      screen.getByLabelText("Current effective icon: Network folder"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Manual override")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use automatic icon" }));
+    expect(screen.getByText("Automatic · Folder")).toBeInTheDocument();
+    reopened.unmount();
+  });
+
   it("saves a stable icon key, restores it on reopen, and clears back to automatic", async () => {
     let latestConnections: Connection[] = [];
     const createClose = vi.fn();
@@ -193,7 +249,7 @@ describe("ConnectionEditor icon persistence", () => {
     );
     fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
     expect(
-      screen.getByLabelText("Current effective icon: Desktop"),
+      screen.getByLabelText("Current effective icon: Microsoft RDP"),
     ).toBeInTheDocument();
     expect(screen.getByText("Automatic · RDP protocol")).toBeInTheDocument();
     expect(

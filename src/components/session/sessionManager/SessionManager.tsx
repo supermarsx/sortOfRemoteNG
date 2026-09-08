@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import {
   RefreshCw,
-  Monitor,
   Globe,
   PowerOff,
   Unplug,
@@ -22,7 +21,6 @@ import {
   History,
   BarChart3,
   LayoutGrid,
-  Terminal,
   Database,
   Wrench,
   Search,
@@ -51,6 +49,7 @@ import {
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
 import { SshSessionsView } from "./SshSessionsView";
+import { getProtocolIcon } from "../../connection/connectionTree/helpers";
 import {
   BoundedSessionCloseBatch,
   type SessionCloseProgress,
@@ -82,6 +81,8 @@ interface SessionManagerProps {
 }
 
 type Mgr = ReturnType<typeof useUnifiedSessionManager>;
+const RdpProtocolIcon = getProtocolIcon("rdp");
+const SshProtocolIcon = getProtocolIcon("ssh");
 
 function formatSessionSourceSummary(mgr: Mgr): string {
   const sources = [
@@ -108,29 +109,11 @@ type ManagerView =
   | "proxy-logs"
   | "proxy-stats";
 
-const KIND_ICON_MAP: Record<string, React.ElementType> = {
-  anydesk: Monitor,
-  http: Globe,
-  "http-proxy": Globe,
-  https: Globe,
-  integration: Database,
-  rdp: Monitor,
-  rlogin: Terminal,
-  rustdesk: Monitor,
-  sftp: Server,
-  ssh: Terminal,
-  telnet: Terminal,
-  tool: Wrench,
-  vnc: Monitor,
-  winmgmt: Server,
-  winrm: Server,
-};
-
 function groupIconForRow(row: UnifiedSessionRow): React.ElementType {
-  if (row.bucket === "integration") return Database;
   if (row.bucket === "tool") return Wrench;
   if (row.bucket === "winmgmt") return Server;
-  return KIND_ICON_MAP[String(row.kind)] ?? Server;
+  if (row.kind === "http-proxy") return Globe;
+  return getProtocolIcon(row.protocol ?? String(row.kind));
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -199,13 +182,13 @@ const KIND_FILTERS: {
     id: "rdp",
     label: "RDP",
     description: "Show Remote Desktop sessions",
-    icon: Monitor,
+    icon: getProtocolIcon("rdp"),
   },
   {
     id: "ssh",
     label: "SSH",
     description: "Show native SSH sessions",
-    icon: Terminal,
+    icon: getProtocolIcon("ssh"),
   },
   {
     id: "proxy",
@@ -842,7 +825,7 @@ const SessionsView: React.FC<{
                 className="sor-option-chip text-xs bg-error/20 hover:bg-error/40 text-error border-error/40"
                 title="Disconnect all RDP sessions"
               >
-                <Monitor size={12} aria-hidden="true" />
+                <RdpProtocolIcon size={12} aria-hidden="true" />
                 <span>Disconnect RDP</span>
               </button>
             )}
@@ -854,7 +837,7 @@ const SessionsView: React.FC<{
                 title="Disconnect all SSH sessions"
                 aria-label="Disconnect all SSH sessions"
               >
-                <Terminal size={12} aria-hidden="true" />
+                <SshProtocolIcon size={12} aria-hidden="true" />
                 <span>Disconnect SSH</span>
               </button>
             )}
@@ -1197,7 +1180,7 @@ const VIEWS: {
   icon: React.ElementType;
 }[] = [
   { id: "sessions", label: "Sessions", icon: LayoutGrid },
-  { id: "ssh-sessions", label: "SSH Sessions", icon: Terminal },
+  { id: "ssh-sessions", label: "SSH Sessions", icon: SshProtocolIcon },
   { id: "rdp-logs", label: "RDP Logs", icon: ScrollText },
   { id: "rdp-history", label: "RDP History", icon: History },
   { id: "proxy-logs", label: "Proxy Log", icon: ScrollText },

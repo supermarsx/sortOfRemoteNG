@@ -16,57 +16,102 @@
  *
  * To add a mark: append its slug here, run `npm run icons:brand:generate`, and
  * commit the regenerated module. Marks that simple-icons does not carry are
- * hand-authored in `handAuthoredBrandIcons.ts` instead.
+ * verified against publisher assets in `handAuthoredBrandIcons.ts` instead, or
+ * represented by an explicitly described generic catalog glyph.
  *
  * Grouping mirrors the connection-icon catalog categories that consume each mark;
  * a slug appears once even when several catalog entries reuse it (for example
- * `hp` serves the HP server, switch, iLO and printer entries).
+ * `synology` serves both the brand and NAS entries).
  */
 export const BRAND_ICON_SLUGS = [
   // Operating systems
   "alpinelinux",
+  "almalinux",
   "android",
   "apple",
   "centos",
+  "debian",
   "dotnet",
   "freebsd",
+  "fedora",
   "linux",
   "macos",
+  "opensuse",
+  "redhat",
+  "rockylinux",
   "ubuntu",
 
   // Virtualization, containers and cloud
+  "alibabacloud",
   "cloudflare",
+  "digitalocean",
   "googlecloud",
+  "hetzner",
   "kubernetes",
+  "ovh",
   "portainer",
   "proxmox",
   "vmware",
 
   // Vendors and hardware
+  "acer",
+  "arduino",
   "asus",
   "cisco",
   "dell",
+  "epson",
+  "espressif",
+  "fujitsu",
   "hp",
+  "huawei",
   "kyocera",
+  "junipernetworks",
+  "lenovo",
+  "lg",
   "mikrotik",
+  "msi",
+  "netapp",
+  "qnap",
+  "razer",
+  "raspberrypi",
+  "samsung",
+  "schneiderelectric",
+  "shelly",
   "supermicro",
   "synology",
   "tplink",
+  "toshiba",
+  "ubiquiti",
 
   // Web and applications
   "apache",
   "bitwarden",
+  "buildkite",
+  "circleci",
   "cpanel",
   "drone",
   "elasticsearch",
+  "envoyproxy",
+  "esphome",
+  "git",
+  "github",
+  "githubactions",
   "gitlab",
+  "google",
   "grafana",
+  "homeassistant",
+  "jenkins",
+  "joomla",
   "letsencrypt",
   "nextcloud",
   "nginx",
   "phpmyadmin",
   "splunk",
+  "tasmota",
+  "teamcity",
   "traefikproxy",
+  "travisci",
+  "wordpress",
 
   // Databases
   "mariadb",
@@ -85,10 +130,13 @@ export const BRAND_ICON_SLUGS = [
 
   // Network
   "openvpn",
+  "wireguard",
 
   // Security
+  "fortinet",
   "opnsense",
   "pfsense",
+  "snort",
 
   // Remote protocols
   "anydesk",
@@ -96,6 +144,59 @@ export const BRAND_ICON_SLUGS = [
   "filezilla",
   "rustdesk",
   "teamviewer",
+
+  // Business, collaboration, automation and server tools
+  "odoo",
+  "metabase",
+  "apachesuperset",
+  "redash",
+  "matomo",
+  "plausibleanalytics",
+  "sap",
+  "erpnext",
+  "dolibarr",
+  "docker",
+  "truenas",
+  "mattermost",
+  "matrix",
+  "zulip",
+  "element",
+  "payloadcms",
+  "drupal",
+  "ghost",
+  "strapi",
+  "directus",
+  "ansible",
+  "n8n",
+  "nodered",
+  "rundeck",
+  "puppet",
+  "gitea",
+  "minio",
+  "caddy",
+  "rocketdotchat",
+  "budibase",
+  "googledrive",
+  "jira",
+  "nginxproxymanager",
+  "php",
+  "prometheus",
+  "apachetomcat",
+  "nodedotjs",
+  "porkbun",
+  "namecheap",
+  "godaddy",
+  "gandi",
+  "ionos",
+  "intel",
+
+  // Telecom providers
+  "deutschetelekom",
+  "orange",
+  "o2",
+  "atandt",
+  "movistar",
+  "scaleway",
 ] as const;
 
 /** A slug known to be vendored into `generatedBrandIcons.ts`. */

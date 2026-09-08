@@ -48,6 +48,12 @@ const getSourceCopy = (
       detail: "This saved icon takes priority over the automatic choice.",
     };
   }
+  if (effective.source === "folder") {
+    return {
+      title: "Automatic · Folder",
+      detail: "Folders use a folder icon regardless of their saved protocol.",
+    };
+  }
   if (effective.source === "integration") {
     const integrationName = descriptor?.label ?? effective.integrationKey;
     return {
@@ -117,6 +123,11 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
   const searchId = `connection-icon-search-${reactId}`;
   const paletteId = `connection-icon-palette-${reactId}`;
   const [query, setQuery] = React.useState("");
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  const clearSearch = () => {
+    setQuery("");
+    searchRef.current?.focus();
+  };
 
   const integrationKey = getConnectionIntegrationKey(connection);
   const descriptor = integrationKey
@@ -279,7 +290,9 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
       <div className="rounded-lg border border-primary/25 bg-primary/5 p-2.5">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">
           Recommended for{" "}
-          {descriptor?.label ?? (connection.protocol || "this item")}
+          {connection.isGroup
+            ? "folders"
+            : (descriptor?.label ?? (connection.protocol || "this item"))}
         </p>
         <div className="mt-1.5 flex min-w-0 flex-wrap gap-2">
           {recommendedDefinitions.map((definition, index) => {
@@ -316,10 +329,15 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
             aria-hidden="true"
           />
           <input
+            ref={searchRef}
             id={searchId}
             type="search"
             role="combobox"
-            aria-label="Search connection icons"
+            aria-label={
+              connection.isGroup
+                ? "Search folder icons"
+                : "Search connection icons"
+            }
             aria-controls={paletteId}
             aria-expanded={visibleDefinitions.length > 0}
             aria-haspopup="listbox"
@@ -339,14 +357,18 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
                 setQuery("");
               }
             }}
-            placeholder="Search labels, keys, protocols, integrations…"
-            className="sor-form-input w-full min-w-0 py-2 pl-9 pr-9 text-sm"
+            placeholder={
+              connection.isGroup
+                ? "Search folders, labels, or categories…"
+                : "Search labels, keys, protocols, integrations…"
+            }
+            className="sor-form-input sor-form-input-icon-left sor-form-input-icon-right w-full min-w-0 py-2 text-sm [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
           />
           {query && (
             <button
               type="button"
               aria-label="Clear icon search"
-              onClick={() => setQuery("")}
+              onClick={clearSearch}
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-textMuted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
             >
               <X size={14} aria-hidden="true" />
@@ -373,7 +395,7 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
             </p>
             <button
               type="button"
-              onClick={() => setQuery("")}
+              onClick={clearSearch}
               className="mt-3 text-xs font-medium text-primary hover:underline"
             >
               Clear search

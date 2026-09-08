@@ -8,6 +8,7 @@ export const CONNECTION_ICON_CATEGORIES = [
   "databases",
   "devops-monitoring",
   "security",
+  "folders",
   "files",
   "communication",
   "generic-shapes",

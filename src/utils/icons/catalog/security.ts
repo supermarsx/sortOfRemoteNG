@@ -1,4 +1,6 @@
 import {
+  BookKey,
+  BrickWallShield,
   FileKey2,
   Fingerprint,
   KeyRound,
@@ -7,9 +9,22 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Vault,
 } from "lucide-react";
 
-import { pfsense } from "../brand";
+import {
+  bitwarden,
+  fortinet,
+  keepass,
+  keepassx,
+  opnsense,
+  pfsense,
+  snort,
+  suricata,
+  wazuh,
+  zeek,
+} from "../brand";
+import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
 
 export const SECURITY_ICONS = [
@@ -48,5 +63,124 @@ export const SECURITY_ICONS = [
     "firewall",
     "router",
     "network appliance",
+  ]),
+  defineIcon("opnsense", "OPNsense", "security", opnsense, [
+    "opnsense",
+    "opn sense",
+    "firewall",
+    "bsd",
+  ]),
+  defineIcon(
+    "opnsense-router",
+    "OPNsense router",
+    "security",
+    createRoleIcon("OPNsenseRouter", "router", opnsense),
+    ["opnsense", "opn sense", "router", "firewall"],
+  ),
+  defineIcon(
+    "pfsense-router",
+    "pfSense router",
+    "security",
+    createRoleIcon("PfSenseRouter", "router", pfsense),
+    ["pfsense", "pf sense", "router", "firewall"],
+  ),
+  defineIcon("snort", "Snort", "security", snort, [
+    "snort",
+    "ids",
+    "ips",
+    "intrusion detection",
+    "network security",
+  ]),
+  defineIcon(
+    "suricata",
+    "Suricata",
+    "security",
+    suricata,
+    ["suricata", "ids", "ips", "intrusion detection", "oisf"],
+    "Suricata connection icon: app-authored S/sensor identifier, not the official meerkat logo.",
+  ),
+  defineIcon(
+    "zeek",
+    "Zeek",
+    "security",
+    zeek,
+    ["zeek", "bro", "network security monitor", "traffic analysis"],
+    "Zeek connection icon: app-authored Z/traffic identifier, not an official project logo.",
+  ),
+  defineIcon(
+    "wazuh",
+    "Wazuh",
+    "security",
+    wazuh,
+    ["wazuh", "siem", "xdr", "endpoint security"],
+    "Wazuh connection icon using the W geometry from its publisher's wordmark.",
+  ),
+  defineIcon("fortinet", "Fortinet", "security", fortinet, [
+    "fortinet",
+    "fortigate",
+    "security",
+    "firewall",
+  ]),
+  defineIcon(
+    "fortinet-firewall",
+    "Fortinet firewall",
+    "security",
+    createRoleIcon("FortinetFirewall", "firewall", fortinet),
+    ["fortinet", "fortigate", "firewall", "utm"],
+  ),
+  defineIcon(
+    "kms-server",
+    "KMS server",
+    "security",
+    createRoleIcon("KMSServer", "server", KeyRound),
+    [
+      "kms server",
+      "kmsserver",
+      "key management server",
+      "windows activation",
+      "key management service",
+    ],
+    "Generic key-management/KMS server, including Windows activation services; not a Microsoft product logo.",
+  ),
+  defineIcon(
+    "keepass",
+    "KeePass",
+    "security",
+    keepass,
+    ["keepass", "kee pass", "password manager", "password vault"],
+    "KeePass using an app-authored K/key identifier, not an official project logo.",
+  ),
+  defineIcon(
+    "keepassx",
+    "KeePassX",
+    "security",
+    keepassx,
+    ["keepassx", "kee pass x", "password manager"],
+    "KeePassX using an app-authored KX identifier, not the KeePassXC logo or an official project logo.",
+  ),
+  defineIcon("password-vault", "Password vault", "security", BookKey, [
+    "password vault",
+    "passowrd vault",
+    "passwordvault",
+    "credentials",
+    "secrets",
+  ]),
+  defineIcon("vault", "Vault", "security", Vault, [
+    "vault",
+    "generic vault",
+    "secure storage",
+    "secrets",
+  ]),
+  defineIcon("bitwarden", "Bitwarden", "security", bitwarden, [
+    "bitwarden",
+    "password manager",
+    "vault",
+    "self hosted",
+  ]),
+  defineIcon("firewall", "Firewall", "security", BrickWallShield, [
+    "generic firewall",
+    "firewall",
+    "packet filter",
+    "network security",
   ]),
 ] as const;

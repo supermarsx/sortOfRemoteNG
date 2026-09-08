@@ -2,6 +2,14 @@ import type { LucideIcon } from "lucide-react";
 import type { BrandIconSlug } from "./brandIconSlugs";
 import { GENERATED_BRAND_ICONS } from "./generatedBrandIcons";
 import {
+  PUBLISHER_BRAND_ICONS,
+  type PublisherBrandIconName,
+} from "./publisherBrandIcons";
+import {
+  HISTORICAL_BRAND_ICONS,
+  type HistoricalBrandIconName,
+} from "./historicalBrandIcons";
+import {
   HAND_AUTHORED_BRAND_ICONS,
   type HandAuthoredBrandIconName,
 } from "./handAuthoredBrandIcons";
@@ -15,22 +23,31 @@ import {
  * lucide's own `createLucideIcon`, so no cast, wrapper or `iconSource`
  * discriminant is needed anywhere in the catalog.
  *
- * Marks come from two places and are otherwise identical:
+ * Marks come from these local sources and share the same component contract:
  *
  * - `generatedBrandIcons.ts` — vendored from simple-icons at build time by
  *   `npm run icons:brand:generate`. Never edit it; edit `brandIconSlugs.ts` and
  *   regenerate.
- * - `handAuthoredBrandIcons.ts` — the four marks simple-icons does not carry
- *   (Windows, AWS, Azure, PowerShell).
+ * - `handAuthoredBrandIcons.ts` — preserved local silhouettes and publisher-sourced
+ *   marks simple-icons does not carry. Sources: docs/connection-icon-brands.md.
+ * - `historicalBrandIcons.ts` — version-pinned historical Simple Icons paths.
+ * - `publisherBrandIcons.ts` — verified publisher SVG geometry, normalized locally.
  */
 
 export { createBrandIcon } from "./createBrandIcon";
 export { BRAND_ICON_SLUGS, type BrandIconSlug } from "./brandIconSlugs";
 export * from "./generatedBrandIcons";
 export * from "./handAuthoredBrandIcons";
+export * from "./historicalBrandIcons";
+export * from "./identifierIcons";
+export * from "./publisherBrandIcons";
 
 /** Every brand mark this app ships, vendored and hand-authored alike. */
-export type BrandIconName = BrandIconSlug | HandAuthoredBrandIconName;
+export type BrandIconName =
+  | BrandIconSlug
+  | HandAuthoredBrandIconName
+  | HistoricalBrandIconName
+  | PublisherBrandIconName;
 
 /**
  * Lookup of every brand mark by name, for tests and dynamic resolution.
@@ -41,4 +58,6 @@ export type BrandIconName = BrandIconSlug | HandAuthoredBrandIconName;
 export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
   ...GENERATED_BRAND_ICONS,
   ...HAND_AUTHORED_BRAND_ICONS,
+  ...HISTORICAL_BRAND_ICONS,
+  ...PUBLISHER_BRAND_ICONS,
 };

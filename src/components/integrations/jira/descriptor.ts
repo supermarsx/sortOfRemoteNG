@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.appservice.ts`:
 //   import { jiraDescriptor } from "../../components/integrations/jira/descriptor";
 
-import { SquareKanban } from "lucide-react";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 
 export const jiraDescriptor: IntegrationDescriptor = {
   key: "jira",
   label: "Jira",
   category: "business-app",
-  icon: SquareKanban,
-  defaultConnectionIconKey: "kanban",
+  icon: getConnectionIconDefinition("jira")!.icon,
+  defaultConnectionIconKey: "jira",
   importPanel: () => import("./JiraPanel"),
 };

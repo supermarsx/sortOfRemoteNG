@@ -7,14 +7,14 @@
 // `src/types/integrations/registry.appservice.ts`:
 //   import { mailcowDescriptor } from "../../components/integrations/mailcow/descriptor";
 
-import { Mailbox } from "lucide-react";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 
 export const mailcowDescriptor: IntegrationDescriptor = {
   key: "mailcow",
   label: "mailcow",
   category: "mail-server",
-  icon: Mailbox,
-  defaultConnectionIconKey: "mailbox",
+  icon: getConnectionIconDefinition("mailcow")!.icon,
+  defaultConnectionIconKey: "mailcow",
   importPanel: () => import("./MailcowPanel"),
 };

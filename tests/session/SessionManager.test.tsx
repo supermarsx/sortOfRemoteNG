@@ -9,6 +9,9 @@ import {
   within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { getConnectionIconDefinition } from "../../src/utils/icons/connectionIconCatalog";
 import {
   SessionManager,
   SESSION_MANAGER_FILTER_STORAGE_KEY,
@@ -287,6 +290,38 @@ function renderManagerWithConnectionState({
 }
 
 describe("SessionManager (unified RDP + internal proxy)", () => {
+  it("renders canonical native protocol geometry in session rows and filters", async () => {
+    renderManager();
+    const row = (await screen.findByText("Prod RDP")).closest("tr")!;
+    const fingerprint = (svg: Element) => {
+      const clone = svg.cloneNode(true) as Element;
+      for (const node of Array.from(clone.querySelectorAll("[class]")))
+        node.removeAttribute("class");
+      return clone.innerHTML;
+    };
+    const expected = (key: string) => {
+      const container = document.createElement("div");
+      container.innerHTML = renderToStaticMarkup(
+        createElement(getConnectionIconDefinition(key)!.icon),
+      );
+      return fingerprint(container.querySelector("svg")!);
+    };
+    const titleCell = screen.getByText("Prod RDP").closest("th")!;
+    expect(row).toContainElement(titleCell);
+    expect(fingerprint(titleCell.querySelector("svg")!)).toBe(
+      expected("microsoft-rdp"),
+    );
+    expect(
+      fingerprint(
+        screen.getByTestId("session-filter-rdp").querySelector("svg")!,
+      ),
+    ).toBe(expected("microsoft-rdp"));
+    expect(
+      fingerprint(
+        screen.getByTestId("session-filter-ssh").querySelector("svg")!,
+      ),
+    ).toBe(expected("ssh"));
+  });
   it("does not capture unused thumbnails for the table even when previews are enabled globally", async () => {
     renderManager({ thumbnailsEnabled: true, thumbnailPolicy: "realtime" });
     await screen.findByText("Prod RDP");

@@ -10,13 +10,14 @@ export const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     data-editor-search-field="icon"
   >
     <h3 className="mb-2 text-xs font-semibold text-[var(--color-textSecondary)]">
-      Connection Icon
+      {mgr.formData.isGroup ? "Folder Icon" : "Connection Icon"}
     </h3>
     <ConnectionIconPicker
       connection={{
         icon: mgr.formData.icon,
         protocol: mgr.formData.protocol ?? "",
         integration: mgr.formData.integration,
+        isGroup: mgr.formData.isGroup,
       }}
       onChange={(icon) => mgr.setFormData((current) => ({ ...current, icon }))}
     />

@@ -6,7 +6,10 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { compile } from "tailwindcss";
+import { DescriptionSection } from "../../src/components/connection/editor/NotesSection";
+import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";
 import { getConnectionIconResolution } from "../../src/components/connection/connectionTree/helpers";
 import { ConnectionIconPicker } from "../../src/components/connection/editor/ConnectionIconPicker";
 import {
@@ -66,11 +69,157 @@ const StatefulPicker: React.FC<{
 };
 
 describe("ConnectionIconPicker", () => {
+  it.each([true, false])(
+    "keeps one custom search clear control and restores input focus when isGroup=%s",
+    (isGroup) => {
+      render(
+        <StatefulPicker initial={makePickerConnection("ssh", { isGroup })} />,
+      );
+      const search = screen.getByRole("combobox", {
+        name: isGroup ? "Search folder icons" : "Search connection icons",
+      });
+      expect(search).toHaveAttribute("type", "search");
+      expect(search).toHaveAttribute("aria-autocomplete", "list");
+      expect(
+        screen.queryByRole("button", { name: "Clear icon search" }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.change(search, { target: { value: "folder" } });
+      fireEvent.mouseEnter(search);
+      const clear = screen.getByRole("button", { name: "Clear icon search" });
+      expect(search.parentElement?.querySelectorAll("button")).toHaveLength(1);
+      act(() => clear.focus());
+      fireEvent.click(clear);
+      expect(search).toHaveValue("");
+      expect(search).toHaveFocus();
+      expect(clear).not.toBeInTheDocument();
+      expect(screen.getByTestId("saved-icon")).toHaveTextContent("automatic");
+
+      fireEvent.change(search, { target: { value: "folder" } });
+      fireEvent.keyDown(search, { key: "Escape" });
+      expect(search).toHaveValue("");
+      expect(search).toHaveFocus();
+      expect(
+        screen.queryByRole("button", { name: "Clear icon search" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("compiles native search-cancel suppression scoped to the picker input", async () => {
+    render(<StatefulPicker />);
+    const search = screen.getByRole("combobox", {
+      name: "Search connection icons",
+    });
+    const candidates = [...search.classList].filter((candidate) =>
+      candidate.includes("::-webkit-search-cancel-button"),
+    );
+    expect(candidates).toEqual([
+      "[&::-webkit-search-cancel-button]:hidden",
+      "[&::-webkit-search-cancel-button]:appearance-none",
+    ]);
+    const stylesheet = await compile("@tailwind utilities;");
+    const css = stylesheet.build(candidates);
+    // JSDOM has no native search decoration. Verify real Tailwind output instead
+    // of treating the single DOM button assertion as native WebView proof.
+    expect(css).toMatch(
+      /::-webkit-search-cancel-button\s*\{\s*display:\s*none;/u,
+    );
+    expect(css).toMatch(
+      /::-webkit-search-cancel-button\s*\{\s*appearance:\s*none;/u,
+    );
+    expect(css).not.toMatch(/(?:^|\n)input(?:\[type=[^\]]+\])?::/u);
+    expect(css.match(/^\./gmu)).toHaveLength(2);
+  });
+
+  it("defaults groups to Folder and offers selectable folder-themed variants", () => {
+    render(
+      <StatefulPicker
+        initial={makePickerConnection("rdp", { isGroup: true })}
+      />,
+    );
+    expect(screen.getByText("Automatic · Folder")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Automatic · RDP protocol"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("listbox", { name: "Folders icons" })
+        .querySelectorAll('[role="option"]'),
+    ).toHaveLength(FOLDER_ICONS.length);
+    expect(
+      getRecommendedConnectionIconKeys(
+        makePickerConnection("rdp", { isGroup: true }),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "folder",
+        "folder-cog",
+        "folder-tree",
+        "folder-lock",
+        "folder-archive",
+      ]),
+    );
+    fireEvent.click(
+      screen.getByRole("option", { name: /Secure folder \(folder-lock\)/ }),
+    );
+    expect(screen.getByTestId("saved-icon")).toHaveTextContent("folder-lock");
+    expect(screen.getByText("Manual override")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use automatic icon" }));
+    expect(
+      screen.getByLabelText("Current effective icon: Folder"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("saved-icon")).toHaveTextContent("automatic");
+  });
+
+  it("reserves both search icon gutters and searches folder types", () => {
+    render(
+      <StatefulPicker
+        initial={makePickerConnection("rdp", { isGroup: true })}
+      />,
+    );
+    const search = screen.getByRole("combobox", {
+      name: "Search folder icons",
+    });
+    expect(search).toHaveClass(
+      "sor-form-input-icon-left",
+      "sor-form-input-icon-right",
+    );
+    fireEvent.change(search, { target: { value: "archive folder" } });
+    expect(
+      screen.getByRole("option", { name: /Archive folder \(folder-archive\)/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Clear icon search" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear icon search" }));
+    expect(search).toHaveValue("");
+  });
+
+  it.each([true, false])(
+    "uses accurate description and notes copy when isGroup=%s",
+    (isGroup) => {
+      const setFormData = vi.fn();
+      render(
+        <DescriptionSection mgr={{ formData: { isGroup }, setFormData }} />,
+      );
+      const input = screen.getByPlaceholderText(
+        `Add notes about this ${isGroup ? "folder" : "connection"}...`,
+      );
+      fireEvent.change(input, {
+        target: { value: "Owner and maintenance notes" },
+      });
+      expect(setFormData).toHaveBeenCalledWith({
+        isGroup,
+        description: "Owner and maintenance notes",
+      });
+    },
+  );
+
   it("shows the shared effective icon, source, previews, and every catalog group", () => {
     render(<StatefulPicker />);
 
     expect(
-      screen.getByLabelText("Current effective icon: Terminal"),
+      screen.getByLabelText("Current effective icon: SSH"),
     ).toBeInTheDocument();
     expect(screen.getByText("Automatic · SSH protocol")).toBeInTheDocument();
     expect(screen.getByLabelText("Icon size previews")).toHaveTextContent("16");
@@ -216,6 +365,40 @@ describe("ConnectionIconPicker", () => {
 });
 
 describe("editor, integration, protocol, and tree icon consistency", () => {
+  it("prioritizes folders over protocol and integration defaults without losing valid overrides", () => {
+    const descriptor = integrationRegistry[0];
+    for (const protocol of ["rdp", `integration:${descriptor.key}`]) {
+      for (const icon of [undefined, "removed-folder-icon"]) {
+        const connection = makePickerConnection(protocol, {
+          isGroup: true,
+          icon,
+        });
+        const editor = resolveEditorConnectionIcon(connection);
+        expect(editor).toMatchObject({
+          key: "folder",
+          source: "folder",
+          overrideState: icon ? "unknown" : "unset",
+        });
+        expect(
+          getConnectionIconResolution(makeSavedConnection(connection)).key,
+        ).toBe("folder");
+      }
+    }
+    for (const { key } of FOLDER_ICONS) {
+      const connection = makePickerConnection("rdp", {
+        isGroup: true,
+        icon: key,
+      });
+      expect(resolveEditorConnectionIcon(connection)).toMatchObject({
+        key,
+        source: "override",
+      });
+      expect(
+        getConnectionIconResolution(makeSavedConnection(connection)).key,
+      ).toBe(key);
+    }
+  });
+
   it("uses every integration default as the first recommendation and tree result", () => {
     integrationRegistry.forEach((descriptor) => {
       const pickerConnection = makePickerConnection(

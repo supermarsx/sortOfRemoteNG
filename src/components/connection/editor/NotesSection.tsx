@@ -39,7 +39,11 @@ export const DescriptionSection: React.FC<{ mgr: NotesSectionManager }> = ({
       }
       rows={6}
       className="w-full resize-y px-4 py-3"
-      placeholder="Add notes about this connection..."
+      placeholder={
+        mgr.formData.isGroup
+          ? "Add notes about this folder..."
+          : "Add notes about this connection..."
+      }
     />
   </div>
 );
