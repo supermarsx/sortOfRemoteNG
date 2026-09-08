@@ -93,9 +93,8 @@ use llm::service::LlmServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
 use onedrive::service::OneDriveServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
-use recording::RecordingServiceState;
-#[cfg(any(feature = "collab", feature = "platform"))]
 use secure_clip::SecureClipServiceState;
+use sorng_recording::RecordingServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
 use terminal_themes::ThemeEngineState;
 #[cfg(any(feature = "collab", feature = "platform"))]
@@ -176,6 +175,7 @@ pub const SECURITY_DATA_REGISTRATION_ORDER: &[&str] = &[
     "PasskeyServiceState",
     "Ssh3ServiceState",
     "BackupServiceState",
+    "RecordingServiceState",
     "BitwardenServiceState",
     "KeePassServiceState",
     "PassboltServiceState",
@@ -225,7 +225,6 @@ pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
     "NextcloudServiceState",
     "GDriveServiceState",
     "OneDriveServiceState",
-    "RecordingServiceState",
     "LlmServiceState",
     "AiAssistServiceState",
     "CommandPaletteServiceState",
@@ -238,8 +237,8 @@ pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
 pub const API_REGISTRATION_ORDER: &[&str] =
     &["ApiService", "DisabledCapsSetter", "ApiServerController"];
 
-/// Maximum moved inventory: 13 infrastructure/API + 40 security/data + 5
-/// access + 13 platform + 14 collaboration registrations.
+/// Maximum moved inventory: 13 infrastructure/API + 41 security/data + 5
+/// access + 13 platform + 13 collaboration registrations.
 pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 85;
 
 pub struct InfrastructureHandles {
@@ -449,10 +448,10 @@ mod tests {
     fn fixed_registrar_inventories_match_the_moved_contract() {
         assert_eq!(ACCESS_REGISTRATION_ORDER.len(), 5);
         assert_eq!(PLATFORM_REGISTRATION_ORDER.len(), 13);
-        assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 14);
+        assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 13);
         assert_eq!(API_REGISTRATION_ORDER.len(), 3);
-        assert_eq!(34 + 6, 40);
-        assert_eq!(10 + 3 + 40 + 5 + 13 + 14, MAX_MANAGED_STATE_REGISTRATIONS);
+        assert_eq!(35 + 6, 41);
+        assert_eq!(10 + 3 + 41 + 5 + 13 + 13, MAX_MANAGED_STATE_REGISTRATIONS);
     }
 
     #[test]

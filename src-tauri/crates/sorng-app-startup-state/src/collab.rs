@@ -14,17 +14,6 @@ pub(super) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     ));
     app.manage(onedrive_state);
 
-    let rec_state: RecordingServiceState =
-        recording::service::new_service_state(&app_dir.to_string_lossy());
-    if let Some(enc_handle) = app.try_state::<sorng_encryption::EncryptionState>() {
-        let enc_arc = Arc::new(enc_handle.inner().clone());
-        let rec_clone = rec_state.clone();
-        tauri::async_runtime::block_on(async move {
-            rec_clone.lock().await.set_encryption_state(enc_arc).await;
-        });
-    }
-    app.manage(rec_state);
-
     let llm_state: LlmServiceState = llm::service::create_llm_state();
     app.manage(llm_state.clone());
     let ai_assist_state: AiAssistServiceState = ai_assist::service::create_ai_assist_state(

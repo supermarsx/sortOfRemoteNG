@@ -54,6 +54,7 @@ pub(super) fn register(
         });
     }
     app.manage(backup_service);
+    register_recording(app, app_dir);
     app.manage(BitwardenService::new_state());
     app.manage(KeePassService::new());
     app.manage(PassboltService::new_state());
@@ -88,5 +89,136 @@ pub(super) fn register(
     {
         let state: RedisServiceState = redis::service::new_state();
         app.manage(state);
+    }
+}
+
+/// Full master-key rotation includes recordings in every build, even when the
+/// optional recording UI/commands are absent. Manage its real service once and
+/// bind it to the same live encryption state used by the other storage services.
+fn register_recording<R: tauri::Runtime>(app: &impl tauri::Manager<R>, app_dir: &std::path::Path) {
+    let encryption = Arc::new(
+        app.state::<sorng_encryption::EncryptionState>()
+            .inner()
+            .clone(),
+    );
+    let rec_state: RecordingServiceState =
+        sorng_recording::service::new_service_state(&app_dir.to_string_lossy());
+    tauri::async_runtime::block_on(async {
+        rec_state
+            .lock()
+            .await
+            .set_encryption_state(encryption)
+            .await;
+    });
+    app.manage(rec_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sorng_encryption::{EncryptionState, MasterDek};
+    use sorng_recording::types::SavedRecordingEnvelope;
+    use tauri::test::{mock_builder, mock_context, noop_assets};
+
+    // Exercise exactly the four typed State arguments of the real full-rotation
+    // command, but never invoke that command, its keychain probe or rotation.
+    #[tauri::command]
+    fn rotation_state_probe(
+        enc_state: tauri::State<'_, EncryptionState>,
+        storage_state: tauri::State<'_, storage::SecureStorageState>,
+        backup_state: tauri::State<'_, backup::BackupServiceState>,
+        recording_state: tauri::State<'_, sorng_recording::service::RecordingServiceState>,
+    ) -> bool {
+        let _ = (
+            enc_state.inner(),
+            storage_state.inner(),
+            backup_state.inner(),
+            recording_state.inner(),
+        );
+        true
+    }
+
+    #[test]
+    fn full_rotation_recording_state_is_managed_without_optional_features() {
+        let root = tempfile::tempdir().unwrap();
+        let fixture = mock_builder()
+            .invoke_handler(tauri::generate_handler![rotation_state_probe])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        fixture.manage(EncryptionState::new());
+        fixture.manage(SecureStorage::new(
+            root.path()
+                .join("storage.json")
+                .to_string_lossy()
+                .into_owned(),
+        ));
+        fixture.manage(backup::BackupService::new(
+            root.path().join("backups").to_string_lossy().into_owned(),
+        ));
+        register_recording(&fixture, root.path());
+        assert!(fixture
+            .try_state::<sorng_recording::service::RecordingServiceState>()
+            .is_some());
+        let view = tauri::WebviewWindowBuilder::new(&fixture, "state-probe", Default::default())
+            .build()
+            .unwrap();
+        tauri::test::assert_ipc_response(
+            &view,
+            tauri::webview::InvokeRequest {
+                cmd: "rotation_state_probe".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+            Ok(true),
+        );
+        assert_eq!(
+            SECURITY_DATA_REGISTRATION_ORDER
+                .iter()
+                .filter(|name| **name == "RecordingServiceState")
+                .count(),
+            1
+        );
+        assert!(!COLLAB_REGISTRATION_ORDER.contains(&"RecordingServiceState"));
+    }
+
+    #[test]
+    fn recording_registrar_injects_the_shared_live_encryption_state() {
+        let root = tempfile::tempdir().unwrap();
+        let fixture = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let encryption = EncryptionState::new();
+        fixture.manage(encryption.clone());
+        register_recording(&fixture, root.path());
+        let recording = fixture.state::<RecordingServiceState>().inner().clone();
+        tauri::async_runtime::block_on(async {
+            let service = recording.lock().await;
+            assert!(service
+                .storage_root_snapshot()
+                .await
+                .starts_with(root.path()));
+            let envelope: SavedRecordingEnvelope = serde_json::from_value(serde_json::json!({
+                "id": "startup-fixture", "name": "Startup fixture", "protocol": "ssh",
+                "saved_at": "2026-01-01T00:00:00Z", "duration_ms": 0, "size_bytes": 2,
+                "compression": "none", "format": "json", "tags": [], "data": "{}"
+            }))
+            .unwrap();
+            assert!(service.save_to_library(envelope.clone()).await.is_err());
+            encryption
+                .install(MasterDek::from_bytes(&[41u8; 32]).unwrap())
+                .await;
+            service.save_to_library(envelope.clone()).await.unwrap();
+            let storage_root = service.storage_root_snapshot().await;
+            assert!(storage_root
+                .join("recordings/startup-fixture.json.enc")
+                .is_file());
+            assert!(!storage_root
+                .join("recordings/startup-fixture.json")
+                .exists());
+            encryption.lock().await;
+            assert!(service.save_to_library(envelope).await.is_err());
+        });
     }
 }

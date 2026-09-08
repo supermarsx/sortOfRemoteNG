@@ -9704,6 +9704,7 @@ dependencies = [
  "sorng-core",
  "sorng-encryption",
  "sorng-opkssh",
+ "sorng-recording",
  "sorng-vault",
  "tauri",
  "tempfile",

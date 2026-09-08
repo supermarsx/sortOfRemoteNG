@@ -41,7 +41,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // incremental-flush writer persists a crash snapshot under
     // `<root>/inflight/` on every append; a power-loss or hard-kill during
     // an active session leaves that snapshot un-finalised. Run recovery once
-    // here (the recording state was just managed in `collab::register`, with
+    // here (the recording state was managed in the always-on security/data registrar, with
     // its encryption handle already injected) so orphaned snapshots are
     // decoded and saved into the library. Best-effort and self-healing: the
     // service SKIPS encrypted snapshots while the key is locked and they are
