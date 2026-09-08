@@ -25,6 +25,7 @@ import McpSettings from "./sections/McpSettings";
 import AiSettings from "./sections/AiSettings";
 import RecoverySettings from "./sections/RecoverySettings";
 import BehaviorSettings from "./sections/BehaviorSettings";
+import BotsSettings from "./sections/BotsSettings";
 import SSHTerminalSettings from "./sections/SSHTerminalSettings";
 import BackupSettings from "./sections/BackupSettings";
 import CloudSyncSettings from "./sections/CloudSyncSettings";
@@ -189,6 +190,9 @@ const ContentPanel: React.FC<
         {mgr.activeTab === "behavior" && (
           <BehaviorSettings settings={s} updateSettings={u} />
         )}
+        {mgr.activeTab === "bots" && (
+          <BotsSettings settings={s} updateSettings={u} />
+        )}
         {mgr.activeTab === "startup" && (
           <StartupSettings settings={s} updateSettings={u} />
         )}
@@ -283,7 +287,7 @@ const ContentPanel: React.FC<
         const showReset =
           mgr.hasScrolledToBottom &&
           mgr.activeTab !== "recovery" &&
-          Boolean(TAB_DEFAULTS[mgr.activeTab]);
+          (TAB_DEFAULTS[mgr.activeTab]?.length ?? 0) > 0;
         if (!saveRequired && !showReset) return null;
         return (
           <div className="sticky bottom-0 flex justify-end items-center gap-2 px-6 py-2 border-t border-[var(--color-border)]/30 bg-[var(--color-surface)]/80 backdrop-blur-sm">

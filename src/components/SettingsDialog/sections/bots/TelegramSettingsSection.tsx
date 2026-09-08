@@ -1,9 +1,5 @@
-// Telegram bot management — folded into Notifications (Behavior) settings.
-//
-// Telegram is notification/bot configuration for a subsystem the app already
-// owns (connection-event notifications, monitoring alerts, digests), so per the
-// t42 plan it folds into the Notifications settings surface rather than getting
-// a standalone Integrations-hub panel. This section is a collapsible sub-panel
+// Telegram bot management — rendered by the dedicated Bots settings tab.
+// This section is a collapsible sub-panel
 // that binds the full 78-command sorng-telegram surface via `useTelegram()`:
 // a bot registry manager on top, then a tabbed management surface (send, message
 // ops, chat admin, files, webhooks, notification rules, monitoring, templates,
@@ -21,7 +17,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { SectionProps } from "./types";
+import type { SectionProps } from "../behavior/types";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { useTelegram } from "../../../../hooks/integration/useTelegram";
 import { useIntegrationConfigStore } from "../../../../hooks/integrations/useIntegrationConfigStore";
@@ -1205,16 +1201,17 @@ const WebhooksTab: React.FC<{ mgr: Mgr; bot: string }> = ({ mgr, bot }) => {
 };
 
 const RulesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { api, run } = mgr;
   const { t } = useTranslation();
   const [rows, setRows] = useState<NotificationRule[]>([]);
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await mgr.run(() => mgr.api.listNotificationRules()));
+      setRows(await run(() => api.listNotificationRules()));
     } catch {
       /* surfaced */
     }
-  }, [mgr]);
+  }, [api, run]);
 
   useEffect(() => {
     void refresh();
@@ -1300,17 +1297,18 @@ const RulesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 };
 
 const MonitoringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { api, run } = mgr;
   const { t } = useTranslation();
   const [rows, setRows] = useState<MonitoringCheck[]>([]);
   const [detail, setDetail] = useState<unknown>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await mgr.run(() => mgr.api.listMonitoringChecks()));
+      setRows(await run(() => api.listMonitoringChecks()));
     } catch {
       /* surfaced */
     }
-  }, [mgr]);
+  }, [api, run]);
 
   useEffect(() => {
     void refresh();
@@ -1425,6 +1423,7 @@ const MonitoringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 };
 
 const TemplatesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { api, run } = mgr;
   const { t } = useTranslation();
   const [rows, setRows] = useState<MessageTemplate[]>([]);
   const [body, setBody] = useState("");
@@ -1432,11 +1431,11 @@ const TemplatesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await mgr.run(() => mgr.api.listTemplates()));
+      setRows(await run(() => api.listTemplates()));
     } catch {
       /* surfaced */
     }
-  }, [mgr]);
+  }, [api, run]);
 
   useEffect(() => {
     void refresh();
@@ -1549,17 +1548,18 @@ const TemplatesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 };
 
 const ScheduledTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { api, run } = mgr;
   const { t } = useTranslation();
   const [rows, setRows] = useState<ScheduledMessage[]>([]);
   const [detail, setDetail] = useState<unknown>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await mgr.run(() => mgr.api.listScheduledMessages()));
+      setRows(await run(() => api.listScheduledMessages()));
     } catch {
       /* surfaced */
     }
-  }, [mgr]);
+  }, [api, run]);
 
   useEffect(() => {
     void refresh();
@@ -1651,16 +1651,17 @@ const BroadcastTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 };
 
 const DigestsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { api, run } = mgr;
   const { t } = useTranslation();
   const [rows, setRows] = useState<DigestConfig[]>([]);
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await mgr.run(() => mgr.api.listDigests()));
+      setRows(await run(() => api.listDigests()));
     } catch {
       /* surfaced */
     }
-  }, [mgr]);
+  }, [api, run]);
 
   useEffect(() => {
     void refresh();
@@ -1714,6 +1715,7 @@ const DigestsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 };
 
 const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { api, run } = mgr;
   const { t } = useTranslation();
   const [stats, setStats] = useState<TelegramStats | null>(null);
   const [log, setLog] = useState<MessageLogEntry[]>([]);
@@ -1721,15 +1723,15 @@ const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
   const refresh = useCallback(async () => {
     try {
-      const [s, l] = await mgr.run(() =>
-        Promise.all([mgr.api.stats(), mgr.api.messageLog(100)]),
+      const [s, l] = await run(() =>
+        Promise.all([api.stats(), api.messageLog(100)]),
       );
       setStats(s);
       setLog(l);
     } catch {
       /* surfaced */
     }
-  }, [mgr]);
+  }, [api, run]);
 
   useEffect(() => {
     void refresh();

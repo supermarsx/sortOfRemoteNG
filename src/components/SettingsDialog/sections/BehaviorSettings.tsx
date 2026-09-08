@@ -1,5 +1,5 @@
 import React from "react";
-import SectionHeading from '../../ui/SectionHeading';
+import SectionHeading from "../../ui/SectionHeading";
 import { useTranslation } from "react-i18next";
 import type { GlobalSettings } from "../../../types/settings/settings";
 import { MousePointerClick } from "lucide-react";
@@ -16,7 +16,7 @@ import ClipboardSection from "./behavior/ClipboardSection";
 import IdleTimeout from "./behavior/IdleTimeout";
 import ReconnectionSection from "./behavior/ReconnectionSection";
 import NotificationsSection from "./behavior/NotificationsSection";
-import TelegramSettingsSection from "./behavior/TelegramSettingsSection";
+import ConfirmationWarnings from "./behavior/ConfirmationWarnings";
 import ConfirmationDialogs from "./behavior/ConfirmationDialogs";
 import DragDropSection from "./behavior/DragDropSection";
 import ScrollInputSection from "./behavior/ScrollInputSection";
@@ -29,7 +29,11 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<MousePointerClick className="w-5 h-5 text-primary" />} title="Behavior" description="Click actions, tab behavior, clipboard, notifications, and reconnection settings." />
+      <SectionHeading
+        icon={<MousePointerClick className="w-5 h-5 text-primary" />}
+        title="Behavior"
+        description="Click actions, tab behavior, clipboard, notifications, and reconnection settings."
+      />
 
       <ClickActions s={settings} u={updateSettings} />
       <TabBehavior s={settings} u={updateSettings} />
@@ -39,7 +43,10 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
       <IdleTimeout s={settings} u={updateSettings} />
       <ReconnectionSection s={settings} u={updateSettings} />
       <NotificationsSection s={settings} u={updateSettings} />
-      <TelegramSettingsSection s={settings} u={updateSettings} />
+      <ConfirmationWarnings
+        settings={settings}
+        updateSettings={updateSettings}
+      />
       <ConfirmationDialogs s={settings} u={updateSettings} />
       <DragDropSection s={settings} u={updateSettings} />
       <ScrollInputSection s={settings} u={updateSettings} />

@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+} from "@testing-library/react";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
+  invoke: (cmd: string, args?: Record<string, unknown>) =>
+    invokeMock(cmd, args),
   isTauri: () => true,
 }));
 
@@ -34,7 +41,64 @@ beforeEach(() => {
   });
 });
 
-describe("TelegramSettingsSection", () => {
+describe("TelegramSettingsSection in Bots settings", () => {
+  it("surfaces a list failure once and retries only on explicit Refresh", async () => {
+    const implementation = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((command, args) =>
+      command === "telegram_list_notification_rules"
+        ? Promise.reject(new Error("Bot service unavailable"))
+        : implementation(command, args),
+    );
+    render(<TelegramSettingsSection s={noopSettings} u={noop} />);
+    fireEvent.click(screen.getByRole("button", { name: /Telegram bots/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Rules" }));
+    await screen.findByText("Bot service unavailable");
+    const calls = () =>
+      invokeMock.mock.calls.filter(
+        ([command]) => command === "telegram_list_notification_rules",
+      );
+    expect(calls()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(calls()).toHaveLength(1);
+    const refreshButtons = screen.getAllByRole("button", { name: "Refresh" });
+    fireEvent.click(refreshButtons[refreshButtons.length - 1]);
+    await screen.findByText("Bot service unavailable");
+    expect(calls()).toHaveLength(2);
+  });
+  it.each([
+    ["Rules", "telegram_list_notification_rules"],
+    ["Monitoring", "telegram_list_monitoring_checks"],
+    ["Templates", "telegram_list_templates"],
+    ["Scheduled", "telegram_list_scheduled_messages"],
+    ["Digests", "telegram_list_digests"],
+    ["Logs", "telegram_message_log"],
+  ])(
+    "refreshes %s once on entry, not again when manager loading state changes",
+    async (tab, command) => {
+      const implementation = invokeMock.getMockImplementation()!;
+      const pending: Array<(rows: never[]) => void> = [];
+      invokeMock.mockImplementation((cmd, args) =>
+        cmd === command
+          ? new Promise<never[]>((resolve) => pending.push(resolve))
+          : implementation(cmd, args),
+      );
+      const view = render(
+        <TelegramSettingsSection s={noopSettings} u={noop} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Telegram bots/i }));
+      fireEvent.click(screen.getByRole("button", { name: tab }));
+      expect(pending).toHaveLength(1);
+      await act(async () => pending[0]([]));
+      expect(pending).toHaveLength(1);
+      view.rerender(<TelegramSettingsSection s={noopSettings} u={noop} />);
+      expect(pending).toHaveLength(1);
+      const refreshButtons = screen.getAllByRole("button", { name: "Refresh" });
+      fireEvent.click(refreshButtons[refreshButtons.length - 1]);
+      expect(pending).toHaveLength(2);
+      await act(async () => pending[1]([]));
+      expect(pending).toHaveLength(2);
+    },
+  );
   it("renders collapsed, then reveals the bot manager when expanded", async () => {
     render(<TelegramSettingsSection s={noopSettings} u={noop} />);
 

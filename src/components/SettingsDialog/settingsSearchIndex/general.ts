@@ -34,56 +34,6 @@ export const GENERAL_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "General",
   },
 
-  // ─── Confirmation warnings ──────────────────────────────────────
-  {
-    key: "warnOnClose",
-    label: "Warn on close",
-    labelKey: "connections.warnOnClose",
-    description:
-      "Show a confirmation dialog when you attempt to close a tab that has an active connection, preventing accidental disconnections.",
-    descriptionKey: "settingsGeneral.warnOnCloseTooltip",
-    tags: ["close warning", "confirm close", "tab", "prompt", "dialog"],
-    synonyms: ["confirm before closing", "ask before close"],
-    section: "general",
-    sectionLabel: "General",
-  },
-  {
-    key: "warnOnDetachClose",
-    label: "Warn on detached tab close",
-    labelKey: "connections.warnOnDetachClose",
-    description:
-      "Show a confirmation dialog before closing a tab that has been detached into its own window.",
-    descriptionKey: "settingsGeneral.warnOnDetachCloseTooltip",
-    tags: ["detach", "popup", "floating", "window", "close warning"],
-    synonyms: ["detached window", "popped out tab", "torn off tab"],
-    section: "general",
-    sectionLabel: "General",
-  },
-  {
-    key: "warnOnExit",
-    label: "Warn on exit",
-    labelKey: "connections.warnOnExit",
-    description:
-      "Show a warning when you try to quit the application while there are still active connections open.",
-    descriptionKey: "settingsGeneral.warnOnExitTooltip",
-    tags: ["exit warning", "confirm exit", "quit", "shutdown"],
-    synonyms: ["confirm quit", "ask before quitting"],
-    section: "general",
-    sectionLabel: "General",
-  },
-  {
-    key: "confirmMainAppClose",
-    label: "Confirm main app close",
-    labelKey: "settingsGeneral.confirmMainAppClose",
-    description:
-      "Always prompt for confirmation before the main application window is closed, even if no connections are active.",
-    descriptionKey: "settingsGeneral.confirmMainAppCloseTooltip",
-    tags: ["confirm", "close", "main window", "quit", "prompt"],
-    synonyms: ["confirm before closing app", "ask before closing window"],
-    section: "general",
-    sectionLabel: "General",
-  },
-
   // ─── Crash recovery ─────────────────────────────────────────────
   {
     key: "detectUnexpectedClose",

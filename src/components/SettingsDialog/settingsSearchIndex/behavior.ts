@@ -12,6 +12,55 @@ import type { SettingSearchEntry } from "./types";
  * (`WindowConnection.tsx`).
  */
 export const BEHAVIOR_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  // ─── Confirmation warnings ──────────────────────────────────────
+  {
+    key: "warnOnClose",
+    label: "Warn on close",
+    labelKey: "connections.warnOnClose",
+    description:
+      "Show a confirmation dialog when you attempt to close a tab that has an active connection, preventing accidental disconnections.",
+    descriptionKey: "settingsGeneral.warnOnCloseTooltip",
+    tags: ["close warning", "confirm close", "tab", "prompt", "dialog"],
+    synonyms: ["confirm before closing", "ask before close"],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
+  {
+    key: "warnOnDetachClose",
+    label: "Warn on detached tab close",
+    labelKey: "connections.warnOnDetachClose",
+    description:
+      "Show a confirmation dialog before closing a tab that has been detached into its own window.",
+    descriptionKey: "settingsGeneral.warnOnDetachCloseTooltip",
+    tags: ["detach", "popup", "floating", "window", "close warning"],
+    synonyms: ["detached window", "popped out tab", "torn off tab"],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
+  {
+    key: "warnOnExit",
+    label: "Warn on exit",
+    labelKey: "connections.warnOnExit",
+    description:
+      "Show a warning when you try to quit the application while there are still active connections open.",
+    descriptionKey: "settingsGeneral.warnOnExitTooltip",
+    tags: ["exit warning", "confirm exit", "quit", "shutdown"],
+    synonyms: ["confirm quit", "ask before quitting"],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
+  {
+    key: "confirmMainAppClose",
+    label: "Confirm main app close",
+    labelKey: "settingsGeneral.confirmMainAppClose",
+    description:
+      "Always prompt for confirmation before the main application window is closed, even if no connections are active.",
+    descriptionKey: "settingsGeneral.confirmMainAppCloseTooltip",
+    tags: ["confirm", "close", "main window", "quit", "prompt"],
+    synonyms: ["confirm before closing app", "ask before closing window"],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
   // ─── Click actions ──────────────────────────────────────────────
   {
     key: "singleClickConnect",
@@ -697,55 +746,6 @@ export const BEHAVIOR_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "Reconnect",
     ],
     synonyms: ["button 5", "side button", "thumb button", "forward button"],
-    section: "behavior",
-    sectionLabel: "Behavior",
-  },
-
-  // ─── Telegram bots (integration panel) ──────────────────────────
-  {
-    key: "telegram.bots",
-    label: "Telegram bots",
-    labelKey: "integrations.telegram.title",
-    description:
-      "Configure Telegram bots for connection-event notifications, monitoring alerts, digests, and manual messaging. Bot tokens are stored encrypted in the OS credential vault, never in the settings file.",
-    descriptionKey: "integrations.telegram.intro",
-    tags: [
-      "telegram",
-      "bot",
-      "notification",
-      "alert",
-      "webhook",
-      "monitoring",
-      "digest",
-      "broadcast",
-      "chat",
-      "integration",
-      "messaging",
-    ],
-    // The panel is a management console, not a set of persisted settings — the
-    // one anchor covers all of it. These are the tab names inside it, so a user
-    // searching "webhook" or "broadcast" lands on the right panel.
-    values: [
-      "Send",
-      "Messages",
-      "Chats",
-      "Files",
-      "Webhooks",
-      "Notification rules",
-      "Monitoring",
-      "Templates",
-      "Scheduled",
-      "Broadcast",
-      "Digests",
-      "Logs",
-    ],
-    synonyms: [
-      "telegram",
-      "bot token",
-      "chat id",
-      "telegram notifications",
-      "bot api",
-    ],
     section: "behavior",
     sectionLabel: "Behavior",
   },

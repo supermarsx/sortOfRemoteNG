@@ -98,6 +98,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "macros", labelKey: "Macros", icon: ListVideo },
 
   // ── Server / integration surfaces ──
+  {
+    id: "bots",
+    labelKey: "integrations.telegram.bots",
+    fallback: "Bots",
+    icon: Bot,
+  },
   { id: "api", labelKey: "API Server", icon: Server },
   {
     id: "mcpServer",
@@ -152,6 +158,7 @@ export const SETTINGS_TAB_ID_LIST = [
   "cloudSync",
   "recording",
   "macros",
+  "bots",
   "api",
   "mcpServer",
   "ai",
@@ -177,9 +184,6 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "connectionTimeout",
     "autoSaveEnabled",
     "autoSaveIntervalMinutes",
-    "warnOnClose",
-    "warnOnExit",
-    "warnOnDetachClose",
     "quickConnectHistoryEnabled",
     "hostnameOverride",
     "detectUnexpectedClose",
@@ -197,6 +201,10 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "rtlLayout",
   ],
   behavior: [
+    "warnOnClose",
+    "warnOnExit",
+    "warnOnDetachClose",
+    "confirmMainAppClose",
     "singleClickConnect",
     "singleClickDisconnect",
     "doubleClickRename",
@@ -317,6 +325,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "showErrorLogBar",
   ],
   security: [
+    "allowSshExternalLinks",
     "encryptionAlgorithm",
     "blockCipherMode",
     "keyDerivationIterations",
@@ -378,6 +387,8 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "showRecordingManagerIcon",
   ],
   macros: ["macros"],
+  // Bot registry/configuration is managed explicitly, not reset as app settings.
+  bots: [],
   mcpServer: ["mcpServer"],
   diagnostics: ["diagnostics"],
   backend: ["backendConfig"],
@@ -408,6 +419,8 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   warnOnClose: true,
   warnOnExit: true,
   warnOnDetachClose: true,
+  confirmMainAppClose: false,
+  allowSshExternalLinks: false,
   quickConnectHistoryEnabled: true,
   startMinimized: false,
   startMaximized: false,

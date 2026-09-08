@@ -18,6 +18,7 @@ import { BACKUP_SEARCH_ENTRIES } from "./backup";
 import { CLOUD_SYNC_SEARCH_ENTRIES } from "./cloudSync";
 import { RECORDING_SEARCH_ENTRIES } from "./recording";
 import { MACROS_SEARCH_ENTRIES } from "./macros";
+import { BOTS_SEARCH_ENTRIES } from "./bots";
 import { API_SEARCH_ENTRIES } from "./api";
 import { MCP_SERVER_SEARCH_ENTRIES } from "./mcpServer";
 import { AI_SEARCH_ENTRIES } from "./ai";
@@ -47,6 +48,7 @@ export { BACKUP_SEARCH_ENTRIES } from "./backup";
 export { CLOUD_SYNC_SEARCH_ENTRIES } from "./cloudSync";
 export { RECORDING_SEARCH_ENTRIES } from "./recording";
 export { MACROS_SEARCH_ENTRIES } from "./macros";
+export { BOTS_SEARCH_ENTRIES } from "./bots";
 export { API_SEARCH_ENTRIES } from "./api";
 export { MCP_SERVER_SEARCH_ENTRIES } from "./mcpServer";
 export { AI_SEARCH_ENTRIES } from "./ai";
@@ -83,6 +85,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   ...CLOUD_SYNC_SEARCH_ENTRIES,
   ...RECORDING_SEARCH_ENTRIES,
   ...MACROS_SEARCH_ENTRIES,
+  ...BOTS_SEARCH_ENTRIES,
   ...API_SEARCH_ENTRIES,
   ...MCP_SERVER_SEARCH_ENTRIES,
   ...AI_SEARCH_ENTRIES,
