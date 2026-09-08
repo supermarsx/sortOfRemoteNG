@@ -86,7 +86,7 @@ describe("Behavior settings section accents", () => {
       container.querySelectorAll(".sor-settings-section-header > svg"),
     );
 
-    expect(sectionIcons).toHaveLength(11);
+    expect(sectionIcons).toHaveLength(12);
     for (const icon of sectionIcons) {
       expect(icon.getAttribute("class")).toContain("text-primary");
     }
