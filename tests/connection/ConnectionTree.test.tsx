@@ -94,42 +94,72 @@ describe("ConnectionTree", () => {
     },
   );
 
-  it("preserves the DOM scroll offset when switching between ordinary and virtual trees", () => {
-    const connections = Array.from({ length: 240 }, (_, index) => ({
-      ...mockConnections[1],
-      id: `threshold-${index}`,
-      name: `Threshold ${String(index).padStart(3, "0")}`,
-      parentId: undefined,
-    }));
-    const content = (rows: Connection[]) => (
-      <ToastProvider>
-        <ConnectionProvider>
-          <InitConnections connections={rows} />
-        </ConnectionProvider>
-      </ToastProvider>
-    );
-    const { rerender } = render(content(connections.slice(0, 200)));
-    const tree = screen.getByRole("tree");
-    expect(screen.getAllByRole("treeitem")).toHaveLength(200);
-    fireEvent.scroll(tree, { target: { scrollTop: 640 } });
-    rerender(content(connections));
-    expect(tree.scrollTop).toBe(640);
-    expect(screen.getByText("Threshold 020")).toBeInTheDocument();
-    expect(screen.queryByText("Threshold 000")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("treeitem").length).toBeLessThan(50);
+  it.each([
+    { transition: "enabling", initiallyVirtual: false, scrollOffset: 640 },
+    { transition: "re-enabling", initiallyVirtual: true, scrollOffset: 1920 },
+  ])(
+    "preserves the DOM scroll offset when $transition virtualization",
+    ({ initiallyVirtual, scrollOffset }) => {
+      const connections = Array.from({ length: 240 }, (_, index) => ({
+        ...mockConnections[1],
+        id: `threshold-${index}`,
+        name: `Threshold ${String(index).padStart(3, "0")}`,
+        parentId: undefined,
+      }));
+      const ordinaryConnections = connections.slice(0, 200);
+      const initialConnections = initiallyVirtual
+        ? connections
+        : ordinaryConnections;
+      let updateConnections: (rows: Connection[]) => void;
+      function ThresholdTree() {
+        const { dispatch } = useConnections();
+        React.useLayoutEffect(() => {
+          updateConnections = (rows) =>
+            dispatch({ type: "SET_CONNECTIONS", payload: rows });
+        }, [dispatch]);
+        return <InitConnections connections={initialConnections} />;
+      }
+      render(
+        <ToastProvider>
+          <ConnectionProvider>
+            <ThresholdTree />
+          </ConnectionProvider>
+        </ToastProvider>,
+      );
+      const tree = screen.getByRole("tree");
+      // These assertions check mounted DOM size, not computed accessibility.
+      const mountedRows = () => tree.querySelectorAll('[role="treeitem"]');
+      const row = (index: number) =>
+        tree.querySelector(`[data-connection-id="threshold-${index}"]`);
+      // Dispatch directly: rerendering a prop-driven initializer first renders
+      // the old rich rows again, then changes the connections in its effect.
+      if (initiallyVirtual) {
+        expect(mountedRows().length).toBeLessThan(50);
+        fireEvent.scroll(tree, { target: { scrollTop: 1280 } });
+        expect(row(40)).toHaveTextContent("Threshold 040");
+        expect(row(20)).not.toBeInTheDocument();
+        act(() => updateConnections(ordinaryConnections));
+      }
+      expect(mountedRows()).toHaveLength(200);
+      fireEvent.scroll(tree, { target: { scrollTop: scrollOffset } });
+      act(() => updateConnections(connections));
+      const firstViewportRow = scrollOffset / 32;
+      expect(tree.scrollTop).toBe(scrollOffset);
+      expect(row(firstViewportRow)).toHaveTextContent(
+        `Threshold ${String(firstViewportRow).padStart(3, "0")}`,
+      );
+      expect(row(firstViewportRow - 20)).not.toBeInTheDocument();
+      expect(mountedRows().length).toBeLessThan(50);
 
-    // The virtual viewport still follows ordinary user scrolling.
-    fireEvent.scroll(tree, { target: { scrollTop: 1280 } });
-    expect(screen.getByText("Threshold 040")).toBeInTheDocument();
-    expect(screen.queryByText("Threshold 020")).not.toBeInTheDocument();
-
-    rerender(content(connections.slice(0, 200)));
-    fireEvent.scroll(tree, { target: { scrollTop: 1920 } });
-    rerender(content(connections));
-    expect(tree.scrollTop).toBe(1920);
-    expect(screen.getByText("Threshold 060")).toBeInTheDocument();
-    expect(screen.queryByText("Threshold 040")).not.toBeInTheDocument();
-  });
+      // The virtual viewport still follows ordinary user scrolling.
+      fireEvent.scroll(tree, { target: { scrollTop: scrollOffset + 640 } });
+      expect(row(firstViewportRow + 20)).toHaveTextContent(
+        `Threshold ${String(firstViewportRow + 20).padStart(3, "0")}`,
+      );
+      expect(row(firstViewportRow)).not.toBeInTheDocument();
+      expect(mountedRows().length).toBeLessThan(50);
+    },
+  );
 
   it("bounds a 10,000-connection expanded tree while preserving hierarchy, keyboard navigation and offscreen reveal", async () => {
     const connections: Connection[] = [];
