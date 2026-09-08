@@ -5,7 +5,6 @@ mod gdrive_commands;
 mod mremoteng_dedicated_commands;
 mod nextcloud_commands;
 mod onedrive_commands;
-mod telegram_commands;
 mod termserv_commands;
 mod whatsapp_commands;
 

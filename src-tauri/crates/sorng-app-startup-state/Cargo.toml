@@ -14,6 +14,7 @@ sorng-commands-core = { path = "../sorng-commands-core", default-features = fals
 sorng-core = { path = "../sorng-core" }
 sorng-encryption = { path = "../sorng-encryption" }
 sorng-llm = { path = "../sorng-llm" }
+sorng-telegram = { path = "../sorng-telegram" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-recording = { path = "../sorng-recording" }
 sorng-vault = { path = "../sorng-vault" }

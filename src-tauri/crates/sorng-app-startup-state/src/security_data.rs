@@ -56,6 +56,7 @@ pub(super) fn register(
     app.manage(backup_service);
     register_recording(app, app_dir);
     register_llm(app);
+    register_telegram(app);
     app.manage(BitwardenService::new_state());
     app.manage(KeePassService::new());
     app.manage(PassboltService::new_state());
@@ -100,6 +101,19 @@ pub(super) fn register_llm<R: tauri::Runtime>(app: &impl tauri::Manager<R>) -> L
         return existing.inner().clone();
     }
     let state = sorng_llm::service::create_llm_state();
+    app.manage(state.clone());
+    state
+}
+
+/// Register the local bot registry without configuring clients or starting any
+/// polling, webhook, notification or other network work.
+pub(super) fn register_telegram<R: tauri::Runtime>(
+    app: &impl tauri::Manager<R>,
+) -> sorng_telegram::TelegramServiceState {
+    if let Some(existing) = app.try_state::<sorng_telegram::TelegramServiceState>() {
+        return existing.inner().clone();
+    }
+    let state = sorng_telegram::service::TelegramService::new();
     app.manage(state.clone());
     state
 }

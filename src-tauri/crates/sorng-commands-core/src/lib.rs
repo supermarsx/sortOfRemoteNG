@@ -1,11 +1,17 @@
 pub use sorng_app_domains::*;
 pub use sorng_llm as llm;
+pub use sorng_telegram as telegram;
 
 #[path = "../../../src/llm_commands.rs"]
 mod llm_commands;
 // Shared with the startup mock-runtime regression; no optional platform graph.
 #[doc(hidden)]
 pub mod llm_handler;
+
+#[path = "../../../src/telegram_commands.rs"]
+mod telegram_commands;
+#[doc(hidden)]
+pub mod telegram_handler;
 
 #[cfg(all(feature = "opkssh", not(feature = "ops")))]
 pub use sorng_opkssh as opkssh;

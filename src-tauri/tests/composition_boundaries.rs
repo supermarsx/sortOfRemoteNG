@@ -79,7 +79,7 @@ fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
         sorng_app_startup_state::PLATFORM_REGISTRATION_ORDER.len(),
         13
     );
-    assert_eq!(sorng_app_startup_state::COLLAB_REGISTRATION_ORDER.len(), 12);
+    assert_eq!(sorng_app_startup_state::COLLAB_REGISTRATION_ORDER.len(), 11);
     assert_eq!(sorng_app_startup_state::API_REGISTRATION_ORDER.len(), 3);
 
     let enabled_databases = [
@@ -95,7 +95,7 @@ fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
     .count();
     assert_eq!(
         sorng_app_startup_state::SECURITY_DATA_REGISTRATION_ORDER.len(),
-        36 + enabled_databases
+        37 + enabled_databases
     );
 
     let expected_prefix = 9 + usize::from(cfg!(all(feature = "opkssh", not(feature = "ops"))));
@@ -220,6 +220,7 @@ fn every_moved_registrar_keeps_its_internal_registration_order() {
             "app.manage(backup_service);",
             "register_recording(app, app_dir);",
             "register_llm(app);",
+            "register_telegram(app);",
             "app.manage(BitwardenService::new_state",
             "app.manage(KeePassService::new",
             "app.manage(PassboltService::new_state",
@@ -289,7 +290,6 @@ fn every_moved_registrar_keeps_its_internal_registration_order() {
         &[
             "let whatsapp_state: WhatsAppServiceState",
             "app.manage(whatsapp_state);",
-            "app.manage(telegram::service::TelegramService::new",
             "app.manage(dropbox::service::DropboxService::new",
             "app.manage(nextcloud::service::NextcloudService::new",
             "app.manage(gdrive::service::GDriveService::new",

@@ -39,6 +39,9 @@ pub fn is_command(command: &str) -> bool {
     if crate::llm_handler::is_command(command) {
         return true;
     }
+    if crate::telegram_handler::is_command(command) {
+        return true;
+    }
     matches!(
         command,
         "greet"
@@ -2826,6 +2829,7 @@ define_command_group!(
 
 pub fn build() -> InvokeHandler {
     let llm = crate::llm_handler::build();
+    let telegram = crate::telegram_handler::build();
     let a = build_a();
     let j = build_j();
     let b = build_b();
@@ -2841,6 +2845,9 @@ pub fn build() -> InvokeHandler {
         let command = invoke.message.command();
         if crate::llm_handler::is_command(command) {
             return llm(invoke);
+        }
+        if crate::telegram_handler::is_command(command) {
+            return telegram(invoke);
         }
         if is_command_a(command) {
             return a(invoke);
@@ -2886,7 +2893,8 @@ mod tests {
     };
     use std::collections::HashSet;
 
-    const COMMAND_ROUTES: [fn(&str) -> bool; 11] = [
+    const COMMAND_ROUTES: [fn(&str) -> bool; 12] = [
+        crate::telegram_handler::is_command,
         crate::llm_handler::is_command,
         is_command_a,
         is_command_j,

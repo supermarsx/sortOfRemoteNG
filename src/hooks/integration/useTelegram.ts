@@ -1,7 +1,7 @@
 // useTelegram — real Tauri `invoke(...)` wrappers for the sorng-telegram backend.
 //
 // Binds all 78 Telegram commands registered in the Tauri handler
-// (`sorng-commands-collab/src/collab_handler.rs`, mirroring
+// (`sorng-commands-core/src/telegram_handler.rs`, available in lean builds and mirroring
 // `sorng-telegram/src/commands.rs`). Telegram is a *registry of many bots*:
 // commands key by `botName` rather than a single connection id.
 //

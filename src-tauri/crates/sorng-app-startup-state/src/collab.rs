@@ -4,7 +4,6 @@ pub(super) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let whatsapp_state: WhatsAppServiceState =
         Arc::new(Mutex::new(whatsapp::service::WhatsAppService::new()));
     app.manage(whatsapp_state);
-    app.manage(telegram::service::TelegramService::new());
     app.manage(dropbox::service::DropboxService::new());
     app.manage(nextcloud::service::NextcloudService::new());
     app.manage(gdrive::service::GDriveService::new());

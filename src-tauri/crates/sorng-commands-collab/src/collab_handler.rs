@@ -115,84 +115,6 @@ pub fn is_command(command: &str) -> bool {
             | "wa_pairing_cancel"
             | "wa_get_messages"
             | "wa_send_auto"
-            | "telegram_add_bot"
-            | "telegram_remove_bot"
-            | "telegram_list_bots"
-            | "telegram_validate_bot"
-            | "telegram_set_bot_enabled"
-            | "telegram_update_bot_token"
-            | "telegram_send_message"
-            | "telegram_send_photo"
-            | "telegram_send_document"
-            | "telegram_send_video"
-            | "telegram_send_audio"
-            | "telegram_send_voice"
-            | "telegram_send_location"
-            | "telegram_send_contact"
-            | "telegram_send_poll"
-            | "telegram_send_dice"
-            | "telegram_send_sticker"
-            | "telegram_send_chat_action"
-            | "telegram_edit_message_text"
-            | "telegram_edit_message_caption"
-            | "telegram_edit_message_reply_markup"
-            | "telegram_delete_message"
-            | "telegram_forward_message"
-            | "telegram_copy_message"
-            | "telegram_pin_message"
-            | "telegram_unpin_message"
-            | "telegram_unpin_all_messages"
-            | "telegram_answer_callback_query"
-            | "telegram_get_chat"
-            | "telegram_get_chat_member_count"
-            | "telegram_get_chat_member"
-            | "telegram_get_chat_administrators"
-            | "telegram_set_chat_title"
-            | "telegram_set_chat_description"
-            | "telegram_ban_chat_member"
-            | "telegram_unban_chat_member"
-            | "telegram_restrict_chat_member"
-            | "telegram_promote_chat_member"
-            | "telegram_leave_chat"
-            | "telegram_export_chat_invite_link"
-            | "telegram_create_invite_link"
-            | "telegram_get_file"
-            | "telegram_download_file"
-            | "telegram_upload_file"
-            | "telegram_get_updates"
-            | "telegram_set_webhook"
-            | "telegram_delete_webhook"
-            | "telegram_get_webhook_info"
-            | "telegram_add_notification_rule"
-            | "telegram_remove_notification_rule"
-            | "telegram_list_notification_rules"
-            | "telegram_set_notification_rule_enabled"
-            | "telegram_process_connection_event"
-            | "telegram_add_monitoring_check"
-            | "telegram_remove_monitoring_check"
-            | "telegram_list_monitoring_checks"
-            | "telegram_set_monitoring_check_enabled"
-            | "telegram_monitoring_summary"
-            | "telegram_record_monitoring_result"
-            | "telegram_add_template"
-            | "telegram_remove_template"
-            | "telegram_list_templates"
-            | "telegram_render_template"
-            | "telegram_validate_template_body"
-            | "telegram_send_template"
-            | "telegram_schedule_message"
-            | "telegram_cancel_scheduled_message"
-            | "telegram_list_scheduled_messages"
-            | "telegram_process_scheduled_messages"
-            | "telegram_broadcast"
-            | "telegram_add_digest"
-            | "telegram_remove_digest"
-            | "telegram_list_digests"
-            | "telegram_stats"
-            | "telegram_message_log"
-            | "telegram_clear_message_log"
-            | "telegram_notification_history"
-            | "telegram_monitoring_history"
             | "dropbox_configure"
             | "dropbox_set_token"
             | "dropbox_disconnect"
@@ -609,95 +531,17 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         whatsapp_commands::wa_get_messages,
         whatsapp_commands::wa_send_auto,
         // Telegram Bot API commands — Bot management
-        telegram_commands::telegram_add_bot,
-        telegram_commands::telegram_remove_bot,
-        telegram_commands::telegram_list_bots,
-        telegram_commands::telegram_validate_bot,
-        telegram_commands::telegram_set_bot_enabled,
-        telegram_commands::telegram_update_bot_token,
         // Telegram commands — Messaging
-        telegram_commands::telegram_send_message,
-        telegram_commands::telegram_send_photo,
-        telegram_commands::telegram_send_document,
-        telegram_commands::telegram_send_video,
-        telegram_commands::telegram_send_audio,
-        telegram_commands::telegram_send_voice,
-        telegram_commands::telegram_send_location,
-        telegram_commands::telegram_send_contact,
-        telegram_commands::telegram_send_poll,
-        telegram_commands::telegram_send_dice,
-        telegram_commands::telegram_send_sticker,
-        telegram_commands::telegram_send_chat_action,
         // Telegram commands — Message management
-        telegram_commands::telegram_edit_message_text,
-        telegram_commands::telegram_edit_message_caption,
-        telegram_commands::telegram_edit_message_reply_markup,
-        telegram_commands::telegram_delete_message,
-        telegram_commands::telegram_forward_message,
-        telegram_commands::telegram_copy_message,
-        telegram_commands::telegram_pin_message,
-        telegram_commands::telegram_unpin_message,
-        telegram_commands::telegram_unpin_all_messages,
-        telegram_commands::telegram_answer_callback_query,
         // Telegram commands — Chat management
-        telegram_commands::telegram_get_chat,
-        telegram_commands::telegram_get_chat_member_count,
-        telegram_commands::telegram_get_chat_member,
-        telegram_commands::telegram_get_chat_administrators,
-        telegram_commands::telegram_set_chat_title,
-        telegram_commands::telegram_set_chat_description,
-        telegram_commands::telegram_ban_chat_member,
-        telegram_commands::telegram_unban_chat_member,
-        telegram_commands::telegram_restrict_chat_member,
-        telegram_commands::telegram_promote_chat_member,
-        telegram_commands::telegram_leave_chat,
-        telegram_commands::telegram_export_chat_invite_link,
-        telegram_commands::telegram_create_invite_link,
         // Telegram commands — Files
-        telegram_commands::telegram_get_file,
-        telegram_commands::telegram_download_file,
-        telegram_commands::telegram_upload_file,
         // Telegram commands — Webhooks & Updates
-        telegram_commands::telegram_get_updates,
-        telegram_commands::telegram_set_webhook,
-        telegram_commands::telegram_delete_webhook,
-        telegram_commands::telegram_get_webhook_info,
         // Telegram commands — Notification rules
-        telegram_commands::telegram_add_notification_rule,
-        telegram_commands::telegram_remove_notification_rule,
-        telegram_commands::telegram_list_notification_rules,
-        telegram_commands::telegram_set_notification_rule_enabled,
-        telegram_commands::telegram_process_connection_event,
         // Telegram commands — Monitoring
-        telegram_commands::telegram_add_monitoring_check,
-        telegram_commands::telegram_remove_monitoring_check,
-        telegram_commands::telegram_list_monitoring_checks,
-        telegram_commands::telegram_set_monitoring_check_enabled,
-        telegram_commands::telegram_monitoring_summary,
-        telegram_commands::telegram_record_monitoring_result,
         // Telegram commands — Templates
-        telegram_commands::telegram_add_template,
-        telegram_commands::telegram_remove_template,
-        telegram_commands::telegram_list_templates,
-        telegram_commands::telegram_render_template,
-        telegram_commands::telegram_validate_template_body,
-        telegram_commands::telegram_send_template,
         // Telegram commands — Scheduled messages
-        telegram_commands::telegram_schedule_message,
-        telegram_commands::telegram_cancel_scheduled_message,
-        telegram_commands::telegram_list_scheduled_messages,
-        telegram_commands::telegram_process_scheduled_messages,
         // Telegram commands — Broadcast & Digests
-        telegram_commands::telegram_broadcast,
-        telegram_commands::telegram_add_digest,
-        telegram_commands::telegram_remove_digest,
-        telegram_commands::telegram_list_digests,
         // Telegram commands — Stats & Logs
-        telegram_commands::telegram_stats,
-        telegram_commands::telegram_message_log,
-        telegram_commands::telegram_clear_message_log,
-        telegram_commands::telegram_notification_history,
-        telegram_commands::telegram_monitoring_history,
         // Dropbox commands — Configuration & Connection
         dropbox_commands::dropbox_configure,
         dropbox_commands::dropbox_set_token,

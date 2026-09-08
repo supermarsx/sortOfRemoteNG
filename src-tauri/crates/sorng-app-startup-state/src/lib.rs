@@ -17,6 +17,8 @@ mod llm_tests;
 #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 mod platform;
 mod security_data;
+#[cfg(test)]
+mod telegram_tests;
 
 pub use sorng_app_api::api::ApiService;
 pub use sorng_app_domains::auth::AuthServiceState;
@@ -178,6 +180,7 @@ pub const SECURITY_DATA_REGISTRATION_ORDER: &[&str] = &[
     "BackupServiceState",
     "RecordingServiceState",
     "LlmServiceState",
+    "TelegramServiceState",
     "BitwardenServiceState",
     "KeePassServiceState",
     "PassboltServiceState",
@@ -222,7 +225,6 @@ pub const PLATFORM_REGISTRATION_ORDER: &[&str] = &[
 
 pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
     "WhatsAppServiceState",
-    "TelegramServiceState",
     "DropboxServiceState",
     "NextcloudServiceState",
     "GDriveServiceState",
@@ -238,8 +240,8 @@ pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
 pub const API_REGISTRATION_ORDER: &[&str] =
     &["ApiService", "DisabledCapsSetter", "ApiServerController"];
 
-/// Maximum moved inventory: 13 infrastructure/API + 42 security/data + 5
-/// access + 13 platform + 12 collaboration registrations.
+/// Maximum moved inventory: 13 infrastructure/API + 43 security/data + 5
+/// access + 13 platform + 11 collaboration registrations.
 pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 85;
 
 pub struct InfrastructureHandles {
@@ -449,10 +451,10 @@ mod tests {
     fn fixed_registrar_inventories_match_the_moved_contract() {
         assert_eq!(ACCESS_REGISTRATION_ORDER.len(), 5);
         assert_eq!(PLATFORM_REGISTRATION_ORDER.len(), 13);
-        assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 12);
+        assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 11);
         assert_eq!(API_REGISTRATION_ORDER.len(), 3);
-        assert_eq!(36 + 6, 42);
-        assert_eq!(10 + 3 + 42 + 5 + 13 + 12, MAX_MANAGED_STATE_REGISTRATIONS);
+        assert_eq!(37 + 6, 43);
+        assert_eq!(10 + 3 + 43 + 5 + 13 + 11, MAX_MANAGED_STATE_REGISTRATIONS);
     }
 
     #[test]

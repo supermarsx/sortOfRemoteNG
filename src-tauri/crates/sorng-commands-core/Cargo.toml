@@ -18,6 +18,7 @@ sorng-vault = { path = "../sorng-vault" }
 sorng-storage = { path = "../sorng-storage" }
 sorng-recording = { path = "../sorng-recording" }
 sorng-llm = { path = "../sorng-llm" }
+sorng-telegram = { path = "../sorng-telegram" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-probes = { path = "../sorng-probes" }
 tauri = { workspace = true }
