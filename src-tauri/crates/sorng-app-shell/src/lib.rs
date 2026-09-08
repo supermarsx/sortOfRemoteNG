@@ -71,6 +71,15 @@ pub mod commands {
         command: &mut Command,
         label: &str,
     ) -> Result<BoundedCommandOutput, String> {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+
+            // Background shortcut helpers must never allocate a console. Hiding
+            // PowerShell after launch alone still lets its console flash first.
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -577,7 +586,14 @@ end tell
             )?;
             let output = run_bounded_command(
                 Command::new(powershell)
-                    .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"])
+                    .args([
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-WindowStyle",
+                        "Hidden",
+                        "-Command",
+                    ])
                     .arg(CREATE_SHORTCUT_POWERSHELL)
                     .env("SORNG_SHORTCUT_PATH", &shortcut_path)
                     .env("SORNG_APP_PATH", &app_path)
@@ -1169,7 +1185,14 @@ StartupNotify=false
 
         match run_bounded_command(
             Command::new(powershell)
-                .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"])
+                .args([
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-Command",
+                ])
                 .arg(READ_SHORTCUT_POWERSHELL)
                 .env("SORNG_SHORTCUT_PATH", path),
             "PowerShell shortcut reader",
@@ -1203,6 +1226,61 @@ StartupNotify=false
     #[cfg(test)]
     mod process_safety_tests {
         use super::{validate_external_url, validate_shortcut_id, validate_shortcut_name};
+
+        #[cfg(target_os = "windows")]
+        fn test_powershell() -> std::process::Command {
+            let executable = super::windows_system_executable(
+                &["System32", "WindowsPowerShell", "v1.0", "powershell.exe"],
+                "Windows PowerShell",
+            )
+            .expect("Windows PowerShell must be available for the shortcut helper");
+            let mut command = std::process::Command::new(executable);
+            command.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]);
+            command
+        }
+
+        #[cfg(target_os = "windows")]
+        #[test]
+        fn background_shortcut_helper_has_no_console_window() {
+            // Omit -WindowStyle on purpose: the process creation flag itself
+            // must prevent console allocation, not merely hide an existing HWND.
+            let output = super::run_bounded_command(
+                test_powershell().arg(
+                    r#"
+$ErrorActionPreference = 'Stop'
+Add-Type -Namespace SorngShortcutTest -Name NativeConsole -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();'
+[Console]::Write([SorngShortcutTest.NativeConsole]::GetConsoleWindow().ToInt64())
+"#,
+                ),
+                "console-free shortcut test helper",
+            )
+            .expect("background PowerShell must finish successfully");
+            assert!(
+                output.success,
+                "{}",
+                super::bounded_output_text(&output.stderr)
+            );
+            assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "0");
+        }
+
+        #[cfg(target_os = "windows")]
+        #[test]
+        fn hidden_shortcut_helper_preserves_environment_data_and_closed_stdin() {
+            let value = "literal; Write-Output unexpected\n\"quoted\"";
+            let output = super::run_bounded_command(
+                test_powershell()
+                    .arg("if ($null -ne [Console]::ReadLine()) { exit 1 }; [Console]::Write($env:SORNG_SHORTCUT_TEST_VALUE)")
+                    .env("SORNG_SHORTCUT_TEST_VALUE", value),
+                "data-only shortcut test helper",
+            )
+            .expect("hidden helper must preserve redirected I/O");
+            assert!(
+                output.success,
+                "{}",
+                super::bounded_output_text(&output.stderr)
+            );
+            assert_eq!(String::from_utf8_lossy(&output.stdout), value);
+        }
 
         #[test]
         fn external_urls_accept_web_links_and_reject_non_web_or_control_input() {

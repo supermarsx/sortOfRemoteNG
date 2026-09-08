@@ -14,6 +14,24 @@ pub type WolServiceState = Arc<Mutex<WolService>>;
 const DEFAULT_BROADCAST_ADDRESS: &str = "255.255.255.255";
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_millis(1_500);
 
+/// WOL discovery helpers collect output in the background, never open a terminal.
+fn discovery_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let command = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let mut command = command;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        command
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WolDevice {
     pub ip: String,
@@ -405,7 +423,7 @@ impl WolService {
 
             #[cfg(target_os = "windows")]
             {
-                let output = Command::new("arp")
+                let output = discovery_command("arp")
                     .arg("-a")
                     .output()
                     .map_err(|e| format!("Failed to execute arp command: {}", e))?;
@@ -437,7 +455,7 @@ impl WolService {
 
             #[cfg(not(target_os = "windows"))]
             {
-                let output = Command::new("arp")
+                let output = discovery_command("arp")
                     .arg("-n")
                     .output()
                     .map_err(|e| format!("Failed to execute arp command: {}", e))?;
@@ -469,7 +487,7 @@ impl WolService {
                 .into_iter()
                 .map(|ip| {
                     std::thread::spawn(move || {
-                        if let Ok(output) = Command::new("nslookup").arg(&ip).output() {
+                        if let Ok(output) = discovery_command("nslookup").arg(&ip).output() {
                             let stdout = String::from_utf8_lossy(&output.stdout);
                             for line in stdout.lines() {
                                 if line.contains("name =") || line.contains("Name:") {
@@ -539,6 +557,44 @@ impl WolService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn discovery_helper_has_no_console_window() {
+        let powershell = std::path::PathBuf::from(
+            std::env::var_os("SystemRoot").expect("Windows system directory must be available"),
+        )
+        .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+        // A harmless helper exercises the exact discovery command constructor;
+        // never invoke ARP, DNS discovery or Wake-on-LAN against the user's LAN.
+        let output = discovery_command(powershell)
+            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"])
+            .arg(
+                r#"
+$ErrorActionPreference = 'Stop'
+Add-Type -Namespace SorngWolTest -Name NativeConsole -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();'
+[Console]::Write([SorngWolTest.NativeConsole]::GetConsoleWindow().ToInt64())
+"#,
+            )
+            .output()
+            .expect("console-free discovery helper must run");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "0");
+    }
+
+    #[test]
+    fn discovery_helper_preserves_program_and_arguments() {
+        for (program, argument) in [("arp", "-a"), ("nslookup", "192.0.2.1")] {
+            let mut command = discovery_command(program);
+            command.arg(argument);
+            assert_eq!(command.get_program(), std::ffi::OsStr::new(program));
+            assert_eq!(command.get_args().collect::<Vec<_>>(), [argument]);
+        }
+    }
 
     fn make_schedule(id: &str) -> WolSchedule {
         WolSchedule {
