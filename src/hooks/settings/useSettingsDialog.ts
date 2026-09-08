@@ -50,7 +50,7 @@ export function useSettingsDialog(
   // `t` is threaded into search so entries carrying `labelKey`/`descriptionKey`
   // also match on their translated text in the current UI language.
   const searchResult = useSettingsSearch(searchQuery, t);
-  useSettingHighlight(highlightKey);
+  useSettingHighlight(activeTab === "ai" ? null : highlightKey);
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
   const bottomSentinelRef = useRef<HTMLDivElement>(null);

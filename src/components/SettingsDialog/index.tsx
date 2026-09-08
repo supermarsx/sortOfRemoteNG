@@ -254,7 +254,9 @@ const ContentPanel: React.FC<
         {mgr.activeTab === "mcpServer" && (
           <McpSettings settings={s} updateSettings={u} />
         )}
-        {mgr.activeTab === "ai" && <AiSettings />}
+        {mgr.activeTab === "ai" && (
+          <AiSettings highlightKey={mgr.highlightKey} />
+        )}
         {mgr.activeTab === "diagnostics" && (
           <DiagnosticsSettings settings={s} updateSettings={u} />
         )}

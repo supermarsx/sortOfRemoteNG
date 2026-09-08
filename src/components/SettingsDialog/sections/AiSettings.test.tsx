@@ -4,7 +4,8 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
+  invoke: (cmd: string, args?: Record<string, unknown>) =>
+    invokeMock(cmd, args),
   isTauri: () => true,
 }));
 
@@ -24,57 +25,66 @@ vi.mock("../../../utils/storage/storage", () => ({
 
 import AiSettings from "./AiSettings";
 import { llmApi } from "../../../hooks/integration/useLlm";
+import { resetIntegrationConfigStoreForTests } from "../../../hooks/integrations/useIntegrationConfigStore";
 
 beforeEach(() => {
+  resetIntegrationConfigStoreForTests();
+  let stored: string | null = null;
   invokeMock.mockReset();
-  invokeMock.mockImplementation((cmd: string) => {
-    switch (cmd) {
-      case "read_app_data":
-        return Promise.resolve(null);
-      case "write_app_data":
-        return Promise.resolve(null);
-      case "llm_list_providers":
-        return Promise.resolve([]);
-      case "llm_get_config":
-        return Promise.resolve({
-          default_provider: null,
-          default_model: null,
-          cache: {
-            enabled: true,
-            max_entries: 1000,
-            ttl_seconds: 3600,
-            max_memory_mb: 256,
-            cache_embeddings: true,
-            cache_tool_calls: false,
-          },
-          balancer: {
-            strategy: "priority",
-            health_check_interval_seconds: 300,
-            failover_enabled: true,
-            sticky_sessions: false,
-          },
-          usage_tracking_enabled: true,
-          cost_alerts: [],
-          model_aliases: {},
-          fallback_chain: [],
-        });
-      case "llm_add_provider":
-        return Promise.resolve(null);
-      default:
-        return Promise.resolve(null);
-    }
-  });
+  invokeMock.mockImplementation(
+    (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "read_app_data":
+          return Promise.resolve(stored);
+        case "compare_and_swap_app_data":
+          if (args?.expected !== stored) return Promise.resolve(false);
+          stored = args.replacement as string;
+          return Promise.resolve(true);
+        case "write_app_data":
+          return Promise.resolve(null);
+        case "llm_list_providers":
+          return Promise.resolve([]);
+        case "llm_get_config":
+          return Promise.resolve({
+            default_provider: null,
+            default_model: null,
+            cache: {
+              enabled: true,
+              max_entries: 1000,
+              ttl_seconds: 3600,
+              max_memory_mb: 256,
+              cache_embeddings: true,
+              cache_tool_calls: false,
+            },
+            balancer: {
+              strategy: "priority",
+              health_check_interval_seconds: 300,
+              failover_enabled: true,
+              sticky_sessions: false,
+            },
+            usage_tracking_enabled: true,
+            cost_alerts: [],
+            model_aliases: {},
+            fallback_chain: [],
+          });
+        case "llm_add_provider":
+          return Promise.resolve(null);
+        default:
+          return Promise.resolve(null);
+      }
+    },
+  );
 });
 
 describe("AiSettings (LLM router fold)", () => {
   it("loads the live router state on mount (list providers + get config)", async () => {
     render(<AiSettings />);
-    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("llm_list_providers", undefined));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("llm_list_providers", undefined),
+    );
     expect(invokeMock).toHaveBeenCalledWith("llm_get_config", undefined);
     expect(screen.getByTestId("section-ai")).toBeInTheDocument();
-    expect(
-      screen.getByText("No providers configured"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No providers configured")).toBeInTheDocument();
   });
 
   it("uses the standard settings section headers and cards", async () => {
@@ -88,24 +98,22 @@ describe("AiSettings (LLM router fold)", () => {
     );
     expect(
       container.querySelectorAll(".sor-settings-section-header"),
-    ).toHaveLength(5);
+    ).toHaveLength(1);
     expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(5);
     expect(container.querySelector(".sor-settings-collapsible")).toBeNull();
 
+    expect(
+      screen.getByRole("heading", { name: "1. Connect your providers" }),
+    ).toHaveClass("sor-settings-section-header");
     for (const name of [
-      "Providers",
-      "Router & load balancing",
+      "2. Routing & defaults",
       "Model catalog",
       "Usage & cache",
-      "Playground",
+      "Test your setup",
     ]) {
-      const heading = screen.getByRole("heading", { name, level: 4 });
-      expect(heading).toHaveClass("sor-settings-section-header");
-      expect(heading.firstElementChild?.getAttribute("class")).toContain(
-        "text-primary",
-      );
-      expect(heading.nextElementSibling).toHaveClass("sor-settings-card");
-      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+      const disclosure = screen.getByText(name).closest("details");
+      expect(disclosure).not.toHaveAttribute("open");
+      expect(disclosure?.querySelector(".sor-settings-card")).not.toBeNull();
     }
   });
 
@@ -126,8 +134,7 @@ describe("AiSettings (LLM router fold)", () => {
     });
 
     // Click the form's submit button (the second "Add provider").
-    const addButtons = screen.getAllByRole("button", { name: /Add provider/i });
-    fireEvent.click(addButtons[addButtons.length - 1]);
+    fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
 
     await waitFor(() =>
       expect(
@@ -141,6 +148,16 @@ describe("AiSettings (LLM router fold)", () => {
     expect(config.display_name).toBe("My OpenAI");
     expect(config.api_key).toBe("sk-secret");
     expect(config.enabled).toBe(true);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "compare_and_swap_app_data",
+        expect.any(Object),
+      ),
+    );
+    const persisted = invokeMock.mock.calls.find(
+      (call) => call[0] === "compare_and_swap_app_data",
+    )?.[1]?.replacement;
+    expect(persisted).not.toContain("sk-secret");
   });
 
   it("exposes the full 20-command surface via llmApi", () => {
