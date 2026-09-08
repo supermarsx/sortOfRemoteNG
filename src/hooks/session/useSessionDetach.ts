@@ -15,6 +15,10 @@ import {
 } from "../../utils/session/sessionLifecycle";
 import { hasNoLiveTransport } from "../../utils/session/sessionClassification";
 import { ToastContext } from "../../contexts/ToastContext";
+import {
+  RDP_INTERNALS_PROTOCOL,
+  RDP_INTERNALS_WINDOW_MESSAGE,
+} from "../../components/app/toolSession";
 
 const DETACHED_SESSION_STORAGE_PREFIX = "detached-session-";
 export const DETACH_REFUSED_EVENT = "sorng:detach-refused";
@@ -162,6 +166,14 @@ export function useSessionDetach(
           );
         }
       };
+
+      if (session.protocol === RDP_INTERNALS_PROTOCOL) {
+        refuseDetach(
+          "Internals is a window-local view",
+          RDP_INTERNALS_WINDOW_MESSAGE,
+        );
+        return;
+      }
 
       // A session that never had a live transport (error / hung connecting,
       // no active VPN route) and has no in-flight native actor attempt has

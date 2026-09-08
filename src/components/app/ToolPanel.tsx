@@ -8,7 +8,12 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
-import { getToolKeyFromProtocol, ToolKey } from "./toolSession";
+import {
+  getToolKeyFromProtocol,
+  ToolKey,
+  RDP_INTERNALS_PROTOCOL,
+  RECORDING_PLAYER_PROTOCOL,
+} from "./toolSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 
 const PerformanceMonitor = dynamic(
@@ -147,9 +152,23 @@ const DatabasePanel = dynamic(
   { ssr: false },
 );
 
+const RDPInternalsTab = dynamic(
+  () =>
+    import("../rdp/RDPInternalsTab").then((module) => module.RDPInternalsTab),
+  { ssr: false },
+);
+const RecordingPlayerTab = dynamic(
+  () =>
+    import("../recording/RecordingPlayerTab").then(
+      (module) => module.RecordingPlayerTab,
+    ),
+  { ssr: false },
+);
+
 interface ToolTabViewerProps {
   session: ConnectionSession;
   onClose: () => void;
+  onActivateSession?: (sessionId: string) => void;
   onCloseManagedSession?: (sessionId: string) => void;
   /** RDP panel extras — provided by SessionViewer from App-level hooks */
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
@@ -180,6 +199,7 @@ interface ToolTabViewerProps {
 export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   session,
   onClose,
+  onActivateSession,
   onCloseManagedSession,
   onReattachSession,
   onDetachToWindow,
@@ -205,6 +225,17 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     [state.sessions],
   );
 
+  if (session.protocol === RDP_INTERNALS_PROTOCOL) {
+    return <RDPInternalsTab session={session} onClose={onClose} />;
+  }
+  if (
+    session.protocol === RECORDING_PLAYER_PROTOCOL &&
+    session.recordingPlayer
+  ) {
+    return (
+      <RecordingPlayerTab recordingId={session.recordingPlayer.recordingId} />
+    );
+  }
   if (!toolKey) return null;
 
   // Tools render as modal dialogs (fixed inset-0 + backdrop). Inside a tab,
@@ -247,7 +278,11 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       )}
       {toolKey === "macroManager" && <MacroManager isOpen onClose={onClose} />}
       {toolKey === "recordingManager" && (
-        <RecordingManager isOpen onClose={onClose} />
+        <RecordingManager
+          isOpen
+          onClose={onClose}
+          onActivateSession={onActivateSession}
+        />
       )}
       {toolKey === "windowsBackup" && (
         <WindowsBackupPanel isOpen onClose={onClose} />

@@ -4,6 +4,7 @@ import {
   createWindowSyncRevisionClock,
   useWindowManager,
 } from "../../src/hooks/window/useWindowManager";
+import { createRdpInternalsSession } from "../../src/components/app/toolSession";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -246,8 +247,7 @@ describe("useWindowManager", () => {
       const requestDetach = [...vi.mocked(listen).mock.calls]
         .reverse()
         .find(([eventName]) => eventName === "connect-in-new-window")?.[1] as
-        | ((event: { payload: any }) => void)
-        | undefined;
+        ((event: { payload: any }) => void) | undefined;
       expect(requestDetach).toBeTypeOf("function");
       vi.useFakeTimers();
       usingFakeTimers = true;
@@ -1121,6 +1121,42 @@ describe("useWindowManager", () => {
         }),
       }),
     });
+  });
+
+  it("does not transfer window-local Internals through MOVE_SESSION", async () => {
+    const tab = createRdpInternalsSession(
+      makeSession("rdp-source", { protocol: "rdp" }),
+    );
+    const dispatch = vi.fn();
+    const { result } = renderWindowManager({ sessions: [tab], dispatch });
+    const target = "detached-internals-test" as any;
+    act(() =>
+      result.current.registry.current.windows.set(target, {
+        windowId: target,
+        sessionIds: [],
+        createdAt: Date.now(),
+      }),
+    );
+    await waitFor(() =>
+      expect(mockWindowListeners.get("wm:command")).toBeTypeOf("function"),
+    );
+    await act(async () => {
+      await mockWindowListeners.get("wm:command")!({
+        payload: {
+          type: "MOVE_SESSION",
+          sessionId: tab.id,
+          targetWindow: target,
+          sourceWindow: "main",
+        },
+      });
+    });
+    expect(result.current.registry.current.sessionOwnership.get(tab.id)).toBe(
+      "main",
+    );
+    expect(
+      result.current.registry.current.windows.get(target)?.sessionIds,
+    ).toEqual([]);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("rejects stale detached reattach and move commands after main owns the session", async () => {

@@ -296,6 +296,8 @@ export interface GlobalSettings {
   confirmDisconnect: boolean;
   /** Confirm before deleting a connection */
   confirmDeleteConnection: boolean;
+  /** Confirm deletion of saved recordings, including Recording Manager Clear All. */
+  confirmDeleteRecording: boolean;
   /** Ask before deleting a tab group (which also closes its tabs) */
   confirmDeleteTabGroup: boolean;
   /** Animate add/remove/filter transitions in the Tab Group Manager */

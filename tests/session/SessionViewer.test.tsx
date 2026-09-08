@@ -301,6 +301,30 @@ describe("SessionViewer", () => {
     expect(mockState.toolTabViewerProps).toHaveBeenCalled();
   });
 
+  it.each(["tool:rdpInternals", "tool:recordingPlayer"])(
+    "routes %s as a tool, never as another RDP client",
+    async (protocol) => {
+      const onActivateSession = vi.fn();
+      const onCloseSession = vi.fn();
+      const session = createSession({ protocol });
+      render(
+        <SessionViewer
+          session={session}
+          onCloseSession={onCloseSession}
+          onActivateSession={onActivateSession}
+        />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: /mock tool viewer/i }),
+      );
+      expect(onCloseSession).toHaveBeenCalledWith(session.id);
+      expect(mockState.rdpClientProps).not.toHaveBeenCalled();
+      expect(mockState.toolTabViewerProps).toHaveBeenCalledWith(
+        expect.objectContaining({ session, onActivateSession }),
+      );
+    },
+  );
+
   it("routes winmgmt sessions to the windows tool panel", async () => {
     render(
       <SessionViewer

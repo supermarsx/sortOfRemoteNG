@@ -392,6 +392,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   // Confirmation Dialogs
   confirmDisconnect: false,
   confirmDeleteConnection: true,
+  confirmDeleteRecording: true,
   confirmDeleteTabGroup: true,
   enableTabGroupAnimations: true,
   confirmBulkOperations: true,

@@ -16,15 +16,12 @@ export interface RDPClientHeaderProps {
   magnifierPipSize: number;
   setMagnifierZoom: (z: number) => void;
   setMagnifierPipSize: (s: number) => void;
-  showInternals: boolean;
-  showSettings: boolean;
   isFullscreen: boolean;
   recState: { isRecording: boolean; isPaused: boolean; duration: number };
   getStatusColor: () => string;
   getStatusIcon: () => React.ReactNode;
   setMagnifierActive: (v: boolean) => void;
-  setShowInternals: (v: boolean) => void;
-  setShowSettings: (v: boolean) => void;
+  onOpenInternals: (section: "diagnostics" | "settings") => void;
   handleScreenshot: () => void;
   handleScreenshotToClipboard: () => void;
   handleStopRecording: () => void;

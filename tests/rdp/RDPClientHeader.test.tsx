@@ -20,15 +20,12 @@ const buildProps = () => {
       magnifierPipSize: 200,
       setMagnifierZoom: vi.fn(),
       setMagnifierPipSize: vi.fn(),
-      showInternals: false,
-      showSettings: false,
       isFullscreen: false,
       recState: { isRecording: false, isPaused: false, duration: 0 },
       getStatusColor: () => "text-green-400",
       getStatusIcon: () => null,
       setMagnifierActive: vi.fn(),
-      setShowInternals: vi.fn(),
-      setShowSettings: vi.fn(),
+      onOpenInternals: vi.fn(),
       handleScreenshot: vi.fn(),
       handleScreenshotToClipboard: vi.fn(),
       handleStopRecording: vi.fn(),
@@ -58,6 +55,22 @@ const buildProps = () => {
 };
 
 describe("RDPClientHeader", () => {
+  it("opens diagnostics and settings in the same session's Internals tab", () => {
+    const { props } = buildProps();
+    render(<RDPClientHeader {...props} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open RDP Internals tab" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open RDP settings in Internals tab",
+      }),
+    );
+    expect(props.onOpenInternals.mock.calls).toEqual([
+      ["diagnostics"],
+      ["settings"],
+    ]);
+  });
   it("opens and closes send-keys popover, and dispatches selected option", () => {
     const { props, handleSendKeys } = buildProps();
     render(<RDPClientHeader {...props} />);

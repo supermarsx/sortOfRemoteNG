@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useSessionDetach } from "../../src/hooks/session/useSessionDetach";
+import { createRdpInternalsSession } from "../../src/components/app/toolSession";
 import { ToastContext } from "../../src/contexts/ToastContext";
 import React from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -177,6 +178,20 @@ describe("useSessionDetach", () => {
       await result.current.handleSessionDetach("nonexistent");
     });
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses window-local Internals before any native handoff or window registration", async () => {
+    const tab = createRdpInternalsSession(makeSession("rdp-source", "rdp"));
+    const { result, dispatch, registerWindow } = renderDetach({
+      sessions: [tab],
+    });
+    await act(async () => {
+      await result.current.handleSessionDetach(tab.id);
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(registerWindow).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
   });
 
   it("persists only bounded opaque detached-session metadata", async () => {

@@ -4,6 +4,7 @@ import type { RDPConnectionSettings } from "../../types/connection/connection";
 
 interface RDPSettingsPanelProps {
   rdpSettings: RDPConnectionSettings;
+  desktopSize: { width: number; height: number };
   colorDepth: number;
   audioEnabled: boolean;
   clipboardEnabled: boolean;
@@ -13,6 +14,7 @@ interface RDPSettingsPanelProps {
 
 export function RDPSettingsPanel({
   rdpSettings,
+  desktopSize,
   colorDepth,
   audioEnabled,
   clipboardEnabled,
@@ -24,11 +26,19 @@ export function RDPSettingsPanel({
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] text-xs mb-1">
-            Resolution
+            Current resolution
           </div>
           <div className="text-[var(--color-text)] text-xs font-mono">
-            {rdpSettings.display?.width ?? 1920}x
-            {rdpSettings.display?.height ?? 1080}
+            {desktopSize.width}x{desktopSize.height}
+          </div>
+        </div>
+        <div className="bg-[var(--color-background)] rounded p-2">
+          <div className="text-[var(--color-textMuted)] text-xs mb-1">
+            Configured resolution
+          </div>
+          <div className="text-[var(--color-text)] text-xs font-mono">
+            {rdpSettings.display?.width ?? "Auto"}x
+            {rdpSettings.display?.height ?? "Auto"}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">

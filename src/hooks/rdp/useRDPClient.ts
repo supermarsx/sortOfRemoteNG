@@ -277,13 +277,11 @@ export function useRDPClient(session: ConnectionSession) {
     "disconnected" | "connecting" | "connected" | "error" | "reconnecting"
   >("disconnected");
   const [statusMessage, setStatusMessage] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
   const [rdpSessionId, setRdpSessionId] = useState<string | null>(null);
   const [desktopSize, setDesktopSize] = useState({ width: 1920, height: 1080 });
   const desktopSizeRef = useRef(desktopSize);
   desktopSizeRef.current = desktopSize;
   const [pointerStyle, setPointerStyle] = useState<string>("default");
-  const [showInternals, setShowInternals] = useState(false);
   const [stats, setStats] = useState<RDPStatsEvent | null>(null);
   const [lifecycle, setLifecycle] = useState<RDPLifecycleEvent | null>(null);
   const [magnifierActive, setMagnifierActive] = useState(false);
@@ -3678,14 +3676,10 @@ export function useRDPClient(session: ConnectionSession) {
     connectionStatus,
     statusMessage,
     isFullscreen,
-    showSettings,
-    setShowSettings,
     rdpSessionId,
     desktopSize,
     rdpSettings,
     pointerStyle,
-    showInternals,
-    setShowInternals,
     stats,
     lifecycle,
     magnifierActive,

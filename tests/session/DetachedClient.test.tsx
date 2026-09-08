@@ -42,11 +42,53 @@ vi.mock("../../src/i18n", () => ({
   default: {},
 }));
 
-vi.mock("../../src/components/session/SessionViewer", () => ({
-  SessionViewer: () => (
-    <div data-testid="mock-session-viewer">Session Viewer</div>
-  ),
+const linkedViewer = vi.hoisted(() => ({
+  enabled: false,
+  mounts: 0,
+  unmounts: 0,
 }));
+vi.mock("../../src/components/session/SessionViewer", async () => {
+  const { useEffect } = await import("react");
+  const { useConnections } = await import("../../src/contexts/useConnections");
+  const { createRdpInternalsSession } =
+    await import("../../src/components/app/toolSession");
+  return {
+    SessionViewer: ({ session, onActivateSession, onCloseSession }: any) => {
+      const { state, dispatch } = useConnections();
+      useEffect(() => {
+        if (!linkedViewer.enabled || session.protocol !== "rdp") return;
+        linkedViewer.mounts++;
+        return () => {
+          linkedViewer.unmounts++;
+        };
+      }, [session.id, session.protocol]);
+      if (!linkedViewer.enabled)
+        return <div data-testid="mock-session-viewer">Session Viewer</div>;
+      return (
+        <div data-testid={`viewer-${session.id}`}>
+          {session.protocol === "rdp" ? (
+            <button
+              onClick={() => {
+                const tab = createRdpInternalsSession(session);
+                if (
+                  !state.sessions.some((candidate) => candidate.id === tab.id)
+                )
+                  dispatch({ type: "ADD_SESSION", payload: tab });
+                onActivateSession?.(tab.id);
+              }}
+            >
+              Open linked internals
+            </button>
+          ) : (
+            <button onClick={() => onCloseSession?.(session.id)}>
+              Close linked tool
+            </button>
+          )}
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock("../../src/hooks/window/useTooltipSystem", () => ({
   useTooltipSystem: vi.fn(),
@@ -198,6 +240,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 describe("DetachedClient accessibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    linkedViewer.enabled = false;
+    linkedViewer.mounts = 0;
+    linkedViewer.unmounts = 0;
     stopMemoryWatchdog();
     SettingsManager.resetInstance();
     _resetInMemorySettingsStore();
@@ -226,6 +271,138 @@ describe("DetachedClient accessibility", () => {
       ).toBeInTheDocument();
     });
   };
+
+  it("keeps only the linked RDP source mounted, retains local Internals across sync, and closes tools locally", async () => {
+    linkedViewer.enabled = true;
+    await renderAndLoadDetachedClient();
+    const rdp = { ...syncedSession, protocol: "rdp" } as any;
+    const sync = (syncRevision: number, sessions = [rdp]) =>
+      act(() =>
+        emitSyncSnapshot({
+          windowId: "detached-1",
+          syncRevision,
+          sessions,
+          connections: [syncedConnection as any],
+          tabGroups: [],
+          activeSessionId: "s1",
+        }),
+      );
+    sync(2);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open linked internals" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Close linked tool" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("viewer-s1")).not.toBeVisible();
+    expect(linkedViewer.mounts).toBe(1);
+    expect(linkedViewer.unmounts).toBe(0);
+    sync(3);
+    expect(
+      screen.getByRole("button", { name: "Close linked tool" }),
+    ).toBeInTheDocument();
+    expect(linkedViewer.mounts).toBe(1);
+    expect(linkedViewer.unmounts).toBe(0);
+    vi.mocked(emit).mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Close linked tool" }));
+    expect(
+      screen.getByRole("button", { name: "Open linked internals" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("viewer-rdp-internals-s1"),
+    ).not.toBeInTheDocument();
+    expect(linkedViewer.mounts).toBe(1);
+    expect(linkedViewer.unmounts).toBe(0);
+    expect(
+      vi
+        .mocked(emit)
+        .mock.calls.some(
+          ([, command]) => (command as any)?.type === "CLOSE_SESSION",
+        ),
+    ).toBe(false);
+  });
+
+  it("does not let a local Internals tab retain ownership after an authoritative empty sync", async () => {
+    linkedViewer.enabled = true;
+    (window as any).__TAURI__ = {};
+    await renderAndLoadDetachedClient();
+    act(() =>
+      emitSyncSnapshot({
+        windowId: "detached-1",
+        syncRevision: 2,
+        sessions: [{ ...syncedSession, protocol: "rdp" } as any],
+        connections: [syncedConnection as any],
+        tabGroups: [],
+        activeSessionId: "s1",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open linked internals" }),
+    );
+    vi.mocked(emit).mockClear();
+    act(() =>
+      emitSyncSnapshot({
+        windowId: "detached-1",
+        syncRevision: 3,
+        sessions: [],
+        connections: [],
+        tabGroups: [],
+      }),
+    );
+    await waitFor(() => expect(mockWindow.close).toHaveBeenCalledTimes(1));
+    expect(
+      screen.queryByTestId("viewer-rdp-internals-s1"),
+    ).not.toBeInTheDocument();
+    expect(linkedViewer.unmounts).toBe(1);
+    expect(
+      vi
+        .mocked(emit)
+        .mock.calls.some(
+          ([, command]) =>
+            (command as any)?.type === "SYNC_SESSION_LIFECYCLE" &&
+            (command as any)?.sessionId === "rdp-internals-s1",
+        ),
+    ).toBe(false);
+  });
+
+  it("preserves reattach for a recording player authoritatively assigned by main", async () => {
+    (window as any).__TAURI__ = {};
+    await renderAndLoadDetachedClient();
+    const player = {
+      id: "recording-player-r1",
+      connectionId: "recording-player-r1",
+      name: "Recording One",
+      status: "connected",
+      protocol: "tool:recordingPlayer",
+      hostname: "",
+      startTime: new Date(),
+      recordingPlayer: { recordingId: "r1" },
+    } as const;
+    act(() =>
+      emitSyncSnapshot({
+        windowId: "detached-1",
+        syncRevision: 2,
+        sessions: [syncedSession as any, player],
+        connections: [syncedConnection as any],
+        tabGroups: [],
+        activeSessionId: player.id,
+      }),
+    );
+    const reattach = screen.getByRole("button", {
+      name: "Reattach Recording One",
+    });
+    expect(reattach).not.toBeDisabled();
+    vi.mocked(emit).mockClear();
+    fireEvent.click(reattach);
+    expect(emit).toHaveBeenCalledWith(
+      "wm:command",
+      expect.objectContaining({
+        type: "REATTACH_SESSION",
+        sessionId: player.id,
+        sourceWindow: "detached-1",
+      }),
+    );
+  });
 
   it("owns detached watchdog thresholds, live settings, and cleanup", async () => {
     vi.useFakeTimers();

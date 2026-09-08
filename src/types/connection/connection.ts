@@ -1593,6 +1593,13 @@ export interface ConnectionSession {
   protocol: string;
   hostname: string;
 
+  /** UI-only tool targets: logical IDs, never native handles or credentials. */
+  rdpInternals?: {
+    sessionId: string;
+    section: "diagnostics" | "settings";
+  };
+  recordingPlayer?: { recordingId: string };
+
   /**
    * Safe dependency snapshot for reconnect/detach. Runtime hosts, credentials,
    * and raw transport configs must never be persisted on the session.

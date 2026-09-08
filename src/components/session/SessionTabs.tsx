@@ -45,7 +45,12 @@ import {
 import { LayoutGrid } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
-import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
+import {
+  getToolKeyFromProtocol,
+  isToolProtocol,
+  RDP_INTERNALS_PROTOCOL,
+  RDP_INTERNALS_WINDOW_MESSAGE,
+} from "../app/toolSession";
 import { getToolIcon } from "../app/toolDescriptors";
 import {
   isWinmgmtProtocol,
@@ -1148,6 +1153,12 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               data-tooltip="Detach"
               data-testid="session-tab-detach"
               aria-label={`Detach ${session.name}`}
+              disabled={session.protocol === RDP_INTERNALS_PROTOCOL}
+              title={
+                session.protocol === RDP_INTERNALS_PROTOCOL
+                  ? RDP_INTERNALS_WINDOW_MESSAGE
+                  : undefined
+              }
             >
               <ExternalLink size={12} />
             </button>
@@ -1739,86 +1750,93 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                   onClick={() => act(() => onSessionDetach(sessionId))}
                   className="sor-menu-item"
                   data-testid="session-tab-detach"
+                  disabled={targetSession?.protocol === RDP_INTERNALS_PROTOCOL}
+                  title={
+                    targetSession?.protocol === RDP_INTERNALS_PROTOCOL
+                      ? RDP_INTERNALS_WINDOW_MESSAGE
+                      : undefined
+                  }
                 >
                   <ExternalLink size={14} className="mr-2" /> Detach to New
                   Window
                 </button>
-                {detachedWindows.length > 0 && (
-                  <div
-                    className="sor-menu-submenu"
-                    data-submenu-open={sendToSubmenuOpen ? "true" : "false"}
-                    onMouseLeave={() => setSendToSubmenuOpen(false)}
-                    onBlurCapture={(event) => {
-                      const next = event.relatedTarget as Node | null;
-                      if (!event.currentTarget.contains(next)) {
-                        setSendToSubmenuOpen(false);
-                      }
-                    }}
-                  >
-                    <button
-                      id={sendToSubmenuTriggerId}
-                      ref={sendToSubmenuTriggerRef}
-                      className="sor-menu-item"
-                      role="menuitem"
-                      aria-haspopup="menu"
-                      aria-expanded={sendToSubmenuOpen}
-                      aria-controls={sendToSubmenuPanelId}
-                      onMouseEnter={() => setSendToSubmenuOpen(true)}
-                      onKeyDown={(event) =>
-                        handleSubmenuTriggerKeyDown(
-                          event,
-                          setSendToSubmenuOpen,
-                          sendToSubmenuPanelRef,
-                        )
-                      }
-                    >
-                      <Send size={14} className="mr-2" />
-                      <span className="flex-1">Send to Window</span>
-                      <ChevronRight size={12} className="ml-2" />
-                    </button>
+                {detachedWindows.length > 0 &&
+                  targetSession?.protocol !== RDP_INTERNALS_PROTOCOL && (
                     <div
-                      id={sendToSubmenuPanelId}
-                      ref={sendToSubmenuPanelRef}
-                      className="sor-menu-submenu-panel"
-                      role="menu"
-                      tabIndex={-1}
-                      aria-label="Send to window submenu"
-                      aria-labelledby={sendToSubmenuTriggerId}
-                      onKeyDown={(event) =>
-                        handleSubmenuPanelKeyDown(
-                          event,
-                          setSendToSubmenuOpen,
-                          sendToSubmenuTriggerRef,
-                        )
-                      }
+                      className="sor-menu-submenu"
+                      data-submenu-open={sendToSubmenuOpen ? "true" : "false"}
+                      onMouseLeave={() => setSendToSubmenuOpen(false)}
+                      onBlurCapture={(event) => {
+                        const next = event.relatedTarget as Node | null;
+                        if (!event.currentTarget.contains(next)) {
+                          setSendToSubmenuOpen(false);
+                        }
+                      }}
                     >
-                      {detachedWindows.map((w) => (
-                        <button
-                          key={w.label}
-                          role="menuitem"
-                          onClick={() =>
-                            act(() => {
-                              import("@tauri-apps/api/event").then(
-                                ({ emit }) => {
-                                  emit("wm:command", {
-                                    type: "MOVE_SESSION",
-                                    sessionId,
-                                    targetWindow: w.label,
-                                    sourceWindow: "main",
-                                  });
-                                },
-                              );
-                            })
-                          }
-                          className="sor-menu-item"
-                        >
-                          <Monitor size={14} className="mr-2" />
-                          {w.title}
-                        </button>
-                      ))}
+                      <button
+                        id={sendToSubmenuTriggerId}
+                        ref={sendToSubmenuTriggerRef}
+                        className="sor-menu-item"
+                        role="menuitem"
+                        aria-haspopup="menu"
+                        aria-expanded={sendToSubmenuOpen}
+                        aria-controls={sendToSubmenuPanelId}
+                        onMouseEnter={() => setSendToSubmenuOpen(true)}
+                        onKeyDown={(event) =>
+                          handleSubmenuTriggerKeyDown(
+                            event,
+                            setSendToSubmenuOpen,
+                            sendToSubmenuPanelRef,
+                          )
+                        }
+                      >
+                        <Send size={14} className="mr-2" />
+                        <span className="flex-1">Send to Window</span>
+                        <ChevronRight size={12} className="ml-2" />
+                      </button>
+                      <div
+                        id={sendToSubmenuPanelId}
+                        ref={sendToSubmenuPanelRef}
+                        className="sor-menu-submenu-panel"
+                        role="menu"
+                        tabIndex={-1}
+                        aria-label="Send to window submenu"
+                        aria-labelledby={sendToSubmenuTriggerId}
+                        onKeyDown={(event) =>
+                          handleSubmenuPanelKeyDown(
+                            event,
+                            setSendToSubmenuOpen,
+                            sendToSubmenuTriggerRef,
+                          )
+                        }
+                      >
+                        {detachedWindows.map((w) => (
+                          <button
+                            key={w.label}
+                            role="menuitem"
+                            onClick={() =>
+                              act(() => {
+                                import("@tauri-apps/api/event").then(
+                                  ({ emit }) => {
+                                    emit("wm:command", {
+                                      type: "MOVE_SESSION",
+                                      sessionId,
+                                      targetWindow: w.label,
+                                      sourceWindow: "main",
+                                    });
+                                  },
+                                );
+                              })
+                            }
+                            className="sor-menu-item"
+                          >
+                            <Monitor size={14} className="mr-2" />
+                            {w.title}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
                 <button
                   onClick={() => act(() => onSessionSelect(sessionId))}
                   className="sor-menu-item"

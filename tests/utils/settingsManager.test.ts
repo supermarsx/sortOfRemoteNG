@@ -68,6 +68,28 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
   fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...seed };
 }
 
+describe("recording deletion confirmation persistence", () => {
+  it("defaults on for existing installations without the setting", async () => {
+    seedStoredSettings({ language: "en-US" });
+    expect(
+      (await SettingsManager.getInstance().loadSettings())
+        .confirmDeleteRecording,
+    ).toBe(true);
+  });
+
+  it("persists disabling confirmation across a settings manager reload", async () => {
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+    await manager.saveSettings({ confirmDeleteRecording: false });
+    expect(fakeStoredSettings?.confirmDeleteRecording).toBe(false);
+    SettingsManager.resetInstance();
+    expect(
+      (await SettingsManager.getInstance().loadSettings())
+        .confirmDeleteRecording,
+    ).toBe(false);
+  });
+});
+
 describe("dev console visibility preference", () => {
   it("defaults off when a legacy settings file has no visibility key", async () => {
     seedStoredSettings({ language: "en-US" });
@@ -308,8 +330,7 @@ describe("SettingsManager loadSettings", () => {
       },
     });
     const persisted = fakeStoredSettings?.networkDiscovery as
-      | GlobalSettings["networkDiscovery"]
-      | undefined;
+      GlobalSettings["networkDiscovery"] | undefined;
     expect(persisted?.timeout).toBe(4321);
     expect(persisted?.customPorts.vnc).toEqual([5999]);
     expect(persisted?.probeStrategies.vnc).toEqual(["rfb"]);

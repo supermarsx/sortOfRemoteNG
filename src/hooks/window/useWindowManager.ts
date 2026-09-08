@@ -8,6 +8,10 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
+import {
+  RDP_INTERNALS_PROTOCOL,
+  RDP_INTERNALS_WINDOW_MESSAGE,
+} from "../../components/app/toolSession";
 import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen as listenToEvent } from "@tauri-apps/api/event";
 import {
@@ -325,6 +329,14 @@ export function useWindowManager({
     async (sessionId: string, targetWindow: WindowId, insertIndex?: number) => {
       const currentOwner = registry.current.sessionOwnership.get(sessionId);
       if (!currentOwner || currentOwner === targetWindow) return;
+
+      if (
+        sessionsRef.current.find((session) => session.id === sessionId)
+          ?.protocol === RDP_INTERNALS_PROTOCOL
+      ) {
+        console.warn(RDP_INTERNALS_WINDOW_MESSAGE);
+        return;
+      }
 
       // Remove from source
       const sourceEntry = registry.current.windows.get(currentOwner);

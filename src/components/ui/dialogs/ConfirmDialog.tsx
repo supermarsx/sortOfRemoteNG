@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Modal, ModalBody, ModalHeader } from '../overlays/Modal';
+import React, { useEffect } from "react";
+import { Modal, ModalBody, ModalHeader } from "../overlays/Modal";
 
 export interface ConfirmDialogProps {
   isOpen: boolean;
@@ -7,9 +7,11 @@ export interface ConfirmDialogProps {
   title?: string;
   confirmText?: string;
   cancelText?: string;
-  variant?: 'default' | 'danger' | 'warning';
+  variant?: "default" | "danger" | "warning";
   onConfirm: () => void;
   onCancel?: () => void;
+  /** Disable the global Enter shortcut when focused buttons must own keyboard activation. */
+  confirmOnEnter?: boolean;
   /**
    * Optional middle button — renders between Cancel and Confirm. Used
    * by the folder-delete dialog (P9) to offer "Keep connections,
@@ -20,33 +22,34 @@ export interface ConfirmDialogProps {
   secondaryAction?: {
     label: string;
     onClick: () => void;
-    variant?: 'default' | 'warning';
+    variant?: "default" | "warning";
   };
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isOpen,
   message,
-  title = 'Confirmation',
-  confirmText = 'OK',
-  cancelText = 'Cancel',
-  variant = 'default',
+  title = "Confirmation",
+  confirmText = "OK",
+  cancelText = "Cancel",
+  variant = "default",
   onConfirm,
   onCancel,
+  confirmOnEnter = true,
   secondaryAction,
 }) => {
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !confirmOnEnter) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
+      if (e.key === "Enter") {
         onConfirm();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onConfirm, onCancel]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onConfirm, onCancel, confirmOnEnter]);
 
   if (!isOpen) return null;
 
@@ -81,9 +84,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
               onClick={secondaryAction.onClick}
               data-testid="confirm-secondary"
               className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
-                secondaryAction.variant === 'warning'
-                  ? 'bg-warning hover:bg-warning/90'
-                  : 'bg-[var(--color-border)] hover:bg-[var(--color-borderHover)]'
+                secondaryAction.variant === "warning"
+                  ? "bg-warning hover:bg-warning/90"
+                  : "bg-[var(--color-border)] hover:bg-[var(--color-borderHover)]"
               }`}
             >
               {secondaryAction.label}
@@ -93,11 +96,11 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             onClick={onConfirm}
             data-testid="confirm-yes"
             className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
-              variant === 'danger'
-                ? 'bg-error hover:bg-error/90'
-                : variant === 'warning'
-                ? 'bg-warning hover:bg-warning/90'
-                : 'bg-primary hover:bg-primary/90'
+              variant === "danger"
+                ? "bg-error hover:bg-error/90"
+                : variant === "warning"
+                  ? "bg-warning hover:bg-warning/90"
+                  : "bg-primary hover:bg-primary/90"
             }`}
           >
             {confirmText}

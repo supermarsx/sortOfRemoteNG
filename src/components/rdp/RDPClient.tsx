@@ -8,13 +8,12 @@ import { formatBytes } from "../../utils/core/formatters";
 import RDPErrorScreen from "./RDPErrorScreen";
 import { ConnectingSpinner } from "../ui/display";
 import { TrustWarningDialog } from "../security/TrustWarningDialog";
-import { RDPInternalsPanel } from "./RDPInternalsPanel";
 import { RDPStatusBar } from "./RDPStatusBar";
 import RDPClientHeader from "./RDPClientHeader";
-import { RDPSettingsPanel } from "./RDPSettingsPanel";
 import WindowsToolsBar from "./WindowsToolsBar";
 import { useRDPClient, type RDPClientMgr } from "../../hooks/rdp/useRDPClient";
 import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
+import { useRDPInternalsBridge } from "../../hooks/rdp/useRDPInternalsBridge";
 
 // ─── Props ───────────────────────────────────────────────────────────
 
@@ -623,6 +622,7 @@ const RDPClient: React.FC<RDPClientProps> = ({
   onActivateSession,
 }) => {
   const mgr = useRDPClient(session);
+  const openInternals = useRDPInternalsBridge(session, mgr, onActivateSession);
 
   // Display rotation state. Seeded from `rdpSettings.display.autoRotate` once
   // the connection finishes loading. The toolbar's rotate button cycles
@@ -665,15 +665,12 @@ const RDPClient: React.FC<RDPClientProps> = ({
           magnifierPipSize={mgr.magnifierPipSize}
           setMagnifierZoom={mgr.setMagnifierZoom}
           setMagnifierPipSize={mgr.setMagnifierPipSize}
-          showInternals={mgr.showInternals}
-          showSettings={mgr.showSettings}
           isFullscreen={mgr.isFullscreen}
           recState={mgr.recState}
           getStatusColor={() => getStatusColor(mgr.connectionStatus)}
           getStatusIcon={() => getStatusIcon(mgr.connectionStatus)}
           setMagnifierActive={mgr.setMagnifierActive}
-          setShowInternals={mgr.setShowInternals}
-          setShowSettings={mgr.setShowSettings}
+          onOpenInternals={openInternals}
           handleScreenshot={mgr.handleScreenshot}
           handleScreenshotToClipboard={mgr.handleScreenshotToClipboard}
           handleStopRecording={mgr.handleStopRecording}
@@ -705,31 +702,6 @@ const RDPClient: React.FC<RDPClientProps> = ({
           totpDefaultAlgorithm={mgr.settings.totpAlgorithm}
           rotation={rotation}
           setRotation={setRotation}
-        />
-      )}
-
-      {!mgr.isFullscreen && mgr.showSettings && (
-        <RDPSettingsPanel
-          rdpSettings={mgr.rdpSettings}
-          colorDepth={mgr.colorDepth}
-          audioEnabled={mgr.audioEnabled}
-          clipboardEnabled={mgr.clipboardEnabled}
-          perfLabel={mgr.perfLabel}
-          certFingerprint={mgr.certFingerprint}
-        />
-      )}
-
-      {!mgr.isFullscreen && mgr.showInternals && (
-        <RDPInternalsPanel
-          stats={mgr.stats}
-          lifecycle={mgr.lifecycle}
-          connectTiming={mgr.connectTiming}
-          rdpSettings={mgr.rdpSettings}
-          activeRenderBackend={mgr.activeRenderBackend}
-          activeFrontendRenderer={mgr.activeFrontendRenderer}
-          framePressureState={mgr.framePressureState}
-          frameBackpressureTelemetry={mgr.frameBackpressureTelemetry}
-          onClose={() => mgr.setShowInternals(false)}
         />
       )}
 

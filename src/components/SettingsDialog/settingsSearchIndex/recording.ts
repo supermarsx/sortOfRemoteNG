@@ -12,6 +12,18 @@ import type { SettingSearchEntry } from "./types";
  * navigated to.
  */
 export const RECORDING_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  {
+    key: "confirmDeleteRecording",
+    label: "Confirm recording deletion",
+    labelKey: "settings.recording.confirmDeleteLabel",
+    description:
+      "Ask before deleting saved recordings or clearing a recording library.",
+    descriptionKey: "settings.recording.confirmDeleteDescription",
+    tags: ["recording", "delete", "confirmation", "clear", "safety"],
+    synonyms: ["delete recording", "confirm delete", "clear recordings"],
+    section: "recording",
+    sectionLabel: "Recording",
+  },
   // ─── SSH terminal recording ─────────────────────────────────────
   {
     key: "recording.enabled",

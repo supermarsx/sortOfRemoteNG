@@ -297,6 +297,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         <ToolTabViewer
           session={session}
           onClose={() => onCloseSession?.(session.id)}
+          onActivateSession={onActivateSession}
           onCloseManagedSession={onCloseSession}
           onReattachSession={onReattachSession}
           onDetachToWindow={onDetachToWindow}

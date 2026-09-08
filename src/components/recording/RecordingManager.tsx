@@ -18,12 +18,16 @@ import { RDPRecordingRow } from "./RDPRecordingRow";
 import { WebHarRecordingRow } from "./WebHarRecordingRow";
 import { formatDuration, formatBytes } from "../../utils/core/formatters";
 import { useRecordingManager } from "../../hooks/recording/useRecordingManager";
+import { useRecordingPlayerSession } from "../../hooks/recording/useRecordingPlayerSession";
+import { useSettings } from "../../contexts/SettingsContext";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 
 type Mgr = ReturnType<typeof useRecordingManager>;
 
 interface RecordingManagerProps {
   isOpen: boolean;
   onClose: () => void;
+  onActivateSession?: (sessionId: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -43,22 +47,34 @@ const Toolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       />
     </div>
     {mgr.activeTab === "ssh" && mgr.sshRecordings.length > 0 && (
-      <button onClick={mgr.handleDeleteAllSsh} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
+      <button
+        onClick={mgr.handleDeleteAllSsh}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg"
+      >
         <Trash2 size={14} /> Clear All
       </button>
     )}
     {mgr.activeTab === "rdp" && mgr.rdpRecordings.length > 0 && (
-      <button onClick={mgr.handleDeleteAllRdp} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
+      <button
+        onClick={mgr.handleDeleteAllRdp}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg"
+      >
         <Trash2 size={14} /> Clear All
       </button>
     )}
     {mgr.activeTab === "web" && mgr.webRecordings.length > 0 && (
-      <button onClick={mgr.handleClearAllWeb} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
+      <button
+        onClick={mgr.handleClearAllWeb}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg"
+      >
         <Trash2 size={14} /> Clear All
       </button>
     )}
     {mgr.activeTab === "webVideo" && mgr.webVideoRecordings.length > 0 && (
-      <button onClick={mgr.handleClearAllWebVideo} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
+      <button
+        onClick={mgr.handleClearAllWebVideo}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg"
+      >
         <Trash2 size={14} /> Clear All
       </button>
     )}
@@ -70,7 +86,8 @@ const StatsBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     {mgr.activeTab === "ssh" && (
       <>
         <span className="flex items-center gap-1">
-          <HardDrive size={10} /> {mgr.sshRecordings.length} recording{mgr.sshRecordings.length !== 1 ? "s" : ""}
+          <HardDrive size={10} /> {mgr.sshRecordings.length} recording
+          {mgr.sshRecordings.length !== 1 ? "s" : ""}
         </span>
         <span className="flex items-center gap-1">
           <Clock size={10} /> {formatDuration(mgr.sshTotalDuration)} total
@@ -80,7 +97,8 @@ const StatsBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     {mgr.activeTab === "rdp" && (
       <>
         <span className="flex items-center gap-1">
-          <Film size={10} /> {mgr.rdpRecordings.length} recording{mgr.rdpRecordings.length !== 1 ? "s" : ""}
+          <Film size={10} /> {mgr.rdpRecordings.length} recording
+          {mgr.rdpRecordings.length !== 1 ? "s" : ""}
         </span>
         <span className="flex items-center gap-1">
           <Clock size={10} /> {formatDuration(mgr.rdpTotalDuration)} total
@@ -92,18 +110,22 @@ const StatsBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     )}
     {mgr.activeTab === "web" && (
       <span className="flex items-center gap-1">
-        <Globe size={10} /> {mgr.webRecordings.length} recording{mgr.webRecordings.length !== 1 ? "s" : ""}
+        <Globe size={10} /> {mgr.webRecordings.length} recording
+        {mgr.webRecordings.length !== 1 ? "s" : ""}
       </span>
     )}
     {mgr.activeTab === "webVideo" && (
       <>
         <span className="flex items-center gap-1">
-          <Film size={10} /> {mgr.webVideoRecordings.length} recording{mgr.webVideoRecordings.length !== 1 ? "s" : ""}
+          <Film size={10} /> {mgr.webVideoRecordings.length} recording
+          {mgr.webVideoRecordings.length !== 1 ? "s" : ""}
         </span>
         {mgr.webVideoRecordings.length > 0 && (
           <span className="flex items-center gap-1">
             <HardDrive size={10} />{" "}
-            {formatBytes(mgr.webVideoRecordings.reduce((s, r) => s + r.sizeBytes, 0))}
+            {formatBytes(
+              mgr.webVideoRecordings.reduce((s, r) => s + r.sizeBytes, 0),
+            )}
           </span>
         )}
       </>
@@ -124,20 +146,33 @@ const SshTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredSsh.length === 0 ? (
     <EmptyState
       icon={Terminal}
-      message={mgr.searchQuery ? "No SSH recordings match your search" : "No SSH terminal recordings yet"}
-      hint={mgr.searchQuery ? undefined : "Start recording from an SSH session toolbar"}
+      message={
+        mgr.searchQuery
+          ? "No SSH recordings match your search"
+          : "No SSH terminal recordings yet"
+      }
+      hint={
+        mgr.searchQuery
+          ? undefined
+          : "Start recording from an SSH session toolbar"
+      }
       className="py-16"
     />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredSsh]
-        .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
+        .sort(
+          (a, b) =>
+            new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime(),
+        )
         .map((rec) => (
           <SSHRecordingRow
             key={rec.id}
             recording={rec}
             isExpanded={mgr.expandedId === rec.id}
-            onToggle={() => mgr.setExpandedId(mgr.expandedId === rec.id ? null : rec.id)}
+            onToggle={() =>
+              mgr.setExpandedId(mgr.expandedId === rec.id ? null : rec.id)
+            }
             onRename={(name) => mgr.handleRenameSsh(rec, name)}
             onDelete={() => mgr.handleDeleteSsh(rec.id)}
             onExport={(format) => mgr.handleExportSsh(rec, format)}
@@ -150,20 +185,33 @@ const RdpTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredRdp.length === 0 ? (
     <EmptyState
       icon={Monitor}
-      message={mgr.searchQuery ? "No RDP recordings match your search" : "No RDP screen recordings yet"}
-      hint={mgr.searchQuery ? undefined : "Enable auto-save in Recording settings, or save from the RDP toolbar"}
+      message={
+        mgr.searchQuery
+          ? "No RDP recordings match your search"
+          : "No RDP screen recordings yet"
+      }
+      hint={
+        mgr.searchQuery
+          ? undefined
+          : "Enable auto-save in Recording settings, or save from the RDP toolbar"
+      }
       className="py-16"
     />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredRdp]
-        .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
+        .sort(
+          (a, b) =>
+            new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime(),
+        )
         .map((rec) => (
           <RDPRecordingRow
             key={rec.id}
             recording={rec}
             isExpanded={mgr.expandedId === rec.id}
-            onToggle={() => mgr.setExpandedId(mgr.expandedId === rec.id ? null : rec.id)}
+            onToggle={() =>
+              mgr.setExpandedId(mgr.expandedId === rec.id ? null : rec.id)
+            }
             onRename={(name) => mgr.handleRenameRdp(rec, name)}
             onDelete={() => mgr.handleDeleteRdp(rec.id)}
             onExport={() => mgr.handleExportRdp(rec)}
@@ -177,20 +225,33 @@ const WebTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredWeb.length === 0 ? (
     <EmptyState
       icon={Globe}
-      message={mgr.searchQuery ? "No web recordings match your search" : "No web HAR recordings yet"}
-      hint={mgr.searchQuery ? undefined : "Start recording HTTP traffic from a web browser session"}
+      message={
+        mgr.searchQuery
+          ? "No web recordings match your search"
+          : "No web HAR recordings yet"
+      }
+      hint={
+        mgr.searchQuery
+          ? undefined
+          : "Start recording HTTP traffic from a web browser session"
+      }
       className="py-16"
     />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredWeb]
-        .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
+        .sort(
+          (a, b) =>
+            new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime(),
+        )
         .map((rec) => (
           <WebHarRecordingRow
             key={rec.id}
             recording={rec}
             isExpanded={mgr.expandedId === rec.id}
-            onToggle={() => mgr.setExpandedId(mgr.expandedId === rec.id ? null : rec.id)}
+            onToggle={() =>
+              mgr.setExpandedId(mgr.expandedId === rec.id ? null : rec.id)
+            }
             onRename={(name) => mgr.handleRenameWeb(rec.id, name)}
             onDelete={() => mgr.handleDeleteWeb(rec.id)}
             onExport={(format) => mgr.handleExportWeb(rec, format)}
@@ -203,14 +264,25 @@ const WebVideoTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredWebVideo.length === 0 ? (
     <EmptyState
       icon={Film}
-      message={mgr.searchQuery ? "No web video recordings match your search" : "No web video recordings yet"}
-      hint={mgr.searchQuery ? undefined : "Record your web browsing session as video"}
+      message={
+        mgr.searchQuery
+          ? "No web video recordings match your search"
+          : "No web video recordings yet"
+      }
+      hint={
+        mgr.searchQuery
+          ? undefined
+          : "Record your web browsing session as video"
+      }
       className="py-16"
     />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredWebVideo]
-        .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
+        .sort(
+          (a, b) =>
+            new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime(),
+        )
         .map((rec) => (
           <div
             key={rec.id}
@@ -225,7 +297,9 @@ const WebVideoTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
                 {rec.host && (
                   <>
                     <span>{rec.host}</span>
-                    <span className="text-[var(--color-textMuted)]">&middot;</span>
+                    <span className="text-[var(--color-textMuted)]">
+                      &middot;
+                    </span>
                   </>
                 )}
                 <span>{formatDuration(rec.durationMs)}</span>
@@ -265,16 +339,42 @@ const WebVideoTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
 export const RecordingManager: React.FC<RecordingManagerProps> = ({
   isOpen,
   onClose,
+  onActivateSession,
 }) => {
-  const mgr = useRecordingManager(isOpen);
+  const { settings } = useSettings();
+  const openPlayer = useRecordingPlayerSession(onActivateSession);
+  const mgr = useRecordingManager(isOpen, {
+    confirmDelete: settings.confirmDeleteRecording,
+    onPlayRdp: openPlayer,
+  });
 
   if (!isOpen) return null;
 
   const recTabs = [
-    { id: "ssh" as const, label: "SSH Terminal", icon: Terminal, count: mgr.sshRecordings.length },
-    { id: "rdp" as const, label: "RDP Screen", icon: Monitor, count: mgr.rdpRecordings.length },
-    { id: "web" as const, label: "Web (HAR)", icon: Globe, count: mgr.webRecordings.length },
-    { id: "webVideo" as const, label: "Web (Video)", icon: Film, count: mgr.webVideoRecordings.length },
+    {
+      id: "ssh" as const,
+      label: "SSH Terminal",
+      icon: Terminal,
+      count: mgr.sshRecordings.length,
+    },
+    {
+      id: "rdp" as const,
+      label: "RDP Screen",
+      icon: Monitor,
+      count: mgr.rdpRecordings.length,
+    },
+    {
+      id: "web" as const,
+      label: "Web (HAR)",
+      icon: Globe,
+      count: mgr.webRecordings.length,
+    },
+    {
+      id: "webVideo" as const,
+      label: "Web (Video)",
+      icon: Film,
+      count: mgr.webVideoRecordings.length,
+    },
   ];
 
   return (
@@ -282,19 +382,21 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
       {/* Sidebar */}
       <div className="w-48 flex-shrink-0 border-r border-[var(--color-border)] flex flex-col">
         <div className="p-3 space-y-1">
-          {recTabs.map(tab => {
+          {recTabs.map((tab) => {
             const Icon = tab.icon;
             const active = mgr.activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => mgr.switchTab(tab.id)}
-                className={`sor-sidebar-tab w-full flex items-center gap-2 ${active ? 'sor-sidebar-tab-active' : ''}`}
+                className={`sor-sidebar-tab w-full flex items-center gap-2 ${active ? "sor-sidebar-tab-active" : ""}`}
               >
                 <Icon size={14} />
                 <span className="flex-1 text-left">{tab.label}</span>
                 {tab.count > 0 && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">{tab.count}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">
+                    {tab.count}
+                  </span>
                 )}
               </button>
             );
@@ -303,10 +405,30 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
       </div>
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {mgr.error && (
+          <p role="alert" className="p-3 text-sm text-error">
+            {mgr.error}
+          </p>
+        )}
+        {mgr.busy && (
+          <p role="status" className="px-4 py-1 text-xs">
+            Working on recording…
+          </p>
+        )}
         <Toolbar mgr={mgr} />
         <StatsBar mgr={mgr} />
         <RecordingContent mgr={mgr} />
       </div>
+      <ConfirmDialog
+        isOpen={mgr.deletePrompt !== null}
+        title="Delete recording"
+        message={mgr.deletePrompt ?? ""}
+        confirmText="Delete"
+        confirmOnEnter={false}
+        variant="danger"
+        onConfirm={() => void mgr.confirmDelete()}
+        onCancel={mgr.cancelDelete}
+      />
     </div>
   );
 };

@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useSyncExternalStore } from "react";
 import RDPClient from "../../src/components/rdp/RDPClient";
 import {
   ConnectionSession,
@@ -23,6 +24,9 @@ import {
   type TrustVerifyResult,
 } from "../../src/utils/auth/trustStore";
 import { useRDPClient } from "../../src/hooks/rdp/useRDPClient";
+import { useConnections } from "../../src/contexts/useConnections";
+import { RDPInternalsTab } from "../../src/components/rdp/RDPInternalsTab";
+import { RDP_INTERNALS_PROTOCOL } from "../../src/components/app/toolSession";
 import {
   advanceSessionLifecycleAuthority,
   hasSessionLifecycleActorAttempt,
@@ -245,15 +249,60 @@ vi.mock("../../src/components/rdp/rdpCanvas", () => ({
   },
 }));
 
-const connectionContextMocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const connectionContextMocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  sessions: [] as ConnectionSession[],
+  listeners: new Set<() => void>(),
+}));
+
+const toolSessionDispatch = (
+  action: import("../../src/contexts/ConnectionContextTypes").ConnectionAction,
+) => {
+  connectionContextMocks.dispatch(action);
+  if (
+    action.type === "ADD_SESSION" &&
+    action.payload.protocol === RDP_INTERNALS_PROTOCOL
+  ) {
+    connectionContextMocks.sessions = [
+      ...connectionContextMocks.sessions,
+      action.payload,
+    ];
+  } else if (
+    action.type === "UPDATE_SESSION" &&
+    connectionContextMocks.sessions.some(
+      (session) => session.id === action.payload.id,
+    )
+  ) {
+    connectionContextMocks.sessions = connectionContextMocks.sessions.map(
+      (session) =>
+        session.id === action.payload.id
+          ? { ...session, ...action.payload }
+          : session,
+    );
+  } else if (action.type === "REMOVE_SESSION") {
+    connectionContextMocks.sessions = connectionContextMocks.sessions.filter(
+      (session) => session.id !== action.payload,
+    );
+  } else return;
+  connectionContextMocks.listeners.forEach((listener) => listener());
+};
+
+const subscribeToolSessions = (listener: () => void) => {
+  connectionContextMocks.listeners.add(listener);
+  return () => {
+    connectionContextMocks.listeners.delete(listener);
+  };
+};
+const getToolSessions = () => connectionContextMocks.sessions;
 
 // Mock useConnections hook
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: {
       connections: [mockConnection],
+      sessions: useSyncExternalStore(subscribeToolSessions, getToolSessions),
     },
-    dispatch: connectionContextMocks.dispatch,
+    dispatch: toolSessionDispatch,
   }),
 }));
 
@@ -362,11 +411,27 @@ function buildClientNalFrame(): ArrayBuffer {
   return frame;
 }
 
+function InternalsTestTabs() {
+  const { state, dispatch } = useConnections();
+  return state.sessions
+    .filter((session) => session.protocol === RDP_INTERNALS_PROTOCOL)
+    .map((session) => (
+      <RDPInternalsTab
+        key={session.id}
+        session={session}
+        onClose={() =>
+          dispatch({ type: "REMOVE_SESSION", payload: session.id })
+        }
+      />
+    ));
+}
+
 const renderWithProviders = (session: ConnectionSession) => {
   return render(
     <ToastProvider>
       <ConnectionProvider>
         <RDPClient session={session} />
+        <InternalsTestTabs />
       </ConnectionProvider>
     </ToastProvider>,
   );
@@ -487,6 +552,7 @@ describe("RDPClient", () => {
     tauriCoreMocks.channels.length = 0;
     rdpBinaryIpcPreflightMocks.assert.mockReset().mockResolvedValue(undefined);
     connectionContextMocks.dispatch.mockReset();
+    connectionContextMocks.sessions = [];
     localStorage.clear();
     setDocumentVisibility("visible", false);
     delete (mockConnection as any).security;
@@ -2697,7 +2763,7 @@ describe("RDPClient", () => {
   });
 
   describe("Settings", () => {
-    it("should toggle settings panel", async () => {
+    it("opens settings in an Internals tab while preserving the desktop", async () => {
       renderWithProviders(mockSession);
 
       const settingsButton = document.querySelector(
@@ -2706,13 +2772,15 @@ describe("RDPClient", () => {
       settingsButton.click();
 
       await waitFor(() => {
-        expect(screen.getByText("Resolution")).toBeInTheDocument();
+        expect(screen.getByText("Current resolution")).toBeInTheDocument();
+        expect(screen.getByTestId("rdp-internals-tab")).toBeInTheDocument();
+        expect(screen.getByTestId("rdp-canvas")).toBeInTheDocument();
       });
     });
   });
 
   describe("RDP Internals", () => {
-    it("should toggle internals panel", async () => {
+    it("opens the Internals tool tab", async () => {
       renderWithProviders(mockSession);
 
       const internalsButton = document.querySelector(

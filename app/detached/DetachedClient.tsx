@@ -20,6 +20,11 @@ import {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import { SessionViewer } from "../../src/components/session/SessionViewer";
+import { SessionRenderActivityProvider } from "../../src/components/session/SessionRenderActivity";
+import {
+  RDP_INTERNALS_PROTOCOL,
+  RECORDING_PLAYER_PROTOCOL,
+} from "../../src/components/app/toolSession";
 import { ConfirmDialog } from "../../src/components/ui/dialogs/ConfirmDialog";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
@@ -129,6 +134,15 @@ const reviveConnection = (connection: Connection): Connection => ({
         : undefined,
 });
 
+/** Only these local, non-transport tools may survive a main-window sync. */
+const isLocalUiTool = (session: ConnectionSession): boolean =>
+  (session.protocol === RDP_INTERNALS_PROTOCOL &&
+    session.id === `rdp-internals-${session.rdpInternals?.sessionId}` &&
+    Boolean(session.rdpInternals?.sessionId)) ||
+  (session.protocol === RECORDING_PLAYER_PROTOCOL &&
+    session.id === `recording-player-${session.recordingPlayer?.recordingId}` &&
+    Boolean(session.recordingPlayer?.recordingId));
+
 const SUBMENU_ITEM_SELECTOR = [
   '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
   "button:not([disabled]):not([role])",
@@ -162,12 +176,22 @@ export const DetachedSessionContent: React.FC<{
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const { state, dispatch } = useConnections();
+  const sessionsRef = useRef(state.sessions);
+  sessionsRef.current = state.sessions;
+  const authoritativeIdsRef = useRef(new Set<string>());
+  const isUnownedLocalTool = useCallback(
+    (session: ConnectionSession) =>
+      isLocalUiTool(session) && !authoritativeIdsRef.current.has(session.id),
+    [],
+  );
+  const activeTabIdRef = useRef<string | null>(null);
   const [error, setError] = useState("");
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [isTransparent, setIsTransparent] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  activeTabIdRef.current = activeTabId;
   const [windowTitleOverride, setWindowTitleOverride] = useState<string | null>(
     null,
   );
@@ -336,12 +360,30 @@ export const DetachedSessionContent: React.FC<{
 
       const sessions = payload.sessions.map(reviveSession);
       const conns = payload.connections.map(reviveConnection);
+      const localTools =
+        sessions.length === 0
+          ? []
+          : sessionsRef.current.filter(
+              (session) =>
+                isLocalUiTool(session) &&
+                !authoritativeIdsRef.current.has(session.id) &&
+                !sessions.some((remote) => remote.id === session.id),
+            );
+      authoritativeIdsRef.current = new Set(
+        sessions.map((session) => session.id),
+      );
+      const mergedSessions = [...sessions, ...localTools];
+      sessionsRef.current = mergedSessions;
 
       dispatch({ type: "SET_CONNECTIONS", payload: conns });
-      dispatch({ type: "SET_SESSIONS", payload: sessions });
+      dispatch({ type: "SET_SESSIONS", payload: mergedSessions });
       if (payload.tabGroups)
         dispatch({ type: "SET_TAB_GROUPS", payload: payload.tabGroups });
-      if (payload.activeSessionId) setActiveTabId(payload.activeSessionId);
+      if (
+        payload.activeSessionId &&
+        !localTools.some((tool) => tool.id === activeTabIdRef.current)
+      )
+        setActiveTabId(payload.activeSessionId);
 
       if (isTauriRef.current && sessions.length > 0) {
         // A newer non-empty snapshot invalidates the prior empty intent. Keep
@@ -575,8 +617,6 @@ export const DetachedSessionContent: React.FC<{
   }, [activeTabId, activeSession]);
 
   // Refs for state accessed inside stable-deps effects
-  const sessionsRef = useRef(state.sessions);
-  sessionsRef.current = state.sessions;
   const connectionsRef = useRef(state.connections);
   connectionsRef.current = state.connections;
 
@@ -595,6 +635,11 @@ export const DetachedSessionContent: React.FC<{
     if (!hasLoadedRef.current) return;
     const currentIds = new Set<string>();
     state.sessions.forEach((session) => {
+      if (
+        isLocalUiTool(session) &&
+        !authoritativeIdsRef.current.has(session.id)
+      )
+        return;
       currentIds.add(session.id);
       const lifecycle = toSessionLifecyclePatch(session, detachedWindowId);
       const snapshot = JSON.stringify(lifecycle);
@@ -615,6 +660,24 @@ export const DetachedSessionContent: React.FC<{
   const emitCloseSession = useCallback(
     (sessionId: string) => {
       const session = sessionsRef.current.find((item) => item.id === sessionId);
+      if (
+        session &&
+        isLocalUiTool(session) &&
+        !authoritativeIdsRef.current.has(session.id)
+      ) {
+        const remaining = sessionsRef.current.filter(
+          (item) => item.id !== sessionId,
+        );
+        sessionsRef.current = remaining;
+        dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+        if (activeTabIdRef.current === sessionId) {
+          const source = remaining.find(
+            (item) => item.id === session.rdpInternals?.sessionId,
+          );
+          setActiveTabId(source?.id ?? remaining[0]?.id ?? null);
+        }
+        return Promise.resolve();
+      }
       const command: WindowCommand = {
         type: "CLOSE_SESSION",
         sessionId,
@@ -624,7 +687,7 @@ export const DetachedSessionContent: React.FC<{
       };
       return emit("wm:command", command);
     },
-    [detachedWindowId],
+    [detachedWindowId, dispatch],
   );
 
   const requestAuthoritativeClose = useCallback(
@@ -672,6 +735,7 @@ export const DetachedSessionContent: React.FC<{
   const emitReattachSession = useCallback(
     (sessionId: string, terminalBuffer?: string) => {
       const session = sessionsRef.current.find((item) => item.id === sessionId);
+      if (session && isUnownedLocalTool(session)) return Promise.resolve();
       const command: WindowCommand = {
         type: "REATTACH_SESSION",
         sessionId,
@@ -683,7 +747,7 @@ export const DetachedSessionContent: React.FC<{
       };
       return emit("wm:command", command);
     },
-    [detachedWindowId],
+    [detachedWindowId, isUnownedLocalTool],
   );
 
   useEffect(() => {
@@ -752,11 +816,16 @@ export const DetachedSessionContent: React.FC<{
 
   const handleCommitRename = useCallback(() => {
     if (renamingTabId && renameValue.trim()) {
-      emit("wm:command", {
-        type: "RENAME_SESSION",
-        sessionId: renamingTabId,
-        name: renameValue.trim(),
-      } as WindowCommand).catch(() => {});
+      const target = sessionsRef.current.find(
+        (item) => item.id === renamingTabId,
+      );
+      if (!target || !isUnownedLocalTool(target)) {
+        emit("wm:command", {
+          type: "RENAME_SESSION",
+          sessionId: renamingTabId,
+          name: renameValue.trim(),
+        } as WindowCommand).catch(() => {});
+      }
       // Also update locally for immediate feedback
       const sess = sessionsRef.current.find((s) => s.id === renamingTabId);
       if (sess)
@@ -766,7 +835,7 @@ export const DetachedSessionContent: React.FC<{
         });
     }
     setRenamingTabId(null);
-  }, [renamingTabId, renameValue, dispatch]);
+  }, [renamingTabId, renameValue, dispatch, isUnownedLocalTool]);
 
   const handleRenameKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -895,6 +964,8 @@ export const DetachedSessionContent: React.FC<{
 
   /** Emit reconnect command to main window's WindowManager. */
   const handleReconnect = useCallback((sid: string) => {
+    const target = sessionsRef.current.find((item) => item.id === sid);
+    if (target && isLocalUiTool(target)) return;
     emit("wm:command", {
       type: "RECONNECT_SESSION",
       sessionId: sid,
@@ -909,6 +980,8 @@ export const DetachedSessionContent: React.FC<{
     const ownedSessions =
       sessionsRef.current.length > 0 ? [...sessionsRef.current] : [s];
     for (const owned of ownedSessions) {
+      if (isLocalUiTool(owned) && !authoritativeIdsRef.current.has(owned.id))
+        continue;
       try {
         const closed = isTauri
           ? await requestAuthoritativeClose(owned)
@@ -933,7 +1006,7 @@ export const DetachedSessionContent: React.FC<{
 
   const handleReattach = useCallback(async () => {
     const s = activeSessionRef.current;
-    if (!s) return;
+    if (!s || isUnownedLocalTool(s)) return;
     try {
       reattachRef.current = true;
       skipNextConfirmRef.current = true;
@@ -994,7 +1067,7 @@ export const DetachedSessionContent: React.FC<{
     } catch (err) {
       console.error("Failed to reattach detached session:", err);
     }
-  }, [detachedWindowId, isTauri, sessionId, dispatch]);
+  }, [detachedWindowId, isTauri, sessionId, dispatch, isUnownedLocalTool]);
 
   // Keep ref in sync for the cross-window drop listener
   handleReattachRef.current = handleReattach;
@@ -1377,7 +1450,12 @@ export const DetachedSessionContent: React.FC<{
               const cmd: WindowCommand = {
                 type: "REORDER_SESSIONS",
                 windowId: myWindowId as any,
-                sessionIds: reordered,
+                sessionIds: reordered.filter((id) => {
+                  const candidate = state.sessions.find(
+                    (item) => item.id === id,
+                  );
+                  return candidate && !isUnownedLocalTool(candidate);
+                }),
               };
               emit("wm:command", cmd).catch(() => {});
             }
@@ -1399,7 +1477,7 @@ export const DetachedSessionContent: React.FC<{
                 key={sess.id}
                 id={`detached-session-tab-${sess.id}`}
                 data-session-id={sess.id}
-                draggable
+                draggable={!isUnownedLocalTool(sess)}
                 data-tauri-disable-drag="true"
                 role="tab"
                 aria-selected={isActive}
@@ -1465,6 +1543,7 @@ export const DetachedSessionContent: React.FC<{
                   e.stopPropagation();
                 }}
                 onDragEnd={async (e) => {
+                  if (isUnownedLocalTool(sess)) return;
                   const { clientX, clientY } = e;
                   if (
                     clientX <= 0 ||
@@ -1555,6 +1634,7 @@ export const DetachedSessionContent: React.FC<{
                   </>
                 )}
                 <button
+                  disabled={isUnownedLocalTool(sess)}
                   onClick={(e) => {
                     e.stopPropagation();
                     emitReattachSession(sess.id).catch(() => {});
@@ -1760,6 +1840,7 @@ export const DetachedSessionContent: React.FC<{
 
                   {/* ── Window actions ── */}
                   <button
+                    disabled={Boolean(sess && isUnownedLocalTool(sess))}
                     onClick={() =>
                       act(() => {
                         emitReattachSession(sid).catch(() => {});
@@ -1769,78 +1850,79 @@ export const DetachedSessionContent: React.FC<{
                   >
                     <CornerUpLeft size={14} className="mr-2" /> Reattach to Main
                   </button>
-                  {otherWindows.length > 0 && (
-                    <div
-                      className="sor-menu-submenu"
-                      data-submenu-open={sendToSubmenuOpen ? "true" : "false"}
-                      onMouseEnter={() => setSendToSubmenuOpen(true)}
-                      onMouseLeave={() => setSendToSubmenuOpen(false)}
-                      onBlurCapture={(event) => {
-                        const next = event.relatedTarget as Node | null;
-                        if (!event.currentTarget.contains(next)) {
-                          setSendToSubmenuOpen(false);
-                        }
-                      }}
-                    >
-                      <button
-                        id={sendToSubmenuTriggerId}
-                        ref={sendToSubmenuTriggerRef}
-                        className="sor-menu-item"
-                        role="menuitem"
-                        aria-haspopup="menu"
-                        aria-expanded={sendToSubmenuOpen}
-                        aria-controls={sendToSubmenuPanelId}
-                        onKeyDown={(event) =>
-                          handleSubmenuTriggerKeyDown(
-                            event,
-                            setSendToSubmenuOpen,
-                            sendToSubmenuPanelRef,
-                          )
-                        }
-                      >
-                        <Send size={14} className="mr-2" />
-                        <span className="flex-1">Send to Window</span>
-                        <ChevronRight size={12} className="ml-2" />
-                      </button>
+                  {otherWindows.length > 0 &&
+                    !(sess && isUnownedLocalTool(sess)) && (
                       <div
-                        id={sendToSubmenuPanelId}
-                        ref={sendToSubmenuPanelRef}
-                        className="sor-menu-submenu-panel"
-                        role="menu"
-                        tabIndex={-1}
-                        aria-label="Send to window submenu"
-                        aria-labelledby={sendToSubmenuTriggerId}
-                        onKeyDown={(event) =>
-                          handleSubmenuPanelKeyDown(
-                            event,
-                            setSendToSubmenuOpen,
-                            sendToSubmenuTriggerRef,
-                          )
-                        }
+                        className="sor-menu-submenu"
+                        data-submenu-open={sendToSubmenuOpen ? "true" : "false"}
+                        onMouseEnter={() => setSendToSubmenuOpen(true)}
+                        onMouseLeave={() => setSendToSubmenuOpen(false)}
+                        onBlurCapture={(event) => {
+                          const next = event.relatedTarget as Node | null;
+                          if (!event.currentTarget.contains(next)) {
+                            setSendToSubmenuOpen(false);
+                          }
+                        }}
                       >
-                        {otherWindows.map((w) => (
-                          <button
-                            key={w.label}
-                            role="menuitem"
-                            onClick={() =>
-                              act(() => {
-                                emit("wm:command", {
-                                  type: "MOVE_SESSION",
-                                  sessionId: sid,
-                                  targetWindow: w.label,
-                                  sourceWindow: detachedWindowId as any,
-                                } as WindowCommand).catch(() => {});
-                              })
-                            }
-                            className="sor-menu-item"
-                          >
-                            <Monitor size={14} className="mr-2" />
-                            {w.title}
-                          </button>
-                        ))}
+                        <button
+                          id={sendToSubmenuTriggerId}
+                          ref={sendToSubmenuTriggerRef}
+                          className="sor-menu-item"
+                          role="menuitem"
+                          aria-haspopup="menu"
+                          aria-expanded={sendToSubmenuOpen}
+                          aria-controls={sendToSubmenuPanelId}
+                          onKeyDown={(event) =>
+                            handleSubmenuTriggerKeyDown(
+                              event,
+                              setSendToSubmenuOpen,
+                              sendToSubmenuPanelRef,
+                            )
+                          }
+                        >
+                          <Send size={14} className="mr-2" />
+                          <span className="flex-1">Send to Window</span>
+                          <ChevronRight size={12} className="ml-2" />
+                        </button>
+                        <div
+                          id={sendToSubmenuPanelId}
+                          ref={sendToSubmenuPanelRef}
+                          className="sor-menu-submenu-panel"
+                          role="menu"
+                          tabIndex={-1}
+                          aria-label="Send to window submenu"
+                          aria-labelledby={sendToSubmenuTriggerId}
+                          onKeyDown={(event) =>
+                            handleSubmenuPanelKeyDown(
+                              event,
+                              setSendToSubmenuOpen,
+                              sendToSubmenuTriggerRef,
+                            )
+                          }
+                        >
+                          {otherWindows.map((w) => (
+                            <button
+                              key={w.label}
+                              role="menuitem"
+                              onClick={() =>
+                                act(() => {
+                                  emit("wm:command", {
+                                    type: "MOVE_SESSION",
+                                    sessionId: sid,
+                                    targetWindow: w.label,
+                                    sourceWindow: detachedWindowId as any,
+                                  } as WindowCommand).catch(() => {});
+                                })
+                              }
+                              className="sor-menu-item"
+                            >
+                              <Monitor size={14} className="mr-2" />
+                              {w.title}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
                   <div className="sor-menu-divider" />
 
@@ -2077,13 +2159,35 @@ export const DetachedSessionContent: React.FC<{
           </div>
         )}
 
-        <div
-          className="flex-1 overflow-hidden min-h-0 h-full"
-          id={`detached-session-panel-${activeSession.id}`}
-          role="tabpanel"
-          aria-labelledby={`detached-session-tab-${activeSession.id}`}
-        >
-          <SessionViewer session={activeSession} />
+        <div className="flex-1 overflow-hidden min-h-0 h-full">
+          {state.sessions
+            .filter(
+              (candidate) =>
+                candidate.id === activeSession.id ||
+                (activeSession.protocol === RDP_INTERNALS_PROTOCOL &&
+                  candidate.protocol === "rdp" &&
+                  candidate.id === activeSession.rdpInternals?.sessionId),
+            )
+            .map((candidate) => (
+              <div
+                key={candidate.id}
+                className="h-full"
+                hidden={candidate.id !== activeSession.id}
+                id={`detached-session-panel-${candidate.id}`}
+                role="tabpanel"
+                aria-labelledby={`detached-session-tab-${candidate.id}`}
+              >
+                <SessionRenderActivityProvider
+                  isActive={candidate.id === activeSession.id}
+                >
+                  <SessionViewer
+                    session={candidate}
+                    onActivateSession={setActiveTabId}
+                    onCloseSession={emitCloseSession}
+                  />
+                </SessionRenderActivityProvider>
+              </div>
+            ))}
         </div>
       </div>
       <ConfirmDialog

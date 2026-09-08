@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   SavedRecording,
   SavedRDPRecording,
@@ -6,10 +6,20 @@ import {
   SavedWebVideoRecording,
 } from "../../types/recording/macroTypes";
 import * as macroService from "../../utils/recording/macroService";
+import { saveRdpRecordingToFile } from "../../utils/recording/recordingFileExport";
 
 export type RecordingTab = "ssh" | "rdp" | "web" | "webVideo";
 
-export function useRecordingManager(isOpen: boolean) {
+interface RecordingManagerOptions {
+  confirmDelete?: boolean;
+  onPlayRdp?: (recording: SavedRDPRecording) => void;
+}
+
+export function useRecordingManager(
+  isOpen: boolean,
+  options: RecordingManagerOptions = {},
+) {
+  const { confirmDelete: shouldConfirmDelete, onPlayRdp } = options;
   const [activeTab, setActiveTab] = useState<RecordingTab>("ssh");
   const [sshRecordings, setSshRecordings] = useState<SavedRecording[]>([]);
   const [rdpRecordings, setRdpRecordings] = useState<SavedRDPRecording[]>([]);
@@ -19,6 +29,50 @@ export function useRecordingManager(isOpen: boolean) {
   >([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [deletePrompt, setDeletePrompt] = useState<string | null>(null);
+  const pendingDelete = useRef<(() => Promise<void>) | null>(null);
+
+  const runAction = useCallback(async (action: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (cause) {
+      setError(`Recording action failed: ${String(cause)}`);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, []);
+
+  const cancelDelete = useCallback(() => {
+    pendingDelete.current = null;
+    setDeletePrompt(null);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    const action = pendingDelete.current;
+    cancelDelete();
+    if (action) await runAction(action);
+  }, [cancelDelete, runAction]);
+
+  const requestDelete = useCallback(
+    async (message: string, action: () => Promise<void>) => {
+      if (busyRef.current || pendingDelete.current) return;
+      if (shouldConfirmDelete === false) {
+        await runAction(action);
+      } else {
+        pendingDelete.current = action;
+        setDeletePrompt(message);
+      }
+    },
+    [shouldConfirmDelete, runAction],
+  );
 
   /* ---- data loading ---- */
   const loadData = useCallback(async () => {
@@ -35,8 +89,12 @@ export function useRecordingManager(isOpen: boolean) {
   }, []);
 
   useEffect(() => {
-    if (isOpen) loadData();
-  }, [isOpen, loadData]);
+    if (isOpen)
+      void loadData().catch((cause: unknown) =>
+        setError(`Unable to load recordings: ${String(cause)}`),
+      );
+    else cancelDelete();
+  }, [isOpen, loadData, cancelDelete]);
 
   /* ---- filtered lists ---- */
   const filteredSsh = useMemo(() => {
@@ -99,11 +157,16 @@ export function useRecordingManager(isOpen: boolean) {
 
   const handleDeleteSsh = useCallback(
     async (id: string) => {
-      await macroService.deleteRecording(id);
-      if (expandedId === id) setExpandedId(null);
-      await loadData();
+      await requestDelete(
+        "Delete this SSH recording? This cannot be undone.",
+        async () => {
+          await macroService.deleteRecording(id);
+          if (expandedId === id) setExpandedId(null);
+          await loadData();
+        },
+      );
     },
-    [expandedId, loadData],
+    [expandedId, loadData, requestDelete],
   );
 
   const handleExportSsh = useCallback(
@@ -140,10 +203,15 @@ export function useRecordingManager(isOpen: boolean) {
   );
 
   const handleDeleteAllSsh = useCallback(async () => {
-    await macroService.saveRecordings([]);
-    setExpandedId(null);
-    await loadData();
-  }, [loadData]);
+    await requestDelete(
+      "Delete all SSH recordings? This cannot be undone.",
+      async () => {
+        await macroService.saveRecordings([]);
+        setExpandedId(null);
+        await loadData();
+      },
+    );
+  }, [loadData, requestDelete]);
 
   /* ---- RDP actions ---- */
   const handleRenameRdp = useCallback(
@@ -157,36 +225,50 @@ export function useRecordingManager(isOpen: boolean) {
 
   const handleDeleteRdp = useCallback(
     async (id: string) => {
-      await macroService.deleteRdpRecording(id);
-      if (expandedId === id) setExpandedId(null);
-      await loadData();
+      const name = rdpRecordings.find((recording) => recording.id === id)?.name;
+      await requestDelete(
+        `Delete ${name ? `“${name}”` : "this RDP recording"}? This cannot be undone.`,
+        async () => {
+          await macroService.deleteRdpRecording(id);
+          if (expandedId === id) setExpandedId(null);
+          await loadData();
+        },
+      );
     },
-    [expandedId, loadData],
+    [expandedId, loadData, requestDelete, rdpRecordings],
   );
 
-  const handleExportRdp = useCallback((rec: SavedRDPRecording) => {
-    const blob = macroService.rdpRecordingToBlob(rec);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const ext = rec.format === "gif" ? "gif" : rec.format || "webm";
-    a.download = `${rec.name.replace(/[^a-zA-Z0-9-_]/g, "_")}.${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, []);
+  const handleExportRdp = useCallback(
+    async (rec: SavedRDPRecording) => {
+      await runAction(async () => {
+        await saveRdpRecordingToFile(rec);
+      });
+    },
+    [runAction],
+  );
 
-  const handlePlayRdp = useCallback((rec: SavedRDPRecording) => {
-    const blob = macroService.rdpRecordingToBlob(rec);
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  }, []);
+  const handlePlayRdp = useCallback(
+    (rec: SavedRDPRecording) => {
+      try {
+        if (!onPlayRdp) throw new Error("Recording player is unavailable.");
+        onPlayRdp(rec);
+      } catch (cause) {
+        setError(`Unable to open recording: ${String(cause)}`);
+      }
+    },
+    [onPlayRdp],
+  );
 
   const handleDeleteAllRdp = useCallback(async () => {
-    await macroService.saveRdpRecordings([]);
-    setExpandedId(null);
-    await loadData();
-  }, [loadData]);
+    await requestDelete(
+      "Delete all RDP recordings? This cannot be undone.",
+      async () => {
+        await macroService.saveRdpRecordings([]);
+        setExpandedId(null);
+        await loadData();
+      },
+    );
+  }, [loadData, requestDelete]);
 
   /* ---- Web HAR actions ---- */
   const handleRenameWeb = useCallback(
@@ -201,10 +283,15 @@ export function useRecordingManager(isOpen: boolean) {
 
   const handleDeleteWeb = useCallback(
     async (id: string) => {
-      await macroService.deleteWebRecording(id);
-      loadData();
+      await requestDelete(
+        "Delete this web recording? This cannot be undone.",
+        async () => {
+          await macroService.deleteWebRecording(id);
+          await loadData();
+        },
+      );
     },
-    [loadData],
+    [loadData, requestDelete],
   );
 
   const handleExportWeb = useCallback(
@@ -226,9 +313,14 @@ export function useRecordingManager(isOpen: boolean) {
   );
 
   const handleClearAllWeb = useCallback(async () => {
-    await macroService.saveWebRecordings([]);
-    loadData();
-  }, [loadData]);
+    await requestDelete(
+      "Delete all web recordings? This cannot be undone.",
+      async () => {
+        await macroService.saveWebRecordings([]);
+        await loadData();
+      },
+    );
+  }, [loadData, requestDelete]);
 
   /* ---- Web Video actions ---- */
   const handleRenameWebVideo = useCallback(
@@ -243,10 +335,15 @@ export function useRecordingManager(isOpen: boolean) {
 
   const handleDeleteWebVideo = useCallback(
     async (id: string) => {
-      await macroService.deleteWebVideoRecording(id);
-      loadData();
+      await requestDelete(
+        "Delete this web video recording? This cannot be undone.",
+        async () => {
+          await macroService.deleteWebVideoRecording(id);
+          await loadData();
+        },
+      );
     },
-    [loadData],
+    [loadData, requestDelete],
   );
 
   const handleExportWebVideo = useCallback((rec: SavedWebVideoRecording) => {
@@ -261,9 +358,14 @@ export function useRecordingManager(isOpen: boolean) {
   }, []);
 
   const handleClearAllWebVideo = useCallback(async () => {
-    await macroService.saveWebVideoRecordings([]);
-    loadData();
-  }, [loadData]);
+    await requestDelete(
+      "Delete all web video recordings? This cannot be undone.",
+      async () => {
+        await macroService.saveWebVideoRecordings([]);
+        await loadData();
+      },
+    );
+  }, [loadData, requestDelete]);
 
   /* ---- stats ---- */
   const sshTotalDuration = useMemo(
@@ -289,6 +391,11 @@ export function useRecordingManager(isOpen: boolean) {
   }, []);
 
   return {
+    error,
+    busy,
+    deletePrompt,
+    confirmDelete,
+    cancelDelete,
     /* tab */
     activeTab,
     switchTab,
