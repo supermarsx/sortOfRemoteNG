@@ -6,6 +6,7 @@ import {
   canOpenTerminalLink,
   openTerminalLink,
 } from "../../utils/ssh/terminalLinks";
+import { SettingsManager } from "../../utils/settings/settingsManager";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useTerminalRecorder } from "../recording/useTerminalRecorder";
 import { useMacroRecorder } from "../recording/useMacroRecorder";
@@ -2594,11 +2595,20 @@ export function useWebTerminal(
       void openTerminalLink(
         uri,
         source,
-        () =>
-          canOpenTerminalLink(
-            sessionRef.current.protocol,
-            settingsRef.current.allowSshExternalLinks,
-          ),
+        () => {
+          const protocol = sessionRef.current.protocol;
+          return (
+            canOpenTerminalLink(
+              protocol,
+              settingsRef.current.allowSshExternalLinks,
+            ) &&
+            // The dialog updates this snapshot before its debounced save (and
+            // retains it on failure). A stale context must never re-grant access.
+            (protocol !== "ssh" ||
+              SettingsManager.getInstance().getSettings()
+                .allowSshExternalLinks === true)
+          );
+        },
         (message) => toastRef.current.error(message, 3000),
       );
     };

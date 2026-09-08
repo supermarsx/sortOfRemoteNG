@@ -2,6 +2,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ILinkHandler } from "@xterm/xterm";
+import { SettingsManager } from "../../utils/settings/settingsManager";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
   hasSessionLifecycleActorAttempt,
@@ -400,6 +401,11 @@ afterEach(() => {
 });
 
 describe("useWebTerminal SSH link security", () => {
+  beforeEach(() => SettingsManager.resetInstance());
+  afterEach(() => {
+    SettingsManager.resetInstance();
+    vi.unstubAllGlobals();
+  });
   it("uses live global opt-in for both link routes without recreating the terminal", async () => {
     mocks.nativeLinks = true;
     // Even an imported per-connection option cannot grant this global policy.
@@ -434,6 +440,9 @@ describe("useWebTerminal SSH link security", () => {
     expect(mocks.confirmPaste).not.toHaveBeenCalled();
 
     mocks.settingsContext.settings = { allowSshExternalLinks: true };
+    SettingsManager.getInstance().applyInMemory({
+      allowSshExternalLinks: true,
+    });
     view.rerender(<Harness />);
     activate();
     await waitFor(() =>
@@ -465,6 +474,9 @@ describe("useWebTerminal SSH link security", () => {
   it("surfaces native link failures through the existing toast without leaking destinations", async () => {
     mocks.nativeLinks = true;
     mocks.settingsContext.settings = { allowSshExternalLinks: true };
+    SettingsManager.getInstance().applyInMemory({
+      allowSshExternalLinks: true,
+    });
     const Harness = () => {
       const model = useWebTerminal(session);
       return <div ref={model.containerRef} />;
@@ -488,6 +500,110 @@ describe("useWebTerminal SSH link security", () => {
     );
     expect(JSON.stringify(mocks.toast.error.mock.calls)).not.toContain(
       "secret",
+    );
+    view.unmount();
+  });
+
+  it("revokes both live link routes before context publication and retains revocation after a failed save", async () => {
+    const writeSettings = vi.fn(async (command: string) => {
+      if (command === "read_app_settings")
+        return { allowSshExternalLinks: true };
+      if (command === "write_app_settings")
+        throw new Error("fixture write denied");
+      return null;
+    });
+    vi.stubGlobal("__TAURI__", { core: { invoke: writeSettings } });
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+    mocks.nativeLinks = true;
+    const contextSnapshot = { allowSshExternalLinks: true };
+    mocks.settingsContext.settings = contextSnapshot;
+    const Harness = () => {
+      const model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness />);
+    const terminal = mocks.MockTerminal.instances[0];
+    const detected = mocks.webLinksHandlers[0];
+    const osc8 = terminal.options.linkHandler as ILinkHandler;
+    const activate = () => {
+      detected(new MouseEvent("click"), "https://example.test/");
+      osc8.activate(new MouseEvent("click"), "https://destination.test/", {
+        start: { x: 1, y: 1 },
+        end: { x: 4, y: 1 },
+      });
+    };
+    activate();
+    expect(mocks.invoke).toHaveBeenCalledWith("open_url_external", {
+      url: "https://example.test/",
+    });
+
+    // Same API used by the dialog synchronously, before its 1500ms save timer.
+    manager.applyInMemory({ allowSshExternalLinks: false });
+    mocks.invoke.mockClear();
+    mocks.confirmPaste.mockClear();
+    activate();
+    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "open_url_external",
+      expect.anything(),
+    );
+    await expect(
+      manager.saveSettings({ allowSshExternalLinks: false }, { silent: true }),
+    ).rejects.toThrow("fixture write denied");
+    expect(
+      writeSettings.mock.calls.filter(
+        ([command]) => command === "write_app_settings",
+      ),
+    ).toHaveLength(3);
+    activate();
+    expect(manager.getSettings().allowSshExternalLinks).toBe(false);
+    expect(mocks.settingsContext.settings).toBe(contextSnapshot);
+    expect(contextSnapshot.allowSshExternalLinks).toBe(true);
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "open_url_external",
+      expect.anything(),
+    );
+    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.MockTerminal.instances).toEqual([terminal]);
+    view.unmount();
+  });
+
+  it("rechecks the live manager after OSC8 confirmation and at global lock", () => {
+    mocks.nativeLinks = true;
+    mocks.settingsContext.settings = { allowSshExternalLinks: true };
+    const manager = SettingsManager.getInstance();
+    manager.applyInMemory({ allowSshExternalLinks: true });
+    const Harness = () => {
+      const model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness />);
+    const osc8 = mocks.MockTerminal.instances[0].options
+      .linkHandler as ILinkHandler;
+    const activate = () =>
+      osc8.activate(new MouseEvent("click"), "https://destination.test/", {
+        start: { x: 1, y: 1 },
+        end: { x: 4, y: 1 },
+      });
+    mocks.confirmPaste.mockImplementation(() => {
+      manager.applyInMemory({ allowSshExternalLinks: false });
+      return true;
+    });
+    activate();
+    expect(mocks.confirmPaste).toHaveBeenCalledOnce();
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "open_url_external",
+      expect.anything(),
+    );
+    manager.applyInMemory({ allowSshExternalLinks: true });
+    manager.invalidateLoadedSettings(true);
+    mocks.confirmPaste.mockClear();
+    activate();
+    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "open_url_external",
+      expect.anything(),
     );
     view.unmount();
   });
