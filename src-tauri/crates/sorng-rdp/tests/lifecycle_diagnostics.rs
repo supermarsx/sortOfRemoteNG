@@ -28,13 +28,17 @@ fn descriptor(name: &str, enabled: bool) -> VirtualChannelDescriptor {
 
 /// The full diagnostics pipeline: a channel registry summary and a frame-flow
 /// controller snapshot are pushed onto `RdpSessionStats`, and the emitted
-/// lifecycle snapshot carries both verbatim (delivered_frames is taken from the
-/// live frame counter, which is zero here).
+/// lifecycle snapshot carries both verbatim, including the controller's
+/// transport-delivery count.
 #[test]
 fn stats_lifecycle_snapshot_carries_channel_and_frame_telemetry() {
     let mut registry = VirtualChannelRegistry::new();
-    registry.register(descriptor("rdpdr", true).ready()).unwrap();
-    registry.register(descriptor("rdpsnd", true).ready()).unwrap();
+    registry
+        .register(descriptor("rdpdr", true).ready())
+        .unwrap();
+    registry
+        .register(descriptor("rdpsnd", true).ready())
+        .unwrap();
     registry.register(descriptor("cliprdr", true)).unwrap();
     registry
         .register(descriptor("audin", true).faulted("channel_fault"))
@@ -71,29 +75,42 @@ fn stats_lifecycle_snapshot_carries_channel_and_frame_telemetry() {
     assert_eq!(snapshot.session_id, "session-1");
 }
 
-/// `lifecycle_snapshot` overrides `delivered_frames` with the live frame counter
-/// so the persisted summary always reflects real throughput, not a stale set
-/// value.
+/// Decoded updates and delivered transport frames are different measurements:
+/// coalescing can combine multiple updates into one delivery. Decoding another
+/// update must not overwrite the delivery count supplied by the controller.
 #[test]
-fn delivered_frames_reflects_live_frame_counter() {
+fn delivered_frames_remain_independent_of_decoded_updates() {
     let stats = RdpSessionStats::new();
-    // Seed a stale delivered count via the frame-flow summary.
-    stats.set_frame_flow_summary(FrameFlowSummary {
-        queued_frames: 1,
-        delivered_frames: 999,
-        dropped_frames: 0,
-        coalesced_frames: 0,
-        average_render_ms: None,
-    });
+    let mut controller = FrameFlowController::default();
+    controller.observe_queue_depth(1);
+    for _ in 0..7 {
+        controller.record_delivered();
+    }
+    stats.set_frame_flow_summary(controller.snapshot().summary());
 
     for _ in 0..12 {
         stats.record_frame();
     }
 
+    let event = stats.to_event("session-2");
+    assert_eq!(event.frame_count, 12);
+    assert_eq!(
+        event.lifecycle.unwrap().frame_flow_summary.delivered_frames,
+        7
+    );
     let snapshot = stats.lifecycle_snapshot("session-2");
-    assert_eq!(snapshot.frame_flow_summary.delivered_frames, 12);
-    // The non-overridden fields are preserved.
+    assert_eq!(snapshot.frame_flow_summary.delivered_frames, 7);
     assert_eq!(snapshot.frame_flow_summary.queued_frames, 1);
+
+    controller.record_delivered();
+    stats.set_frame_flow_summary(controller.snapshot().summary());
+    stats.record_frame();
+    let event = stats.to_event("session-2");
+    assert_eq!(event.frame_count, 13);
+    assert_eq!(
+        event.lifecycle.unwrap().frame_flow_summary.delivered_frames,
+        8
+    );
 }
 
 /// A defaulted snapshot (no channel/frame telemetry set) projects zeroed
@@ -181,7 +198,9 @@ fn channel_fault_projects_recovering_substate_and_failure_class() {
     );
 
     let mut registry = VirtualChannelRegistry::new();
-    registry.register(descriptor("rdpdr", true).ready()).unwrap();
+    registry
+        .register(descriptor("rdpdr", true).ready())
+        .unwrap();
     registry
         .register(descriptor("cliprdr", true).faulted("channel_fault"))
         .unwrap();
@@ -227,7 +246,10 @@ fn snapshot_projects_reconnect_attempt_and_failure_class() {
     );
     let snapshot = failed.snapshot();
     assert_eq!(snapshot.state, "terminated");
-    assert_eq!(snapshot.last_failure_class.as_deref(), Some("trust_rejected"));
+    assert_eq!(
+        snapshot.last_failure_class.as_deref(),
+        Some("trust_rejected")
+    );
 }
 
 /// The emitted lifecycle snapshot — even when carrying channel/frame telemetry —
