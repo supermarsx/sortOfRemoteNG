@@ -65,4 +65,20 @@ describe("integration HTTP proxy helper", () => {
 
     expect(getGlobalHttpProxyUrl()).toBeUndefined();
   });
+
+  it("fails closed for an enabled unsupported or malformed browser proxy", () => {
+    for (const override of [
+      { type: "socks5" as const },
+      { host: "proxy.example/escape" },
+      { host: "proxy.example@other.example" },
+      { port: 0 },
+    ]) {
+      setProxy(override);
+      expect(() => getGlobalHttpProxyUrl({ failClosed: true })).toThrow(
+        /configured route will not be bypassed/u,
+      );
+    }
+    setProxy({ enabled: false, type: "socks5" });
+    expect(getGlobalHttpProxyUrl({ failClosed: true })).toBeUndefined();
+  });
 });

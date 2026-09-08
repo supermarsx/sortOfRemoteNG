@@ -161,6 +161,7 @@ function localNavigationFailure(
     | "invalid_navigation"
     | "proxy_start_failed"
     | "certificate_rejected"
+    | "tls_failure"
   >,
   title: string,
   url: string,
@@ -359,6 +360,8 @@ export function useWebBrowser(session: ConnectionSession) {
   const proxyUrlRef = useRef<string>("");
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
+  const proxyRecoveryBusyRef = useRef(false);
+  const mountedRef = useRef(true);
   const activeNavigationUrlRef = useRef(currentUrl);
   const navigationFailureRef = useRef<ProxyNavigationFailure | null>(
     navigationFailure,
@@ -464,155 +467,176 @@ export function useWebBrowser(session: ConnectionSession) {
   }, []);
 
   // ── HTTPS cert trust ───────────────────────────────────────
-  const fetchAndVerifyCert = useCallback(async (): Promise<boolean> => {
-    if (session.protocol !== "https") return true;
-    const port = connection?.port || 443;
-    const policy = resolveEffectiveTrustPolicy(
-      connection?.httpsTrustPolicy,
-      settings.httpsTrustPolicy,
-      settings.trustPolicy,
-      connection?.tlsTrustPolicy ?? settings.tlsTrustPolicy ?? "always-ask",
-    );
-    // Capture the navigation generation BEFORE the async gap so we can
-    // detect whether a newer navigation has superseded us after the
-    // await completes (e.g. React StrictMode double-mount race).
-    const genBefore = navGenRef.current;
-
-    try {
-      const info = await invoke<{
-        fingerprint: string;
-        subject: string | null;
-        issuer: string | null;
-        pem: string | null;
-        valid_from: string | null;
-        valid_to: string | null;
-        serial: string | null;
-        signature_algorithm: string | null;
-        san: string[];
-        subject_cn: string | null;
-        subject_org: string | null;
-        subject_ou: string | null;
-        subject_country: string | null;
-        subject_state: string | null;
-        subject_locality: string | null;
-        subject_email: string | null;
-        issuer_cn: string | null;
-        issuer_org: string | null;
-        issuer_country: string | null;
-        key_algorithm: string | null;
-        key_size: number | null;
-        version: number | null;
-        chain: Array<{
-          subject: string;
-          issuer: string;
-          fingerprint: string;
-          valid_from: string;
-          valid_to: string;
-        }> | null;
-      }>("get_tls_certificate_info", { host: normalizedHostname, port });
-
-      // If a newer navigation started while we were awaiting the cert,
-      // this call is stale — bail out so we don't overwrite the ref
-      // that the newer call will (or already did) set.
-      if (genBefore !== navGenRef.current) return false;
-
-      const now = new Date().toISOString();
-      const identity: CertIdentity = {
-        fingerprint: info.fingerprint,
-        subject: info.subject ?? undefined,
-        issuer: info.issuer ?? undefined,
-        firstSeen: now,
-        lastSeen: now,
-        validFrom: info.valid_from ?? undefined,
-        validTo: info.valid_to ?? undefined,
-        pem: info.pem ?? undefined,
-        serial: info.serial ?? undefined,
-        signatureAlgorithm: info.signature_algorithm ?? undefined,
-        san: info.san.length > 0 ? info.san : undefined,
-        subjectCn: info.subject_cn ?? undefined,
-        subjectOrg: info.subject_org ?? undefined,
-        subjectOu: info.subject_ou ?? undefined,
-        subjectCountry: info.subject_country ?? undefined,
-        subjectState: info.subject_state ?? undefined,
-        subjectLocality: info.subject_locality ?? undefined,
-        subjectEmail: info.subject_email ?? undefined,
-        issuerCn: info.issuer_cn ?? undefined,
-        issuerOrg: info.issuer_org ?? undefined,
-        issuerCountry: info.issuer_country ?? undefined,
-        keyAlgorithm: info.key_algorithm ?? undefined,
-        keySize: info.key_size ?? undefined,
-        version: info.version ?? undefined,
-        chain: info.chain?.map((c) => ({
-          subject: c.subject,
-          issuer: c.issuer,
-          fingerprint: c.fingerprint,
-          validFrom: c.valid_from,
-          validTo: c.valid_to,
-        })),
-      };
-      setCertIdentity(identity);
-      if (policy === "always-trust") {
-        acceptedCertFingerprintRef.current = identity.fingerprint;
-        return true;
-      }
-      const connId = connection?.id;
-      const result = await verifyIdentity(
-        normalizedHostname,
-        port,
-        "https",
-        identity,
-        connId,
+  const fetchAndVerifyCert = useCallback(
+    async (proxyUrl?: string): Promise<boolean> => {
+      if (session.protocol !== "https") return true;
+      const port = connection?.port || 443;
+      const policy = resolveEffectiveTrustPolicy(
+        connection?.httpsTrustPolicy,
+        settings.httpsTrustPolicy,
+        settings.trustPolicy,
+        connection?.tlsTrustPolicy ?? settings.tlsTrustPolicy ?? "always-ask",
       );
-      if (result.status === "trusted") {
-        // The cert was previously accepted (this session or a prior one).
-        // Pin the proxy to the same fingerprint.
-        acceptedCertFingerprintRef.current = identity.fingerprint;
-        return true;
-      }
-      if (result.status === "first-use" && policy === "tofu") {
-        await trustIdentity(
+      // Capture the navigation generation BEFORE the async gap so we can
+      // detect whether a newer navigation has superseded us after the
+      // await completes (e.g. React StrictMode double-mount race).
+      const genBefore = navGenRef.current;
+
+      try {
+        const info = await invoke<{
+          fingerprint: string;
+          subject: string | null;
+          issuer: string | null;
+          pem: string | null;
+          valid_from: string | null;
+          valid_to: string | null;
+          serial: string | null;
+          signature_algorithm: string | null;
+          san: string[];
+          subject_cn: string | null;
+          subject_org: string | null;
+          subject_ou: string | null;
+          subject_country: string | null;
+          subject_state: string | null;
+          subject_locality: string | null;
+          subject_email: string | null;
+          issuer_cn: string | null;
+          issuer_org: string | null;
+          issuer_country: string | null;
+          key_algorithm: string | null;
+          key_size: number | null;
+          version: number | null;
+          chain: Array<{
+            subject: string;
+            issuer: string;
+            fingerprint: string;
+            valid_from: string;
+            valid_to: string;
+          }> | null;
+        }>("get_tls_certificate_info", {
+          host: normalizedHostname,
+          port,
+          proxyUrl,
+        });
+
+        // If a newer navigation started while we were awaiting the cert,
+        // this call is stale — bail out so we don't overwrite the ref
+        // that the newer call will (or already did) set.
+        if (genBefore !== navGenRef.current) return false;
+
+        const now = new Date().toISOString();
+        const identity: CertIdentity = {
+          fingerprint: info.fingerprint,
+          subject: info.subject ?? undefined,
+          issuer: info.issuer ?? undefined,
+          firstSeen: now,
+          lastSeen: now,
+          validFrom: info.valid_from ?? undefined,
+          validTo: info.valid_to ?? undefined,
+          pem: info.pem ?? undefined,
+          serial: info.serial ?? undefined,
+          signatureAlgorithm: info.signature_algorithm ?? undefined,
+          san: info.san.length > 0 ? info.san : undefined,
+          subjectCn: info.subject_cn ?? undefined,
+          subjectOrg: info.subject_org ?? undefined,
+          subjectOu: info.subject_ou ?? undefined,
+          subjectCountry: info.subject_country ?? undefined,
+          subjectState: info.subject_state ?? undefined,
+          subjectLocality: info.subject_locality ?? undefined,
+          subjectEmail: info.subject_email ?? undefined,
+          issuerCn: info.issuer_cn ?? undefined,
+          issuerOrg: info.issuer_org ?? undefined,
+          issuerCountry: info.issuer_country ?? undefined,
+          keyAlgorithm: info.key_algorithm ?? undefined,
+          keySize: info.key_size ?? undefined,
+          version: info.version ?? undefined,
+          chain: info.chain?.map((c) => ({
+            subject: c.subject,
+            issuer: c.issuer,
+            fingerprint: c.fingerprint,
+            validFrom: c.valid_from,
+            validTo: c.valid_to,
+          })),
+        };
+        setCertIdentity(identity);
+        if (policy === "always-trust") {
+          acceptedCertFingerprintRef.current = identity.fingerprint;
+          return true;
+        }
+        const connId = connection?.id;
+        const result = await verifyIdentity(
           normalizedHostname,
           port,
           "https",
           identity,
-          false,
           connId,
         );
-        // P6c: TOFU auto-trusted on first contact — same as above.
-        acceptedCertFingerprintRef.current = identity.fingerprint;
-        return true;
-      }
-      if (
-        result.status === "mismatch" ||
-        result.status === "expired" ||
-        policy === "always-ask" ||
-        policy === "strict"
-      ) {
-        // If a previous trust dialog is still pending (e.g. React StrictMode
-        // double-mount or rapid re-navigation), reject the old promise so
-        // the stale navigateToUrl() call doesn't hang forever.
-        if (trustResolveRef.current) {
-          trustResolveRef.current(false);
-          trustResolveRef.current = null;
+        if (genBefore !== navGenRef.current) return false;
+        if (result.status === "trusted") {
+          // The cert was previously accepted (this session or a prior one).
+          // Pin the proxy to the same fingerprint.
+          acceptedCertFingerprintRef.current = identity.fingerprint;
+          return true;
         }
-        return new Promise<boolean>((resolve) => {
-          trustResolveRef.current = resolve;
-          setTrustPrompt(result);
-        });
+        if (result.status === "first-use" && policy === "tofu") {
+          await trustIdentity(
+            normalizedHostname,
+            port,
+            "https",
+            identity,
+            false,
+            connId,
+          );
+          if (genBefore !== navGenRef.current) return false;
+          // P6c: TOFU auto-trusted on first contact — same as above.
+          acceptedCertFingerprintRef.current = identity.fingerprint;
+          return true;
+        }
+        if (
+          result.status === "mismatch" ||
+          result.status === "expired" ||
+          policy === "always-ask" ||
+          policy === "strict"
+        ) {
+          // If a previous trust dialog is still pending (e.g. React StrictMode
+          // double-mount or rapid re-navigation), reject the old promise so
+          // the stale navigateToUrl() call doesn't hang forever.
+          if (trustResolveRef.current) {
+            trustResolveRef.current(false);
+            trustResolveRef.current = null;
+          }
+          return new Promise<boolean>((resolve) => {
+            trustResolveRef.current = resolve;
+            setTrustPrompt(result);
+          });
+        }
+        return false;
+      } catch (err) {
+        if (genBefore !== navGenRef.current) return false;
+        debugLog("WebBrowser", "Failed to fetch HTTPS cert info", { err });
+        acceptedCertFingerprintRef.current = null;
+        applyNavigationFailure(
+          localNavigationFailure(
+            "tls_failure",
+            "Unable to inspect the HTTPS certificate",
+            activeNavigationUrlRef.current,
+            "Certificate inspection failed on the configured route. The connection was not opened without the trust check.",
+            err instanceof Error ? err.message : String(err),
+          ),
+        );
+        return false;
       }
-      return false;
-    } catch (err) {
-      debugLog("WebBrowser", "Failed to fetch HTTPS cert info", { err });
-      return true;
-    }
-  }, [
-    session.protocol,
-    normalizedHostname,
-    connection,
-    settings.httpsTrustPolicy,
-    settings.trustPolicy,
-    settings.tlsTrustPolicy,
-  ]);
+    },
+    [
+      session.protocol,
+      normalizedHostname,
+      connection,
+      settings.httpsTrustPolicy,
+      settings.trustPolicy,
+      settings.tlsTrustPolicy,
+      applyNavigationFailure,
+    ],
+  );
 
   const handleTrustAccept = useCallback(async () => {
     if (trustPrompt && certIdentity) {
@@ -703,14 +727,14 @@ export function useWebBrowser(session: ConnectionSession) {
   const stopProxy = useCallback(async (sessionId?: string) => {
     const id = sessionId ?? proxySessionIdRef.current;
     if (!id) return;
+    if (id === proxySessionIdRef.current) {
+      proxySessionIdRef.current = "";
+      proxyUrlRef.current = "";
+    }
     try {
       await invoke("stop_basic_auth_proxy", { sessionId: id });
     } catch {
       // Session may already be gone
-    }
-    if (!sessionId || sessionId === proxySessionIdRef.current) {
-      proxySessionIdRef.current = "";
-      proxyUrlRef.current = "";
     }
   }, []);
 
@@ -760,12 +784,12 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       activeNavigationUrlRef.current = urlObj.toString();
-      if (urlObj.protocol === "https:") {
-        const trusted = await fetchAndVerifyCert();
-        if (!trusted) return;
-        if (gen !== navGenRef.current) return;
-      }
       loadTimeoutRef.current = setTimeout(() => {
+        if (gen !== navGenRef.current) return;
+        navGenRef.current += 1;
+        trustResolveRef.current?.(false);
+        trustResolveRef.current = null;
+        setTrustPrompt(null);
         const errorMessage = `Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`;
         applyNavigationFailure(
           localNavigationFailure(
@@ -778,6 +802,11 @@ export function useWebBrowser(session: ConnectionSession) {
         );
       }, LOAD_TIMEOUT_MS);
       try {
+        const upstreamProxyUrl = getGlobalHttpProxyUrl({ failClosed: true });
+        if (urlObj.protocol === "https:") {
+          const trusted = await fetchAndVerifyCert(upstreamProxyUrl);
+          if (!trusted || gen !== navGenRef.current) return;
+        }
         // ── Universal proxy mediation (P1) ──
         // Every http/https tab now routes through `start_basic_auth_proxy`
         // regardless of whether Basic Auth is configured. Reasons:
@@ -836,7 +865,7 @@ export function useWebBrowser(session: ConnectionSession) {
                 // If the app has a global HTTP(S) proxy, the loopback
                 // mediator owns that outbound hop. The iframe still talks only
                 // to its protected p<token>.localhost authority.
-                upstream_proxy_url: getGlobalHttpProxyUrl(),
+                upstream_proxy_url: upstreamProxyUrl,
                 // t20: arm proxy-side web auto-login for this session
                 // when the connection opted in. Default off. The
                 // credential itself is NOT sent separately — the
@@ -873,7 +902,13 @@ export function useWebBrowser(session: ConnectionSession) {
             }).catch(() => {});
             return;
           }
-          const protectedProxyUrl = validateProtectedProxyUrl(response);
+          let protectedProxyUrl: string;
+          try {
+            protectedProxyUrl = validateProtectedProxyUrl(response);
+          } catch (error) {
+            await stopProxy(response.session_id);
+            throw error;
+          }
           proxySessionIdRef.current = response.session_id;
           proxyUrlRef.current = protectedProxyUrl;
           if (
@@ -889,6 +924,7 @@ export function useWebBrowser(session: ConnectionSession) {
               console.error("Auto-record failed:", err);
             }
           }
+          if (gen !== navGenRef.current) return;
           if (iframeRef.current) {
             const proxyBase = protectedProxyUrl.replace(/\/+$/, "");
             iframeRef.current.src = proxyBase + pagePath;
@@ -950,9 +986,16 @@ export function useWebBrowser(session: ConnectionSession) {
 
   // Cleanup proxy and timeout on unmount
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      navGenRef.current += 1;
+      trustResolveRef.current?.(false);
+      trustResolveRef.current = null;
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
       const id = proxySessionIdRef.current;
+      proxySessionIdRef.current = "";
+      proxyUrlRef.current = "";
       if (id) {
         invoke("stop_basic_auth_proxy", { sessionId: id }).catch(() => {});
       }
@@ -1009,107 +1052,112 @@ export function useWebBrowser(session: ConnectionSession) {
     };
   }, [toast]);
 
-  // Proxy keepalive polling. P1: every tab now has a proxy session, so
-  // health monitoring applies universally — drop the pre-P1 hasAuth gate.
+  // Both manual and automatic recovery share one in-flight operation. A late
+  // result belongs only to the same navigation generation and proxy session.
+  const restartOwnedProxy = useCallback(
+    async (sid: string, gen: number) => {
+      const resp = await invoke<ProxyMediatorResponse>(
+        "restart_proxy_session",
+        { sessionId: sid },
+      );
+      let protectedProxyUrl: string;
+      try {
+        protectedProxyUrl = validateProtectedProxyUrl(resp);
+      } catch (error) {
+        await stopProxy(resp.session_id);
+        throw error;
+      }
+      if (gen !== navGenRef.current || proxySessionIdRef.current !== sid) {
+        await stopProxy(resp.session_id);
+        return false;
+      }
+      proxySessionIdRef.current = resp.session_id;
+      proxyUrlRef.current = protectedProxyUrl;
+      setProxyAlive(true);
+      clearNavigationFailure();
+      if (iframeRef.current) {
+        const urlObj = new URL(activeNavigationUrlRef.current);
+        iframeRef.current.src =
+          protectedProxyUrl.replace(/\/+$/, "") +
+          urlObj.pathname +
+          urlObj.search +
+          urlObj.hash;
+      }
+      return true;
+    },
+    [clearNavigationFailure, stopProxy],
+  );
+
   useEffect(() => {
     if (!settings.proxyKeepaliveEnabled) return;
     const intervalMs = (settings.proxyKeepaliveIntervalSeconds ?? 10) * 1000;
     const id = setInterval(async () => {
       const sid = proxySessionIdRef.current;
-      if (!sid) return;
+      if (!sid || proxyRecoveryBusyRef.current) return;
+      const gen = navGenRef.current;
+      proxyRecoveryBusyRef.current = true;
       try {
         const results = await invoke<
           Array<{ session_id: string; alive: boolean; error?: string }>
         >("check_proxy_health", { sessionIds: [sid] });
+        if (gen !== navGenRef.current || proxySessionIdRef.current !== sid)
+          return;
         const entry = results.find((r) => r.session_id === sid);
-        if (entry && !entry.alive) {
-          debugLog("WebBrowser", "Proxy health check failed", {
-            sid,
-            error: entry.error,
-          });
-          setProxyAlive(false);
-          const maxRestarts = settings.proxyMaxAutoRestarts ?? 5;
-          const canAutoRestart =
-            settings.proxyAutoRestart &&
-            (maxRestarts === 0 || autoRestartCountRef.current < maxRestarts);
-          if (canAutoRestart) {
-            try {
-              const resp = await invoke<ProxyMediatorResponse>(
-                "restart_proxy_session",
-                { sessionId: sid },
-              );
-              const protectedProxyUrl = validateProtectedProxyUrl(resp);
-              proxySessionIdRef.current = resp.session_id;
-              proxyUrlRef.current = protectedProxyUrl;
-              autoRestartCountRef.current += 1;
-              setProxyAlive(true);
-              if (iframeRef.current) {
-                const urlObj = new URL(currentUrl);
-                const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
-                iframeRef.current.src =
-                  protectedProxyUrl.replace(/\/+$/, "") + pagePath;
-              }
-              debugLog("WebBrowser", "Proxy auto-restarted successfully", {
-                newSessionId: resp.session_id,
-                restartCount: autoRestartCountRef.current,
-              });
-            } catch (restartErr) {
-              debugLog("WebBrowser", "Auto-restart failed", { restartErr });
-            }
-          } else {
-            debugLog("WebBrowser", "Auto-restart skipped", {
-              autoRestart: settings.proxyAutoRestart,
-              count: autoRestartCountRef.current,
-              max: maxRestarts,
-            });
-          }
-        } else if (entry && entry.alive) {
+        if (entry?.alive) {
           setProxyAlive(true);
+          return;
         }
-      } catch {
-        // check_proxy_health failed — ignore
+        if (!entry) return;
+        setProxyAlive(false);
+        const maxRestarts = settings.proxyMaxAutoRestarts ?? 5;
+        if (
+          settings.proxyAutoRestart &&
+          (maxRestarts === 0 || autoRestartCountRef.current < maxRestarts)
+        ) {
+          // Failed attempts consume the limit too: permanent failure must not
+          // trigger an unbounded restart/error loop.
+          autoRestartCountRef.current += 1;
+          await restartOwnedProxy(sid, gen);
+        }
+      } catch (error) {
+        if (gen === navGenRef.current && proxySessionIdRef.current === sid) {
+          debugLog("WebBrowser", "Proxy health/recovery failed", { error });
+        }
+      } finally {
+        proxyRecoveryBusyRef.current = false;
       }
     }, intervalMs);
     return () => clearInterval(id);
   }, [
-    currentUrl,
     settings.proxyKeepaliveEnabled,
     settings.proxyKeepaliveIntervalSeconds,
     settings.proxyAutoRestart,
     settings.proxyMaxAutoRestarts,
+    restartOwnedProxy,
   ]);
 
-  // Manual proxy restart
   const handleRestartProxy = useCallback(async () => {
+    if (proxyRecoveryBusyRef.current) return;
     const sid = proxySessionIdRef.current;
     if (!sid) {
-      navigateToUrl(currentUrl);
+      await navigateToUrl(currentUrl);
       return;
     }
+    const gen = navGenRef.current;
+    proxyRecoveryBusyRef.current = true;
     setProxyRestarting(true);
     try {
-      const resp = await invoke<ProxyMediatorResponse>(
-        "restart_proxy_session",
-        { sessionId: sid },
-      );
-      const protectedProxyUrl = validateProtectedProxyUrl(resp);
-      proxySessionIdRef.current = resp.session_id;
-      proxyUrlRef.current = protectedProxyUrl;
-      setProxyAlive(true);
-      if (iframeRef.current) {
-        const urlObj = new URL(currentUrl);
-        const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
-        iframeRef.current.src =
-          protectedProxyUrl.replace(/\/+$/, "") + pagePath;
-      }
+      await restartOwnedProxy(sid, gen);
     } catch {
-      proxySessionIdRef.current = "";
-      proxyUrlRef.current = "";
-      navigateToUrl(currentUrl);
+      if (gen === navGenRef.current && proxySessionIdRef.current === sid) {
+        await stopProxy(sid);
+        if (gen === navGenRef.current) await navigateToUrl(currentUrl, false);
+      }
     } finally {
-      setProxyRestarting(false);
+      proxyRecoveryBusyRef.current = false;
+      if (mountedRef.current) setProxyRestarting(false);
     }
-  }, [currentUrl, navigateToUrl]);
+  }, [currentUrl, navigateToUrl, restartOwnedProxy, stopProxy]);
 
   // Track in-proxy navigation
   const baseTargetRef = useRef(buildTargetUrl().replace(/\/+$/, ""));
@@ -1221,8 +1269,9 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [applyNavigationFailure, currentUrl]);
 
   const handleRefresh = useCallback(() => {
-    navigateToUrl(currentUrl, false);
-  }, [currentUrl, navigateToUrl]);
+    if (!proxyAlive) void handleRestartProxy();
+    else void navigateToUrl(currentUrl, false);
+  }, [currentUrl, navigateToUrl, proxyAlive, handleRestartProxy]);
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
@@ -1678,6 +1727,11 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [editingBmIdx]);
 
   const handleCancelLoading = useCallback(() => {
+    navGenRef.current += 1;
+    trustResolveRef.current?.(false);
+    trustResolveRef.current = null;
+    setTrustPrompt(null);
+    if (iframeRef.current) iframeRef.current.src = "about:blank";
     applyNavigationFailure(
       localNavigationFailure(
         "timeout",

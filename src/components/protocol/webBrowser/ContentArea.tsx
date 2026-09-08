@@ -7,7 +7,7 @@ import { LoadingElement } from "../../ui/display/loadingElement";
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
   <div className="flex-1 relative">
     {/* Proxy-dead banner */}
-    {mgr.hasAuth && !mgr.proxyAlive && !mgr.isLoading && !mgr.loadError && (
+    {!mgr.proxyAlive && !mgr.isLoading && !mgr.loadError && (
       <div className="absolute top-0 inset-x-0 z-20 bg-error/90 border-b border-error px-4 py-2 flex items-center justify-between text-xs text-error">
         <div className="flex items-center gap-2">
           <WifiOff size={14} className="text-error" />

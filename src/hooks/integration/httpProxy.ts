@@ -23,14 +23,28 @@ function formatProxyHost(host: string): string {
   return trimmed;
 }
 
-export function getGlobalHttpProxyUrl(): string | undefined {
+export function getGlobalHttpProxyUrl(options?: {
+  failClosed?: boolean;
+}): string | undefined {
   const proxy = SettingsManager.getInstance().getSettings().globalProxy;
   if (!proxy?.enabled) return undefined;
 
   const scheme = proxyScheme(proxy);
   const host = proxy.host?.trim();
   const port = Number(proxy.port);
-  if (!scheme || !host || !Number.isInteger(port) || port < 1 || port > 65535) {
+  if (
+    !scheme ||
+    !host ||
+    /[\s/@\\?#]/u.test(host) ||
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    if (options?.failClosed) {
+      throw new Error(
+        "The enabled global proxy is not a valid HTTP(S) proxy. Correct its settings before opening this web connection; the configured route will not be bypassed.",
+      );
+    }
     return undefined;
   }
 

@@ -264,6 +264,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     expect(mockInvoke).toHaveBeenCalledWith("get_tls_certificate_info", {
       host: "admin.example.test",
       port: 443,
+      proxyUrl: undefined,
     });
     expect(mockVerifyIdentity).toHaveBeenCalledWith(
       "admin.example.test",

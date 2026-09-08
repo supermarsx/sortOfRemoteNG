@@ -11,6 +11,10 @@ pub use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
+#[path = "http_proxy_transport.rs"]
+mod proxy_transport;
+pub use proxy_transport::fetch_tls_certificate_info;
+
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
@@ -532,7 +536,7 @@ pub struct BasicAuthProxyConfig {
     /// Defaults to "1.2".  SSL 3.0 is NOT supported by the TLS backend.
     #[serde(default = "default_min_tls_version")]
     pub min_tls_version: String,
-    /// Connection ID that owns this proxy session (for per-connection isolation)
+    /// Saved connection metadata. Each tab owns a separate returned session_id.
     #[serde(default)]
     pub connection_id: String,
     /// P7: snapshot of the frontend's live `:root --color-*` CSS

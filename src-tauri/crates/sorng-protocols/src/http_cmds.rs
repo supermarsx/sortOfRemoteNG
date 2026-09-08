@@ -428,25 +428,9 @@ pub async fn start_basic_auth_proxy(
     let connection_id = config.connection_id.clone();
     let upstream_proxy_url = config.upstream_proxy_url.clone();
 
-    // ---- Per-connection isolation ----
-    // If a proxy already exists for this connection_id, shut it down first so
-    // we never have duplicate proxies for the same connection.
-    if !connection_id.is_empty() {
-        let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
-        let stale_ids: Vec<String> = mgr
-            .sessions
-            .iter()
-            .filter(|(_, entry)| entry.connection_id == connection_id)
-            .map(|(id, _)| id.clone())
-            .collect();
-        for stale in stale_ids {
-            if let Some(mut entry) = mgr.sessions.remove(&stale) {
-                if let Some(tx) = entry.shutdown_tx.take() {
-                    let _ = tx.send(());
-                }
-            }
-        }
-    }
+    // Each browser tab owns its unique returned session_id. connection_id is
+    // metadata, not an eviction key: opening another tab for a saved connection
+    // must not kill the first tab's listener and trigger competing restarts.
 
     // Build an async reqwest client for this session with connection keep-alive
     // and reasonable timeouts to avoid stale-connection errors.
@@ -917,77 +901,9 @@ pub async fn restart_proxy_session(
 pub async fn get_tls_certificate_info(
     host: String,
     port: u16,
+    proxy_url: Option<String>,
 ) -> Result<TlsCertificateInfo, String> {
-    let addr = format!("{}:{}", host, port);
-    let connector = tokio_rustls::TlsConnector::from(build_tls_config(false)?);
-
-    let tcp = tokio::net::TcpStream::connect(&addr)
-        .await
-        .map_err(|e| format!("TCP connect failed: {}", e))?;
-
-    let tls = connector
-        .connect(tls_server_name(&host)?, tcp)
-        .await
-        .map_err(|e| format!("TLS handshake failed: {}", e))?;
-
-    // Capture the full certificate chain before extracting the leaf.
-    let chain_ders = peer_certificate_chain_der(&tls);
-
-    let der = peer_certificate_der(&tls)?;
-
-    // SHA-256 fingerprint
-    let mut hasher = Sha256::new();
-    hasher.update(&der);
-    let fingerprint = hex::encode(hasher.finalize());
-    let parsed = parse_tls_certificate_details(&der, &fingerprint);
-
-    // Build PEM
-    let pem = {
-        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &der);
-        let mut pem_str = String::from("-----BEGIN CERTIFICATE-----\n");
-        for chunk in b64.as_bytes().chunks(64) {
-            pem_str.push_str(std::str::from_utf8(chunk).unwrap_or_default());
-            pem_str.push('\n');
-        }
-        pem_str.push_str("-----END CERTIFICATE-----\n");
-        Some(pem_str)
-    };
-
-    // Build chain entries from all certs in the TLS chain.
-    let chain: Vec<TlsCertificateChainEntry> = chain_ders
-        .iter()
-        .filter_map(|cert_der| parse_chain_entry_from_der(cert_der))
-        .collect();
-
-    Ok(TlsCertificateInfo {
-        fingerprint,
-        subject: parsed.subject,
-        issuer: parsed.issuer,
-        pem,
-        valid_from: parsed.valid_from,
-        valid_to: parsed.valid_to,
-        serial: parsed.serial,
-        signature_algorithm: parsed.signature_algorithm,
-        san: parsed.san,
-
-        subject_cn: parsed.subject_cn,
-        subject_org: parsed.subject_org,
-        subject_ou: parsed.subject_ou,
-        subject_country: parsed.subject_country,
-        subject_state: parsed.subject_state,
-        subject_locality: parsed.subject_locality,
-        subject_email: parsed.subject_email,
-
-        issuer_cn: parsed.issuer_cn,
-        issuer_org: parsed.issuer_org,
-        issuer_country: parsed.issuer_country,
-
-        key_algorithm: parsed.key_algorithm,
-        key_size: parsed.key_size,
-        version: parsed.version,
-
-        chain,
-    })
+    fetch_tls_certificate_info(&host, port, proxy_url.as_deref()).await
 }
 
 /// Run a deep diagnostic probe against an HTTP/HTTPS endpoint.
