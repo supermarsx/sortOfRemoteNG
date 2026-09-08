@@ -16,46 +16,59 @@ import {
   Save,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { EmptyState } from '../ui/display';
-import { useShortcutManager, FolderPreset } from "../../hooks/window/useShortcutManager";
+import { EmptyState } from "../ui/display";
+import {
+  useShortcutManager,
+  FolderPreset,
+} from "../../hooks/window/useShortcutManager";
 import { useConnections } from "../../contexts/useConnections";
 import { createToolSession } from "./toolSession";
-import { Select } from '../ui/forms';
+import { Select } from "../ui/forms";
 
 interface ShortcutManagerDialogProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type ManagerTab = 'shortcuts' | 'scan';
+type ManagerTab = "shortcuts" | "scan";
 
 /* ── Shortcuts List Tab ─────────────────────────────────── */
 
-function ShortcutsListTab({ mgr, t, onOpenCreateTab }: { mgr: ReturnType<typeof useShortcutManager>; t: ReturnType<typeof useTranslation>['t']; onOpenCreateTab: () => void }) {
+function ShortcutsListTab({
+  mgr,
+  t,
+  onOpenCreateTab,
+}: {
+  mgr: ReturnType<typeof useShortcutManager>;
+  t: ReturnType<typeof useTranslation>["t"];
+  onOpenCreateTab: () => void;
+}) {
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="flex items-center justify-between">
         <span className="text-xs text-[var(--color-textSecondary)]">
           {mgr.shortcuts.length === 1
-            ? t(
-                "shortcuts.shortcutCount.one",
-                "{{count}} shortcut",
-                { count: mgr.shortcuts.length },
-              )
-            : t(
-                "shortcuts.shortcutCount.other",
-                "{{count}} shortcuts",
-                { count: mgr.shortcuts.length },
-              )}
+            ? t("shortcuts.shortcutCount.one", "{{count}} shortcut", {
+                count: mgr.shortcuts.length,
+              })
+            : t("shortcuts.shortcutCount.other", "{{count}} shortcuts", {
+                count: mgr.shortcuts.length,
+              })}
         </span>
         <div className="flex items-center gap-2">
           {mgr.shortcuts.some((s) => !s.exists) && (
-            <button onClick={mgr.cleanupShortcuts} className="sor-btn sor-btn-warning sor-btn-xs">
+            <button
+              onClick={mgr.cleanupShortcuts}
+              className="sor-btn sor-btn-warning sor-btn-xs"
+            >
               <AlertTriangle size={12} />
               {t("shortcuts.cleanupMissing", "Clean up missing")}
             </button>
           )}
-          <button onClick={onOpenCreateTab} className="sor-btn sor-btn-primary sor-btn-xs">
+          <button
+            onClick={onOpenCreateTab}
+            className="sor-btn sor-btn-primary sor-btn-xs"
+          >
             <Plus size={12} />
             {t("shortcuts.createShortcut", "New Shortcut")}
           </button>
@@ -66,7 +79,10 @@ function ShortcutsListTab({ mgr, t, onOpenCreateTab }: { mgr: ReturnType<typeof 
         <EmptyState
           icon={Keyboard}
           message={t("shortcuts.noShortcuts", "No shortcuts created yet")}
-          hint={t("shortcuts.createHint", "Click 'New Shortcut' to get started")}
+          hint={t(
+            "shortcuts.createHint",
+            "Click 'New Shortcut' to get started",
+          )}
           className="py-12"
         />
       ) : (
@@ -82,29 +98,60 @@ function ShortcutsListTab({ mgr, t, onOpenCreateTab }: { mgr: ReturnType<typeof 
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <Link size={14} className={shortcut.exists ? "text-primary" : "text-error"} />
-                  <span className="font-medium text-[var(--color-text)] truncate">{shortcut.name}</span>
+                  <Link
+                    size={14}
+                    className={shortcut.exists ? "text-primary" : "text-error"}
+                  />
+                  <span className="font-medium text-[var(--color-text)] truncate">
+                    {shortcut.name}
+                  </span>
                   {!shortcut.exists && (
-                    <span className="text-xs text-error px-2 py-0.5 bg-error/30 rounded">{t("shortcuts.missing", "Missing")}</span>
+                    <span className="text-xs text-error px-2 py-0.5 bg-error/30 rounded">
+                      {t("shortcuts.missing", "Missing")}
+                    </span>
                   )}
                 </div>
-                <div className="text-xs text-[var(--color-textSecondary)] mt-1 truncate">{shortcut.path}</div>
+                <div className="text-xs text-[var(--color-textSecondary)] mt-1 truncate">
+                  {shortcut.path}
+                </div>
                 <div className="flex items-center gap-3 text-xs text-[var(--color-textMuted)] mt-1">
-                  {shortcut.connectionId && <span>🔌 {mgr.getConnectionName(shortcut.connectionId)}</span>}
-                  {shortcut.collectionId && <span>📁 {mgr.getCollectionName(shortcut.collectionId)}</span>}
-                  <span>{new Date(shortcut.createdAt).toLocaleDateString()}</span>
+                  {shortcut.connectionId && (
+                    <span>
+                      🔌 {mgr.getConnectionName(shortcut.connectionId)}
+                    </span>
+                  )}
+                  {shortcut.collectionId && (
+                    <span>
+                      📁 {mgr.getCollectionName(shortcut.collectionId)}
+                    </span>
+                  )}
+                  <span>
+                    {new Date(shortcut.createdAt).toLocaleDateString()}
+                  </span>
                 </div>
               </div>
               <div className="flex items-center gap-1 ml-2">
                 {shortcut.exists && (
-                  <button onClick={() => mgr.openShortcutLocation(shortcut.path)} className="sor-icon-btn" data-tooltip={t("shortcuts.openLocation", "Open Location")}>
+                  <button
+                    onClick={() => mgr.openShortcutLocation(shortcut.path)}
+                    className="sor-icon-btn"
+                    data-tooltip={t("shortcuts.openLocation", "Open Location")}
+                  >
                     <ExternalLink size={14} />
                   </button>
                 )}
-                <button onClick={() => mgr.handleEditShortcut(shortcut)} className="sor-icon-btn" data-tooltip={t("shortcuts.edit", "Edit")}>
+                <button
+                  onClick={() => mgr.handleEditShortcut(shortcut)}
+                  className="sor-icon-btn"
+                  data-tooltip={t("shortcuts.edit", "Edit")}
+                >
                   <Edit size={14} />
                 </button>
-                <button onClick={() => mgr.handleDeleteShortcut(shortcut)} className="sor-icon-btn-danger" data-tooltip={t("shortcuts.delete", "Delete")}>
+                <button
+                  onClick={() => mgr.handleDeleteShortcut(shortcut)}
+                  className="sor-icon-btn-danger"
+                  data-tooltip={t("shortcuts.delete", "Delete")}
+                >
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -118,39 +165,237 @@ function ShortcutsListTab({ mgr, t, onOpenCreateTab }: { mgr: ReturnType<typeof 
 
 /* ── Scan Tab ───────────────────────────────────────────── */
 
-function ScanTab({ mgr, t }: { mgr: ReturnType<typeof useShortcutManager>; t: ReturnType<typeof useTranslation>['t'] }) {
+function ScanTab({
+  mgr,
+  t,
+}: {
+  mgr: ReturnType<typeof useShortcutManager>;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleResults = mgr.scannedShortcuts.filter((scanned) =>
+    [scanned.name, scanned.path, scanned.target].some((value) =>
+      value?.toLowerCase().includes(normalizedQuery),
+    ),
+  );
+  const allVisibleSelected =
+    visibleResults.length > 0 &&
+    visibleResults.every((scanned) =>
+      mgr.selectedScannedPaths.has(scanned.path),
+    );
+
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-[var(--color-textSecondary)]">
-          {t("shortcuts.scanDescription", "Scan desktop, documents, and custom folders for existing sortOfRemoteNG shortcuts.")}
+          {t(
+            "shortcuts.scanDescription",
+            "Scan desktop, documents, and custom folders for existing sortOfRemoteNG shortcuts.",
+          )}
         </p>
-        <button onClick={mgr.handleScanShortcuts} disabled={mgr.isScanning} className="sor-btn sor-btn-primary sor-btn-sm flex-shrink-0">
-          {mgr.isScanning ? <><RefreshCw size={14} className="animate-spin" />{t("shortcuts.scanning", "Scanning...")}</> : <><Search size={14} />{t("shortcuts.scan", "Scan")}</>}
+        <button
+          onClick={mgr.handleScanShortcuts}
+          disabled={mgr.scanActionsBusy}
+          className="sor-btn sor-btn-primary sor-btn-sm flex-shrink-0"
+        >
+          {mgr.isScanning ? (
+            <>
+              <RefreshCw size={14} className="animate-spin" />
+              {t("shortcuts.scanning", "Scanning...")}
+            </>
+          ) : (
+            <>
+              <Search size={14} />
+              {t("shortcuts.scan", "Scan")}
+            </>
+          )}
         </button>
       </div>
 
       {mgr.showScanResults && mgr.scannedShortcuts.length === 0 && (
-        <EmptyState icon={Search} iconSize={24} message={t("shortcuts.noShortcutsFound", "No sortOfRemoteNG shortcuts found")} hint={t("shortcuts.allTracked", "All shortcuts may already be tracked")} className="py-8" />
+        <EmptyState
+          icon={Search}
+          iconSize={24}
+          message={t("shortcuts.noScanResults", "No scan results to manage")}
+          hint={t(
+            "shortcuts.scanAgainHint",
+            "Scan again to find existing shortcuts.",
+          )}
+          className="py-8"
+        />
+      )}
+      {mgr.isImporting && (
+        <p role="status" className="text-sm text-[var(--color-textSecondary)]">
+          {t("shortcuts.importing", "Importing shortcuts...")}
+        </p>
       )}
 
       {mgr.scannedShortcuts.length > 0 && (
         <div className="space-y-2">
           <div className="text-xs text-[var(--color-textMuted)]">
-            {t("shortcuts.foundShortcuts", { count: mgr.scannedShortcuts.length, defaultValue: `Found ${mgr.scannedShortcuts.length} shortcut(s)` })}
+            {t("shortcuts.foundShortcuts", {
+              count: mgr.scannedShortcuts.length,
+              defaultValue: `Found ${mgr.scannedShortcuts.length} shortcut(s)`,
+            })}
           </div>
-          {mgr.scannedShortcuts.map((scanned, index) => (
-            <div key={scanned.path ?? index} className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/30">
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label={t("shortcuts.searchResults", "Search scan results")}
+            placeholder={t("shortcuts.searchResults", "Search scan results")}
+            className="sor-form-input"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                disabled={mgr.scanActionsBusy || visibleResults.length === 0}
+                onChange={(event) => {
+                  if (event.target.checked)
+                    mgr.selectAllScanned(
+                      visibleResults.map((scanned) => scanned.path),
+                    );
+                  else
+                    visibleResults.forEach((scanned) => {
+                      if (mgr.selectedScannedPaths.has(scanned.path))
+                        mgr.toggleScannedSelection(scanned.path);
+                    });
+                }}
+              />
+              {t("shortcuts.selectVisible", "Select all visible shortcuts")}
+            </label>
+            <span
+              role="status"
+              className="text-xs text-[var(--color-textMuted)]"
+            >
+              {t("shortcuts.selectedCount", {
+                count: mgr.selectedScannedPaths.size,
+                defaultValue: `${mgr.selectedScannedPaths.size} selected`,
+              })}
+            </span>
+            <button
+              disabled={
+                mgr.scanActionsBusy || mgr.selectedScannedPaths.size === 0
+              }
+              onClick={mgr.clearScannedSelection}
+              className="sor-btn sor-btn-secondary sor-btn-xs"
+            >
+              {t("shortcuts.clearSelection", "Clear selection")}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              disabled={
+                mgr.scanActionsBusy || mgr.selectedScannedPaths.size === 0
+              }
+              onClick={mgr.handleImportSelectedScanned}
+              className="sor-btn sor-btn-primary sor-btn-sm"
+            >
+              {t("shortcuts.importSelected", "Import selected")}
+            </button>
+            <button
+              disabled={mgr.scanActionsBusy}
+              onClick={mgr.handleImportAllScanned}
+              className="sor-btn sor-btn-primary sor-btn-sm"
+            >
+              {t("shortcuts.importAll", "Import all")}
+            </button>
+            <button
+              disabled={
+                mgr.scanActionsBusy || mgr.selectedScannedPaths.size === 0
+              }
+              onClick={mgr.handleDiscardSelectedScanned}
+              className="sor-btn sor-btn-secondary sor-btn-sm"
+            >
+              {t("shortcuts.discardSelected", "Discard selected")}
+            </button>
+            <button
+              disabled={mgr.scanActionsBusy}
+              onClick={mgr.handleDiscardAllScanned}
+              className="sor-btn sor-btn-secondary sor-btn-sm"
+            >
+              {t("shortcuts.discardAll", "Discard all results")}
+            </button>
+          </div>
+          <p className="text-xs text-[var(--color-textMuted)]">
+            {t(
+              "shortcuts.discardHint",
+              "Discard only removes scan results; shortcut files are not deleted. Bulk actions include selected or all results, even when hidden by search.",
+            )}
+          </p>
+          {visibleResults.length === 0 && (
+            <p className="text-sm text-[var(--color-textSecondary)]">
+              {t("shortcuts.noMatchingResults", "No matching scan results")}
+            </p>
+          )}
+          {visibleResults.map((scanned) => (
+            <div
+              key={scanned.path}
+              className="flex items-center justify-between gap-2 p-3 rounded-lg bg-primary/10 border border-primary/30"
+            >
+              <input
+                type="checkbox"
+                aria-label={t("shortcuts.selectResult", {
+                  name: scanned.name,
+                  defaultValue: `Select ${scanned.name}`,
+                })}
+                checked={mgr.selectedScannedPaths.has(scanned.path)}
+                disabled={mgr.scanActionsBusy}
+                onChange={() => mgr.toggleScannedSelection(scanned.path)}
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <Link size={14} className="text-primary" />
-                  <span className="font-medium text-[var(--color-text)] truncate">{scanned.name}</span>
-                  <span className="text-xs text-primary px-2 py-0.5 bg-primary/20 rounded">{t("shortcuts.discovered", "Discovered")}</span>
+                  <span className="font-medium text-[var(--color-text)] truncate">
+                    {scanned.name}
+                  </span>
+                  <span className="text-xs text-primary px-2 py-0.5 bg-primary/20 rounded">
+                    {t("shortcuts.discovered", "Discovered")}
+                  </span>
                 </div>
-                <div className="text-xs text-[var(--color-textSecondary)] mt-1 truncate">{scanned.path}</div>
-                {scanned.target && <div className="text-xs text-[var(--color-textMuted)] mt-1 truncate">→ {scanned.target}</div>}
+                <div className="text-xs text-[var(--color-textSecondary)] mt-1 truncate">
+                  {scanned.path}
+                </div>
+                {scanned.target && (
+                  <div className="text-xs text-[var(--color-textMuted)] mt-1 truncate">
+                    → {scanned.target}
+                  </div>
+                )}
               </div>
-              <button onClick={() => mgr.handleImportScannedShortcut(scanned)} className="sor-btn sor-btn-primary sor-btn-xs ml-2">
+              <button
+                disabled={mgr.scanActionsBusy}
+                onClick={() => mgr.openShortcutLocation(scanned.path)}
+                aria-label={t("shortcuts.revealResult", {
+                  name: scanned.name,
+                  defaultValue: `Open containing folder for ${scanned.name}`,
+                })}
+                className="sor-icon-btn"
+              >
+                <FolderOpen size={14} />
+              </button>
+              <button
+                disabled={mgr.scanActionsBusy}
+                onClick={() => mgr.handleDiscardScannedShortcut(scanned.path)}
+                aria-label={t("shortcuts.discardResult", {
+                  name: scanned.name,
+                  defaultValue: `Discard result ${scanned.name}`,
+                })}
+                className="sor-btn sor-btn-secondary sor-btn-xs"
+              >
+                {t("shortcuts.discard", "Discard")}
+              </button>
+              <button
+                disabled={mgr.scanActionsBusy}
+                onClick={() => mgr.handleImportScannedShortcut(scanned)}
+                aria-label={t("shortcuts.importResult", {
+                  name: scanned.name,
+                  defaultValue: `Import ${scanned.name}`,
+                })}
+                className="sor-btn sor-btn-primary sor-btn-xs"
+              >
                 <Plus size={14} /> {t("shortcuts.import", "Import")}
               </button>
             </div>
@@ -170,7 +415,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
   const { t } = useTranslation();
   const mgr = useShortcutManager(isOpen);
   const { dispatch } = useConnections();
-  const [activeTab, setActiveTab] = useState<ManagerTab>('shortcuts');
+  const [activeTab, setActiveTab] = useState<ManagerTab>("shortcuts");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -190,15 +435,23 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
   if (!isOpen) return null;
 
   const TABS: { id: ManagerTab; label: string; icon: React.FC<any> }[] = [
-    { id: 'shortcuts', label: t("shortcuts.createdShortcuts", "Shortcuts"), icon: List },
-    { id: 'scan', label: t("shortcuts.scanForShortcuts", "Scan"), icon: Search },
+    {
+      id: "shortcuts",
+      label: t("shortcuts.createdShortcuts", "Shortcuts"),
+      icon: List,
+    },
+    {
+      id: "scan",
+      label: t("shortcuts.scanForShortcuts", "Scan"),
+      icon: Search,
+    },
   ];
 
   const handleOpenCreateTab = () => {
-    const session = createToolSession('shortcutCreator', {
+    const session = createToolSession("shortcutCreator", {
       name: t("shortcuts.createShortcut", "New Shortcut"),
     });
-    dispatch({ type: 'ADD_SESSION', payload: session });
+    dispatch({ type: "ADD_SESSION", payload: session });
   };
 
   return (
@@ -206,41 +459,56 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
       {/* Sidebar */}
       <div className="w-48 flex-shrink-0 border-r border-[var(--color-border)] flex flex-col">
         <div className="p-3 space-y-1">
-          {TABS.map(tab => {
+          {TABS.map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`sor-sidebar-tab w-full flex items-center gap-2 ${active ? 'sor-sidebar-tab-active' : ''}`}
+                className={`sor-sidebar-tab w-full flex items-center gap-2 ${active ? "sor-sidebar-tab-active" : ""}`}
               >
                 <Icon size={14} />
                 <span className="flex-1 text-left">{tab.label}</span>
-                {tab.id === 'shortcuts' && mgr.shortcuts.length > 0 && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">{mgr.shortcuts.length}</span>
+                {tab.id === "shortcuts" && mgr.shortcuts.length > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">
+                    {mgr.shortcuts.length}
+                  </span>
                 )}
               </button>
             );
           })}
         </div>
         <div className="mt-auto p-3 border-t border-[var(--color-border)]">
-          <button onClick={mgr.refreshShortcuts} disabled={mgr.isLoading} className={`sor-btn sor-btn-secondary sor-btn-xs w-full ${mgr.isLoading ? 'animate-spin' : ''}`}>
-            <RefreshCw size={12} />{" "}
-            {t("shortcuts.refreshList", "Refresh")}
+          <button
+            onClick={mgr.refreshShortcuts}
+            disabled={mgr.isLoading}
+            className={`sor-btn sor-btn-secondary sor-btn-xs w-full ${mgr.isLoading ? "animate-spin" : ""}`}
+          >
+            <RefreshCw size={12} /> {t("shortcuts.refreshList", "Refresh")}
           </button>
         </div>
       </div>
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {mgr.errorMessage && (
-          <div className="mx-4 mt-3 rounded-md border border-error/60 bg-error/20 px-3 py-2 text-sm text-error">{mgr.errorMessage}</div>
+          <div className="mx-4 mt-3 rounded-md border border-error/60 bg-error/20 px-3 py-2 text-sm text-error">
+            {mgr.errorMessage}
+          </div>
         )}
         {mgr.statusMessage && (
-          <div className="mx-4 mt-3 rounded-md border border-primary/60 bg-primary/20 px-3 py-2 text-sm text-primary">{mgr.statusMessage}</div>
+          <div className="mx-4 mt-3 rounded-md border border-primary/60 bg-primary/20 px-3 py-2 text-sm text-primary">
+            {mgr.statusMessage}
+          </div>
         )}
-        {activeTab === 'shortcuts' && <ShortcutsListTab mgr={mgr} t={t} onOpenCreateTab={handleOpenCreateTab} />}
-        {activeTab === 'scan' && <ScanTab mgr={mgr} t={t} />}
+        {activeTab === "shortcuts" && (
+          <ShortcutsListTab
+            mgr={mgr}
+            t={t}
+            onOpenCreateTab={handleOpenCreateTab}
+          />
+        )}
+        {activeTab === "scan" && <ScanTab mgr={mgr} t={t} />}
       </div>
     </div>
   );
@@ -248,7 +516,10 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
 
 /* ── Standalone Shortcut Creator Tab ────────────────────── */
 
-export const ShortcutCreator: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+export const ShortcutCreator: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+}> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const mgr = useShortcutManager(isOpen);
 
@@ -259,41 +530,145 @@ export const ShortcutCreator: React.FC<{ isOpen: boolean; onClose: () => void }>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-xl mx-auto w-full p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{t("shortcuts.shortcutName", "Shortcut Name")}</label>
-            <input type="text" value={mgr.shortcutName} onChange={(e) => mgr.setShortcutName(e.target.value)} placeholder={t("shortcuts.namePlaceholder", "My Server Connection")} className="sor-form-input" />
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              {t("shortcuts.shortcutName", "Shortcut Name")}
+            </label>
+            <input
+              type="text"
+              value={mgr.shortcutName}
+              onChange={(e) => mgr.setShortcutName(e.target.value)}
+              placeholder={t(
+                "shortcuts.namePlaceholder",
+                "My Server Connection",
+              )}
+              className="sor-form-input"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{t("shortcuts.folder", "Folder")}</label>
-            <Select value={mgr.selectedFolder} onChange={(v: string) => mgr.setSelectedFolder(v as FolderPreset)} variant="form" options={[{ value: "desktop", label: t("shortcuts.desktop", "Desktop") }, { value: "documents", label: t("shortcuts.documents", "Documents") }, { value: "appdata", label: t("shortcuts.appdata", "AppData (Start Menu)") }, { value: "custom", label: t("shortcuts.customFolder", "Custom Folder...") }]} />
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              {t("shortcuts.folder", "Folder")}
+            </label>
+            <Select
+              value={mgr.selectedFolder}
+              onChange={(v: string) => mgr.setSelectedFolder(v as FolderPreset)}
+              variant="form"
+              options={[
+                { value: "desktop", label: t("shortcuts.desktop", "Desktop") },
+                {
+                  value: "documents",
+                  label: t("shortcuts.documents", "Documents"),
+                },
+                {
+                  value: "appdata",
+                  label: t("shortcuts.appdata", "AppData (Start Menu)"),
+                },
+                {
+                  value: "custom",
+                  label: t("shortcuts.customFolder", "Custom Folder..."),
+                },
+              ]}
+            />
           </div>
           {mgr.selectedFolder === "custom" && (
             <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{t("shortcuts.customPath", "Custom Folder Path")}</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                {t("shortcuts.customPath", "Custom Folder Path")}
+              </label>
               <div className="flex gap-2">
-                <input type="text" value={mgr.customFolderPath} onChange={(e) => mgr.setCustomFolderPath(e.target.value)} placeholder="C:\\Users\\Me\\Shortcuts" className="sor-form-input flex-1" />
-                <button type="button" onClick={mgr.browseCustomFolder} className="sor-btn sor-btn-secondary">
+                <input
+                  type="text"
+                  value={mgr.customFolderPath}
+                  onChange={(e) => mgr.setCustomFolderPath(e.target.value)}
+                  placeholder="C:\\Users\\Me\\Shortcuts"
+                  className="sor-form-input flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={mgr.browseCustomFolder}
+                  className="sor-btn sor-btn-secondary"
+                >
                   <Folder size={14} /> {t("shortcuts.browse", "Browse")}
                 </button>
               </div>
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{t("shortcuts.collection", "Collection")} ({t("common.optional", "Optional")})</label>
-            <Select value={mgr.selectedCollectionId} onChange={(v: string) => mgr.setSelectedCollectionId(v)} variant="form" options={[{ value: '', label: t("shortcuts.selectDatabase", "Select a collection...") }, ...mgr.collections.map((c) => ({ value: c.id, label: c.name }))]} />
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              {t("shortcuts.collection", "Collection")} (
+              {t("common.optional", "Optional")})
+            </label>
+            <Select
+              value={mgr.selectedCollectionId}
+              onChange={(v: string) => mgr.setSelectedCollectionId(v)}
+              variant="form"
+              label={t("shortcuts.collection", "Collection")}
+              searchable
+              searchPlaceholder={t(
+                "shortcuts.searchCollections",
+                "Search collections...",
+              )}
+              options={[
+                {
+                  value: "",
+                  label: t(
+                    "shortcuts.selectDatabase",
+                    "Select a collection...",
+                  ),
+                },
+                ...mgr.collections.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{t("shortcuts.connection", "Connection")} ({t("common.optional", "Optional")})</label>
-            <Select value={mgr.selectedConnectionId} onChange={(v: string) => mgr.setSelectedConnectionId(v)} variant="form" options={[{ value: '', label: t("shortcuts.selectConnection", "Select a connection...") }, ...mgr.connections.filter((c) => !c.isGroup).map((c) => ({ value: c.id, label: c.name }))]} />
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              {t("shortcuts.connection", "Connection")} (
+              {t("common.optional", "Optional")})
+            </label>
+            <Select
+              value={mgr.selectedConnectionId}
+              onChange={(v: string) => mgr.setSelectedConnectionId(v)}
+              variant="form"
+              label={t("shortcuts.connection", "Connection")}
+              searchable
+              searchPlaceholder={t(
+                "shortcuts.searchConnections",
+                "Search connections...",
+              )}
+              options={[
+                {
+                  value: "",
+                  label: t(
+                    "shortcuts.selectConnection",
+                    "Select a connection...",
+                  ),
+                },
+                ...mgr.connections
+                  .filter((c) => !c.isGroup)
+                  .map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
           </div>
-          {mgr.errorMessage && <div className="rounded-md border border-error/60 bg-error/20 px-3 py-2 text-sm text-error">{mgr.errorMessage}</div>}
-          {mgr.statusMessage && <div className="rounded-md border border-primary/60 bg-primary/20 px-3 py-2 text-sm text-primary">{mgr.statusMessage}</div>}
+          {mgr.errorMessage && (
+            <div className="rounded-md border border-error/60 bg-error/20 px-3 py-2 text-sm text-error">
+              {mgr.errorMessage}
+            </div>
+          )}
+          {mgr.statusMessage && (
+            <div className="rounded-md border border-primary/60 bg-primary/20 px-3 py-2 text-sm text-primary">
+              {mgr.statusMessage}
+            </div>
+          )}
         </div>
       </div>
       <div className="px-4 py-3 border-t border-[var(--color-border)] flex justify-end gap-3 flex-shrink-0">
         <button onClick={onClose} className="sor-btn sor-btn-secondary">
           {t("common.cancel", "Cancel")}
         </button>
-        <button onClick={mgr.handleCreateShortcut} disabled={mgr.isLoading} className="sor-btn sor-btn-primary">
+        <button
+          onClick={mgr.handleCreateShortcut}
+          disabled={mgr.isLoading}
+          className="sor-btn sor-btn-primary"
+        >
           <Save size={14} /> {t("shortcuts.createShortcut", "Create Shortcut")}
         </button>
       </div>

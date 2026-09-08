@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useConnections } from "../../contexts/useConnections";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { useTranslation } from "react-i18next";
+import { generateId } from "../../utils/core/id";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -28,6 +29,44 @@ export interface ScannedShortcut {
 export type FolderPreset = "desktop" | "documents" | "appdata" | "custom";
 
 const STORAGE_KEY = "sortofremoteng-shortcuts";
+
+/** Windows paths are case-insensitive; POSIX paths must retain their case. */
+function shortcutPathKey(path: string): string {
+  return /^[a-z]:[\\/]|^\\\\/i.test(path) || path.includes("\\")
+    ? path.replace(/\\/g, "/").toLowerCase()
+    : path;
+}
+
+function readTrackedShortcuts(): ShortcutInfo[] {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (!stored) return [];
+  const parsed: unknown = JSON.parse(stored);
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some(
+      (entry) =>
+        !entry ||
+        typeof entry.id !== "string" ||
+        typeof entry.path !== "string" ||
+        typeof entry.name !== "string",
+    )
+  ) {
+    throw new Error(
+      "The tracked shortcut list is invalid; it has not been overwritten.",
+    );
+  }
+  return parsed as ShortcutInfo[];
+}
+
+function shortcutArgument(
+  args: string | null,
+  name: string,
+): string | undefined {
+  const match = args?.match(
+    new RegExp(`(?:^|\\s)--${name}(?:=|\\s+)(?:"([^"]*)"|'([^']*)'|(\\S+))`),
+  );
+  return match?.[1] ?? match?.[2] ?? match?.[3];
+}
 
 function isTauri(): boolean {
   return (
@@ -67,6 +106,22 @@ export function useShortcutManager(isOpen: boolean) {
     [],
   );
   const [showScanResults, setShowScanResults] = useState(false);
+  const [selectedScannedPaths, setSelectedScannedPaths] = useState<Set<string>>(
+    new Set(),
+  );
+  const [isImporting, setIsImporting] = useState(false);
+  const scanOperationRef = useRef(false);
+  const scannedRef = useRef<ScannedShortcut[]>([]);
+  const selectedScannedRef = useRef<Set<string>>(new Set());
+
+  const replaceScannedResults = useCallback((results: ScannedShortcut[]) => {
+    scannedRef.current = results;
+    setScannedShortcuts(results);
+  }, []);
+  const replaceScannedSelection = useCallback((paths: Set<string>) => {
+    selectedScannedRef.current = paths;
+    setSelectedScannedPaths(paths);
+  }, []);
 
   // ─── Persistence helpers ────────────────────────────────────────
 
@@ -93,8 +148,14 @@ export function useShortcutManager(isOpen: boolean) {
               }
             }),
           );
-          setShortcuts(checked);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(checked));
+          // Native existence checks can finish after an import or another window's
+          // edit. Never overwrite that newer tracked list with this old snapshot.
+          if (localStorage.getItem(STORAGE_KEY) !== stored) {
+            setShortcuts(readTrackedShortcuts());
+          } else {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(checked));
+            setShortcuts(checked);
+          }
         } else {
           setShortcuts(parsed);
         }
@@ -123,6 +184,7 @@ export function useShortcutManager(isOpen: boolean) {
   // ─── Scan external shortcuts ────────────────────────────────────
 
   const handleScanShortcuts = useCallback(async () => {
+    if (scanOperationRef.current || isLoading) return;
     if (!isTauri()) {
       setErrorMessage(
         t(
@@ -132,6 +194,7 @@ export function useShortcutManager(isOpen: boolean) {
       );
       return;
     }
+    scanOperationRef.current = true;
     setIsScanning(true);
     setErrorMessage("");
     setStatusMessage(t("shortcuts.scanning", "Scanning for shortcuts..."));
@@ -162,17 +225,23 @@ export function useShortcutManager(isOpen: boolean) {
         setErrorMessage(
           t("shortcuts.noFoldersToScan", "No folders available to scan."),
         );
+        setStatusMessage("");
         return;
       }
 
       const results = await invoke<ScannedShortcut[]>("scan_shortcuts", {
         folders: foldersToScan,
       });
-      const sortofremotengShortcuts = results.filter(
-        (s) => s.is_sortofremoteng,
-      );
+      const seenPaths = new Set<string>();
+      const sortofremotengShortcuts = results.filter((shortcut) => {
+        const key = shortcutPathKey(shortcut.path);
+        if (!shortcut.is_sortofremoteng || seenPaths.has(key)) return false;
+        seenPaths.add(key);
+        return true;
+      });
 
-      setScannedShortcuts(sortofremotengShortcuts);
+      replaceScannedResults(sortofremotengShortcuts);
+      replaceScannedSelection(new Set());
       setShowScanResults(true);
       setStatusMessage(
         t("shortcuts.scanComplete", {
@@ -187,55 +256,176 @@ export function useShortcutManager(isOpen: boolean) {
       setErrorMessage(
         t("shortcuts.scanFailed", "Failed to scan for shortcuts."),
       );
+      setStatusMessage("");
     } finally {
+      scanOperationRef.current = false;
       setIsScanning(false);
     }
-  }, [customFolderPath, t]);
+  }, [
+    customFolderPath,
+    t,
+    isLoading,
+    replaceScannedResults,
+    replaceScannedSelection,
+  ]);
+
+  const toggleScannedSelection = useCallback(
+    (path: string) => {
+      if (
+        scanOperationRef.current ||
+        isLoading ||
+        !scannedRef.current.some((item) => item.path === path)
+      )
+        return;
+      const next = new Set(selectedScannedRef.current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      replaceScannedSelection(next);
+    },
+    [isLoading, replaceScannedSelection],
+  );
+
+  const selectAllScanned = useCallback(
+    (paths?: string[]) => {
+      if (scanOperationRef.current || isLoading) return;
+      const allowed = paths ? new Set(paths) : null;
+      const next = new Set(selectedScannedRef.current);
+      for (const item of scannedRef.current) {
+        if (!allowed || allowed.has(item.path)) next.add(item.path);
+      }
+      replaceScannedSelection(next);
+    },
+    [isLoading, replaceScannedSelection],
+  );
+
+  const clearScannedSelection = useCallback(() => {
+    if (!scanOperationRef.current && !isLoading)
+      replaceScannedSelection(new Set());
+  }, [isLoading, replaceScannedSelection]);
+
+  const removeScannedResults = useCallback(
+    (paths: Set<string>) => {
+      replaceScannedResults(
+        scannedRef.current.filter((item) => !paths.has(item.path)),
+      );
+      replaceScannedSelection(
+        new Set(
+          [...selectedScannedRef.current].filter((path) => !paths.has(path)),
+        ),
+      );
+    },
+    [replaceScannedResults, replaceScannedSelection],
+  );
+
+  const importScanned = useCallback(
+    (paths: Set<string>) => {
+      if (scanOperationRef.current || isLoading) return;
+      const candidates = scannedRef.current.filter(
+        (item) => item.is_sortofremoteng && paths.has(item.path),
+      );
+      if (candidates.length === 0) return;
+      scanOperationRef.current = true;
+      setIsImporting(true);
+      setErrorMessage("");
+      try {
+        // One synchronous read/merge/write transaction, not a loop over closures
+        // containing an obsolete React `shortcuts` snapshot.
+        const tracked = readTrackedShortcuts();
+        const knownPaths = new Set(
+          tracked.map((item) => shortcutPathKey(item.path)),
+        );
+        const knownIds = new Set(tracked.map((item) => item.id));
+        const additions: ShortcutInfo[] = [];
+        for (const item of candidates) {
+          const key = shortcutPathKey(item.path);
+          if (knownPaths.has(key)) continue;
+          const baseId = generateId();
+          let id = baseId;
+          for (let suffix = 1; knownIds.has(id); suffix++)
+            id = `${baseId}-${suffix}`;
+          knownIds.add(id);
+          knownPaths.add(key);
+          additions.push({
+            id,
+            name: item.name,
+            path: item.path,
+            collectionId: shortcutArgument(item.arguments, "collection"),
+            connectionId: shortcutArgument(item.arguments, "connection"),
+            createdAt: new Date().toISOString(),
+            exists: true,
+          });
+        }
+        if (additions.length > 0) saveShortcuts([...tracked, ...additions]);
+        else setShortcuts(tracked);
+        // Findings/selection change only once persistence has succeeded.
+        removeScannedResults(new Set(candidates.map((item) => item.path)));
+        const skipped = candidates.length - additions.length;
+        setStatusMessage(
+          t("shortcuts.importedBatch", {
+            count: additions.length,
+            skipped,
+            defaultValue: `Imported ${additions.length} shortcut(s); ${skipped} already tracked.`,
+          }),
+        );
+      } catch (error) {
+        setStatusMessage("");
+        setErrorMessage(
+          t("shortcuts.importFailed", {
+            error: String(error),
+            defaultValue: `Failed to import shortcuts: ${String(error)}`,
+          }),
+        );
+      } finally {
+        scanOperationRef.current = false;
+        setIsImporting(false);
+      }
+    },
+    [isLoading, removeScannedResults, saveShortcuts, t],
+  );
 
   const handleImportScannedShortcut = useCallback(
     (scanned: ScannedShortcut) => {
-      const alreadyTracked = shortcuts.some((s) => s.path === scanned.path);
-      if (alreadyTracked) {
-        setErrorMessage(
-          t("shortcuts.alreadyTracked", "This shortcut is already tracked."),
-        );
-        setTimeout(() => setErrorMessage(""), 3000);
-        return;
-      }
+      importScanned(new Set([scanned.path]));
+    },
+    [importScanned],
+  );
+  const handleImportSelectedScanned = useCallback(() => {
+    importScanned(selectedScannedRef.current);
+  }, [importScanned]);
+  const handleImportAllScanned = useCallback(() => {
+    importScanned(new Set(scannedRef.current.map((item) => item.path)));
+  }, [importScanned]);
 
-      let collectionId: string | undefined;
-      let connectionId: string | undefined;
-      if (scanned.arguments) {
-        const collectionMatch = scanned.arguments.match(/--collection\s+(\S+)/);
-        const connectionMatch = scanned.arguments.match(/--connection\s+(\S+)/);
-        if (collectionMatch) collectionId = collectionMatch[1];
-        if (connectionMatch) connectionId = connectionMatch[1];
-      }
-
-      const newShortcut: ShortcutInfo = {
-        id: Date.now().toString(),
-        name: scanned.name,
-        path: scanned.path,
-        collectionId,
-        connectionId,
-        createdAt: new Date().toISOString(),
-        exists: true,
-      };
-
-      saveShortcuts([...shortcuts, newShortcut]);
+  const discardScanned = useCallback(
+    (paths: Set<string>) => {
+      if (scanOperationRef.current || isLoading) return;
+      const count = scannedRef.current.filter((item) =>
+        paths.has(item.path),
+      ).length;
+      if (count === 0) return;
+      removeScannedResults(paths);
+      setErrorMessage("");
       setStatusMessage(
-        t("shortcuts.imported", {
-          name: scanned.name,
-          defaultValue: `Imported "${scanned.name}" to tracked shortcuts`,
+        t("shortcuts.discardedResults", {
+          count,
+          defaultValue: `Discarded ${count} scan result(s). No shortcut files were deleted.`,
         }),
       );
-      setTimeout(() => setStatusMessage(""), 3000);
-      setScannedShortcuts((prev) =>
-        prev.filter((s) => s.path !== scanned.path),
-      );
     },
-    [shortcuts, saveShortcuts, t],
+    [isLoading, removeScannedResults, t],
   );
+  const handleDiscardScannedShortcut = useCallback(
+    (path: string) => {
+      discardScanned(new Set([path]));
+    },
+    [discardScanned],
+  );
+  const handleDiscardSelectedScanned = useCallback(() => {
+    discardScanned(selectedScannedRef.current);
+  }, [discardScanned]);
+  const handleDiscardAllScanned = useCallback(() => {
+    discardScanned(new Set(scannedRef.current.map((item) => item.path)));
+  }, [discardScanned]);
 
   // ─── Folder path resolver ──────────────────────────────────────
 
@@ -466,10 +656,21 @@ export function useShortcutManager(isOpen: boolean) {
 
   const openShortcutLocation = async (path: string) => {
     try {
-      const folder = path.substring(0, path.lastIndexOf("\\"));
+      const separator = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+      if (separator < 0)
+        throw new Error("Shortcut path has no containing folder.");
+      const root =
+        separator === 0 || (separator === 2 && /^[a-z]:/i.test(path));
+      const folder = path.slice(0, separator + (root ? 1 : 0));
       await invoke("open_folder", { path: folder });
     } catch (error) {
       console.error("Failed to open folder:", error);
+      setErrorMessage(
+        t("shortcuts.openFolderFailed", {
+          error: String(error),
+          defaultValue: `Failed to open containing folder: ${String(error)}`,
+        }),
+      );
     }
   };
 
@@ -528,6 +729,7 @@ export function useShortcutManager(isOpen: boolean) {
     connections: state.connections,
     scannedShortcuts,
     showScanResults,
+    selectedScannedPaths,
 
     // Form state
     shortcutName,
@@ -547,6 +749,8 @@ export function useShortcutManager(isOpen: boolean) {
     isLoading,
     editingShortcut,
     isScanning,
+    isImporting,
+    scanActionsBusy: isScanning || isImporting || isLoading,
 
     // Actions
     handleCreateShortcut,
@@ -555,6 +759,14 @@ export function useShortcutManager(isOpen: boolean) {
     handleUpdateShortcut,
     handleScanShortcuts,
     handleImportScannedShortcut,
+    toggleScannedSelection,
+    selectAllScanned,
+    clearScannedSelection,
+    handleImportSelectedScanned,
+    handleImportAllScanned,
+    handleDiscardSelectedScanned,
+    handleDiscardAllScanned,
+    handleDiscardScannedShortcut,
     openShortcutLocation,
     refreshShortcuts,
     cleanupShortcuts,
