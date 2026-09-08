@@ -41,6 +41,7 @@ import {
   Loader2,
   Lock,
   RefreshCw,
+  FolderOpen,
   Shield,
   ShieldCheck,
   Trash2,
@@ -1067,8 +1068,9 @@ const EncryptionAtRestSection: React.FC = () => {
               type="button"
               disabled={portableExportBusy}
               onClick={() => void choosePortablePath("export")}
-              className="text-xs underline"
+              className="inline-flex self-end w-fit max-w-full items-center justify-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-50"
             >
+              <FolderOpen aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
               Choose portable key destination
             </button>
             <SettingsPasswordRow

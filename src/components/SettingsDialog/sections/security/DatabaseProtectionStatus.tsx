@@ -1,4 +1,5 @@
 import { Card } from "../../../ui/settings/SettingsPrimitives";
+import { RefreshCw } from "lucide-react";
 import type { useDatabaseEncryptionStatus } from "../../../../hooks/settings/useDatabaseEncryptionStatus";
 
 export default function DatabaseProtectionStatus({
@@ -66,9 +67,16 @@ export default function DatabaseProtectionStatus({
           type="button"
           onClick={() => void refresh()}
           disabled={loading}
-          className="text-xs underline disabled:opacity-50"
+          aria-busy={loading}
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Refresh disk protection status
+          <RefreshCw
+            aria-hidden="true"
+            className={`h-3.5 w-3.5 shrink-0${loading ? " animate-spin motion-reduce:animate-none" : ""}`}
+          />
+          {loading
+            ? "Refreshing disk protection status…"
+            : "Refresh disk protection status"}
         </button>
       </Card>
     </section>

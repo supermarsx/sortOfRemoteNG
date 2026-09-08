@@ -173,6 +173,10 @@ describe("EncryptionAtRestSection", () => {
     const choose = await screen.findByRole("button", {
       name: "Choose portable key destination",
     });
+    expect(choose).toHaveAttribute("type", "button");
+    expect(choose).toBeEnabled();
+    expect(choose).toHaveClass("self-end", "w-fit", "max-w-full");
+    expect(choose.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     fireEvent.click(choose);
     await waitFor(() => expect(portableDialog.save).toHaveBeenCalledTimes(1));
     expect(
