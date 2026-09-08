@@ -6,7 +6,6 @@ import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
-import { ErrorLogBar } from "./ErrorLogBar";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { ProtocolRepairNotice } from "../connection/ProtocolRepairDialog";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
@@ -52,7 +51,6 @@ interface AppDialogsProps {
   showPasswordDialog: boolean;
   showSettings: boolean;
   showDiagnostics: boolean;
-  showErrorLog: boolean;
   setShowDatabasePanel: (v: boolean) => void;
   setShowQuickConnect: (v: boolean) => void;
   setShowSettings: (v: boolean) => void;
@@ -61,7 +59,6 @@ interface AppDialogsProps {
   /** Bump to re-apply an unchanged `settingsInitialTab`. */
   settingsInitialTabNonce?: number;
   setShowDiagnostics: (v: boolean) => void;
-  setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
   passwordDialogMode: "setup" | "unlock";
   passwordError: string;
   databasePanelInitialTab?: "collections";
@@ -112,14 +109,12 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     showPasswordDialog,
     showSettings,
     showDiagnostics,
-    showErrorLog,
     setShowDatabasePanel,
     setShowQuickConnect,
     setShowSettings,
     settingsInitialTab,
     settingsInitialTabNonce,
     setShowDiagnostics,
-    setShowErrorLog,
     passwordDialogMode,
     passwordError,
     databasePanelInitialTab,
@@ -242,11 +237,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
           }}
         />
       )}
-
-      <ErrorLogBar
-        isVisible={showErrorLog || appSettings.showErrorLogBar}
-        onToggle={() => setShowErrorLog(!showErrorLog)}
-      />
 
       <RDPCertTrustPrompt />
 

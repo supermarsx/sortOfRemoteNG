@@ -79,7 +79,7 @@ import { useCloseTabShortcut } from "./hooks/session/useCloseTabShortcut";
 import { useWindowManager } from "./hooks/window/useWindowManager";
 import { useBehaviorWindowLifecycle } from "./hooks/window/useBehaviorWindowLifecycle";
 import { AppToolbar } from "./components/app/AppToolbar";
-import { AppStatusBar } from "./components/app/AppStatusBar";
+import { AppBottomBars } from "./components/app/AppBottomBars";
 import { DebugPanel } from "./components/debug/DebugPanel";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
@@ -1971,14 +1971,15 @@ const AppContent: React.FC = () => {
         {!isSessionFullscreen && renderSidebar("right")}
       </div>
 
-      {!isSessionFullscreen && (
-        <AppStatusBar
-          connections={state.connections}
-          sessions={state.sessions}
-          databaseManager={databaseManager}
-          isInitialized={isInitialized}
-        />
-      )}
+      <AppBottomBars
+        showStatusBar={!isSessionFullscreen}
+        showErrorLog={showErrorLog || appSettings.showErrorLogBar}
+        onToggleErrorLog={() => setShowErrorLog(!showErrorLog)}
+        connections={state.connections}
+        sessions={state.sessions}
+        databaseManager={databaseManager}
+        isInitialized={isInitialized}
+      />
 
       <AppDialogs
         appSettings={appSettings}
@@ -1987,14 +1988,12 @@ const AppContent: React.FC = () => {
         showPasswordDialog={showPasswordDialog}
         showSettings={showSettings}
         showDiagnostics={showDiagnostics}
-        showErrorLog={showErrorLog}
         setShowDatabasePanel={setShowDatabasePanel}
         setShowQuickConnect={setShowQuickConnect}
         setShowSettings={setShowSettings}
         settingsInitialTab={settingsTabRequest.tab}
         settingsInitialTabNonce={settingsTabRequest.nonce}
         setShowDiagnostics={setShowDiagnostics}
-        setShowErrorLog={setShowErrorLog}
         passwordDialogMode={passwordDialogMode}
         passwordError={passwordError}
         databasePanelInitialTab={databasePanelInitialTab}

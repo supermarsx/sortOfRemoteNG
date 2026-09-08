@@ -30,7 +30,8 @@ const LEVEL_COLORS: Record<string, string> = {
   error: "text-error bg-error/20 border-error",
   warn: "text-warning bg-warning/20 border-warning",
   info: "text-primary bg-primary/20 border-primary",
-  debug: "text-[var(--color-textSecondary)] bg-[var(--color-surface)]/50 border-[var(--color-border)]",
+  debug:
+    "text-[var(--color-textSecondary)] bg-[var(--color-surface)]/50 border-[var(--color-border)]",
 };
 
 export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
@@ -42,16 +43,28 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
   if (!isVisible) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-[var(--color-background)] border-t border-[var(--color-border)] shadow-lg" data-testid="error-log-bar">
+    <div
+      className="relative min-w-0 shrink-0 bg-[var(--color-background)] border-t border-[var(--color-border)] shadow-lg"
+      data-testid="error-log-bar"
+    >
       {/* Header bar - always visible when error log is enabled */}
       <div
         className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface)] cursor-pointer hover:bg-[var(--color-surfaceHover)]"
         role="button"
         tabIndex={0}
         aria-expanded={mgr.isExpanded}
-        aria-label={mgr.isExpanded ? mgr.t("errorLog.collapse", "Collapse error log") : mgr.t("errorLog.expand", "Expand error log")}
+        aria-label={
+          mgr.isExpanded
+            ? mgr.t("errorLog.collapse", "Collapse error log")
+            : mgr.t("errorLog.expand", "Expand error log")
+        }
         onClick={() => mgr.setIsExpanded(!mgr.isExpanded)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); mgr.setIsExpanded(!mgr.isExpanded); } }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            mgr.setIsExpanded(!mgr.isExpanded);
+          }
+        }}
       >
         <div className="flex items-center gap-3">
           <Bug size={16} className="text-[var(--color-textSecondary)]" />
@@ -91,9 +104,15 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
             <X size={14} />
           </button>
           {mgr.isExpanded ? (
-            <ChevronDown size={16} className="text-[var(--color-textSecondary)]" />
+            <ChevronDown
+              size={16}
+              className="text-[var(--color-textSecondary)]"
+            />
           ) : (
-            <ChevronUp size={16} className="text-[var(--color-textSecondary)]" />
+            <ChevronUp
+              size={16}
+              className="text-[var(--color-textSecondary)]"
+            />
           )}
         </div>
       </div>
@@ -111,10 +130,14 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
                 <div
                   key={entry.id}
                   className={`px-4 py-2 cursor-pointer hover:bg-[var(--color-surface)]/50 transition-colors ${
-                    mgr.selectedEntry?.id === entry.id ? "bg-[var(--color-surface)]" : ""
+                    mgr.selectedEntry?.id === entry.id
+                      ? "bg-[var(--color-surface)]"
+                      : ""
                   }`}
                   onClick={() =>
-                    mgr.setSelectedEntry(mgr.selectedEntry?.id === entry.id ? null : entry)
+                    mgr.setSelectedEntry(
+                      mgr.selectedEntry?.id === entry.id ? null : entry,
+                    )
                   }
                 >
                   <div className="flex items-start gap-3">
@@ -135,8 +158,8 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
                           entry.level === "error"
                             ? "text-error"
                             : entry.level === "warn"
-                            ? "text-warning"
-                            : "text-[var(--color-textSecondary)]"
+                              ? "text-warning"
+                              : "text-[var(--color-textSecondary)]"
                         }`}
                       >
                         {entry.message}
