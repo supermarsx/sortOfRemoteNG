@@ -16,8 +16,15 @@ pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> Vault
 
 /// Read a secret from the macOS Keychain.
 pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> {
-    get_generic_password(service, account)
-        .map_err(|e| VaultError::not_found(format!("Keychain get_generic_password: {e}")))
+    get_generic_password(service, account).map_err(|error| {
+        // errSecItemNotFound is the only safe read-or-create signal. A locked
+        // keychain, denied prompt or corrupt item must not create another key.
+        if error.code() == -25300 {
+            VaultError::not_found("Keychain entry not found")
+        } else {
+            VaultError::platform(format!("Keychain get_generic_password: {error}"))
+        }
+    })
 }
 
 /// Delete a secret from the macOS Keychain.

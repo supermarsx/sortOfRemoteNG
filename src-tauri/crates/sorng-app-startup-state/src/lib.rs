@@ -268,7 +268,11 @@ fn classify_dek_wrapper_probe(result: std::io::Result<bool>) -> DekWrapperProbe 
 }
 
 fn probe_dek_wrapper(app_dir: &std::path::Path) -> DekWrapperProbe {
-    classify_dek_wrapper_probe(app_dir.join("dek.enc").try_exists())
+    classify_dek_wrapper_probe(match std::fs::symlink_metadata(app_dir.join("dek.enc")) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    })
 }
 
 fn should_bootstrap_vault(probe: DekWrapperProbe, keychain_available: bool) -> bool {
@@ -300,11 +304,12 @@ pub fn register_infrastructure_prefix(
         eprintln!("Encryption-at-rest: DEK wrapper presence could not be confirmed; vault bootstrap skipped.");
     }
     if should_bootstrap_vault(dek_wrapper_probe, sorng_vault::keychain::is_available()) {
-        if let Ok(bytes) = tauri::async_runtime::block_on(sorng_vault::keychain::ensure_dek()) {
-            if let Some(dek) = sorng_encryption::MasterDek::from_bytes(&bytes) {
+        match tauri::async_runtime::block_on(sorng_encryption::profile_guard::load_or_create_vault_dek(&app_dir)) {
+            Ok(dek) => {
                 tauri::async_runtime::block_on(enc_state.install(dek));
-                println!("Encryption-at-rest: vault DEK ensured + installed at boot.");
+                println!("Encryption-at-rest: vault DEK loaded and installed at boot.");
             }
+            Err(_) => eprintln!("Encryption-at-rest: existing key could not be recovered safely; startup remains locked."),
         }
     }
     let enc_state_for_logger = enc_state.clone();

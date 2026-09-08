@@ -16,3 +16,11 @@ static SETTINGS_COORDINATOR: Mutex<()> = Mutex::const_new(());
 pub async fn lock() -> MutexGuard<'static, ()> {
     SETTINGS_COORDINATOR.lock().await
 }
+
+/// Synchronous native trust operations cannot await on a protocol thread.
+/// Refuse during a representation/key transition instead of using stale data.
+pub fn try_lock() -> Result<MutexGuard<'static, ()>, &'static str> {
+    SETTINGS_COORDINATOR
+        .try_lock()
+        .map_err(|_| "encryption storage transition in progress; retry after it completes")
+}

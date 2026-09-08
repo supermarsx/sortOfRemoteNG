@@ -1288,9 +1288,9 @@ impl SyncTrustStore {
 //   databases/<id>.trust.json.bak  previous generation (SDBF ladder)
 //
 // Encryption mirrors `database_files.rs`: when the master DEK is unlocked at
-// activation time the `ArtifactKind::TrustStore` sub-key is derived ONCE
-// (async) and cached, so the synchronous verifiers can encrypt/decrypt with
-// no `block_on`. Not configured → plaintext SDBF; configured-but-locked →
+// each native I/O operation derives the current `ArtifactKind::TrustStore`
+// sub-key under a synchronous read lease (no `block_on` or stale key cache).
+// Not configured → plaintext SDBF; configured-but-locked →
 // fail closed. No active database → every read/write fails closed.
 
 /// Prefix the frontend uses for connection-scoped hosts
@@ -1314,6 +1314,11 @@ pub struct TrustRuntime {
     /// Serialises every read-modify-write across the async service and the
     /// synchronous verifiers (they share the file, not the memory).
     io: std::sync::Mutex<()>,
+}
+
+struct TrustIoGuard<'a> {
+    _coordinator: Option<tokio::sync::MutexGuard<'static, ()>>,
+    _io: std::sync::MutexGuard<'a, ()>,
 }
 
 static RUNTIME: OnceLock<RwLock<Option<Arc<TrustRuntime>>>> = OnceLock::new();
@@ -1505,10 +1510,38 @@ impl TrustRuntime {
         self.app_dir.join(LEGACY_RDP_TRUST_FILE)
     }
 
-    fn io_guard(&self) -> Result<std::sync::MutexGuard<'_, ()>, String> {
-        self.io
+    fn io_guard(&self) -> Result<TrustIoGuard<'_>, String> {
+        let coordinator = self
+            .enc_state
+            .as_ref()
+            .map(|_| sorng_encryption::settings_coordinator::try_lock())
+            .transpose()
+            .map_err(str::to_string)?;
+        let io = self
+            .io
             .lock()
-            .map_err(|_| "trust runtime io lock poisoned".to_string())
+            .map_err(|_| "trust runtime io lock poisoned".to_string())?;
+        Ok(TrustIoGuard {
+            _coordinator: coordinator,
+            _io: io,
+        })
+    }
+
+    fn with_current_key<R>(
+        &self,
+        f: impl FnOnce(Option<&SubKey>) -> Result<R, String>,
+    ) -> Result<R, String> {
+        if let Some(state) = &self.enc_state {
+            return state
+                .with_sub_key_sync(ArtifactKind::TrustStore, f)
+                .map_err(str::to_string)?;
+        }
+        // Explicit-key legacy/test runtimes have no shared master state.
+        let guard = self
+            .active
+            .read()
+            .map_err(|_| "trust runtime active lock poisoned".to_string())?;
+        f(guard.as_ref().and_then(|db| db.sub_key.as_ref()))
     }
 
     /// Set (or clear, with `None`) the active database and its cached
@@ -1543,6 +1576,11 @@ impl TrustRuntime {
     }
 
     fn active_is_encrypted(&self) -> bool {
+        if let Some(state) = &self.enc_state {
+            return state
+                .with_sub_key_sync(ArtifactKind::TrustStore, |key| key.is_some())
+                .unwrap_or(false);
+        }
         self.active
             .read()
             .ok()
@@ -1550,8 +1588,7 @@ impl TrustRuntime {
             .unwrap_or(false)
     }
 
-    /// Derive the `TrustStore` sub-key from the runtime's encryption state
-    /// (when installed and unlocked), make `database_id` active, seed it
+    /// Make `database_id` active, derive current keys only during I/O, seed it
     /// from the legacy sidecars on first activation (D5), and report the
     /// resulting state. `None` deactivates (lock / close) — verifiers then
     /// fail closed.
@@ -1560,6 +1597,21 @@ impl TrustRuntime {
         database_id: Option<String>,
         connection_ids: &[String],
     ) -> Result<ActiveTrustDatabase, String> {
+        // This async command must queue, not reject a temporarily busy
+        // coordinator while the frontend continues opening another database.
+        let coordinator = if self.enc_state.is_some() {
+            Some(sorng_encryption::settings_coordinator::lock().await)
+        } else {
+            None
+        };
+        let _io = TrustIoGuard {
+            _coordinator: coordinator,
+            _io: self
+                .io
+                .lock()
+                .map_err(|_| "trust runtime io lock poisoned".to_string())?,
+        };
+        self.set_active(None, None)?;
         let Some(id) = database_id else {
             self.set_active(None, None)?;
             return Ok(ActiveTrustDatabase {
@@ -1570,33 +1622,30 @@ impl TrustRuntime {
             });
         };
         validate_database_id(&id)?;
-        let sub_key = match &self.enc_state {
-            Some(state) => state.sub_key(ArtifactKind::TrustStore).await,
-            None => None,
-        };
-        self.set_active(Some(id.clone()), sub_key)?;
-        let _io = self.io_guard()?;
-        let seeded = self.seed_from_legacy(&id, connection_ids)?;
-        let data = self.load_active()?;
-        Ok(ActiveTrustDatabase {
-            database_id: Some(id),
-            encrypted: self.active_is_encrypted(),
-            record_count: data.records.len() as u64,
-            seeded_records: seeded,
-        })
+        self.set_active(Some(id.clone()), None)?;
+        let outcome = (|| {
+            let seeded = self.seed_from_legacy(&id, connection_ids)?;
+            let data = self.load_active()?;
+            Ok(ActiveTrustDatabase {
+                database_id: Some(id),
+                encrypted: self.active_is_encrypted(),
+                record_count: data.records.len() as u64,
+                seeded_records: seeded,
+            })
+        })();
+        if outcome.is_err() {
+            *self
+                .active
+                .write()
+                .map_err(|_| "trust runtime active lock poisoned".to_string())? = None;
+        }
+        outcome
     }
 
-    /// Re-derive the cached sub-key for the active database, e.g. after an
-    /// unlock or a master-key rotation. No-op when nothing is active.
+    /// Compatibility API; production I/O derives its own current key, so
+    /// correctness never depends on a renderer delivering a refresh event.
     pub async fn refresh_sub_key(&self) -> Result<(), String> {
-        let Some(id) = self.active_database_id() else {
-            return Ok(());
-        };
-        let sub_key = match &self.enc_state {
-            Some(state) => state.sub_key(ArtifactKind::TrustStore).await,
-            None => None,
-        };
-        self.set_active(Some(id), sub_key)
+        Ok(())
     }
 
     /// Current activation snapshot (never seeds, never errors on "no active
@@ -1626,6 +1675,13 @@ impl TrustRuntime {
     /// cached? Mirrors the durable markers `database_files.rs` consults
     /// plus "any generation of this trust file is already an envelope".
     fn encryption_configured_for(&self, canonical: &Path) -> bool {
+        if self.enc_state.as_ref().is_some_and(|state| {
+            state.has_installed_key()
+                || sorng_encryption::profile_guard::probe_profile(&self.app_dir)
+                    != sorng_encryption::profile_guard::ProfileEvidence::Fresh
+        }) {
+            return true;
+        }
         for marker in ["dek.enc", "settings.enc"] {
             if self.app_dir.join(marker).exists() {
                 return true;
@@ -1649,22 +1705,59 @@ impl TrustRuntime {
     /// file is an empty store; a corrupt/oversized/symlinked one or an
     /// envelope without a key is an error (fail closed).
     fn read_file(&self, canonical: &Path) -> Result<TrustStoreData, String> {
+        self.with_current_key(|key| self.read_file_with_key(canonical, key))
+    }
+
+    fn read_file_with_key(
+        &self,
+        canonical: &Path,
+        key: Option<&SubKey>,
+    ) -> Result<TrustStoreData, String> {
+        let mut any_generation = false;
+        for path in [
+            canonical.to_path_buf(),
+            sdbf::sibling(canonical, "bak"),
+            canonical.with_extension("json.v0.bak"),
+        ] {
+            match std::fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                    return Err(
+                        "trust recovery generation must be a regular non-symlink file".to_string(),
+                    );
+                }
+                Ok(metadata) => {
+                    // Allow envelope/SDBF overhead, but never read unbounded
+                    // attacker-controlled recovery files before validating JSON.
+                    if metadata.len() > MAX_TRUST_STORE_BYTES + 1024 {
+                        return Err("trust recovery generation exceeds the size limit".to_string());
+                    }
+                    any_generation = true;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => {
+                    return Err("trust recovery generation could not be inspected".to_string())
+                }
+            }
+        }
+        if key.is_none() && self.encryption_configured_for(canonical) {
+            return Err(
+                "trust store is encrypted; unlock first via Settings → Security".to_string(),
+            );
+        }
         refuse_symlink(canonical)?;
         let Some((payload, _source)) = sdbf::safe_read_raw(canonical).map_err(|e| e.to_string())?
         else {
+            if any_generation {
+                return Err(
+                    "existing trust store has no readable valid recovery generation".to_string(),
+                );
+            }
             return Ok(TrustStoreData::default());
         };
         let plain = if is_envelope_blob(&payload) {
-            let guard = self
-                .active
-                .read()
-                .map_err(|_| "trust runtime active lock poisoned".to_string())?;
-            let key = guard
-                .as_ref()
-                .and_then(|db| db.sub_key.as_ref())
-                .ok_or_else(|| {
-                    "trust store is encrypted; unlock first via Settings → Security".to_string()
-                })?;
+            let key = key.ok_or_else(|| {
+                "trust store is encrypted; unlock first via Settings → Security".to_string()
+            })?;
             decrypt_with_subkey(key, &payload)?
         } else {
             payload
@@ -1686,6 +1779,15 @@ impl TrustRuntime {
     /// sub-key the write is plaintext only when master encryption is not
     /// configured; otherwise it fails closed (no plaintext downgrade).
     fn write_file(&self, canonical: &Path, data: &TrustStoreData) -> Result<(), String> {
+        self.with_current_key(|key| self.write_file_with_key(canonical, data, key))
+    }
+
+    fn write_file_with_key(
+        &self,
+        canonical: &Path,
+        data: &TrustStoreData,
+        key: Option<&SubKey>,
+    ) -> Result<(), String> {
         refuse_symlink(canonical)?;
         validate_trust_store_data(data)?;
         let plain =
@@ -1694,11 +1796,7 @@ impl TrustRuntime {
             return Err("serialized trust store exceeds the size limit".to_string());
         }
         let payload = {
-            let guard = self
-                .active
-                .read()
-                .map_err(|_| "trust runtime active lock poisoned".to_string())?;
-            match guard.as_ref().and_then(|db| db.sub_key.as_ref()) {
+            match key {
                 Some(key) => encrypt_with_subkey(key, &plain)?,
                 None => {
                     if self.encryption_configured_for(canonical) {
@@ -1791,8 +1889,25 @@ impl TrustRuntime {
     /// `delete_database_data`. Deleting the active database's store leaves
     /// it active with an empty store.
     pub fn delete_store(&self, database_id: &str) -> Result<(), String> {
+        let coordinator =
+            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        self.delete_store_with_coordinator_guard(database_id, &coordinator)
+    }
+
+    /// Database transactions already own the coordinator; the required lease
+    /// makes this exception explicit without nesting the same mutex.
+    pub fn delete_store_with_coordinator_guard(
+        &self,
+        database_id: &str,
+        _coordinator: &tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<(), String> {
         let canonical = self.trust_file_path(database_id)?;
-        let _io = self.io_guard()?;
+        // The database deletion command owns the settings coordinator already.
+        // This low-level deletion seam never derives or installs key material.
+        let _io = self
+            .io
+            .lock()
+            .map_err(|_| "trust runtime io lock poisoned".to_string())?;
         for path in [
             canonical.clone(),
             sdbf::sibling(&canonical, "bak"),
@@ -2203,6 +2318,131 @@ mod runtime_tests {
         Arc::new(state)
     }
 
+    #[tokio::test]
+    async fn rotation_refreshes_native_key_without_renderer_and_blocks_inflight_io() {
+        let dir = tempdir().unwrap();
+        let state = unlocked_state().await;
+        let guard = install_runtime_for_tests(dir.path().join("databases"), Some(state.clone()));
+        guard
+            .runtime
+            .activate_database(Some("rotated".into()), &[])
+            .await
+            .unwrap();
+        let store = SyncTrustStore::shared();
+        store
+            .trust_identity_blocking("h:1".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        let path = dir.path().join("databases/rotated.trust.json");
+        let old_key = state.sub_key(ArtifactKind::TrustStore).await.unwrap();
+        let old_blob = sdbf::parse_and_verify(&std::fs::read(&path).unwrap())
+            .unwrap()
+            .to_vec();
+        let plain = decrypt_with_subkey(&old_key, &old_blob).unwrap();
+        let coordinator = sorng_encryption::settings_coordinator::lock().await;
+        assert!(store
+            .trust_identity_blocking("blocked:1".into(), "tls".into(), tls_identity("bb"), true)
+            .is_err());
+        assert!(guard.runtime.export(None).is_err());
+        let next = MasterDek::generate();
+        let next_key = next.sub_key(ArtifactKind::TrustStore);
+        sdbf::safe_write(&path, &encrypt_with_subkey(&next_key, &plain).unwrap()).unwrap();
+        state.install(next).await;
+        drop(coordinator);
+        assert!(matches!(
+            store.verify_identity_blocking("h:1", "tls", tls_identity("aa")),
+            Ok(TrustVerifyResult::Trusted)
+        ));
+        store
+            .trust_identity_blocking("new:1".into(), "tls".into(), tls_identity("cc"), true)
+            .unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let blob = sdbf::parse_and_verify(&bytes).unwrap();
+        assert!(decrypt_with_subkey(&next_key, blob).is_ok());
+        assert!(
+            decrypt_with_subkey(&old_key, blob).is_err(),
+            "no stale-key writes after rotation"
+        );
+        state.lock().await;
+        assert!(
+            guard
+                .runtime
+                .import(
+                    Some("never-created"),
+                    TrustExportDocument {
+                        version: TRUST_EXPORT_VERSION,
+                        records: vec![],
+                        policy: TrustPolicy::Strict,
+                        policy_config: TrustPolicyConfig::default()
+                    },
+                    TrustImportMode::Replace
+                )
+                .is_err(),
+            "lock must not create a plaintext new store"
+        );
+    }
+
+    #[tokio::test]
+    async fn guarded_and_standalone_deletion_share_transaction_order() {
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "delete");
+        SyncTrustStore::shared()
+            .trust_identity_blocking("h:1".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        let coordinator = sorng_encryption::settings_coordinator::lock().await;
+        assert!(guard.runtime.delete_store("delete").is_err());
+        guard
+            .runtime
+            .delete_store_with_coordinator_guard("delete", &coordinator)
+            .unwrap();
+        drop(coordinator);
+        guard.runtime.delete_store("delete").unwrap();
+    }
+
+    #[tokio::test]
+    async fn activation_queues_and_failure_deactivates_instead_of_reusing_old_scope() {
+        let dir = tempdir().unwrap();
+        let state = unlocked_state().await;
+        let guard = install_runtime_for_tests(dir.path().join("databases"), Some(state));
+        guard
+            .runtime
+            .activate_database(Some("original".into()), &[])
+            .await
+            .unwrap();
+        let coordinator = sorng_encryption::settings_coordinator::lock().await;
+        let runtime = guard.runtime.clone();
+        let queued =
+            tokio::spawn(
+                async move { runtime.activate_database(Some("queued".into()), &[]).await },
+            );
+        tokio::task::yield_now().await;
+        assert!(
+            !queued.is_finished(),
+            "async activation must await the transaction"
+        );
+        assert_eq!(
+            guard.runtime.active_database_id().as_deref(),
+            Some("original")
+        );
+        drop(coordinator);
+        queued.await.unwrap().unwrap();
+        assert_eq!(
+            guard.runtime.active_database_id().as_deref(),
+            Some("queued")
+        );
+        std::fs::write(dir.path().join("databases/broken.trust.json"), b"invalid").unwrap();
+        assert!(guard
+            .runtime
+            .activate_database(Some("broken".into()), &[])
+            .await
+            .is_err());
+        assert_eq!(
+            guard.runtime.active_database_id(),
+            None,
+            "failed open must never reuse another database's trust"
+        );
+        guard.runtime.refresh_sub_key().await.unwrap();
+        assert_eq!(guard.runtime.active_database_id(), None);
+    }
     #[test]
     fn per_database_isolation_and_bak_recovery() {
         let dir = tempdir().unwrap();
@@ -2265,9 +2505,8 @@ mod runtime_tests {
         }
         assert_eq!(store.global_policy(), TrustPolicy::Strict);
 
-        // Lock, refresh the cached key: reads and writes fail closed.
+        // Lock alone revokes native access: no manual refresh or renderer event.
         state.lock().await;
-        guard.runtime.refresh_sub_key().await.unwrap();
         let err = store
             .verify_identity_blocking("h:1", "tls", tls_identity("aa"))
             .unwrap_err();
@@ -2296,6 +2535,19 @@ mod runtime_tests {
         let bytes = std::fs::read(dir.path().join("databases").join("plain.trust.json")).unwrap();
         assert!(sdbf::parse_and_verify(&bytes).unwrap().starts_with(b"{"));
         assert_eq!(guard.runtime.active_info().unwrap().record_count, 1);
+        // Cold-start recovery has no key history yet, but an encrypted sibling
+        // still forbids creating a different plaintext trust store.
+        sdbf::safe_write(
+            &dir.path().join("databases/existing.json"),
+            b"SORNG\0encrypted",
+        )
+        .unwrap();
+        assert!(guard
+            .runtime
+            .activate_database(Some("new-store".into()), &[])
+            .await
+            .is_err());
+        assert_eq!(guard.runtime.active_database_id(), None);
     }
 
     #[test]

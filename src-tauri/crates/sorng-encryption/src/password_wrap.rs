@@ -32,6 +32,7 @@ use argon2::Argon2;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use crate::dek::{MasterDek, KEY_LEN};
 use crate::envelope::{MAGIC, NONCE_LEN, SALT_LEN};
@@ -139,17 +140,11 @@ pub fn wrap(password: &str, dek: &MasterDek, params: Argon2Params) -> Result<Vec
     OsRng.fill_bytes(&mut nonce_bytes);
 
     let kek = derive_kek(password, &salt, params)?;
-    let cipher = Aes256Gcm::new((&kek).into());
+    let cipher = Aes256Gcm::new((&*kek).into());
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    // Re-derive the raw DEK bytes here without using `MasterDek::raw()`
-    // (it's `#[cfg(test)]`-only) by deriving the same artifact-kind-free
-    // bytes through the public `from_bytes` round-trip. We expose a
-    // crate-internal accessor instead — cleaner.
-    let dek_bytes = dek_bytes_for_wrap(dek);
-
     let wrapped = cipher
-        .encrypt(nonce, dek_bytes.as_slice())
+        .encrypt(nonce, dek.bytes_for_password_wrap().as_slice())
         .map_err(|_| WrapError::AuthenticationFailed)?;
     debug_assert_eq!(wrapped.len(), WRAPPED_LEN);
 
@@ -207,12 +202,14 @@ pub fn unwrap(password: &str, file_bytes: &[u8]) -> Result<MasterDek, WrapError>
     nonce_bytes.copy_from_slice(&file_bytes[36..48]);
 
     let kek = derive_kek(password, &salt, params)?;
-    let cipher = Aes256Gcm::new((&kek).into());
+    let cipher = Aes256Gcm::new((&*kek).into());
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    let plaintext = cipher
-        .decrypt(nonce, &file_bytes[48..])
-        .map_err(|_| WrapError::AuthenticationFailed)?;
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(nonce, &file_bytes[48..])
+            .map_err(|_| WrapError::AuthenticationFailed)?,
+    );
     if plaintext.len() != KEY_LEN {
         return Err(WrapError::AuthenticationFailed);
     }
@@ -221,7 +218,11 @@ pub fn unwrap(password: &str, file_bytes: &[u8]) -> Result<MasterDek, WrapError>
 
 /// Argon2id KDF. Pure helper so both wrap and unwrap go through the
 /// same code path and a regression in one is caught by the other.
-fn derive_kek(password: &str, salt: &[u8], params: Argon2Params) -> Result<[u8; 32], WrapError> {
+fn derive_kek(
+    password: &str,
+    salt: &[u8],
+    params: Argon2Params,
+) -> Result<Zeroizing<[u8; 32]>, WrapError> {
     let argon_params = argon2::Params::new(
         params.memory_kib,
         params.time_cost,
@@ -234,25 +235,11 @@ fn derive_kek(password: &str, salt: &[u8], params: Argon2Params) -> Result<[u8; 
         argon2::Version::V0x13,
         argon_params,
     );
-    let mut out = [0u8; 32];
+    let mut out = Zeroizing::new([0u8; 32]);
     argon
-        .hash_password_into(password.as_bytes(), salt, &mut out)
+        .hash_password_into(password.as_bytes(), salt, &mut *out)
         .map_err(|e| WrapError::Kdf(format!("argon2 hash: {e}")))?;
     Ok(out)
-}
-
-/// Extract the raw DEK bytes for wrapping. Tightly scoped to this
-/// module so the bytes never leave the crate boundary in plaintext.
-fn dek_bytes_for_wrap(dek: &MasterDek) -> Vec<u8> {
-    // We can't call `dek.raw()` (it's `#[cfg(test)]`-only on purpose).
-    // Round-trip via the public HKDF + Vec interface: derive a temp
-    // sub-key with a sentinel label that's never used elsewhere, then
-    // XOR-recover the master bytes? That's contrived. Better: lift the
-    // accessor to `pub(crate)` for this single call site.
-    //
-    // Since we want a tight blast radius, do the lift here via a
-    // dedicated helper on `MasterDek` rather than exposing `raw()`.
-    dek.bytes_for_password_wrap().to_vec()
 }
 
 #[cfg(test)]

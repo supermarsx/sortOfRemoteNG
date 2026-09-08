@@ -293,7 +293,8 @@ pub async fn trust_import_database(
 /// `delete_database_data`.
 #[tauri::command]
 pub async fn trust_delete_database_store(database_id: String) -> Result<(), String> {
-    runtime()?.delete_store(&database_id)
+    let coordinator = sorng_encryption::settings_coordinator::lock().await;
+    runtime()?.delete_store_with_coordinator_guard(&database_id, &coordinator)
 }
 
 /// Report the legacy `trust_store.json` / `rdp-cert-trust.json` sidecars.

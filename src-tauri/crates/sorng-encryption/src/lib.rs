@@ -49,6 +49,7 @@ pub mod lockout;
 pub mod log_adapter;
 pub mod log_sink;
 pub mod password_wrap;
+pub mod profile_guard;
 pub mod settings_coordinator;
 pub mod state;
 

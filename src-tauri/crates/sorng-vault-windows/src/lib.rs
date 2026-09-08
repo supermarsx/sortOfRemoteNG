@@ -34,6 +34,12 @@ pub fn store_secret(service: &str, account: &str, secret: &[u8]) -> Result<(), S
 
 #[cfg(target_os = "windows")]
 pub fn read_secret(service: &str, account: &str) -> Result<Vec<u8>, String> {
+    read_secret_optional(service, account)?.ok_or_else(|| "credential not found".to_string())
+}
+
+/// Preserve the native absence signal separately from access/DPAPI failures.
+#[cfg(target_os = "windows")]
+pub fn read_secret_optional(service: &str, account: &str) -> Result<Option<Vec<u8>>, String> {
     use windows::core::HSTRING;
     use windows::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
@@ -44,13 +50,18 @@ pub fn read_secret(service: &str, account: &str) -> Result<Vec<u8>, String> {
 
     unsafe {
         let mut pcred: *mut CREDENTIALW = std::ptr::null_mut();
-        CredReadW(
+        let result = CredReadW(
             windows::core::PCWSTR(target_h.as_ptr()),
             CRED_TYPE_GENERIC,
             Some(0),
             &mut pcred,
-        )
-        .map_err(|e| format!("CredReadW failed: {e}"))?;
+        );
+        if let Err(error) = result {
+            if credential_is_missing(error.code().0) {
+                return Ok(None);
+            }
+            return Err(format!("CredReadW failed: {error}"));
+        }
 
         let cred = &*pcred;
         let blob =
@@ -58,8 +69,13 @@ pub fn read_secret(service: &str, account: &str) -> Result<Vec<u8>, String> {
         let protected = blob.to_vec();
         CredFree(pcred as *const _ as *const std::ffi::c_void);
 
-        dpapi_unprotect(&protected)
+        dpapi_unprotect(&protected).map(Some)
     }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn credential_is_missing(code: i32) -> bool {
+    code as u32 == 0x8007_0490 || code == 1168
 }
 
 #[cfg(target_os = "windows")]
@@ -185,5 +201,17 @@ fn dpapi_unprotect(protected: &[u8]) -> Result<Vec<u8>, String> {
         )));
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod missing_credential_tests {
+    #[test]
+    fn only_native_not_found_is_permission_to_create() {
+        assert!(super::credential_is_missing(1168));
+        assert!(super::credential_is_missing(0x8007_0490u32 as i32));
+        for code in [0, 5, 0x8007_0005u32 as i32, 0x8009_000bu32 as i32] {
+            assert!(!super::credential_is_missing(code));
+        }
     }
 }

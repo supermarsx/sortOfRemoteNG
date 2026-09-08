@@ -30,9 +30,10 @@ fn plat_store(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
 fn plat_read(service: &str, account: &str) -> VaultResult<Zeroizing<Vec<u8>>> {
     #[cfg(target_os = "windows")]
     {
-        sorng_vault_windows::read_secret(service, account)
+        sorng_vault_windows::read_secret_optional(service, account)
+            .map_err(VaultError::platform)?
             .map(Zeroizing::new)
-            .map_err(VaultError::platform)
+            .ok_or_else(|| VaultError::not_found("credential not found"))
     }
     #[cfg(target_os = "macos")]
     {
@@ -239,6 +240,9 @@ pub async fn read_dek() -> VaultResult<Vec<u8>> {
 pub async fn ensure_dek() -> VaultResult<Vec<u8>> {
     match read_dek().await {
         Ok(dek) => Ok(dek),
-        Err(_) => generate_and_store_dek().await,
+        Err(error) if matches!(error.kind, VaultErrorKind::NotFound) => {
+            generate_and_store_dek().await
+        }
+        Err(error) => Err(error),
     }
 }

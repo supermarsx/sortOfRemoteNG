@@ -22,7 +22,10 @@
 //! - `lock()` zeroizes the in-memory DEK; subsequent reads need a fresh
 //!   unlock. Auto-lock policies in Phase 4 call this on idle.
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tokio::sync::RwLock;
 
 use crate::dek::{ArtifactKind, MasterDek, SubKey};
@@ -35,6 +38,7 @@ use crate::envelope::MasterKeyStorage;
 #[derive(Clone, Default)]
 pub struct EncryptionState {
     inner: Arc<RwLock<Option<MasterDek>>>,
+    ever_installed: Arc<AtomicBool>,
 }
 
 impl EncryptionState {
@@ -63,7 +67,14 @@ impl EncryptionState {
     /// zeroized.
     pub async fn install(&self, dek: MasterDek) {
         let mut guard = self.inner.write().await;
+        self.ever_installed.store(true, Ordering::Release);
         *guard = Some(dek);
+    }
+
+    /// A later lock must not turn a previously encrypted runtime into a fresh
+    /// plaintext profile merely because an artifact has not been created yet.
+    pub fn has_installed_key(&self) -> bool {
+        self.ever_installed.load(Ordering::Acquire)
     }
 
     /// Derive a sub-key for the given artifact. Returns `None` when the
@@ -74,15 +85,29 @@ impl EncryptionState {
         guard.as_ref().map(|m| m.sub_key(artifact))
     }
 
+    /// Synchronous native artifact access without an activation-time key cache.
+    /// The read lease covers the callback, so lock/install cannot finish while
+    /// its old key is still encrypting or committing bytes. Contention fails
+    /// closed rather than blocking a Tokio worker with `block_on`.
+    pub fn with_sub_key_sync<R>(
+        &self,
+        artifact: ArtifactKind,
+        f: impl FnOnce(Option<&SubKey>) -> R,
+    ) -> Result<R, &'static str> {
+        let guard = self
+            .inner
+            .try_read()
+            .map_err(|_| "encryption key transition in progress")?;
+        let key = guard.as_ref().map(|master| master.sub_key(artifact));
+        Ok(f(key.as_ref()))
+    }
+
     /// Read-only snapshot of the master DEK for callers that need the
     /// raw bytes (wrapping for password export in Phase 6, vault
     /// re-store in Phase 1). Kept `pub(crate)` so it never leaks
     /// outside this crate.
     #[allow(dead_code)]
-    pub(crate) async fn with_master<R>(
-        &self,
-        f: impl FnOnce(&MasterDek) -> R,
-    ) -> Option<R> {
+    pub(crate) async fn with_master<R>(&self, f: impl FnOnce(&MasterDek) -> R) -> Option<R> {
         let guard = self.inner.read().await;
         guard.as_ref().map(f)
     }
@@ -153,13 +178,13 @@ pub fn decide_setup(
     configured_mode: Option<MasterKeyStorage>,
 ) -> SetupOutcome {
     match (vault_available, has_dek_in_vault, configured_mode) {
-        // Vault present, DEK present, mode says "vault only" → silent load.
-        (true, true, Some(MasterKeyStorage::Vault)) => SetupOutcome::UnlockedFromVault,
-        // Vault present, DEK present, hybrid or password mode → still need pw.
-        (true, true, Some(MasterKeyStorage::VaultAndPassword)) => {
+        // A password receipt is independently sufficient, including portable
+        // profiles and hybrid recovery after the OS vault entry disappears.
+        (_, _, Some(MasterKeyStorage::Password | MasterKeyStorage::VaultAndPassword)) => {
             SetupOutcome::PasswordRequired
         }
-        (true, true, Some(MasterKeyStorage::Password)) => SetupOutcome::PasswordRequired,
+        // Vault present, DEK present, mode says "vault only" → silent load.
+        (true, true, Some(MasterKeyStorage::Vault)) => SetupOutcome::UnlockedFromVault,
         // Vault present, no DEK yet → first-run, defaults to vault.
         (true, false, _) => SetupOutcome::FreshlyInitialized,
         // No vault available → password-only.
@@ -172,6 +197,43 @@ pub fn decide_setup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_receipts_do_not_require_any_vault() {
+        for mode in [
+            MasterKeyStorage::Password,
+            MasterKeyStorage::VaultAndPassword,
+        ] {
+            for available in [false, true] {
+                for present in [false, true] {
+                    assert_eq!(
+                        decide_setup(available, present, Some(mode)),
+                        SetupOutcome::PasswordRequired
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn synchronous_lease_prevents_key_replacement_and_tracks_lock() {
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        state
+            .with_sub_key_sync(ArtifactKind::TrustStore, |key| {
+                assert!(key.is_some());
+                assert!(
+                    state.inner.try_write().is_err(),
+                    "lease must protect the complete native callback"
+                );
+            })
+            .unwrap();
+        state.lock().await;
+        assert!(state.has_installed_key());
+        assert!(state
+            .with_sub_key_sync(ArtifactKind::TrustStore, |key| key.is_none())
+            .unwrap());
+    }
 
     #[tokio::test]
     async fn locked_state_returns_no_sub_key() {

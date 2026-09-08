@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_fs::FsExt;
+use zeroize::Zeroizing;
 
 use crate::artifacts::settings as artifact_settings;
 use crate::audit::{self, AuditEntry, AuditEvent};
@@ -59,6 +60,9 @@ pub struct EncryptionStatus {
     /// `true` when a legacy plain `settings.json` is still present —
     /// drives the migration prompt.
     pub settings_plaintext_present: bool,
+    /// No usable receipt is available, but existing/uncertain profile evidence
+    /// forbids creating a replacement key. The UI must offer recovery, not setup.
+    pub recovery_required: bool,
 }
 
 /// Caller's setup method choice. Matches the `EncryptionSettings.
@@ -332,19 +336,45 @@ pub async fn encryption_status(
 ) -> Result<EncryptionStatus, String> {
     let vault_available = sorng_vault::keychain::is_available();
     let vault_backend = sorng_vault::keychain::backend_name().to_string();
-    let vault_has_master_dek = if vault_available {
-        sorng_vault::keychain::read_dek().await.is_ok()
+    let (vault_has_master_dek, vault_probe_uncertain) = if vault_available {
+        match sorng_vault::keychain::read_bytes_zeroizing(
+            sorng_vault::types::SERVICE_NAME,
+            sorng_vault::types::MASTER_DEK_ACCOUNT,
+        )
+        .await
+        {
+            Ok(bytes) => (MasterDek::from_bytes(&bytes).is_some(), bytes.len() != 32),
+            Err(error) => (
+                false,
+                !matches!(error.kind, sorng_vault::types::VaultErrorKind::NotFound),
+            ),
+        }
     } else {
-        false
+        (false, false)
     };
 
     // File-system signals — what does disk say about our mode?
     let dek_enc = app_data_path(&app, DEK_ENC_FILENAME).ok();
     let settings_enc = app_data_path(&app, artifact_settings::SETTINGS_ENC_FILENAME).ok();
     let settings_json = app_data_path(&app, SETTINGS_JSON_FILENAME).ok();
-    let password_wrap_present = dek_enc.as_ref().is_some_and(|p| p.exists());
+    let password_wrap_present = dek_enc
+        .as_ref()
+        .is_some_and(|p| std::fs::symlink_metadata(p).is_ok());
     let settings_encrypted_on_disk = settings_enc.as_ref().is_some_and(|p| p.exists());
     let settings_plaintext_present = settings_json.as_ref().is_some_and(|p| p.exists());
+    let unlocked = state.is_unlocked().await;
+    let recovery_required = !unlocked
+        && !vault_has_master_dek
+        && !password_wrap_present
+        && (vault_probe_uncertain
+            || app
+                .path()
+                .app_data_dir()
+                .map(|dir| {
+                    crate::profile_guard::probe_profile(&dir)
+                        != crate::profile_guard::ProfileEvidence::Fresh
+                })
+                .unwrap_or(true));
 
     // Derive the "current" mode from the disk signals:
     let master_key_storage = match (
@@ -366,7 +396,7 @@ pub async fn encryption_status(
     Ok(EncryptionStatus {
         schema_version: if settings_encrypted_on_disk { 2 } else { 0 },
         master_key_storage,
-        unlocked: state.is_unlocked().await,
+        unlocked,
         vault_available,
         vault_has_master_dek,
         vault_backend,
@@ -374,15 +404,8 @@ pub async fn encryption_status(
         password_wrap_present,
         settings_encrypted_on_disk,
         settings_plaintext_present,
+        recovery_required,
     })
-}
-
-async fn install_setup_dek(state: &EncryptionState, dek: MasterDek) {
-    // Key preparation, vault access, password KDF, and receipt persistence are
-    // completed by the caller before this point. Only the live enable edge
-    // needs to share an order with settings writers.
-    let _settings_guard = crate::settings_coordinator::lock().await;
-    state.install(dek).await;
 }
 
 #[tauri::command]
@@ -391,35 +414,60 @@ pub async fn encryption_setup(
     state: State<'_, EncryptionState>,
     method: SetupMethod,
 ) -> Result<UnlockResult, String> {
+    let _settings_guard = crate::settings_coordinator::lock().await;
     if state.is_unlocked().await {
         return Ok(UnlockResult::AlreadyUnlocked);
     }
     let dir = ensure_app_data_dir(&app)?;
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
+    crate::profile_guard::require_fresh_profile(&dir)?;
 
     match method {
         SetupMethod::Vault => {
             if !sorng_vault::keychain::is_available() {
                 return Ok(UnlockResult::VaultUnavailable);
             }
-            let bytes = sorng_vault::keychain::ensure_dek()
-                .await
-                .map_err(|e| format!("ensure_dek: {e}"))?;
-            let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
+            let dek = crate::profile_guard::load_or_create_vault_dek(&dir).await?;
             record_security_audit(
                 &dir,
                 AuditEvent::SetupCompleted,
                 serde_json::json!({ "method": "vault", "vaultAvailable": true }),
             )?;
-            install_setup_dek(&state, dek).await;
+            state.install(dek).await;
             Ok(UnlockResult::UnlockedFromVault)
         }
         SetupMethod::Password { password, argon2 } => {
+            let password = Zeroizing::new(password);
             // Generate fresh DEK, wrap with the supplied password,
             // persist next to settings.enc.
             let argon = argon2.unwrap_or(Argon2Params::OWASP);
             argon.validate().map_err(|e| e.to_string())?;
-            let dek = MasterDek::generate();
+            let dek = if sorng_vault::keychain::is_available() {
+                // Never replace a readable existing vault key with unrelated
+                // bytes when converting a fresh legacy profile to password mode.
+                match sorng_vault::keychain::read_bytes_zeroizing(
+                    sorng_vault::types::SERVICE_NAME,
+                    sorng_vault::types::MASTER_DEK_ACCOUNT,
+                )
+                .await
+                {
+                    Ok(bytes) => {
+                        MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?
+                    }
+                    Err(error)
+                        if matches!(error.kind, sorng_vault::types::VaultErrorKind::NotFound) =>
+                    {
+                        MasterDek::generate()
+                    }
+                    Err(_) => {
+                        return Err(
+                            "OS vault key could not be read; refusing to replace it".to_string()
+                        )
+                    }
+                }
+            } else {
+                MasterDek::generate()
+            };
             let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
             atomic_write(&dek_path, &blob)?;
             record_security_audit(
@@ -427,10 +475,11 @@ pub async fn encryption_setup(
                 AuditEvent::SetupCompleted,
                 serde_json::json!({ "method": "password", "vaultAvailable": false }),
             )?;
-            install_setup_dek(&state, dek).await;
+            state.install(dek).await;
             Ok(UnlockResult::UnlockedFromPassword)
         }
         SetupMethod::VaultAndPassword { password, argon2 } => {
+            let password = Zeroizing::new(password);
             if !sorng_vault::keychain::is_available() {
                 return Ok(UnlockResult::VaultUnavailable);
             }
@@ -440,10 +489,7 @@ pub async fn encryption_setup(
             // Vault is the source of truth for the DEK bytes; the
             // password-wrap is a recovery copy. Hand the same DEK to
             // both sinks.
-            let bytes = sorng_vault::keychain::ensure_dek()
-                .await
-                .map_err(|e| format!("ensure_dek: {e}"))?;
-            let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
+            let dek = crate::profile_guard::load_or_create_vault_dek(&dir).await?;
             let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
             atomic_write(&dek_path, &blob)?;
             record_security_audit(
@@ -454,7 +500,7 @@ pub async fn encryption_setup(
                     "vaultAvailable": true,
                 }),
             )?;
-            install_setup_dek(&state, dek).await;
+            state.install(dek).await;
             Ok(UnlockResult::UnlockedFromVault)
         }
     }
@@ -466,17 +512,43 @@ pub async fn encryption_unlock(
     state: State<'_, EncryptionState>,
     password: Option<String>,
 ) -> Result<UnlockResult, String> {
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    let password = password.map(Zeroizing::new);
     if state.is_unlocked().await {
         return Ok(UnlockResult::AlreadyUnlocked);
     }
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
-    let dek_enc_present = dek_path.exists();
+    let dek_enc_present = match std::fs::symlink_metadata(&dek_path) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return Err("DEK wrapper presence could not be verified".to_string()),
+    };
     let dir = ensure_app_data_dir(&app)?;
 
     let vault_available = sorng_vault::keychain::is_available();
-    let has_dek = if vault_available {
-        sorng_vault::keychain::read_dek().await.is_ok()
+    let has_dek = if vault_available && !dek_enc_present {
+        match sorng_vault::keychain::read_bytes_zeroizing(
+            sorng_vault::types::SERVICE_NAME,
+            sorng_vault::types::MASTER_DEK_ACCOUNT,
+        )
+        .await
+        {
+            Ok(bytes) => {
+                if bytes.len() != 32 {
+                    return Err("vault returned wrong-size DEK".to_string());
+                }
+                true
+            }
+            Err(error) if matches!(error.kind, sorng_vault::types::VaultErrorKind::NotFound) => {
+                false
+            }
+            Err(_) => {
+                return Err("OS vault key could not be read; unlock requires recovery".to_string())
+            }
+        }
     } else {
+        // A password receipt works independently; unavailable or denied vault
+        // access must not prevent password-only or hybrid recovery.
         false
     };
 
@@ -490,11 +562,14 @@ pub async fn encryption_unlock(
     };
     let outcome = decide_setup(vault_available, has_dek, configured);
 
-    match (outcome, password.as_deref()) {
+    match (outcome, password.as_ref().map(|value| value.as_str())) {
         (SetupOutcome::UnlockedFromVault, _) => {
-            let bytes = sorng_vault::keychain::read_dek()
-                .await
-                .map_err(|e| format!("read_dek: {e}"))?;
+            let bytes = sorng_vault::keychain::read_bytes_zeroizing(
+                sorng_vault::types::SERVICE_NAME,
+                sorng_vault::types::MASTER_DEK_ACCOUNT,
+            )
+            .await
+            .map_err(|e| format!("read_dek: {e}"))?;
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
             record_security_audit(
                 &dir,
@@ -508,7 +583,10 @@ pub async fn encryption_unlock(
             // and are untouched here.
             Ok(UnlockResult::UnlockedFromVault)
         }
-        (SetupOutcome::FreshlyInitialized, _) => Ok(UnlockResult::NeedsSetup),
+        (SetupOutcome::FreshlyInitialized, _) => {
+            crate::profile_guard::require_fresh_profile(&dir)?;
+            Ok(UnlockResult::NeedsSetup)
+        }
         (SetupOutcome::PasswordRequired, None) => Ok(UnlockResult::PasswordRequired),
         (SetupOutcome::PasswordRequired, Some(pw)) => {
             // Honour the lockout schedule before doing any KDF work —
@@ -573,7 +651,7 @@ pub async fn encryption_lock(
     state: State<'_, EncryptionState>,
     reason: Option<String>,
 ) -> Result<(), String> {
-    state.lock().await;
+    let _settings_guard = lock_encryption_state(&state).await;
     let _ = app.emit(EVENT_LOCKED, ());
     let dir = ensure_app_data_dir(&app)?;
     record_security_audit(
@@ -584,6 +662,12 @@ pub async fn encryption_lock(
         }),
     )?;
     Ok(())
+}
+
+async fn lock_encryption_state(state: &EncryptionState) -> tokio::sync::MutexGuard<'static, ()> {
+    let guard = crate::settings_coordinator::lock().await;
+    state.lock().await;
+    guard
 }
 
 /// Current lockout state for the password-unlock path. Cheap to call —
@@ -607,6 +691,9 @@ pub async fn encryption_change_password(
     new_password: String,
     argon2: Option<Argon2Params>,
 ) -> Result<(), String> {
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    let old_password = Zeroizing::new(old_password);
+    let new_password = Zeroizing::new(new_password);
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
     let blob = read_bounded_regular_file(&dek_path, password_wrap::FILE_LEN as u64)?;
 
@@ -926,6 +1013,8 @@ pub async fn encryption_export_portable_dek(
     password: String,
     argon2: Option<Argon2Params>,
 ) -> Result<u64, String> {
+    let _settings_guard = crate::settings_coordinator::lock().await;
+    let password = Zeroizing::new(password);
     if !state.is_unlocked().await {
         return Err("state is locked; unlock before exporting".into());
     }
@@ -933,10 +1022,10 @@ pub async fn encryption_export_portable_dek(
     argon.validate().map_err(|e| e.to_string())?;
 
     let bytes = state
-        .with_master(|m| *m.bytes_for_password_wrap())
+        .with_master(|m| Zeroizing::new(*m.bytes_for_password_wrap()))
         .await
         .ok_or("master DEK unavailable")?;
-    let dek = MasterDek::from_bytes(&bytes).ok_or("internal: wrong-size DEK")?;
+    let dek = MasterDek::from_bytes(bytes.as_slice()).ok_or("internal: wrong-size DEK")?;
     let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
 
     let dest = std::path::PathBuf::from(&destination_path);
@@ -1232,59 +1321,141 @@ pub async fn encryption_import_portable_dek(
     password: String,
     acknowledge_local_data_loss: Option<bool>,
 ) -> Result<(), String> {
+    let _coordinator = crate::settings_coordinator::lock().await;
+    let password = Zeroizing::new(password);
     let dir = ensure_app_data_dir(&app)?;
     let source = PathBuf::from(&source_path);
     require_renderer_scoped_path(&app, &source)?;
-    // Before anything is read, unwrapped, or installed: refuse if the
-    // swap would strand local data.
     let scan = portable_import_guard(&dir, acknowledge_local_data_loss.unwrap_or(false))?;
     let blob = read_bounded_regular_file(&source, password_wrap::FILE_LEN as u64)?;
     let dek = password_wrap::unwrap(&password, &blob).map_err(|e| format!("unwrap: {e}"))?;
-
-    // Adopt as the live key.
-    let raw = *dek.bytes_for_password_wrap();
-    state.install(dek).await;
-
-    // Persist locally so the next start finds it.
-    if sorng_vault::keychain::is_available() {
-        sorng_vault::keychain::store_bytes(
-            sorng_vault::types::SERVICE_NAME,
-            sorng_vault::types::MASTER_DEK_ACCOUNT,
-            &raw,
-        )
-        .await
-        .map_err(|e| format!("vault store: {e}"))?;
-    }
-
-    // Always write `dek.enc` too — it's the cross-machine recipe and
-    // protects against the user nuking the vault on cleanup.
-    let dek_path = dir.join(DEK_ENC_FILENAME);
-    let dek_local = MasterDek::from_bytes(&raw).ok_or("internal: re-wrap wrong-size DEK")?;
-    let local_wrap = password_wrap::wrap(&password, &dek_local, Argon2Params::OWASP)
+    let local_wrap = password_wrap::wrap(&password, &dek, Argon2Params::OWASP)
         .map_err(|e| format!("re-wrap: {e}"))?;
-    atomic_write(&dek_path, &local_wrap)?;
-
-    // Reset lockout (successful unwrap counts as proof the user
-    // holds the password) and broadcast.
-    let lockout = update_lockout_state(&dir, LockoutState::record_success);
-    let lockout_result = persist_lockout_state(&dir, &lockout);
-    let audit_result = record_security_audit(
-        &dir,
-        AuditEvent::PortableImported,
-        serde_json::json!({
-            "sourceFile": source.file_name().and_then(|value| value.to_str()),
-            // Non-zero only when the user overrode the guard, so the
-            // audit log records exactly what was knowingly abandoned.
-            "acknowledgedAtRiskArtifacts": scan.at_risk_count(),
-        }),
-    );
-    lockout_result?;
-    audit_result?;
+    let old_vault = if sorng_vault::keychain::is_available() {
+        Some(
+            match sorng_vault::keychain::read_bytes_zeroizing(
+                sorng_vault::types::SERVICE_NAME,
+                sorng_vault::types::MASTER_DEK_ACCOUNT,
+            )
+            .await
+            {
+                Ok(bytes) => Some(bytes),
+                Err(error)
+                    if matches!(error.kind, sorng_vault::types::VaultErrorKind::NotFound) =>
+                {
+                    None
+                }
+                Err(_) => {
+                    return Err("OS vault key could not be backed up; import refused".to_string())
+                }
+            },
+        )
+    } else {
+        None
+    };
+    commit_import_receipts_with(
+        &dir.join(DEK_ENC_FILENAME),
+        &state,
+        dek,
+        &local_wrap,
+        old_vault,
+        &FilesystemSettingsTransitionIo,
+        |bytes| async move {
+            match bytes {
+                Some(bytes) => {
+                    sorng_vault::keychain::store_bytes(
+                        sorng_vault::types::SERVICE_NAME,
+                        sorng_vault::types::MASTER_DEK_ACCOUNT,
+                        &bytes,
+                    )
+                    .await
+                }
+                None => {
+                    sorng_vault::keychain::delete(
+                        sorng_vault::types::SERVICE_NAME,
+                        sorng_vault::types::MASTER_DEK_ACCOUNT,
+                    )
+                    .await
+                }
+            }
+            .map_err(|_| "OS vault receipt update failed".to_string())
+        },
+        || {
+            let lockout = update_lockout_state(&dir, LockoutState::record_success);
+            persist_lockout_state(&dir, &lockout)?;
+            record_security_audit(
+                &dir,
+                AuditEvent::PortableImported,
+                serde_json::json!({
+                    "sourceFile": source.file_name().and_then(|value| value.to_str()),
+                    "acknowledgedAtRiskArtifacts": scan.at_risk_count(),
+                }),
+            )
+        },
+    )
+    .await?;
     let _ = app.emit(EVENT_UNLOCKED, ());
-
     Ok(())
 }
 
+/// Handled-error transaction: receipts become durable before the live key is
+/// replaced. Existing local and vault receipts are restored on any failure.
+/// This is not a process-crash journal; rollback failures remain explicit.
+#[allow(clippy::too_many_arguments)]
+async fn commit_import_receipts_with<W, F>(
+    path: &Path,
+    state: &EncryptionState,
+    dek: MasterDek,
+    local_wrap: &[u8],
+    old_vault: Option<Option<Zeroizing<Vec<u8>>>>,
+    io: &dyn SettingsTransitionIo,
+    write_vault: W,
+    finish: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String>
+where
+    W: Fn(Option<Zeroizing<Vec<u8>>>) -> F,
+    F: std::future::Future<Output = Result<(), String>>,
+{
+    let previous = if path
+        .try_exists()
+        .map_err(|_| "could not inspect existing DEK wrapper")?
+    {
+        Some(io.read(path)?)
+    } else {
+        None
+    };
+    let mut vault_attempted = false;
+    let outcome = async {
+        io.write(path, local_wrap)?;
+        if old_vault.is_some() {
+            vault_attempted = true;
+            write_vault(Some(Zeroizing::new(dek.bytes_for_password_wrap().to_vec()))).await?;
+        }
+        finish()
+    }
+    .await;
+    if let Err(error) = outcome {
+        let rollback = match previous {
+            Some(bytes) => io.write(path, &bytes),
+            None if path.try_exists().unwrap_or(true) => io.remove(path),
+            None => Ok(()),
+        };
+        let mut error = match rollback {
+            Ok(()) => error,
+            Err(_) => {
+                format!("{error}; original DEK wrapper rollback failed; preserve recovery receipts")
+            }
+        };
+        if vault_attempted && write_vault(old_vault.flatten()).await.is_err() {
+            error.push_str(
+                "; original OS vault receipt rollback failed; preserve recovery receipts",
+            );
+        }
+        return Err(error);
+    }
+    state.install(dek).await;
+    Ok(())
+}
 // ─── Phase 7: audit log read / clear commands ──────────────────────
 
 /// Return the most recent `limit` audit entries (default 100). The
@@ -1319,6 +1490,112 @@ pub async fn encryption_audit_clear(app: AppHandle) -> Result<(), String> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn requested_lock_waits_for_rotation_then_remains_locked() {
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let coordinator = crate::settings_coordinator::lock().await;
+        let copy = state.clone();
+        let task = tokio::spawn(async move {
+            drop(lock_encryption_state(&copy).await);
+        });
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
+        state.install(MasterDek::generate()).await;
+        drop(coordinator);
+        task.await.unwrap();
+        assert!(
+            !state.is_unlocked().await,
+            "rotation cannot undo the queued lock"
+        );
+    }
+
+    #[tokio::test]
+    async fn portable_import_restores_receipts_and_live_key_on_handled_failures() {
+        for failure in ["file", "vault", "audit"] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("dek.enc");
+            std::fs::write(&path, b"old wrapped receipt").unwrap();
+            let state = transition_test_state().await;
+            let old = state.master_bytes_raw().await.unwrap();
+            let writes = std::cell::RefCell::new(Vec::<Option<Vec<u8>>>::new());
+            let io = InjectedSettingsTransitionIo {
+                fail_write: (failure == "file").then(|| path.clone()),
+                ..Default::default()
+            };
+            let result = commit_import_receipts_with(
+                &path,
+                &state,
+                MasterDek::generate(),
+                b"new wrapped receipt",
+                Some(Some(Zeroizing::new(old.to_vec()))),
+                &io,
+                |bytes| {
+                    let first = writes.borrow().is_empty();
+                    writes.borrow_mut().push(bytes.map(|value| value.to_vec()));
+                    async move {
+                        if failure == "vault" && first {
+                            Err("injected vault failure".to_string())
+                        } else {
+                            Ok(())
+                        }
+                    }
+                },
+                || {
+                    if failure == "audit" {
+                        Err("injected audit failure".to_string())
+                    } else {
+                        Ok(())
+                    }
+                },
+            )
+            .await;
+            assert!(result.is_err(), "{failure}");
+            assert_eq!(std::fs::read(&path).unwrap(), b"old wrapped receipt");
+            assert_eq!(state.master_bytes_raw().await.unwrap(), old);
+            if failure != "file" {
+                assert_eq!(
+                    writes.borrow().last().unwrap().as_deref(),
+                    Some(old.as_slice())
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn portable_import_installs_only_after_receipts_and_verification() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("dek.enc");
+        let state = transition_test_state().await;
+        let old = state.sub_key(ArtifactKind::Settings).await.unwrap();
+        let new_dek = MasterDek::generate();
+        let expected = *new_dek.sub_key(ArtifactKind::Settings).bytes();
+        commit_import_receipts_with(
+            &path,
+            &state,
+            new_dek,
+            b"new receipt",
+            None,
+            &FilesystemSettingsTransitionIo,
+            |_| async { panic!("disabled vault must not be touched") },
+            || {
+                assert_eq!(std::fs::read(&path).unwrap(), b"new receipt");
+                state
+                    .with_sub_key_sync(ArtifactKind::Settings, |key| {
+                        assert_eq!(key.unwrap().bytes(), old.bytes())
+                    })
+                    .unwrap();
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            state.sub_key(ArtifactKind::Settings).await.unwrap().bytes(),
+            &expected
+        );
+    }
 
     #[test]
     fn setup_method_password_default_argon2() {
