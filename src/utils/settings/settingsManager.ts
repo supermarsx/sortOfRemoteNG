@@ -690,6 +690,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   },
 
   // Password Reveal
+  allowSshExternalLinks: false,
   passwordReveal: {
     enabled: true,
     mode: "toggle",
@@ -1124,6 +1125,7 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      allowSshExternalLinks: normalizedStored.allowSshExternalLinks === true,
       ...sshReconnectSettings,
       sshTerminal: mergeSSHTerminalConfig(
         DEFAULT_SETTINGS.sshTerminal,
@@ -1236,6 +1238,10 @@ export class SettingsManager {
       delete restApi.apiKey;
       delete restApi.jwtSecret;
       safePatch.restApi = restApi as GlobalSettings["restApi"];
+    }
+    if ("allowSshExternalLinks" in safePatch) {
+      safePatch.allowSshExternalLinks =
+        safePatch.allowSshExternalLinks === true;
     }
     if (safePatch.networkDiscovery) {
       safePatch.networkDiscovery = normalizeNetworkDiscoverySettings(

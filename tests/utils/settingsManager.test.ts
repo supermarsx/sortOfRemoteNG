@@ -68,6 +68,35 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
   fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...seed };
 }
 
+describe("SSH external link global opt-in persistence", () => {
+  it.each([undefined, null, false, "true", "false", 1, {}, []])(
+    "normalizes a missing or malformed stored opt-in (%j) to disabled",
+    async (value) => {
+      fakeStoredSettings = { language: "en-US", allowSshExternalLinks: value };
+      expect(
+        (await SettingsManager.getInstance().loadSettings())
+          .allowSshExternalLinks,
+      ).toBe(false);
+    },
+  );
+
+  it("persists explicit enabling and disabling across reloads", async () => {
+    const manager = SettingsManager.getInstance();
+    expect((await manager.loadSettings()).allowSshExternalLinks).toBe(false);
+    await manager.saveSettings({ allowSshExternalLinks: true });
+    expect(fakeStoredSettings?.allowSshExternalLinks).toBe(true);
+    SettingsManager.resetInstance();
+    const reloaded = SettingsManager.getInstance();
+    expect((await reloaded.loadSettings()).allowSshExternalLinks).toBe(true);
+    await reloaded.saveSettings({ allowSshExternalLinks: false });
+    SettingsManager.resetInstance();
+    expect(
+      (await SettingsManager.getInstance().loadSettings())
+        .allowSshExternalLinks,
+    ).toBe(false);
+  });
+});
+
 describe("recording deletion confirmation persistence", () => {
   it("defaults on for existing installations without the setting", async () => {
     seedStoredSettings({ language: "en-US" });

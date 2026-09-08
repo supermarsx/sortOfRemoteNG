@@ -640,6 +640,9 @@ export interface GlobalSettings {
    */
   passwordReveal: PasswordRevealConfig;
 
+  /** Global-only opt-in for HTTP(S) links in SSH terminals; default false. */
+  allowSshExternalLinks: boolean;
+
   // ─── WinRM Global Defaults ─────────────────────────────────────
   /**
    * Global default WinRM/WMI configuration applied to new connections.

@@ -386,6 +386,7 @@ export const defaultSettings: GlobalSettings = {
     serverCertValidation: "validate",
   },
   // Password Reveal
+  allowSshExternalLinks: false,
   passwordReveal: {
     enabled: true,
     mode: "toggle",

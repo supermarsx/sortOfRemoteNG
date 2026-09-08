@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import {
+  canOpenTerminalLink,
+  openTerminalLink,
+} from "../../utils/ssh/terminalLinks";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useTerminalRecorder } from "../recording/useTerminalRecorder";
 import { useMacroRecorder } from "../recording/useMacroRecorder";
@@ -450,6 +454,7 @@ export function useWebTerminal(
   incomingCleanupQuarantineRef.current = session.vpnLeaseCleanupQuarantine;
   const connectionRef = useRef(connection);
   const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const sshTerminalConfigRef = useRef(sshTerminalConfig);
   sshTerminalConfigRef.current = sshTerminalConfig;
   const connectionsRef = useRef(state.connections);
@@ -2585,6 +2590,18 @@ export function useWebTerminal(
       ? { cols: sshTerminalConfig.columns, rows: sshTerminalConfig.rows }
       : {};
 
+    const activateLink = (uri: string, source: "detected" | "osc8") => {
+      void openTerminalLink(
+        uri,
+        source,
+        () =>
+          canOpenTerminalLink(
+            sessionRef.current.protocol,
+            settingsRef.current.allowSshExternalLinks,
+          ),
+        (message) => toastRef.current.error(message, 3000),
+      );
+    };
     const term = new Terminal({
       theme: getTerminalTheme(),
       fontFamily,
@@ -2603,11 +2620,18 @@ export function useWebTerminal(
       scrollOnUserInput: sshTerminalConfig?.scrollOnKeystroke ?? true,
       ...dimensionOptions,
       allowProposedApi: true,
+      // Always replace xterm's default OSC8 opener, including while disabled.
+      linkHandler: {
+        allowNonHttpProtocols: false,
+        activate: (_event, uri) => activateLink(uri, "osc8"),
+      },
     });
 
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(
+      new WebLinksAddon((_event, uri) => activateLink(uri, "detected")),
+    );
 
     /* ── bell handling ── */
     let bellCount = 0;

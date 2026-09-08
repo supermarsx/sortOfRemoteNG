@@ -37,6 +37,31 @@ const CREDSSP_TAGS = [
 
 export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "allowSshExternalLinks",
+    label: "Allow opening links from SSH sessions",
+    description:
+      "Global opt-in for HTTP and HTTPS terminal links; off by default. OSC8 links confirm their actual destination.",
+    tags: [
+      "ssh",
+      "terminal",
+      "links",
+      "hyperlinks",
+      "browser",
+      "http",
+      "https",
+      "osc8",
+      "security",
+    ],
+    synonyms: [
+      "external links",
+      "clickable urls",
+      "open url",
+      "terminal links",
+    ],
+    section: "security",
+    sectionLabel: "Security",
+  },
+  {
     key: "currentDatabaseSecurity",
     label: "Current database password",
     description:

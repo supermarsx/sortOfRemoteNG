@@ -10,6 +10,7 @@ import EncryptionAtRestSection from "./security/EncryptionAtRestSection";
 import ExportSecuritySection from "./security/ExportSecuritySection";
 import KeyDerivationSection from "./security/KeyDerivationSection";
 import PasswordRevealSection from "./security/PasswordRevealSection";
+import TerminalLinksSection from "./security/TerminalLinksSection";
 import SSHKeyGenSection from "./security/SSHKeyGenSection";
 import TOTPDefaultsSection from "./security/TOTPDefaultsSection";
 import type { SecuritySettingsProps } from "./security/types";
@@ -56,6 +57,10 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       <CollectionKeyGenSection mgr={mgr} />
       <CredSSPSection settings={settings} updateSettings={updateSettings} />
       <PasswordRevealSection
+        settings={settings}
+        updateSettings={updateSettings}
+      />
+      <TerminalLinksSection
         settings={settings}
         updateSettings={updateSettings}
       />

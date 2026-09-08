@@ -1,6 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ILinkHandler } from "@xterm/xterm";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
   hasSessionLifecycleActorAttempt,
@@ -52,7 +53,8 @@ const mocks = vi.hoisted(() => {
     writeParsedDisposeCount = 0;
     renderDisposeCount = 0;
 
-    constructor() {
+    constructor(options: Record<string, unknown> = {}) {
+      Object.assign(this.options, options);
       MockTerminal.instances.push(this);
     }
 
@@ -175,6 +177,8 @@ const mocks = vi.hoisted(() => {
 
   return {
     MockTerminal,
+    webLinksHandlers: [] as Array<(event: MouseEvent, uri: string) => void>,
+    nativeLinks: false,
     connection,
     context,
     settingsContext,
@@ -206,10 +210,15 @@ vi.mock("@xterm/addon-fit", () => ({
   },
 }));
 vi.mock("@xterm/addon-web-links", () => ({
-  WebLinksAddon: class {},
+  WebLinksAddon: class {
+    constructor(handler: (event: MouseEvent, uri: string) => void) {
+      mocks.webLinksHandlers.push(handler);
+    }
+  },
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mocks.invoke(...args),
+  isTauri: () => mocks.nativeLinks,
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (...args: unknown[]) => mocks.listen(...args),
@@ -303,6 +312,8 @@ const emitTauriEvent = (event: string, payload: unknown) => {
 beforeEach(() => {
   resetSessionLifecycleAllocatorForTests();
   mocks.MockTerminal.instances.length = 0;
+  mocks.webLinksHandlers.length = 0;
+  mocks.nativeLinks = false;
   mocks.MockTerminal.lazyCore = false;
   mocks.context.dispatch.mockReset();
   mocks.invoke.mockReset();
@@ -386,6 +397,100 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("useWebTerminal SSH link security", () => {
+  it("uses live global opt-in for both link routes without recreating the terminal", async () => {
+    mocks.nativeLinks = true;
+    // Even an imported per-connection option cannot grant this global policy.
+    mocks.terminalConfig = { allowSshExternalLinks: true };
+    mocks.settingsContext.settings = {
+      sshTerminal: { allowSshExternalLinks: true },
+    };
+    const Harness = () => {
+      const model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness />);
+    await waitFor(() => expect(mocks.MockTerminal.instances).toHaveLength(1));
+    const terminal = mocks.MockTerminal.instances[0];
+    const osc8 = terminal.options.linkHandler as ILinkHandler;
+    const detected = mocks.webLinksHandlers[0];
+    expect(osc8.allowNonHttpProtocols).toBe(false);
+    expect(detected).toBeTypeOf("function");
+    const activate = () => {
+      detected(new MouseEvent("click"), "https://example.test/");
+      osc8.activate(
+        new MouseEvent("click"),
+        "https://actual-destination.test/",
+        { start: { x: 1, y: 1 }, end: { x: 4, y: 1 } },
+      );
+    };
+    activate();
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "open_url_external",
+      expect.anything(),
+    );
+    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+
+    mocks.settingsContext.settings = { allowSshExternalLinks: true };
+    view.rerender(<Harness />);
+    activate();
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("open_url_external", {
+        url: "https://actual-destination.test/",
+      }),
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith("open_url_external", {
+      url: "https://example.test/",
+    });
+    expect(mocks.confirmPaste).toHaveBeenCalledWith(
+      expect.stringContaining("https://actual-destination.test/"),
+    );
+
+    mocks.settingsContext.settings = { allowSshExternalLinks: false };
+    view.rerender(<Harness />);
+    mocks.invoke.mockClear();
+    mocks.confirmPaste.mockClear();
+    activate();
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "open_url_external",
+      expect.anything(),
+    );
+    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.MockTerminal.instances).toEqual([terminal]);
+    view.unmount();
+  });
+
+  it("surfaces native link failures through the existing toast without leaking destinations", async () => {
+    mocks.nativeLinks = true;
+    mocks.settingsContext.settings = { allowSshExternalLinks: true };
+    const Harness = () => {
+      const model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness />);
+    const originalInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "open_url_external")
+        return Promise.reject(new Error("sensitive-url-details"));
+      return originalInvoke?.(command, args);
+    });
+    mocks.webLinksHandlers[0](
+      new MouseEvent("click"),
+      "https://example.test/?token=secret",
+    );
+    await waitFor(() =>
+      expect(mocks.toast.error).toHaveBeenCalledWith(
+        "Unable to open the terminal link in your browser.",
+        3000,
+      ),
+    );
+    expect(JSON.stringify(mocks.toast.error.mock.calls)).not.toContain(
+      "secret",
+    );
+    view.unmount();
+  });
 });
 
 describe("useWebTerminal input lifecycle", () => {
