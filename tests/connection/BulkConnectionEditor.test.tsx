@@ -81,7 +81,7 @@ describe("BulkConnectionEditor", () => {
     );
     for (const [name, protocol, key] of [
       ["Alpha", "ssh", "ssh"],
-      ["Beta", "rdp", "microsoft-rdp"],
+      ["Beta", "rdp", "microsoft"],
     ]) {
       const row = (await screen.findByText(name)).closest("tr")!;
       const cell = Array.from(row.querySelectorAll("td")).find(

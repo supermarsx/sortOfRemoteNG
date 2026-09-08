@@ -168,9 +168,9 @@ describe("platform and network icon requests", () => {
 
   it("uses the requested protocol-native defaults while preserving saved keys", () => {
     expect(PROTOCOL_ICON_DEFAULTS).toEqual({
-      rdp: "microsoft-rdp",
+      rdp: "microsoft",
       ssh: "ssh",
-      ard: "apple-rd",
+      ard: "apple",
       serial: "serial",
       vnc: "vnc",
       anydesk: "anydesk",
@@ -194,16 +194,16 @@ describe("platform and network icon requests", () => {
       smb: "smb",
       gcp: "googlecloud",
       azure: "azure",
-      "ibm-csp": "ibm-cloud",
+      "ibm-csp": "ibm",
       "digital-ocean": "digitalocean",
       heroku: "heroku",
       scaleway: "scaleway",
       linode: "linode",
       ovhcloud: "ovh",
-      idrac: "dell-idrac",
-      ilo: "ilo",
-      lenovo: "lenovo-xclarity",
-      supermicro: "supermicro-bmc",
+      idrac: "dell",
+      ilo: "hpe",
+      lenovo: "lenovo",
+      supermicro: "supermicro",
       "voip-phone": "voip",
     });
   });

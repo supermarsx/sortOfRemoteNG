@@ -309,13 +309,13 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     const titleCell = screen.getByText("Prod RDP").closest("th")!;
     expect(row).toContainElement(titleCell);
     expect(fingerprint(titleCell.querySelector("svg")!)).toBe(
-      expected("microsoft-rdp"),
+      expected("microsoft"),
     );
     expect(
       fingerprint(
         screen.getByTestId("session-filter-rdp").querySelector("svg")!,
       ),
-    ).toBe(expected("microsoft-rdp"));
+    ).toBe(expected("microsoft"));
     expect(
       fingerprint(
         screen.getByTestId("session-filter-ssh").querySelector("svg")!,

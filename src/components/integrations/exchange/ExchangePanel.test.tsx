@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 import {
   render,
   screen,
@@ -134,6 +137,34 @@ describe("exchangeDescriptor", () => {
 });
 
 describe("ExchangePanel shell", () => {
+  it("renders the actual plain Exchange catalog mark in the product header", async () => {
+    invokeMock.mockResolvedValue(null);
+    render(<ExchangePanel isOpen onClose={() => {}} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const header = screen.getByRole("heading", { name: "Exchange" })
+      .parentElement!.parentElement!;
+    const actual = header.querySelector("svg")!;
+    const expected = document.createElement("div");
+    expected.innerHTML = renderToStaticMarkup(
+      createElement(getConnectionIconDefinition("exchange")!.icon),
+    );
+    expect(actual.innerHTML).toBe(expected.querySelector("svg")!.innerHTML);
+    expect(actual.querySelector("[data-role-frame]")).toBeNull();
+    const genericMail = document.createElement("div");
+    genericMail.innerHTML = renderToStaticMarkup(
+      createElement(getConnectionIconDefinition("mail")!.icon),
+    );
+    expect(actual.innerHTML).not.toBe(
+      genericMail.querySelector("svg")!.innerHTML,
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "exchange_connect_with_config",
+      expect.anything(),
+    );
+  });
+
   it("online connect form drives one atomic configure-and-connect command", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "read_app_data") return Promise.resolve(null);

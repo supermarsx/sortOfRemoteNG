@@ -212,7 +212,7 @@ publisher-sourced assets.
 
 ### Additional publisher SVGs
 
-`publisherBrandIcons.ts` adds twenty-three marks from public publisher assets,
+`publisherBrandIcons.ts` adds twenty-four marks from public publisher assets,
 without assigning them the Simple Icons collection license. Original SVG
 SHA-256 hashes are recorded in source, and offline tests verify the selected
 path geometry and normalization. Whitespace may be normalized; fills inherit
@@ -305,7 +305,7 @@ errors and asserts no missing-key warnings.
 ## Protocol and camera source additions
 
 The final source registry has 150 installed marks, 12 pinned historical marks,
-23 publisher-file marks and seven preserved/local marks (including the three
+24 publisher-file marks and seven preserved/local marks (including the three
 publisher geometries described above). The 46 explicitly nonofficial identifiers
 are a separate registry and are not counted as sourced marks.
 
@@ -347,6 +347,32 @@ meaningful terminal/lock, web/lock, connector, transfer, shared-file or display
 geometry, not invented official protocol logos. Existing manual `terminal`,
 `monitor`, `folder`, `eye` and all other saved choices remain valid.
 
+## Pure modern Exchange product mark
+
+`microsoftexchangemodern` vendors the exact single path from Microsoft's
+[ExchangeLogoIcon.tsx](https://raw.githubusercontent.com/microsoft/fluentui/eefc5128d958e74262de72965b60608953945515/packages/react-icons-mdl2-branded/src/components/ExchangeLogoIcon.tsx), pinned to commit `eefc5128d958e74262de72965b60608953945515`.
+It depicts the modern flat E tile and Exchange tiles rather than the older
+perspective E used by the historical Simple Icons export. The full publisher
+2048×2048 coordinate system is uniformly scaled by 24/2048. No server, computer,
+envelope frame, or other app-authored geometry is added to the pure product mark.
+The manual server variant can still place it in the app's separate server frame.
+
+The earlier `microsoftexchange` historical export and its source hash remain
+unchanged. This lets existing artwork references distinguish the old and modern
+designs instead of silently relabeling the old path as current.
+
+Source TSX SHA-256:
+`5d913439528e5e4cb51606ceeeed6aeaf8bff5bc1b08bd969238e89fb0c425d4`.
+Exact rendered path SHA-256:
+`e41f35b84ad0952c541f730ede4970ae894f226ec401e949906590863e04f4fb`.
+Offline tests verify this path, uniform scale, absence of a device wrapper, and
+distinctness from the historical artwork.
+
+Copyright Microsoft Corporation. The publisher package
+[license](https://github.com/microsoft/fluentui/blob/eefc5128d958e74262de72965b60608953945515/packages/react-icons-mdl2-branded/LICENSE)
+specifically requires the [Microsoft Fabric Assets License](https://aka.ms/fluentui-assets-license).
+These branded assets are **not** covered by a blanket MIT or CC0 assertion.
+
 ## Product-role semantics
 
 The Microsoft/Apple/Cisco VPN, Hyper-V, RD Gateway and remote-desktop entries
@@ -355,8 +381,10 @@ They do not claim to reproduce those products' application icons. Generic KMS,
 SQL server, MTA, Active Directory server, wired router and SNMP entries use
 service/device geometry rather than vendor branding. The older Active Directory
 entry remains intact; its new server variant uses a distinct directory-tree inset.
-Saved explicit icon keys and their components are preserved. Automatic defaults
-now use the protocol/brand-appropriate catalog keys, with the same resolver feeding
+Saved explicit icon keys remain valid, and manual appliance choices remain
+selectable. The Exchange base mark and its server-variant inset now use the pinned
+modern product glyph described above. Automatic defaults use pure brand marks or
+unframed protocol symbols, without app-authored server/appliance frames, with the same resolver feeding
 the editor dropdown, connection tree, Quick Connect, Bulk Connection Editor and
 Session Manager. All 37 built-in defaults and 27 registered integration descriptors
 are checked; integration icons and persistence-safe default keys agree. Tool,

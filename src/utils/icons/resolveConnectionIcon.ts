@@ -15,9 +15,9 @@ export const GENERIC_CONNECTION_ICON_KEY: ConnectionIconKey = "monitor";
 export const PROTOCOL_ICON_DEFAULTS: Readonly<
   Record<BuiltInConnectionProtocol, ConnectionIconKey>
 > = Object.freeze({
-  rdp: "microsoft-rdp",
+  rdp: "microsoft",
   ssh: "ssh",
-  ard: "apple-rd",
+  ard: "apple",
   serial: "serial",
   vnc: "vnc",
   anydesk: "anydesk",
@@ -41,16 +41,16 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   smb: "smb",
   gcp: "googlecloud",
   azure: "azure",
-  "ibm-csp": "ibm-cloud",
+  "ibm-csp": "ibm",
   "digital-ocean": "digitalocean",
   heroku: "heroku",
   scaleway: "scaleway",
   linode: "linode",
   ovhcloud: "ovh",
-  idrac: "dell-idrac",
-  ilo: "ilo",
-  lenovo: "lenovo-xclarity",
-  supermicro: "supermicro-bmc",
+  idrac: "dell",
+  ilo: "hpe",
+  lenovo: "lenovo",
+  supermicro: "supermicro",
   "voip-phone": "voip",
 });
 

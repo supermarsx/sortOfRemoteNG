@@ -49,7 +49,7 @@ import {
   leveloneIdentifier,
   lg,
   microsoft,
-  microsoftexchange as exchange,
+  microsoftexchangemodern as exchange,
   mikrotik,
   msi,
   netapp,
@@ -1145,7 +1145,7 @@ export const VENDORS_HARDWARE_ICONS = [
     "vendors-hardware",
     exchange,
     ["exchange", "microsoft exchange", "mail", "email", "plain"],
-    "Microsoft Exchange connection icon using the historical Exchange brand mark.",
+    "Microsoft Exchange connection icon using the pinned Microsoft Exchange product mark.",
   ),
   defineIcon("intel", "Intel", "vendors-hardware", intel, [
     "intel",

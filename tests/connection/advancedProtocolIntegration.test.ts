@@ -275,7 +275,7 @@ describe("advanced protocol connection integration", () => {
     expect(getProtocolDefaultIconKey("raw")).toBe("raw-socket");
     expect(getProtocolDefaultIconKey("rlogin")).toBe("rlogin");
     expect(getProtocolDefaultIconKey("winrm")).toBe("powershell");
-    expect(getProtocolDefaultIconKey("ard")).toBe("apple-rd");
+    expect(getProtocolDefaultIconKey("ard")).toBe("apple");
     expect(getProtocolDefaultIconKey("postgresql")).toBe("postgresql");
     expect(getProtocolDefaultIconKey("spice")).toBe("spice");
     expect(getProtocolDefaultIconKey("xdmcp")).toBe("xdmcp");

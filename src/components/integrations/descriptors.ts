@@ -23,8 +23,8 @@ export const vmwareDesktopDescriptor: IntegrationDescriptor = {
   key: "vmwareDesktop",
   label: "VMware Workstation",
   category: "virtualization",
-  icon: getConnectionIconDefinition("vmware-workstation")!.icon,
-  defaultConnectionIconKey: "vmware-workstation",
+  icon: getConnectionIconDefinition("vmware")!.icon,
+  defaultConnectionIconKey: "vmware",
   importPanel: () => import("./vmwareDesktop/VmwareDesktopPanel"),
 };
 
@@ -32,8 +32,8 @@ export const vmwareDescriptor: IntegrationDescriptor = {
   key: "vmware",
   label: "VMware vSphere",
   category: "virtualization",
-  icon: getConnectionIconDefinition("vsphere")!.icon,
-  defaultConnectionIconKey: "vsphere",
+  icon: getConnectionIconDefinition("vmware")!.icon,
+  defaultConnectionIconKey: "vmware",
   importPanel: () => import("./VmwarePanel"),
 };
 

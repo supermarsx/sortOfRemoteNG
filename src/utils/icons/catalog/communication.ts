@@ -18,7 +18,7 @@ import {
   mailcow,
   matrix,
   mattermost,
-  microsoftexchange,
+  microsoftexchangemodern,
   osticket,
   postfix,
   rocketdotchat,
@@ -119,7 +119,7 @@ export const COMMUNICATION_ICONS = [
     "exchange-server",
     "Microsoft Exchange server",
     "communication",
-    createRoleIcon("ExchangeServer", "server", microsoftexchange),
+    createRoleIcon("ExchangeServer", "server", microsoftexchangemodern),
     ["exchange server", "exchange-server", "microsoft exchange", "email"],
   ),
   defineIcon(

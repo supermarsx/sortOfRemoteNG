@@ -157,7 +157,7 @@ describe("emoji-style markers and additional shapes", () => {
     for (const key of PREVIOUS_KEYS)
       expect(getConnectionIconDefinition(key)?.key, key).toBe(key);
     expect(resolveEffectiveConnectionIcon({ protocol: "rdp" })).toMatchObject({
-      key: "microsoft-rdp",
+      key: "microsoft",
       source: "protocol",
     });
     expect(

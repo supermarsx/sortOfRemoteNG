@@ -5,7 +5,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { Mail, Loader2, Plug, PlugZap, RefreshCw, Save } from "lucide-react";
+import { Loader2, Plug, PlugZap, RefreshCw, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { IntegrationPanelProps } from "../../../types/integrations/registry";
 import type {
@@ -31,6 +31,9 @@ import {
   type ExchangeConnectionFormState,
 } from "../../../utils/integrations/exchangeConnectionFields";
 import { exchangeTabs } from "./registry";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
+
+const ExchangeIcon = getConnectionIconDefinition("exchange")!.icon;
 
 /**
  * Exchange integration panel — the shell (crate lead t42-exchange-L). Owns the
@@ -227,7 +230,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-3">
         <div className="flex items-center gap-2">
-          <Mail className="h-5 w-5 text-primary" />
+          <ExchangeIcon className="h-5 w-5 text-primary" />
           <div>
             <h2 className="text-base font-semibold text-[var(--color-text)]">
               {t("integrations.exchange.title", "Exchange")}

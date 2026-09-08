@@ -141,7 +141,7 @@ describe("resolveEffectiveConnectionIcon", () => {
   });
 
   it("maps ARD and macOS Screen Sharing searches to the viewer icon", () => {
-    expect(getProtocolDefaultIconKey("ard")).toBe("apple-rd");
+    expect(getProtocolDefaultIconKey("ard")).toBe("apple");
     expect(getConnectionIconDefinition("eye")?.keywords).toEqual(
       expect.arrayContaining([
         "ard",

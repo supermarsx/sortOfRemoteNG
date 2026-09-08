@@ -249,7 +249,7 @@ describe("ConnectionEditor icon persistence", () => {
     );
     fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
     expect(
-      screen.getByLabelText("Current effective icon: Microsoft RDP"),
+      screen.getByLabelText("Current effective icon: Microsoft"),
     ).toBeInTheDocument();
     expect(screen.getByText("Automatic · RDP protocol")).toBeInTheDocument();
     expect(

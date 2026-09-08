@@ -316,6 +316,36 @@ test("historical marks preserve the version-pinned upstream path bytes", async (
   }
 });
 
+test("modern Exchange uses the pure publisher glyph and preserves its historical alternative", async () => {
+  const { microsoftexchangemodern, microsoftexchange } =
+    await importBrandModule();
+  const modern = renderToStaticMarkup(
+    createElement(microsoftexchangemodern, {
+      size: 16,
+      color: "rebeccapurple",
+    }),
+  );
+  const legacy = renderToStaticMarkup(createElement(microsoftexchange));
+  const modernPath = modern.match(/<path d="([^"]+)"/u)?.[1];
+  const legacyPath = legacy.match(/<path d="([^"]+)"/u)?.[1];
+  assert.ok(modernPath && legacyPath);
+  assert.notEqual(
+    modernPath,
+    legacyPath,
+    "the modern flat E/Exchange tiles must not alias the old perspective E",
+  );
+  assert.equal(
+    (modern.match(/<svg\b/gu) ?? []).length,
+    1,
+    "pure mark must not wrap a device inset",
+  );
+  assert.equal((modern.match(/<path\b/gu) ?? []).length, 1);
+  assert.match(modern, /transform="scale\(0\.01171875\)"/u);
+  assert.match(modern, /width="16"/u);
+  assert.match(modern, /stroke="rebeccapurple"/u);
+  assert.doesNotMatch(modern, /<(?:rect|image|text|foreignObject)\b/u);
+});
+
 test("publisher marks normalize their source coordinates without distorting geometry", async () => {
   const { microsoft, hpe, tencentcloud } = await importBrandModule();
   for (const [Icon, transform] of [
@@ -356,6 +386,11 @@ test("publisher SVG paths retain the verified geometry and normalization", async
   const { PUBLISHER_BRAND_ICONS, PUBLISHER_BRAND_ICON_NAMES } =
     await importBrandModule();
   const sources = {
+    microsoftexchangemodern: [
+      1,
+      "e41f35b84ad0952c541f730ede4970ae894f226ec401e949906590863e04f4fb",
+      "scale(0.01171875)",
+    ],
     uniview: [
       1,
       "2e5fb8e5133aa3ff4e39e6daab6d5ca70f173b49e5681f90ec4e8d3ea744da47",
