@@ -161,8 +161,7 @@ pub async fn llm_get_config(state: State<'_, LlmServiceState>) -> Res<LlmConfig>
 #[tauri::command]
 pub async fn llm_update_config(state: State<'_, LlmServiceState>, config: LlmConfig) -> Res<()> {
     let mut svc = state.0.write().await;
-    svc.update_config(config);
-    Ok(())
+    svc.update_config(config)
 }
 
 #[tauri::command]

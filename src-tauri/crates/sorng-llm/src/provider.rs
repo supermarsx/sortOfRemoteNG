@@ -94,6 +94,9 @@ impl ProviderRegistry {
     /// Remove a provider
     pub fn unregister(&mut self, id: &str) -> bool {
         self.configs.remove(id);
+        if self.default_provider.as_deref() == Some(id) {
+            self.default_provider = None;
+        }
         self.providers.remove(id).is_some()
     }
 
@@ -140,6 +143,10 @@ impl ProviderRegistry {
     /// Set default provider
     pub fn set_default(&mut self, id: &str) {
         self.default_provider = Some(id.to_string());
+    }
+
+    pub fn clear_default(&mut self) {
+        self.default_provider = None;
     }
 
     /// Get default provider

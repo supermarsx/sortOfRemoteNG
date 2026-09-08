@@ -47,6 +47,9 @@ impl LlmService {
 
     #[allow(clippy::result_large_err)]
     pub fn add_provider(&mut self, config: ProviderConfig) -> LlmResult<()> {
+        if self.registry.get_config(&config.id).is_some() {
+            return self.update_provider(config);
+        }
         let id = config.id.clone();
         let provider = providers::create_provider(&config);
 
@@ -59,6 +62,8 @@ impl LlmService {
         if self.registry.default_provider_id().is_none() {
             self.registry.set_default(&id);
         }
+        self.config.default_provider = self.registry.default_provider_id().map(str::to_owned);
+        self.cache.clear();
 
         Ok(())
     }
@@ -66,14 +71,53 @@ impl LlmService {
     pub fn remove_provider(&mut self, id: &str) -> bool {
         self.rate_limiter.unregister(id);
         self.balancer.unregister(id);
-        self.registry.unregister(id)
+        let removed = self.registry.unregister(id);
+        self.config.default_provider = self.registry.default_provider_id().map(str::to_owned);
+        self.cache.clear();
+        removed
     }
 
     #[allow(clippy::result_large_err)]
-    pub fn update_provider(&mut self, config: ProviderConfig) -> LlmResult<()> {
+    pub fn update_provider(&mut self, mut config: ProviderConfig) -> LlmResult<()> {
         let id = config.id.clone();
-        self.remove_provider(&id);
-        self.add_provider(config)
+        let existing = self
+            .registry
+            .get_config(&id)
+            .ok_or_else(|| LlmError::provider_not_found(&id))?;
+        // IPC redacts keys. Preserve blank edits only within the same auth scope;
+        // never forward the old secret to a new provider, endpoint or tenant.
+        if config
+            .api_key
+            .as_deref()
+            .is_none_or(|key| key.trim().is_empty())
+        {
+            let same_scope = config.provider_type == existing.provider_type
+                && config.base_url == existing.base_url
+                && config.org_id == existing.org_id
+                && config.project_id == existing.project_id
+                && config.region == existing.region;
+            if same_scope {
+                config.api_key = existing.api_key.clone();
+            } else if matches!(
+                config.provider_type,
+                ProviderType::Ollama | ProviderType::Local
+            ) {
+                config.api_key = None;
+            } else {
+                return Err(LlmError::invalid_config(
+                    "Enter a replacement API key when changing the provider authentication scope",
+                ));
+            }
+        }
+        let provider = providers::create_provider(&config);
+        self.rate_limiter.unregister(&id);
+        if let Some(ref limit) = config.rate_limit {
+            self.rate_limiter.register(&id, limit.clone());
+        }
+        self.balancer.register(&id);
+        self.registry.register(&id, provider, config);
+        self.cache.clear();
+        Ok(())
     }
 
     pub fn list_providers(&self) -> Vec<ProviderConfig> {
@@ -84,6 +128,8 @@ impl LlmService {
     pub fn set_default_provider(&mut self, id: &str) -> LlmResult<()> {
         if self.registry.get(id).is_some() {
             self.registry.set_default(id);
+            self.config.default_provider = Some(id.to_string());
+            self.cache.clear();
             Ok(())
         } else {
             Err(LlmError::provider_not_found(id))
@@ -107,17 +153,18 @@ impl LlmService {
         let mut req = request.clone();
         req.model = model;
 
-        // 2. Check cache
-        if let Some(cached) = self.cache.get(&req) {
-            return Ok(cached);
-        }
-
-        // 3. Select provider
+        // Resolve routing before cache lookup so an explicitly disabled provider
+        // cannot be bypassed by another provider's cached response.
         let provider_id = if let Some(ref pid) = req.provider_id {
+            self.require_enabled_provider(pid)?;
             pid.clone()
         } else {
             self.select_provider(&req.model)?
         };
+        req.provider_id = Some(provider_id.clone());
+        if let Some(cached) = self.cache.get(&req) {
+            return Ok(cached);
+        }
 
         // 4. Rate limit check
         let estimated_tokens = TokenCounter::estimate_messages(&req.messages);
@@ -145,15 +192,17 @@ impl LlmService {
                     })
                     .unwrap_or(0.0);
 
-                self.usage_tracker.record(
-                    &response.provider,
-                    &response.model,
-                    &response.usage,
-                    cost,
-                    false,
-                    latency,
-                    RequestType::Chat,
-                );
+                if self.config.usage_tracking_enabled {
+                    self.usage_tracker.record(
+                        &response.provider,
+                        &response.model,
+                        &response.usage,
+                        cost,
+                        false,
+                        latency,
+                        RequestType::Chat,
+                    );
+                }
 
                 // 7. Release rate limiter
                 self.rate_limiter
@@ -180,12 +229,15 @@ impl LlmService {
         primary_id: &str,
         request: &ChatCompletionRequest,
     ) -> LlmResult<ChatCompletionResponse> {
+        self.require_enabled_provider(primary_id)?;
+        let mut errors = Vec::new();
         // Try primary provider
         if let Some(provider) = self.registry.get(primary_id) {
             match provider.chat_completion(request).await {
                 Ok(response) => return Ok(response),
-                Err(e) if e.retryable => {
+                Err(e) if e.retryable && self.config.balancer.failover_enabled => {
                     log::warn!("Provider {} failed (retryable): {}", primary_id, e);
+                    errors.push(e);
                 }
                 Err(e) => return Err(e),
             }
@@ -200,8 +252,10 @@ impl LlmService {
             .cloned()
             .collect();
 
-        let mut errors = Vec::new();
         for fallback_id in &fallback_ids {
+            if self.require_enabled_provider(fallback_id).is_err() {
+                continue;
+            }
             if let Some(provider) = self.registry.get(fallback_id) {
                 match provider.chat_completion(request).await {
                     Ok(mut response) => {
@@ -221,13 +275,32 @@ impl LlmService {
 
     #[allow(clippy::result_large_err)]
     fn select_provider(&mut self, model: &str) -> LlmResult<String> {
-        // First check if model maps to a specific provider
-        if let Some((id, _)) = self.registry.find_provider_for_model(model) {
-            return Ok(id.clone());
+        let mut enabled: Vec<_> = self
+            .registry
+            .list_configs()
+            .into_iter()
+            .filter(|config| config.enabled)
+            .collect();
+        enabled.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id)));
+        let matching: Vec<_> = enabled
+            .iter()
+            .filter(|config| config.default_model.as_deref() == Some(model))
+            .map(|config| config.id.clone())
+            .collect();
+        // Preserve explicit model affinity. The default is the Priority fallback,
+        // not an unconditional shortcut around RoundRobin/other chosen strategies.
+        if matching.is_empty() && self.config.balancer.strategy == BalancerStrategy::Priority {
+            if let Some(id) = self.registry.default_provider_id() {
+                if enabled.iter().any(|config| config.id == id) && self.balancer.is_available(id) {
+                    return Ok(id.to_string());
+                }
+            }
         }
-
-        // Use load balancer
-        let available: Vec<String> = self.registry.list_ids();
+        let available = if matching.is_empty() {
+            enabled.iter().map(|config| config.id.clone()).collect()
+        } else {
+            matching
+        };
         let priorities: HashMap<String, i32> = self
             .registry
             .list_configs()
@@ -236,6 +309,20 @@ impl LlmService {
             .collect();
 
         self.balancer.select(&available, &priorities)
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn require_enabled_provider(&self, id: &str) -> LlmResult<()> {
+        let config = self
+            .registry
+            .get_config(id)
+            .ok_or_else(|| LlmError::provider_not_found(id))?;
+        if !config.enabled {
+            return Err(LlmError::invalid_config(
+                "The selected LLM provider is disabled",
+            ));
+        }
+        Ok(())
     }
 
     // ── Embedding ──────────────────────────────────────────────────────
@@ -250,6 +337,7 @@ impl LlmService {
             .or(self.registry.default_provider_id())
             .ok_or_else(|| LlmError::provider_not_found("none configured"))?
             .to_string();
+        self.require_enabled_provider(&provider_id)?;
 
         let provider = self
             .registry
@@ -368,14 +456,29 @@ impl LlmService {
         &self.config
     }
 
-    pub fn update_config(&mut self, config: LlmConfig) {
+    #[allow(clippy::result_large_err)]
+    pub fn update_config(&mut self, config: LlmConfig) -> LlmResult<()> {
+        if let Some(id) = config.default_provider.as_deref() {
+            if self.registry.get(id).is_none() {
+                return Err(LlmError::provider_not_found(id));
+            }
+            self.registry.set_default(id);
+        } else {
+            self.registry.clear_default();
+        }
         self.cache = ResponseCache::new(config.cache.clone());
         self.balancer = LoadBalancer::new(config.balancer.clone());
+        for id in self.registry.list_ids() {
+            self.balancer.register(&id);
+        }
         self.config = config;
+        Ok(())
     }
 
     pub fn set_balancer_strategy(&mut self, strategy: BalancerStrategy) {
-        self.balancer.set_strategy(strategy);
+        self.balancer.set_strategy(strategy.clone());
+        self.config.balancer.strategy = strategy;
+        self.cache.clear();
     }
 }
 
@@ -383,3 +486,7 @@ impl LlmService {
 pub fn create_llm_state() -> LlmServiceState {
     LlmServiceState(Arc::new(RwLock::new(LlmService::new(LlmConfig::default()))))
 }
+
+#[cfg(test)]
+#[path = "service_settings_tests.rs"]
+mod settings_tests;

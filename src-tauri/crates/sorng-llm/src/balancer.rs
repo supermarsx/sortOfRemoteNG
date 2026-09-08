@@ -99,6 +99,13 @@ impl LoadBalancer {
         self.states.remove(provider_id);
     }
 
+    /// Shared availability check for selection, including a preferred default.
+    pub fn is_available(&self, provider_id: &str) -> bool {
+        self.states
+            .get(provider_id)
+            .is_none_or(ProviderState::is_available)
+    }
+
     /// Select the next provider based on strategy
     #[allow(clippy::result_large_err)]
     pub fn select(
@@ -108,12 +115,7 @@ impl LoadBalancer {
     ) -> LlmResult<String> {
         let candidates: Vec<&String> = available_ids
             .iter()
-            .filter(|id| {
-                self.states
-                    .get(id.as_str())
-                    .map(|s| s.is_available())
-                    .unwrap_or(true)
-            })
+            .filter(|id| self.is_available(id))
             .collect();
 
         if candidates.is_empty() {

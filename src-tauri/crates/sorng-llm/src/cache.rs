@@ -45,6 +45,9 @@ impl ResponseCache {
     /// Generate a cache key from a request
     pub fn cache_key(request: &ChatCompletionRequest) -> String {
         let mut hasher = Sha256::new();
+        // The same prompt routed to a different provider is a different request.
+        hasher.update(request.provider_id.as_deref().unwrap_or_default());
+        hasher.update([0]);
         hasher.update(&request.model);
 
         // Hash messages content
