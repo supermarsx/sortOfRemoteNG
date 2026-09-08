@@ -79,9 +79,14 @@ describe("real catalog React list keys", () => {
   it("renders every real catalog icon without warnings in a fresh renderer", () => {
     const result = renderInFreshProcess(`
       const { CONNECTION_ICON_CATALOG } = require('./src/utils/icons/connectionIconCatalog.ts');
+      const { FOLDER_OPEN_ICONS } = require('./src/utils/icons/catalog/folders.ts');
       for (const entry of CONNECTION_ICON_CATALOG) {
         const markup = renderToStaticMarkup(React.createElement(entry.icon, { size: 16 }));
         if (!markup.includes('<svg')) throw new Error('No SVG: ' + entry.key);
+      }
+      for (const [key, Icon] of Object.entries(FOLDER_OPEN_ICONS)) {
+        const markup = renderToStaticMarkup(React.createElement(Icon, { size: 16 }));
+        if (!markup.includes('<svg')) throw new Error('No open folder SVG: ' + key);
       }
       process.stdout.write(JSON.stringify({ count: CONNECTION_ICON_CATALOG.length }));
     `);

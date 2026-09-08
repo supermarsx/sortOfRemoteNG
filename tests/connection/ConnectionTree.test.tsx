@@ -16,6 +16,7 @@ import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import { Connection } from "../../src/types/connection/connection";
 import type { ConnectionFilter } from "../../src/types/connection/connection";
+import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";
 
 const mockConnections: Connection[] = [
   {
@@ -91,9 +92,11 @@ describe("ConnectionTree", () => {
       );
       expect(
         folderRow.querySelector(
-          icon === "folder-lock" || icon === "server"
+          icon === "server"
             ? selector
-            : ".lucide-folder-open",
+            : icon === "folder-lock"
+              ? '[data-role-frame="folder-open"]'
+              : ".lucide-folder-open",
         ),
       ).toBeInTheDocument();
       fireEvent.click(within(folderRow).getAllByRole("button")[0]);
@@ -103,6 +106,50 @@ describe("ConnectionTree", () => {
       expect(folderRow.querySelector(selector)).toBeInTheDocument();
     },
   );
+
+  it("opens every saved folder with its own emblem and restores closed geometry without modifying its key", async () => {
+    const connections = FOLDER_ICONS.map((entry) => ({
+      ...mockConnections[0],
+      id: entry.key,
+      name: entry.label,
+      icon: entry.key,
+    }));
+    let state!: ReturnType<typeof useConnections>["state"];
+    function Observe() {
+      state = useConnections().state;
+      return null;
+    }
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Observe />
+          <InitConnections connections={connections} />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    const rows = await screen.findAllByTestId("connection-group");
+    expect(rows).toHaveLength(FOLDER_ICONS.length);
+    for (const entry of FOLDER_ICONS) {
+      const row = rows.find((item) => within(item).queryByText(entry.label))!;
+      const icon = () => within(row).getByLabelText(entry.ariaLabel);
+      const closed = icon().innerHTML;
+      fireEvent.click(within(row).getAllByRole("button")[0]);
+      expect(row).toHaveAttribute("aria-expanded", "true");
+      if (entry.key !== "folder-open")
+        expect(icon().innerHTML).not.toBe(closed);
+      expect(icon()).toHaveClass("text-warning");
+      if (entry.key !== "folder" && entry.key !== "folder-open")
+        expect(
+          icon().querySelector('[data-role-frame="folder-open"]'),
+        ).not.toBeNull();
+      expect(
+        state.connections.find((item) => item.id === entry.key)?.icon,
+      ).toBe(entry.key);
+      fireEvent.click(within(row).getAllByRole("button")[0]);
+      expect(row).toHaveAttribute("aria-expanded", "false");
+      expect(icon().innerHTML).toBe(closed);
+    }
+  });
 
   it.each([0, 40])(
     "does not re-render a %i-row non-virtual tree when it scrolls",

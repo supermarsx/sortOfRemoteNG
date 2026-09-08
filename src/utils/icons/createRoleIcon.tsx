@@ -3,6 +3,7 @@ import type { LucideIcon, LucideProps } from "lucide-react";
 
 export type IconRole =
   | "folder"
+  | "folder-open"
   | "server"
   | "management-server"
   | "database"
@@ -40,6 +41,15 @@ const ROLE_FRAMES: Record<IconRole, RoleFrame> = {
   folder: {
     outline: <path d="M3 4h5l2 3h11v13H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />,
     inset: [6, 8, 12, 11],
+  },
+  "folder-open": {
+    outline: (
+      <>
+        <path d="M2 18V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v1" />
+        <path d="M5 9h17l-3 12H2L5 9Z" />
+      </>
+    ),
+    inset: [6, 9, 12, 11],
   },
   server: {
     outline: (

@@ -11,6 +11,7 @@ import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";
 
 const roles: IconRole[] = [
   "folder",
+  "folder-open",
   "server",
   "management-server",
   "database",

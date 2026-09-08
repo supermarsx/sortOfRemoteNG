@@ -9,6 +9,7 @@ import {
   type ConnectionIconCategory,
   type ConnectionIconKey,
 } from "./connectionIconCatalog";
+import { FOLDER_OPEN_ICONS } from "./catalog/folders";
 
 export const GENERIC_CONNECTION_ICON_KEY: ConnectionIconKey = "monitor";
 
@@ -77,6 +78,18 @@ export interface EffectiveConnectionIcon {
   description: string;
   category: ConnectionIconCategory;
   keywords: readonly string[];
+}
+
+/** Expansion affects presentation only, never the saved icon or its resolution. */
+export function getExpandedFolderIcon(
+  resolved: EffectiveConnectionIcon,
+  expanded: boolean,
+): EffectiveConnectionIcon["icon"] {
+  if (!expanded || resolved.category !== "folders") return resolved.icon;
+  return (
+    FOLDER_OPEN_ICONS[resolved.key as keyof typeof FOLDER_OPEN_ICONS] ??
+    resolved.icon
+  );
 }
 
 export type ConnectionIconInput = Pick<Connection, "icon" | "integration"> & {

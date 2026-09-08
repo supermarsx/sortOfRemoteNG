@@ -1,8 +1,18 @@
 import {
   ArrowLeftRight,
+  Archive,
   BriefcaseBusiness,
   createLucideIcon,
   Container,
+  Clock,
+  CodeXml,
+  GitFork,
+  Heart,
+  Kanban,
+  LockKeyhole,
+  Network,
+  RefreshCw,
+  Settings,
   Folder,
   FolderOpen,
   FolderArchive,
@@ -28,6 +38,7 @@ import {
   Terminal,
   UserRound,
   Wifi,
+  type LucideIcon,
 } from "lucide-react";
 
 import { defineIcon } from "./types";
@@ -298,3 +309,80 @@ export const FOLDER_ICONS = [
     ],
   ),
 ] as const;
+
+/** Presentation-only counterparts. Keep saved keys and picker entries unchanged. */
+export const FOLDER_OPEN_ICONS: Readonly<
+  Record<(typeof FOLDER_ICONS)[number]["key"], LucideIcon>
+> = Object.freeze({
+  folder: FolderOpen,
+  // A deliberately selected open-folder glyph keeps its historical appearance.
+  "folder-open": FolderOpen,
+  "folder-cog": createRoleIcon("OpenCogFolder", "folder-open", Settings),
+  "folder-tree": createRoleIcon("OpenTreeFolder", "folder-open", Network),
+  "folder-lock": createRoleIcon("OpenLockFolder", "folder-open", LockKeyhole),
+  "folder-archive": createRoleIcon("OpenArchiveFolder", "folder-open", Archive),
+  "folder-code": createRoleIcon("OpenCodeFolder", "folder-open", CodeXml),
+  "folder-git": createRoleIcon("OpenGitFolder", "folder-open", GitFork),
+  "folder-sync": createRoleIcon("OpenSyncFolder", "folder-open", RefreshCw),
+  "folder-clock": createRoleIcon("OpenClockFolder", "folder-open", Clock),
+  "folder-kanban": createRoleIcon("OpenKanbanFolder", "folder-open", Kanban),
+  "folder-heart": createRoleIcon("OpenHeartFolder", "folder-open", Heart),
+  "folder-work": createRoleIcon(
+    "OpenWorkFolder",
+    "folder-open",
+    BriefcaseBusiness,
+  ),
+  "folder-personal": createRoleIcon(
+    "OpenPersonalFolder",
+    "folder-open",
+    UserRound,
+  ),
+  "folder-remote": createRoleIcon(
+    "OpenRemoteFolder",
+    "folder-open",
+    ArrowLeftRight,
+  ),
+  "folder-rdp": createRoleIcon("OpenRdpFolder", "folder-open", Monitor),
+  "folder-phone": createRoleIcon("OpenPhoneFolder", "folder-open", Phone),
+  "folder-switch": createRoleIcon(
+    "OpenSwitchFolder",
+    "folder-open",
+    SwitchPorts,
+  ),
+  "folder-router": createRoleIcon("OpenRouterFolder", "folder-open", Router),
+  "folder-web": createRoleIcon("OpenWebFolder", "folder-open", Globe),
+  "folder-admin": createRoleIcon("OpenAdminFolder", "folder-open", ShieldCheck),
+  "folder-ssh": createRoleIcon("OpenSshFolder", "folder-open", Terminal),
+  "folder-server": createRoleIcon("OpenServerFolder", "folder-open", Server),
+  "folder-nas": createRoleIcon("OpenNasFolder", "folder-open", StorageBays),
+  "folder-access-point": createRoleIcon(
+    "OpenAccessPointFolder",
+    "folder-open",
+    Wifi,
+  ),
+  "folder-directory": createRoleIcon(
+    "OpenDirectoryFolder",
+    "folder-open",
+    Folders,
+  ),
+  "folder-file-server": createRoleIcon(
+    "OpenFileServerFolder",
+    "folder-open",
+    HardDriveDownload,
+  ),
+  "folder-mail-server": createRoleIcon(
+    "OpenMailServerFolder",
+    "folder-open",
+    Mail,
+  ),
+  "folder-container-server": createRoleIcon(
+    "OpenContainerServerFolder",
+    "folder-open",
+    Container,
+  ),
+  "folder-hypervisor": createRoleIcon(
+    "OpenHypervisorFolder",
+    "folder-open",
+    Layers,
+  ),
+});

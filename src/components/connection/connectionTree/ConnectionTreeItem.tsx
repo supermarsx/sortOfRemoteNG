@@ -9,11 +9,10 @@ import React, { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useConnections } from "../../../contexts/useConnections";
 import { isToolProtocol } from "../../app/toolSession";
+import { getExpandedFolderIcon } from "../../../utils/icons/resolveConnectionIcon";
 import {
   ChevronDown,
   ChevronRight,
-  Folder,
-  FolderOpen,
   MoreVertical,
   Play,
   Power,
@@ -93,7 +92,10 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
   const isExpanded = expanded ?? connection.expanded ?? false;
 
   const iconResolution = getConnectionIconResolution(connection);
-  const ProtocolIcon = iconResolution.icon;
+  const ProtocolIcon = getExpandedFolderIcon(
+    iconResolution,
+    !!connection.isGroup && isExpanded,
+  );
 
   const handleToggleExpand = () => {
     if (connection.isGroup) {
@@ -286,19 +288,11 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
         )}
 
         <div className="flex items-center min-w-0 flex-1">
-          {connection.isGroup && iconResolution.source !== "override" ? (
-            isExpanded ? (
-              <FolderOpen size={16} className="mr-2 text-warning" />
-            ) : (
-              <Folder size={16} className="mr-2 text-warning" />
-            )
-          ) : (
-            <ProtocolIcon
-              size={16}
-              aria-label={iconResolution.ariaLabel}
-              className={`mr-2 ${connection.isGroup ? "text-warning" : getStatusColor(activeSession?.status)}`}
-            />
-          )}
+          <ProtocolIcon
+            size={16}
+            aria-label={iconResolution.ariaLabel}
+            className={`mr-2 ${connection.isGroup ? "text-warning" : getStatusColor(activeSession?.status)}`}
+          />
           {connection.favorite && (
             <Star
               size={11}
