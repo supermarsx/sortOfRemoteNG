@@ -8,7 +8,6 @@ mod docker_compose_commands;
 mod extensions_commands;
 mod fonts_commands;
 mod k8s_commands;
-mod llm_commands;
 mod recording_commands;
 mod secure_clip_commands;
 mod terminal_themes_commands;

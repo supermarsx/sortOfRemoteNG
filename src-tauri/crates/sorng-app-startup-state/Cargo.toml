@@ -13,6 +13,7 @@ sorng-app-startup-connectivity = { path = "../sorng-app-startup-connectivity", d
 sorng-commands-core = { path = "../sorng-commands-core", default-features = false }
 sorng-core = { path = "../sorng-core" }
 sorng-encryption = { path = "../sorng-encryption" }
+sorng-llm = { path = "../sorng-llm" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-recording = { path = "../sorng-recording" }
 sorng-vault = { path = "../sorng-vault" }

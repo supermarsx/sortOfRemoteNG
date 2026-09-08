@@ -36,6 +36,9 @@ mod runtime_capability_commands {
 }
 
 pub fn is_command(command: &str) -> bool {
+    if crate::llm_handler::is_command(command) {
+        return true;
+    }
     matches!(
         command,
         "greet"
@@ -2822,6 +2825,7 @@ define_command_group!(
 );
 
 pub fn build() -> InvokeHandler {
+    let llm = crate::llm_handler::build();
     let a = build_a();
     let j = build_j();
     let b = build_b();
@@ -2835,6 +2839,9 @@ pub fn build() -> InvokeHandler {
 
     Box::new(move |invoke| {
         let command = invoke.message.command();
+        if crate::llm_handler::is_command(command) {
+            return llm(invoke);
+        }
         if is_command_a(command) {
             return a(invoke);
         }
@@ -2879,7 +2886,8 @@ mod tests {
     };
     use std::collections::HashSet;
 
-    const COMMAND_ROUTES: [fn(&str) -> bool; 10] = [
+    const COMMAND_ROUTES: [fn(&str) -> bool; 11] = [
+        crate::llm_handler::is_command,
         is_command_a,
         is_command_j,
         is_command_b,

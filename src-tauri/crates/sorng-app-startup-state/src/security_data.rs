@@ -55,6 +55,7 @@ pub(super) fn register(
     }
     app.manage(backup_service);
     register_recording(app, app_dir);
+    register_llm(app);
     app.manage(BitwardenService::new_state());
     app.manage(KeePassService::new());
     app.manage(PassboltService::new_state());
@@ -90,6 +91,17 @@ pub(super) fn register(
         let state: RedisServiceState = redis::service::new_state();
         app.manage(state);
     }
+}
+
+/// LLM settings and core IPC are available in lean builds too. Optional AI and
+/// palette consumers retrieve this exact state instead of creating another router.
+pub(super) fn register_llm<R: tauri::Runtime>(app: &impl tauri::Manager<R>) -> LlmServiceState {
+    if let Some(existing) = app.try_state::<LlmServiceState>() {
+        return existing.inner().clone();
+    }
+    let state = sorng_llm::service::create_llm_state();
+    app.manage(state.clone());
+    state
 }
 
 /// Full master-key rotation includes recordings in every build, even when the

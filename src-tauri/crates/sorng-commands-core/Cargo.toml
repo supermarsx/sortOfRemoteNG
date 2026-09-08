@@ -17,6 +17,7 @@ sorng-vault = { path = "../sorng-vault" }
 # every artifact during master-key rotation.
 sorng-storage = { path = "../sorng-storage" }
 sorng-recording = { path = "../sorng-recording" }
+sorng-llm = { path = "../sorng-llm" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-probes = { path = "../sorng-probes" }
 tauri = { workspace = true }

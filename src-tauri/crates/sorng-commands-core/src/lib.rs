@@ -1,4 +1,11 @@
 pub use sorng_app_domains::*;
+pub use sorng_llm as llm;
+
+#[path = "../../../src/llm_commands.rs"]
+mod llm_commands;
+// Shared with the startup mock-runtime regression; no optional platform graph.
+#[doc(hidden)]
+pub mod llm_handler;
 
 #[cfg(all(feature = "opkssh", not(feature = "ops")))]
 pub use sorng_opkssh as opkssh;

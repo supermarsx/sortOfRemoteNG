@@ -14,8 +14,7 @@ pub(super) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     ));
     app.manage(onedrive_state);
 
-    let llm_state: LlmServiceState = llm::service::create_llm_state();
-    app.manage(llm_state.clone());
+    let llm_state: LlmServiceState = app.state::<LlmServiceState>().inner().clone();
     let ai_assist_state: AiAssistServiceState = ai_assist::service::create_ai_assist_state(
         ai_assist::AiAssistConfig::default(),
         Some(llm_state.clone()),

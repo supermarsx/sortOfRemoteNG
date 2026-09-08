@@ -12,6 +12,8 @@ use tokio::sync::Mutex;
 mod access;
 #[cfg(any(feature = "collab", feature = "platform"))]
 mod collab;
+#[cfg(test)]
+mod llm_tests;
 #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 mod platform;
 mod security_data;
@@ -89,11 +91,10 @@ use extensions::service::ExtensionsServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
 use fonts::FontServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
-use llm::service::LlmServiceState;
-#[cfg(any(feature = "collab", feature = "platform"))]
 use onedrive::service::OneDriveServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
 use secure_clip::SecureClipServiceState;
+use sorng_llm::service::LlmServiceState;
 use sorng_recording::RecordingServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
 use terminal_themes::ThemeEngineState;
@@ -176,6 +177,7 @@ pub const SECURITY_DATA_REGISTRATION_ORDER: &[&str] = &[
     "Ssh3ServiceState",
     "BackupServiceState",
     "RecordingServiceState",
+    "LlmServiceState",
     "BitwardenServiceState",
     "KeePassServiceState",
     "PassboltServiceState",
@@ -225,7 +227,6 @@ pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
     "NextcloudServiceState",
     "GDriveServiceState",
     "OneDriveServiceState",
-    "LlmServiceState",
     "AiAssistServiceState",
     "CommandPaletteServiceState",
     "FontServiceState",
@@ -237,8 +238,8 @@ pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
 pub const API_REGISTRATION_ORDER: &[&str] =
     &["ApiService", "DisabledCapsSetter", "ApiServerController"];
 
-/// Maximum moved inventory: 13 infrastructure/API + 41 security/data + 5
-/// access + 13 platform + 13 collaboration registrations.
+/// Maximum moved inventory: 13 infrastructure/API + 42 security/data + 5
+/// access + 13 platform + 12 collaboration registrations.
 pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 85;
 
 pub struct InfrastructureHandles {
@@ -448,10 +449,10 @@ mod tests {
     fn fixed_registrar_inventories_match_the_moved_contract() {
         assert_eq!(ACCESS_REGISTRATION_ORDER.len(), 5);
         assert_eq!(PLATFORM_REGISTRATION_ORDER.len(), 13);
-        assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 13);
+        assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 12);
         assert_eq!(API_REGISTRATION_ORDER.len(), 3);
-        assert_eq!(35 + 6, 41);
-        assert_eq!(10 + 3 + 41 + 5 + 13 + 13, MAX_MANAGED_STATE_REGISTRATIONS);
+        assert_eq!(36 + 6, 42);
+        assert_eq!(10 + 3 + 42 + 5 + 13 + 12, MAX_MANAGED_STATE_REGISTRATIONS);
     }
 
     #[test]

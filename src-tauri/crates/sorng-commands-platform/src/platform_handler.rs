@@ -79,26 +79,6 @@ pub fn is_command(command: &str) -> bool {
             | "rec_storage_size"
             | "rec_migrate_to_encrypted"
             | "rec_cancel_migration"
-            | "llm_add_provider"
-            | "llm_remove_provider"
-            | "llm_update_provider"
-            | "llm_list_providers"
-            | "llm_set_default_provider"
-            | "llm_chat_completion"
-            | "llm_create_embedding"
-            | "llm_list_models"
-            | "llm_models_for_provider"
-            | "llm_model_info"
-            | "llm_health_check"
-            | "llm_health_check_all"
-            | "llm_usage_summary"
-            | "llm_cache_stats"
-            | "llm_clear_cache"
-            | "llm_status"
-            | "llm_get_config"
-            | "llm_update_config"
-            | "llm_set_balancer_strategy"
-            | "llm_estimate_tokens"
             | "ai_assist_create_session"
             | "ai_assist_remove_session"
             | "ai_assist_list_sessions"
@@ -703,26 +683,6 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         recording_commands::rec_migrate_to_encrypted,
         recording_commands::rec_cancel_migration,
         // LLM backend commands
-        llm_commands::llm_add_provider,
-        llm_commands::llm_remove_provider,
-        llm_commands::llm_update_provider,
-        llm_commands::llm_list_providers,
-        llm_commands::llm_set_default_provider,
-        llm_commands::llm_chat_completion,
-        llm_commands::llm_create_embedding,
-        llm_commands::llm_list_models,
-        llm_commands::llm_models_for_provider,
-        llm_commands::llm_model_info,
-        llm_commands::llm_health_check,
-        llm_commands::llm_health_check_all,
-        llm_commands::llm_usage_summary,
-        llm_commands::llm_cache_stats,
-        llm_commands::llm_clear_cache,
-        llm_commands::llm_status,
-        llm_commands::llm_get_config,
-        llm_commands::llm_update_config,
-        llm_commands::llm_set_balancer_strategy,
-        llm_commands::llm_estimate_tokens,
         // AI Assist commands
         ai_assist_commands::ai_assist_create_session,
         ai_assist_commands::ai_assist_remove_session,
