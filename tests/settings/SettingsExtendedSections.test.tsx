@@ -265,6 +265,11 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
+    const devtoolsToggle = screen.getByRole("checkbox", { name: /^Devtools/ });
+    expect(devtoolsToggle).toBeChecked();
+    fireEvent.click(devtoolsToggle);
+    expect(updateSettings).toHaveBeenCalledWith({ showDevtoolsIcon: false });
+
     expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(6);
     expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
       "text-primary",

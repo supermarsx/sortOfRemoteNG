@@ -4,6 +4,8 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { AppToolbar } from "../../src/components/app/AppToolbar";
 import { TOOL_DESCRIPTORS } from "../../src/components/app/toolDescriptors";
 import { TOOL_LABELS } from "../../src/components/app/toolSession";
+import { defaultSettings } from "../../src/contexts/SettingsContext";
+import { DEFAULT_VALUES } from "../../src/components/SettingsDialog/settingsConstants";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -93,6 +95,38 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("hides the dev console with both startup and reset defaults", () => {
+    expect(defaultSettings.showDevtoolsIcon).toBe(false);
+    expect(DEFAULT_VALUES.showDevtoolsIcon).toBe(false);
+    const props = makeProps();
+    render(
+      <AppToolbar
+        {...props}
+        appSettings={{
+          ...props.appSettings,
+          showDevtoolsIcon: defaultSettings.showDevtoolsIcon,
+        }}
+      />,
+    );
+    expect(screen.queryByTitle("Open dev console")).not.toBeInTheDocument();
+  });
+
+  it("restores the dev console button and existing handler when opted in, and hides it when disabled", () => {
+    const props = makeProps();
+    const { rerender } = render(<AppToolbar {...props} />);
+    expect(screen.queryByTitle("Open dev console")).not.toBeInTheDocument();
+    rerender(
+      <AppToolbar
+        {...props}
+        appSettings={{ ...props.appSettings, showDevtoolsIcon: true }}
+      />,
+    );
+    fireEvent.click(screen.getByTitle("Open dev console"));
+    expect(props.handleOpenDevtools).toHaveBeenCalledTimes(1);
+    rerender(<AppToolbar {...props} />);
+    expect(screen.queryByTitle("Open dev console")).not.toBeInTheDocument();
+  });
+
   it("keeps the canonical tool descriptor exhaustive", () => {
     expect(Object.keys(TOOL_DESCRIPTORS).sort()).toEqual(
       Object.keys(TOOL_LABELS).sort(),

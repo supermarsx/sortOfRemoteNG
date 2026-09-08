@@ -434,7 +434,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showSettingsIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
-  showDevtoolsIcon: true,
+  showDevtoolsIcon: false,
   showDebugPanelIcon: false,
   showSecurityIcon: true,
   showProxyMenuIcon: true,

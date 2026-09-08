@@ -68,6 +68,38 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
   fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...seed };
 }
 
+describe("dev console visibility preference", () => {
+  it("defaults off when a legacy settings file has no visibility key", async () => {
+    seedStoredSettings({ language: "en-US" });
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).showDevtoolsIcon,
+    ).toBe(false);
+  });
+
+  it("preserves an explicitly saved enabled preference", async () => {
+    seedStoredSettings({ showDevtoolsIcon: true });
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).showDevtoolsIcon,
+    ).toBe(true);
+  });
+
+  it("persists disabling and re-enabling the existing preference across reloads", async () => {
+    seedStoredSettings({ showDevtoolsIcon: true });
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+    await manager.saveSettings({ showDevtoolsIcon: false });
+    expect(fakeStoredSettings?.showDevtoolsIcon).toBe(false);
+    SettingsManager.resetInstance();
+    const reloaded = SettingsManager.getInstance();
+    expect((await reloaded.loadSettings()).showDevtoolsIcon).toBe(false);
+    await reloaded.saveSettings({ showDevtoolsIcon: true });
+    SettingsManager.resetInstance();
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).showDevtoolsIcon,
+    ).toBe(true);
+  });
+});
+
 describe("SettingsManager colorScheme", () => {
   it("defaults to blue", async () => {
     const manager = SettingsManager.getInstance();
