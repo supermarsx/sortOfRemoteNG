@@ -11,6 +11,7 @@ import { proxyCollectionManager } from "../../utils/connection/proxyCollectionMa
 import { InvalidPasswordError } from "../../utils/core/errors";
 import { useConnections } from "../../contexts/useConnections";
 import { useTranslation } from "react-i18next";
+import { useDatabaseBulkActions } from "./useDatabaseBulkActions";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ export function useDatabaseSelector(
    * need to react).
    */
   onDatabaseClose?: () => Promise<void> | void,
+  onBeforeCurrentLock?: () => Promise<void>,
 ) {
   const databaseManager = DatabaseManager.getInstance();
   const { saveData, flushPendingSave } = useConnections();
@@ -204,7 +206,11 @@ export function useDatabaseSelector(
 
   useEffect(() => {
     if (isOpen) {
-      loadDatabases();
+      void loadDatabases().catch((error: unknown) =>
+        setError(
+          error instanceof Error ? error.message : "Unable to load databases.",
+        ),
+      );
       setSavedProfiles(proxyCollectionManager.getProfiles());
       setSavedChains(proxyCollectionManager.getChains());
     }
@@ -378,6 +384,8 @@ export function useDatabaseSelector(
         ...editingCollection,
         isEncrypted: wantsEncryption,
       };
+      const securityWarnings: string[] = [];
+      let securityCleanupPending = false;
 
       if (databaseManager.getCurrentDatabase()?.id === editingCollection.id) {
         // Re-encryption must never race a pending snapshot captured with the
@@ -386,22 +394,46 @@ export function useDatabaseSelector(
       }
 
       if (editingCollection.isEncrypted && !wantsEncryption) {
-        await databaseManager.removePasswordFromDatabase(
+        const outcome = await databaseManager.removePasswordFromDatabase(
           editingCollection.id,
           editPassword.current,
         );
+        securityWarnings.push(...(outcome?.warnings ?? []));
+        securityCleanupPending ||= outcome?.cleanupPending ?? false;
         updatedCollection = { ...updatedCollection, isEncrypted: false };
       }
 
       if (wantsEncryption && wantsPasswordChange) {
-        await databaseManager.changeDatabasePassword(
+        const outcome = await databaseManager.changeDatabasePassword(
           editingCollection.id,
           editingCollection.isEncrypted ? editPassword.current : undefined,
           editPassword.next,
         );
+        securityWarnings.push(...(outcome?.warnings ?? []));
+        securityCleanupPending ||= outcome?.cleanupPending ?? false;
         updatedCollection = { ...updatedCollection, isEncrypted: true };
       }
 
+      if (securityCleanupPending) {
+        setCollections(
+          collections.map((c) =>
+            c.id === editingCollection.id
+              ? { ...c, isEncrypted: wantsEncryption }
+              : c,
+          ),
+        );
+        setEditingCollection(null);
+        setEditPassword({
+          current: "",
+          next: "",
+          confirm: "",
+          enableEncryption: false,
+        });
+        setError(
+          `Database security change committed. Local recovery cleanup is pending; other metadata edits were not saved. ${securityWarnings.join(" ")}`,
+        );
+        return;
+      }
       await databaseManager.updateDatabase(updatedCollection);
       setCollections(
         collections.map((c) =>
@@ -409,7 +441,13 @@ export function useDatabaseSelector(
         ),
       );
       setEditingCollection(null);
-      setError("");
+      setEditPassword({
+        current: "",
+        next: "",
+        confirm: "",
+        enableEncryption: false,
+      });
+      setError(securityWarnings.join(" "));
     } catch (error) {
       setError(
         error instanceof Error
@@ -920,7 +958,24 @@ export function useDatabaseSelector(
   const isDatabaseUnlocked = (id: string) =>
     databaseManager.isDatabaseUnlocked(id);
 
+  const bulk = useDatabaseBulkActions({
+    collections,
+    context: {
+      manager: databaseManager,
+      flushCurrent: async () => {
+        await saveData();
+        await flushPendingSave();
+      },
+      onCurrentClosed: onDatabaseClose,
+      beforeCurrentLock: onBeforeCurrentLock,
+    },
+    refresh: loadDatabases,
+    transitionGuard: openInFlight,
+    blocked: isWorking || loadingCollection !== null,
+  });
+
   return {
+    bulk,
     // Collections
     collections,
     isCurrentDatabase,

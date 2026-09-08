@@ -56,6 +56,10 @@ function defaultInvoke(cmd: string, args?: InvokeArgs): unknown {
     case "delete_database_data": {
       const id = args?.databaseId as string;
       fileStore.delete(id);
+      if (indexFile)
+        indexFile.value = indexFile.value.filter(
+          (row) => (row as { id?: string }).id !== id,
+        );
       return undefined;
     }
     default:
@@ -133,8 +137,7 @@ describe("DatabaseManager (IPC path)", () => {
     expect(
       invokeSpy.mock.calls.some(
         (c) =>
-          c[0] === "save_database_data" &&
-          (c[1] as any).databaseId === col.id,
+          c[0] === "save_database_data" && (c[1] as any).databaseId === col.id,
       ),
     ).toBe(true);
   });

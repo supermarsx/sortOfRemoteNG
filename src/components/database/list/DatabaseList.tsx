@@ -23,6 +23,7 @@ import { Checkbox, PasswordInput, Textarea } from "../../ui/forms";
 import { EmptyState, LoadingElement } from "../../ui/display";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import { useSettings } from "../../../contexts/SettingsContext";
+import { DatabaseBulkControls } from "./DatabaseBulkControls";
 
 interface DatabaseListProps {
   mgr: Mgr;
@@ -133,6 +134,11 @@ function DatabaseList({ mgr }: DatabaseListProps) {
         </div>
         <div className="text-xs text-[var(--color-textSecondary)] space-y-1">
           <p>{t("databaseCenter.subtitle")}</p>
+          <p>
+            Encryption badges and locks here describe each database’s separate
+            password. Manage and inspect global on-disk protection in Settings →
+            Security.
+          </p>
         </div>
       </div>
 
@@ -157,6 +163,15 @@ function DatabaseList({ mgr }: DatabaseListProps) {
       </div>
 
       {/* Inline forms */}
+      {mgr.bulk && (
+        <DatabaseBulkControls
+          mgr={mgr}
+          visible={filteredCollections}
+          disabled={
+            anyFormOpen || mgr.loadingCollection !== null || mgr.isWorking
+          }
+        />
+      )}
       {mgr.showCreateForm && (
         <CreateDatabaseCard
           mgr={mgr}
@@ -351,10 +366,18 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
         <span className="animate-row-sweep" aria-hidden="true" />
       )}
       <div className="flex items-center gap-3 p-3">
+        {mgr.bulk && (
+          <Checkbox
+            aria-label={`Select database ${collection.name}`}
+            checked={mgr.bulk.selectedIds.has(collection.id)}
+            onChange={(checked) => mgr.bulk.toggle(collection.id, checked)}
+            disabled={mgr.bulk.running || loading !== null || mgr.isWorking}
+          />
+        )}
         <button
           type="button"
           onClick={() => void mgr.handleSelectCollection(collection)}
-          disabled={loading !== null}
+          disabled={loading !== null || mgr.bulk?.running}
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
           aria-label={
             t("databaseCenter.collections.openCollectionLabel", {
@@ -408,7 +431,10 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
           </div>
         </button>
 
-        <div className="flex items-center gap-0.5 flex-shrink-0">
+        <fieldset
+          disabled={mgr.bulk?.running}
+          className="flex items-center gap-0.5 flex-shrink-0"
+        >
           <button
             type="button"
             onClick={() => void mgr.handleSelectCollection(collection)}
@@ -472,7 +498,7 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
           >
             <Trash2 size={13} />
           </button>
-        </div>
+        </fieldset>
       </div>
     </div>
   );

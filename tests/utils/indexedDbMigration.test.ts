@@ -42,6 +42,10 @@ beforeEach(async () => {
         if (indexFile === null) return null;
         return { value: indexFile, source: "current" };
       case "databases_save_index":
+        if (
+          JSON.stringify(indexFile ?? []) !== JSON.stringify(args?.expectedList)
+        )
+          throw new Error("index changed");
         indexFile = (args?.list as unknown[]) ?? [];
         return undefined;
       case "load_database_data": {
@@ -51,6 +55,14 @@ beforeEach(async () => {
       }
       case "save_database_data": {
         const id = args?.databaseId as string;
+        if (!indexFile?.some((row) => (row as { id?: string }).id === id)) {
+          if (
+            !args?.migrationMetadata ||
+            (args.migrationMetadata as { id?: string }).id !== id ||
+            fileStore.has(id)
+          )
+            throw new Error("fresh migration metadata required");
+        }
         fileStore.set(id, args?.data);
         return undefined;
       }
@@ -79,8 +91,12 @@ describe("migrateIndexedDbToFiles", () => {
     // ran" or "fresh install on the file-based store".
     indexFile = [{ id: "x" }];
     // Plant IndexedDB rows that should NOT be touched.
-    await IndexedDbService.setItem("mremote-databases", [{ id: "would-be-migrated" }]);
-    await IndexedDbService.setItem("mremote-database-would-be-migrated", { foo: "bar" });
+    await IndexedDbService.setItem("mremote-databases", [
+      { id: "would-be-migrated" },
+    ]);
+    await IndexedDbService.setItem("mremote-database-would-be-migrated", {
+      foo: "bar",
+    });
 
     const report = await migrateIndexedDbToFiles();
     expect(report.alreadyMigrated).toBe(true);
@@ -88,8 +104,14 @@ describe("migrateIndexedDbToFiles", () => {
     expect(report.failed).toBe(0);
     // Migrator did not call save_* commands.
     expect(invokeImpl).toHaveBeenCalledWith("databases_list", undefined);
-    expect(invokeImpl).not.toHaveBeenCalledWith("save_database_data", expect.anything());
-    expect(invokeImpl).not.toHaveBeenCalledWith("databases_save_index", expect.anything());
+    expect(invokeImpl).not.toHaveBeenCalledWith(
+      "save_database_data",
+      expect.anything(),
+    );
+    expect(invokeImpl).not.toHaveBeenCalledWith(
+      "databases_save_index",
+      expect.anything(),
+    );
   });
 
   it("migrates a single database with its payload", async () => {
@@ -159,7 +181,9 @@ describe("migrateIndexedDbToFiles", () => {
 
     invokeImpl.mockImplementation(async (cmd: string, args?: any) => {
       if (cmd === "databases_list")
-        return indexFile === null ? null : { value: indexFile, source: "current" };
+        return indexFile === null
+          ? null
+          : { value: indexFile, source: "current" };
       if (cmd === "databases_save_index") {
         indexFile = args.list;
         return undefined;
@@ -216,7 +240,9 @@ describe("migrateIndexedDbToFiles", () => {
     // The migrator must NOT delete the IDB rows. P5 retires the
     // surface; this is the one-release rollback window.
     expect(await IndexedDbService.getItem("mremote-databases")).toEqual([meta]);
-    expect(await IndexedDbService.getItem("mremote-database-rb-1")).toEqual(payload);
+    expect(await IndexedDbService.getItem("mremote-database-rb-1")).toEqual(
+      payload,
+    );
   });
 
   it("returns a no-op report when the Tauri runtime is unavailable", async () => {

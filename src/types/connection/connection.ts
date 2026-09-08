@@ -1805,6 +1805,8 @@ export interface ConnectionDatabase {
   name: string;
   description?: string;
   isEncrypted: boolean;
+  /** Native-coordinated password generation; absent for legacy databases. */
+  securityRevision?: string;
   createdAt: string;
   updatedAt: string;
   lastAccessed: string;

@@ -1,4 +1,7 @@
-import { Connection, ConnectionDatabase } from "../../types/connection/connection";
+import {
+  Connection,
+  ConnectionDatabase,
+} from "../../types/connection/connection";
 import { StorageData } from "../storage/storage";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
@@ -35,6 +38,12 @@ import type {
 interface LoadResultEnvelope<T = unknown> {
   value: T;
   source: "current" | "backup" | "v0-migration";
+}
+
+export interface DatabaseSecurityOutcome {
+  committed: boolean;
+  cleanupPending: boolean;
+  warnings: string[];
 }
 
 /**
@@ -84,7 +93,10 @@ function fromBase64(str: string): Uint8Array {
   return bytes;
 }
 
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(
+  password: string,
+  salt: Uint8Array,
+): Promise<CryptoKey> {
   const crypto = getCrypto();
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -95,7 +107,12 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
     ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: asBufferSource(salt), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    {
+      name: "PBKDF2",
+      salt: asBufferSource(salt),
+      iterations: PBKDF2_ITERATIONS,
+      hash: "SHA-256",
+    },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
@@ -134,7 +151,10 @@ async function decryptData(payload: string, password: string): Promise<string> {
 // Legacy decryption for backward compatibility with existing CryptoJS-format
 // encrypted collections (AES-256-CBC + MD5 EVP_BytesToKey + "Salted__" header).
 // Delegates to the Rust backend via Tauri invoke; no third-party JS crypto.
-async function legacyDecrypt(ciphertext: string, password: string): Promise<string | null> {
+async function legacyDecrypt(
+  ciphertext: string,
+  password: string,
+): Promise<string | null> {
   const invoke = await getInvoke();
   if (!invoke) return null;
   try {
@@ -199,7 +219,8 @@ export type CurrentDatabaseChangeReason =
   | "unlock"
   | "lock"
   | "close"
-  | "delete";
+  | "delete"
+  | "security-change";
 
 /**
  * Payload handed to `onCurrentDatabaseChange` subscribers.
@@ -355,6 +376,25 @@ export class DatabaseManager {
   private currentDatabase: ConnectionDatabase | null = null;
   private currentPassword: string | null = null;
   private readonly unlockedDatabasePasswords = new Map<string, string>();
+  // Bound to the credential that actually decrypted this generation, never to
+  // metadata refreshed by a different window or an ordinary metadata edit.
+  private readonly credentialSecurityRevisions = new Map<string, string>();
+  private securityEpoch = 0;
+  private readonly databaseSecurityEpochs = new Map<string, number>();
+  private readonly loadedRepresentations = new WeakMap<StorageData, unknown>();
+  private readonly loadedSecurityRevisions = new WeakMap<StorageData, string>();
+  private readonly indexSnapshots = new WeakMap<
+    ConnectionDatabase[],
+    ConnectionDatabase[]
+  >();
+
+  private rememberIndexSnapshot(
+    original: ConnectionDatabase[],
+    normalized: ConnectionDatabase[],
+  ): ConnectionDatabase[] {
+    this.indexSnapshots.set(normalized, structuredClone(original));
+    return normalized;
+  }
   private beforeDatabaseTransition: (() => Promise<void>) | null = null;
   private databaseTransitionQueue: Promise<void> = Promise.resolve();
 
@@ -367,6 +407,60 @@ export class DatabaseManager {
 
   static resetInstance(): void {
     (DatabaseManager as any).instance = undefined;
+  }
+
+  /** Call after the durable flush, synchronously before global lock's async cleanup. */
+  invalidatePendingDatabaseOperations(): void {
+    this.securityEpoch += 1;
+    this.unlockedDatabasePasswords.clear();
+    this.credentialSecurityRevisions.clear();
+    this.currentPassword = null;
+  }
+
+  private captureDatabaseEpoch(id: string): string {
+    return `${this.securityEpoch}:${this.databaseSecurityEpochs.get(id) ?? 0}`;
+  }
+
+  private assertDatabaseEpoch(id: string, epoch: string): void {
+    if (this.captureDatabaseEpoch(id) !== epoch) {
+      throw new Error(
+        "Database access expired because it was locked or its security changed. Retry after unlocking.",
+      );
+    }
+  }
+
+  private assertSecurityRevision(
+    id: string,
+    expected: string,
+    latest: ConnectionDatabase | null | undefined,
+  ): void {
+    if (latest && (latest.securityRevision ?? "") === expected) return;
+    if (this.credentialSecurityRevisions.get(id) === expected) {
+      this.forgetUnlockedDatabase(id);
+      if (this.currentDatabase?.id === id) this.currentPassword = null;
+    }
+    throw new Error(
+      "Database security changed; stale credentials or snapshots were rejected. Unlock again before retrying.",
+    );
+  }
+
+  private async assertSnapshotCurrent(
+    id: string,
+    data: StorageData,
+  ): Promise<void> {
+    const revision = this.loadedSecurityRevisions.get(data);
+    if (revision === undefined)
+      throw new Error("Database snapshot has no verified security revision.");
+    this.assertSecurityRevision(id, revision, await this.getDatabase(id));
+  }
+
+  private async assertSecurityRevisionAfterRead(
+    id: string,
+    revision: string,
+    epoch: string,
+  ): Promise<void> {
+    this.assertSecurityRevision(id, revision, await this.getDatabase(id));
+    this.assertDatabaseEpoch(id, epoch);
   }
 
   /**
@@ -499,6 +593,11 @@ export class DatabaseManager {
     isEncrypted: boolean = false,
     password?: string,
   ): Promise<ConnectionDatabase> {
+    if (isEncrypted && !password) {
+      throw new InvalidPasswordError(
+        "A password is required before creating an encrypted database.",
+      );
+    }
     const collection: ConnectionDatabase = {
       id: generateId(),
       name,
@@ -510,8 +609,10 @@ export class DatabaseManager {
     };
 
     const collections = await this.getAllDatabases();
+    const expectedIndex =
+      this.indexSnapshots.get(collections) ?? structuredClone(collections);
     collections.push(collection);
-    await this.saveDatabases(collections);
+    await this.saveDatabases(collections, expectedIndex);
 
     // Assumes collection count is modest; appending and rewriting the entire
     // array could be expensive if thousands of collections were stored.
@@ -521,6 +622,7 @@ export class DatabaseManager {
         collection.id,
         { connections: [], settings: {}, timestamp: Date.now() },
         password,
+        collection.securityRevision ?? "",
       );
       this.rememberUnlockedDatabase(collection, password);
     } else {
@@ -533,10 +635,10 @@ export class DatabaseManager {
 
     // Log collection creation
     SettingsManager.getInstance().logAction(
-      'info',
-      'Database created',
+      "info",
+      "Database created",
       undefined,
-      `Database "${name}" created${isEncrypted ? ' (encrypted)' : ''}`
+      `Database "${name}" created${isEncrypted ? " (encrypted)" : ""}`,
     );
 
     // A freshly created database is not yet the active one, so this is a
@@ -557,54 +659,91 @@ export class DatabaseManager {
       const invoke = await getInvoke();
       if (invoke) {
         // Primary path (Tauri runtime): the P1 file-storage backend.
-        const envelope = await invoke<LoadResultEnvelope<ConnectionDatabase[]> | null>(
-          "databases_list",
-        );
+        const envelope = await invoke<LoadResultEnvelope<
+          ConnectionDatabase[]
+        > | null>("databases_list");
         if (envelope == null) return [];
         if (envelope.source !== "current") {
           logRecovery("databases index", envelope.source);
         }
-        const list = Array.isArray(envelope.value) ? envelope.value : [];
-        return list.map((c: any) => ({
-          ...c,
-          createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date(c.createdAt).toISOString(),
-          updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date(c.updatedAt).toISOString(),
-          lastAccessed: typeof c.lastAccessed === 'string' ? c.lastAccessed : new Date(c.lastAccessed).toISOString(),
-        }));
+        if (!Array.isArray(envelope.value))
+          throw new CorruptedDataError(
+            "Database index is malformed; no changes were made.",
+          );
+        const list = envelope.value;
+        return this.rememberIndexSnapshot(
+          list,
+          list.map((c: any) => ({
+            ...c,
+            createdAt:
+              typeof c.createdAt === "string"
+                ? c.createdAt
+                : new Date(c.createdAt).toISOString(),
+            updatedAt:
+              typeof c.updatedAt === "string"
+                ? c.updatedAt
+                : new Date(c.updatedAt).toISOString(),
+            lastAccessed:
+              typeof c.lastAccessed === "string"
+                ? c.lastAccessed
+                : new Date(c.lastAccessed).toISOString(),
+          })),
+        );
       }
 
       // ── Browser / pre-Tauri fallback (P5 will retire this branch). ──
       // No file storage available; fall back to the IndexedDB rows
       // existing tests rely on. Production never reaches this code.
-      let collections = await IndexedDbService.getItem<ConnectionDatabase[]>(
-        this.databasesKey,
-      );
-      if (!collections) {
-        const legacy = await IndexedDbService.getItem<ConnectionDatabase[]>(
-          this.legacyDatabasesKey,
-        );
-        if (legacy) {
-          await IndexedDbService.setItem(this.databasesKey, legacy);
-          try {
-            await IndexedDbService.removeItem(this.legacyDatabasesKey);
-          } catch {
-            // best-effort
-          }
-          collections = legacy;
-        }
-      }
+      const collections = await IndexedDbService.transactItemsStrict<
+        ConnectionDatabase[] | null
+      >([this.databasesKey, this.legacyDatabasesKey], (values) => {
+        const current = values[this.databasesKey];
+        const legacy = values[this.legacyDatabasesKey];
+        const selected = current ?? legacy;
+        if (selected !== null && !Array.isArray(selected))
+          throw new CorruptedDataError(
+            "Database index is malformed; no changes were made.",
+          );
+        return {
+          set:
+            current === null && legacy !== null
+              ? { [this.databasesKey]: legacy }
+              : {},
+          remove:
+            current === null && legacy !== null
+              ? [this.legacyDatabasesKey]
+              : [],
+          result: selected as ConnectionDatabase[] | null,
+        };
+      });
       if (collections) {
-        return collections.map((c: any) => ({
-          ...c,
-          createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date(c.createdAt).toISOString(),
-          updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date(c.updatedAt).toISOString(),
-          lastAccessed: typeof c.lastAccessed === 'string' ? c.lastAccessed : new Date(c.lastAccessed).toISOString(),
-        }));
+        if (!Array.isArray(collections))
+          throw new CorruptedDataError(
+            "Database index is malformed; no changes were made.",
+          );
+        return this.rememberIndexSnapshot(
+          collections,
+          collections.map((c: any) => ({
+            ...c,
+            createdAt:
+              typeof c.createdAt === "string"
+                ? c.createdAt
+                : new Date(c.createdAt).toISOString(),
+            updatedAt:
+              typeof c.updatedAt === "string"
+                ? c.updatedAt
+                : new Date(c.updatedAt).toISOString(),
+            lastAccessed:
+              typeof c.lastAccessed === "string"
+                ? c.lastAccessed
+                : new Date(c.lastAccessed).toISOString(),
+          })),
+        );
       }
       return [];
     } catch (error) {
       console.error("Failed to load databases:", error);
-      return [];
+      throw error;
     }
   }
 
@@ -618,9 +757,7 @@ export class DatabaseManager {
    * selection is a manager-wide operation, so placing the barrier here also
    * protects callers outside the collection picker (import/restore flows).
    */
-  registerBeforeDatabaseTransition(
-    guard: () => Promise<void>,
-  ): () => void {
+  registerBeforeDatabaseTransition(guard: () => Promise<void>): () => void {
     this.beforeDatabaseTransition = guard;
     return () => {
       if (this.beforeDatabaseTransition === guard) {
@@ -644,6 +781,7 @@ export class DatabaseManager {
     id: string,
     password?: string,
   ): Promise<void> {
+    const epoch = this.captureDatabaseEpoch(id);
     const previousDatabaseId = this.currentDatabase?.id ?? null;
     const switchingDatabase =
       this.currentDatabase !== null && this.currentDatabase.id !== id;
@@ -672,20 +810,23 @@ export class DatabaseManager {
     if (switchingDatabase) {
       await this.beforeDatabaseTransition?.();
     }
+    this.assertDatabaseEpoch(id, epoch);
+    if (loaded) await this.assertSnapshotCurrent(id, loaded);
     this.currentDatabase = collection;
     this.currentPassword = resolvedPassword || null;
-    this.rememberUnlockedDatabase(collection, resolvedPassword);
 
     // Update last accessed time
     collection.lastAccessed = new Date().toISOString();
     await this.updateDatabase(collection);
-    
+    this.assertDatabaseEpoch(id, epoch);
+    if (loaded) await this.assertSnapshotCurrent(id, loaded);
+
     // Log collection selection/opening
     SettingsManager.getInstance().logAction(
-      'info',
-      'Database opened',
+      "info",
+      "Database opened",
       undefined,
-      `Switched to database "${collection.name}"`
+      `Switched to database "${collection.name}"`,
     );
 
     // The database is now fully current: point the native Trust Center at
@@ -708,16 +849,28 @@ export class DatabaseManager {
     const current = this.currentDatabase;
     if (!current) return null;
     const databaseId = current.id;
+    const epoch = this.captureDatabaseEpoch(databaseId);
     const passwordAtCapture = this.currentPassword || undefined;
-    const resolvePassword = () =>
-      this.currentDatabase?.id === databaseId
-        ? this.currentPassword || undefined
-        : passwordAtCapture;
+    const revisionAtCapture = this.credentialSecurityRevisions.get(databaseId);
+    const resolvePassword = () => {
+      this.assertDatabaseEpoch(databaseId, epoch);
+      if (revisionAtCapture === undefined)
+        throw new Error(
+          "Database access expired. Unlock again before retrying.",
+        );
+      return passwordAtCapture;
+    };
     return {
       databaseId,
-      load: () => this.loadDatabaseData(databaseId, resolvePassword()),
+      load: () =>
+        this.loadDatabaseData(databaseId, resolvePassword(), revisionAtCapture),
       save: (data) =>
-        this.saveDatabaseData(databaseId, data, resolvePassword()),
+        this.saveDatabaseData(
+          databaseId,
+          data,
+          resolvePassword(),
+          revisionAtCapture,
+        ),
     };
   }
 
@@ -741,6 +894,7 @@ export class DatabaseManager {
    * feature linked to the OS keychain.
    */
   async unlockDatabase(id: string, password: string): Promise<void> {
+    const epoch = this.captureDatabaseEpoch(id);
     const collection = await this.getDatabase(id);
     if (!collection) {
       throw new DatabaseNotFoundError();
@@ -755,7 +909,8 @@ export class DatabaseManager {
     // (same one `selectDatabase` would have surfaced) without any
     // side effects on `currentDatabase` / `currentPassword`.
     const loaded = await this.loadDatabaseData(id, password);
-    this.rememberUnlockedDatabase(collection, password);
+    this.assertDatabaseEpoch(id, epoch);
+    if (loaded) await this.assertSnapshotCurrent(id, loaded);
 
     // Unlocking does not change which database is active, so the active
     // database in the payload is still `currentDatabase`. Re-activating the
@@ -822,7 +977,10 @@ export class DatabaseManager {
       this.closeCurrentDatabase("lock");
       return;
     }
-    if (!this.unlockedDatabasePasswords.has(id)) return;
+    if (!this.unlockedDatabasePasswords.has(id)) {
+      this.forgetUnlockedDatabase(id);
+      return;
+    }
     this.forgetUnlockedDatabase(id);
     SettingsManager.getInstance().logAction(
       "info",
@@ -855,7 +1013,10 @@ export class DatabaseManager {
 
   getUnlockedDatabaseIds(): string[] {
     const unlockedIds = new Set(this.unlockedDatabasePasswords.keys());
-    if (this.currentDatabase && this.isDatabaseUnlocked(this.currentDatabase.id)) {
+    if (
+      this.currentDatabase &&
+      this.isDatabaseUnlocked(this.currentDatabase.id)
+    ) {
       unlockedIds.add(this.currentDatabase.id);
     }
     return Array.from(unlockedIds);
@@ -888,16 +1049,41 @@ export class DatabaseManager {
     collection: ConnectionDatabase | null,
     password?: string,
   ): void {
+    if (collection)
+      this.credentialSecurityRevisions.set(
+        collection.id,
+        collection.securityRevision ?? "",
+      );
     if (collection?.isEncrypted && password) {
       this.unlockedDatabasePasswords.set(collection.id, password);
+    } else if (collection) {
+      this.unlockedDatabasePasswords.delete(collection.id);
+    }
+    if (collection && this.currentDatabase?.id === collection.id) {
+      // Refresh both halves together when this window verifies credentials
+      // installed by another window. Never pair an old currentPassword with
+      // the newly verified revision, including after password removal.
+      this.currentPassword = collection.isEncrypted ? (password ?? null) : null;
+      this.currentDatabase = {
+        ...this.currentDatabase,
+        isEncrypted: collection.isEncrypted,
+        securityRevision: collection.securityRevision,
+      };
     }
   }
 
   private forgetUnlockedDatabase(databaseId: string): void {
+    this.databaseSecurityEpochs.set(
+      databaseId,
+      (this.databaseSecurityEpochs.get(databaseId) ?? 0) + 1,
+    );
     this.unlockedDatabasePasswords.delete(databaseId);
+    this.credentialSecurityRevisions.delete(databaseId);
   }
 
-  private getUnlockedPasswordForDatabase(databaseId: string): string | undefined {
+  private getUnlockedPasswordForDatabase(
+    databaseId: string,
+  ): string | undefined {
     if (this.currentDatabase?.id === databaseId && this.currentPassword) {
       return this.currentPassword;
     }
@@ -913,7 +1099,8 @@ export class DatabaseManager {
       return undefined;
     }
 
-    const password = providedPassword || this.getUnlockedPasswordForDatabase(collection.id);
+    const password =
+      providedPassword || this.getUnlockedPasswordForDatabase(collection.id);
     if (!password) {
       throw new InvalidPasswordError(
         "Encrypted database must be unlocked before it can be exported",
@@ -949,10 +1136,21 @@ export class DatabaseManager {
 
   async updateDatabase(collection: ConnectionDatabase): Promise<void> {
     const collections = await this.getAllDatabases();
+    const expectedIndex =
+      this.indexSnapshots.get(collections) ?? structuredClone(collections);
     const index = collections.findIndex((c) => c.id === collection.id);
     if (index >= 0) {
-      collections[index] = { ...collection, updatedAt: new Date().toISOString() };
-      await this.saveDatabases(collections);
+      if (collections[index].isEncrypted !== collection.isEncrypted) {
+        throw new Error(
+          "Database encryption changes require the dedicated security transaction.",
+        );
+      }
+      collections[index] = {
+        ...collection,
+        securityRevision: collections[index].securityRevision,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.saveDatabases(collections, expectedIndex);
       if (this.currentDatabase?.id === collection.id) {
         this.currentDatabase = { ...collections[index] };
       }
@@ -961,9 +1159,6 @@ export class DatabaseManager {
 
   async deleteDatabase(id: string): Promise<void> {
     const collection = await this.getDatabase(id);
-    const collections = await this.getAllDatabases();
-    const filteredCollections = collections.filter((c) => c.id !== id);
-    await this.saveDatabases(filteredCollections);
 
     // Remove collection data. The Tauri command unlinks both the
     // canonical file and its `.bak`; the IDB branch is the
@@ -972,16 +1167,31 @@ export class DatabaseManager {
     if (invoke) {
       await invoke("delete_database_data", { databaseId: id });
     } else {
-      await IndexedDbService.removeItem(`mremote-database-${id}`);
-      await IndexedDbService.removeItem(`mremote-collection-${id}`);
+      await IndexedDbService.transactItemsStrict(
+        [this.databasesKey],
+        (values) => {
+          const rows = values[this.databasesKey];
+          if (!Array.isArray(rows))
+            throw new CorruptedDataError("Database index is malformed.");
+          return {
+            set: {
+              [this.databasesKey]: rows.filter(
+                (row: ConnectionDatabase) => row.id !== id,
+              ),
+            },
+            remove: [`mremote-database-${id}`, `mremote-collection-${id}`],
+            result: undefined,
+          };
+        },
+      );
     }
 
     // Log collection deletion
     SettingsManager.getInstance().logAction(
-      'info',
-      'Database deleted',
+      "info",
+      "Database deleted",
       undefined,
-      `Database "${collection?.name || id}" deleted`
+      `Database "${collection?.name || id}" deleted`,
     );
 
     const wasCurrent = this.currentDatabase?.id === id;
@@ -1012,14 +1222,14 @@ export class DatabaseManager {
       includeTrust?: boolean;
     },
   ): Promise<ConnectionDatabase> {
+    const epoch = this.captureDatabaseEpoch(collectionId);
     const sourceCollection = await this.getDatabase(collectionId);
     if (!sourceCollection) {
       throw new DatabaseNotFoundError();
     }
 
     const duplicatePassword = sourceCollection.isEncrypted
-      ? options?.password ??
-        this.getUnlockedPasswordForDatabase(collectionId)
+      ? (options?.password ?? this.getUnlockedPasswordForDatabase(collectionId))
       : undefined;
 
     if (sourceCollection.isEncrypted && !duplicatePassword) {
@@ -1037,12 +1247,18 @@ export class DatabaseManager {
     }
 
     const collections = await this.getAllDatabases();
+    this.assertDatabaseEpoch(collectionId, epoch);
     const sourceIndex = collections.findIndex(
       (collection) => collection.id === collectionId,
     );
     if (sourceIndex < 0) {
       throw new DatabaseNotFoundError();
     }
+    this.assertSecurityRevision(
+      collectionId,
+      this.loadedSecurityRevisions.get(sourceData)!,
+      collections[sourceIndex],
+    );
 
     const now = new Date().toISOString();
     const duplicatedCollection: ConnectionDatabase = {
@@ -1061,44 +1277,74 @@ export class DatabaseManager {
 
     const nextCollections = [...collections];
     nextCollections.splice(sourceIndex + 1, 0, duplicatedCollection);
-    await this.saveDatabases(nextCollections);
-    await this.saveDatabaseData(
-      duplicatedCollection.id,
-      cloneStorageData(sourceData),
-      sourceCollection.isEncrypted ? duplicatePassword : undefined,
+    await this.saveDatabases(
+      nextCollections,
+      this.indexSnapshots.get(collections) ?? collections,
     );
+    try {
+      this.assertDatabaseEpoch(collectionId, epoch);
+      await this.saveDatabaseData(
+        duplicatedCollection.id,
+        cloneStorageData(sourceData),
+        sourceCollection.isEncrypted ? duplicatePassword : undefined,
+        duplicatedCollection.securityRevision ?? "",
+      );
+      this.assertDatabaseEpoch(collectionId, epoch);
+      await this.assertSnapshotCurrent(collectionId, sourceData);
 
-    // A clone is a copy of the whole database, trust included — otherwise the
-    // duplicate would re-prompt for every host the original already trusted.
-    const includeTrust = options?.includeTrust !== false;
-    await this.applyTrustRecords(
-      duplicatedCollection.id,
-      await this.readTrustRecords(collectionId, includeTrust),
-      includeTrust,
-      "replace",
-    );
+      // A clone is a copy of the whole database, trust included — otherwise the
+      // duplicate would re-prompt for every host the original already trusted.
+      const includeTrust = options?.includeTrust !== false;
+      await this.applyTrustRecords(
+        duplicatedCollection.id,
+        await this.readTrustRecords(collectionId, includeTrust),
+        includeTrust,
+        "replace",
+      );
+      this.assertDatabaseEpoch(collectionId, epoch);
 
-    SettingsManager.getInstance().logAction(
-      "info",
-      "Database cloned",
-      undefined,
-      `Database "${sourceCollection.name}" cloned to "${duplicatedCollection.name}"`,
-    );
+      SettingsManager.getInstance().logAction(
+        "info",
+        "Database cloned",
+        undefined,
+        `Database "${sourceCollection.name}" cloned to "${duplicatedCollection.name}"`,
+      );
 
-    return duplicatedCollection;
+      await this.assertSnapshotCurrent(collectionId, sourceData);
+      this.assertDatabaseEpoch(collectionId, epoch);
+      return duplicatedCollection;
+    } catch {
+      // Once published, another window can edit the clone. An unconditional
+      // rollback would delete that newer work; report the exact partial output
+      // instead of hiding it behind a generic rejection or claiming success.
+      throw new Error(
+        `Cloning did not finish. Partial database "${duplicatedCollection.name}" (${duplicatedCollection.id}) was created and may contain copied data. Review it before retrying.`,
+      );
+    }
   }
 
   private async saveDatabases(
     collections: ConnectionDatabase[],
+    expectedList: ConnectionDatabase[],
   ): Promise<void> {
     const invoke = await getInvoke();
     if (invoke) {
       // Primary path: persist the index via the P1 safe writer.
-      await invoke("databases_save_index", { list: collections });
+      await invoke("databases_save_index", { list: collections, expectedList });
       return;
     }
     // Browser / pre-Tauri fallback (P5 will retire this branch).
-    await IndexedDbService.setItem(this.databasesKey, collections);
+    await IndexedDbService.transactItemsStrict(
+      [this.databasesKey],
+      (values) => {
+        if (
+          JSON.stringify(values[this.databasesKey] ?? []) !==
+          JSON.stringify(expectedList)
+        )
+          throw new Error("Database index changed; reload before retrying.");
+        return { set: { [this.databasesKey]: collections }, result: undefined };
+      },
+    );
   }
 
   // Collection data management
@@ -1106,7 +1352,37 @@ export class DatabaseManager {
     collectionId: string,
     data: StorageData,
     password?: string,
+    expectedSecurityRevision?: string,
   ): Promise<void> {
+    const epoch = this.captureDatabaseEpoch(collectionId);
+    let revision =
+      expectedSecurityRevision ??
+      (!password ||
+      this.getUnlockedPasswordForDatabase(collectionId) === password
+        ? this.credentialSecurityRevisions.get(collectionId)
+        : undefined);
+    const collection = await this.getDatabase(collectionId);
+    if (revision !== undefined)
+      this.assertSecurityRevision(collectionId, revision, collection);
+    if (!collection) throw new DatabaseNotFoundError();
+    if (collection?.isEncrypted && !password) {
+      throw new InvalidPasswordError(
+        "A password is required to save an encrypted database; plaintext overwrite was blocked.",
+      );
+    }
+    if (collection.isEncrypted !== Boolean(password))
+      throw new Error(
+        "Database security changed; stale password-bearing save was rejected.",
+      );
+    // An explicitly supplied, previously unverified password must decrypt the
+    // current generation before it can authorize replacing it. Initial creation
+    // supplies its new generation explicitly because no payload exists yet.
+    if (revision === undefined && password) {
+      const verified = await this.loadDatabaseData(collectionId, password);
+      if (!verified) throw new DatabaseNotFoundError();
+      revision = this.loadedSecurityRevisions.get(verified);
+    }
+    revision ??= collection.securityRevision ?? "";
     // Encrypt up front when a password is set — the IPC layer (and
     // the IndexedDB fallback below) are bytes-in / bytes-out and
     // know nothing about per-DB passwords. The payload becomes
@@ -1116,33 +1392,73 @@ export class DatabaseManager {
       : data;
 
     const invoke = await getInvoke();
+    this.assertDatabaseEpoch(collectionId, epoch);
     if (invoke) {
       // Primary path: persist via the P1 safe writer.
-      await invoke("save_database_data", {
-        databaseId: collectionId,
-        data: payload,
-      });
+      try {
+        await invoke("save_database_data", {
+          databaseId: collectionId,
+          data: payload,
+          expectedSecurityRevision: revision,
+        });
+      } catch (error) {
+        // A remote-window commit can win while encryption/IPC is pending.
+        // Retire the old credential when the native CAS rejects its revision.
+        this.assertSecurityRevision(
+          collectionId,
+          revision,
+          await this.getDatabase(collectionId),
+        );
+        throw error;
+      }
+      this.assertDatabaseEpoch(collectionId, epoch);
       return;
     }
 
     // ── Browser / pre-Tauri fallback (P5 will retire this branch). ──
     const key = `mremote-database-${collectionId}`;
     const legacyKey = `mremote-collection-${collectionId}`;
-    await IndexedDbService.setItem(key, payload);
-    try {
-      await IndexedDbService.removeItem(legacyKey);
-    } catch {
-      // best-effort
-    }
+    await IndexedDbService.transactItemsStrict(
+      [this.databasesKey],
+      (values) => {
+        this.assertDatabaseEpoch(collectionId, epoch);
+        const rows = values[this.databasesKey];
+        const latest = Array.isArray(rows)
+          ? rows.find((row: ConnectionDatabase) => row.id === collectionId)
+          : undefined;
+        this.assertSecurityRevision(collectionId, revision!, latest);
+        if (latest.isEncrypted !== Boolean(password)) {
+          throw new Error(
+            "Database security changed; stale password-bearing save was rejected.",
+          );
+        }
+        return {
+          set: { [key]: payload },
+          remove: [legacyKey],
+          result: undefined,
+        };
+      },
+    );
+    this.assertDatabaseEpoch(collectionId, epoch);
   }
 
   async loadDatabaseData(
     collectionId: string,
     password?: string,
+    expectedSecurityRevision?: string,
   ): Promise<StorageData | null> {
+    const epoch = this.captureDatabaseEpoch(collectionId);
     const key = `mremote-database-${collectionId}`;
     const legacyKey = `mremote-collection-${collectionId}`;
+    const credentialRevision =
+      expectedSecurityRevision ??
+      (!password ||
+      this.getUnlockedPasswordForDatabase(collectionId) === password
+        ? this.credentialSecurityRevisions.get(collectionId)
+        : undefined);
     const collection = await this.getDatabase(collectionId);
+    const revision = credentialRevision ?? collection?.securityRevision ?? "";
+    this.assertSecurityRevision(collectionId, revision, collection);
     let stored: any = null;
 
     if (collection?.isEncrypted && !password) {
@@ -1170,33 +1486,40 @@ export class DatabaseManager {
       }
     } else {
       // ── Browser / pre-Tauri fallback (P5 will retire this branch). ──
-      stored = await IndexedDbService.getItem<any>(key);
-
-      if (!stored) {
-        // One-shot migration: read from the old key and rewrite to the
-        // new one so subsequent loads avoid the fallback path.
-        stored = await IndexedDbService.getItem<any>(legacyKey);
-        if (stored) {
-          try {
-            await IndexedDbService.setItem(key, stored);
-            await IndexedDbService.removeItem(legacyKey);
-          } catch {
-            // best-effort; falling through to use `stored` as-is
-          }
-        }
-      }
+      stored = await IndexedDbService.transactItemsStrict(
+        [this.databasesKey, key, legacyKey],
+        (values) => {
+          this.assertDatabaseEpoch(collectionId, epoch);
+          const rows = values[this.databasesKey];
+          const latest = Array.isArray(rows)
+            ? rows.find((row: ConnectionDatabase) => row.id === collectionId)
+            : undefined;
+          this.assertSecurityRevision(collectionId, revision, latest);
+          const canonical = values[key];
+          const legacy = values[legacyKey];
+          // Read, canonical-absent check and legacy move share one transaction;
+          // no captured legacy value can overwrite another window's commit.
+          const migrate = canonical === null && legacy !== null;
+          return {
+            set: migrate ? { [key]: legacy } : {},
+            remove: migrate ? [legacyKey] : [],
+            result: canonical ?? legacy,
+          };
+        },
+      );
     }
 
     if (!stored) {
       throw new DatabaseNotFoundError();
     }
+    this.assertDatabaseEpoch(collectionId, epoch);
 
     try {
       if (password) {
         let decrypted: string | null = null;
 
         // Try export WebCrypto envelopes first, then legacy salt.iv.ciphertext.
-        if (typeof stored === 'string' && isWebCryptoPayload(stored)) {
+        if (typeof stored === "string" && isWebCryptoPayload(stored)) {
           try {
             decrypted = await decryptExportWithPassword(stored, password);
           } catch {
@@ -1204,7 +1527,11 @@ export class DatabaseManager {
           }
         }
 
-        if (!decrypted && typeof stored === 'string' && stored.split('.').length === 3) {
+        if (
+          !decrypted &&
+          typeof stored === "string" &&
+          stored.split(".").length === 3
+        ) {
           try {
             decrypted = await decryptData(stored, password);
           } catch {
@@ -1213,7 +1540,7 @@ export class DatabaseManager {
         }
 
         // Fallback: try legacy CryptoJS decryption for backward compatibility
-        if (!decrypted && typeof stored === 'string') {
+        if (!decrypted && typeof stored === "string") {
           decrypted = await legacyDecrypt(stored, password);
         }
 
@@ -1222,7 +1549,24 @@ export class DatabaseManager {
         }
         try {
           const parsed = JSON.parse(decrypted) as StorageData;
+          this.assertDatabaseEpoch(collectionId, epoch);
+          if (
+            !parsed ||
+            typeof parsed !== "object" ||
+            !Array.isArray(parsed.connections)
+          ) {
+            throw new CorruptedDataError(
+              "Decrypted database payload has an invalid shape.",
+            );
+          }
+          await this.assertSecurityRevisionAfterRead(
+            collectionId,
+            revision,
+            epoch,
+          );
           this.rememberUnlockedDatabase(collection, password);
+          this.loadedRepresentations.set(parsed, stored);
+          this.loadedSecurityRevisions.set(parsed, revision);
           return parsed;
         } catch (error) {
           if (error instanceof SyntaxError) {
@@ -1235,6 +1579,26 @@ export class DatabaseManager {
           throw error;
         }
       } else {
+        if (
+          typeof stored !== "object" ||
+          Array.isArray(stored) ||
+          !Array.isArray(stored.connections)
+        ) {
+          throw new CorruptedDataError(
+            "Database metadata and payload disagree; plaintext loading was blocked.",
+          );
+        }
+        await this.assertSecurityRevisionAfterRead(
+          collectionId,
+          revision,
+          epoch,
+        );
+        this.rememberUnlockedDatabase(collection);
+        this.loadedRepresentations.set(
+          stored as StorageData,
+          structuredClone(stored),
+        );
+        this.loadedSecurityRevisions.set(stored as StorageData, revision);
         return stored as StorageData;
       }
     } catch (error) {
@@ -1256,10 +1620,16 @@ export class DatabaseManager {
     if (!this.currentDatabase) {
       throw new Error("No collection selected");
     }
+    const revision = this.credentialSecurityRevisions.get(
+      this.currentDatabase.id,
+    );
+    if (revision === undefined)
+      throw new Error("Database access expired. Unlock again before retrying.");
     await this.saveDatabaseData(
       this.currentDatabase.id,
       data,
       this.currentPassword || undefined,
+      revision,
     );
   }
 
@@ -1267,9 +1637,15 @@ export class DatabaseManager {
     if (!this.currentDatabase) {
       throw new Error("No collection selected");
     }
+    const revision = this.credentialSecurityRevisions.get(
+      this.currentDatabase.id,
+    );
+    if (revision === undefined)
+      throw new Error("Database access expired. Unlock again before retrying.");
     return this.loadDatabaseData(
       this.currentDatabase.id,
       this.currentPassword || undefined,
+      revision,
     );
   }
 
@@ -1313,6 +1689,7 @@ export class DatabaseManager {
       includeTrust?: boolean;
     },
   ): Promise<DatabaseExportSnapshot> {
+    const epoch = this.captureDatabaseEpoch(collectionId);
     const collection = await this.getDatabase(collectionId);
     if (!collection) {
       throw new Error("Collection not found");
@@ -1327,11 +1704,14 @@ export class DatabaseManager {
       throw new Error("Failed to load collection data");
     }
 
-    this.rememberUnlockedDatabase(collection, password);
+    this.assertDatabaseEpoch(collectionId, epoch);
     const trustRecords = await this.readTrustRecords(
       collectionId,
       options?.includeTrust !== false,
     );
+    this.assertDatabaseEpoch(collectionId, epoch);
+    await this.assertSnapshotCurrent(collectionId, data);
+    this.assertDatabaseEpoch(collectionId, epoch);
     return this.buildExportSnapshot(
       collection,
       data,
@@ -1372,9 +1752,8 @@ export class DatabaseManager {
         colorTags: data.colorTags ?? {},
       },
       password,
+      this.loadedSecurityRevisions.get(data),
     );
-
-    this.rememberUnlockedDatabase(collection, password);
 
     // Appending connections into an existing database also merges whatever
     // trust the source carried. Merge never downgrades: an unrevoked import
@@ -1389,29 +1768,32 @@ export class DatabaseManager {
   async removePasswordFromDatabase(
     collectionId: string,
     password: string,
-  ): Promise<void> {
-    const collection = await this.getDatabase(collectionId);
-    if (!collection) throw new Error("Collection not found");
-
-    const data = await this.loadDatabaseData(collectionId, password);
-    if (data === null) throw new Error("Invalid password");
-
-    await this.saveDatabaseData(collectionId, data);
-    collection.isEncrypted = false;
-    await this.updateDatabase(collection);
-
-    if (this.currentDatabase?.id === collectionId) {
-      this.currentPassword = null;
-      this.currentDatabase = { ...collection };
-    }
-    this.forgetUnlockedDatabase(collectionId);
+  ): Promise<DatabaseSecurityOutcome> {
+    return this.commitDatabaseSecurity(collectionId, password, undefined);
   }
 
   async changeDatabasePassword(
     collectionId: string,
     currentPassword: string | undefined,
     newPassword: string,
-  ): Promise<void> {
+  ): Promise<DatabaseSecurityOutcome> {
+    if (!newPassword)
+      throw new InvalidPasswordError(
+        "A non-empty new database password is required.",
+      );
+    return this.commitDatabaseSecurity(
+      collectionId,
+      currentPassword,
+      newPassword,
+    );
+  }
+
+  private async commitDatabaseSecurity(
+    collectionId: string,
+    currentPassword: string | undefined,
+    newPassword: string | undefined,
+  ): Promise<DatabaseSecurityOutcome> {
+    const epoch = this.captureDatabaseEpoch(collectionId);
     const collection = await this.getDatabase(collectionId);
     if (!collection) throw new Error("Collection not found");
 
@@ -1423,15 +1805,110 @@ export class DatabaseManager {
       throw new Error("Invalid password");
     }
 
-    await this.saveDatabaseData(collectionId, data, newPassword);
-    collection.isEncrypted = true;
-    await this.updateDatabase(collection);
-
-    if (this.currentDatabase?.id === collectionId) {
-      this.currentPassword = newPassword;
-      this.currentDatabase = { ...collection };
+    const expectedData = this.loadedRepresentations.get(data);
+    if (expectedData === undefined)
+      throw new Error(
+        "Database snapshot has no verified storage representation.",
+      );
+    const payload = newPassword
+      ? await encryptExportWithPassword(JSON.stringify(data), newPassword)
+      : data;
+    const securityRevision = generateId();
+    const updatedAt = new Date().toISOString();
+    const updated = {
+      ...collection,
+      isEncrypted: Boolean(newPassword),
+      securityRevision,
+      updatedAt,
+    };
+    const invoke = await getInvoke();
+    this.assertDatabaseEpoch(collectionId, epoch);
+    let outcome: DatabaseSecurityOutcome;
+    if (invoke) {
+      outcome = await invoke<DatabaseSecurityOutcome>(
+        "change_database_security",
+        {
+          databaseId: collectionId,
+          data: payload,
+          expectedData,
+          isEncrypted: Boolean(newPassword),
+          expectedSecurityRevision: collection.securityRevision ?? "",
+          securityRevision,
+          updatedAt,
+        },
+      );
+    } else {
+      const key = `mremote-database-${collectionId}`;
+      outcome = await IndexedDbService.transactItemsStrict(
+        [this.databasesKey, key],
+        (values) => {
+          this.assertDatabaseEpoch(collectionId, epoch);
+          const rows = values[this.databasesKey];
+          if (!Array.isArray(rows))
+            throw new CorruptedDataError("Database index is malformed.");
+          const latest = rows.find(
+            (row: ConnectionDatabase) => row.id === collectionId,
+          );
+          if (
+            !latest ||
+            (latest.securityRevision ?? "") !==
+              (collection.securityRevision ?? "") ||
+            JSON.stringify(values[key]) !== JSON.stringify(expectedData)
+          ) {
+            throw new Error(
+              "Database contents or security changed during password preparation; reload before retrying.",
+            );
+          }
+          return {
+            set: {
+              [this.databasesKey]: rows.map((row: ConnectionDatabase) =>
+                row.id === collectionId
+                  ? {
+                      ...row,
+                      isEncrypted: updated.isEncrypted,
+                      securityRevision,
+                      updatedAt,
+                    }
+                  : row,
+              ),
+              [key]: payload,
+            },
+            remove: [`mremote-collection-${collectionId}`],
+            result: { committed: true, cleanupPending: false, warnings: [] },
+          };
+        },
+      );
     }
-    this.rememberUnlockedDatabase(collection, newPassword);
+    if (!outcome?.committed)
+      throw new Error("Database security transaction did not commit.");
+    // A durable commit is authoritative even if old-generation cleanup needs retry.
+    // Never reattach a credential after a lock that happened while IPC was pending.
+    if (this.captureDatabaseEpoch(collectionId) !== epoch) {
+      return {
+        ...outcome,
+        warnings: [
+          ...outcome.warnings,
+          "The security change committed, but access was locked while it completed. Unlock with the new credentials before reopening.",
+        ],
+      };
+    }
+    this.forgetUnlockedDatabase(collectionId);
+    if (this.currentDatabase?.id === collectionId) {
+      this.currentPassword = newPassword ?? null;
+      this.currentDatabase = updated;
+    }
+    this.rememberUnlockedDatabase(updated, newPassword);
+    if (this.currentDatabase?.id === collectionId) {
+      emitCurrentDatabaseChange({
+        reason: "security-change",
+        database: updated,
+        databaseId: collectionId,
+        previousDatabaseId: collectionId,
+        connectionIds: data.connections.map((connection) => connection.id),
+        trustActivation: Promise.resolve(),
+      });
+    }
+    return outcome;
   }
 
   async importDatabase(
@@ -1452,7 +1929,9 @@ export class DatabaseManager {
     try {
       if (isWebCryptoPayload(content)) {
         if (!options?.importPassword) {
-          throw new InvalidPasswordError("Password required for encrypted export");
+          throw new InvalidPasswordError(
+            "Password required for encrypted export",
+          );
         }
         parsed = JSON.parse(
           await decryptExportWithPassword(content, options.importPassword),
@@ -1465,7 +1944,9 @@ export class DatabaseManager {
         throw error;
       }
       if (!options?.importPassword) {
-        throw new InvalidPasswordError("Password required for encrypted export");
+        throw new InvalidPasswordError(
+          "Password required for encrypted export",
+        );
       }
 
       let decrypted: string | null = null;
@@ -1473,7 +1954,10 @@ export class DatabaseManager {
       // Try new Web Crypto format first
       if (isWebCryptoPayload(content)) {
         try {
-          decrypted = await decryptExportWithPassword(content, options.importPassword);
+          decrypted = await decryptExportWithPassword(
+            content,
+            options.importPassword,
+          );
         } catch {
           // Not new format — fall through to legacy
         }

@@ -20,6 +20,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       getAllDatabases: vi.fn().mockResolvedValue([]),
       getCurrentDatabase: vi.fn().mockReturnValue(null),
       registerBeforeDatabaseTransition: vi.fn(() => () => {}),
+      onCurrentDatabaseChange: vi.fn(() => () => {}),
     }),
     resetInstance: vi.fn(),
   },

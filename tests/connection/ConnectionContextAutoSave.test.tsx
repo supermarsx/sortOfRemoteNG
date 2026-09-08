@@ -8,6 +8,7 @@ import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { openDB } from "idb";
 import { Connection } from "../../src/types/connection/connection";
 import { StorageData } from "../../src/utils/storage/storage";
+import { performDatabaseSecurityAction } from "../../src/utils/connection/databaseSecurityActions";
 
 const DB_NAME = "mremote-keyval";
 const STORE_NAME = "keyval";
@@ -45,7 +46,150 @@ describe("ConnectionProvider auto-save", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it.each(["close", "lock"] as const)(
+    "clears revoked persistence ownership on %s and ignores an old save after reopen",
+    async (reason) => {
+      let finish!: () => void;
+      const capture = manager.captureCurrentDatabaseDataTarget.bind(manager);
+      const captureSpy = vi
+        .spyOn(manager, "captureCurrentDatabaseDataTarget")
+        .mockImplementation(() => {
+          const target = capture();
+          return target
+            ? {
+                ...target,
+                save: () =>
+                  new Promise<void>((resolve) => {
+                    finish = resolve;
+                  }),
+              }
+            : null;
+        });
+      const { result } = renderHook(() => useConnections(), { wrapper });
+      await act(async () => {
+        await result.current.loadData(collectionId);
+      });
+      const row: Connection = {
+        id: "closed-row",
+        name: "unsaved",
+        protocol: "ssh",
+        hostname: "fixture.example",
+        port: 22,
+        isGroup: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      act(() =>
+        result.current.dispatch({ type: "SET_CONNECTIONS", payload: [row] }),
+      );
+      let oldSave!: Promise<void>;
+      act(() => {
+        oldSave = result.current.flushPendingSave();
+      });
+      act(() => {
+        if (reason === "lock") manager.invalidatePendingDatabaseOperations();
+        manager.closeCurrentDatabase(reason);
+      });
+      expect(result.current.state.connections).toEqual([]);
+      expect(result.current.persistence.error).toMatch(/not persisted/);
+      captureSpy.mockRestore();
+      await act(async () => {
+        await manager.selectDatabase(collectionId);
+        expect(await result.current.loadData(collectionId)).toBe(true);
+      });
+      act(() =>
+        result.current.dispatch({
+          type: "SET_CONNECTIONS",
+          payload: [{ ...row, name: "new-owner" }],
+        }),
+      );
+      expect(result.current.persistence.dirty).toBe(true);
+      await act(async () => {
+        finish();
+        await oldSave;
+      });
+      expect(result.current.persistence.dirty).toBe(true);
+      expect(result.current.state.connections[0].name).toBe("new-owner");
+      await act(async () => {
+        await result.current.flushPendingSave();
+      });
+      expect(
+        (await manager.loadDatabaseData(collectionId))?.connections[0].name,
+      ).toBe("new-owner");
+      expect(result.current.persistence.error).toBeNull();
+    },
+  );
+
+  it("recaptures committed password generations without losing dirty rows or reviving old targets", async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(async () => {
+      await result.current.loadData(collectionId);
+    });
+    const row: Connection = {
+      id: "password-change-row",
+      name: "before",
+      protocol: "ssh",
+      hostname: "fixture.example",
+      port: 22,
+      isGroup: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    act(() =>
+      result.current.dispatch({ type: "SET_CONNECTIONS", payload: [row] }),
+    );
+    const oldTarget = manager.captureCurrentDatabaseDataTarget()!;
+    await act(async () => {
+      await performDatabaseSecurityAction(
+        collectionId,
+        { type: "set-password", newPassword: "fixture-new-password" },
+        { manager, flushCurrent: result.current.flushPendingSave },
+      );
+    });
+    expect(result.current.state.connections[0].name).toBe("before");
+    expect(() => oldTarget.load()).toThrow();
+    act(() =>
+      result.current.dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...row, name: "after" },
+      }),
+    );
+    await act(async () => {
+      await result.current.flushPendingSave();
+    });
+    const encrypted = await IndexedDbService.getItem(
+      `mremote-database-${collectionId}`,
+    );
+    expect(typeof encrypted).toBe("string");
+    const restored = await manager.loadDatabaseData(
+      collectionId,
+      "fixture-new-password",
+    );
+    expect(restored?.connections[0].name).toBe("after");
+    expect(result.current.persistence.dirty).toBe(false);
+    await act(async () => {
+      await performDatabaseSecurityAction(
+        collectionId,
+        { type: "remove-password", currentPassword: "fixture-new-password" },
+        { manager, flushCurrent: result.current.flushPendingSave },
+      );
+    });
+    act(() =>
+      result.current.dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...row, name: "after removal" },
+      }),
+    );
+    await act(async () => {
+      await result.current.flushPendingSave();
+    });
+    expect(
+      (await manager.loadDatabaseData(collectionId))?.connections[0].name,
+    ).toBe("after removal");
   });
 
   it("writes empty list after deleting all connections", async () => {

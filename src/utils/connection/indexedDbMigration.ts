@@ -83,7 +83,11 @@ export async function migrateIndexedDbToFiles(): Promise<MigrationReport> {
   // the IndexedDB rows alone.
   try {
     const existing = await invoke<LoadResultEnvelope | null>("databases_list");
-    if (existing && Array.isArray(existing.value) && existing.value.length > 0) {
+    if (
+      existing &&
+      Array.isArray(existing.value) &&
+      existing.value.length > 0
+    ) {
       report.alreadyMigrated = true;
       return report;
     }
@@ -102,7 +106,9 @@ export async function migrateIndexedDbToFiles(): Promise<MigrationReport> {
   // then the legacy "mremote-collections" key.
   let dbList = await IndexedDbService.getItem<unknown[]>(DATABASES_LIST_KEY);
   if (!dbList) {
-    dbList = await IndexedDbService.getItem<unknown[]>(LEGACY_DATABASES_LIST_KEY);
+    dbList = await IndexedDbService.getItem<unknown[]>(
+      LEGACY_DATABASES_LIST_KEY,
+    );
   }
   if (!dbList || !Array.isArray(dbList) || dbList.length === 0) {
     // Nothing to migrate. Not an error — fresh install.
@@ -114,7 +120,10 @@ export async function migrateIndexedDbToFiles(): Promise<MigrationReport> {
   // `load_database_data`. Only count a row as migrated when the
   // round-trip succeeds.
   for (const raw of dbList) {
-    const id = typeof raw === "object" && raw && "id" in raw ? String((raw as any).id) : null;
+    const id =
+      typeof raw === "object" && raw && "id" in raw
+        ? String((raw as any).id)
+        : null;
     if (!id) {
       report.failed += 1;
       report.failures.push({
@@ -157,6 +166,11 @@ export async function migrateIndexedDbToFiles(): Promise<MigrationReport> {
       await invoke<void>("save_database_data", {
         databaseId: id,
         data: payload,
+        migrationMetadata: raw,
+        expectedSecurityRevision:
+          typeof raw === "object" && raw && "securityRevision" in raw
+            ? String(raw.securityRevision ?? "")
+            : "",
       });
 
       // Read-back verification. The payload from IDB and the
@@ -187,7 +201,10 @@ export async function migrateIndexedDbToFiles(): Promise<MigrationReport> {
   // (those files exist on disk), but means the user will keep
   // seeing the IDB-backed picker until the next boot retries.
   try {
-    await invoke<void>("databases_save_index", { list: dbList });
+    await invoke<void>("databases_save_index", {
+      list: dbList,
+      expectedList: [],
+    });
   } catch (e) {
     report.failures.push({
       id: "<index>",

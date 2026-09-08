@@ -1912,6 +1912,7 @@ impl TrustRuntime {
             canonical.clone(),
             sdbf::sibling(&canonical, "bak"),
             sdbf::sibling(&canonical, "tmp"),
+            canonical.with_extension("json.v0.bak"),
         ] {
             match std::fs::remove_file(&path) {
                 Ok(()) => {}
@@ -2388,13 +2389,31 @@ mod runtime_tests {
         SyncTrustStore::shared()
             .trust_identity_blocking("h:1".into(), "tls".into(), tls_identity("aa"), true)
             .unwrap();
+        let canonical = guard.runtime.trust_file_path("delete").unwrap();
+        let bytes = std::fs::read(&canonical).unwrap();
+        let generations = [
+            canonical.clone(),
+            sdbf::sibling(&canonical, "bak"),
+            sdbf::sibling(&canonical, "tmp"),
+            canonical.with_extension("json.v0.bak"),
+        ];
+        for path in &generations {
+            std::fs::write(path, &bytes).unwrap();
+        }
         let coordinator = sorng_encryption::settings_coordinator::lock().await;
         assert!(guard.runtime.delete_store("delete").is_err());
+        assert!(generations.iter().all(|path| path.exists()));
         guard
             .runtime
             .delete_store_with_coordinator_guard("delete", &coordinator)
             .unwrap();
+        assert!(generations.iter().all(|path| !path.exists()));
         drop(coordinator);
+        for path in &generations {
+            std::fs::write(path, &bytes).unwrap();
+        }
+        guard.runtime.delete_store("delete").unwrap();
+        assert!(generations.iter().all(|path| !path.exists()));
         guard.runtime.delete_store("delete").unwrap();
     }
 

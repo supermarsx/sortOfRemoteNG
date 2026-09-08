@@ -1,4 +1,4 @@
-import { openDB, DBSchema, IDBPDatabase } from "idb";
+import { openDB, unwrap, DBSchema, IDBPDatabase } from "idb";
 
 interface KeyValDB extends DBSchema {
   keyval: {
@@ -100,5 +100,71 @@ export class IndexedDbService {
   static async removeItemStrict(key: string): Promise<void> {
     const db = await this.getDB();
     await db.delete(STORE_NAME, key);
+  }
+
+  /** Atomically read/compare/update related records; transform must stay synchronous. */
+  static async transactItemsStrict<T>(
+    keys: readonly string[],
+    transform: (values: Readonly<Record<string, unknown>>) => {
+      set: Readonly<Record<string, unknown>>;
+      remove?: readonly string[];
+      result: T;
+    },
+  ): Promise<T> {
+    const db = await this.getDB();
+    // Perform dependent writes inside the final native request's success event.
+    // Awaiting request promises can leave a transaction inactive in WebKit and
+    // event-loop/fake-timer environments before the next write is submitted.
+    return new Promise<T>((resolve, reject) => {
+      const transaction = unwrap(db).transaction(STORE_NAME, "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const values: Record<string, unknown> = {};
+      let remaining = keys.length;
+      let result: T;
+      let failure: unknown;
+      const abort = (error: unknown) => {
+        failure = error;
+        try {
+          transaction.abort();
+        } catch {
+          reject(error);
+        }
+      };
+      transaction.onabort = () =>
+        reject(
+          failure ??
+            transaction.error ??
+            new Error("IndexedDB transaction aborted."),
+        );
+      transaction.onerror = () => {
+        failure ??= transaction.error;
+      };
+      transaction.oncomplete = () => resolve(result);
+      const apply = () => {
+        try {
+          const changes = transform(values);
+          for (const [key, value] of Object.entries(changes.set))
+            store.put(JSON.stringify(value), key);
+          for (const key of changes.remove ?? []) store.delete(key);
+          result = changes.result;
+        } catch (error) {
+          abort(error);
+        }
+      };
+      if (remaining === 0) apply();
+      for (const key of keys) {
+        const request = store.get(key);
+        request.onsuccess = () => {
+          try {
+            values[key] =
+              request.result === undefined ? null : JSON.parse(request.result);
+            remaining -= 1;
+            if (remaining === 0) apply();
+          } catch (error) {
+            abort(error);
+          }
+        };
+      }
+    });
   }
 }

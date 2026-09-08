@@ -71,6 +71,7 @@ pub fn is_command(command: &str) -> bool {
             | "databases_save_index"
             | "load_database_data"
             | "save_database_data"
+            | "change_database_security"
             | "delete_database_data"
             | "databases_encryption_status"
             | "get_cpu_aes_capabilities"
@@ -1403,6 +1404,7 @@ define_command_group!(
         database_files::databases_save_index,
         database_files::load_database_data,
         database_files::save_database_data,
+        database_files::change_database_security,
         database_files::delete_database_data,
         database_files::databases_encryption_status,
         cpu_commands::get_cpu_aes_capabilities,
@@ -2955,6 +2957,9 @@ mod tests {
     /// scanner, which cannot see a command no TS file calls yet.
     #[test]
     fn databases_encryption_probe_is_recognized_and_registered() {
+        assert!(is_command("change_database_security"));
+        assert!(GROUP_A_COMMANDS.contains(&"change_database_security"));
+        assert_eq!(command_route_count("change_database_security"), 1);
         assert!(
             is_command("databases_encryption_status"),
             "the encryption-status probe is not publicly recognized"

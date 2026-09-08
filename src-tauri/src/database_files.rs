@@ -67,6 +67,7 @@ use tauri::{AppHandle, Manager};
 // `sibling`) lives in `sorng_storage::sdbf` since t62 so the per-database
 // trust store can share it. Re-exported here so every existing caller and
 // this module's tests compile unchanged.
+use sorng_storage::database_transaction;
 pub use sorng_storage::sdbf::*;
 
 fn databases_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -87,14 +88,7 @@ fn per_db_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     // IDs in the wild are UUIDs but the IPC surface is untrusted, so
     // a path-traversal id like `../../etc/passwd` must error rather
     // than reach `path.join`.
-    if id.is_empty()
-        || id.contains('/')
-        || id.contains('\\')
-        || id.contains("..")
-        || id.contains('\0')
-    {
-        return Err(format!("invalid database id: {id:?}"));
-    }
+    database_transaction::validate_database_id(id)?;
     Ok(databases_dir(app)?.join(format!("{id}.json")))
 }
 
@@ -500,10 +494,27 @@ async fn save_payload(
     value: &serde_json::Value,
     master_encryption_configured: bool,
 ) -> Result<(), String> {
+    let encoded = encode_payload(
+        state,
+        artifact,
+        canonical,
+        value,
+        master_encryption_configured,
+    )
+    .await?;
+    safe_write(canonical, &encoded).map_err(|e| e.to_string())
+}
+
+async fn encode_payload(
+    state: &EncryptionState,
+    artifact: ArtifactKind,
+    canonical: &Path,
+    value: &serde_json::Value,
+    master_encryption_configured: bool,
+) -> Result<Vec<u8>, String> {
     let plain = serde_json::to_vec(value).map_err(|e| format!("serialise payload: {e}"))?;
     if state.is_unlocked().await {
-        let envelope = encrypt_payload(state, artifact, &plain).await?;
-        return safe_write(canonical, &envelope).map_err(|e| e.to_string());
+        return encrypt_payload(state, artifact, &plain).await;
     }
 
     if master_encryption_configured {
@@ -512,7 +523,88 @@ async fn save_payload(
         );
     }
     ensure_locked_plaintext_write_is_safe(canonical)?;
-    safe_write(canonical, &plain).map_err(|e| e.to_string())
+    Ok(plain)
+}
+
+fn recover_database_transactions(dir: &Path) -> Result<(), String> {
+    if let Some(outcome) = database_transaction::recover(dir)? {
+        if outcome.cleanup_pending {
+            return Err(format!(
+                "database security change committed, but recovery cleanup is pending: {}",
+                outcome.warnings.join("; ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn require_database_access(app: &AppHandle, state: &EncryptionState) -> Result<bool, String> {
+    let configured = master_encryption_configured(app, state).await?;
+    if configured && !state.is_unlocked().await {
+        return Err("database storage is locked; unlock via Settings → Security".into());
+    }
+    Ok(configured)
+}
+
+fn security_revision(row: &serde_json::Value) -> &str {
+    row.get("securityRevision")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+}
+
+fn validate_index_snapshot(
+    current: &serde_json::Value,
+    expected: &serde_json::Value,
+) -> Result<(), String> {
+    if !current.is_array() || !expected.is_array() {
+        return Err("database index must be an array".into());
+    }
+    if current != expected {
+        return Err("database index changed; reload before retrying".into());
+    }
+    Ok(())
+}
+
+fn validate_data_shape(data: &serde_json::Value, encrypted: bool) -> Result<(), String> {
+    let valid = if encrypted {
+        data.as_str().is_some_and(|value| !value.is_empty())
+    } else {
+        data.is_object()
+            && data
+                .get("connections")
+                .is_some_and(serde_json::Value::is_array)
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err("database metadata and payload disagree; refusing a security downgrade or malformed payload".into())
+    }
+}
+
+fn validate_fresh_migration(
+    path: &Path,
+    database_id: &str,
+    metadata: &serde_json::Value,
+) -> Result<(), String> {
+    if metadata.get("id").and_then(serde_json::Value::as_str) != Some(database_id) {
+        return Err("migration metadata id mismatch".into());
+    }
+    for suffix in ["", "bak", "tmp", "v0.bak"] {
+        let candidate = if suffix.is_empty() {
+            path.to_path_buf()
+        } else {
+            sibling(path, suffix)
+        };
+        match std::fs::symlink_metadata(candidate) {
+            Ok(_) => return Err(
+                "refusing to overwrite an existing unindexed database generation during migration"
+                    .into(),
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("inspect migration destination: {error}")),
+        }
+    }
+    Ok(())
 }
 
 /// High-level encrypted load: safe_read → distinguish envelope from
@@ -530,7 +622,31 @@ async fn encrypted_load(
 ) -> Result<Option<LoadResult>, String> {
     let (payload_bytes, source) = match safe_read_raw(canonical).map_err(|e| e.to_string())? {
         Some(p) => p,
-        None => return Ok(None),
+        None => {
+            for suffix in ["", "bak", "tmp", "v0.bak"] {
+                let path = if suffix.is_empty() {
+                    canonical.to_path_buf()
+                } else {
+                    sibling(canonical, suffix)
+                };
+                match std::fs::symlink_metadata(&path) {
+                    Ok(_) => {
+                        return Err(format!(
+                            "database generations exist but none is readable: {}",
+                            canonical.display()
+                        ))
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!(
+                            "inspect database generation {}: {error}",
+                            path.display()
+                        ))
+                    }
+                }
+            }
+            return Ok(None);
+        }
     };
 
     if is_envelope_blob(&payload_bytes) {
@@ -564,6 +680,9 @@ pub async fn databases_list(
     app: AppHandle,
     enc_state: tauri::State<'_, EncryptionState>,
 ) -> Result<Option<LoadResult>, String> {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    require_database_access(&app, &enc_state).await?;
+    recover_database_transactions(&databases_dir(&app)?)?;
     let path = index_path(&app)?;
     encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &path).await
 }
@@ -577,9 +696,50 @@ pub async fn databases_save_index(
     app: AppHandle,
     enc_state: tauri::State<'_, EncryptionState>,
     list: serde_json::Value,
+    expected_list: serde_json::Value,
 ) -> Result<(), String> {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let configured = require_database_access(&app, &enc_state).await?;
+    recover_database_transactions(&databases_dir(&app)?)?;
     let path = index_path(&app)?;
-    let configured = master_encryption_configured(&app, &enc_state).await?;
+    let proposed = list.as_array().ok_or("database index must be an array")?;
+    let current = encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &path).await?;
+    let current_value = current
+        .as_ref()
+        .map(|loaded| loaded.value.clone())
+        .unwrap_or_else(|| serde_json::json!([]));
+    validate_index_snapshot(&current_value, &expected_list)?;
+    let current_rows = current
+        .as_ref()
+        .map(|loaded| {
+            loaded
+                .value
+                .as_array()
+                .ok_or("stored database index is malformed")
+        })
+        .transpose()?;
+    let mut ids = std::collections::HashSet::new();
+    for row in proposed {
+        let id = row
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("database index row has no id")?;
+        database_transaction::validate_database_id(id)?;
+        if !ids.insert(id) {
+            return Err("duplicate database index id".into());
+        }
+        if let Some(existing) = current_rows.and_then(|rows| {
+            rows.iter().find(|candidate| {
+                candidate.get("id").and_then(serde_json::Value::as_str) == Some(id)
+            })
+        }) {
+            if existing.get("isEncrypted") != row.get("isEncrypted")
+                || security_revision(existing) != security_revision(row)
+            {
+                return Err("database security changed; reload before saving metadata".into());
+            }
+        }
+    }
     save_payload(
         &enc_state,
         ArtifactKind::DatabasesIndex,
@@ -602,6 +762,9 @@ pub async fn load_database_data(
     enc_state: tauri::State<'_, EncryptionState>,
     database_id: String,
 ) -> Result<Option<LoadResult>, String> {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    require_database_access(&app, &enc_state).await?;
+    recover_database_transactions(&databases_dir(&app)?)?;
     let path = per_db_path(&app, &database_id)?;
     encrypted_load(&enc_state, ArtifactKind::Connections, &path).await
 }
@@ -626,9 +789,43 @@ pub async fn save_database_data(
     enc_state: tauri::State<'_, EncryptionState>,
     database_id: String,
     data: serde_json::Value,
+    expected_security_revision: Option<String>,
+    migration_metadata: Option<serde_json::Value>,
 ) -> Result<(), String> {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let configured = require_database_access(&app, &enc_state).await?;
+    recover_database_transactions(&databases_dir(&app)?)?;
     let path = per_db_path(&app, &database_id)?;
-    let configured = master_encryption_configured(&app, &enc_state).await?;
+    let index =
+        encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &index_path(&app)?).await?;
+    let migration;
+    let indexed_rows = index
+        .as_ref()
+        .map(|index| index.value.as_array().ok_or("database index malformed"))
+        .transpose()?;
+    let current_row = indexed_rows.and_then(|rows| {
+        rows.iter()
+            .find(|row| row.get("id").and_then(serde_json::Value::as_str) == Some(&database_id))
+    });
+    let row = if let Some(row) = current_row {
+        row
+    } else {
+        if indexed_rows.is_some_and(|rows| !rows.is_empty()) {
+            return Err("database no longer exists".into());
+        }
+        migration = migration_metadata.ok_or("database index missing")?;
+        validate_fresh_migration(&path, &database_id, &migration)?;
+        &migration
+    };
+    if security_revision(row) != expected_security_revision.as_deref().unwrap_or("") {
+        return Err("database security changed; stale password-bearing save was rejected".into());
+    }
+    validate_data_shape(
+        &data,
+        row.get("isEncrypted")
+            .and_then(serde_json::Value::as_bool)
+            .ok_or("database encryption metadata malformed")?,
+    )?;
     save_payload(
         &enc_state,
         ArtifactKind::Connections,
@@ -639,12 +836,115 @@ pub async fn save_database_data(
     .await
 }
 
-/// Best-effort removal of every variant (canonical + .bak + .tmp +
-/// .v0.bak). Used when the user deletes a database from the picker.
-/// Always returns `Ok(())` — missing files aren't an error.
+/// Atomically change the per-database password representation and its index flag.
+/// Only this target's security fields are merged into the latest coordinated index.
 #[tauri::command]
-pub async fn delete_database_data(app: AppHandle, database_id: String) -> Result<(), String> {
+#[allow(clippy::too_many_arguments)] // Named IPC fields are the explicit compare-and-swap contract.
+pub async fn change_database_security(
+    app: AppHandle,
+    enc_state: tauri::State<'_, EncryptionState>,
+    database_id: String,
+    data: serde_json::Value,
+    expected_data: serde_json::Value,
+    is_encrypted: bool,
+    expected_security_revision: String,
+    security_revision: String,
+    updated_at: String,
+) -> Result<database_transaction::TransactionOutcome, String> {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let configured = require_database_access(&app, &enc_state).await?;
+    let dir = databases_dir(&app)?;
+    recover_database_transactions(&dir)?;
+    let path = per_db_path(&app, &database_id)?;
+    let index_path = index_path(&app)?;
+    let mut index = encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &index_path)
+        .await?
+        .ok_or("database index missing")?
+        .value;
+    let row = index
+        .as_array_mut()
+        .ok_or("database index malformed")?
+        .iter_mut()
+        .find(|row| row.get("id").and_then(serde_json::Value::as_str) == Some(&database_id))
+        .ok_or("database no longer exists")?;
+    if self::security_revision(row) != expected_security_revision
+        || security_revision.is_empty()
+        || security_revision == expected_security_revision
+    {
+        return Err("database security changed; reload before retrying".into());
+    }
+    let existing = encrypted_load(&enc_state, ArtifactKind::Connections, &path)
+        .await?
+        .ok_or("database payload missing")?;
+    if existing.value != expected_data {
+        return Err(
+            "database contents changed during password preparation; reload before retrying".into(),
+        );
+    }
+    validate_data_shape(
+        &existing.value,
+        row.get("isEncrypted")
+            .and_then(serde_json::Value::as_bool)
+            .ok_or("database encryption metadata malformed")?,
+    )?;
+    validate_data_shape(&data, is_encrypted)?;
+    row["isEncrypted"] = is_encrypted.into();
+    row["securityRevision"] = security_revision.into();
+    row["updatedAt"] = updated_at.into();
+    let payload_bytes = encode_payload(
+        &enc_state,
+        ArtifactKind::Connections,
+        &path,
+        &data,
+        configured,
+    )
+    .await?;
+    let index_bytes = encode_payload(
+        &enc_state,
+        ArtifactKind::DatabasesIndex,
+        &index_path,
+        &index,
+        configured,
+    )
+    .await?;
+    database_transaction::commit(&dir, &database_id, &payload_bytes, &index_bytes)
+}
+
+/// Strict deletion of payload generations, trust and finally the latest index
+/// entry. This is not a crash-atomic deletion: partial I/O errors are reported,
+/// and metadata is retained until every requested file removal succeeds.
+#[tauri::command]
+pub async fn delete_database_data(
+    app: AppHandle,
+    enc_state: tauri::State<'_, EncryptionState>,
+    database_id: String,
+) -> Result<(), String> {
+    let guard = sorng_encryption::settings_coordinator::lock().await;
+    let configured = require_database_access(&app, &enc_state).await?;
+    recover_database_transactions(&databases_dir(&app)?)?;
     let canonical = per_db_path(&app, &database_id)?;
+    let index_path = index_path(&app)?;
+    let mut index = encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &index_path)
+        .await?
+        .ok_or("database index missing")?
+        .value;
+    let rows = index.as_array_mut().ok_or("database index malformed")?;
+    // Preflight every payload path before the first removal.
+    for suffix in ["", "bak", "tmp", "v0.bak"] {
+        let target = if suffix.is_empty() {
+            canonical.clone()
+        } else {
+            sibling(&canonical, suffix)
+        };
+        match std::fs::symlink_metadata(target) {
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_file() => {
+                return Err("refusing non-regular database deletion target".into())
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("inspect database deletion target: {error}")),
+        }
+    }
     for suffix in &["", ".bak", ".tmp", ".v0.bak"] {
         let path = if suffix.is_empty() {
             canonical.clone()
@@ -653,13 +953,38 @@ pub async fn delete_database_data(app: AppHandle, database_id: String) -> Result
             s.push(*suffix);
             PathBuf::from(s)
         };
-        let _ = std::fs::remove_file(&path);
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_file() => {
+                return Err("refusing non-regular database deletion target".into())
+            }
+            Ok(_) => std::fs::remove_file(&path).map_err(|e| {
+                format!(
+                    "Deletion stopped and may be partial; database index retained. Remove {}: {e}",
+                    path.display()
+                )
+            })?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("inspect database deletion target: {error}")),
+        }
     }
     // t62: the per-database trust store lives beside the payload.
     if let Ok(rt) = sorng_storage::trust_store::runtime() {
-        rt.delete_store(&database_id)?;
+        rt.delete_store_with_coordinator_guard(&database_id, &guard).map_err(|e| format!("Payload deletion completed but trust cleanup failed; database index retained: {e}"))?;
     }
-    Ok(())
+    rows.retain(|row| row.get("id").and_then(serde_json::Value::as_str) != Some(&database_id));
+    save_payload(
+        &enc_state,
+        ArtifactKind::DatabasesIndex,
+        &index_path,
+        &index,
+        configured,
+    )
+    .await
+    .map_err(|e| {
+        format!(
+            "Database files were removed but index cleanup failed; refresh and retry deletion: {e}"
+        )
+    })
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1094,6 +1419,11 @@ async fn databases_encryption_status_inner(
     verify: bool,
 ) -> DatabasesEncryptionStatus {
     let mut errors = Vec::new();
+    match database_transaction::pending(databases_dir) {
+        Ok(true) => errors.push("A database security transaction requires recovery or committed cleanup; this read-only status check did not modify files.".into()),
+        Err(error) => errors.push(format!("Database transaction status: {error}")),
+        Ok(false) => {},
+    }
     let unlocked = state.is_unlocked().await;
     // `<app_data>/databases` -> `<app_data>`. Derived rather than taken
     // from `key_ring::app_data_dir()`'s process-wide slot so the probe
@@ -1469,30 +1799,95 @@ mod tests {
 
     #[test]
     fn per_db_path_rejects_traversal_ids() {
-        // We can't easily test `per_db_path` without an AppHandle,
-        // but the sanitiser is purely path-string based — drive it
-        // by reconstructing the same predicate.
-        for bad in &["../etc/passwd", "..\\windows", "a/b", "a\\b", "", "x\0y"] {
-            let id = *bad;
-            let rejected = id.is_empty()
-                || id.contains('/')
-                || id.contains('\\')
-                || id.contains("..")
-                || id.contains('\0');
-            assert!(rejected, "expected to reject {id:?}");
+        for bad in &[
+            "../etc/passwd",
+            "..\\windows",
+            "a/b",
+            "a\\b",
+            "",
+            "x\0y",
+            "index",
+            "INDEX",
+            "x:stream",
+            "a.trust",
+            "CON",
+            "name.",
+        ] {
+            assert!(
+                database_transaction::validate_database_id(bad).is_err(),
+                "expected to reject {bad:?}"
+            );
         }
         for good in &[
             "550e8400-e29b-41d4-a716-446655440000",
             "Personal",
             "work_prod_2026",
         ] {
-            let id = *good;
-            let rejected = id.is_empty()
-                || id.contains('/')
-                || id.contains('\\')
-                || id.contains("..")
-                || id.contains('\0');
-            assert!(!rejected, "should not reject {id:?}");
+            assert!(
+                database_transaction::validate_database_id(good).is_ok(),
+                "should not reject {good:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn index_cas_rejects_concurrent_add_delete_and_security_changes() {
+        let expected = serde_json::json!([{"id":"A","securityRevision":"one"}]);
+        for current in [
+            serde_json::json!([]),
+            serde_json::json!([{"id":"A","securityRevision":"two"}]),
+            serde_json::json!([{"id":"A","securityRevision":"one"},{"id":"B"}]),
+        ] {
+            assert!(validate_index_snapshot(&current, &expected).is_err());
+        }
+        assert!(validate_index_snapshot(&expected, &expected).is_ok());
+    }
+
+    #[tokio::test]
+    async fn encrypted_load_distinguishes_corruption_from_a_fresh_store() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("index.json");
+        let state = EncryptionState::new();
+        assert!(encrypted_load(&state, ArtifactKind::DatabasesIndex, &path)
+            .await
+            .unwrap()
+            .is_none());
+        std::fs::write(&path, b"corrupted existing index").unwrap();
+        assert!(encrypted_load(&state, ArtifactKind::DatabasesIndex, &path)
+            .await
+            .unwrap_err()
+            .contains("none is readable"));
+    }
+
+    #[test]
+    fn payload_shape_cannot_silently_cross_the_password_boundary() {
+        let object = serde_json::json!({"connections":[],"settings":{}});
+        let ciphertext = serde_json::json!("existing-per-database-ciphertext");
+        assert!(validate_data_shape(&object, false).is_ok());
+        assert!(validate_data_shape(&ciphertext, true).is_ok());
+        assert!(validate_data_shape(&object, true).is_err());
+        assert!(validate_data_shape(&ciphertext, false).is_err());
+    }
+
+    #[test]
+    fn migration_requires_matching_metadata_and_a_truly_fresh_generation_ladder() {
+        let metadata = serde_json::json!({"id":"Personal","isEncrypted":true});
+        for suffix in ["", "bak", "tmp", "v0.bak"] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("Personal.json");
+            assert!(validate_fresh_migration(&path, "Personal", &metadata).is_ok());
+            assert!(validate_fresh_migration(&path, "Other", &metadata).is_err());
+            let occupied = if suffix.is_empty() {
+                path.clone()
+            } else {
+                sibling(&path, suffix)
+            };
+            std::fs::write(&occupied, b"existing protected or corrupt bytes").unwrap();
+            assert!(validate_fresh_migration(&path, "Personal", &metadata).is_err());
+            assert_eq!(
+                std::fs::read(occupied).unwrap(),
+                b"existing protected or corrupt bytes"
+            );
         }
     }
 

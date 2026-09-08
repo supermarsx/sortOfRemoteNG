@@ -342,6 +342,16 @@ async fn rotate_master_key_full_inner_impl(
     // receipt persistence, and live-key installation, rotation is one FIFO
     // transaction with ordinary settings writes and representation changes.
     let settings_guard = sorng_encryption::settings_coordinator::lock().await;
+    if let Some(recovery) =
+        sorng_storage::database_transaction::recover(&app_data_dir.join("databases"))?
+    {
+        if recovery.cleanup_pending {
+            return Err(format!(
+                "database security cleanup must finish before master rotation: {}",
+                recovery.warnings.join("; ")
+            ));
+        }
+    }
 
     // The state or on-disk receipt could have changed while password preflight
     // ran and this rotation waited its turn, so all canonical preconditions are

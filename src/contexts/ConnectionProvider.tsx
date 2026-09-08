@@ -317,6 +317,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // during an in-flight switch.
   const activeDatabaseTargetRef = useRef<DatabaseDataTarget | null>(null);
   const loadGenerationRef = useRef(0);
+  const saveGenerationRef = useRef(0);
   // Stable live snapshot used by logging and persistence callbacks.
   const stateRef = useRef(state);
   const connectionsRef = useRef(state.connections);
@@ -335,6 +336,67 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   stateRef.current = state;
   connectionsRef.current = state.connections;
+
+  useEffect(
+    () =>
+      databaseManager.onCurrentDatabaseChange((change) => {
+        if (
+          !change.database &&
+          ["close", "lock", "delete"].includes(change.reason)
+        ) {
+          const lostUnsaved =
+            dirtyRevisionRef.current > persistedRevisionRef.current;
+          loadGenerationRef.current += 1;
+          saveGenerationRef.current += 1;
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+          saveLoopRef.current = null;
+          activeDatabaseTargetRef.current = null;
+          pendingSnapshotRef.current = null;
+          hasLoadedRef.current = false;
+          dirtyRevisionRef.current = 0;
+          persistedRevisionRef.current = 0;
+          tabGroupSavePendingRef.current = false;
+          connectionsRef.current = [];
+          tabGroupsRef.current = [];
+          stateRef.current = {
+            ...stateRef.current,
+            connections: [],
+            tabGroups: [],
+          };
+          baseDispatch({ type: "SET_CONNECTIONS", payload: [] });
+          baseDispatch({ type: "SET_TAB_GROUPS", payload: [] });
+          setPersistence({
+            dirty: false,
+            saving: false,
+            error: lostUnsaved
+              ? "Database closed before pending changes could be saved. Decrypted pending data was cleared; it was not persisted."
+              : null,
+          });
+          return;
+        }
+        if (
+          change.reason !== "security-change" ||
+          !change.database ||
+          change.database.id !== activeDatabaseTargetRef.current?.databaseId
+        )
+          return;
+        const target = databaseManager.captureCurrentDatabaseDataTarget();
+        if (!target || target.databaseId !== change.database.id) return;
+        activeDatabaseTargetRef.current = target;
+        // Keep any failed/dirty snapshot and its revision, but stop routing its
+        // retry through a revoked credential capture after a committed change.
+        if (
+          pendingSnapshotRef.current?.target.databaseId === target.databaseId
+        ) {
+          pendingSnapshotRef.current = {
+            ...pendingSnapshotRef.current,
+            target,
+          };
+        }
+      }),
+    [databaseManager],
+  );
 
   const markPersistenceDirty = useCallback(() => {
     dirtyRevisionRef.current += 1;
@@ -551,6 +613,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       return saveLoopRef.current;
     }
 
+    const generation = saveGenerationRef.current;
     const saveLoop = (async () => {
       while (dirtyRevisionRef.current > persistedRevisionRef.current) {
         const targetRevision = dirtyRevisionRef.current;
@@ -584,6 +647,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         try {
           await snapshot.target.save(snapshot.data);
         } catch (error) {
+          if (generation !== saveGenerationRef.current) throw error;
           const message =
             error instanceof Error ? error.message : String(error);
           if (mountedRef.current) {
@@ -596,6 +660,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           console.error("Failed to save data:", error);
           throw error;
         }
+
+        if (generation !== saveGenerationRef.current) return;
 
         persistedRevisionRef.current = targetRevision;
         if (pendingSnapshotRef.current === snapshot) {
@@ -621,7 +687,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         saveLoopRef.current = null;
       }
     }
-  }, [buildStorageSnapshot, databaseManager]);
+  }, [buildStorageSnapshot]);
 
   // Every DatabaseManager selection path (including import/restore callers)
   // must cross the same durable barrier before the mutable current database

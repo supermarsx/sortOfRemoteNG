@@ -33,8 +33,15 @@ describe("DatabaseManager", () => {
   });
 
   it("loads collection data", async () => {
-    await IndexedDbService.setItem("mremote-collection-abc", sampleData);
-    const loaded = await manager.loadDatabaseData("abc");
+    const collection = await manager.createDatabase("Legacy payload");
+    await IndexedDbService.removeItemStrict(
+      `mremote-database-${collection.id}`,
+    );
+    await IndexedDbService.setItem(
+      `mremote-collection-${collection.id}`,
+      sampleData,
+    );
+    const loaded = await manager.loadDatabaseData(collection.id);
     expect(loaded).toEqual(sampleData);
   });
 
@@ -133,11 +140,9 @@ describe("DatabaseManager", () => {
       password: "secret",
     });
 
-    expect((await manager.getAllDatabases()).map((collection) => collection.name)).toEqual([
-      "Vault",
-      "Vault (Copy)",
-      "Sibling",
-    ]);
+    expect(
+      (await manager.getAllDatabases()).map((collection) => collection.name),
+    ).toEqual(["Vault", "Vault (Copy)", "Sibling"]);
     expect(await manager.loadDatabaseData(duplicate.id, "secret")).toEqual(
       sourceData,
     );
@@ -150,12 +155,7 @@ describe("DatabaseManager", () => {
   });
 
   it("throws InvalidPasswordError when password is incorrect", async () => {
-    const col = await manager.createDatabase(
-      "Secure",
-      "desc",
-      true,
-      "secret",
-    );
+    const col = await manager.createDatabase("Secure", "desc", true, "secret");
     await expect(
       manager.loadDatabaseData(col.id, "wrong"),
     ).rejects.toBeInstanceOf(InvalidPasswordError);
@@ -163,18 +163,27 @@ describe("DatabaseManager", () => {
 
   it("reports encrypted databases as exportable only after unlock", async () => {
     const open = await manager.createDatabase("Open");
-    const secure = await manager.createDatabase("Secure", "desc", true, "secret");
+    const secure = await manager.createDatabase(
+      "Secure",
+      "desc",
+      true,
+      "secret",
+    );
 
-    await expect(
-      manager.loadDatabaseData(secure.id),
-    ).rejects.toBeInstanceOf(InvalidPasswordError);
+    await expect(manager.loadDatabaseData(secure.id)).rejects.toBeInstanceOf(
+      InvalidPasswordError,
+    );
 
     let exportable = await manager.getExportableDatabases();
-    expect(exportable.find((database) => database.id === open.id)).toMatchObject({
+    expect(
+      exportable.find((database) => database.id === open.id),
+    ).toMatchObject({
       isExportable: true,
       isUnlocked: true,
     });
-    expect(exportable.find((database) => database.id === secure.id)).toMatchObject({
+    expect(
+      exportable.find((database) => database.id === secure.id),
+    ).toMatchObject({
       isExportable: true,
       isUnlocked: true,
     });
@@ -182,11 +191,15 @@ describe("DatabaseManager", () => {
     DatabaseManager.resetInstance();
     const freshManager = DatabaseManager.getInstance();
     exportable = await freshManager.getExportableDatabases();
-    expect(exportable.find((database) => database.id === open.id)).toMatchObject({
+    expect(
+      exportable.find((database) => database.id === open.id),
+    ).toMatchObject({
       isExportable: true,
       isUnlocked: true,
     });
-    expect(exportable.find((database) => database.id === secure.id)).toMatchObject({
+    expect(
+      exportable.find((database) => database.id === secure.id),
+    ).toMatchObject({
       isExportable: false,
       isUnlocked: false,
     });
@@ -195,13 +208,25 @@ describe("DatabaseManager", () => {
     expect(freshManager.isDatabaseUnlocked(secure.id)).toBe(true);
     expect(freshManager.getUnlockedDatabaseIds()).toContain(secure.id);
 
-    const snapshot = await freshManager.readExportableDatabaseSnapshot(secure.id);
+    const snapshot = await freshManager.readExportableDatabaseSnapshot(
+      secure.id,
+    );
     expect(snapshot.collection.id).toBe(secure.id);
   });
 
   it("does not reuse the current password for a different encrypted database", async () => {
-    const first = await manager.createDatabase("First", "desc", true, "first-secret");
-    const second = await manager.createDatabase("Second", "desc", true, "second-secret");
+    const first = await manager.createDatabase(
+      "First",
+      "desc",
+      true,
+      "first-secret",
+    );
+    const second = await manager.createDatabase(
+      "Second",
+      "desc",
+      true,
+      "second-secret",
+    );
 
     DatabaseManager.resetInstance();
     const freshManager = DatabaseManager.getInstance();
@@ -218,7 +243,7 @@ describe("DatabaseManager", () => {
     ).resolves.toMatchObject({ collection: { id: second.id } });
   });
 
-  it("keeps a captured data target usable after the active password is rotated", async () => {
+  it("expires an old captured target and uses a fresh target after password rotation", async () => {
     const secure = await manager.createDatabase(
       "Secure",
       "desc",
@@ -229,17 +254,14 @@ describe("DatabaseManager", () => {
     const target = manager.captureCurrentDatabaseDataTarget();
     expect(target?.databaseId).toBe(secure.id);
 
-    await manager.changeDatabasePassword(
-      secure.id,
-      "old-secret",
-      "new-secret",
-    );
+    await manager.changeDatabasePassword(secure.id, "old-secret", "new-secret");
     const updated = {
       connections: [{ id: "after-rotation", name: "After rotation" } as any],
       settings: {},
       timestamp: 2,
     };
-    await target?.save(updated as any);
+    expect(() => target?.save(updated as any)).toThrow("access expired");
+    await manager.captureCurrentDatabaseDataTarget()?.save(updated as any);
 
     await expect(
       manager.loadDatabaseData(secure.id, "new-secret"),
@@ -348,11 +370,23 @@ describe("DatabaseManager", () => {
 
   it("throws CorruptedDataError when decrypted data is invalid", async () => {
     const password = "secret";
+    const collection = await manager.createDatabase(
+      "Corrupt payload",
+      "",
+      true,
+      password,
+    );
     // Encrypt invalid JSON via the same WebCrypto helper the manager uses.
     const encrypted = await encryptWithPassword("{bad-json", password);
-    await IndexedDbService.setItem("mremote-collection-corrupt", encrypted);
+    await IndexedDbService.removeItemStrict(
+      `mremote-database-${collection.id}`,
+    );
+    await IndexedDbService.setItem(
+      `mremote-collection-${collection.id}`,
+      encrypted,
+    );
     await expect(
-      manager.loadDatabaseData("corrupt", password),
+      manager.loadDatabaseData(collection.id, password),
     ).rejects.toBeInstanceOf(CorruptedDataError);
   });
 });
