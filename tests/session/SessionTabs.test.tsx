@@ -267,7 +267,7 @@ describe("SessionTabs accessibility", () => {
     renderTabs({ activeSessionId: "ssh-built-in" });
 
     const expected = {
-      "ssh-built-in": "terminal",
+      "ssh-built-in": "ssh",
       "saved-override": "star",
       "database-brand": "postgresql",
       "cloud-brand": "azure",
