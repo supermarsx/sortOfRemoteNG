@@ -29,6 +29,7 @@ import {
 
 import { defineIcon } from "./types";
 import { createRoleIcon } from "../createRoleIcon";
+import { INDUSTRIAL_ASSET_ICONS } from "./industrialAssets";
 
 const StorageServer = createRoleIcon("StorageServer", "server", HardDrive);
 const Appliance = createLucideIcon("GenericAppliance", [
@@ -690,4 +691,5 @@ export const SERVERS_DEVICES_ICONS = [
       "rendering",
     ],
   ),
+  ...INDUSTRIAL_ASSET_ICONS,
 ] as const;

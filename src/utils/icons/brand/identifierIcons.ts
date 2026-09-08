@@ -388,8 +388,20 @@ export const amcrest = createLucideIcon("AmcrestIdentifier", [
   ],
 ]);
 
+/** App-authored SE/ethernet identifier; not the SoftEther project's raster logo. */
+export const softether = createLucideIcon("SoftEtherIdentifier", [
+  [
+    "path",
+    {
+      d: "M10 5H6a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6H3M21 5h-6v12h6M15 11h5M9 21h9M12 18v3M18 19v2",
+      key: "softether-identifier",
+    },
+  ],
+]);
+
 /** Every explicitly nonofficial brand identifier, for source and uniqueness tests. */
 export const APP_AUTHORED_IDENTIFIER_ICONS = {
+  softether,
   ddwrt,
   nomachine,
   x2go,

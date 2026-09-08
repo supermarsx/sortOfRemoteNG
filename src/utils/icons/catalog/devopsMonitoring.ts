@@ -49,6 +49,7 @@ import {
 } from "../brand";
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
+import { LLM_VARIANT_ICONS } from "./llmVariants";
 
 export const DEVOPS_MONITORING_ICONS = [
   defineIcon("activity", "Activity", "devops-monitoring", Activity, [
@@ -408,4 +409,5 @@ export const DEVOPS_MONITORING_ICONS = [
     "siem",
     "observability",
   ]),
+  ...LLM_VARIANT_ICONS,
 ] as const;

@@ -8,11 +8,13 @@ import { FILES_ICONS } from "./catalog/files";
 import { FOLDER_ICONS } from "./catalog/folders";
 import { GENERIC_SHAPE_ICONS } from "./catalog/genericShapes";
 import { NETWORK_ICONS } from "./catalog/network";
+import { ISP_PROVIDER_ICONS } from "./catalog/providers";
 import { OPERATING_SYSTEM_ICONS } from "./catalog/operatingSystems";
 import { REMOTE_PROTOCOL_ICONS } from "./catalog/remoteProtocols";
 import { SECURITY_ICONS } from "./catalog/security";
 import { SERVERS_DEVICES_ICONS } from "./catalog/serversDevices";
 import { VENDORS_HARDWARE_ICONS } from "./catalog/vendorsHardware";
+import { VENDOR_ICONS } from "./catalog/vendors";
 import { VIRTUALIZATION_ICONS } from "./catalog/virtualization";
 import { VOICE_TELEPHONY_ICONS } from "./catalog/voiceTelephony";
 import { WEB_APPLICATION_ICONS } from "./catalog/webApplications";
@@ -45,6 +47,7 @@ export const CONNECTION_ICON_CATALOG = [
   ...REMOTE_PROTOCOL_ICONS,
   ...SERVERS_DEVICES_ICONS,
   ...NETWORK_ICONS,
+  ...ISP_PROVIDER_ICONS,
   ...CLOUD_ICONS,
   ...DATABASE_ICONS,
   ...DEVOPS_MONITORING_ICONS,
@@ -55,6 +58,7 @@ export const CONNECTION_ICON_CATALOG = [
   ...GENERIC_SHAPE_ICONS,
   ...OPERATING_SYSTEM_ICONS,
   ...VIRTUALIZATION_ICONS,
+  ...VENDOR_ICONS,
   ...VENDORS_HARDWARE_ICONS,
   ...VOICE_TELEPHONY_ICONS,
   ...WEB_APPLICATION_ICONS,

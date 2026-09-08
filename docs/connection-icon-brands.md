@@ -8,7 +8,7 @@ these composites are app UI symbols, not official alternate brand logos.
 
 ## Installed Simple Icons
 
-`src/utils/icons/brand/brandIconSlugs.ts` is the source of truth for the 150 paths
+`src/utils/icons/brand/brandIconSlugs.ts` is the source of truth for the 161 paths
 vendored from the installed `simple-icons` 16.28.0 package. Regenerate with
 `npm run icons:brand:generate`; validate with `npm run icons:brand:check`.
 Never hand-edit `generatedBrandIcons.ts`. The generator reads only requested
@@ -212,7 +212,7 @@ publisher-sourced assets.
 
 ### Additional publisher SVGs
 
-`publisherBrandIcons.ts` adds twenty-four marks from public publisher assets,
+`publisherBrandIcons.ts` adds twenty-eight marks from public publisher assets,
 without assigning them the Simple Icons collection license. Original SVG
 SHA-256 hashes are recorded in source, and offline tests verify the selected
 path geometry and normalization. Whitespace may be normalized; fills inherit
@@ -243,7 +243,7 @@ the UI color. Local role frames remain app symbols, not approved brand lockups.
 
 ## Explicitly nonofficial identifiers
 
-Forty-six entries use explicit nonofficial identifiers. Most did not yield a
+Forty-seven entries use explicit nonofficial identifiers. Most did not yield a
 suitable compact vector source in the installed or checked historical collection
 and bounded publisher lookup; VIVA is intentionally neutral because the intended
 provider is unconfirmed. These entries are still distinct and usable:
@@ -296,7 +296,7 @@ They stay outside the `BRAND_ICONS` registry. Their device/server variants use
 the same identifier inside a different role silhouette, so variants are not
 merely duplicate bare glyphs with different labels.
 
-The `APP_AUTHORED_IDENTIFIER_ICONS` registry enumerates all 46 exceptions, and
+The `APP_AUTHORED_IDENTIFIER_ICONS` registry enumerates all 47 exceptions, and
 tests assert their path geometry is pairwise distinct and none enters the
 `BRAND_ICONS` sourced-mark registry. New custom Lucide nodes carry stable React
 keys; a regression renders every brand without filtering unrelated console
@@ -304,9 +304,9 @@ errors and asserts no missing-key warnings.
 
 ## Protocol and camera source additions
 
-The final source registry has 150 installed marks, 12 pinned historical marks,
-24 publisher-file marks and seven preserved/local marks (including the three
-publisher geometries described above). The 46 explicitly nonofficial identifiers
+The final source registry has 161 installed marks, 13 pinned historical marks,
+28 publisher-file marks and seven preserved/local marks (including the three
+publisher geometries described above). The 47 explicitly nonofficial identifiers
 are a separate registry and are not counted as sourced marks.
 
 Scaleway comes from the installed collection's `scaleway` path, whose publisher
@@ -372,6 +372,65 @@ Copyright Microsoft Corporation. The publisher package
 [license](https://github.com/microsoft/fluentui/blob/eefc5128d958e74262de72965b60608953945515/packages/react-icons-mdl2-branded/LICENSE)
 specifically requires the [Microsoft Fabric Assets License](https://aka.ms/fluentui-assets-license).
 These branded assets are **not** covered by a blanket MIT or CC0 assertion.
+
+## CRM, GraphQL, VPN, and database additions
+
+The installed collection supplies GraphQL, HubSpot, Zoho, ZeroTier, Tailscale,
+Cockroach Labs, ClickHouse, Apache Cassandra, Apache CouchDB, Neo4j, and InfluxDB.
+SQLite reuses its existing vendored path. CockroachDB entries use the publisher's
+Cockroach Labs mark, not an invented separate product logo. These are local icon
+choices; they do not add database drivers or VPN implementations.
+
+| Mark                         | Publisher source recorded in the installed collection                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GraphQL                      | [Brand assets](https://graphql.org/brand)                                                                                                         |
+| HubSpot                      | [Style guide](https://www.hubspot.com/style-guide)                                                                                                |
+| Zoho                         | [Branding](https://www.zoho.com/branding)                                                                                                         |
+| ZeroTier                     | [Publisher](https://www.zerotier.com)                                                                                                             |
+| Tailscale                    | [Press resources](https://tailscale.com/press)                                                                                                    |
+| SQLite                       | [Pinned publisher artwork](https://github.com/sqlite/sqlite/blob/43e862723ec680542ca6f608f9963c0993dd7324/art/sqlite370.eps)                      |
+| Cockroach Labs               | [Publisher](https://www.cockroachlabs.com)                                                                                                        |
+| ClickHouse                   | [Pinned publisher SVG](https://github.com/ClickHouse/ClickHouse/blob/12bd453a43819176d25ecf247033f6cb1af54beb/website/images/logo-clickhouse.svg) |
+| Apache Cassandra and CouchDB | [Apache logos](https://www.apache.org/logos)                                                                                                      |
+| Neo4j                        | [Brand guide](https://neo4j.com/brand/#logo)                                                                                                      |
+| InfluxDB                     | [Publisher downloads](https://influxdata.github.io/branding/logo/downloads/)                                                                      |
+
+The installed metadata records Apache-2.0 for the Cassandra and CouchDB artwork;
+the [ASF trademark policy](https://www.apache.org/foundation/marks/) still applies.
+The other listed metadata entries do not declare an individual artwork license.
+That absence, and the collection's CC0 license, do not grant unrestricted
+publisher trademark permission.
+
+Salesforce preserves the exact historical
+[Simple Icons 11.0.0 SVG path](https://raw.githubusercontent.com/simple-icons/simple-icons/11.0.0/icons/salesforce.svg).
+The source is its cloud silhouette without lettering, not newly authored
+Salesforce artwork. Source SVG SHA-256:
+`9f8adb4f73acb235b2fe1c721f17d915d3559c905d1de9c7b678d76d0687eb08`.
+Rendered path SHA-256:
+`1d3af188552e86b2e368f97efcbe990d32ae8a2d870d169f9284cd680b18c5c5`.
+
+Four additional assets use verified publisher SVG geometry:
+
+- **Pipedrive:** [Publisher source](https://www.pipedrive.com/). Leading P path from the publisher header wordmark; remaining lettering omitted. Source 18×21 symbol viewport begins at (0,5). Source SVG SHA-256: `b96d5e70979e59117b3fe26f85bcc76e986a048bfed711074e57269a5cefa105`. Rendered path SHA-256: `52cb4efbdae85617054eda2a6d49fe8a65dd6b30de1177db21bf0bc85cb37ca2`.
+- **NetBird:** [Publisher source](https://netbird.io/_next/static/media/netbird-icon.167cd80b.svg). All three exact bird paths from the publisher press-kit icon. Uniform 41×30 fit; monochrome removes the original darker wing overlap. Source SVG SHA-256: `0876ddda40f4ddc49f8ed6a0cd6369482af29077f06a648e907043e022151468`. Rendered path SHA-256: `6cb44c0cee99b8d1d6868c5a8c799cd45323ac8f8f4bb18c49acf1faeb69a14e`.
+- **Twingate:** [Publisher source](https://www.twingate.com/). Two left-hand symbol subpaths from header SVG#svg712272324_2169. Lettering beginning at M26.8 omitted; original evenodd fill retained. Source SVG SHA-256: `a7169ca049e502cc639bc2b102ee08f1e698a753cfd8976c9e9feda4a50ecd6f`. Rendered path SHA-256: `01c141edfcd80afa53960ec86a97e3b0b0fc44c01d06c881bb42db5ed8c5de08`.
+- **Nebula VPN:** [Publisher source](https://nebula.defined.net/img/mark.svg). Final wave/network symbol path from the actual Nebula VPN documentation logo, not the unrelated Nebula streaming brand. Lettering omitted; uniform fit of its 480×256 symbol region. Source SVG SHA-256: `b2f0303ef1d78a7319a431aa8218c1ee2928a090d782fa2221ad9d4e62f31b93`. Rendered path SHA-256: `c3a409d5858acdb3bc364592c06afb5523bf1ea4e6f392cc1d6e73aa727a3404`.
+
+For Pipedrive and Twingate, the source hash identifies the selected inline header
+SVG, not the whole HTML page; path bytes and transforms are checked separately.
+All four are monochrome adaptations, not newly licensed CC0 artwork.
+[NetBird's press guidelines](https://netbird.io/press) specify its original
+palette and prohibit color changes; the connection-color adaptation here is
+disclosed, not asserted to satisfy those marketing guidelines or grant a broader
+license. The verified [Nebula documentation](https://nebula.defined.net/docs/)
+identifies the open-source networking project; the unrelated installed
+`nebula` streaming-service mark is intentionally not vendored.
+
+**SoftEther** uses a distinct app-authored SE/ethernet SVG identifier. The checked
+[project website](https://www.softether.org/) supplies raster logo artwork; no
+verified compact vector was obtained in the bounded lookup. The identifier is
+not a tracing or official project logo, and remains outside `BRAND_ICONS`.
+Its VPN variant adds only the app's existing role frame.
 
 ## Product-role semantics
 

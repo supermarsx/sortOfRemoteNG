@@ -22,9 +22,9 @@ import {
 } from "../brand";
 import { defineIcon } from "./types";
 
-/** Carrier choices share the existing network category and stable key contract. */
+/** Carrier choices retain their stable keys in the provider section. */
 export const TELECOM_ICONS = [
-  defineIcon("telecom", "Telecom", "network", RadioTower, [
+  defineIcon("telecom", "Telecom", "isp-providers", RadioTower, [
     "telecom",
     "generic telecom",
     "telecommunications",
@@ -34,7 +34,7 @@ export const TELECOM_ICONS = [
     "internet provider",
     "isp",
   ]),
-  defineIcon("vodafone", "Vodafone", "network", vodafone, [
+  defineIcon("vodafone", "Vodafone", "isp-providers", vodafone, [
     "vodafone",
     "telecom",
     "mobile operator",
@@ -45,7 +45,7 @@ export const TELECOM_ICONS = [
   defineIcon(
     "deutsche-telekom",
     "Deutsche Telekom",
-    "network",
+    "isp-providers",
     deutschetelekom,
     [
       "deutsche telekom",
@@ -56,7 +56,7 @@ export const TELECOM_ICONS = [
       "carrier",
     ],
   ),
-  defineIcon("orange", "Orange", "network", orange, [
+  defineIcon("orange", "Orange", "isp-providers", orange, [
     "orange",
     "orange telecom",
     "telecom",
@@ -64,7 +64,7 @@ export const TELECOM_ICONS = [
     "carrier",
     "broadband",
   ]),
-  defineIcon("o2", "O2", "network", o2, [
+  defineIcon("o2", "O2", "isp-providers", o2, [
     "o2",
     "o 2",
     "telecom",
@@ -72,7 +72,7 @@ export const TELECOM_ICONS = [
     "carrier",
     "broadband",
   ]),
-  defineIcon("att", "AT&T", "network", atandt, [
+  defineIcon("att", "AT&T", "isp-providers", atandt, [
     "at&t",
     "at and t",
     "atandt",
@@ -81,7 +81,7 @@ export const TELECOM_ICONS = [
     "carrier",
     "internet provider",
   ]),
-  defineIcon("movistar", "Movistar", "network", movistar, [
+  defineIcon("movistar", "Movistar", "isp-providers", movistar, [
     "movistar",
     "telefonica",
     "telecom",
@@ -92,7 +92,7 @@ export const TELECOM_ICONS = [
   defineIcon(
     "t-mobile",
     "T-Mobile",
-    "network",
+    "isp-providers",
     tmobile,
     [
       "t-mobile",
@@ -107,12 +107,12 @@ export const TELECOM_ICONS = [
   defineIcon(
     "meo",
     "MEO",
-    "network",
+    "isp-providers",
     meo,
     ["meo", "telecom", "mobile operator", "broadband", "internet provider"],
     "MEO connection icon with an app-authored identifier; not an official MEO logo.",
   ),
-  defineIcon("nos", "NOS", "network", nos, [
+  defineIcon("nos", "NOS", "isp-providers", nos, [
     "nos",
     "nos telecom",
     "telecom",
@@ -120,7 +120,7 @@ export const TELECOM_ICONS = [
     "broadband",
     "carrier",
   ]),
-  defineIcon("digi", "DIGI", "network", digi, [
+  defineIcon("digi", "DIGI", "isp-providers", digi, [
     "digi",
     "digi telecom",
     "telecom",
@@ -131,7 +131,7 @@ export const TELECOM_ICONS = [
   defineIcon(
     "viva",
     "VIVA",
-    "network",
+    "isp-providers",
     viva,
     ["viva", "telecom", "carrier", "operator", "neutral identifier"],
     "Neutral VIVA telecom identifier authored by the app; not an official logo and not assigned to a particular regional provider.",
@@ -139,12 +139,12 @@ export const TELECOM_ICONS = [
   defineIcon(
     "uzo",
     "UZO",
-    "network",
+    "isp-providers",
     uzo,
     ["uzo", "telecom", "mobile operator", "broadband", "internet provider"],
     "UZO connection icon with an app-authored identifier; not an official UZO logo.",
   ),
-  defineIcon("tele2", "Tele2", "network", tele2, [
+  defineIcon("tele2", "Tele2", "isp-providers", tele2, [
     "tele2",
     "tele 2",
     "telecom",
@@ -152,7 +152,7 @@ export const TELECOM_ICONS = [
     "broadband",
     "carrier",
   ]),
-  defineIcon("sfr", "SFR", "network", sfr, [
+  defineIcon("sfr", "SFR", "isp-providers", sfr, [
     "sfr",
     "telecom",
     "mobile operator",
@@ -162,12 +162,12 @@ export const TELECOM_ICONS = [
   defineIcon(
     "altice",
     "Altice",
-    "network",
+    "isp-providers",
     altice,
     ["altice", "altice europe", "telecom", "carrier", "broadband"],
     "Altice connection icon using an archived official Altice Europe mark.",
   ),
-  defineIcon("three", "Three", "network", three, [
+  defineIcon("three", "Three", "isp-providers", three, [
     "three",
     "3",
     "three telecom",
@@ -178,7 +178,7 @@ export const TELECOM_ICONS = [
   defineIcon(
     "hurricane-electric",
     "Hurricane Electric",
-    "network",
+    "isp-providers",
     hurricaneelectric,
     [
       "hurricane electric",
@@ -195,7 +195,7 @@ export const TELECOM_ICONS = [
   defineIcon(
     "nowo",
     "NOWO",
-    "network",
+    "isp-providers",
     nowo,
     ["nowo", "telecom", "mobile operator", "broadband", "internet provider"],
     "NOWO connection icon using the NOWO lettering from the publisher's DIGI/NOWO mark.",

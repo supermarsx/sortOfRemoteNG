@@ -23,6 +23,7 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
   "remote-protocols": "Remote protocols",
   "servers-devices": "Servers & devices",
   network: "Network",
+  "isp-providers": "ISPs & providers",
   cloud: "Cloud",
   databases: "Databases",
   "devops-monitoring": "DevOps & monitoring",
@@ -33,7 +34,8 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
   "generic-shapes": "Markers & shapes",
   "operating-systems": "Operating systems",
   virtualization: "Virtualization & containers",
-  "vendors-hardware": "Vendors & hardware",
+  vendors: "Vendors & brands",
+  "vendors-hardware": "Hardware & appliances",
   "voice-telephony": "Voice & telephony",
   "web-applications": "Web & applications",
 });

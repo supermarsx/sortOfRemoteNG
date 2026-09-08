@@ -8,6 +8,7 @@ import {
 
 import {
   alibabacloud,
+  aws,
   azure,
   digitalocean,
   googlecloud,
@@ -25,6 +26,37 @@ import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
 
 export const CLOUD_ICONS = [
+  defineIcon(
+    "aws",
+    "AWS",
+    "cloud",
+    aws,
+    ["aws", "amazon web services", "amazon cloud", "cloud provider", "plain"],
+    "AWS cloud-provider choice using the app's existing AWS/cloud identifier, not a newly sourced official product mark.",
+  ),
+  defineIcon(
+    "oracle",
+    "Oracle",
+    "cloud",
+    oracle,
+    ["oracle", "oracle cloud", "oci", "cloud provider", "plain brand"],
+    "Oracle cloud-provider choice using the plain Oracle parent brand mark, not an ERP-specific icon.",
+  ),
+  defineIcon(
+    "redhat-cloud-brand",
+    "Red Hat cloud brand",
+    "cloud",
+    redhat,
+    [
+      "redhat",
+      "red hat",
+      "red hat cloud",
+      "openshift",
+      "cloud provider",
+      "plain brand",
+    ],
+    "Cloud-provider choice using the plain Red Hat parent brand mark, not a separate cloud-product logo.",
+  ),
   defineIcon("heroku", "Heroku", "cloud", heroku, ["heroku", "cloud", "paas"]),
   defineIcon("scaleway", "Scaleway", "cloud", scaleway, [
     "scaleway",
@@ -121,4 +153,41 @@ export const CLOUD_ICONS = [
     ["linode", "akamai", "cloud", "vps"],
     "Linode connection icon using the historical Linode cube mark, not the current Akamai logo.",
   ),
+  defineIcon("ibm", "IBM", "cloud", ibm, [
+    "ibm",
+    "international business machines",
+    "power",
+    "mainframe",
+  ]),
+  defineIcon("hetzner", "Hetzner", "cloud", hetzner, [
+    "hetzner",
+    "hosting",
+    "cloud",
+    "provider",
+    "plain",
+  ]),
+  defineIcon("ovh", "OVH", "cloud", ovh, [
+    "ovh",
+    "ovhcloud",
+    "ovh cloud",
+    "hosting",
+    "provider",
+    "plain",
+  ]),
+  defineIcon("digitalocean", "DigitalOcean", "cloud", digitalocean, [
+    "digitalocean",
+    "digital ocean",
+    "cloud",
+    "hosting",
+    "provider",
+    "plain",
+  ]),
+  defineIcon("alibabacloud", "Alibaba Cloud", "cloud", alibabacloud, [
+    "alibabacloud",
+    "alibaba cloud",
+    "aliyun",
+    "cloud",
+    "provider",
+    "plain",
+  ]),
 ] as const;

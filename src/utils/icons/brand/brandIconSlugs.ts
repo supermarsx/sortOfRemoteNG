@@ -114,9 +114,15 @@ export const BRAND_ICON_SLUGS = [
   "wordpress",
 
   // Databases
+  "apachecassandra",
+  "apachecouchdb",
+  "clickhouse",
+  "cockroachlabs",
+  "influxdb",
   "mariadb",
   "mongodb",
   "mysql",
+  "neo4j",
   "postgresql",
   "redis",
   "sqlite",
@@ -130,7 +136,9 @@ export const BRAND_ICON_SLUGS = [
 
   // Network
   "openvpn",
+  "tailscale",
   "wireguard",
+  "zerotier",
 
   // Security
   "fortinet",
@@ -146,6 +154,9 @@ export const BRAND_ICON_SLUGS = [
   "teamviewer",
 
   // Business, collaboration, automation and server tools
+  "graphql",
+  "hubspot",
+  "zoho",
   "odoo",
   "metabase",
   "apachesuperset",

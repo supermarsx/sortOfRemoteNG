@@ -280,6 +280,8 @@ test("historical marks preserve the version-pinned upstream path bytes", async (
   const { HISTORICAL_BRAND_ICONS, HISTORICAL_BRAND_ICON_NAMES } =
     await importBrandModule();
   const hashes = {
+    salesforce:
+      "1d3af188552e86b2e368f97efcbe990d32ae8a2d870d169f9284cd680b18c5c5",
     heroku: "489f3f58c4fa1064a098080a015747329b477bb81cc8bdf755a12fd592ac7090",
     tmobile: "fafddc1ad71a451ab5eca8bfc2085a381448bce9671cf6658c4c8846811c3d49",
     java: "27c0563ecd4b6d139b484904f262a5d8aa27bb8786ff1b1335a5790c672ff0fd",
@@ -363,7 +365,7 @@ test("app-authored identifiers are distinct SVG geometry and not advertised as o
   const { BRAND_ICONS, APP_AUTHORED_IDENTIFIER_ICONS } =
     await importBrandModule();
   const identifiers = Object.entries(APP_AUTHORED_IDENTIFIER_ICONS);
-  assert.equal(identifiers.length, 46);
+  assert.equal(identifiers.length, 47);
   const paths = identifiers.map(([name, Icon]) => {
     assert.ok(
       !(name in BRAND_ICONS),
@@ -386,6 +388,26 @@ test("publisher SVG paths retain the verified geometry and normalization", async
   const { PUBLISHER_BRAND_ICONS, PUBLISHER_BRAND_ICON_NAMES } =
     await importBrandModule();
   const sources = {
+    pipedrive: [
+      1,
+      "52cb4efbdae85617054eda2a6d49fe8a65dd6b30de1177db21bf0bc85cb37ca2",
+      "translate(1.7142857142857142 0) scale(1.1428571428571428) translate(0 -5)",
+    ],
+    netbird: [
+      1,
+      "6cb44c0cee99b8d1d6868c5a8c799cd45323ac8f8f4bb18c49acf1faeb69a14e",
+      "translate(0 3.2195121951219514) scale(0.5853658536585366)",
+    ],
+    twingate: [
+      1,
+      "01c141edfcd80afa53960ec86a97e3b0b0fc44c01d06c881bb42db5ed8c5de08",
+      "translate(4.8 0) scale(1.2)",
+    ],
+    nebula: [
+      1,
+      "c3a409d5858acdb3bc364592c06afb5523bf1ea4e6f392cc1d6e73aa727a3404",
+      "translate(0 5.6) scale(0.05) translate(-288 0)",
+    ],
     microsoftexchangemodern: [
       1,
       "e41f35b84ad0952c541f730ede4970ae894f226ec401e949906590863e04f4fb",
@@ -532,6 +554,38 @@ test("publisher SVG paths retain the verified geometry and normalization", async
       `${name} normalization drifted`,
     );
   }
+});
+
+test("CRM and VPN symbols preserve publisher fill rules and distinguish the actual Nebula project", async () => {
+  const {
+    pipedrive,
+    netbird,
+    twingate,
+    nebula,
+    softether,
+    BRAND_ICON_SLUGS,
+    BRAND_ICONS,
+    APP_AUTHORED_IDENTIFIER_ICONS,
+  } = await importBrandModule();
+  for (const Icon of [pipedrive, netbird, twingate, nebula]) {
+    const markup = renderToStaticMarkup(createElement(Icon, { size: 16 }));
+    assert.equal((markup.match(/<svg\b/gu) ?? []).length, 1);
+    assert.equal((markup.match(/<path\b/gu) ?? []).length, 1);
+    assert.doesNotMatch(markup, /<(?:rect|image|text|foreignObject)\b/u);
+    assert.match(markup, /width="16"/u);
+  }
+  for (const Icon of [pipedrive, twingate]) {
+    const markup = renderToStaticMarkup(createElement(Icon));
+    assert.match(markup, /fill-rule="evenodd"/u);
+    assert.match(markup, /clip-rule="evenodd"/u);
+  }
+  assert.ok(
+    !BRAND_ICON_SLUGS.includes("nebula"),
+    "the installed nebula slug is a streaming service, not the VPN project",
+  );
+  assert.equal(BRAND_ICONS.nebula, nebula);
+  assert.equal(APP_AUTHORED_IDENTIFIER_ICONS.softether, softether);
+  assert.ok(!("softether" in BRAND_ICONS));
 });
 
 test("telecom marks retain special fill rules and keep unresolved provider identity neutral", async () => {

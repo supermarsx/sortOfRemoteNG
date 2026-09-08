@@ -22,23 +22,17 @@ import {
   bind,
   cisco,
   ddwrt,
-  cloudflare,
   freshtomato,
-  gandi,
-  godaddy,
-  ionos,
   microsoft,
-  namecheap,
   netbox,
   openldap,
   openvpn,
-  porkbun,
   samba,
   wireguard,
 } from "../brand";
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
-import { TELECOM_ICONS } from "./telecom";
+import { VPN_TYPE_ICONS } from "./vpnTypes";
 
 const RackRouter = createLucideIcon("RackRouter", [
   [
@@ -272,43 +266,6 @@ export const NETWORK_ICONS = [
     "polling",
     "management protocol",
   ]),
-  defineIcon("porkbun", "Porkbun", "network", porkbun, [
-    "porkbun",
-    "pork bun",
-    "domain registrar",
-    "dns",
-  ]),
-  defineIcon("namecheap", "Namecheap", "network", namecheap, [
-    "namecheap",
-    "name cheap",
-    "domain registrar",
-    "dns",
-  ]),
-  defineIcon("godaddy", "GoDaddy", "network", godaddy, [
-    "godaddy",
-    "go daddy",
-    "domain registrar",
-    "dns",
-  ]),
-  defineIcon("gandi", "Gandi", "network", gandi, [
-    "gandi",
-    "domain registrar",
-    "dns",
-  ]),
-  defineIcon("ionos", "IONOS", "network", ionos, [
-    "ionos",
-    "1and1",
-    "1 1",
-    "domain registrar",
-    "dns",
-  ]),
-  defineIcon("cloudflare", "Cloudflare", "network", cloudflare, [
-    "cloudflare",
-    "cloud flare",
-    "domain registrar",
-    "dns",
-    "cdn",
-  ]),
   defineIcon("router-rack", "Rack router", "network", RackRouter, [
     "rack router",
     "router rack",
@@ -357,5 +314,5 @@ export const NETWORK_ICONS = [
     ],
     "DD-WRT router with an app-authored identifier; not an official DD-WRT logo.",
   ),
-  ...TELECOM_ICONS,
+  ...VPN_TYPE_ICONS,
 ] as const;

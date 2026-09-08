@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { defineIcon } from "./types";
+import { FILE_TYPE_ICONS } from "./fileTypes";
 
 export const FILES_ICONS = [
   defineIcon("file", "File", "files", File, ["document"]),
@@ -32,4 +33,5 @@ export const FILES_ICONS = [
     "accounting",
     "fatura",
   ]),
+  ...FILE_TYPE_ICONS,
 ] as const;

@@ -11,6 +11,7 @@ import {
 } from "../brand";
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
+import { DATABASE_SERVER_ICONS } from "./databaseServers";
 
 export const DATABASE_ICONS = [
   defineIcon("database", "Database", "databases", Database, [
@@ -126,4 +127,5 @@ export const DATABASE_ICONS = [
     "key value",
     "database",
   ]),
+  ...DATABASE_SERVER_ICONS,
 ] as const;

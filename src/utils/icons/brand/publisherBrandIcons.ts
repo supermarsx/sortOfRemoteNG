@@ -362,7 +362,66 @@ export const microsoftexchangemodern = createBrandIcon(
   "scale(0.01171875)",
 );
 
+// https://www.pipedrive.com/
+// Source SVG SHA-256: b96d5e70979e59117b3fe26f85bcc76e986a048bfed711074e57269a5cefa105
+// Leading P path from the publisher header wordmark; remaining lettering omitted. Source 18×21 symbol viewport begins at (0,5).
+export const pipedrive = createLucideIcon("pipedrive", [
+  [
+    "path",
+    {
+      d: "M17.4027 12.9716C17.4027 17.4003 14.5432 20.4293 10.4545 20.4293C8.51071 20.4293 6.90877 19.6289 6.30901 18.6287L6.33738 19.6572V26H2.16355V9.59983C2.16355 9.37169 2.1068 9.31369 1.84884 9.31369H0.418434V5.82847H3.90738C5.50803 5.82847 5.90916 7.19987 6.02267 7.80051C6.6521 6.7436 8.3095 5.51526 10.6544 5.51526C14.6863 5.51397 17.4027 8.51328 17.4027 12.9716ZM13.1424 13C13.1424 10.6284 11.5985 9.00049 9.65349 9.00049C8.05283 9.00049 6.25096 10.0574 6.25096 13.0296C6.25096 14.972 7.33699 17.0008 9.59674 17.0008C11.2554 16.9995 13.1424 15.7995 13.1424 13Z",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      clipRule: "evenodd",
+      transform:
+        "translate(1.7142857142857142 0) scale(1.1428571428571428) translate(0 -5)",
+      key: "pipedrive-publisher-path",
+    },
+  ],
+]);
+
+// https://netbird.io/_next/static/media/netbird-icon.167cd80b.svg
+// Source SVG SHA-256: 0876ddda40f4ddc49f8ed6a0cd6369482af29077f06a648e907043e022151468
+// All three exact bird paths from the publisher press-kit icon. Uniform 41×30 fit; monochrome removes the original darker wing overlap.
+export const netbird = createBrandIcon(
+  "netbird",
+  "M28.5735 0C23.7203 0.445248 21.3049 3.23918 20.3921 4.65284L6.21094 29.2194H23.3196L40.1945 0H28.5735Z M23.331 29.2198L0 4.47517C0 4.47517 26.381 -2.6154 28.9523 19.5023L23.331 29.2198Z M19.8683 5.56728L12.7109 17.9674L23.319 29.2211L28.9402 19.4813C28.0497 11.8787 24.343 7.72674 19.8683 5.55615",
+  "translate(0 3.2195121951219514) scale(0.5853658536585366)",
+);
+
+// https://www.twingate.com/
+// Source SVG SHA-256: a7169ca049e502cc639bc2b102ee08f1e698a753cfd8976c9e9feda4a50ecd6f
+// Two left-hand symbol subpaths from header SVG#svg712272324_2169. Lettering beginning at M26.8 omitted; original evenodd fill retained.
+export const twingate = createLucideIcon("twingate", [
+  [
+    "path",
+    {
+      d: "M0 8.516V17.2s1.298-.89 2.75-1.91v-4.774c0-2.347.707-3.104 2.62-4.526l2.624-1.95V0S4.198 2.816 2.62 3.99C.707 5.412 0 6.17 0 8.516ZM4 20v-8.684c0-2.347.707-3.104 2.62-4.526 1.578-1.174 5.374-3.99 5.374-3.99v7.577c0 .218.001.425.003.624.018 2.099.027 3.218-2.12 4.841C8.105 17.184 4 20 4 20Z",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      clipRule: "evenodd",
+      transform: "translate(4.8 0) scale(1.2)",
+      key: "twingate-publisher-path",
+    },
+  ],
+]);
+
+// https://nebula.defined.net/img/mark.svg
+// Source SVG SHA-256: b2f0303ef1d78a7319a431aa8218c1ee2928a090d782fa2221ad9d4e62f31b93
+// Final wave/network symbol path from the actual Nebula VPN documentation logo, not the unrelated Nebula streaming brand. Lettering omitted; uniform fit of its 480×256 symbol region.
+export const nebula = createBrandIcon(
+  "nebula",
+  "M752.057 110.838C742.529 101.31 727.081 101.31 717.553 110.838L717.55 110.842C702.461 125.935 716.472 135.641 677.658 174.455C653.978 198.135 642.812 205.185 631.294 205.11C621.463 205.185 608.609 198.135 584.928 174.454C546.112 135.637 560.129 125.933 545.033 110.838C544.14 109.944 543.179 109.162 542.191 108.436C530.229 98.906 518.451 106 482.136 69.6845C443.319 30.8674 456.258 22.2416 441.162 7.14606C431.634 -2.38202 416.186 -2.38202 406.658 7.14606L406.654 7.15014C393.722 20.0874 404.498 30.8716 365.684 69.6848C326.874 108.496 318.244 95.5674 303.153 110.652L303.146 110.658C293.618 120.186 293.618 135.635 303.146 145.163C312.674 154.69 328.122 154.69 337.65 145.163C352.746 130.067 338.728 120.363 377.545 81.5456C401.226 57.865 414.08 50.8152 423.91 50.8902C435.428 50.8152 446.595 57.8653 470.275 81.5453C509.088 120.359 495.077 130.065 510.167 145.158L510.17 145.162C510.94 145.932 511.76 146.617 512.602 147.263C526.493 159.323 536.063 149.31 573.068 186.315C611.881 225.129 601.105 235.913 614.038 248.85L614.041 248.854C623.569 258.382 639.017 258.382 648.545 248.854C663.641 233.758 650.702 225.133 689.519 186.316C728.336 147.498 739.118 158.281 752.057 145.342C761.585 135.814 761.585 120.366 752.057 110.838Z",
+  "translate(0 5.6) scale(0.05) translate(-288 0)",
+);
+
 export const PUBLISHER_BRAND_ICON_NAMES = [
+  "pipedrive",
+  "netbird",
+  "twingate",
+  "nebula",
   "microsoftexchangemodern",
   "uniview",
   "axis",
@@ -393,6 +452,10 @@ export type PublisherBrandIconName =
 export const PUBLISHER_BRAND_ICONS: Readonly<
   Record<PublisherBrandIconName, LucideIcon>
 > = {
+  pipedrive,
+  netbird,
+  twingate,
+  nebula,
   microsoftexchangemodern,
   uniview,
   axis,

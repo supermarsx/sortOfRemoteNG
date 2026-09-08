@@ -35,6 +35,8 @@ import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
 
 import { BUSINESS_APPLICATION_ICONS } from "./businessApplications";
+import { BUSINESS_SYSTEM_ICONS } from "./businessSystems";
+import { BANKING_ICONS } from "./banking";
 
 /**
  * Web and application icons. Seeded with generic Lucide entries so the category
@@ -313,4 +315,6 @@ export const WEB_APPLICATION_ICONS = [
     "javascript runtime",
     "node server",
   ]),
+  ...BANKING_ICONS,
+  ...BUSINESS_SYSTEM_ICONS,
 ] as const;

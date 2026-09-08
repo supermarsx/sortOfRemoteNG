@@ -15,11 +15,13 @@ import { FILES_ICONS } from "../../src/utils/icons/catalog/files";
 import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";
 import { GENERIC_SHAPE_ICONS } from "../../src/utils/icons/catalog/genericShapes";
 import { NETWORK_ICONS } from "../../src/utils/icons/catalog/network";
+import { ISP_PROVIDER_ICONS } from "../../src/utils/icons/catalog/providers";
 import { OPERATING_SYSTEM_ICONS } from "../../src/utils/icons/catalog/operatingSystems";
 import { REMOTE_PROTOCOL_ICONS } from "../../src/utils/icons/catalog/remoteProtocols";
 import { SECURITY_ICONS } from "../../src/utils/icons/catalog/security";
 import { SERVERS_DEVICES_ICONS } from "../../src/utils/icons/catalog/serversDevices";
 import { VENDORS_HARDWARE_ICONS } from "../../src/utils/icons/catalog/vendorsHardware";
+import { VENDOR_ICONS } from "../../src/utils/icons/catalog/vendors";
 import { VIRTUALIZATION_ICONS } from "../../src/utils/icons/catalog/virtualization";
 import { VOICE_TELEPHONY_ICONS } from "../../src/utils/icons/catalog/voiceTelephony";
 import { WEB_APPLICATION_ICONS } from "../../src/utils/icons/catalog/webApplications";
@@ -47,6 +49,7 @@ const CATALOG_MODULES: readonly CatalogModule[] = [
     entries: SERVERS_DEVICES_ICONS,
   },
   { name: "network", category: "network", entries: NETWORK_ICONS },
+  { name: "providers", category: "isp-providers", entries: ISP_PROVIDER_ICONS },
   { name: "cloud", category: "cloud", entries: CLOUD_ICONS },
   { name: "databases", category: "databases", entries: DATABASE_ICONS },
   {
@@ -78,6 +81,11 @@ const CATALOG_MODULES: readonly CatalogModule[] = [
     entries: VIRTUALIZATION_ICONS,
   },
   {
+    name: "vendors",
+    category: "vendors",
+    entries: VENDOR_ICONS,
+  },
+  {
     name: "vendorsHardware",
     category: "vendors-hardware",
     entries: VENDORS_HARDWARE_ICONS,
@@ -99,7 +107,7 @@ describe("connection icon catalog modules", () => {
     expect(CATALOG_MODULES.map((module) => module.category)).toEqual([
       ...CONNECTION_ICON_CATEGORIES,
     ]);
-    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(16);
+    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(18);
   });
 
   it("composes the catalog from every module without dropping entries", () => {

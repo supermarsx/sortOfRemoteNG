@@ -1,4 +1,4 @@
-import { Container, GlobeLock, Layers, MonitorCog } from "lucide-react";
+import { Container, Layers, MonitorCog } from "lucide-react";
 
 import {
   docker,
@@ -32,13 +32,6 @@ export const VIRTUALIZATION_ICONS = [
     "kvm",
     "xen",
     "bare metal",
-  ]),
-  defineIcon("noip", "Dynamic DNS", "virtualization", GlobeLock, [
-    "noip",
-    "no-ip",
-    "dynamic dns",
-    "ddns",
-    "hostname",
   ]),
   defineIcon("vmware", "VMware", "virtualization", vmware, [
     "vmware",
