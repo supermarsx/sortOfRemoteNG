@@ -851,6 +851,13 @@ export function useConnectionEditor(
   const editorRevisionRef = useRef(0);
   const renderedEditorSnapshotRef = useRef<string | null>(null);
   const editorIdentityRef = useRef<string | null>(null);
+  const incomingConnectionRef = useRef(connection);
+  incomingConnectionRef.current = connection;
+  const lastEnqueuedRevisionRef = useRef<number | null>(null);
+  const lastEnqueuedSnapshotRef = useRef<string | null>(null);
+  // A superseded/failed write may still have reached storage. Only a current,
+  // successful save can restore the unchanged fast path, not queue settlement.
+  const hasUnconfirmedSaveRef = useRef(false);
   const saveRequestSequenceRef = useRef(0);
   const latestSaveRequestRef = useRef(0);
   const saveQueueTailRef = useRef<Promise<void>>(Promise.resolve());
@@ -1060,7 +1067,7 @@ export function useConnectionEditor(
   );
 
   const isNewConnection = !connection;
-  const editorIdentity = `${connection?.id ?? "new"}:${isOpen ? "open" : "closed"}`;
+  const editorIdentity = JSON.stringify([connection?.id ?? null, isOpen]);
   const renderedEditorSnapshot = buildEditorSnapshot(formData);
   if (
     editorIdentityRef.current !== editorIdentity ||
@@ -1073,6 +1080,13 @@ export function useConnectionEditor(
 
   // ── Effects ───────────────────────────────────────────────────
   useEffect(() => {
+    // An open editor owns its draft. Same-ID reducer updates include our own
+    // optimistic, not-yet-persisted saves and must not reset the draft/baseline.
+    // Switching connection or closing/reopening starts a fresh editing session.
+    const connection = incomingConnectionRef.current;
+    isInitializedRef.current = false;
+    lastEnqueuedRevisionRef.current = null;
+    let initializationFrame: number | undefined;
     if (connection) {
       const isSshConnection = connection.protocol === "ssh";
 
@@ -1119,10 +1133,17 @@ export function useConnectionEditor(
       );
       // Mark as initialized on the *next* effect cycle so the auto-save
       // effect that fires from the setFormData re-render still sees false.
-      isInitializedRef.current = false;
-      requestAnimationFrame(() => {
-        isInitializedRef.current = true;
-      });
+      if (isOpenRef.current) {
+        initializationFrame = requestAnimationFrame(() => {
+          if (
+            editorMountedRef.current &&
+            isOpenRef.current &&
+            editorIdentityRef.current === editorIdentity
+          ) {
+            isInitializedRef.current = true;
+          }
+        });
+      }
     } else {
       clearManagedSshSecrets();
       const initial = { ...DEFAULT_FORM, cloudProvider: undefined };
@@ -1130,13 +1151,19 @@ export function useConnectionEditor(
       originalDataRef.current = buildEditorSnapshot(initial);
       isInitializedRef.current = false;
     }
+    lastEnqueuedSnapshotRef.current = originalDataRef.current;
     setAutoSaveStatus("idle");
+    return () => {
+      if (initializationFrame !== undefined) {
+        cancelAnimationFrame(initializationFrame);
+      }
+      isInitializedRef.current = false;
+    };
   }, [
     buildEditorSnapshot,
     clearManagedSshSecrets,
-    connection,
+    editorIdentity,
     hydrateManagedSshSecrets,
-    isOpen,
     sanitizeSshConnectionOverride,
   ]);
 
@@ -1338,6 +1365,7 @@ export function useConnectionEditor(
           ),
         );
         const alreadySynchronized =
+          current.hostname === persistentConnection.hostname &&
           current.password === "" &&
           !hasRuntimeSecrets &&
           JSON.stringify(
@@ -1353,6 +1381,21 @@ export function useConnectionEditor(
       });
     },
     [],
+  );
+
+  const persistedEditorSnapshot = useCallback(
+    (draft: Partial<Connection>, persistentConnection: Connection) =>
+      buildEditorSnapshot(
+        isIntegrationConnectionProtocol(persistentConnection.protocol)
+          ? {
+              ...draft,
+              hostname: persistentConnection.hostname,
+              password: "",
+              integration: persistentConnection.integration,
+            }
+          : draft,
+      ),
+    [buildEditorSnapshot],
   );
 
   const isCurrentEditorRevision = useCallback(
@@ -1376,6 +1419,12 @@ export function useConnectionEditor(
 
   const enqueueConnectionSave = useCallback(
     (request: EditorSaveRequest): Promise<EditorSaveOutcome> => {
+      if (!isCurrentEditorRevision(request.revision)) {
+        return Promise.resolve({ status: "superseded" });
+      }
+      hasUnconfirmedSaveRef.current = true;
+      lastEnqueuedRevisionRef.current = request.revision;
+      lastEnqueuedSnapshotRef.current = renderedEditorSnapshotRef.current;
       const requestId = ++saveRequestSequenceRef.current;
       latestSaveRequestRef.current = requestId;
 
@@ -1437,7 +1486,19 @@ export function useConnectionEditor(
 
   // Auto-save effect
   useEffect(() => {
-    if (!connection || !settings.autoSaveEnabled || !isInitializedRef.current) {
+    if (!settings.autoSaveEnabled) {
+      lastEnqueuedRevisionRef.current = null;
+      return;
+    }
+    if (
+      !connection ||
+      !isOpen ||
+      !isInitializedRef.current ||
+      lastEnqueuedRevisionRef.current === editorRevisionRef.current ||
+      // Compare with the queued draft, not just the last confirmed baseline:
+      // reverting A -> B -> A must queue A while B is still being written.
+      buildEditorSnapshot(formData) === lastEnqueuedSnapshotRef.current
+    ) {
       return;
     }
     if (autoSaveTimerRef.current) {
@@ -1464,6 +1525,12 @@ export function useConnectionEditor(
 
         if (outcome.status === "saved") {
           syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
+          originalDataRef.current = persistedEditorSnapshot(
+            formData,
+            outcome.prepared.persistentConnection,
+          );
+          lastEnqueuedSnapshotRef.current = originalDataRef.current;
+          hasUnconfirmedSaveRef.current = false;
           setAutoSaveStatus("saved");
           autoSaveIdleTimerRef.current = window.setTimeout(() => {
             autoSaveIdleTimerRef.current = null;
@@ -1491,8 +1558,11 @@ export function useConnectionEditor(
     connection,
     settings.autoSaveEnabled,
     buildConnectionData,
+    buildEditorSnapshot,
     enqueueConnectionSave,
+    isOpen,
     isCurrentEditorRevision,
+    persistedEditorSnapshot,
     persistenceErrorMessage,
     sshSecretRevision,
     syncPersistedIntegrationForm,
@@ -1514,6 +1584,7 @@ export function useConnectionEditor(
 
       // Detect whether anything actually changed
       const hasChanges =
+        hasUnconfirmedSaveRef.current ||
         buildEditorSnapshot(formData) !== originalDataRef.current;
       const needsIntegrationInstance =
         isIntegrationConnectionProtocol(formData.protocol) &&
@@ -1547,9 +1618,14 @@ export function useConnectionEditor(
       }
 
       syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
-      originalDataRef.current = buildEditorSnapshot(
+      // Compare against the submitted editor shape, not storage-only fields
+      // (timestamps/defaults) that do not change the still-open draft.
+      originalDataRef.current = persistedEditorSnapshot(
+        formData,
         outcome.prepared.persistentConnection,
       );
+      lastEnqueuedSnapshotRef.current = originalDataRef.current;
+      hasUnconfirmedSaveRef.current = false;
       toast.success(
         `"${outcome.prepared.persistentConnection.name}" ${
           connection ? "saved" : "created"
@@ -1565,6 +1641,7 @@ export function useConnectionEditor(
       formData,
       isCurrentEditorRevision,
       onClose,
+      persistedEditorSnapshot,
       persistenceErrorMessage,
       syncPersistedIntegrationForm,
       toast,
@@ -1594,6 +1671,7 @@ export function useConnectionEditor(
       runtimeConnection.protocol,
     );
     const hasChanges =
+      hasUnconfirmedSaveRef.current ||
       buildEditorSnapshot(formData) !== originalDataRef.current;
 
     if (!isIntegration && !hasChanges) {
@@ -1623,13 +1701,16 @@ export function useConnectionEditor(
     if (outcome.persisted) {
       if (isIntegration) {
         syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
-        originalDataRef.current = buildEditorSnapshot(
+        originalDataRef.current = persistedEditorSnapshot(
+          formData,
           outcome.prepared.persistentConnection,
         );
       } else {
         originalDataRef.current = buildEditorSnapshot(formData);
       }
+      lastEnqueuedSnapshotRef.current = originalDataRef.current;
     }
+    hasUnconfirmedSaveRef.current = false;
     return outcome.prepared.runtimeConnection;
   }, [
     buildConnectionData,
@@ -1638,6 +1719,7 @@ export function useConnectionEditor(
     enqueueConnectionSave,
     formData,
     isCurrentEditorRevision,
+    persistedEditorSnapshot,
     persistenceErrorMessage,
     syncPersistedIntegrationForm,
     toast,

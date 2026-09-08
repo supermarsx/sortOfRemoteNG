@@ -2832,12 +2832,10 @@ describe("ConnectionEditor", () => {
       expect(integrationConfigRaw).not.toContain("must-not-connect");
     });
 
-    it("still connects after an autosave has fired (autosave dirty-baseline guard)", async () => {
-      // Encodes plan §1.4: autosave persists but never updates the dirty
-      // baseline, so the connection reports dirty forever. This is the test
-      // that would go RED under a "disable Connect while dirty" design — it
-      // locks that door shut. Uses real timers to drive the ~1s autosave
-      // debounce, matching this file's idiom.
+    it("still connects with the durable edits after an autosave has fired", async () => {
+      // Successful autosave advances the editor's dirty baseline. Connect must
+      // still launch the edited connection, without requiring another edit or
+      // a redundant Save. Use real timers for this file's autosave debounce.
       settingsMockState.autoSaveEnabled = true;
       try {
         const onConnect = vi.fn();
@@ -2869,7 +2867,7 @@ describe("ConnectionEditor", () => {
           expect(seen[seen.length - 1][0].hostname).toBe("172.16.0.9"),
         );
 
-        // The connection is now "dirty forever"; Connect must still work.
+        // The edited connection is durable; Connect must still work.
         fireEvent.click(screen.getByTestId("editor-connect"));
         await waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1));
         expect((onConnect.mock.calls[0][0] as Connection).hostname).toBe(
