@@ -176,6 +176,7 @@ describe("bounded canvas capture", () => {
   });
 
   it("finishes at the duration bound with a valid file and limit callback", async () => {
+    vi.useFakeTimers();
     mockCaptureCanvas();
     const canvas = document.createElement("canvas");
     canvas.width = 2;
@@ -185,10 +186,16 @@ describe("bounded canvas capture", () => {
       maxDurationMs: 100,
       onLimit,
     });
-    collector.captureFrame(0);
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    collector.captureFrame(150);
-    const blob = await collector.encode(150);
+    expect(collector.captureFrame(0)).toBe(true);
+    // Settle both worker initialization and the first frame acknowledgement;
+    // a wall-clock sleep cannot guarantee either under a loaded test runner.
+    await vi.advanceTimersByTimeAsync(TestGifWorker.responseDelay * 2);
+    expect(collector.captureFrame(150)).toBe(true);
+    const encoding = collector.encode(150);
+    await vi.advanceTimersByTimeAsync(TestGifWorker.responseDelay);
+    const blob = await encoding;
+    // FileReader uses the environment's real event loop.
+    vi.useRealTimers();
     expect(parseGif(await blobBytes(blob)).frames[0].delay).toBe(100);
     expect(onLimit).toHaveBeenCalledOnce();
     expect(collector.captureFrame(200)).toBe(false);
