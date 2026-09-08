@@ -1,5 +1,15 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { availableParallelism } from "node:os";
+
+export function resolveTestWorkerCount(parallelism = availableParallelism()) {
+  if (!Number.isInteger(parallelism) || parallelism < 1) {
+    throw new RangeError("Available parallelism must be a positive integer.");
+  }
+  // Follow Vitest 4's run-mode default, reserving a CPU for coordination,
+  // while retaining the workstation cap for this large jsdom suite.
+  return Math.max(1, Math.min(8, parallelism - 1));
+}
 
 /**
  * These suites use Node's built-in test runner and have dedicated package
@@ -17,11 +27,9 @@ export const NODE_TEST_SUITE_EXCLUDES = [
 export default defineConfig({
   plugins: [react()],
   test: {
-    // Large CI/dev hosts can expose dozens of logical CPUs. Letting Vitest
-    // mirror that count causes jsdom workers to contend until otherwise fast
-    // tests exceed their per-test timeout, so keep the suite predictably
-    // bounded across machines.
-    maxWorkers: 8,
+    // A fixed eight workers oversubscribes smaller hosted runners. Respect
+    // their available CPU capacity as well as the cap on larger dev hosts.
+    maxWorkers: resolveTestWorkerCount(),
     environment: "jsdom",
     globals: true,
     setupFiles: "./vitest.setup.ts",
