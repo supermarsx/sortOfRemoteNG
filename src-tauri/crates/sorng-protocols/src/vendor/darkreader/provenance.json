@@ -1,0 +1,17 @@
+{
+  "version": "4.9.130",
+  "source": "https://registry.npmjs.org/darkreader/-/darkreader-4.9.130.tgz",
+  "integrity": "sha512-hLYjyUszzRc7n+EGbK+LYJV9uCp0JwwvRNgXgKyMkqCoetwkheefWUIxbxKiqQaSWLrCQuQuv55f2cHQMopJ2w==",
+  "upstream": "https://github.com/darkreader/darkreader",
+  "documentation": "https://github.com/darkreader/darkreader/blob/main/README.md#using-for-a-website",
+  "files": {
+    "LICENSE": {
+      "bytes": 1095,
+      "sha256": "f0a5f835174494f8981b2cbb1a34054d4f887a5c865318650d6a17afe1c7850e"
+    },
+    "darkreader.js": {
+      "bytes": 353879,
+      "sha256": "bc589aeb7cc9aabd9fc8a20594d364666b72fec9620fe6304a5521b4e545f3c1"
+    }
+  }
+}

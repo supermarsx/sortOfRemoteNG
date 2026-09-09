@@ -18,6 +18,8 @@ pub use proxy_transport::fetch_tls_certificate_info;
 
 #[path = "http_response.rs"]
 mod proxy_response;
+#[path = "http_web_automation.rs"]
+mod web_automation;
 #[cfg(test)]
 #[path = "http_response_tests.rs"]
 mod proxy_response_tests;
@@ -1304,6 +1306,11 @@ pub async fn axum_proxy_handler(
     use axum::http::{Response, StatusCode};
 
     let method = req.method().clone();
+    if req.uri().path() == web_automation::DARKREADER_PATH {
+        // The router's protected-host/origin middleware has already run. Never
+        // forward this bundled asset path or count it as an upstream request.
+        return web_automation::asset(&method);
+    }
     let document_sequence = state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1;
     let path_and_query = req
         .uri()

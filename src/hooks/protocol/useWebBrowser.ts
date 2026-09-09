@@ -13,6 +13,7 @@ import { useToastContext } from "../../contexts/ToastContext";
 import { generateId } from "../../utils/core/id";
 import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
+import { useWebAutomation } from "./useWebAutomation";
 import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
@@ -243,8 +244,8 @@ export function validateProtectedProxyUrl(
    ═══════════════════════════════════════════════════════════════ */
 
 export function useWebBrowser(session: ConnectionSession) {
-  const { state, dispatch } = useConnections();
-  const { settings } = useSettings();
+  const { state, dispatch, dispatchAndFlush, recycleBin } = useConnections();
+  const { settings, settingsReady } = useSettings();
   const { toast } = useToastContext();
   const connection = resolveRuntimeConnection(
     state.connections,
@@ -2211,7 +2212,34 @@ export function useWebBrowser(session: ConnectionSession) {
     );
   }, [applyNavigationFailure, currentUrl]);
 
+  const getAutomationDocument = useCallback(() => {
+    const doc = currentDocumentRef.current;
+    return doc &&
+      doc.generation === navGenRef.current &&
+      doc.sessionId === proxySessionIdRef.current &&
+      !pendingNavigationRef.current &&
+      !navigationFailureRef.current
+      ? doc
+      : null;
+  }, []);
+  const automation = useWebAutomation({
+    connection,
+    ownerDatabaseId: session.ownerDatabaseId,
+    settings,
+    settingsReady: settingsReady === true,
+    scopeKey: recycleBin?.snapshot
+      ? `${recycleBin.snapshot.scope.databaseId}:${recycleBin.snapshot.scope.generation}`
+      : "",
+    blocked: waitingForTrust || !!trustPrompt || !!loadError,
+    navigationKey: `${session.id}:${currentUrl}:${isLoading}`,
+    iframe: iframeRef,
+    getDocument: getAutomationDocument,
+    updateConnection: (updated) =>
+      dispatchAndFlush({ type: "UPDATE_CONNECTION", payload: updated }),
+  });
+
   return {
+    automation,
     // Context
     session,
     connection,

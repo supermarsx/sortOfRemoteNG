@@ -5,6 +5,7 @@ import BookmarkContextMenu from "./BookmarkContextMenu";
 import FolderChip from "./FolderChip";
 import React from "react";
 import { Star } from "lucide-react";
+import { WebAutomationControls } from "./WebAutomationControls";
 
 const BookmarkBar: React.FC<SectionProps> = ({ mgr }) => {
   const baseUrl = mgr.buildTargetUrl().replace(/\/+$/, "");
@@ -49,6 +50,7 @@ const BookmarkBar: React.FC<SectionProps> = ({ mgr }) => {
         </span>
       )}
       <BookmarkContextMenu mgr={mgr} />
+      <WebAutomationControls automation={mgr.automation} />
       <BarContextMenu mgr={mgr} />
     </div>
   );

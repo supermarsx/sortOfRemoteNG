@@ -31,6 +31,8 @@
       url: /http-viewer-trust/
     - title: Website application profiles
       url: /http-application-profiles/
+    - title: Website macros, scripts & dark mode
+      url: /http-website-automation/
 
 - label: Security & your data
   items:

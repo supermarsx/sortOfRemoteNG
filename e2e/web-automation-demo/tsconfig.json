@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "types": ["vite/client", "@webgpu/types", "node"],
+    "lib": ["dom", "dom.iterable", "es2022"]
+  },
+  "include": ["./*.ts", "./*.tsx"],
+  "exclude": ["../../node_modules", "../../src-tauri"]
+}

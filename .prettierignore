@@ -32,3 +32,6 @@ src-tauri/target
 
 # Vendored/reference source retained for protocol research, not formatted by app tooling.
 docs/cedar-reference
+
+# Pinned official API/license bytes and their reproducible hash manifest.
+src-tauri/crates/sorng-protocols/src/vendor/darkreader/

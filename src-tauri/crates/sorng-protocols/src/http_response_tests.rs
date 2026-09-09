@@ -162,6 +162,36 @@ async fn request_health_recovers_after_401_and_500_without_resetting_history() {
 }
 
 #[tokio::test]
+async fn website_automation_asset_is_local_and_keeps_proxy_access_guards() {
+    // A closed upstream proves the asset never forwards to a website.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = format!("http://{}/", listener.local_addr().unwrap());
+    drop(listener);
+    let proxy = proxy(target, client()).await;
+    let path = super::web_automation::DARKREADER_PATH;
+    let allowed = fetch(&proxy, path).await;
+    assert_eq!(allowed.status(), StatusCode::OK);
+    assert_eq!(allowed.headers()["X-Content-Type-Options"], "nosniff");
+    assert!(allowed.text().await.unwrap().contains("DarkReader"));
+    let rejected = client()
+        .get(format!("{}{path}", proxy.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
+    let write = client()
+        .post(format!("{}{path}", proxy.base))
+        .header("Host", &proxy.state.proxy_authority)
+        .header("Origin", &proxy.state.proxy_origin)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(write.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(proxy.state.request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(proxy.state.error_count.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
 async fn actual_proxy_decodes_gzip_documents_assets_and_preserves_raw_query_and_port() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
