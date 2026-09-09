@@ -10,6 +10,7 @@ import {
 import { generateId } from "../core/id";
 import { redactSecrets } from "../errors/redact";
 import { commandExecutionDisplayStatus } from "./sshCommandEvidence";
+import { isSSHReconnectConnectionId } from "./sshReconnectTarget";
 
 export const SSH_COMMAND_HISTORY_SYNC_EVENT =
   "sortofremoteng:ssh-command-history-sync";
@@ -100,6 +101,15 @@ function sanitizeExecution(
     required: true,
   });
   if (!sessionId || !sessionName || !hostname) return null;
+  if (
+    value.connectionId !== undefined &&
+    !isSSHReconnectConnectionId(value.connectionId)
+  )
+    return null;
+  const connectionIdentity =
+    value.connectionId === undefined
+      ? {}
+      : { connectionId: value.connectionId };
 
   const status = ["success", "error", "pending", "cancelled"].includes(
     String(value.status),
@@ -123,6 +133,7 @@ function sanitizeExecution(
       : undefined;
   const execution: CommandExecution = {
     sessionId,
+    ...connectionIdentity,
     sessionName,
     hostname,
     executedAt: validDate(value.executedAt),
@@ -150,6 +161,7 @@ function sanitizeExecution(
   const displayStatus = commandExecutionDisplayStatus(execution);
   const metadata: CommandExecution = {
     sessionId,
+    ...connectionIdentity,
     sessionName,
     hostname,
     ...(execution.executedAt ? { executedAt: execution.executedAt } : {}),

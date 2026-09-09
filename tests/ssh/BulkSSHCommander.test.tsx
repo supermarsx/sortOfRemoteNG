@@ -65,6 +65,7 @@ vi.mock("../../src/utils/settings/themeManager", () => ({
 const mockSessions = [
   {
     id: "session-1",
+    connectionId: "saved-ssh-1",
     name: "SSH Server 1",
     protocol: "ssh",
     hostname: "192.168.1.100",
@@ -73,6 +74,7 @@ const mockSessions = [
   },
   {
     id: "session-2",
+    connectionId: "saved-ssh-2",
     name: "SSH Server 2",
     protocol: "ssh",
     hostname: "192.168.1.101",
@@ -470,6 +472,9 @@ describe("BulkSSHCommander", () => {
         const stored = getSSHCommandHistoryMemorySnapshot();
         expect(stored).toHaveLength(1);
         expect(stored[0].executions).toHaveLength(2);
+        expect(
+          stored[0].executions.map((execution) => execution.connectionId),
+        ).toEqual(["saved-ssh-1", "saved-ssh-2"]);
         expect(
           stored[0].executions.every(
             (execution) =>

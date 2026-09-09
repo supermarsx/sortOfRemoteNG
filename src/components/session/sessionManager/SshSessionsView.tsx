@@ -7,6 +7,7 @@ import {
   ScrollText,
   Search,
   Terminal,
+  RotateCw,
 } from "lucide-react";
 import { EmptyState } from "../../ui/display";
 import {
@@ -25,6 +26,15 @@ import {
   sanitizeSSHHistoryString as displayString,
 } from "../../../utils/ssh/sshCommandHistorySanitizer";
 import { getSSHCommandHistoryMemorySnapshot } from "../../../hooks/ssh/useSSHCommandHistory";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../../types/connection/connection";
+import {
+  createSSHReconnectResolver,
+  isSSHReconnectConnectionId,
+  type SSHReconnectReference,
+} from "../../../utils/ssh/sshReconnectTarget";
 
 export const SSH_COMMAND_HISTORY_STORAGE_KEY = "sshCommandHistory";
 
@@ -45,6 +55,7 @@ type SshActivityStatus =
 interface SshActivityRow {
   id: string;
   sessionId: string;
+  connectionId?: string;
   sessionName: string;
   hostname: string;
   activity: string;
@@ -85,9 +96,17 @@ function sanitizeLifecycleActivity(
   ) {
     return null;
   }
+  if (
+    value.connectionId !== undefined &&
+    !isSSHReconnectConnectionId(value.connectionId)
+  )
+    return null;
   return {
     id,
     sessionId,
+    ...(value.connectionId !== undefined
+      ? { connectionId: value.connectionId }
+      : {}),
     sessionName,
     hostname,
     recordedAt,
@@ -318,7 +337,87 @@ function executionSearchTerms(execution: CommandExecution): string[] {
   ];
 }
 
-export const SshSessionsView: React.FC = () => {
+interface SshSessionsViewProps {
+  connections?: readonly Connection[];
+  sessions?: readonly ConnectionSession[];
+  onReconnect?: (connection: Connection) => void | Promise<unknown>;
+}
+const EMPTY_CONNECTIONS: readonly Connection[] = [];
+const EMPTY_SESSIONS: readonly ConnectionSession[] = [];
+
+export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
+  connections = EMPTY_CONNECTIONS,
+  sessions = EMPTY_SESSIONS,
+  onReconnect,
+}) => {
+  const resolveReconnect = useMemo(
+    () => createSSHReconnectResolver(connections, sessions),
+    [connections, sessions],
+  );
+  const reconnectingRef = useRef(new Set<string>());
+  const [reconnecting, setReconnecting] = useState(new Set<string>());
+  const [reconnectMessage, setReconnectMessage] = useState<string | null>(null);
+  const reconnect = async (reference: SSHReconnectReference) => {
+    const { connection } = resolveReconnect(reference);
+    if (
+      !connection ||
+      !onReconnect ||
+      reconnectingRef.current.has(connection.id)
+    )
+      return;
+    reconnectingRef.current.add(connection.id);
+    setReconnecting(new Set(reconnectingRef.current));
+    setReconnectMessage(null);
+    try {
+      // The existing host action owns confirmation, saved credentials and live
+      // tab reuse. A reconnect never replays the command shown in history.
+      await onReconnect(connection);
+      setReconnectMessage(
+        `Connection request handled for ${connection.name}; see its session tab for connection status.`,
+      );
+    } catch {
+      setReconnectMessage(
+        "The connection request failed. Review the saved connection and try again.",
+      );
+    } finally {
+      reconnectingRef.current.delete(connection.id);
+      setReconnecting(new Set(reconnectingRef.current));
+    }
+  };
+  const reconnectButton = (
+    reference: SSHReconnectReference,
+    label: string,
+    showTarget = false,
+  ) => {
+    const target = resolveReconnect(reference);
+    const name = target.connection?.name ?? label;
+    const pending = target.connection
+      ? reconnecting.has(target.connection.id)
+      : false;
+    const hint = !onReconnect
+      ? "Reconnect is unavailable in this window."
+      : (target.reason ??
+        `Open or focus ${name} using its current saved host (${target.connection.hostname}), credentials and settings. Historical commands are not replayed.`);
+    return (
+      <span data-tooltip={hint} className="inline-flex">
+        <button
+          type="button"
+          className="sor-option-chip text-xs disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label={`Reconnect to ${name}`}
+          disabled={!onReconnect || !target.connection || pending}
+          onClick={() => void reconnect(reference)}
+        >
+          <RotateCw
+            size={12}
+            aria-hidden="true"
+            className={pending ? "animate-spin" : undefined}
+          />
+          {pending ? "Opening…" : "Reconnect"}
+          {showTarget ? ` ${name}` : ""}
+        </button>
+      </span>
+    );
+  };
   const initialHistory = useMemo(getSSHCommandHistoryMemorySnapshot, []);
   const initialLifecycle = useMemo(readPersistedLifecycleActivity, []);
   const [entries, setEntries] = useState(initialHistory);
@@ -408,6 +507,7 @@ export const SshSessionsView: React.FC = () => {
         return {
           id: `dispatch:${entryIndex}:${executionIndex}`,
           sessionId: execution.sessionId,
+          connectionId: execution.connectionId,
           sessionName: execution.sessionName,
           hostname: execution.hostname,
           activity: isVerifiedCompletion
@@ -429,6 +529,7 @@ export const SshSessionsView: React.FC = () => {
     const lifecycleRows = lifecycleActivity.map((activity, index) => ({
       id: `lifecycle:${index}`,
       sessionId: activity.sessionId,
+      connectionId: activity.connectionId,
       sessionName: activity.sessionName,
       hostname: activity.hostname,
       activity:
@@ -620,11 +721,19 @@ export const SshSessionsView: React.FC = () => {
                 ? "Search SSH activity, dispatches, sessions, or hosts..."
                 : "Search commands, sessions, hosts, tags, or notes..."
             }
-            className="sor-form-input w-full pl-8 text-xs"
+            className="sor-form-input sor-form-input-icon-left w-full text-xs"
             aria-label={`Search SSH ${activeTab}`}
             data-testid="ssh-sessions-search"
           />
         </div>
+        {reconnectMessage && (
+          <p
+            role="status"
+            className="text-xs text-[var(--color-textSecondary)]"
+          >
+            {reconnectMessage}
+          </p>
+        )}
       </div>
 
       <div
@@ -665,6 +774,9 @@ export const SshSessionsView: React.FC = () => {
                   ))}
                   <th scope="col" className="px-3 py-2 font-medium">
                     Evidence / details
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Connection
                   </th>
                 </tr>
               </thead>
@@ -712,6 +824,9 @@ export const SshSessionsView: React.FC = () => {
                           {row.details}
                         </div>
                       </td>
+                      <td className="px-3 py-2.5">
+                        {reconnectButton(row, row.sessionName || row.sessionId)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -753,6 +868,9 @@ export const SshSessionsView: React.FC = () => {
                   <th scope="col" className="px-3 py-2 font-medium">
                     Tags / notes
                   </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Connections
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -783,6 +901,19 @@ export const SshSessionsView: React.FC = () => {
                   ]
                     .filter(Boolean)
                     .join(" · ");
+                  const reconnectTargets = new Map<string, CommandExecution>();
+                  for (const execution of entry.executions) {
+                    const target = resolveReconnect(execution);
+                    const key =
+                      target.connection?.id ??
+                      JSON.stringify([
+                        execution.connectionId,
+                        execution.sessionId,
+                        execution.hostname,
+                      ]);
+                    if (!reconnectTargets.has(key))
+                      reconnectTargets.set(key, execution);
+                  }
                   return (
                     <tr
                       key={entries.indexOf(entry)}
@@ -837,6 +968,24 @@ export const SshSessionsView: React.FC = () => {
                         title={annotations}
                       >
                         <div className="truncate">{annotations || "—"}</div>
+                      </td>
+                      <td className="max-w-72 px-3 py-2.5">
+                        <div className="flex flex-col items-start gap-1">
+                          {[...reconnectTargets].map(([key, execution]) => (
+                            <React.Fragment key={key}>
+                              {reconnectButton(
+                                execution,
+                                execution.sessionName || execution.sessionId,
+                                true,
+                              )}
+                            </React.Fragment>
+                          ))}
+                          {reconnectTargets.size === 0 && (
+                            <span className="text-[var(--color-textMuted)]">
+                              No recorded target
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

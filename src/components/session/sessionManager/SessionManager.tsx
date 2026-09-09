@@ -1362,7 +1362,13 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               sessionCloseYieldControl={sessionCloseYieldControl}
             />
           )}
-          {view === "ssh-sessions" && <SshSessionsView />}
+          {view === "ssh-sessions" && (
+            <SshSessionsView
+              connections={connections}
+              sessions={state.sessions}
+              onReconnect={onReconnect}
+            />
+          )}
           {view === "rdp-logs" && (
             <div className="flex-1 min-h-0">
               <RDPLogViewer isVisible sessionFilter={logSessionFilter} />

@@ -7,28 +7,19 @@
 
 /** Result status of a command execution. */
 export type CommandExecutionStatus =
-  | "success"
-  | "error"
-  | "pending"
-  | "cancelled";
+  "success" | "error" | "pending" | "cancelled";
 export type CommandExecutionEvidence =
-  | "dispatch-accepted"
-  | "dispatch-failed"
-  | "remote-completion";
+  "dispatch-accepted" | "dispatch-failed" | "remote-completion";
 export type CommandExecutionSource =
-  | "bulk-dispatch"
-  | "web-terminal-script"
-  | "imported";
+  "bulk-dispatch" | "web-terminal-script" | "imported";
 export type CommandExecutionDisplayStatus =
-  | "success"
-  | "error"
-  | "dispatched"
-  | "dispatch-failed"
-  | "unverified";
+  "success" | "error" | "dispatched" | "dispatch-failed" | "unverified";
 
 /** A single execution of a command against one session. */
 export interface CommandExecution {
   sessionId: string;
+  /** Stable saved connection identity; no credentials or runtime configuration. */
+  connectionId?: string;
   sessionName: string;
   hostname: string;
   /** Exact execution timestamp. Absent on history written before this field existed. */
@@ -93,10 +84,7 @@ export type SSHCommandCategory = (typeof SSHCommandCategories)[number];
 // ─── Filters ───────────────────────────────────────────────────
 
 export type HistorySortField =
-  | "lastExecutedAt"
-  | "createdAt"
-  | "executionCount"
-  | "command";
+  "lastExecutedAt" | "createdAt" | "executionCount" | "command";
 export type HistorySortDirection = "asc" | "desc";
 
 export interface SSHCommandHistoryFilter {

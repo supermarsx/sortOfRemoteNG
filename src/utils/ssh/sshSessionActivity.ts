@@ -1,4 +1,5 @@
 import { generateId } from "../core/id";
+import { isSSHReconnectConnectionId } from "./sshReconnectTarget";
 
 export const SSH_SESSION_ACTIVITY_STORAGE_KEY = "sshSessionActivity";
 export const SSH_SESSION_ACTIVITY_SYNC_EVENT =
@@ -10,6 +11,8 @@ export interface SSHSessionActivityRecord {
   id: string;
   recordedAt: string;
   sessionId: string;
+  /** Stable saved connection identity, when known by the producer. */
+  connectionId?: string;
   sessionName: string;
   hostname: string;
   kind: SSHSessionActivityKind;
@@ -22,6 +25,11 @@ export function appendSSHSessionActivity(
   record: Omit<SSHSessionActivityRecord, "id" | "recordedAt" | "source">,
 ): void {
   if (typeof window === "undefined") return;
+  if (
+    record.connectionId !== undefined &&
+    !isSSHReconnectConnectionId(record.connectionId)
+  )
+    return;
   try {
     const stored = window.localStorage.getItem(
       SSH_SESSION_ACTIVITY_STORAGE_KEY,
@@ -32,6 +40,7 @@ export function appendSSHSessionActivity(
       id: generateId(),
       recordedAt: new Date().toISOString(),
       sessionId: record.sessionId.slice(0, 512),
+      ...(record.connectionId ? { connectionId: record.connectionId } : {}),
       sessionName: record.sessionName.slice(0, 512),
       hostname: record.hostname.slice(0, 512),
       kind: record.kind,

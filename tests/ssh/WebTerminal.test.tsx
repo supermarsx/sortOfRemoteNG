@@ -509,6 +509,7 @@ describe("WebTerminal", () => {
     });
 
     it("should display success message when connected", async () => {
+      window.localStorage.removeItem("sshSessionActivity");
       mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
@@ -516,6 +517,15 @@ describe("WebTerminal", () => {
       await waitFor(() => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
         expect(screen.getByText("SSH lib: Rust")).toBeInTheDocument();
+        expect(
+          JSON.parse(window.localStorage.getItem("sshSessionActivity") ?? "[]"),
+        ).toContainEqual(
+          expect.objectContaining({
+            sessionId: mockSession.id,
+            connectionId: mockSession.connectionId,
+            kind: "connected",
+          }),
+        );
       });
     });
 

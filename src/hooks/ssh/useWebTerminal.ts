@@ -629,6 +629,7 @@ export function useWebTerminal(
       const currentSession = sessionRef.current;
       appendSSHSessionActivity({
         sessionId: currentSession.id,
+        connectionId: currentSession.connectionId,
         sessionName: currentSession.name,
         hostname: currentSession.hostname ?? "",
         kind,
@@ -2443,6 +2444,7 @@ export function useWebTerminal(
         addCommandHistoryEntry(command, [
           {
             sessionId: currentSession.id,
+            connectionId: currentSession.connectionId,
             sessionName: currentSession.name,
             hostname: currentSession.hostname ?? "",
             source: "web-terminal-script",

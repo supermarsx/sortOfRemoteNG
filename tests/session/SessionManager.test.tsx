@@ -28,6 +28,10 @@ import {
 } from "../../src/types/connection/connection";
 import { useUnifiedSessionManager } from "../../src/hooks/session/useUnifiedSessionManager";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  appendSSHSessionActivity,
+  SSH_SESSION_ACTIVITY_STORAGE_KEY,
+} from "../../src/utils/ssh/sshSessionActivity";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -290,6 +294,29 @@ function renderManagerWithConnectionState({
 }
 
 describe("SessionManager (unified RDP + internal proxy)", () => {
+  it("wires SSH history reconnect to the host action and current saved connection", async () => {
+    const onReconnect = vi.fn();
+    appendSSHSessionActivity({
+      sessionId: "archived-session",
+      connectionId: SSH_CONNECTION.id,
+      sessionName: "Archived SSH",
+      hostname: SSH_CONNECTION.hostname,
+      kind: "disconnected",
+    });
+    try {
+      renderManager({ connections: [SSH_CONNECTION], onReconnect });
+      fireEvent.click(screen.getByTestId("session-view-ssh-sessions"));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Reconnect to Prod SSH" }),
+      );
+      await waitFor(() =>
+        expect(onReconnect).toHaveBeenCalledExactlyOnceWith(SSH_CONNECTION),
+      );
+    } finally {
+      localStorage.removeItem(SSH_SESSION_ACTIVITY_STORAGE_KEY);
+    }
+  });
+
   it("renders canonical native protocol geometry in session rows and filters", async () => {
     renderManager();
     const row = (await screen.findByText("Prod RDP")).closest("tr")!;

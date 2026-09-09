@@ -557,6 +557,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
         const result = historyItem.results[session.id];
         return {
           sessionId: session.id,
+          connectionId: session.connectionId,
           sessionName: session.name,
           hostname: session.hostname ?? "",
           status: result?.status ?? "cancelled",
