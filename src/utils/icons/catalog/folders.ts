@@ -41,6 +41,10 @@ import {
 
 import { defineIcon } from "./types";
 import { createRoleIcon } from "../createRoleIcon";
+import {
+  ADDITIONAL_FOLDER_ICONS,
+  ADDITIONAL_FOLDER_OPEN_ICONS,
+} from "./folderVariants";
 
 const SwitchPorts = createLucideIcon("FolderSwitchPorts", [
   [
@@ -401,12 +405,14 @@ export const FOLDER_ICONS = [
     CollectiveFolder,
     ["collective", "team", "shared", "people", "community", "group"],
   ),
+  ...ADDITIONAL_FOLDER_ICONS,
 ] as const;
 
 /** Presentation-only counterparts. Keep saved keys and picker entries unchanged. */
 export const FOLDER_OPEN_ICONS: Readonly<
   Record<(typeof FOLDER_ICONS)[number]["key"], LucideIcon>
 > = Object.freeze({
+  ...ADDITIONAL_FOLDER_OPEN_ICONS,
   "folder-building": createRoleIcon(
     "OpenBuildingFolder",
     "folder-open",

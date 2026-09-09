@@ -17,8 +17,11 @@ import {
   type EffectiveConnectionIcon,
 } from "../../../utils/icons/resolveConnectionIcon";
 
+/** Custom entries are supplied dynamically; they are never built-in keys. */
+export type ConnectionIconPickerCategory = ConnectionIconCategory | "custom";
+
 export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
-  Record<ConnectionIconCategory, string>
+  Record<ConnectionIconPickerCategory, string>
 > = Object.freeze({
   "remote-protocols": "Remote protocols",
   "servers-devices": "Servers & devices",
@@ -32,6 +35,10 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
   files: "Files & storage",
   communication: "Communication",
   "generic-shapes": "Markers & shapes",
+  emojis: "Emojis",
+  pirates: "Pirates",
+  "deities-religion": "Deities & religion",
+  custom: "Custom icons",
   "operating-systems": "Operating systems",
   virtualization: "Virtualization & containers",
   vendors: "Vendors & brands",

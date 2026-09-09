@@ -91,13 +91,18 @@ function geometry(key: string) {
 }
 
 describe("emoji-style markers and additional shapes", () => {
-  it.each(REQUESTED)("renders %s as local SVG in Markers & Shapes", (key) => {
-    expect(getConnectionIconDefinition(key)?.category).toBe("generic-shapes");
-    expect(geometry(key)).not.toBe("");
-    expect(
-      filterConnectionIcons(key.replace(/-/g, " ")).map((entry) => entry.key),
-    ).toContain(key);
-  });
+  it.each(REQUESTED)(
+    "renders %s as local SVG in its dedicated category",
+    (key) => {
+      expect(getConnectionIconDefinition(key)?.category).toBe(
+        key.startsWith("emoji-") ? "emojis" : "generic-shapes",
+      );
+      expect(geometry(key)).not.toBe("");
+      expect(
+        filterConnectionIcons(key.replace(/-/g, " ")).map((entry) => entry.key),
+      ).toContain(key);
+    },
+  );
   it.each(EMOJI)("finds %s by Unicode alias %s", (key, alias) => {
     expect(filterConnectionIcons(alias).map((entry) => entry.key)).toContain(
       key,

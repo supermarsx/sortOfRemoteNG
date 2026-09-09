@@ -16,6 +16,7 @@ import {
   Waypoints,
   Wifi,
 } from "lucide-react";
+import { NETWORK_VARIANT_ICONS } from "./networkVariants";
 
 import {
   apple,
@@ -315,4 +316,5 @@ export const NETWORK_ICONS = [
     "DD-WRT router with an app-authored identifier; not an official DD-WRT logo.",
   ),
   ...VPN_TYPE_ICONS,
+  ...NETWORK_VARIANT_ICONS,
 ] as const;

@@ -14,6 +14,9 @@ import { DEVOPS_MONITORING_ICONS } from "../../src/utils/icons/catalog/devopsMon
 import { FILES_ICONS } from "../../src/utils/icons/catalog/files";
 import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";
 import { GENERIC_SHAPE_ICONS } from "../../src/utils/icons/catalog/genericShapes";
+import { EMOJI_ICONS } from "../../src/utils/icons/catalog/emojis";
+import { PIRATE_ICONS } from "../../src/utils/icons/catalog/pirates";
+import { DEITY_RELIGION_ICONS } from "../../src/utils/icons/catalog/deitiesReligion";
 import { NETWORK_ICONS } from "../../src/utils/icons/catalog/network";
 import { ISP_PROVIDER_ICONS } from "../../src/utils/icons/catalog/providers";
 import { OPERATING_SYSTEM_ICONS } from "../../src/utils/icons/catalog/operatingSystems";
@@ -70,6 +73,13 @@ const CATALOG_MODULES: readonly CatalogModule[] = [
     category: "generic-shapes",
     entries: GENERIC_SHAPE_ICONS,
   },
+  { name: "emojis", category: "emojis", entries: EMOJI_ICONS },
+  { name: "pirates", category: "pirates", entries: PIRATE_ICONS },
+  {
+    name: "deitiesReligion",
+    category: "deities-religion",
+    entries: DEITY_RELIGION_ICONS,
+  },
   {
     name: "operatingSystems",
     category: "operating-systems",
@@ -107,7 +117,7 @@ describe("connection icon catalog modules", () => {
     expect(CATALOG_MODULES.map((module) => module.category)).toEqual([
       ...CONNECTION_ICON_CATEGORIES,
     ]);
-    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(18);
+    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(21);
   });
 
   it("composes the catalog from every module without dropping entries", () => {

@@ -307,7 +307,7 @@ describe("industrial, business, VPN and ISP icon additions", () => {
     );
   });
   it("routes providers to their own section while leaving cloud and network devices separate", () => {
-    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(18);
+    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(21);
     const providers = CONNECTION_ICON_CATALOG.filter(
       (entry) => entry.category === "isp-providers",
     );

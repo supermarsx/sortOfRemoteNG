@@ -7,6 +7,9 @@ import { DEVOPS_MONITORING_ICONS } from "./catalog/devopsMonitoring";
 import { FILES_ICONS } from "./catalog/files";
 import { FOLDER_ICONS } from "./catalog/folders";
 import { GENERIC_SHAPE_ICONS } from "./catalog/genericShapes";
+import { EMOJI_ICONS } from "./catalog/emojis";
+import { PIRATE_ICONS } from "./catalog/pirates";
+import { DEITY_RELIGION_ICONS } from "./catalog/deitiesReligion";
 import { NETWORK_ICONS } from "./catalog/network";
 import { ISP_PROVIDER_ICONS } from "./catalog/providers";
 import { OPERATING_SYSTEM_ICONS } from "./catalog/operatingSystems";
@@ -56,6 +59,9 @@ export const CONNECTION_ICON_CATALOG = [
   ...FILES_ICONS,
   ...COMMUNICATION_ICONS,
   ...GENERIC_SHAPE_ICONS,
+  ...EMOJI_ICONS,
+  ...PIRATE_ICONS,
+  ...DEITY_RELIGION_ICONS,
   ...OPERATING_SYSTEM_ICONS,
   ...VIRTUALIZATION_ICONS,
   ...VENDOR_ICONS,
