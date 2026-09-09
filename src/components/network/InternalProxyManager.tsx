@@ -333,41 +333,85 @@ const LogDetailField: React.FC<{
   </div>
 );
 
-export const ProxyLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="space-y-3">
-    <div className="flex items-center justify-between">
-      <p className="text-sm text-[var(--color-textSecondary)]">
-        Last {mgr.requestLog.length} proxied requests (newest first). Click a
-        row to see full details and copy individual fields.
-      </p>
-      {mgr.requestLog.length > 0 && (
-        <button
-          onClick={mgr.handleClearLog}
-          className="sor-option-chip text-xs"
+export const ProxyLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const [page, setPage] = useState(0);
+  const pageSize = 100;
+  const pageCount = Math.max(1, Math.ceil(mgr.requestLog.length / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const offset = currentPage * pageSize;
+  const visible = mgr.requestLog.slice(offset, offset + pageSize);
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-[var(--color-textSecondary)]">
+          Last {mgr.requestLog.length} proxied requests (newest first). Click a
+          row to see full details and copy individual fields.
+        </p>
+        {mgr.requestLog.length > 0 && (
+          <button
+            onClick={mgr.handleClearLog}
+            className="sor-option-chip text-xs"
+          >
+            <Trash2 size={12} />
+            <span>Clear Log</span>
+          </button>
+        )}
+      </div>
+
+      {mgr.requestLog.length === 0 ? (
+        <div className="text-center py-16 text-[var(--color-textMuted)]">
+          <ScrollText size={40} className="mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No requests logged yet</p>
+          <p className="text-xs mt-1">
+            Requests appear here while logging is enabled in Proxy settings.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {visible.map((entry, i) => (
+            <LogRow
+              key={
+                entry.id ||
+                `${entry.session_id}:${entry.timestamp}:${entry.method}:${entry.url}:${offset + i}`
+              }
+              entry={entry}
+            />
+          ))}
+        </div>
+      )}
+      {pageCount > 1 && (
+        <nav
+          aria-label="Request log pages"
+          className="flex flex-wrap items-center justify-end gap-2 text-xs"
         >
-          <Trash2 size={12} />
-          <span>Clear Log</span>
-        </button>
+          <span aria-live="polite">
+            {offset + 1}–{Math.min(offset + pageSize, mgr.requestLog.length)} of{" "}
+            {mgr.requestLog.length}
+          </span>
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            Newer requests
+          </button>
+          <span>
+            Page {currentPage + 1} of {pageCount}
+          </span>
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={currentPage + 1 >= pageCount}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            Older requests
+          </button>
+        </nav>
       )}
     </div>
-
-    {mgr.requestLog.length === 0 ? (
-      <div className="text-center py-16 text-[var(--color-textMuted)]">
-        <ScrollText size={40} className="mx-auto mb-3 opacity-30" />
-        <p className="text-sm">No requests logged yet</p>
-        <p className="text-xs mt-1">
-          Requests will appear here as they are proxied.
-        </p>
-      </div>
-    ) : (
-      <div className="space-y-1.5">
-        {[...mgr.requestLog].reverse().map((entry, i) => (
-          <LogRow key={i} entry={entry} />
-        ))}
-      </div>
-    )}
-  </div>
-);
+  );
+};
 
 export const ProxyStatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">

@@ -596,6 +596,7 @@ mod tests {
     fn log_entry_shapes_carry_no_credential_body() {
         use crate::http::{ProxyRequestLogEntry, WebRecordingEntry};
         let entry = ProxyRequestLogEntry {
+            id: "fixture".into(),
             session_id: "s".into(),
             method: "GET".into(),
             url: format!("{}?nonce=deadbeef", AUTOLOGIN_PATH),

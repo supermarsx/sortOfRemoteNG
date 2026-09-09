@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 pub use sha2::{Digest, Sha256};
 pub use std::collections::HashMap;
+use std::collections::VecDeque;
 pub use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub use std::sync::Arc;
 use std::sync::OnceLock;
@@ -20,6 +21,9 @@ mod proxy_response;
 #[cfg(test)]
 #[path = "http_response_tests.rs"]
 mod proxy_response_tests;
+#[cfg(test)]
+#[path = "http_request_log_tests.rs"]
+mod request_log_tests;
 #[cfg(test)]
 #[path = "http_tls_test_fixture.rs"]
 mod tls_test_fixture;
@@ -845,7 +849,9 @@ pub struct ProxyMediatorResponse {
 pub struct ProxySessionManager {
     pub sessions: HashMap<String, ProxySessionEntry>,
     /// Global request log (last N entries, ring buffer style).
-    pub request_log: Vec<ProxyRequestLogEntry>,
+    pub request_log: VecDeque<ProxyRequestLogEntry>,
+    request_log_capacity: usize,
+    next_request_log_id: u64,
 }
 
 pub struct ProxySessionEntry {
@@ -874,6 +880,9 @@ pub struct ProxySessionEntry {
 /// A single entry in the proxy request log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyRequestLogEntry {
+    /// Stable per-process identity, independent of timestamp collisions/order.
+    #[serde(default)]
+    pub id: String,
     pub session_id: String,
     pub method: String,
     pub url: String,
@@ -900,8 +909,39 @@ impl ProxySessionManager {
     pub fn new() -> Arc<std::sync::Mutex<Self>> {
         Arc::new(std::sync::Mutex::new(Self {
             sessions: HashMap::new(),
-            request_log: Vec::new(),
+            request_log: VecDeque::new(),
+            request_log_capacity: 10_000,
+            next_request_log_id: 0,
         }))
+    }
+
+    pub fn set_request_log_capacity(&mut self, capacity: usize) -> Result<usize, String> {
+        if capacity > 100_000 {
+            return Err("Proxy request log capacity must be between 0 and 100000".into());
+        }
+        self.request_log_capacity = capacity;
+        while self.request_log.len() > capacity {
+            self.request_log.pop_front();
+        }
+        // Release an oversized prior allocation after explicit shrink/disable.
+        self.request_log.shrink_to_fit();
+        Ok(self.request_log.len())
+    }
+
+    pub fn record_request(&mut self, mut entry: ProxyRequestLogEntry) {
+        if self.request_log_capacity == 0 {
+            return;
+        }
+        self.next_request_log_id = self.next_request_log_id.wrapping_add(1);
+        entry.id = self.next_request_log_id.to_string();
+        if self.request_log.len() == self.request_log_capacity {
+            self.request_log.pop_front();
+        }
+        self.request_log.push_back(entry);
+    }
+
+    pub fn request_log_newest_first(&self) -> Vec<ProxyRequestLogEntry> {
+        self.request_log.iter().rev().cloned().collect()
     }
 }
 
@@ -1406,10 +1446,8 @@ pub async fn axum_proxy_handler(
 
             // Log the request.
             if let Ok(mut mgr) = state.global_sessions.lock() {
-                if mgr.request_log.len() >= 1000 {
-                    mgr.request_log.remove(0);
-                }
-                mgr.request_log.push(ProxyRequestLogEntry {
+                mgr.record_request(ProxyRequestLogEntry {
+                    id: String::new(),
                     session_id: state.session_id.clone(),
                     method: method_str.clone(),
                     url: full_url.clone(),
@@ -1749,10 +1787,8 @@ pub async fn axum_proxy_handler(
             }
 
             if let Ok(mut mgr) = state.global_sessions.lock() {
-                if mgr.request_log.len() >= 1000 {
-                    mgr.request_log.remove(0);
-                }
-                mgr.request_log.push(ProxyRequestLogEntry {
+                mgr.record_request(ProxyRequestLogEntry {
+                    id: String::new(),
                     session_id: state.session_id.clone(),
                     method: method_str.clone(),
                     url: full_url.clone(),

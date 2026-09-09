@@ -639,7 +639,27 @@ pub fn get_proxy_request_log(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<Vec<ProxyRequestLogEntry>, String> {
     let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
-    Ok(mgr.request_log.clone())
+    Ok(mgr.request_log_newest_first())
+}
+
+/// Runtime diagnostic log policy only. Zero clears/disables the ring; recordings
+/// and request/error counters are unaffected. Settings persistence is separate.
+#[derive(serde::Serialize)]
+pub struct ProxyRequestLogCapacity {
+    capacity: u32,
+    retained: usize,
+}
+
+#[tauri::command]
+pub fn set_proxy_request_log_capacity(
+    capacity: u32,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<ProxyRequestLogCapacity, String> {
+    let mut mgr = sessions
+        .lock()
+        .map_err(|_| "Proxy log is unavailable".to_string())?;
+    let retained = mgr.set_request_log_capacity(capacity as usize)?;
+    Ok(ProxyRequestLogCapacity { capacity, retained })
 }
 
 /// Clear the proxy request log.

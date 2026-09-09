@@ -627,6 +627,7 @@ pub fn is_command(command: &str) -> bool {
             | "list_proxy_sessions"
             | "get_proxy_session_details"
             | "get_proxy_request_log"
+            | "set_proxy_request_log_capacity"
             | "clear_proxy_request_log"
             | "stop_all_proxy_sessions"
             | "check_proxy_health"
@@ -2085,6 +2086,7 @@ define_command_group!(
         http_commands::list_proxy_sessions,
         http_commands::get_proxy_session_details,
         http_commands::get_proxy_request_log,
+        http_commands::set_proxy_request_log_capacity,
         http_commands::clear_proxy_request_log,
         http_commands::stop_all_proxy_sessions,
         http_commands::check_proxy_health,
@@ -3256,6 +3258,14 @@ mod tests {
         "prune_nx_sessions",
         "get_nx_session_count",
     ];
+
+    #[test]
+    fn proxy_request_log_capacity_command_is_registered() {
+        let command = "set_proxy_request_log_capacity";
+        assert!(is_command(command));
+        let registration = format!("http_commands::{command},");
+        assert!(include_str!("core_handler.rs").contains(&registration));
+    }
 
     #[test]
     fn only_full_master_key_rotation_is_exposed_and_used_by_the_frontend() {

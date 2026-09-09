@@ -22,6 +22,8 @@ export interface ProxySessionDetail {
 }
 
 export interface ProxyRequestLogEntry {
+  /** New backends provide stable IDs; older fixtures/backends may omit it. */
+  id?: string;
   session_id: string;
   method: string;
   url: string;
