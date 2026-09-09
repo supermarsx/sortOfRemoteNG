@@ -94,6 +94,13 @@ pub fn is_command(command: &str) -> bool {
             | "load_database_data"
             | "save_database_data"
             | "change_database_security"
+            | "database_protection_capabilities"
+            | "database_protection_status"
+            | "database_protection_unlock"
+            | "database_protection_lock"
+            | "database_protection_save"
+            | "database_protection_load"
+            | "database_protection_change"
             | "delete_database_data"
             | "databases_encryption_status"
             | "get_cpu_aes_capabilities"
@@ -1435,6 +1442,13 @@ define_command_group!(
         database_files::load_database_data,
         database_files::save_database_data,
         database_files::change_database_security,
+        database_protection::database_protection_capabilities,
+        database_protection::database_protection_status,
+        database_protection::database_protection_unlock,
+        database_protection::database_protection_lock,
+        database_protection::database_protection_save,
+        database_protection::database_protection_load,
+        database_protection::database_protection_change,
         database_files::delete_database_data,
         database_files::databases_encryption_status,
         cpu_commands::get_cpu_aes_capabilities,

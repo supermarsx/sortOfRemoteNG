@@ -58,6 +58,8 @@ pub use envelope::{EnvelopeError, EnvelopeHeader, MasterKeyStorage};
 pub use lockout::{LockoutState, LOCKOUT_FILENAME};
 pub mod artifact_policy;
 pub mod artifact_transaction;
+pub mod database_protection;
+pub mod database_sessions;
 pub use password_wrap::{Argon2Params, WrapError};
 pub use state::EncryptionState;
 

@@ -77,6 +77,7 @@ pub mod app_settings_commands;
 // Tauri-agnostic `rotate_master_key_full_inner` helper directly.
 pub mod artifact_encryption_commands;
 pub mod artifact_storage_adapters;
+pub use sorng_commands_core::database_protection;
 pub mod encryption_rotation_commands;
 
 #[cfg(test)]

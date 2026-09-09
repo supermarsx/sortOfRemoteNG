@@ -743,6 +743,7 @@ pub async fn databases_save_index(
         }) {
             if existing.get("isEncrypted") != row.get("isEncrypted")
                 || security_revision(existing) != security_revision(row)
+                || existing.get("protectionFormat") != row.get("protectionFormat")
             {
                 return Err("database security changed; reload before saving metadata".into());
             }
@@ -828,6 +829,8 @@ pub async fn save_database_data(
     if security_revision(row) != expected_security_revision.as_deref().unwrap_or("") {
         return Err("database security changed; stale password-bearing save was rejected".into());
     }
+    let existing = encrypted_load(&enc_state, ArtifactKind::Connections, &path).await?;
+    reject_managed_raw_write(row, existing.as_ref().map(|entry| &entry.value), &data)?;
     validate_data_shape(
         &data,
         row.get("isEncrypted")
@@ -889,6 +892,7 @@ pub async fn change_database_security(
             "database contents changed during password preparation; reload before retrying".into(),
         );
     }
+    reject_managed_raw_write(row, Some(&existing.value), &data)?;
     validate_data_shape(
         &existing.value,
         row.get("isEncrypted")
@@ -916,6 +920,141 @@ pub async fn change_database_security(
     )
     .await?;
     database_transaction::commit(&dir, &database_id, &payload_bytes, &index_bytes)
+}
+
+pub(crate) fn reject_managed_raw_write(
+    row: &serde_json::Value,
+    current: Option<&serde_json::Value>,
+    proposed: &serde_json::Value,
+) -> Result<(), String> {
+    use sorng_encryption::database_protection::is_managed;
+    if row.get("protectionFormat").is_some()
+        || current.is_some_and(is_managed)
+        || is_managed(proposed)
+    {
+        return Err("managed database protection requires its native unlock and save commands; raw copying or replacement is refused".into());
+    }
+    Ok(())
+}
+
+/// Internal managed database seam. Caller owns the global writer/key barrier;
+/// no renderer-controlled paths or platform vault calls enter these functions.
+pub(crate) struct ManagedSnapshot {
+    pub index: serde_json::Value,
+    pub row: serde_json::Value,
+    pub data: serde_json::Value,
+}
+pub(crate) async fn managed_snapshot(
+    profile: &Path,
+    state: &EncryptionState,
+    id: &str,
+) -> Result<ManagedSnapshot, String> {
+    database_transaction::validate_database_id(id)?;
+    state.resolve_write_policy(ArtifactKind::Connections, false)?;
+    state.resolve_write_policy(ArtifactKind::DatabasesIndex, false)?;
+    let dir = profile.join("databases");
+    let path = dir.join(format!("{id}.json"));
+    let index_path = dir.join("index.json");
+    sorng_encryption::artifact_transaction::validate_regular_path(profile, &path, true)?;
+    sorng_encryption::artifact_transaction::validate_regular_path(profile, &index_path, true)?;
+    recover_database_transactions(&dir)?;
+    let index = encrypted_load(state, ArtifactKind::DatabasesIndex, &index_path)
+        .await?
+        .ok_or("database index missing")?
+        .value;
+    let row = index
+        .as_array()
+        .ok_or("database index malformed")?
+        .iter()
+        .find(|row| row.get("id").and_then(serde_json::Value::as_str) == Some(id))
+        .ok_or("database no longer exists")?
+        .clone();
+    let data = encrypted_load(state, ArtifactKind::Connections, &path)
+        .await?
+        .ok_or("database payload missing")?
+        .value;
+    validate_data_shape(
+        &data,
+        row.get("isEncrypted")
+            .and_then(serde_json::Value::as_bool)
+            .ok_or("database encryption metadata malformed")?,
+    )?;
+    if row.get("protectionFormat").is_some()
+        || sorng_encryption::database_protection::is_managed(&data)
+    {
+        let envelope = sorng_encryption::database_protection::DatabaseEnvelope::parse(&data, id)?;
+        if envelope.security_revision != security_revision(&row) {
+            return Err(
+                "managed database revision does not match its authenticated container".into(),
+            );
+        }
+    }
+    Ok(ManagedSnapshot { index, row, data })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn managed_commit(
+    profile: &Path,
+    state: &EncryptionState,
+    id: &str,
+    expected_revision: &str,
+    expected_data: &serde_json::Value,
+    data: &serde_json::Value,
+    new_revision: &str,
+) -> Result<database_transaction::TransactionOutcome, String> {
+    let mut current = managed_snapshot(profile, state, id).await?;
+    if security_revision(&current.row) != expected_revision || current.data != *expected_data {
+        return Err(
+            "database security or contents changed; unlock and retry from a fresh snapshot".into(),
+        );
+    }
+    let managed = sorng_encryption::database_protection::is_managed(data);
+    if managed {
+        let envelope = sorng_encryption::database_protection::DatabaseEnvelope::parse(data, id)?;
+        if envelope.security_revision != new_revision {
+            return Err("managed payload and metadata security revisions differ".into());
+        }
+    } else {
+        sorng_encryption::database_protection::validate_data(data)?;
+    }
+    if new_revision.is_empty() {
+        return Err("security revision required".into());
+    }
+    let row = current
+        .index
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row.get("id").and_then(serde_json::Value::as_str) == Some(id))
+        .unwrap();
+    row["isEncrypted"] = managed.into();
+    row["securityRevision"] = new_revision.into();
+    if managed {
+        row["protectionFormat"] = sorng_encryption::database_protection::FORMAT.into();
+    } else {
+        row.as_object_mut()
+            .ok_or("database metadata malformed")?
+            .remove("protectionFormat");
+    }
+    let dir = profile.join("databases");
+    let configured = state.has_installed_key();
+    let payload = encode_payload(
+        state,
+        ArtifactKind::Connections,
+        &dir.join(format!("{id}.json")),
+        data,
+        configured,
+    )
+    .await?;
+    let index = encode_payload(
+        state,
+        ArtifactKind::DatabasesIndex,
+        &dir.join("index.json"),
+        &current.index,
+        configured,
+    )
+    .await?;
+    database_transaction::commit(&dir, id, &payload, &index)
 }
 
 /// Strict deletion of payload generations, trust and finally the latest index

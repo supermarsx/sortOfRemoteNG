@@ -26,6 +26,7 @@ tauri = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+sorng-storage = { path = "../sorng-storage" }
 tauri = { workspace = true, features = ["test"] }
 tempfile = { workspace = true }
 

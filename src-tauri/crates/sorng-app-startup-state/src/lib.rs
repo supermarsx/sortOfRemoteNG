@@ -15,6 +15,8 @@ mod artifact_tests;
 #[cfg(any(feature = "collab", feature = "platform"))]
 mod collab;
 #[cfg(test)]
+mod database_protection_tests;
+#[cfg(test)]
 mod llm_tests;
 #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 mod platform;

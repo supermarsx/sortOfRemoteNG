@@ -24,7 +24,7 @@
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, OnceLock,
 };
 use tokio::sync::RwLock;
 
@@ -40,6 +40,7 @@ pub struct EncryptionState {
     inner: Arc<RwLock<Option<MasterDek>>>,
     ever_installed: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
+    session_owner: Arc<OnceLock<u64>>,
     pub(crate) artifact_policy: Arc<crate::artifact_policy::PolicyRuntime>,
 }
 
@@ -59,6 +60,9 @@ impl EncryptionState {
     /// state is a no-op. Subsequent reads require a fresh unlock.
     pub async fn lock(&self) {
         let mut guard = self.inner.write().await;
+        if let Some(owner) = self.session_owner.get() {
+            crate::database_sessions::revoke_owner(*owner);
+        }
         // Drop replaces the value with None; the old MasterDek's
         // Zeroizing field zeroes itself on Drop.
         *guard = None;
@@ -71,6 +75,9 @@ impl EncryptionState {
     /// zeroized.
     pub async fn install(&self, dek: MasterDek) {
         let mut guard = self.inner.write().await;
+        if let Some(owner) = self.session_owner.get() {
+            crate::database_sessions::revoke_owner(*owner);
+        }
         self.ever_installed.store(true, Ordering::Release);
         *guard = Some(dek);
         self.generation.fetch_add(1, Ordering::AcqRel);
@@ -161,6 +168,14 @@ impl EncryptionState {
 
     pub fn key_generation(&self) -> u64 {
         self.generation.load(Ordering::Acquire)
+    }
+    /// Clones share an owner; detached snapshots have a distinct owner. This
+    /// identity is process-local, never serialized, and not based on addresses.
+    pub fn database_session_owner(&self) -> u64 {
+        static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
+        *self
+            .session_owner
+            .get_or_init(|| NEXT_OWNER.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Derive a sub-key for the given artifact. Returns `None` when the
