@@ -82,6 +82,12 @@ fn proxy_client_builder(
     upstream_proxy_url: Option<&str>,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
+        // Response editing owns bounded decoding. Keep opaque byte/header
+        // behavior stable even if another crate enables reqwest codecs.
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
         .timeout(std::time::Duration::from_secs(120))
         .connect_timeout(std::time::Duration::from_secs(15))
         .pool_idle_timeout(std::time::Duration::from_secs(20))
@@ -485,10 +491,17 @@ pub async fn start_basic_auth_proxy(
         auto_login_selectors: config.http_auto_login_selectors.clone(),
         client,
         request_count: request_count.clone(),
+        document_sequence: Arc::new(AtomicU64::new(0)),
         error_count: error_count.clone(),
         last_error: last_error.clone(),
         global_sessions: (*sessions).clone(),
-        app: app.clone(),
+        credentials_applied: Some(Arc::new({
+            let app = app.clone();
+            move |payload| {
+                use tauri::Emitter;
+                let _ = app.emit("proxy-credentials-applied", payload);
+            }
+        })),
     });
 
     // P3: register the auth POST endpoint before the fallback so it
@@ -825,10 +838,17 @@ pub async fn restart_proxy_session(
         auto_login_selectors: None,
         client,
         request_count: request_count.clone(),
+        document_sequence: Arc::new(AtomicU64::new(0)),
         error_count: error_count.clone(),
         last_error: last_error.clone(),
         global_sessions: (*sessions).clone(),
-        app: app.clone(),
+        credentials_applied: Some(Arc::new({
+            let app = app.clone();
+            move |payload| {
+                use tauri::Emitter;
+                let _ = app.emit("proxy-credentials-applied", payload);
+            }
+        })),
     });
 
     let router = axum::Router::new()

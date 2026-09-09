@@ -187,12 +187,8 @@ async fn inspect_certificate(
 }
 
 #[cfg(test)]
-#[path = "http_tls_test_fixture.rs"]
-mod tls_test_fixture;
-
-#[cfg(test)]
 mod tests {
-    use super::tls_test_fixture::{test_acceptor, TEST_CERT};
+    use super::super::tls_test_fixture::{test_acceptor, TEST_CERT};
     use super::*;
     use sha2::{Digest, Sha256};
     use tokio::net::TcpListener;

@@ -15,6 +15,15 @@ use tokio::sync::Mutex;
 mod proxy_transport;
 pub use proxy_transport::fetch_tls_certificate_info;
 
+#[path = "http_response.rs"]
+mod proxy_response;
+#[cfg(test)]
+#[path = "http_response_tests.rs"]
+mod proxy_response_tests;
+#[cfg(test)]
+#[path = "http_tls_test_fixture.rs"]
+mod tls_test_fixture;
+
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
@@ -1035,8 +1044,8 @@ mod recording_header_redaction_tests {
 /// per-challenge `pending_nonce` lives in the same lock so the POST
 /// can verify the submission matches a challenge we actually served.
 ///
-/// `app` is the Tauri `AppHandle`, threaded in so the auth handler
-/// can emit `proxy-credentials-applied` to the frontend (which the
+/// `credentials_applied` is the desktop event sink, so the auth handler
+/// can report `proxy-credentials-applied` to the frontend (which the
 /// React side listens for, then offers a "save these credentials?"
 /// toast).
 #[derive(Clone)]
@@ -1072,11 +1081,15 @@ pub struct AxumProxyState {
     /// client so a set-but-unmatched selector means "do not fill".
     pub auto_login_selectors: Option<HttpAutoLoginSelectors>,
     pub client: reqwest::Client,
+    /// Request-start ordering for document lifecycle reports (never credentials).
+    pub document_sequence: Arc<AtomicU64>,
     pub request_count: Arc<AtomicU64>,
     pub error_count: Arc<AtomicU64>,
     pub last_error: Arc<std::sync::Mutex<Option<String>>>,
     pub global_sessions: ProxySessionManagerState,
-    pub app: tauri::AppHandle,
+    /// Desktop boundary supplied by real constructors. No runtime is needed by
+    /// the transport itself or isolated protected-route tests.
+    pub credentials_applied: Option<Arc<dyn Fn(serde_json::Value) + Send + Sync>>,
 }
 
 fn proxy_request_headers_are_authorized(
@@ -1110,12 +1123,25 @@ fn collect_upstream_headers(
     target_origin: &str,
 ) -> Vec<(String, String)> {
     let mut forwarded = Vec::new();
+    let document_request = incoming
+        .get("sec-fetch-dest")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|dest| matches!(dest, "document" | "iframe" | "script" | "style"));
     for (key, value) in incoming {
         let name = key.as_str();
-        if (name == "authorization" && mode != UpstreamAuthMode::None)
+        if (document_request
+            && matches!(
+                name,
+                "if-none-match" | "if-modified-since" | "if-range" | "range"
+            ))
+            || (name == "authorization" && mode != UpstreamAuthMode::None)
             || matches!(
                 name,
-                "host" | "connection" | "proxy-authorization" | "transfer-encoding"
+                "host"
+                    | "connection"
+                    | "proxy-authorization"
+                    | "transfer-encoding"
+                    | "accept-encoding"
             )
         {
             continue;
@@ -1133,6 +1159,12 @@ fn collect_upstream_headers(
             }
         }
     }
+    // Never forward browser codecs that this proxy cannot decode before editing
+    // HTML/CSS/JS. Opaque responses retain their encoding and bytes unchanged.
+    forwarded.push((
+        "accept-encoding".into(),
+        proxy_response::ACCEPT_ENCODING.into(),
+    ));
     forwarded
 }
 
@@ -1232,11 +1264,13 @@ pub async fn axum_proxy_handler(
     use axum::http::{Response, StatusCode};
 
     let method = req.method().clone();
+    let document_sequence = state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1;
     let path_and_query = req
         .uri()
         .path_and_query()
         .map(|pq| pq.as_str().to_string())
         .unwrap_or_else(|| "/".to_string());
+    let (path_and_query, navigation_token) = proxy_response::navigation_request(&path_and_query);
 
     let full_url = format!(
         "{}{}",
@@ -1256,12 +1290,20 @@ pub async fn axum_proxy_handler(
         _ => reqwest::Method::GET,
     };
 
-    let fwd_headers = collect_upstream_headers(
+    let mut fwd_headers = collect_upstream_headers(
         req.headers(),
         state.upstream_auth_mode,
         &state.proxy_origin,
         &state.target_origin,
     );
+    if navigation_token.is_some() {
+        fwd_headers.retain(|(name, _)| {
+            !matches!(
+                name.as_str(),
+                "if-none-match" | "if-modified-since" | "if-range" | "range"
+            )
+        });
+    }
 
     // Forward request body.
     let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
@@ -1443,16 +1485,33 @@ pub async fn axum_proxy_handler(
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
 
-            let raw_bytes = match resp.bytes().await {
-                Ok(b) => b.to_vec(),
-                Err(e) => {
-                    return Response::builder()
-                        .status(StatusCode::BAD_GATEWAY)
-                        .body(Body::from(format!(
-                            "Failed to read upstream response: {}",
-                            e
-                        )))
-                        .expect("valid HTTP response");
+            // Decode before status-page theming AND successful document edits.
+            // Malformed/oversized representations produce a clear bounded error,
+            // never a partly rewritten compressed stream.
+            let has_body = method != axum::http::Method::HEAD
+                && status_code != StatusCode::NO_CONTENT
+                && status_code != StatusCode::RESET_CONTENT;
+            let is_rewritable = has_body
+                && (proxy_response::is_editable(content_type.as_deref())
+                    || (status_u16 >= 400
+                        && content_type
+                            .as_deref()
+                            .is_none_or(|ct| ct.trim().is_empty())));
+            let raw_bytes = match proxy_response::read_body(resp, &resp_hdrs, is_rewritable).await {
+                Ok(b) => b,
+                Err(detail) => {
+                    state.error_count.fetch_add(1, Ordering::Relaxed);
+                    if let Ok(mut error) = state.last_error.lock() {
+                        *error = Some(detail.to_string());
+                    }
+                    let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
+                    return crate::themed_errors::themed_error_response(
+                        crate::themed_errors::ProxyErrorKind::Other,
+                        &full_url,
+                        detail,
+                        &theme,
+                        &state.session_id,
+                    );
                 }
             };
 
@@ -1566,16 +1625,6 @@ pub async fn axum_proxy_handler(
 
             // Rewrite absolute target URLs in text responses so that
             // sub-resources resolve through the local proxy.
-            let is_rewritable = content_type
-                .as_deref()
-                .map(|ct| {
-                    ct.contains("text/html")
-                        || ct.contains("text/css")
-                        || ct.contains("application/javascript")
-                        || ct.contains("text/javascript")
-                })
-                .unwrap_or(false);
-
             let mut final_body = if is_rewritable && !state.target_origin.is_empty() {
                 let text = String::from_utf8_lossy(&raw_bytes);
                 text.replace(&state.target_origin, "").into_bytes()
@@ -1584,10 +1633,17 @@ pub async fn axum_proxy_handler(
             };
 
             // Inject navigation reporter into HTML.
-            let is_html = content_type
-                .as_deref()
-                .map(|ct| ct.contains("text/html"))
-                .unwrap_or(false);
+            let is_html = has_body
+                && content_type
+                    .as_deref()
+                    .map(|ct| {
+                        ct.split(';')
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .eq_ignore_ascii_case("text/html")
+                    })
+                    .unwrap_or(false);
             if is_html {
                 let nav_script = "<script>try{window.parent.postMessage(\
                     {type:'proxy_navigate',url:location.href},'*')\
@@ -1621,6 +1677,15 @@ pub async fn axum_proxy_handler(
                 } else {
                     final_body.extend_from_slice(injected_scripts.as_bytes());
                 }
+                // Install before application scripts, independently of optional
+                // auto-login. Readiness means DOM available, never authenticated.
+                final_body = proxy_response::inject_readiness(
+                    &String::from_utf8_lossy(&final_body),
+                    &state.session_id,
+                    navigation_token.as_deref(),
+                    document_sequence,
+                )
+                .into_bytes();
             }
 
             // Build response, stripping headers that block iframe display
@@ -1628,7 +1693,8 @@ pub async fn axum_proxy_handler(
             let mut builder = Response::builder().status(status_u16);
             for (key, value) in resp_hdrs.iter() {
                 let k = key.as_str().to_lowercase();
-                if k == "transfer-encoding"
+                if (is_rewritable && proxy_response::invalidated_header(&k))
+                    || k == "transfer-encoding"
                     || k == "connection"
                     || k == "content-length"
                     || k == "www-authenticate"
@@ -1647,6 +1713,9 @@ pub async fn axum_proxy_handler(
             }
             if let Some(ct) = &content_type {
                 builder = builder.header("Content-Type", ct.as_str());
+            }
+            if is_rewritable {
+                builder = builder.header("Cache-Control", "no-store");
             }
             builder = builder.header("Content-Length", final_body.len().to_string());
             builder = builder.header("Access-Control-Allow-Origin", state.proxy_origin.as_str());
@@ -1839,16 +1908,13 @@ pub async fn themed_auth_post_handler(
     // the password — passwords belong in the backend session, not
     // JS strings. Frontend matches on session_id / connection_id
     // and surfaces a toast bound to the connection.
-    use tauri::Emitter;
-    let _ = state.app.emit(
-        "proxy-credentials-applied",
-        serde_json::json!({
+    if let Some(notify) = &state.credentials_applied {
+        notify(serde_json::json!({
             "session_id": state.session_id,
             "connection_id": state.connection_id,
             "username": form.username,
-        }),
-    );
-
+        }));
+    }
     // 303 See Other forces the browser to GET the redirect target
     // — even though this was a POST — which is what we want so the
     // iframe re-fetches the original content through the now-
