@@ -102,6 +102,7 @@ pub fn is_command(command: &str) -> bool {
             | "database_protection_save"
             | "database_protection_load"
             | "database_protection_change"
+            | "trust_migrate_legacy_database"
             | "delete_database_data"
             | "databases_encryption_status"
             | "get_cpu_aes_capabilities"
@@ -1454,6 +1455,7 @@ define_command_group!(
         database_protection::database_protection_save,
         database_protection::database_protection_load,
         database_protection::database_protection_change,
+        database_protection::trust_migrate_legacy_database,
         database_files::delete_database_data,
         database_files::databases_encryption_status,
         cpu_commands::get_cpu_aes_capabilities,

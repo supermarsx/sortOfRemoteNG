@@ -32,6 +32,8 @@ import {
   SettingsSelectRow,
 } from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
+import { ManagedDatabaseUnlockForm } from "../../encryption/ManagedDatabaseUnlockForm";
+import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 
@@ -220,12 +222,232 @@ const TrustDatabaseBanner: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   );
 };
 
+const TrustLegacyMigrationReview: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const [page, setPage] = React.useState(0);
+  const [password, setPassword] = React.useState("");
+  const [unlockError, setUnlockError] = React.useState("");
+  const [unlockBusy, setUnlockBusy] = React.useState(false);
+  const unlockGuard = React.useRef(false);
+  const unlockScope = React.useRef(mgr.migrationUnlock?.database.id);
+  unlockScope.current = mgr.migrationUnlock?.database.id;
+  React.useEffect(() => {
+    setPassword("");
+    setUnlockError("");
+  }, [mgr.migrationUnlock?.database.id]);
+  const rows = mgr.migrationRows ?? [];
+  const pageCount = Math.max(1, Math.ceil(rows.length / 100));
+  const currentPage = Math.min(page, pageCount - 1);
+  const ready = rows.filter((row) => row.state === "ready").length;
+  const migrating = mgr.actionBusy === "migrate-legacy";
+  const unlockLegacy = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (unlockGuard.current || !password) return;
+    unlockGuard.current = true;
+    setUnlockBusy(true);
+    setUnlockError("");
+    const expected = unlockScope.current;
+    const secret = password;
+    setPassword("");
+    try {
+      await mgr.finishMigrationUnlock(secret);
+    } catch (error) {
+      if (unlockScope.current === expected)
+        setUnlockError(error instanceof Error ? error.message : String(error));
+    } finally {
+      unlockGuard.current = false;
+      setUnlockBusy(false);
+    }
+  };
+  return (
+    <section
+      className="space-y-3 rounded border border-[var(--color-border)] p-3"
+      aria-label="Legacy trust migration review"
+    >
+      <p className="text-xs">
+        Review before importing: missing legacy decisions will be added, except
+        identities previously forgotten in this database. Existing destination
+        identities, policies, revocations and Forget exclusions are preserved.
+      </p>
+      <p className="text-xs" role="status">
+        {ready} ready · {rows.filter((row) => row.state === "locked").length}{" "}
+        require unlock ·{" "}
+        {
+          rows.filter(
+            (row) => row.state === "migrated" || row.state === "verified",
+          ).length
+        }{" "}
+        completed or verified ·{" "}
+        {rows.filter((row) => row.state === "error").length} errors
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr>
+              <th className="p-2">Database</th>
+              <th className="p-2">Migration status</th>
+              <th className="p-2">Result</th>
+              <th className="p-2">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows
+              .slice(currentPage * 100, (currentPage + 1) * 100)
+              .map((row) => (
+                <tr
+                  key={row.database.id}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="p-2">{row.database.name}</td>
+                  <td className="p-2">{row.state}</td>
+                  <td className="max-w-64 break-words p-2">
+                    {row.added !== undefined &&
+                      `${row.added} added; ${row.preserved ?? 0} preserved. `}
+                    {row.message}
+                  </td>
+                  <td className="p-2">
+                    {row.state === "locked" && (
+                      <button
+                        type="button"
+                        className={ACTION_BUTTON_CLASS}
+                        disabled={mgr.actionBusy !== undefined || unlockBusy}
+                        onClick={() =>
+                          void mgr.startMigrationUnlock(row.database)
+                        }
+                      >
+                        Unlock {row.database.name}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      {pageCount > 1 && (
+        <nav
+          aria-label="Migration review pages"
+          className="flex items-center gap-3 text-xs"
+        >
+          <button
+            type="button"
+            disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            Previous page
+          </button>
+          <span>
+            Page {currentPage + 1} of {pageCount}
+          </span>
+          <button
+            type="button"
+            disabled={currentPage + 1 === pageCount}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            Next page
+          </button>
+        </nav>
+      )}
+      {mgr.migrationUnlock && (
+        <div className="space-y-2 rounded border border-[var(--color-border)] p-3">
+          <p className="text-xs font-medium">
+            Unlock {mgr.migrationUnlock.database.name} for migration (does not
+            open it)
+          </p>
+          {mgr.migrationUnlock.status ? (
+            <ManagedDatabaseUnlockForm
+              key={mgr.migrationUnlock.database.id}
+              databaseId={mgr.migrationUnlock.database.id}
+              status={mgr.migrationUnlock.status}
+              disabled={migrating}
+              onUnlockComplete={() => mgr.finishMigrationUnlock()}
+            />
+          ) : (
+            <form
+              onSubmit={(event) => void unlockLegacy(event)}
+              className="space-y-2"
+            >
+              <label className="block text-xs">
+                Database password for migration
+                <input
+                  aria-label="Database password for migration"
+                  type="password"
+                  autoComplete="off"
+                  className="sor-form-input mt-1 block w-full"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={unlockBusy || migrating}
+                />
+              </label>
+              {unlockError && (
+                <p role="alert" className="text-xs text-error">
+                  {unlockError}
+                </p>
+              )}
+              <button
+                type="submit"
+                className={ACTION_BUTTON_CLASS}
+                disabled={unlockBusy || migrating || !password}
+              >
+                {unlockBusy ? "Unlocking…" : "Unlock for migration"}
+              </button>
+            </form>
+          )}
+          <button
+            type="button"
+            className="text-xs"
+            disabled={unlockBusy}
+            onClick={mgr.closeMigrationUnlock}
+          >
+            Cancel unlock
+          </button>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={ACTION_BUTTON_CLASS}
+          disabled={ready === 0 || mgr.actionBusy !== undefined || unlockBusy}
+          onClick={() => mgr.setConfirmMigration(true)}
+        >
+          <Archive size={12} aria-hidden="true" />
+          Migrate {ready} ready databases
+        </button>
+        {migrating && (
+          <button
+            type="button"
+            className={ACTION_BUTTON_CLASS}
+            onClick={mgr.cancelMigration}
+          >
+            Cancel after current database
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-[var(--color-textMuted)]">
+        Each database commits separately. Cancellation stops before the next
+        database; completed migrations remain. Legacy files are never deleted by
+        migration.
+      </p>
+      <ConfirmDialog
+        isOpen={mgr.confirmMigration}
+        title="Import missing legacy trust decisions?"
+        confirmText="Migrate ready databases"
+        confirmOnEnter={false}
+        variant="warning"
+        message={`Import missing legacy decisions into ${ready} reviewed databases without switching the active database? Previously forgotten identities remain excluded. Existing identities, policies and revocations are preserved. Legacy source files remain until separately verified and deleted.`}
+        onCancel={() => mgr.setConfirmMigration(false)}
+        onConfirm={() => void mgr.applyMigration()}
+      />
+    </section>
+  );
+};
+
 const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
   const status = mgr.legacyStatus;
-  if (!status || !mgr.legacyPresent) return null;
+  if ((!status || !mgr.legacyPresent) && !mgr.migrationRows && !mgr.legacyError)
+    return null;
 
-  const blocked = !status.allDatabasesOpened;
+  const blocked = status?.canDeleteLegacy !== true;
 
   return (
     <div
@@ -247,7 +469,7 @@ const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         className="space-y-0.5 text-[11px] font-mono text-[var(--color-textMuted)]"
         data-testid="trust-legacy-status"
       >
-        {status.legacyPresent && (
+        {status?.legacyPresent && (
           <li>
             {t("trustCenter.legacy.storeFile", {
               defaultValue: "trust_store.json — {{total}} identities",
@@ -255,7 +477,7 @@ const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             })}
           </li>
         )}
-        {status.rdpLegacyPresent && (
+        {status?.rdpLegacyPresent && (
           <li>
             {t("trustCenter.legacy.rdpFile", {
               defaultValue: "rdp-cert-trust.json — {{total}} RDP certificates",
@@ -264,6 +486,50 @@ const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </li>
         )}
       </ul>
+      {mgr.legacyError && (
+        <div className="space-y-2">
+          <p role="alert" className="text-xs text-error">
+            {mgr.legacyError}
+          </p>
+          <button
+            type="button"
+            className={ACTION_BUTTON_CLASS}
+            disabled={mgr.actionBusy !== undefined}
+            onClick={() => void mgr.refreshLegacyStatus()}
+          >
+            <RefreshCw size={12} aria-hidden="true" />
+            Retry legacy trust inspection
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        className={ACTION_BUTTON_CLASS}
+        disabled={mgr.actionBusy !== undefined}
+        onClick={() => void mgr.reviewMigration()}
+      >
+        <Archive size={12} aria-hidden="true" />
+        Review legacy trust migration
+      </button>
+      <p className="text-[11px] text-[var(--color-textMuted)]">
+        Migrate missing legacy decisions without opening or switching databases.
+        Existing identities, policies and revocations are preserved; legacy
+        source files are retained.
+      </p>
+      {status?.blockers?.map((reason, index) => (
+        <p
+          key={`${index}:${reason}`}
+          className="break-words text-[11px] text-warning"
+        >
+          {reason}
+        </p>
+      ))}
+      {mgr.migrationError && (
+        <p role="alert" className="text-xs text-error">
+          {mgr.migrationError}
+        </p>
+      )}
+      {mgr.migrationRows && <TrustLegacyMigrationReview mgr={mgr} />}
       {mgr.showConfirmDeleteLegacy ? (
         <div
           className="space-y-2 rounded border border-error/40 bg-error/10 p-2"
@@ -279,9 +545,9 @@ const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             })}
           </p>
           <p className="text-[11px] leading-relaxed text-[var(--color-textMuted)]">
-            {t("trustCenter.legacy.confirmBody", {
+            {t("trustCenter.legacy.verifiedRemovalBody", {
               defaultValue:
-                "trust_store.json and rdp-cert-trust.json are removed permanently. A database that was never opened would then start with an empty Trust Center.",
+                "Remove the verified legacy source files permanently? Native migration receipts and destination stores will be checked again before deletion. Existing per-database trust records remain.",
             })}
           </p>
           <div className="flex items-center gap-2">
@@ -310,9 +576,9 @@ const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             data-testid="trust-delete-legacy"
             title={
               blocked
-                ? t("trustCenter.legacy.blocked", {
+                ? t("trustCenter.legacy.migrationRequired", {
                     defaultValue:
-                      "Open every database once so its trust records are migrated before deleting the legacy files.",
+                      "Review and migrate legacy trust records, then verify every destination before deleting the source files.",
                   })
                 : undefined
             }
@@ -328,9 +594,9 @@ const TrustLegacyCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               className="text-[11px] leading-relaxed text-warning"
               data-testid="trust-delete-legacy-blocked"
             >
-              {t("trustCenter.legacy.blocked", {
+              {t("trustCenter.legacy.migrationRequired", {
                 defaultValue:
-                  "Open every database once so its trust records are migrated before deleting the legacy files.",
+                  "Review and migrate legacy trust records, then verify every destination before deleting the source files.",
               })}
             </p>
           )}

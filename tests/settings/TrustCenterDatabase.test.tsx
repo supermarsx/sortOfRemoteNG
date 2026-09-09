@@ -37,6 +37,21 @@ let savePath: string | null;
 let openPath: string | null;
 let fileContents: string;
 let writtenFiles: Array<[string, string]>;
+let databaseRows: Array<{
+  id: string;
+  name: string;
+  isEncrypted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastAccessed: string;
+  protectionFormat?: "sorng-db";
+}>;
+const unlocked = new Set<string>();
+const migrateDatabase = vi.fn();
+const unlockDatabase = vi.fn(async (id: string) => {
+  unlocked.add(id);
+});
+const selectDatabase = vi.fn();
 
 const saveDialog = vi.fn(async () => savePath);
 const openDialog = vi.fn(async () => openPath);
@@ -66,7 +81,14 @@ vi.mock("../../src/contexts/useConnections", () => ({
 
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
-    getInstance: () => ({ getCurrentDatabase: () => currentDatabase }),
+    getInstance: () => ({
+      getCurrentDatabase: () => currentDatabase,
+      getAllDatabases: async () => databaseRows,
+      isDatabaseUnlocked: (id: string) => unlocked.has(id),
+      unlockDatabase,
+      migrateLegacyTrustDatabase: migrateDatabase,
+      selectDatabase,
+    }),
   },
   onCurrentDatabaseChange: () => () => undefined,
 }));
@@ -76,6 +98,7 @@ vi.mock("../../src/utils/auth/trustStore", () => ({
   getAllPerConnectionTrustRecords: vi.fn(() => []),
   ensureTrustStoreReady: vi.fn(() => Promise.resolve()),
   retryTrustStoreHydration: vi.fn(() => Promise.resolve()),
+  refreshTrustStoreRecords: vi.fn(() => Promise.resolve()),
   getTrustStoreAvailability: vi.fn(() => ({ state: "ready" })),
   getTrustStoreScope: vi.fn(() => scope),
   refreshTrustStoreScope: vi.fn(() => Promise.resolve(scope)),
@@ -139,7 +162,39 @@ beforeEach(async () => {
     resolved: true,
   };
   currentDatabase = { id: "db-1", name: "Production" };
-  legacyStatus = null;
+  legacyStatus = {
+    legacyPresent: false,
+    legacyRecords: 0,
+    rdpLegacyPresent: false,
+    rdpLegacyRecords: 0,
+    allDatabasesOpened: true,
+    canDeleteLegacy: true,
+    pendingDatabaseIds: [],
+    verifiedDatabaseIds: [],
+    blockers: [],
+  };
+  databaseRows = [
+    {
+      id: "db-1",
+      name: "Production",
+      isEncrypted: false,
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      lastAccessed: "2026-01-01",
+    },
+  ];
+  unlocked.clear();
+  unlockDatabase.mockClear();
+  selectDatabase.mockClear();
+  migrateDatabase
+    .mockReset()
+    .mockImplementation(async (databaseId: string) => ({
+      databaseId,
+      status: "migrated",
+      migratedRecords: 2,
+      preservedRecords: 1,
+      warnings: [],
+    }));
   savePath = "/tmp/trust.json";
   openPath = "/tmp/trust.json";
   fileContents = JSON.stringify(trustDocument);
@@ -295,6 +350,155 @@ describe("Trust Center — management moved to its dedicated tab", () => {
 });
 
 describe("Trust Center — legacy sidecars", () => {
+  function pendingLegacy() {
+    legacyStatus = {
+      legacyPresent: true,
+      legacyRecords: 3,
+      rdpLegacyPresent: false,
+      rdpLegacyRecords: 0,
+      allDatabasesOpened: false,
+      canDeleteLegacy: false,
+      pendingDatabaseIds: databaseRows.map((row) => row.id),
+      verifiedDatabaseIds: [],
+      blockers: [],
+    };
+  }
+  async function review() {
+    renderSection();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Review legacy trust migration",
+      }),
+    );
+    await screen.findByRole("region", {
+      name: "Legacy trust migration review",
+    });
+  }
+  it("reviews missing-only migration and requires confirmation without opening any database", async () => {
+    pendingLegacy();
+    await review();
+    expect(migrateDatabase).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Migrate 1 ready databases" }),
+    );
+    expect(
+      screen.getByText(/Previously forgotten identities remain excluded/),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(migrateDatabase).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("confirm-yes"));
+    await screen.findByText(/2 added; 1 preserved/);
+    expect(migrateDatabase).toHaveBeenCalledWith("db-1");
+    expect(selectDatabase).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalledWith("trust_delete_legacy_stores");
+    expect(screen.getByTestId("trust-delete-legacy")).toBeDisabled();
+  });
+  it("requires explicit unlock of a locked legacy source without switching databases", async () => {
+    databaseRows[0].isEncrypted = true;
+    pendingLegacy();
+    await review();
+    expect(unlockDatabase).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Migrate 0 ready databases" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock Production" }));
+    fireEvent.change(
+      await screen.findByLabelText("Database password for migration"),
+      { target: { value: "fixture-password" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlock for migration" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Migrate 1 ready databases" }),
+      ).toBeEnabled(),
+    );
+    expect(unlockDatabase).toHaveBeenCalledWith("db-1", "fixture-password");
+    expect(selectDatabase).not.toHaveBeenCalled();
+    expect(migrateDatabase).not.toHaveBeenCalled();
+  });
+  it("retains per-database partial errors and never deletes sources", async () => {
+    databaseRows.push({ ...databaseRows[0], id: "db-2", name: "Staging" });
+    pendingLegacy();
+    migrateDatabase.mockRejectedValueOnce(new Error("source changed"));
+    await review();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Migrate 2 ready databases" }),
+    );
+    fireEvent.click(screen.getByTestId("confirm-yes"));
+    await screen.findByText("source changed");
+    await screen.findByText(/2 added; 1 preserved/);
+    expect(migrateDatabase).toHaveBeenCalledTimes(2);
+    expect(invokeMock).not.toHaveBeenCalledWith("trust_delete_legacy_stores");
+  });
+  it("cancels between databases while preserving the committed first migration", async () => {
+    databaseRows.push({ ...databaseRows[0], id: "db-2", name: "Staging" });
+    pendingLegacy();
+    let finish!: (value: unknown) => void;
+    migrateDatabase.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await review();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Migrate 2 ready databases" }),
+    );
+    fireEvent.click(screen.getByTestId("confirm-yes"));
+    await waitFor(() => expect(migrateDatabase).toHaveBeenCalledTimes(1));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel after current database" }),
+    );
+    finish({
+      databaseId: "db-1",
+      status: "migrated",
+      migratedRecords: 2,
+      preservedRecords: 1,
+      warnings: [],
+    });
+    await screen.findByText("Not started; legacy sources retained.");
+    expect(migrateDatabase).toHaveBeenCalledTimes(1);
+    expect(invokeMock).not.toHaveBeenCalledWith("trust_delete_legacy_stores");
+  });
+  it("reports inspection failure with an explicit retry and disabled cleanup", async () => {
+    pendingLegacy();
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementationOnce(async () => {
+      throw new Error("legacy file unreadable");
+    });
+    renderSection();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "legacy file unreadable",
+    );
+    expect(screen.getByTestId("trust-delete-legacy")).toBeDisabled();
+    invokeMock.mockImplementation(original);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry legacy trust inspection" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByText("legacy file unreadable"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+  it("bounds large reviews to 100 rows while migrating all reviewed ready targets", async () => {
+    databaseRows = Array.from({ length: 205 }, (_, index) => ({
+      ...databaseRows[0],
+      id: `db-${index}`,
+      name: `Database ${index}`,
+    }));
+    pendingLegacy();
+    await review();
+    expect(screen.getAllByRole("row")).toHaveLength(101);
+    expect(
+      screen.getByRole("button", { name: "Migrate 205 ready databases" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getAllByRole("row")).toHaveLength(101);
+    expect(migrateDatabase).not.toHaveBeenCalled();
+  });
   it("hides the legacy card when no legacy file remains", async () => {
     legacyStatus = {
       legacyPresent: false,
@@ -312,7 +516,7 @@ describe("Trust Center — legacy sidecars", () => {
     expect(screen.queryByTestId("trust-legacy")).toBeNull();
   });
 
-  it("blocks deletion until every database has been opened once", async () => {
+  it("blocks deletion until native migration coverage is verified", async () => {
     legacyStatus = {
       legacyPresent: true,
       legacyRecords: 12,
@@ -342,6 +546,7 @@ describe("Trust Center — legacy sidecars", () => {
       rdpLegacyPresent: false,
       rdpLegacyRecords: 0,
       allDatabasesOpened: true,
+      canDeleteLegacy: true,
     };
     renderSection();
     await settle();

@@ -368,6 +368,7 @@ async fn legacy_sidecars_seed_each_database_with_its_own_connection_scope() {
         },
         records: Default::default(),
         legacy_suppressed_keys: Default::default(),
+        legacy_migration_receipt: None,
     };
     for (key, host, kind, identity) in [
         (
@@ -491,16 +492,58 @@ async fn legacy_sidecars_seed_each_database_with_its_own_connection_scope() {
     assert_eq!(again.seeded_records, 0);
     assert_eq!(again.record_count, 3);
 
-    // "Every database opened" gates the legacy delete: a third database that
-    // exists on disk but was never opened must hold the gate shut.
-    assert!(runtime.legacy_status().unwrap().all_databases_opened);
-    std::fs::write(dirs.databases().join("db-three.json"), b"payload").unwrap();
+    // Activation alone is not a verified migration receipt. The native cleanup
+    // gate also requires the real index and each exact source payload.
+    assert!(!runtime.legacy_status().unwrap().all_databases_opened);
+    assert!(runtime.delete_legacy_stores().is_err());
+    let scopes = [
+        ("db-one", vec!["conn-alpha".to_string()]),
+        ("db-two", vec!["conn-beta".to_string()]),
+        ("db-three", vec![]),
+    ];
+    let rows: Vec<_> = scopes
+        .iter()
+        .map(|(id, _)| serde_json::json!({"id":id,"isEncrypted":false,"securityRevision":"r0"}))
+        .collect();
+    sdbf::safe_write(
+        &dirs.databases().join("index.json"),
+        &serde_json::to_vec(&rows).unwrap(),
+    )
+    .unwrap();
+    for (id, ids) in &scopes {
+        let payload = serde_json::json!({"connections":ids.iter().map(|id| serde_json::json!({"id":id})).collect::<Vec<_>>()});
+        sdbf::safe_write(
+            &dirs.databases().join(format!("{id}.json")),
+            &serde_json::to_vec(&payload).unwrap(),
+        )
+        .unwrap();
+    }
     assert!(!runtime.legacy_status().unwrap().all_databases_opened);
     runtime
         .activate_database(Some("db-three".into()), &[])
         .await
         .unwrap();
-    assert!(runtime.legacy_status().unwrap().all_databases_opened);
+    assert!(!runtime.legacy_status().unwrap().all_databases_opened);
+    assert!(runtime.delete_legacy_stores().is_err());
+    {
+        let coordinator = sorng_encryption::settings_coordinator::lock().await;
+        for (id, ids) in &scopes {
+            let payload = serde_json::json!({"connections":ids.iter().map(|id| serde_json::json!({"id":id})).collect::<Vec<_>>()});
+            runtime
+                .migrate_legacy_database_with_coordinator_guard(
+                    &dirs.app_dir,
+                    id,
+                    "r0",
+                    &payload,
+                    ids,
+                    &coordinator,
+                    || Ok(()),
+                )
+                .unwrap();
+        }
+    }
+    assert_eq!(runtime.active_database_id().as_deref(), Some("db-three"));
+    assert!(runtime.legacy_status().unwrap().can_delete_legacy);
 
     assert_eq!(runtime.delete_legacy_stores().unwrap(), 2);
     assert!(!legacy_path.exists() && !rdp_path.exists());

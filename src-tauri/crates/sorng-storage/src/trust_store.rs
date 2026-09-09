@@ -27,6 +27,10 @@ use crate::envelope_io::{decrypt_with_subkey, encrypt_with_subkey, is_envelope_b
 use crate::sdbf;
 use sorng_encryption::{ArtifactKind, EncryptionState, SubKey};
 
+#[path = "trust_legacy.rs"]
+mod legacy_migration;
+pub use legacy_migration::{TrustLegacyMigrationOutcome, TrustLegacyMigrationReceipt};
+
 const MAX_TRUST_STORE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUST_RECORDS: usize = 10_000;
 const MAX_HISTORY_ENTRIES: usize = 1_000;
@@ -348,6 +352,8 @@ pub struct TrustStoreData {
     /// These are not revocations and retain no identity or fingerprint.
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub legacy_suppressed_keys: std::collections::BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_migration_receipt: Option<TrustLegacyMigrationReceipt>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1235,6 +1241,9 @@ fn suppress_legacy_keys(
 }
 
 fn validate_trust_store_data(data: &TrustStoreData) -> Result<(), String> {
+    if let Some(receipt) = &data.legacy_migration_receipt {
+        receipt.validate()?;
+    }
     validate_suppressed_keys(&data.legacy_suppressed_keys)?;
     if data.records.len() > MAX_TRUST_RECORDS {
         return Err("trust store contains too many records".to_string());
@@ -1596,10 +1605,12 @@ pub struct TrustLegacyStatus {
     pub legacy_records: u64,
     pub rdp_legacy_present: bool,
     pub rdp_legacy_records: u64,
-    /// Every `databases/<id>.json` has a `<id>.trust.json` beside it, i.e.
-    /// every database has been opened at least once since the migration
-    /// shipped, so deleting the legacy sidecars cannot lose anything.
+    /// Compatibility field: every indexed database has verified migration coverage.
     pub all_databases_opened: bool,
+    pub pending_database_ids: Vec<String>,
+    pub verified_database_ids: Vec<String>,
+    pub blockers: Vec<String>,
+    pub can_delete_legacy: bool,
 }
 
 /// Local mirror of `sorng-rdp`'s `CertTrustEntry` (camelCase JSON in
@@ -2205,6 +2216,7 @@ impl TrustRuntime {
                 policy_config: document.policy_config.clone(),
                 records: HashMap::new(),
                 legacy_suppressed_keys: current.legacy_suppressed_keys,
+                legacy_migration_receipt: None,
             },
             TrustImportMode::Merge => current,
         };
@@ -2313,167 +2325,116 @@ impl TrustRuntime {
             return Ok(0);
         }
 
-        let mut data = TrustStoreData::default();
-        if let Some(legacy) = legacy {
-            data.policy = legacy.policy;
-            data.policy_config = legacy.policy_config;
-            for (key, mut record) in legacy.records {
-                let scoped = record.host.strip_prefix(CONNECTION_SCOPE_PREFIX);
-                let keep = match scoped {
-                    None => true,
-                    Some(rest) => rest
-                        .split('/')
-                        .next()
-                        .is_some_and(|conn| connection_ids.iter().any(|id| id == conn)),
-                };
-                if !keep {
-                    continue;
-                }
-                if record.history.len() < MAX_HISTORY_ENTRIES {
-                    record.history.push(migrated_history_entry(
-                        &record,
-                        "migrated from legacy trust_store.json",
-                    ));
-                }
-                data.records.insert(key, record);
-            }
-        }
-        for (_key, entry) in rdp.entries {
-            if entry.host.is_empty() || entry.fingerprint.is_empty() {
-                continue;
-            }
-            let host = format!("{}:{}", entry.host, entry.port);
-            let key = TrustStoreService::record_key("rdp", &host);
-            if data.records.contains_key(&key) {
-                continue;
-            }
-            let now = Utc::now().to_rfc3339();
-            let non_empty = |s: String| if s.is_empty() { None } else { Some(s) };
-            let identity = Identity::Tls(Box::new(CertIdentity {
-                fingerprint: entry.fingerprint.trim().to_ascii_lowercase(),
-                subject: non_empty(entry.subject),
-                issuer: non_empty(entry.issuer),
-                first_seen: if entry.first_seen.is_empty() {
-                    now.clone()
-                } else {
-                    entry.first_seen
-                },
-                last_seen: if entry.last_seen.is_empty() {
-                    now.clone()
-                } else {
-                    entry.last_seen
-                },
-                valid_from: non_empty(entry.valid_from),
-                valid_to: non_empty(entry.valid_to),
-                pem: non_empty(entry.pem),
-                serial: non_empty(entry.serial),
-                signature_algorithm: non_empty(entry.signature_algorithm),
-                san: if entry.san.is_empty() {
-                    None
-                } else {
-                    Some(entry.san)
-                },
-                chain_fingerprints: vec![],
-                subject_cn: None,
-                subject_org: None,
-                subject_ou: None,
-                subject_country: None,
-                subject_state: None,
-                subject_locality: None,
-                subject_email: None,
-                issuer_cn: None,
-                issuer_org: None,
-                issuer_country: None,
-                key_algorithm: None,
-                key_size: None,
-                version: None,
-                chain: None,
-            }));
-            let mut record = TrustRecord {
-                host,
-                record_type: "rdp".to_string(),
-                identity,
-                user_approved: true,
-                nickname: None,
-                history: vec![],
-                host_policy: None,
-                host_policy_config: None,
-                stats: VerificationStats::default(),
-                first_trusted: Some(now),
-                trust_expires: None,
-                revoked: false,
-                tags: vec![],
-            };
-            record.history.push(migrated_history_entry(
-                &record,
-                "migrated from legacy rdp-cert-trust.json",
-            ));
-            data.records.insert(key, record);
-        }
+        let data = legacy_data_for_connections(legacy, rdp, connection_ids);
         let seeded = data.records.len() as u64;
         self.write_file(&canonical, &data)?;
         Ok(seeded)
     }
+}
 
-    /// Report the legacy sidecars and whether every database has a trust
-    /// file (so the UI can offer "Delete legacy trust files").
-    pub fn legacy_status(&self) -> Result<TrustLegacyStatus, String> {
-        let legacy_path = self.legacy_path();
-        let legacy_present = legacy_path.exists();
-        let legacy_records = if legacy_present {
-            load_trust_store_data(&legacy_path)
-                .map(|d| d.records.len() as u64)
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        let rdp_present = self.legacy_rdp_path().exists();
-        let rdp_records = if rdp_present {
-            self.read_legacy_rdp()
-                .map(|d| d.entries.len() as u64)
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        let mut all_opened = true;
-        if let Ok(entries) = std::fs::read_dir(&self.databases_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name == "index.json" || !name.ends_with(".json") || name.ends_with(".trust.json")
-                {
-                    continue;
-                }
-                let id = &name[..name.len() - ".json".len()];
-                if !self.databases_dir.join(format!("{id}.trust.json")).exists() {
-                    all_opened = false;
-                    break;
-                }
+fn legacy_data_for_connections(
+    legacy: Option<TrustStoreData>,
+    rdp: RdpLegacyDocument,
+    connection_ids: &[String],
+) -> TrustStoreData {
+    let mut data = TrustStoreData::default();
+    if let Some(legacy) = legacy {
+        data.policy = legacy.policy;
+        data.policy_config = legacy.policy_config;
+        for (key, mut record) in legacy.records {
+            let scoped = record.host.strip_prefix(CONNECTION_SCOPE_PREFIX);
+            let keep = match scoped {
+                None => true,
+                Some(rest) => rest
+                    .split('/')
+                    .next()
+                    .is_some_and(|conn| connection_ids.iter().any(|id| id == conn)),
+            };
+            if !keep {
+                continue;
             }
-        }
-        Ok(TrustLegacyStatus {
-            legacy_present,
-            legacy_records,
-            rdp_legacy_present: rdp_present,
-            rdp_legacy_records: rdp_records,
-            all_databases_opened: all_opened,
-        })
-    }
-
-    /// Delete both legacy sidecars (and any `.bak`). Returns how many files
-    /// were removed. The caller (UI) gates this on `all_databases_opened`.
-    pub fn delete_legacy_stores(&self) -> Result<u32, String> {
-        let mut removed = 0u32;
-        for base in [self.legacy_path(), self.legacy_rdp_path()] {
-            for path in [base.clone(), sdbf::sibling(&base, "bak")] {
-                match std::fs::remove_file(&path) {
-                    Ok(()) => removed += 1,
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(format!("remove {}: {e}", path.display())),
-                }
+            if record.history.len() < MAX_HISTORY_ENTRIES {
+                record.history.push(migrated_history_entry(
+                    &record,
+                    "migrated from legacy trust_store.json",
+                ));
             }
+            data.records.insert(key, record);
         }
-        Ok(removed)
     }
+    for (_key, entry) in rdp.entries {
+        if entry.host.is_empty() || entry.fingerprint.is_empty() {
+            continue;
+        }
+        let host = format!("{}:{}", entry.host, entry.port);
+        let key = TrustStoreService::record_key("rdp", &host);
+        if data.records.contains_key(&key) {
+            continue;
+        }
+        let now = Utc::now().to_rfc3339();
+        let non_empty = |s: String| if s.is_empty() { None } else { Some(s) };
+        let identity = Identity::Tls(Box::new(CertIdentity {
+            fingerprint: entry.fingerprint.trim().to_ascii_lowercase(),
+            subject: non_empty(entry.subject),
+            issuer: non_empty(entry.issuer),
+            first_seen: if entry.first_seen.is_empty() {
+                now.clone()
+            } else {
+                entry.first_seen
+            },
+            last_seen: if entry.last_seen.is_empty() {
+                now.clone()
+            } else {
+                entry.last_seen
+            },
+            valid_from: non_empty(entry.valid_from),
+            valid_to: non_empty(entry.valid_to),
+            pem: non_empty(entry.pem),
+            serial: non_empty(entry.serial),
+            signature_algorithm: non_empty(entry.signature_algorithm),
+            san: if entry.san.is_empty() {
+                None
+            } else {
+                Some(entry.san)
+            },
+            chain_fingerprints: vec![],
+            subject_cn: None,
+            subject_org: None,
+            subject_ou: None,
+            subject_country: None,
+            subject_state: None,
+            subject_locality: None,
+            subject_email: None,
+            issuer_cn: None,
+            issuer_org: None,
+            issuer_country: None,
+            key_algorithm: None,
+            key_size: None,
+            version: None,
+            chain: None,
+        }));
+        let mut record = TrustRecord {
+            host,
+            record_type: "rdp".to_string(),
+            identity,
+            user_approved: true,
+            nickname: None,
+            history: vec![],
+            host_policy: None,
+            host_policy_config: None,
+            stats: VerificationStats::default(),
+            first_trusted: Some(now),
+            trust_expires: None,
+            revoked: false,
+            tags: vec![],
+        };
+        record.history.push(migrated_history_entry(
+            &record,
+            "migrated from legacy rdp-cert-trust.json",
+        ));
+        data.records.insert(key, record);
+    }
+    data
 }
 
 /// Merge `incoming` into `data` under the D6 rules. Records are re-keyed
@@ -3453,13 +3414,13 @@ mod runtime_tests {
         assert_eq!(again.seeded_records, 0);
         assert_eq!(again.record_count, 3);
 
-        // all_databases_opened tracks <id>.json vs <id>.trust.json.
+        // Opening a database is no longer proof of verified migration coverage.
         std::fs::write(app_dir.join("databases").join("db2.json"), b"x").unwrap();
         assert!(!rt.legacy_status().unwrap().all_databases_opened);
         rt.activate_database(Some("db2".into()), &[]).await.unwrap();
-        assert!(rt.legacy_status().unwrap().all_databases_opened);
-        assert_eq!(rt.delete_legacy_stores().unwrap(), 2);
-        assert!(!legacy_path.exists() && !rdp_path.exists());
+        assert!(!rt.legacy_status().unwrap().all_databases_opened);
+        assert!(rt.delete_legacy_stores().is_err());
+        assert!(legacy_path.exists() && rdp_path.exists());
     }
 
     #[tokio::test]

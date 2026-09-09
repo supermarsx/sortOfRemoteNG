@@ -52,6 +52,13 @@ export interface DatabaseSecurityOutcome {
   cleanupPending: boolean;
   warnings: string[];
 }
+export interface LegacyTrustMigrationOutcome {
+  databaseId: string;
+  status: "migrated" | "already-verified";
+  migratedRecords: number;
+  preservedRecords: number;
+  warnings: string[];
+}
 
 /**
  * Surface a recovery via the action log so the user sees that their
@@ -492,6 +499,75 @@ export class DatabaseManager {
 
   async getDatabaseProtectionCapabilities() {
     return databaseProtection.capabilities();
+  }
+
+  /** Migrate a named database without changing the active database or trust scope. */
+  async migrateLegacyTrustDatabase(
+    id: string,
+  ): Promise<LegacyTrustMigrationOutcome> {
+    const epoch = this.captureDatabaseEpoch(id);
+    const database = await this.getDatabase(id);
+    if (!database) throw new DatabaseNotFoundError();
+    const invoke = await getInvoke();
+    if (!invoke)
+      throw new Error("Legacy trust migration requires the desktop app.");
+    let source: {
+      sourceSessionId?: string;
+      expectedData?: unknown;
+      connectionIds?: string[];
+    } = {};
+    if (database.protectionFormat === "sorng-db") {
+      source = { sourceSessionId: this.requireManagedSession(id).sessionId };
+    } else if (database.isEncrypted) {
+      const password = this.getUnlockedPasswordForDatabase(id);
+      if (!password)
+        throw new Error(
+          "Unlock this database explicitly before migrating its legacy trust records.",
+        );
+      const data = await this.loadDatabaseData(
+        id,
+        password,
+        database.securityRevision ?? "",
+      );
+      if (!data) throw new DatabaseNotFoundError();
+      const expectedData = this.loadedRepresentations.get(data);
+      if (expectedData === undefined)
+        throw new Error(
+          "Migration requires the exact verified database snapshot.",
+        );
+      source = { expectedData, connectionIds: this.connectionIdsOf(data) };
+    }
+    this.assertDatabaseEpoch(id, epoch);
+    const result = await invoke<LegacyTrustMigrationOutcome>(
+      "trust_migrate_legacy_database",
+      {
+        databaseId: id,
+        expectedSecurityRevision: database.securityRevision ?? "",
+        ...source,
+      },
+    );
+    if (
+      result?.databaseId !== id ||
+      !["migrated", "already-verified"].includes(result.status) ||
+      !Number.isSafeInteger(result.migratedRecords) ||
+      result.migratedRecords < 0 ||
+      !Number.isSafeInteger(result.preservedRecords) ||
+      result.preservedRecords < 0 ||
+      !Array.isArray(result.warnings) ||
+      result.warnings.some((warning) => typeof warning !== "string")
+    )
+      throw new Error(
+        "Migration returned an invalid result. Refresh native verification before deleting any legacy files.",
+      );
+    return this.captureDatabaseEpoch(id) === epoch
+      ? result
+      : {
+          ...result,
+          warnings: [
+            ...result.warnings,
+            "Migration completed, but database access changed. Refresh verification before cleanup.",
+          ],
+        };
   }
 
   /** Caller holds the database mutation queue and durably flushes current edits first. */

@@ -53,6 +53,20 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         .invoke_handler(sorng_commands_core::database_protection::build())
         .build(mock_context(noop_assets()))
         .unwrap();
+    // This runtime is bound only to this temporary profile. No default OS
+    // AppData or real legacy known-host/trust source is inspected by the IPC.
+    let trust_runtime = sorng_storage::trust_store::install_runtime(
+        root.path().join("databases"),
+        Some(std::sync::Arc::new(state.clone())),
+    );
+    trust_runtime
+        .set_active(Some("unrelated-active".into()), None)
+        .unwrap();
+    std::fs::write(
+        root.path().join("trust_store.json"),
+        serde_json::to_vec(&sorng_storage::trust_store::TrustStoreData::default()).unwrap(),
+    )
+    .unwrap();
     app.manage(state);
     let main = tauri::WebviewWindowBuilder::new(&app, "db-main", Default::default())
         .build()
@@ -79,6 +93,25 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
     assert_eq!(capabilities["ciphers"][0]["id"], "aes-256-gcm");
     let before = invoke(&main, names[1], json!({"databaseId":"db"})).unwrap();
     assert_eq!(before["kind"], "none");
+    let migrate_command = "trust_migrate_legacy_database";
+    assert!(sorng_commands_core::is_command(migrate_command));
+    assert!(invoke(
+        &main,
+        migrate_command,
+        json!({"databaseId":"db","expectedSecurityRevision":"stale"})
+    )
+    .is_err());
+    let migrated = invoke(
+        &main,
+        migrate_command,
+        json!({"databaseId":"db","expectedSecurityRevision":"r0"}),
+    )
+    .unwrap();
+    assert_eq!(migrated["status"], "migrated");
+    assert_eq!(
+        trust_runtime.active_database_id().as_deref(),
+        Some("unrelated-active")
+    );
     let changed = invoke(&main,names[5],json!({"databaseId":"db","expectedSecurityRevision":"r0",
         "expectedData":data,"legacyVerifiedData":data,"target":{"dataCipher":"chacha20-poly1305",
         "keepSlotIds":[],"newSlots":[{"type":"password","label":"Portable","password":"fixture-only",
@@ -96,6 +129,16 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
     )
     .unwrap();
     assert_eq!(opened["data"], data);
+    let managed_migration = json!({"databaseId":"db","expectedSecurityRevision":opened["securityRevision"],"sourceSessionId":opened["sessionId"]});
+    assert!(invoke(&main, migrate_command, managed_migration.clone()).is_err());
+    assert_eq!(
+        invoke(&other, migrate_command, managed_migration.clone()).unwrap()["status"],
+        "migrated"
+    );
+    assert_eq!(
+        trust_runtime.active_database_id().as_deref(),
+        Some("unrelated-active")
+    );
     let request = json!({"databaseId":"db","sessionId":opened["sessionId"],
         "expectedSecurityRevision":opened["securityRevision"],"data":{"connections":[{"id":"saved"}]}});
     assert!(invoke(&main, names[4], request.clone()).is_err());
@@ -114,9 +157,29 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
     assert_eq!(locked["warnings"], json!([]));
     assert!(invoke(&other, names[4], request).is_err());
     assert!(invoke(&other, names[6], load_request).is_err());
+    assert!(invoke(&other, migrate_command, managed_migration).is_err());
+    // Legacy password path carries the exact previously verified encrypted
+    // representation, never a renderer-supplied plaintext copy to persist.
+    sorng_storage::sdbf::safe_write(
+        &root.path().join("databases/index.json"),
+        &serde_json::to_vec(
+            &json!([{"id":"db","isEncrypted":true,"securityRevision":"legacy-r0"}]),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    sorng_storage::sdbf::safe_write(
+        &root.path().join("databases/db.json"),
+        &serde_json::to_vec(&json!("opaque-legacy-password-fixture")).unwrap(),
+    )
+    .unwrap();
+    assert!(invoke(&main,migrate_command,json!({"databaseId":"db","expectedSecurityRevision":"legacy-r0","expectedData":"wrong-raw","connectionIds":[]})).is_err());
+    let legacy=invoke(&main,migrate_command,json!({"databaseId":"db","expectedSecurityRevision":"legacy-r0","expectedData":"opaque-legacy-password-fixture","connectionIds":[]})).unwrap();
+    assert_eq!(legacy["status"], "migrated");
+    assert!(root.path().join("trust_store.json").exists());
     assert_eq!(
-        invoke(&other, names[1], json!({"databaseId":"db"})).unwrap()["unlocked"],
-        false
+        invoke(&other, names[1], json!({"databaseId":"db"})).unwrap()["kind"],
+        "legacy-password"
     );
     assert!(root.path().join("databases/db.json").is_file());
 }

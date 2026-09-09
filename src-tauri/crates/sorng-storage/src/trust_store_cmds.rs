@@ -353,8 +353,8 @@ pub async fn trust_legacy_status() -> Result<TrustLegacyStatus, String> {
     runtime()?.legacy_status()
 }
 
-/// Delete the legacy sidecars. Returns the number of files removed. The UI
-/// gates this on `TrustLegacyStatus::all_databases_opened`.
+/// Delete legacy sidecars only after native inventory/receipt revalidation.
+/// User confirmation is separate from migration; no UI flag grants eligibility.
 #[tauri::command]
 pub async fn trust_delete_legacy_stores() -> Result<u32, String> {
     runtime()?.delete_legacy_stores()
