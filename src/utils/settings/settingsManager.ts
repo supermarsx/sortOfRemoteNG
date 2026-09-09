@@ -433,6 +433,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showCollectionSwitcherIcon: true,
   showImportExportIcon: true,
   showSettingsIcon: true,
+  showTrustCenterIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
   showDevtoolsIcon: false,

@@ -13,6 +13,7 @@ import {
   Bug,
   ScreenShare,
   FlaskConical,
+  Fingerprint,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -54,6 +55,7 @@ interface AppToolbarProps {
    * affordances so each lands on its own settings section.
    */
   openSettings: (tab?: SettingsTabId) => void;
+  openTrustCenter: () => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setShowProxyMenu: (v: boolean) => void;
   setShowShortcutManager: (v: boolean) => void;
@@ -92,6 +94,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowDatabasePanel,
   openImportExport,
   openSettings,
+  openTrustCenter,
   setRdpPanelOpen,
   setShowProxyMenu,
   setShowShortcutManager,
@@ -257,6 +260,18 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               data-testid="toolbar-settings"
             >
               <ToolGlyph tool="settings" />
+            </button>
+          )}
+          {(appSettings.showTrustCenterIcon ?? true) && (
+            <button
+              type="button"
+              onClick={openTrustCenter}
+              className="app-bar-button p-2"
+              aria-label={t("settingsLayout.trustCenter", "Trust Center")}
+              data-tooltip={t("settingsLayout.trustCenter", "Trust Center")}
+              data-testid="toolbar-trust-center"
+            >
+              <Fingerprint size={14} aria-hidden="true" />
             </button>
           )}
           <button

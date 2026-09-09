@@ -64,6 +64,7 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
   setShowDatabasePanel: vi.fn(),
   openImportExport: vi.fn(),
   openSettings: vi.fn(),
+  openTrustCenter: vi.fn(),
   setRdpPanelOpen: vi.fn(),
   setShowInternalProxyManager: vi.fn(),
   setShowProxyMenu: vi.fn(),
@@ -94,6 +95,26 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("shows the configurable Trust Center shortcut and uses the existing tab opener", () => {
+    expect(defaultSettings.showTrustCenterIcon).toBe(true);
+    expect(DEFAULT_VALUES.showTrustCenterIcon).toBe(true);
+    const props = makeProps();
+    const { rerender } = render(<AppToolbar {...props} />);
+    const button = screen.getByRole("button", { name: "Trust Center" });
+    expect(button).toHaveAttribute("data-tooltip", "Trust Center");
+    fireEvent.click(button);
+    expect(props.openTrustCenter).toHaveBeenCalledOnce();
+    expect(props.openSettings).not.toHaveBeenCalled();
+    rerender(
+      <AppToolbar
+        {...props}
+        appSettings={{ ...props.appSettings, showTrustCenterIcon: false }}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Trust Center" }),
+    ).not.toBeInTheDocument();
+  });
   it("hides the dev console with both startup and reset defaults", () => {
     expect(defaultSettings.showDevtoolsIcon).toBe(false);
     expect(DEFAULT_VALUES.showDevtoolsIcon).toBe(false);

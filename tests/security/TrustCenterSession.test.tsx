@@ -28,12 +28,17 @@ vi.mock("../../src/components/security/TrustCenterTab", () => ({
   default: ({
     onClose,
     showClose = true,
+    onOpenTrustSettings,
   }: {
     onClose: () => void;
     showClose?: boolean;
+    onOpenTrustSettings?: () => void;
   }) => (
     <section aria-label="Dedicated manager">
       {showClose && <button onClick={onClose}>Close dedicated manager</button>}
+      {onOpenTrustSettings && (
+        <button onClick={onOpenTrustSettings}>Trust settings</button>
+      )}
     </section>
   ),
 }));
@@ -57,6 +62,21 @@ afterEach(() => {
   fixture.dispatch.mockClear();
 });
 describe("Trust Center tab navigation", () => {
+  it("routes Trust settings to the host's existing Settings trust section", async () => {
+    const openSettings = vi.fn();
+    render(
+      <ToolTabViewer
+        session={createTrustCenterSession()}
+        onClose={vi.fn()}
+        onOpenSettings={openSettings}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Trust settings" }),
+    );
+    expect(openSettings).toHaveBeenCalledWith("trust");
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
   it("creates one reusable local tab even on rapid repeated activation", () => {
     const activate = vi.fn();
     const { result } = renderHook(() => useTrustCenterSession(activate));

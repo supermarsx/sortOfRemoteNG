@@ -355,6 +355,7 @@ export interface GlobalSettings {
   showCollectionSwitcherIcon: boolean;
   showImportExportIcon: boolean;
   showSettingsIcon: boolean;
+  showTrustCenterIcon: boolean;
   showPerformanceMonitorIcon: boolean;
   showActionLogIcon: boolean;
   showDevtoolsIcon: boolean;

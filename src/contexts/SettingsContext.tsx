@@ -166,6 +166,7 @@ export const defaultSettings: GlobalSettings = {
   showCollectionSwitcherIcon: true,
   showImportExportIcon: true,
   showSettingsIcon: true,
+  showTrustCenterIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
   showDevtoolsIcon: false,

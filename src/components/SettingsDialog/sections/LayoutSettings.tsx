@@ -15,6 +15,7 @@ import {
   FolderSync,
   FileStack,
   Settings,
+  Fingerprint,
   Shield,
   Keyboard,
   Activity,
@@ -509,6 +510,17 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             infoTooltip={t(
               "settingsLayout.proxyVpnMenuTooltip",
               "Show the proxy and VPN management icon",
+            )}
+          />
+          <Toggle
+            checked={settings.showTrustCenterIcon ?? true}
+            onChange={(v) => updateSettings({ showTrustCenterIcon: v })}
+            icon={<Fingerprint size={16} />}
+            label={t("settingsLayout.trustCenter", "Trust Center")}
+            settingKey="showTrustCenterIcon"
+            infoTooltip={t(
+              "settingsLayout.trustCenterIconTooltip",
+              "Show the Trust Center icon to open or focus certificate and SSH host identity management",
             )}
           />
           <Toggle

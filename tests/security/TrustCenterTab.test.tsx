@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Profiler } from "react";
 import type {
   TrustRecord,
   TrustExportRecord,
@@ -186,6 +187,54 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("dedicated Trust Center", () => {
+  it("keeps an inspector opened as its database first becomes ready", async () => {
+    let clicked = false;
+    render(
+      <Profiler
+        id="inspect-on-ready"
+        onRender={() => {
+          const inspect = screen.queryByRole<HTMLButtonElement>("button", {
+            name: "Inspect alpha:443",
+          });
+          // Exercise a click after the ready DOM commit but before its passive
+          // scope-reset effect, without relying on scheduler timing or sleeps.
+          if (!clicked && inspect && !inspect.disabled) {
+            clicked = true;
+            inspect.click();
+          }
+        }}
+      >
+        <TrustCenterTab onClose={vi.fn()} />
+      </Profiler>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Review tag replacement" }),
+      ).toBeEnabled(),
+    );
+    expect(clicked).toBe(true);
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Identity — alpha:443",
+    );
+  });
+
+  it("opens Trust settings through its host without closing the manager", async () => {
+    const onOpenTrustSettings = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <TrustCenterTab
+        onClose={onClose}
+        showClose={false}
+        onOpenTrustSettings={onOpenTrustSettings}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Trust settings" }));
+    expect(onOpenTrustSettings).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+  });
   it("preserves the Close action for a standalone manager", async () => {
     const onClose = vi.fn();
     render(<TrustCenterTab onClose={onClose} />);

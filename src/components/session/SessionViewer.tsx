@@ -227,6 +227,7 @@ interface SessionViewerProps {
   ) => Promise<void> | void;
   onDatabaseClose?: () => Promise<void> | void;
   onBeforeCurrentLock?: () => Promise<void>;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
   onIntegrationStateChange?: (
     sessionId: string,
     event: IntegrationSessionStateEvent,
@@ -288,6 +289,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
   onDatabaseSelect,
   onDatabaseClose,
   onBeforeCurrentLock,
+  onOpenSettings,
   onIntegrationStateChange,
   settingsInitialTab,
   settingsInitialTabNonce,
@@ -308,6 +310,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
           onDatabaseSelect={onDatabaseSelect}
           onDatabaseClose={onDatabaseClose}
           onBeforeCurrentLock={onBeforeCurrentLock}
+          onOpenSettings={onOpenSettings}
           settingsInitialTab={settingsInitialTab}
           settingsInitialTabNonce={settingsInitialTabNonce}
         />

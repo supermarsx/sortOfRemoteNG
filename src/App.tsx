@@ -1742,6 +1742,7 @@ const AppContent: React.FC = () => {
               toolShowSetters.current.importExport(true);
             }}
             openSettings={handleOpenSettings}
+            openTrustCenter={openTrustCenter}
             setRdpPanelOpen={toolShowSetters.current.rdpSessions}
             setShowProxyMenu={toolShowSetters.current.proxyChain}
             setShowShortcutManager={toolShowSetters.current.shortcutManager}
@@ -1844,6 +1845,7 @@ const AppContent: React.FC = () => {
                       onDatabaseSelect={handleDatabaseSelect}
                       onDatabaseClose={handleDatabaseClose}
                       onBeforeCurrentLock={beforeCurrentDatabaseLock}
+                      onOpenSettings={handleOpenSettings}
                       onIntegrationStateChange={handleIntegrationSessionState}
                       settingsInitialTab={settingsTabRequest.tab}
                       settingsInitialTabNonce={settingsTabRequest.nonce}

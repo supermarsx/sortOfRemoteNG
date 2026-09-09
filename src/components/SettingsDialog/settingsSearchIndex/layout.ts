@@ -231,6 +231,22 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Layout",
   },
   {
+    key: "showTrustCenterIcon",
+    label: "Trust Center",
+    labelKey: "settingsLayout.trustCenter",
+    description:
+      "Show the Trust Center icon to open or focus certificate and SSH host identity management",
+    descriptionKey: "settingsLayout.trustCenterIconTooltip",
+    tags: ["toolbar", "icon", "trust", "certificate", "SSH", "secondary bar"],
+    synonyms: [
+      "trust center button",
+      "certificate manager icon",
+      "topbar trust",
+    ],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
     key: "showProxyMenuIcon",
     label: "Proxy / VPN Menu",
     labelKey: "settingsLayout.proxyVpnMenu",

@@ -10,6 +10,7 @@ import {
   Eye,
   Search,
   X,
+  Settings,
 } from "lucide-react";
 import {
   useTrustCenter,
@@ -47,9 +48,11 @@ const actionHints: Record<TrustCenterAction, string> = {
 export default function TrustCenterTab({
   onClose,
   showClose = true,
+  onOpenTrustSettings,
 }: {
   onClose: () => void;
   showClose?: boolean;
+  onOpenTrustSettings?: () => void;
 }) {
   const { state } = useConnections();
   const connectionNames = useMemo(
@@ -64,7 +67,11 @@ export default function TrustCenterTab({
     [connectionNames],
   );
   const mgr = useTrustCenter(lookupConnection);
-  const [detail, setDetail] = useState<TrustCenterRow | null>(null);
+  const [detailSelection, setDetail] = useState<
+    (TrustCenterRow & { databaseId: string | null }) | null
+  >(null);
+  const detail =
+    detailSelection?.databaseId === mgr.databaseId ? detailSelection : null;
   const [nickname, setNickname] = useState("");
   const [policy, setPolicy] = useState<TrustPolicy | "inherit">("inherit");
   const [tags, setTags] = useState("");
@@ -73,8 +80,11 @@ export default function TrustCenterTab({
   const [page, setPage] = useState(0);
   const [importPage, setImportPage] = useState(0);
   useEffect(() => {
-    setDetail(null);
-    setNickname("");
+    // A click may already belong to the newly hydrated scope when this passive
+    // effect runs. Only discard an inspector captured for a different scope.
+    setDetail((previous) =>
+      previous?.databaseId === mgr.databaseId ? previous : null,
+    );
   }, [mgr.databaseId]);
   useEffect(() => {
     setImportReviewed(false);
@@ -147,16 +157,29 @@ export default function TrustCenterTab({
             policies remain in Settings → Trust Center.
           </p>
         </div>
-        {showClose && (
-          <button
-            type="button"
-            className={button}
-            onClick={onClose}
-            aria-label="Close Trust Center"
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onOpenTrustSettings && (
+            <button
+              type="button"
+              className={button}
+              onClick={onOpenTrustSettings}
+              data-tooltip="Open global Trust Verification settings"
+            >
+              <Settings size={14} aria-hidden="true" />
+              Trust settings
+            </button>
+          )}
+          {showClose && (
+            <button
+              type="button"
+              className={button}
+              onClick={onClose}
+              aria-label="Close Trust Center"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </header>
       <div className="space-y-3 border-b border-[var(--color-border)] p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -517,7 +540,7 @@ export default function TrustCenterTab({
                         disabled={disabled}
                         data-tooltip="Inspect identity and certificate details"
                         onClick={() => {
-                          setDetail(row);
+                          setDetail({ ...row, databaseId: mgr.databaseId });
                           setNickname(row.record.nickname ?? "");
                           setPolicy(row.record.hostPolicy ?? "inherit");
                           setTags(row.record.tags?.join(", ") ?? "");

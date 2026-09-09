@@ -192,6 +192,7 @@ interface ToolTabViewerProps {
   /** Close the currently-open database (and lock its cached password). */
   onDatabaseClose?: () => Promise<void> | void;
   onBeforeCurrentLock?: () => Promise<void>;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
   /** Settings tab to deep-link to when this is the `tool:settings` tab. */
   settingsInitialTab?: SettingsTabId;
   /** Bump to re-apply an unchanged `settingsInitialTab`. */
@@ -214,6 +215,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   onDatabaseSelect,
   onDatabaseClose,
   onBeforeCurrentLock,
+  onOpenSettings,
   settingsInitialTab,
   settingsInitialTabNonce,
 }) => {
@@ -237,7 +239,15 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     return <RDPInternalsTab session={session} onClose={onClose} />;
   }
   if (session.protocol === TRUST_CENTER_PROTOCOL)
-    return <TrustCenterTab onClose={onClose} showClose={false} />;
+    return (
+      <TrustCenterTab
+        onClose={onClose}
+        showClose={false}
+        onOpenTrustSettings={
+          onOpenSettings ? () => onOpenSettings("trust") : undefined
+        }
+      />
+    );
   if (
     session.protocol === RECORDING_PLAYER_PROTOCOL &&
     session.recordingPlayer
