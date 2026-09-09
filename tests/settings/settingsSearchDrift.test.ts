@@ -82,6 +82,7 @@ const FILE_TAB_OVERRIDES: Record<string, string> = {
   "StartupSettings.tsx": "startup",
   "ThemeSettings.tsx": "theme",
   "TrustVerificationSettings.tsx": "trust",
+  "LegacyTrustForceDelete.tsx": "trust", // Child of TrustVerificationSettings.
   "UpdaterSettings.tsx": "updater",
   "VpnSettings.tsx": "vpn",
   "WebBrowserSettings.tsx": "webBrowser",
