@@ -1,0 +1,80 @@
+{
+  "source": "BouncyCastle.Cryptography 2.6.2; net6.0; EaxBlockCipher(TwofishEngine/SerpentEngine); 128-bit tag",
+  "packageUrl": "https://api.nuget.org/v3-flatcontainer/bouncycastle.cryptography/2.6.2/bouncycastle.cryptography.2.6.2.nupkg",
+  "packageSha256": "623936fb1fd171579c706390390711282898cf2c759a5167852e5ab82208f8cb",
+  "assemblySha256": "e5eeaf6d263c493619982fd3638e6135077311d08c961e1fe128f9107d29ebc6",
+  "vectors": [
+    {
+      "algorithm": "twofish-256-eax",
+      "name": "empty",
+      "keyHex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "nonceHex": "00000000000000000000000000000000",
+      "aadHex": "",
+      "plaintextHex": "",
+      "ciphertextAndTagHex": "1ccc43c2a3009680c042d402aa2fbbfd"
+    },
+    {
+      "algorithm": "twofish-256-eax",
+      "name": "aad-only",
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonceHex": "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "aadHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "plaintextHex": "",
+      "ciphertextAndTagHex": "caae0c36aaf116481d77525a53834802"
+    },
+    {
+      "algorithm": "twofish-256-eax",
+      "name": "partial-block",
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonceHex": "101112131415161718191a1b1c1d1e1f",
+      "aadHex": "736f72744f6652656d6f74654e47204541582066697874757265207631",
+      "plaintextHex": "7b22636f6e6e656374696f6e73223a5b5d7d",
+      "ciphertextAndTagHex": "ee663b04ccd06da1406520e26d91b6a45eeaaa934d216a50fe177307bca47e133bb2"
+    },
+    {
+      "algorithm": "twofish-256-eax",
+      "name": "multi-block",
+      "keyHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "nonceHex": "000102030405060708090a0b0c0d0e0f",
+      "aadHex": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0df",
+      "plaintextHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748",
+      "ciphertextAndTagHex": "bb5ea952fc69293b08f8846166f1422ba0b4c1200222a192f3093527e07630e4c947f9980818848a3100ff0feafe449bb8583b3766e226d3cc8fd8ee8adc6d2d5bd7d945a6fbbe9aef0d7558bf2636ae4bdb8cef35d96f55f5"
+    },
+    {
+      "algorithm": "serpent-256-eax",
+      "name": "empty",
+      "keyHex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "nonceHex": "00000000000000000000000000000000",
+      "aadHex": "",
+      "plaintextHex": "",
+      "ciphertextAndTagHex": "5332f7150d91af63c1aca37caecdc810"
+    },
+    {
+      "algorithm": "serpent-256-eax",
+      "name": "aad-only",
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonceHex": "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "aadHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "plaintextHex": "",
+      "ciphertextAndTagHex": "9de9a889974cb2c0aec1b285888648e8"
+    },
+    {
+      "algorithm": "serpent-256-eax",
+      "name": "partial-block",
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "nonceHex": "101112131415161718191a1b1c1d1e1f",
+      "aadHex": "736f72744f6652656d6f74654e47204541582066697874757265207631",
+      "plaintextHex": "7b22636f6e6e656374696f6e73223a5b5d7d",
+      "ciphertextAndTagHex": "e703aab7746d560ac285e0614f451ebf6f4f2a3fcb8a24720fb1e465c38f2f601912"
+    },
+    {
+      "algorithm": "serpent-256-eax",
+      "name": "multi-block",
+      "keyHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "nonceHex": "000102030405060708090a0b0c0d0e0f",
+      "aadHex": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0df",
+      "plaintextHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748",
+      "ciphertextAndTagHex": "7475b32eb6809681b9f748d1bd717be2123c7839a3e141175c39eafe4ab3026560df5369ad81b92b58ddc47d7dbac0d1518a527cf31f81e7ec8c9e40892ced83e14c752e5a9bce83aaa59faaef71cad226601f8d7aa15dbd6b"
+    }
+  ]
+}

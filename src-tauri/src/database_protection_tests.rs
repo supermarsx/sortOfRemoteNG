@@ -663,6 +663,30 @@ fn managed_database_capabilities_are_honest_and_contain_no_secret_material() {
     assert_eq!(value["schemaVersion"], 1);
     assert_eq!(value["ciphers"][0]["id"], "aes-256-gcm");
     assert_eq!(value["ciphers"][1]["id"], "chacha20-poly1305");
+    assert_eq!(
+        value["ciphers"].as_array().unwrap().len(),
+        DataCipher::ALL.len()
+    );
+    for cipher in DataCipher::ALL {
+        let id = serde_json::to_value(cipher).unwrap();
+        assert!(value["ciphers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == id && row["available"] == true));
+    }
+    for cipher in ["twofish-256-eax", "serpent-256-eax"] {
+        let row = value["ciphers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == cipher)
+            .unwrap();
+        assert!(row["reason"]
+            .as_str()
+            .unwrap()
+            .contains("not VeraCrypt compatible"));
+    }
     for kind in ["webauthn-prf", "biometric"] {
         let row = value["protectors"]
             .as_array()
@@ -674,6 +698,178 @@ fn managed_database_capabilities_are_honest_and_contain_no_secret_material() {
         assert!(row["reason"].as_str().unwrap().contains("not implemented"));
     }
     assert!(VAULT_SERVICE.starts_with("sortofremoteng.internal."));
+}
+
+#[tokio::test]
+async fn managed_database_eax_save_restart_clone_and_rekey_preserve_cas_and_key_isolation() {
+    let _coordinator = sorng_encryption::settings_coordinator::lock().await;
+    for cipher in ["twofish-256-eax", "serpent-256-eax"] {
+        let (root, state, data) = fixture().await;
+        let vault = FakeVault::default();
+        let initial = change_inner(
+            root.path(),
+            &state,
+            "main",
+            "db",
+            "r0",
+            data.clone(),
+            None,
+            Some(data.clone()),
+            Some(password_target(cipher)),
+            false,
+            false,
+            &vault,
+        )
+        .await
+        .unwrap();
+        let edited = json!({"connections":[{"id":"saved","password":"test-only-must-stay-protected"}],"settings":{"preserve":true}});
+        let save = save_inner(
+            root.path(),
+            &state,
+            "main",
+            "db",
+            initial.session_id.as_deref().unwrap(),
+            &initial.security_revision,
+            edited.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(save.committed && !save.cleanup_pending);
+        let saved = managed_snapshot(root.path(), &state, "db").await.unwrap();
+        assert!(!saved
+            .data
+            .as_str()
+            .unwrap()
+            .contains("test-only-must-stay-protected"));
+        let envelope = DatabaseEnvelope::parse(&saved.data, "db").unwrap();
+        let old_key = envelope
+            .unlock_password(&envelope.slots[0].id, "fixture-only")
+            .unwrap();
+
+        // A new native runtime reads and unlocks only the persisted container.
+        let restarted = EncryptionState::new();
+        sorng_encryption::artifact_policy::initialize(&restarted, root.path()).await;
+        let opened = unlock_inner(
+            root.path(),
+            &restarted,
+            "restarted",
+            "db",
+            &envelope.slots[0].id,
+            Some(Zeroizing::new("fixture-only".into())),
+            &vault,
+        )
+        .await
+        .unwrap();
+        assert_eq!(opened.data, edited);
+        assert!(save_inner(
+            root.path(),
+            &restarted,
+            "restarted",
+            "db",
+            initial.session_id.as_deref().unwrap(),
+            &initial.security_revision,
+            data.clone()
+        )
+        .await
+        .is_err());
+
+        // Clone through the exact-empty destination branch: only a freshly
+        // wrapped protected destination is persisted, never source plaintext.
+        let empty = json!({"connections":[],"settings":{},"timestamp":0});
+        sdbf::safe_write(&root.path().join("databases/index.json"),&serde_json::to_vec(&json!([saved.row,{"id":"clone","isEncrypted":false,"securityRevision":"clone-r0"}])).unwrap()).unwrap();
+        sdbf::safe_write(
+            &root.path().join("databases/clone.json"),
+            &serde_json::to_vec(&empty).unwrap(),
+        )
+        .unwrap();
+        let cloned = change_inner_with_initialization(
+            root.path(),
+            &restarted,
+            "restarted",
+            "clone",
+            "clone-r0",
+            empty,
+            None,
+            Some(opened.data.clone()),
+            Some(password_target(cipher)),
+            false,
+            false,
+            true,
+            &vault,
+        )
+        .await
+        .unwrap();
+        assert!(cloned.committed);
+        let cloned_snapshot = managed_snapshot(root.path(), &restarted, "clone")
+            .await
+            .unwrap();
+        let cloned_envelope = DatabaseEnvelope::parse(&cloned_snapshot.data, "clone").unwrap();
+        assert_ne!(cloned_envelope.key_id, envelope.key_id);
+        assert_ne!(cloned_envelope.slots[0].id, envelope.slots[0].id);
+        assert!(cloned_envelope.open(&old_key).is_err());
+        assert!(!cloned_snapshot
+            .data
+            .as_str()
+            .unwrap()
+            .contains("test-only-must-stay-protected"));
+        let cloned_open = unlock_inner(
+            root.path(),
+            &restarted,
+            "restarted",
+            "clone",
+            &cloned_envelope.slots[0].id,
+            Some(Zeroizing::new("fixture-only".into())),
+            &vault,
+        )
+        .await
+        .unwrap();
+        assert_eq!(cloned_open.data, edited);
+
+        // Replacing a protector rotates the DEK; old backed-up slots cannot
+        // decrypt new EAX ciphertext. The existing revision CAS stays enforced.
+        let target:ProtectionTarget=serde_json::from_value(json!({"dataCipher":cipher,"keepSlotIds":[],"newSlots":[{"type":"password","label":"Replacement","password":"replacement-only","argon2":{"memoryKib":8192,"timeCost":1,"parallelism":1}}]})).unwrap();
+        let rekeyed = change_inner(
+            root.path(),
+            &restarted,
+            "restarted",
+            "db",
+            &opened.security_revision,
+            saved.data,
+            Some(opened.session_id.clone()),
+            None,
+            Some(target),
+            false,
+            false,
+            &vault,
+        )
+        .await
+        .unwrap();
+        let latest = managed_snapshot(root.path(), &restarted, "db")
+            .await
+            .unwrap();
+        let latest_envelope = DatabaseEnvelope::parse(&latest.data, "db").unwrap();
+        assert_ne!(latest_envelope.key_id, envelope.key_id);
+        assert!(latest_envelope.open(&old_key).is_err());
+        assert!(latest_envelope
+            .unlock_password(&latest_envelope.slots[0].id, "fixture-only")
+            .is_err());
+        assert!(save_inner(
+            root.path(),
+            &restarted,
+            "restarted",
+            "db",
+            &opened.session_id,
+            &opened.security_revision,
+            edited.clone()
+        )
+        .await
+        .is_err());
+        let key = latest_envelope
+            .unlock_password(&latest_envelope.slots[0].id, "replacement-only")
+            .unwrap();
+        assert_eq!(latest_envelope.open(&key).unwrap(), edited);
+        assert_ne!(rekeyed.security_revision, opened.security_revision);
+    }
 }
 
 #[tokio::test]

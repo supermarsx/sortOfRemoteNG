@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionDatabase } from "../../../../types/connection/connection";
+import {
+  DATABASE_CIPHER_LABELS,
+  isDatabaseCipher,
+} from "../../../../types/encryption/databaseProtection";
 import type {
   DatabaseCipher,
   DatabaseProtectionCapabilities,
@@ -74,7 +78,22 @@ export function ManagedDatabaseProtectionSection({
     ) === true;
   const managed = status?.kind === "managed";
   const needsEnrollment = !managed || replace;
+  const resultingProtectorTypes = needsEnrollment
+    ? [
+        ...(passwordSlot ? ["password"] : []),
+        ...(vaultSlot ? ["os-vault"] : []),
+      ]
+    : (status?.slots.map((slot) => slot.type) ?? []);
+  const resultingDeviceBoundOnly =
+    resultingProtectorTypes.length > 0 &&
+    !resultingProtectorTypes.includes("password");
+  const selectedCipher = capabilities?.ciphers.find(
+    (item) => item.id === cipher,
+  );
+  const advancedCipher =
+    cipher === "twofish-256-eax" || cipher === "serpent-256-eax";
   const canApply =
+    isDatabaseCipher(cipher) &&
     capabilities?.ciphers.some(
       (item) => item.id === cipher && item.available,
     ) &&
@@ -135,9 +154,7 @@ export function ManagedDatabaseProtectionSection({
           expectedSecurityRevision: status.securityRevision,
           currentPassword: currentPassword || undefined,
           confirmRemoveProtection: remove,
-          confirmDeviceBoundOnly:
-            target?.newSlots.every((slot) => slot.type === "os-vault") &&
-            target.keepSlotIds.length === 0,
+          confirmDeviceBoundOnly: !remove && resultingDeviceBoundOnly,
         });
       });
       if (epoch !== generation.current) return;
@@ -230,6 +247,7 @@ export function ManagedDatabaseProtectionSection({
                 Data cipher
                 <select
                   aria-label="Database data cipher"
+                  aria-describedby="database-data-cipher-help"
                   className="sor-form-input mt-1 block w-full"
                   value={cipher}
                   disabled={busy}
@@ -241,9 +259,10 @@ export function ManagedDatabaseProtectionSection({
                     <option
                       key={item.id}
                       value={item.id}
-                      disabled={!item.available}
+                      disabled={!item.available || !isDatabaseCipher(item.id)}
                     >
-                      {item.id}
+                      {DATABASE_CIPHER_LABELS[item.id] ??
+                        `Unsupported cipher (${item.id})`}
                       {!item.available
                         ? ` — ${item.reason ?? "unavailable"}`
                         : ""}
@@ -251,6 +270,17 @@ export function ManagedDatabaseProtectionSection({
                   ))}
                 </select>
               </label>
+              <p
+                id="database-data-cipher-help"
+                className="text-xs text-[var(--color-textMuted)]"
+              >
+                This choice changes only this database's inner payload cipher,
+                not the global artifact cipher or password/OS-vault key
+                wrapping. AES-256-GCM remains the recommended default.
+                {advancedCipher &&
+                  " Twofish and Serpent use EAX authentication here, as advanced software-only alternatives; this is not a VeraCrypt-compatible volume format."}
+                {selectedCipher?.reason && ` ${selectedCipher.reason}`}
+              </p>
               {managed && (
                 <label className="flex items-start gap-2 text-xs">
                   <input
@@ -380,7 +410,7 @@ export function ManagedDatabaseProtectionSection({
         message={
           review === "remove"
             ? `Remove the inner encryption layer from ${database.name}? Global artifact protection is unchanged. Without that outer protection the payload may be plaintext. Existing external backups remain unchanged.`
-            : `Apply ${cipher} to ${database.name}? ${replace ? "All existing unlock methods will be revoked for new ciphertext; every wanted method must be re-enrolled. " : ""}${vaultSlot && !passwordSlot && needsEnrollment ? "This is device-bound-only access: losing this device/account can make the database unrecoverable. " : ""}Existing exported copies and backups are not securely erased.`
+            : `Apply ${DATABASE_CIPHER_LABELS[cipher]} to ${database.name}? Only this database's inner payload cipher changes; global artifact protection and existing slot wrapping are unchanged unless you replace the unlock methods. ${replace ? "All existing unlock methods will be revoked for new ciphertext; every wanted method must be re-enrolled. " : ""}${resultingDeviceBoundOnly ? "This is device-bound-only access: losing this device/account can make the database unrecoverable. " : ""}Existing exported copies and backups are not securely erased.`
         }
         confirmOnEnter={false}
         variant={review === "remove" ? "danger" : "warning"}

@@ -311,7 +311,9 @@ fn migration_connection_ids(data: &Value) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn database_protection_capabilities() -> Value {
     json!({"schemaVersion":1,"ciphers":[
-        {"id":"aes-256-gcm","available":true}, {"id":"chacha20-poly1305","available":true}
+        {"id":"aes-256-gcm","available":true}, {"id":"chacha20-poly1305","available":true},
+        {"id":"twofish-256-eax","available":true,"reason":"Advanced software-only alternative; not VeraCrypt compatible. AES/ChaCha are recommended. No independent audit, constant-time, or complete-zeroization guarantee."},
+        {"id":"serpent-256-eax","available":true,"reason":"Advanced software-only alternative; not VeraCrypt compatible. AES/ChaCha are recommended. No independent audit, constant-time, or complete-zeroization guarantee."}
     ],"protectors":[
         {"id":"password","available":true,"deviceBound":false,"requiresUserPresence":false},
         {"id":"os-vault","available":NativeVault.available(),"deviceBound":true,"requiresUserPresence":false,"reason":"OS-account secret storage; not biometric or hardware-presence enforcement"},

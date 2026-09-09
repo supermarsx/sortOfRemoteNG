@@ -240,4 +240,68 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         Some("unrelated-active")
     );
     assert!(invoke(&main, force_names[1], request).is_err());
+    // Advanced ciphers use the same actual registered command surface and
+    // native opaque leases. No OS vault, authenticator, or user data is used.
+    let mut rows: Vec<Value> = serde_json::from_slice(
+        &sorng_storage::sdbf::safe_read_raw(&root.path().join("databases/index.json"))
+            .unwrap()
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    for (id, cipher, next_cipher) in [
+        ("eax-twofish", "twofish-256-eax", "serpent-256-eax"),
+        ("eax-serpent", "serpent-256-eax", "aes-256-gcm"),
+    ] {
+        let original = json!({"connections":[],"settings":{}});
+        rows.push(json!({"id":id,"isEncrypted":false,"securityRevision":"new-r0"}));
+        sorng_storage::sdbf::safe_write(
+            &root.path().join("databases/index.json"),
+            &serde_json::to_vec(&rows).unwrap(),
+        )
+        .unwrap();
+        sorng_storage::sdbf::safe_write(
+            &root.path().join(format!("databases/{id}.json")),
+            &serde_json::to_vec(&original).unwrap(),
+        )
+        .unwrap();
+        let changed=invoke(&main,names[5],json!({"databaseId":id,"expectedSecurityRevision":"new-r0","expectedData":original,"legacyVerifiedData":original,"target":{"dataCipher":cipher,"keepSlotIds":[],"newSlots":[{"type":"password","label":"Fixture","password":"fixture-only","argon2":{"memoryKib":8192,"timeCost":1,"parallelism":1}}]}})).unwrap();
+        assert_eq!(changed["committed"], true);
+        let status = invoke(&main, names[1], json!({"databaseId":id})).unwrap();
+        assert_eq!(status["dataCipher"], cipher);
+        invoke(&main, names[3], json!({"databaseId":id})).unwrap();
+        let unlocked = invoke(
+            &main,
+            names[2],
+            json!({"databaseId":id,"slotId":status["slots"][0]["id"],"password":"fixture-only"}),
+        )
+        .unwrap();
+        let edited =
+            json!({"connections":[{"id":"fixture","password":"not-on-disk"}],"settings":{}});
+        let save=invoke(&main,names[4],json!({"databaseId":id,"sessionId":unlocked["sessionId"],"expectedSecurityRevision":unlocked["securityRevision"],"data":edited})).unwrap();
+        assert_eq!(save["committed"], true);
+        let loaded=invoke(&main,names[6],json!({"databaseId":id,"sessionId":unlocked["sessionId"],"expectedSecurityRevision":unlocked["securityRevision"]})).unwrap();
+        assert_eq!(loaded["data"], edited);
+        let raw =
+            sorng_storage::sdbf::safe_read_raw(&root.path().join(format!("databases/{id}.json")))
+                .unwrap()
+                .unwrap()
+                .0;
+        assert!(!String::from_utf8_lossy(&raw).contains("not-on-disk"));
+        let persisted: Value = serde_json::from_slice(&raw).unwrap();
+        let transitioned=invoke(&main,names[5],json!({"databaseId":id,"expectedSecurityRevision":unlocked["securityRevision"],"expectedData":persisted,"sourceSessionId":unlocked["sessionId"],"target":{"dataCipher":next_cipher,"keepSlotIds":[status["slots"][0]["id"]],"newSlots":[]}})).unwrap();
+        assert_eq!(transitioned["committed"], true);
+        assert_eq!(
+            invoke(&main, names[1], json!({"databaseId":id})).unwrap()["dataCipher"],
+            next_cipher
+        );
+        // Keep the actual committed index for the next fixture database.
+        rows = serde_json::from_slice(
+            &sorng_storage::sdbf::safe_read_raw(&root.path().join("databases/index.json"))
+                .unwrap()
+                .unwrap()
+                .0,
+        )
+        .unwrap();
+    }
 }

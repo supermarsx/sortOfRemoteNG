@@ -113,7 +113,14 @@ beforeEach(() => {
         return {
           schemaVersion: 1,
           ciphers: [{ id: "aes-256-gcm", available: true }],
-          protectors: [{ id: "password", available: true }],
+          protectors: [
+            {
+              id: "password",
+              available: true,
+              deviceBound: false,
+              requiresUserPresence: false,
+            },
+          ],
         };
       if (command === "database_protection_change") {
         const row = rows.find((row) => row.id === args.databaseId)!;

@@ -15,6 +15,30 @@ use zeroize::Zeroize;
 pub use zeroize::Zeroizing;
 
 use crate::password_wrap::Argon2Params;
+use eax::cipher::{BlockClosure, BlockEncrypt, BlockSizeUser, KeySizeUser};
+
+/// Serpent 0.5 accepts 16–32 byte keys, but advertises a 16-byte default key.
+/// EAX uses the associated key size, so adapt only the type-level size; all key
+/// scheduling and block operations remain in the unmodified RustCrypto cipher.
+#[derive(Clone)]
+struct Serpent256(serpent::Serpent);
+impl KeySizeUser for Serpent256 {
+    type KeySize = eax::aead::consts::U32;
+}
+impl BlockSizeUser for Serpent256 {
+    type BlockSize = eax::aead::consts::U16;
+}
+impl eax::cipher::BlockCipher for Serpent256 {}
+impl KeyInit for Serpent256 {
+    fn new(key: &eax::cipher::Key<Self>) -> Self {
+        Self(serpent::Serpent::new_from_slice(key).expect("Serpent accepts a fixed 32-byte key"))
+    }
+}
+impl BlockEncrypt for Serpent256 {
+    fn encrypt_with_backend(&self, operation: impl BlockClosure<BlockSize = Self::BlockSize>) {
+        self.0.encrypt_with_backend(operation);
+    }
+}
 
 pub const FORMAT: &str = "sorng-db";
 pub const VERSION: u8 = 1;
@@ -29,6 +53,79 @@ pub enum DataCipher {
     Aes256Gcm,
     #[serde(rename = "chacha20-poly1305")]
     Chacha20Poly1305,
+    #[serde(rename = "twofish-256-eax")]
+    Twofish256Eax,
+    #[serde(rename = "serpent-256-eax")]
+    Serpent256Eax,
+}
+
+impl DataCipher {
+    pub const ALL: [Self; 4] = [
+        Self::Aes256Gcm,
+        Self::Chacha20Poly1305,
+        Self::Twofish256Eax,
+        Self::Serpent256Eax,
+    ];
+    fn nonce_len(self) -> usize {
+        match self {
+            Self::Aes256Gcm | Self::Chacha20Poly1305 => 12,
+            Self::Twofish256Eax | Self::Serpent256Eax => 16,
+        }
+    }
+    fn encrypt(
+        self,
+        key: &DatabaseKey,
+        nonce: &[u8],
+        payload: Payload<'_, '_>,
+    ) -> Result<Vec<u8>, String> {
+        if nonce.len() != self.nonce_len() {
+            return Err("invalid data cipher nonce length".into());
+        }
+        match self {
+            Self::Aes256Gcm => {
+                Aes256Gcm::new((&*key.0).into()).encrypt(aes_gcm::Nonce::from_slice(nonce), payload)
+            }
+            Self::Chacha20Poly1305 => ChaCha20Poly1305::new((&*key.0).into())
+                .encrypt(chacha20poly1305::Nonce::from_slice(nonce), payload),
+            Self::Twofish256Eax => eax::Eax::<twofish::Twofish>::new((&*key.0).into()).encrypt(
+                eax::Nonce::<eax::aead::consts::U16>::from_slice(nonce),
+                payload,
+            ),
+            Self::Serpent256Eax => eax::Eax::<Serpent256>::new((&*key.0).into()).encrypt(
+                eax::Nonce::<eax::aead::consts::U16>::from_slice(nonce),
+                payload,
+            ),
+        }
+        .map_err(|_| "encrypt managed database failed".into())
+    }
+    fn decrypt(
+        self,
+        key: &DatabaseKey,
+        nonce: &[u8],
+        payload: Payload<'_, '_>,
+    ) -> Result<Vec<u8>, String> {
+        if nonce.len() != self.nonce_len() {
+            return Err("invalid data cipher nonce length".into());
+        }
+        match self {
+            Self::Aes256Gcm => {
+                Aes256Gcm::new((&*key.0).into()).decrypt(aes_gcm::Nonce::from_slice(nonce), payload)
+            }
+            Self::Chacha20Poly1305 => ChaCha20Poly1305::new((&*key.0).into())
+                .decrypt(chacha20poly1305::Nonce::from_slice(nonce), payload),
+            Self::Twofish256Eax => eax::Eax::<twofish::Twofish>::new((&*key.0).into()).decrypt(
+                eax::Nonce::<eax::aead::consts::U16>::from_slice(nonce),
+                payload,
+            ),
+            Self::Serpent256Eax => eax::Eax::<Serpent256>::new((&*key.0).into()).decrypt(
+                eax::Nonce::<eax::aead::consts::U16>::from_slice(nonce),
+                payload,
+            ),
+        }
+        .map_err(|_| {
+            "database authentication failed: wrong unlock secret or damaged container".into()
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -392,7 +489,7 @@ impl DatabaseEnvelope {
                 return Err("duplicate database unlock slot".into());
             }
         }
-        decode_exact(&envelope.nonce, 12)?;
+        decode_exact(&envelope.nonce, envelope.data_cipher.nonce_len())?;
         if envelope.ciphertext.len() > (MAX_DATA_BYTES + 16).div_ceil(3) * 4 {
             return Err("managed ciphertext exceeds size limit".into());
         }
@@ -445,19 +542,14 @@ impl DatabaseEnvelope {
         if plaintext.len() > MAX_DATA_BYTES {
             return Err("database plaintext exceeds size limit".into());
         }
-        let nonce = random_bytes::<12>();
+        let nonce = random_bytes::<16>();
+        let nonce = &nonce[..self.data_cipher.nonce_len()];
         let aad = self.aad()?;
         let payload = Payload {
             msg: &plaintext,
             aad: &aad,
         };
-        let encrypted = match self.data_cipher {
-            DataCipher::Aes256Gcm => Aes256Gcm::new((&*key.0).into())
-                .encrypt(aes_gcm::Nonce::from_slice(&nonce), payload),
-            DataCipher::Chacha20Poly1305 => ChaCha20Poly1305::new((&*key.0).into())
-                .encrypt(chacha20poly1305::Nonce::from_slice(&nonce), payload),
-        }
-        .map_err(|_| "encrypt managed database failed")?;
+        let encrypted = self.data_cipher.encrypt(key, nonce, payload)?;
         self.nonce = STANDARD.encode(nonce);
         self.ciphertext = STANDARD.encode(encrypted);
         if self.open(key)? != *data {
@@ -466,7 +558,7 @@ impl DatabaseEnvelope {
         Ok(())
     }
     pub fn open(&self, key: &DatabaseKey) -> Result<Value, String> {
-        let nonce = decode_exact(&self.nonce, 12)?;
+        let nonce = decode_exact(&self.nonce, self.data_cipher.nonce_len())?;
         let ciphertext = STANDARD
             .decode(&self.ciphertext)
             .map_err(|_| "invalid ciphertext encoding")?;
@@ -475,13 +567,7 @@ impl DatabaseEnvelope {
             msg: &ciphertext,
             aad: &aad,
         };
-        let plaintext = match self.data_cipher {
-            DataCipher::Aes256Gcm => Aes256Gcm::new((&*key.0).into())
-                .decrypt(aes_gcm::Nonce::from_slice(&nonce), payload),
-            DataCipher::Chacha20Poly1305 => ChaCha20Poly1305::new((&*key.0).into())
-                .decrypt(chacha20poly1305::Nonce::from_slice(&nonce), payload),
-        }
-        .map_err(|_| "database authentication failed: wrong unlock secret or damaged container")?;
+        let plaintext = self.data_cipher.decrypt(key, &nonce, payload)?;
         let plaintext = Zeroizing::new(plaintext);
         if plaintext.len() > MAX_DATA_BYTES {
             return Err("database plaintext exceeds size limit".into());
@@ -580,6 +666,8 @@ mod tests {
         for (cipher, name) in [
             (DataCipher::Aes256Gcm, "aes-256-gcm"),
             (DataCipher::Chacha20Poly1305, "chacha20-poly1305"),
+            (DataCipher::Twofish256Eax, "twofish-256-eax"),
+            (DataCipher::Serpent256Eax, "serpent-256-eax"),
         ] {
             assert_eq!(serde_json::to_value(cipher).unwrap(), name);
             assert_eq!(
@@ -603,10 +691,15 @@ mod tests {
         );
     }
     #[test]
-    fn both_ciphers_roundtrip_and_password_changes_never_expose_keys() {
-        for cipher in [DataCipher::Aes256Gcm, DataCipher::Chacha20Poly1305] {
+    fn all_ciphers_roundtrip_and_password_changes_never_expose_keys() {
+        for cipher in DataCipher::ALL {
             let (mut envelope, key, data) = fixture(cipher);
             let parsed = DatabaseEnvelope::parse(&envelope.value().unwrap(), "db").unwrap();
+            assert_eq!(
+                STANDARD.decode(&parsed.nonce).unwrap().len(),
+                cipher.nonce_len()
+            );
+            assert_eq!(STANDARD.decode(&parsed.slots[0].nonce).unwrap().len(), 12);
             let recovered = parsed
                 .unlock_password(&parsed.slots[0].id, "test-only")
                 .unwrap();
@@ -646,35 +739,162 @@ mod tests {
     }
     #[test]
     fn authenticated_context_rejects_identity_cipher_revision_and_slot_tampering() {
-        let (envelope, key, _) = fixture(DataCipher::Aes256Gcm);
-        for field in [
-            "databaseId",
-            "keyId",
-            "securityRevision",
-            "dataCipher",
-            "label",
-            "salt",
-            "nonce",
-            "ciphertext",
-        ] {
-            let mut value = serde_json::to_value(&envelope).unwrap();
-            match field {
-                "dataCipher" => value[field] = "chacha20-poly1305".into(),
-                "label" => value["slots"][0]["label"] = "tampered".into(),
-                "salt" => value["slots"][0]["kdf"]["salt"] = STANDARD.encode([9u8; 16]).into(),
-                "nonce" => value["nonce"] = STANDARD.encode([9u8; 12]).into(),
-                "ciphertext" => value["ciphertext"] = STANDARD.encode([9u8; 48]).into(),
-                _ => value[field] = "different".into(),
+        for cipher in DataCipher::ALL {
+            let (envelope, key, _) = fixture(cipher);
+            for field in [
+                "databaseId",
+                "keyId",
+                "securityRevision",
+                "dataCipher",
+                "label",
+                "salt",
+                "nonce",
+                "ciphertext",
+            ] {
+                let mut value = serde_json::to_value(&envelope).unwrap();
+                match field {
+                    "dataCipher" => {
+                        value[field] = serde_json::to_value(match cipher {
+                            DataCipher::Aes256Gcm => DataCipher::Chacha20Poly1305,
+                            DataCipher::Chacha20Poly1305 => DataCipher::Aes256Gcm,
+                            DataCipher::Twofish256Eax => DataCipher::Serpent256Eax,
+                            DataCipher::Serpent256Eax => DataCipher::Twofish256Eax,
+                        })
+                        .unwrap()
+                    }
+                    "label" => value["slots"][0]["label"] = "tampered".into(),
+                    "salt" => value["slots"][0]["kdf"]["salt"] = STANDARD.encode([9u8; 16]).into(),
+                    "nonce" => {
+                        value["nonce"] = STANDARD.encode(vec![9u8; cipher.nonce_len()]).into()
+                    }
+                    "ciphertext" => value["ciphertext"] = STANDARD.encode([9u8; 48]).into(),
+                    _ => value[field] = "different".into(),
+                }
+                let tampered: DatabaseEnvelope = serde_json::from_value(value).unwrap();
+                assert!(tampered.open(&key).is_err(), "{field}");
             }
-            let tampered: DatabaseEnvelope = serde_json::from_value(value).unwrap();
-            assert!(tampered.open(&key).is_err(), "{field}");
+            let mut missing = envelope.clone();
+            missing.slots.clear();
+            assert!(DatabaseEnvelope::parse(&missing.value().unwrap(), "db").is_err());
+            let mut duplicate = envelope.clone();
+            duplicate.slots.push(duplicate.slots[0].clone());
+            assert!(DatabaseEnvelope::parse(&duplicate.value().unwrap(), "db").is_err());
+            for nonce_len in [0, 11, 12, 15, 16, 17] {
+                if nonce_len == cipher.nonce_len() {
+                    continue;
+                }
+                let mut wrong_nonce = envelope.clone();
+                wrong_nonce.nonce = STANDARD.encode(vec![0u8; nonce_len]);
+                assert!(DatabaseEnvelope::parse(&wrong_nonce.value().unwrap(), "db").is_err());
+                assert!(wrong_nonce.open(&key).is_err());
+            }
         }
-        let mut missing = envelope.clone();
-        missing.slots.clear();
-        assert!(DatabaseEnvelope::parse(&missing.value().unwrap(), "db").is_err());
-        let mut duplicate = envelope.clone();
-        duplicate.slots.push(duplicate.slots[0].clone());
-        assert!(DatabaseEnvelope::parse(&duplicate.value().unwrap(), "db").is_err());
+    }
+    #[test]
+    fn eax_matches_independent_bouncycastle_256_bit_vectors_and_rejects_tampering() {
+        assert!(Serpent256::new_from_slice(&[0u8; 16]).is_err());
+        assert!(Serpent256::new_from_slice(&[0u8; 24]).is_err());
+        assert!(Serpent256::new_from_slice(&[0u8; 32]).is_ok());
+        assert!(Serpent256::new_from_slice(&[0u8; 33]).is_err());
+        fn bytes(value: &Value) -> Vec<u8> {
+            let hex = value.as_str().unwrap();
+            (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect()
+        }
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/database-eax-bouncycastle-2.6.2.json"
+        ))
+        .unwrap();
+        let vectors = fixture["vectors"].as_array().unwrap();
+        assert_eq!(vectors.len(), 8);
+        for vector in vectors {
+            let cipher: DataCipher = serde_json::from_value(vector["algorithm"].clone()).unwrap();
+            let key = DatabaseKey::from_bytes(&bytes(&vector["keyHex"])).unwrap();
+            let nonce = bytes(&vector["nonceHex"]);
+            let aad = bytes(&vector["aadHex"]);
+            let plain = bytes(&vector["plaintextHex"]);
+            let expected = bytes(&vector["ciphertextAndTagHex"]);
+            assert_eq!(expected.len(), plain.len() + 16);
+            assert_eq!(
+                cipher
+                    .encrypt(
+                        &key,
+                        &nonce,
+                        Payload {
+                            msg: &plain,
+                            aad: &aad
+                        }
+                    )
+                    .unwrap(),
+                expected,
+                "{} {}",
+                vector["algorithm"],
+                vector["name"]
+            );
+            assert_eq!(
+                cipher
+                    .decrypt(
+                        &key,
+                        &nonce,
+                        Payload {
+                            msg: &expected,
+                            aad: &aad
+                        }
+                    )
+                    .unwrap(),
+                plain
+            );
+            for index in [0, expected.len() - 1] {
+                let mut corrupt = expected.clone();
+                corrupt[index] ^= 1;
+                assert!(cipher
+                    .decrypt(
+                        &key,
+                        &nonce,
+                        Payload {
+                            msg: &corrupt,
+                            aad: &aad
+                        }
+                    )
+                    .is_err());
+            }
+            let mut wrong_nonce = nonce.clone();
+            wrong_nonce[0] ^= 1;
+            assert!(cipher
+                .decrypt(
+                    &key,
+                    &wrong_nonce,
+                    Payload {
+                        msg: &expected,
+                        aad: &aad
+                    }
+                )
+                .is_err());
+            let mut wrong_aad = aad.clone();
+            wrong_aad.push(0);
+            assert!(cipher
+                .decrypt(
+                    &key,
+                    &nonce,
+                    Payload {
+                        msg: &expected,
+                        aad: &wrong_aad
+                    }
+                )
+                .is_err());
+            assert!(cipher
+                .decrypt(
+                    &DatabaseKey::generate(),
+                    &nonce,
+                    Payload {
+                        msg: &expected,
+                        aad: &aad
+                    }
+                )
+                .is_err());
+        }
     }
     #[test]
     fn malformed_versions_and_unbounded_kdfs_fail_before_derivation() {
@@ -698,41 +918,43 @@ mod tests {
     }
     #[test]
     fn random_vault_slots_are_bound_to_profile_database_key_and_slot() {
-        let key = DatabaseKey::generate();
-        let kek = DatabaseKey::generate();
-        let slot = new_vault_slot(
-            "db",
-            "key",
-            "slot".into(),
-            "profile",
-            "OS account",
-            &kek,
-            &key,
-        )
-        .unwrap();
-        let envelope = DatabaseEnvelope::create(
-            "db",
-            "key",
-            "rev",
-            DataCipher::Chacha20Poly1305,
-            vec![slot],
-            &serde_json::json!({"connections":[]}),
-            &key,
-        )
-        .unwrap();
-        assert!(envelope.unlock_vault("slot", "profile", &kek).is_ok());
-        assert!(envelope.unlock_vault("slot", "other", &kek).is_err());
-        assert!(envelope
-            .unlock_vault("slot", "profile", &DatabaseKey::generate())
-            .is_err());
-        let baseline = vault_account("profile", "db", "key", "slot").unwrap();
-        for (profile, db, key, slot) in [
-            ("other", "db", "key", "slot"),
-            ("profile", "other", "key", "slot"),
-            ("profile", "db", "other", "slot"),
-            ("profile", "db", "key", "other"),
-        ] {
-            assert_ne!(vault_account(profile, db, key, slot).unwrap(), baseline);
+        for cipher in DataCipher::ALL {
+            let key = DatabaseKey::generate();
+            let kek = DatabaseKey::generate();
+            let slot = new_vault_slot(
+                "db",
+                "key",
+                "slot".into(),
+                "profile",
+                "OS account",
+                &kek,
+                &key,
+            )
+            .unwrap();
+            let envelope = DatabaseEnvelope::create(
+                "db",
+                "key",
+                "rev",
+                cipher,
+                vec![slot],
+                &serde_json::json!({"connections":[]}),
+                &key,
+            )
+            .unwrap();
+            assert!(envelope.unlock_vault("slot", "profile", &kek).is_ok());
+            assert!(envelope.unlock_vault("slot", "other", &kek).is_err());
+            assert!(envelope
+                .unlock_vault("slot", "profile", &DatabaseKey::generate())
+                .is_err());
+            let baseline = vault_account("profile", "db", "key", "slot").unwrap();
+            for (profile, db, key, slot) in [
+                ("other", "db", "key", "slot"),
+                ("profile", "other", "key", "slot"),
+                ("profile", "db", "other", "slot"),
+                ("profile", "db", "key", "other"),
+            ] {
+                assert_ne!(vault_account(profile, db, key, slot).unwrap(), baseline);
+            }
         }
     }
 }

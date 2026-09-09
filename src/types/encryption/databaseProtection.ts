@@ -1,6 +1,18 @@
 import type { StorageData } from "../../utils/storage/storage";
 
-export type DatabaseCipher = "aes-256-gcm" | "chacha20-poly1305";
+export const DATABASE_CIPHER_LABELS = {
+  "aes-256-gcm": "AES-256-GCM (recommended)",
+  "chacha20-poly1305": "ChaCha20-Poly1305 (portable software option)",
+  "twofish-256-eax": "Twofish-256-EAX (advanced)",
+  "serpent-256-eax": "Serpent-256-EAX (advanced)",
+} as const;
+export type DatabaseCipher = keyof typeof DATABASE_CIPHER_LABELS;
+export function isDatabaseCipher(value: unknown): value is DatabaseCipher {
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(DATABASE_CIPHER_LABELS, value)
+  );
+}
 export type DatabaseProtector =
   "password" | "os-vault" | "webauthn-prf" | "biometric";
 export interface DatabaseProtectionCapabilities {
