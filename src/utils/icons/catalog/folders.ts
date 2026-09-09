@@ -45,6 +45,10 @@ import {
   ADDITIONAL_FOLDER_ICONS,
   ADDITIONAL_FOLDER_OPEN_ICONS,
 } from "./folderVariants";
+import {
+  COLLECTION_FOLDER_ICONS,
+  COLLECTION_FOLDER_OPEN_ICONS,
+} from "./folderCollectionVariants";
 
 const SwitchPorts = createLucideIcon("FolderSwitchPorts", [
   [
@@ -124,6 +128,9 @@ const HypervisorFolder = createRoleIcon("HypervisorFolder", "folder", Layers);
 
 export const FOLDER_ICONS = [
   defineIcon("folder", "Folder", "folders", Folder, [
+    "generic",
+    "plain",
+    "standard",
     "group",
     "directory",
     "files",
@@ -406,6 +413,7 @@ export const FOLDER_ICONS = [
     ["collective", "team", "shared", "people", "community", "group"],
   ),
   ...ADDITIONAL_FOLDER_ICONS,
+  ...COLLECTION_FOLDER_ICONS,
 ] as const;
 
 /** Presentation-only counterparts. Keep saved keys and picker entries unchanged. */
@@ -413,6 +421,7 @@ export const FOLDER_OPEN_ICONS: Readonly<
   Record<(typeof FOLDER_ICONS)[number]["key"], LucideIcon>
 > = Object.freeze({
   ...ADDITIONAL_FOLDER_OPEN_ICONS,
+  ...COLLECTION_FOLDER_OPEN_ICONS,
   "folder-building": createRoleIcon(
     "OpenBuildingFolder",
     "folder-open",
