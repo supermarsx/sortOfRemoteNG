@@ -15,8 +15,11 @@ export interface DurableLoadResult<T> {
 
 interface AppDataJsonStoreOptions<T> {
   key: string;
-  legacyLocalStorageKey: string;
+  legacyLocalStorageKey?: string;
   sanitize: (value: unknown) => SanitizedValue<T>;
+  requireNative?: boolean;
+  /** Macro-family policy and rotation, not the generic connections artifact. */
+  backend?: "app-data" | "macro-library";
 }
 
 const mutationQueues = new Map<string, Promise<void>>();
@@ -57,18 +60,32 @@ const emitChanged = (key: string): void => {
 
 export class AppDataJsonStore<T> {
   readonly key: string;
-  private readonly legacyLocalStorageKey: string;
+  private readonly legacyLocalStorageKey: string | undefined;
   private readonly sanitizeValue: (value: unknown) => SanitizedValue<T>;
+  private readonly requireNative: boolean;
+  private readonly storageBackend: "app-data" | "macro-library";
 
   constructor(options: AppDataJsonStoreOptions<T>) {
     this.key = options.key;
     this.legacyLocalStorageKey = options.legacyLocalStorageKey;
     this.sanitizeValue = options.sanitize;
+    this.storageBackend = options.backend ?? "app-data";
+    this.requireNative =
+      options.requireNative === true || this.storageBackend === "macro-library";
+  }
+
+  private async backend(): Promise<TauriInvoke | null> {
+    const invoke = await getInvoke();
+    if (!invoke && this.requireNative)
+      throw new Error(
+        "This library requires the desktop app and an unlocked data store. No browser fallback was written.",
+      );
+    return invoke;
   }
 
   async load(): Promise<DurableLoadResult<T>> {
     return enqueue(this.key, async () => {
-      const invoke = await getInvoke();
+      const invoke = await this.backend();
       const durableRaw = await this.readRaw(invoke);
       if (durableRaw !== null) {
         const normalized = await this.normalizeDurable(invoke, durableRaw);
@@ -80,7 +97,7 @@ export class AppDataJsonStore<T> {
       if (legacyRaw === null) return { value: null, sanitized: false };
 
       const sanitized = this.sanitizeValue(
-        parseJson(this.legacyLocalStorageKey, legacyRaw),
+        parseJson(this.legacyLocalStorageKey ?? this.key, legacyRaw),
       );
       const replacement = JSON.stringify(sanitized.value);
       const committed = await this.compareAndSwap(invoke, null, replacement);
@@ -106,7 +123,7 @@ export class AppDataJsonStore<T> {
     return enqueue(this.key, async () => {
       const sanitized = this.sanitizeValue(value);
       const replacement = JSON.stringify(sanitized.value);
-      const invoke = await getInvoke();
+      const invoke = await this.backend();
 
       for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
         const expected = await this.readRaw(invoke);
@@ -119,6 +136,37 @@ export class AppDataJsonStore<T> {
 
       throw new Error(
         `Could not persist "${this.key}" after ${MAX_CAS_ATTEMPTS} concurrent write conflicts`,
+      );
+    });
+  }
+
+  /** Apply a synchronous edit to the latest value, retrying only refused CAS writes. */
+  async update(
+    transform: (current: T | null) => T,
+  ): Promise<SanitizedValue<T>> {
+    return enqueue(this.key, async () => {
+      const invoke = await this.backend();
+      for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+        const expected = await this.readRaw(invoke);
+        const current =
+          expected === null
+            ? null
+            : this.sanitizeValue(parseJson(this.key, expected)).value;
+        const sanitized = this.sanitizeValue(transform(current));
+        const replacement = JSON.stringify(sanitized.value);
+        if (!(await this.compareAndSwap(invoke, expected, replacement)))
+          continue;
+        // A failed verification must never reapply the edit: the write may
+        // already have committed or a different window may have advanced it.
+        if ((await this.readRaw(invoke)) !== replacement)
+          throw new Error(
+            "Library write could not be verified. Reload before retrying; legacy data was retained.",
+          );
+        emitChanged(this.key);
+        return sanitized;
+      }
+      throw new Error(
+        "Library changed in another window. Reload before retrying.",
       );
     });
   }
@@ -153,7 +201,12 @@ export class AppDataJsonStore<T> {
 
   private async readRaw(invoke: TauriInvoke | null): Promise<string | null> {
     if (invoke) {
-      return invoke<string | null>("read_app_data", { key: this.key });
+      return invoke<string | null>(
+        this.storageBackend === "macro-library"
+          ? "read_macro_library"
+          : "read_app_data",
+        { key: this.key },
+      );
     }
     const value = await IndexedDbService.getItemStrict<unknown>(this.key);
     if (value === null) return null;
@@ -166,11 +219,16 @@ export class AppDataJsonStore<T> {
     replacement: string,
   ): Promise<boolean> {
     if (invoke) {
-      return invoke<boolean>("compare_and_swap_app_data", {
-        key: this.key,
-        expected,
-        replacement,
-      });
+      return invoke<boolean>(
+        this.storageBackend === "macro-library"
+          ? "compare_and_swap_macro_library"
+          : "compare_and_swap_app_data",
+        {
+          key: this.key,
+          expected,
+          replacement,
+        },
+      );
     }
 
     const current = await this.readRaw(null);
@@ -180,12 +238,14 @@ export class AppDataJsonStore<T> {
   }
 
   private readLegacy(): string | null {
-    if (typeof localStorage === "undefined") return null;
+    if (typeof localStorage === "undefined" || !this.legacyLocalStorageKey)
+      return null;
     return localStorage.getItem(this.legacyLocalStorageKey);
   }
 
   private removeLegacy(): void {
-    if (typeof localStorage === "undefined") return;
+    if (typeof localStorage === "undefined" || !this.legacyLocalStorageKey)
+      return;
     if (localStorage.getItem(this.legacyLocalStorageKey) !== null) {
       localStorage.removeItem(this.legacyLocalStorageKey);
     }

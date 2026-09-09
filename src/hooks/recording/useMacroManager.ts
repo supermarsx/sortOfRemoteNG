@@ -1,25 +1,50 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { TerminalMacro, SavedRecording } from '../../types/recording/macroTypes';
-import * as macroService from '../../utils/recording/macroService';
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import {
+  TerminalMacro,
+  SavedRecording,
+} from "../../types/recording/macroTypes";
+import * as macroService from "../../utils/recording/macroService";
 
-export type MacroTab = 'macros' | 'recordings';
+export type MacroTab = "macros" | "recordings";
 
 export function useMacroManager(isOpen: boolean) {
-  const [activeTab, setActiveTab] = useState<MacroTab>('macros');
+  const [activeTab, setActiveTab] = useState<MacroTab>("macros");
   const [macros, setMacros] = useState<TerminalMacro[]>([]);
   const [recordings, setRecordings] = useState<SavedRecording[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [editingMacro, setEditingMacro] = useState<TerminalMacro | null>(null);
-  const [editingRecording, setEditingRecording] = useState<SavedRecording | null>(null);
+  const [editingRecording, setEditingRecording] =
+    useState<SavedRecording | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const request = useRef(0);
 
   const loadData = useCallback(async () => {
-    const [m, r] = await Promise.all([macroService.loadMacros(), macroService.loadRecordings()]);
-    setMacros(m);
-    setRecordings(r);
+    const generation = ++request.current;
+    try {
+      const [m, r] = await Promise.all([
+        macroService.loadMacros(),
+        macroService.loadRecordings(),
+      ]);
+      if (generation !== request.current) return;
+      setMacros(m);
+      setRecordings(r);
+      setError(null);
+    } catch {
+      if (generation === request.current)
+        setError(
+          "Macro library unavailable. Open the desktop app and unlock its data store, then retry. Existing macros have not been reset.",
+        );
+    }
   }, []);
 
   useEffect(() => {
-    if (isOpen) loadData();
+    if (isOpen) void loadData();
+    const invalidate = () => {
+      request.current++;
+    };
+    return () => {
+      invalidate();
+    };
   }, [isOpen, loadData]);
 
   // Filtered lists
@@ -50,7 +75,7 @@ export function useMacroManager(isOpen: boolean) {
   const macrosByCategory = useMemo(() => {
     const groups: Record<string, TerminalMacro[]> = {};
     filteredMacros.forEach((m) => {
-      const cat = m.category || 'Uncategorized';
+      const cat = m.category || "Uncategorized";
       (groups[cat] ??= []).push(m);
     });
     return groups;
@@ -60,8 +85,8 @@ export function useMacroManager(isOpen: boolean) {
   const handleNewMacro = useCallback(() => {
     const macro: TerminalMacro = {
       id: crypto.randomUUID(),
-      name: 'New Macro',
-      steps: [{ command: '', delayMs: 200, sendNewline: true }],
+      name: "New Macro",
+      steps: [{ command: "", delayMs: 200, sendNewline: true }],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -70,19 +95,33 @@ export function useMacroManager(isOpen: boolean) {
 
   const handleSaveMacro = useCallback(
     async (macro: TerminalMacro) => {
-      macro.updatedAt = new Date().toISOString();
-      await macroService.saveMacro(macro);
-      setEditingMacro(null);
-      await loadData();
+      try {
+        await macroService.saveMacro({
+          ...macro,
+          updatedAt: new Date().toISOString(),
+        });
+        setEditingMacro(null);
+        await loadData();
+      } catch {
+        setError(
+          "Macro could not be saved. The draft was retained; unlock the data store and retry.",
+        );
+      }
     },
     [loadData],
   );
 
   const handleDeleteMacro = useCallback(
     async (id: string) => {
-      await macroService.deleteMacro(id);
-      if (editingMacro?.id === id) setEditingMacro(null);
-      await loadData();
+      try {
+        await macroService.deleteMacro(id);
+        if (editingMacro?.id === id) setEditingMacro(null);
+        await loadData();
+      } catch {
+        setError(
+          "Macro deletion could not be confirmed. Reload the library before retrying.",
+        );
+      }
     },
     [editingMacro, loadData],
   );
@@ -96,8 +135,14 @@ export function useMacroManager(isOpen: boolean) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await macroService.saveMacro(dup);
-      await loadData();
+      try {
+        await macroService.saveMacro(dup);
+        await loadData();
+      } catch {
+        setError(
+          "Macro copy could not be saved. Unlock the data store and retry.",
+        );
+      }
     },
     [loadData],
   );
@@ -122,14 +167,15 @@ export function useMacroManager(isOpen: boolean) {
   );
 
   const handleExportRecording = useCallback(
-    async (rec: SavedRecording, format: 'json' | 'asciicast' | 'script') => {
+    async (rec: SavedRecording, format: "json" | "asciicast" | "script") => {
       const data = await macroService.exportRecording(rec.recording, format);
-      const ext = format === 'asciicast' ? 'cast' : format === 'script' ? 'txt' : 'json';
-      const blob = new Blob([data], { type: 'text/plain' });
+      const ext =
+        format === "asciicast" ? "cast" : format === "script" ? "txt" : "json";
+      const blob = new Blob([data], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `${rec.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.${ext}`;
+      a.download = `${rec.name.replace(/[^a-zA-Z0-9-_]/g, "_")}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
     },
@@ -139,19 +185,19 @@ export function useMacroManager(isOpen: boolean) {
   // ---- Import / Export Macros ----
   const handleExportMacros = useCallback(() => {
     const data = JSON.stringify(macros, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'macros.json';
+    a.download = "macros.json";
     a.click();
     URL.revokeObjectURL(url);
   }, [macros]);
 
   const handleImportMacros = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -166,14 +212,18 @@ export function useMacroManager(isOpen: boolean) {
           await macroService.saveMacro(macro);
         }
         await loadData();
-      } catch (err) {
-        console.error('Import failed:', err);
+      } catch {
+        setError(
+          "Macro import could not be completed. The source file is unchanged; reload before retrying.",
+        );
       }
     };
     input.click();
   }, [loadData]);
 
   return {
+    error,
+    refresh: loadData,
     activeTab,
     setActiveTab,
     macros,

@@ -11,8 +11,12 @@ import {
   WebRecording,
 } from "../../types/recording/macroTypes";
 import { renderTerminalToGif, stripAnsi } from "./gifEncoder";
+import {
+  loadTerminalMacros,
+  updateTerminalMacros,
+  validateTerminalMacros,
+} from "./terminalMacroPersistence";
 
-const MACROS_STORAGE_KEY = "mremote-terminal-macros";
 const RECORDINGS_STORAGE_KEY = "mremote-session-recordings";
 const RDP_RECORDINGS_STORAGE_KEY = "mremote-rdp-recordings";
 const WEB_RECORDINGS_STORAGE_KEY = "mremote-web-recordings";
@@ -84,29 +88,36 @@ function redactSavedWebRecording(saved: SavedWebRecording): SavedWebRecording {
 // ─── Macros ────────────────────────────────────────────────────────
 
 export async function loadMacros(): Promise<TerminalMacro[]> {
-  const data =
-    await IndexedDbService.getItem<TerminalMacro[]>(MACROS_STORAGE_KEY);
-  return data ?? [];
+  return loadTerminalMacros();
 }
 
-export async function saveMacros(macros: TerminalMacro[]): Promise<void> {
-  await IndexedDbService.setItem(MACROS_STORAGE_KEY, macros);
+export async function saveMacros(
+  macros: TerminalMacro[],
+  expectedMacros: TerminalMacro[],
+): Promise<void> {
+  const replacement = validateTerminalMacros(macros);
+  const expected = JSON.stringify(validateTerminalMacros(expectedMacros));
+  await updateTerminalMacros((current) => {
+    if (JSON.stringify(current) !== expected)
+      throw new Error(
+        "Terminal macro library changed. Reload before replacing it.",
+      );
+    return replacement;
+  });
 }
 
 export async function saveMacro(macro: TerminalMacro): Promise<void> {
-  const macros = await loadMacros();
-  const idx = macros.findIndex((m) => m.id === macro.id);
-  if (idx >= 0) {
-    macros[idx] = macro;
-  } else {
-    macros.push(macro);
-  }
-  await saveMacros(macros);
+  const [validated] = validateTerminalMacros([macro]);
+  await updateTerminalMacros((macros) => {
+    const idx = macros.findIndex((m) => m.id === validated.id);
+    if (idx >= 0) macros[idx] = validated;
+    else macros.push(validated);
+    return macros;
+  });
 }
 
 export async function deleteMacro(id: string): Promise<void> {
-  const macros = await loadMacros();
-  await saveMacros(macros.filter((m) => m.id !== id));
+  await updateTerminalMacros((macros) => macros.filter((m) => m.id !== id));
 }
 
 // ─── Recordings ────────────────────────────────────────────────────
@@ -436,16 +447,16 @@ export async function replayMacro(
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
+    if (signal?.aborted) finish();
   });
 }
 
