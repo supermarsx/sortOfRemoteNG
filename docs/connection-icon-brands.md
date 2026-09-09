@@ -1,4 +1,9 @@
-# Connection icon brand sources
+---
+title: Connection icon brand sources
+eyebrow: For developers
+description: Source provenance and rendering conventions for the connection icon catalog.
+permalink: /connection-icon-brands/
+---
 
 The picker stores stable catalog keys, not SVG payloads. All icons render locally
 on the same 24×24 grid and inherit the connection color. No image CDN, web font,

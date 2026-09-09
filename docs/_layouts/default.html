@@ -13,6 +13,11 @@
       content="{{ page.description | default: site.description | strip_html | normalize_whitespace | escape }}"
     />
     <link rel="canonical" href="{{ page.url | absolute_url }}" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="{{ '/assets/app-icon.svg' | relative_url }}"
+    />
     <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}" />
   </head>
   <body>
@@ -20,7 +25,13 @@
 
     <header class="mobile-header">
       <a class="mobile-brand" href="{{ '/' | relative_url }}">
-        <span class="brand-mark" aria-hidden="true">sR</span>
+        <img
+          class="brand-mark"
+          src="{{ '/assets/app-icon.svg' | relative_url }}"
+          width="36"
+          height="36"
+          alt=""
+        />
         <span>sortOfRemoteNG</span>
       </a>
       <button
@@ -77,5 +88,16 @@
     </div>
 
     <script src="{{ '/assets/js/site.js' | relative_url }}" defer></script>
+    {% if page.release_chooser %}
+    <script
+      type="module"
+      src="{{ '/assets/js/release-chooser.js' | relative_url }}"
+    ></script>
+    {% endif %} {% if page.mermaid %}
+    <script
+      type="module"
+      src="{{ '/assets/js/diagrams.js' | relative_url }}"
+    ></script>
+    {% endif %}
   </body>
 </html>

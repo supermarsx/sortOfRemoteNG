@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="sortOfRemoteNG app icon">
+  <defs>
+    <linearGradient id="background" x1="160" y1="80" x2="864" y2="944" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#172554" />
+      <stop offset="0.58" stop-color="#0f172a" />
+      <stop offset="1" stop-color="#020617" />
+    </linearGradient>
+    <radialGradient id="accent" cx="512" cy="420" r="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.32" />
+      <stop offset="0.5" stop-color="#2563eb" stop-opacity="0.16" />
+      <stop offset="1" stop-color="#2563eb" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#background)" />
+  <rect width="1024" height="1024" fill="url(#accent)" />
+  <circle cx="512" cy="494" r="286" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="22" />
+
+  <g
+    transform="translate(192 208) scale(26.6667)"
+    fill="none"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <rect x="2" y="3" width="20" height="14" rx="2" stroke="#e2e8f0" stroke-width="2.2" />
+    <line x1="8" y1="21" x2="16" y2="21" stroke="#e2e8f0" stroke-width="2.2" />
+    <line x1="12" y1="17" x2="12" y2="21" stroke="#e2e8f0" stroke-width="2.2" />
+    <rect x="4.6" y="5.6" width="14.8" height="8.8" rx="1" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.75" stroke-width="0.35" />
+  </g>
+</svg>

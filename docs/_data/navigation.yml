@@ -4,9 +4,13 @@
       url: /
     - title: Getting started
       url: /getting-started/
+    - title: Downloads & updates
+      url: /releases/
 
 - label: Use the app
   items:
+    - title: User guide
+      url: /user-guide/
     - title: Connections & Editor
       url: /connections-editor/
     - title: Protocols
@@ -21,16 +25,31 @@
       url: /import-export-clone/
     - title: GIF recording
       url: /gif-recording/
+    - title: Integrations
+      url: /integrations/
+    - title: Web viewer troubleshooting
+      url: /http-viewer-trust/
 
-- label: Project guide
+- label: Security & your data
+  items:
+    - title: Security overview
+      url: /security-overview/
+    - title: Encryption & recovery
+      url: /security/encryption-at-rest/
+    - title: Master-key recovery
+      url: /master-key-recovery/
+
+- label: For developers
   items:
     - title: Architecture
       url: /architecture/
-    - title: Security
-      url: /security-overview/
     - title: Testing
       url: /testing/
-    - title: Releases
-      url: /releases/
+    - title: Native command inventory
+      url: /native-command-inventory/
+    - title: Icon sources
+      url: /connection-icon-brands/
+    - title: Release engineering
+      url: /releases/#release-engineering
     - title: Contributing
       url: /contributing/

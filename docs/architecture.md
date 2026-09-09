@@ -3,11 +3,32 @@ title: Architecture
 eyebrow: Project guide
 description: Follow a saved connection from the React editor through typed hooks and the Tauri command boundary into focused Rust crates.
 permalink: /architecture/
+mermaid: true
 ---
 
 sortOfRemoteNG is a Tauri desktop application with a Next.js and React webview and a Rust backend workspace. The boundary is deliberate: the frontend owns presentation and orchestration state, while native networking, storage, platform APIs, and protocol engines stay behind registered Tauri commands.
 
 ## Runtime layers
+
+<figure class="diagram-frame">
+<pre class="mermaid">
+flowchart TB
+  A[React editor, settings and session views] --> B[Typed hooks and frontend orchestration]
+  B --> C[Registered Tauri IPC commands]
+  C --> D[Validation, capabilities and native state]
+  D --> E[Protocol and integration engines]
+  D --> F[Native storage and protection services]
+  E --> G[Remote endpoints and platform APIs]
+  F --> H[App-managed files and protected key providers]
+  E --> I[Command results and runtime events]
+  F --> I
+  I --> B
+  B --> A
+</pre>
+<figcaption>The desktop boundary: views call typed wrappers, registered commands validate and dispatch native work, and results or events update the frontend. This diagram does not imply that the renderer directly reads native files or key stores.</figcaption>
+</figure>
+
+In text: **views → typed wrappers → registered IPC → native services**. Protocol engines communicate with remote systems; native storage services manage local files and protection. Both return results and events to the frontend. Browser-only previews use their separate browser storage path and cannot stand in for native feature or encryption verification.
 
 | Layer                      | Primary locations                                                    | Responsibility                                                                          |
 | -------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |

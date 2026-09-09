@@ -1,4 +1,11 @@
-# Verified master-key recovery
+---
+title: Master-key recovery and locking
+eyebrow: Security & your data
+description: Back up and recover the original master key without resetting encrypted data or confusing independent database protection.
+permalink: /master-key-recovery/
+---
+
+## Verified master-key recovery
 
 Create an offline backup while the profile is healthy: Settings → Security → Encryption at rest → Export portable master key. Choose a native file-picker destination and a strong, separate export password. The `.dek` file is authenticated and password protected using the existing Argon2id/AES-GCM portable format. Anyone with both the file and its password can recover the key; store them separately. A backup made before a master-key rotation may no longer prove membership of the current profile.
 

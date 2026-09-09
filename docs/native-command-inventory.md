@@ -1,4 +1,9 @@
-# Native command wiring inventory
+---
+title: Native command inventory
+eyebrow: For developers
+description: Command registration, frontend reachability, and build capability boundaries.
+permalink: /native-command-inventory/
+---
 
 The registration checker follows handler modules reached by the real application
 router, then extracts `generate_handler!` lists and macros that generate those

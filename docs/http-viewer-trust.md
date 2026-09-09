@@ -1,4 +1,9 @@
-# Embedded HTTP viewer: trust and authentication
+---
+title: Web viewer trust and authentication
+eyebrow: Use the app
+description: Understand certificate decisions, anonymous diagnostics, and authentication limits in the embedded HTTP viewer.
+permalink: /http-viewer-trust/
+---
 
 The lean native certificate extractor returns a required SHA-256 fingerprint even when optional subject, issuer and validity display details are unavailable. Its chain DTO represents unavailable display fields as empty strings. A legitimate SAN-only certificate can also have an empty subject. The frontend previously required every chain display field to be nonempty and threw `Malformed bounded native trust identity` before consulting the native Trust Center. Missing/empty display details are now accepted; wrong types, NULs, excessive lengths, oversized chains and missing/malformed bounded fingerprints remain rejected.
 

@@ -1,0 +1,71 @@
+<section
+  class="release-chooser"
+  data-release-chooser
+  data-repository="{{ site.repository_url }}"
+  aria-labelledby="download-heading"
+>
+  <div class="release-heading">
+    <img
+      src="{{ '/assets/app-icon.svg' | relative_url }}"
+      width="48"
+      height="48"
+      alt=""
+    />
+    <div>
+      <p class="eyebrow">Desktop application</p>
+      <h2 id="download-heading">Get sortOfRemoteNG</h2>
+    </div>
+  </div>
+  <p data-release-status role="status" aria-live="polite">
+    Choose your system to find a published download.
+  </p>
+  <p class="release-hint" data-platform-hint>
+    Confirm your operating system and processor. Browser detection is only a
+    hint.
+  </p>
+  <div class="release-fields">
+    <label
+      >Operating system<select data-release-os>
+        <option value="">Choose your system</option>
+        <option value="windows">Windows</option>
+        <option value="darwin">macOS</option>
+        <option value="linux">Linux</option>
+      </select></label
+    >
+    <label
+      >Processor<select data-release-arch>
+        <option value="">Choose your processor</option>
+        <option value="x86_64">Intel / AMD 64-bit (x64)</option>
+        <option value="aarch64">ARM64 / Apple silicon</option>
+      </select></label
+    >
+    <label
+      >Package preference<select data-release-package disabled>
+        <option value="">Choose a system first</option>
+      </select></label
+    >
+  </div>
+  <p class="release-package-help" data-package-help></p>
+  <div class="release-actions">
+    <a data-release-download class="docs-button docs-button-primary" hidden
+      >Download</a
+    ><button type="button" data-release-retry class="docs-button" hidden>
+      Retry release lookup</button
+    ><a href="{{ site.repository_url }}/releases" class="docs-button"
+      >All releases &amp; downloads</a
+    >
+  </div>
+  <p class="release-file" data-release-file></p>
+  <p class="release-hint">
+    No automatic download. Choices are remembered only in this browser. You can
+    override them at any time. Match the package to the computer where you will
+    install it.
+  </p>
+  <noscript
+    ><p>
+      JavaScript is disabled. Open
+      <a href="{{ site.repository_url }}/releases">GitHub Releases</a> and
+      choose the asset matching your operating system and processor.
+    </p></noscript
+  >
+</section>

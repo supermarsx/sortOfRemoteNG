@@ -1,9 +1,31 @@
 ---
-title: Releases
-eyebrow: Project guide
-description: Understand rolling version identity, signed updater artifacts, platform bundles, private feeds, and signing prerequisites.
+title: Download and update
+eyebrow: Start here
+description: Choose the right desktop package for your computer, then learn how to keep it up to date.
 permalink: /releases/
+release_chooser: true
 ---
+
+{% include release-chooser.html %}
+
+## Choose the right package
+
+Windows installers are available as EXE or MSI; the portable ZIP can be extracted and run without an installer. On macOS, choose Apple silicon (ARM64) or Intel (x64). On Linux, choose AppImage or the package format supported by your distribution.
+
+Not sure about the processor? Check **Settings → System → About** on Windows, **About This Mac** on macOS, or run `uname -m` on Linux. Browser information can be incomplete, especially on Apple silicon or emulated Windows browsers; the chooser never treats it as a hardware check.
+
+Only files actually present in the latest public GitHub release appear as downloads. If the lookup is unavailable, [browse releases directly]({{ site.repository_url }}/releases). This site does not claim Winget, Scoop, Chocolatey, Homebrew, or Flathub app registrations.
+
+## Updating an existing installation
+
+Use the app's update controls when a signed update is available for your installation type. Supported automatic-update layouts are Windows EXE/MSI installs, macOS app bundles, and Linux AppImage. Debian, RPM, Flatpak, and portable ZIP packages use a newer matching download instead. Do not install a different package layout over an existing one just because it appears first in the chooser.
+
+Back up important databases and retain their recovery methods before updating. OS code-signing warnings and in-app updater signatures are separate checks; a published download is not a promise that every platform-signing service is configured.
+
+## For developers
+
+<details class="developer-notes" markdown="1">
+<summary id="release-engineering">Release engineering, signing, and recovery</summary>
 
 Public releases use a rolling `YY.N` identity, while package ecosystems and updater metadata receive the SemVer projection `YY.N.0`. Every successful `main` push queues a release only after all required checks pass for that exact source commit.
 
@@ -135,3 +157,5 @@ npm run release:test
 ```
 
 Security-sensitive release changes should be reviewed against [Security]({{ '/security-overview/' | relative_url }}) and the signing runbooks above.
+
+</details>

@@ -9,7 +9,13 @@
       href="{{ '/' | relative_url }}"
       aria-label="sortOfRemoteNG documentation home"
     >
-      <span class="brand-mark" aria-hidden="true">sR</span>
+      <img
+        class="brand-mark"
+        src="{{ '/assets/app-icon.svg' | relative_url }}"
+        width="36"
+        height="36"
+        alt=""
+      />
       <span class="brand-copy">
         <strong>sortOfRemoteNG</strong>
         <small>Documentation</small>
@@ -24,6 +30,12 @@
       <span aria-hidden="true">×</span>
     </button>
   </div>
+
+  <a
+    class="sidebar-download docs-button docs-button-primary"
+    href="{{ '/releases/' | relative_url }}"
+    >Download the app</a
+  >
 
   <!-- prettier-ignore -->
   <nav class="sidebar-nav" aria-label="Primary">
