@@ -10,6 +10,7 @@ export type ProxySessionStatus =
   | "tls"
   | "timeout"
   | "auth"
+  | "proxyauth"
   | "forbidden"
   | "notfound"
   | "ratelimited"
@@ -26,7 +27,8 @@ const STATUS_META: Record<
   dns: { label: "DNS error", tone: "err" },
   tls: { label: "TLS error", tone: "err" },
   timeout: { label: "Timeout", tone: "warn" },
-  auth: { label: "Auth required", tone: "warn" },
+  auth: { label: "Request unauthorized", tone: "warn" },
+  proxyauth: { label: "Proxy authentication required", tone: "warn" },
   forbidden: { label: "Forbidden", tone: "err" },
   notfound: { label: "Not found", tone: "err" },
   ratelimited: { label: "Rate limited", tone: "warn" },
@@ -43,10 +45,8 @@ export function classifySession(s: {
   error_count: number;
   last_error?: string | null;
 }): ProxySessionStatus {
-  if (s.error_count === 0 && s.request_count === 0) return "waiting";
-  if (s.error_count === 0) return "healthy";
-
   const message = (s.last_error || "").toLowerCase();
+  if (!message) return s.request_count === 0 ? "waiting" : "healthy";
   if (
     message.includes("connection refused") ||
     message.includes("actively refused")
@@ -70,8 +70,8 @@ export function classifySession(s: {
     return "tls";
   if (message.includes("timeout") || message.includes("timed out"))
     return "timeout";
-  if (message.includes("http 401") || message.includes("http 407"))
-    return "auth";
+  if (message.includes("http 401")) return "auth";
+  if (message.includes("http 407")) return "proxyauth";
   if (message.includes("http 403")) return "forbidden";
   if (message.includes("http 404")) return "notfound";
   if (message.includes("http 429")) return "ratelimited";

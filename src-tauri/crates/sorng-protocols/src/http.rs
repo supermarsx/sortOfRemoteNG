@@ -1439,9 +1439,16 @@ pub async fn axum_proxy_handler(
             state.request_count.fetch_add(1, Ordering::Relaxed);
             if status_u16 >= 400 {
                 state.error_count.fetch_add(1, Ordering::Relaxed);
-                if let Ok(mut le) = state.last_error.lock() {
-                    *le = Some(format!("HTTP {} for {}", status_u16, full_url));
-                }
+            }
+            // Current request health is separate from lifetime error counters.
+            // A login-check 401 must not survive a later successful response.
+            // This describes the last completed request, not website auth state.
+            if let Ok(mut le) = state.last_error.lock() {
+                *le = if status_u16 >= 400 {
+                    Some(format!("HTTP {} for {}", status_u16, full_url))
+                } else {
+                    None
+                };
             }
 
             // Log the request.

@@ -87,7 +87,8 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3">
     <div className="flex items-center justify-between">
       <p className="text-sm text-[var(--color-textSecondary)]">
-        Active proxy sessions mediating HTTP traffic with injected credentials.
+        Proxy request health, not application sign-in status. Error totals
+        include earlier requests.
       </p>
       {mgr.sessions.length > 0 && (
         <button

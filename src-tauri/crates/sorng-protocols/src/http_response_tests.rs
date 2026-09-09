@@ -113,6 +113,55 @@ async fn fetch(proxy: &FixtureProxy, path: &str) -> reqwest::Response {
 }
 
 #[tokio::test]
+async fn request_health_recovers_after_401_and_500_without_resetting_history() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = axum::Router::new().fallback(|request: axum::extract::Request| async move {
+        let status = match request.uri().path() {
+            "/unauthorized" => 401,
+            "/failed" => 500,
+            _ => 200,
+        };
+        Response::builder()
+            .status(status)
+            .header("Content-Type", "text/plain")
+            .body(Body::from("synthetic response"))
+            .unwrap()
+    });
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let proxy = proxy(format!("http://{address}/"), client()).await;
+    for (path, status, error_total) in [
+        ("/unauthorized", 401, 1),
+        ("/ok", 200, 1),
+        ("/failed", 500, 2),
+        ("/ok", 200, 2),
+    ] {
+        assert_eq!(fetch(&proxy, path).await.status().as_u16(), status);
+        assert_eq!(proxy.state.error_count.load(Ordering::Relaxed), error_total);
+        let error = proxy.state.last_error.lock().unwrap().clone();
+        if status < 400 {
+            assert!(error.is_none());
+        } else {
+            assert!(error.unwrap().contains(&format!("HTTP {status}")));
+        }
+    }
+    assert_eq!(proxy.state.request_count.load(Ordering::Relaxed), 4);
+    let history = proxy
+        .state
+        .global_sessions
+        .lock()
+        .unwrap()
+        .request_log_newest_first();
+    assert_eq!(
+        history.iter().map(|entry| entry.status).collect::<Vec<_>>(),
+        [200, 500, 200, 401]
+    );
+    upstream.abort();
+}
+
+#[tokio::test]
 async fn actual_proxy_decodes_gzip_documents_assets_and_preserves_raw_query_and_port() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

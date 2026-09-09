@@ -133,7 +133,7 @@ export interface UseUnifiedSessionManagerParams {
 
 /** Classify a proxy session's normalized status. */
 function proxyStatus(s: ProxySessionDetail): UnifiedSessionStatus {
-  if (s.error_count > 0) return "error";
+  if (s.last_error) return "error";
   if (s.request_count === 0) return "waiting";
   return "connected";
 }

@@ -310,11 +310,9 @@ describe("InternalProxyManager", () => {
       "session-status-servererror",
     );
     expect(serverBadges).toHaveLength(2);
-    // 407 falls into the "auth" bucket alongside 401, since the UX is
-    // identical (the proxy will offer a themed challenge or surface
-    // the same "Auth required" badge).
+    // An upstream proxy's 407 is not an application's 401 or proof of login.
     expect(
-      await screen.findByTestId("session-status-auth"),
+      await screen.findByTestId("session-status-proxyauth"),
     ).toBeInTheDocument();
   });
 

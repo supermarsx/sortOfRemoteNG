@@ -122,6 +122,28 @@ afterEach(() => {
 });
 
 describe("automatic Session Manager observation", () => {
+  it("reports current proxy health without treating historical errors as active failures", async () => {
+    const original = fixture.invoke.getMockImplementation()!;
+    fixture.invoke.mockImplementation((command: string) =>
+      command === "get_proxy_session_details"
+        ? Promise.resolve([{ ...proxy, error_count: 4, last_error: null }])
+        : original(command),
+    );
+    const view = renderHook(() =>
+      useUnifiedSessionManager({
+        isVisible: true,
+        connections: CONNECTIONS,
+        activeBackendSessionIds: BACKENDS,
+        thumbnailsEnabled: false,
+      }),
+    );
+    await tick();
+    expect(view.result.current.proxyRows[0]).toMatchObject({
+      status: "connected",
+      proxySession: { error_count: 4, last_error: null },
+    });
+  });
+
   it("keeps equal snapshots stable, has no 3s polling, and fetches logs only in their view", async () => {
     const view = renderHook(
       ({
