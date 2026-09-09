@@ -111,6 +111,10 @@ export const ENCRYPTION_EVENT_LOCKED = "encryption:locked";
  *  Settings hand-side decisions. */
 export const ARTIFACT_LABELS: Record<string, string> = {
   "sorng-v1::connections": "Connections database",
+  "sorng-v1::databases-index": "Database names and index",
+  "sorng-v1::trust-store": "Database trust records",
+  "sorng-v1::key-ring": "Retained master-key recovery ring",
+  "sorng-v1::artifact-policy": "Artifact protection policy",
   "sorng-v1::settings": "Settings",
   "sorng-v1::recordings-meta": "Recording metadata",
   "sorng-v1::recordings-media": "Recording media files",

@@ -111,6 +111,8 @@ export interface FullRotateFailure {
 
 export interface UseEncryption {
   status: EncryptionStatus | null;
+  /** Invalidates expensive artifact inspection only on key lifecycle changes. */
+  lifecycleRevision: number;
   loading: boolean;
   error: string | null;
   /** Live lockout state for password-mode unlock attempts. */
@@ -176,6 +178,7 @@ export interface UseEncryption {
 
 export function useEncryption(): UseEncryption {
   const [status, setStatus] = useState<EncryptionStatus | null>(null);
+  const [lifecycleRevision, setLifecycleRevision] = useState(0);
   const [lockout, setLockout] = useState<LockoutSnapshot | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -262,6 +265,7 @@ export function useEncryption(): UseEncryption {
         const mod = await import("@tauri-apps/api/event");
         if (cancelled) return;
         unlistenUnlocked = await mod.listen(ENCRYPTION_EVENT_UNLOCKED, () => {
+          setLifecycleRevision((revision) => revision + 1);
           void refresh();
           void refreshLockout();
         });
@@ -270,6 +274,7 @@ export function useEncryption(): UseEncryption {
           return;
         }
         unlistenLocked = await mod.listen(ENCRYPTION_EVENT_LOCKED, () => {
+          setLifecycleRevision((revision) => revision + 1);
           void refresh();
         });
         if (cancelled) unlistenLocked();
@@ -299,6 +304,7 @@ export function useEncryption(): UseEncryption {
     async (method: SetupMethod): Promise<UnlockResult> => {
       const inv = await invokeOrThrow();
       const result = await inv<UnlockResult>("encryption_setup", { method });
+      setLifecycleRevision((revision) => revision + 1);
       await refresh();
       return result;
     },
@@ -420,6 +426,7 @@ export function useEncryption(): UseEncryption {
         "encryption_rotate_master_key_full",
         { password: password ?? null },
       );
+      setLifecycleRevision((revision) => revision + 1);
       await refresh();
       return report;
     },
@@ -449,6 +456,7 @@ export function useEncryption(): UseEncryption {
         sourcePath,
         password,
       });
+      setLifecycleRevision((revision) => revision + 1);
       await refresh();
       await refreshLockout();
       await refreshAudit();
@@ -464,6 +472,7 @@ export function useEncryption(): UseEncryption {
 
   return {
     status,
+    lifecycleRevision,
     lockout,
     audit,
     loading,

@@ -1,34 +1,4 @@
-/**
- * Settings → Security → Encryption-at-rest panel.
- *
- * Surfaces the live state of the `sorng-encryption` subsystem and
- * lets the user run the commands that ship today (Phases 0–3). Knobs
- * that need Phases 5/6 to be real (unlock-screen policy, disable &
- * decrypt, portable export) are rendered with explicit "ships in
- * Phase X" affordances so the panel is honest about what works now.
- *
- * Structure:
- *
- * 1. **Status card** — vault availability, backend name, what mode is
- *    in effect, whether settings.json is still plaintext on disk,
- *    schema version.
- * 2. **First-run wizard** — appears only when the master DEK hasn't
- *    been generated yet. Auto-detects the vault and offers the right
- *    setup choice; falls back to "ask for a password" when no vault.
- * 3. **Settings migration** — appears only when a plaintext
- *    settings.json is present. One click runs the migration command
- *    and the report renders inline.
- * 4. **Change password** — appears only in password / hybrid mode.
- *    Old + new + optional Argon2id parameter override.
- * 5. **Encrypted artifacts list** — read-only audit of every
- *    artifact's HKDF label and human name. Per-artifact migrate
- *    buttons land in Phase 5 once the corresponding scan-and-migrate
- *    commands exist.
- *
- * The component mounts inside `SecuritySettings.tsx` between the
- * existing `EncryptionAlgorithmSection` and `KeyDerivationSection`
- * subsections — see the parent for the visual order.
- */
+/** Global master-key lifecycle and inspected, per-artifact protection controls. */
 import React, { useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -57,33 +27,17 @@ import {
   Toggle as SettingsToggleRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
-import {
-  useEncryption,
-  type RecordingMigrationReport,
-} from "../../../../hooks/settings/useEncryption";
+import { useEncryption } from "../../../../hooks/settings/useEncryption";
 import {
   ARGON2_OWASP,
   AUDIT_EVENT_LABELS,
-  ARTIFACT_LABELS,
   describeStorage,
   type Argon2Params,
-  type MigrationReport,
   type SetupMethod,
 } from "../../../../types/encryption/encryption";
 import { useDatabaseEncryptionStatus } from "../../../../hooks/settings/useDatabaseEncryptionStatus";
 import DatabaseProtectionStatus from "./DatabaseProtectionStatus";
-
-function pad(n: number): string {
-  return n.toString().padStart(2, "0");
-}
-
-/** Build a stable timestamp string for the inline migration report. */
-function formatNow(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-}
+import ArtifactProtectionPanel from "./ArtifactProtectionPanel";
 
 const EncryptionAtRestSection: React.FC = () => {
   const enc = useEncryption();
@@ -111,41 +65,11 @@ const EncryptionAtRestSection: React.FC = () => {
       return next;
     });
 
-  const [migrateBusy, setMigrateBusy] = useState(false);
-  const [migrateError, setMigrateError] = useState<string | null>(null);
-  const [migrateReport, setMigrateReport] = useState<MigrationReport | null>(
-    null,
-  );
-  const [migrateRanAt, setMigrateRanAt] = useState<string | null>(null);
-
-  // Phase 2a — recording metadata + macros migration (separate Tauri
-  // command that walks the recordings storage root, not settings).
-  const [migrateRecBusy, setMigrateRecBusy] = useState(false);
-  const [migrateRecError, setMigrateRecError] = useState<string | null>(null);
-  const [migrateRecReport, setMigrateRecReport] =
-    useState<RecordingMigrationReport | null>(null);
-  const [migrateRecRanAt, setMigrateRecRanAt] = useState<string | null>(null);
-
-  // Live progress for the in-flight recording migration. Drives the
-  // progress bar + "Migrating <stage>: <index>/<total>" label below
-  // the button. Reset when the next migration starts.
-  const [migrateRecProgress, setMigrateRecProgress] = useState<{
-    stage: string;
-    index: number;
-    total: number;
-  } | null>(null);
-  const [migrateRecCancelling, setMigrateRecCancelling] = useState(false);
-
   const [changeOldPw, setChangeOldPw] = useState("");
   const [changeNewPw, setChangeNewPw] = useState("");
   const [changeBusy, setChangeBusy] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
   const [changeSuccess, setChangeSuccess] = useState(false);
-
-  // Phase 6 — disable / rotate / portable export-import.
-  const [disableBusy, setDisableBusy] = useState(false);
-  const [disableError, setDisableError] = useState<string | null>(null);
-  const [disableSuccess, setDisableSuccess] = useState<string | null>(null);
 
   const [rotateBusy, setRotateBusy] = useState(false);
   const [rotateError, setRotateError] = useState<string | null>(null);
@@ -227,20 +151,6 @@ const EncryptionAtRestSection: React.FC = () => {
     }
   };
 
-  const handleMigrate = async () => {
-    setMigrateBusy(true);
-    setMigrateError(null);
-    try {
-      const report = await enc.migrateSettings();
-      setMigrateReport(report);
-      setMigrateRanAt(formatNow());
-    } catch (e) {
-      setMigrateError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setMigrateBusy(false);
-    }
-  };
-
   const handleLockNow = async () => {
     if (lockBusy) return;
     setLockBusy(true);
@@ -251,45 +161,6 @@ const EncryptionAtRestSection: React.FC = () => {
       setLockError(e instanceof Error ? e.message : String(e));
     } finally {
       setLockBusy(false);
-    }
-  };
-
-  const handleMigrateRecordings = async () => {
-    setMigrateRecBusy(true);
-    setMigrateRecError(null);
-    setMigrateRecProgress(null);
-    setMigrateRecCancelling(false);
-    try {
-      const report = await enc.migrateRecordings((event) => {
-        // The opening event of each stage carries `index === 0` and
-        // sets the stage label + total. Subsequent events update the
-        // index — React batches the state writes so a 10k-file
-        // migration doesn't cause a re-render per file.
-        setMigrateRecProgress({
-          stage: event.stage,
-          index: event.index,
-          total: event.total,
-        });
-      });
-      setMigrateRecReport(report);
-      setMigrateRecRanAt(formatNow());
-    } catch (e) {
-      setMigrateRecError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setMigrateRecBusy(false);
-      setMigrateRecProgress(null);
-      setMigrateRecCancelling(false);
-    }
-  };
-
-  const handleCancelRecordingsMigration = async () => {
-    setMigrateRecCancelling(true);
-    try {
-      await enc.cancelRecordingsMigration();
-    } catch (e) {
-      // Cancellation errors are non-fatal — the migration either
-      // completes anyway or surfaces the error in its own catch.
-      console.warn("cancel migration failed", e);
     }
   };
 
@@ -306,22 +177,6 @@ const EncryptionAtRestSection: React.FC = () => {
       setChangeError(e instanceof Error ? e.message : String(e));
     } finally {
       setChangeBusy(false);
-    }
-  };
-
-  const handleDisableSettings = async () => {
-    setDisableBusy(true);
-    setDisableError(null);
-    setDisableSuccess(null);
-    try {
-      const report = await enc.disableSettings();
-      setDisableSuccess(
-        `Decrypted ${report.bytesIn.toLocaleString()} bytes back to ${report.destinationPath}`,
-      );
-    } catch (e) {
-      setDisableError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setDisableBusy(false);
     }
   };
 
@@ -732,183 +587,6 @@ const EncryptionAtRestSection: React.FC = () => {
         </div>
       )}
 
-      {/* ── Migrate plaintext settings ───────────────────────────── */}
-      {status?.settingsPlaintextPresent && status.unlocked && (
-        <div
-          className="space-y-4"
-          data-setting-key="encryptionAtRest.migratePlaintext"
-        >
-          <SectionHeader
-            icon={<FileWarning className="w-4 h-4 text-warning" />}
-            title="Migrate plaintext settings"
-          />
-          <Card>
-            <p className="text-xs text-[var(--color-textMuted)]">
-              A legacy <code>settings.json</code> was found alongside the new
-              format. Running the migration encrypts it as
-              <code>settings.enc</code> using the current master key, removes
-              the original plaintext file, and updates the boot path to read
-              from the encrypted file going forward.
-            </p>
-
-            {migrateError && (
-              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>{migrateError}</span>
-              </div>
-            )}
-
-            {migrateReport && migrateRanAt && (
-              <div className="text-xs space-y-1 p-2 rounded bg-success/10 border border-success/30">
-                <div className="flex items-center gap-1.5 text-success font-medium">
-                  <Check className="w-3.5 h-3.5" />
-                  Migrated at {migrateRanAt}
-                </div>
-                <div className="grid grid-cols-2 gap-x-3 text-[var(--color-textSecondary)]">
-                  <span>Source bytes</span>
-                  <span className="text-[var(--color-text)] font-mono">
-                    {migrateReport.bytesIn.toLocaleString()}
-                  </span>
-                  <span>Encrypted bytes</span>
-                  <span className="text-[var(--color-text)] font-mono">
-                    {migrateReport.bytesOut.toLocaleString()}
-                  </span>
-                  <span>Mode used</span>
-                  <span className="text-[var(--color-text)]">
-                    {describeStorage(migrateReport.masterKeyStorage)}
-                  </span>
-                  <span>Plaintext source</span>
-                  <span className="text-[var(--color-text)]">
-                    Removed after encryption
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleMigrate}
-                disabled={migrateBusy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-warning text-[var(--color-text)] hover:bg-warning/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-              >
-                {migrateBusy ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <FileWarning className="w-3.5 h-3.5" />
-                )}
-                Migrate now
-              </button>
-            </div>
-          </Card>
-
-          {/* ── Recordings + macros migration ─────────────────────── */}
-          <Card>
-            <p className="text-xs text-[var(--color-textMuted)]">
-              Convert every plaintext <code>&lt;id&gt;.json</code> recording
-              envelope and macro file under the recordings storage root to its{" "}
-              <code>&lt;id&gt;.json.enc</code> v2 form. Originals are archived
-              as <code>.json.v0.bak</code>; new captures will land encrypted
-              automatically once you migrate.
-            </p>
-
-            {migrateRecRanAt && migrateRecReport && (
-              <div className="mt-2 p-2 rounded bg-success/10 border border-success/30 text-xs">
-                <div className="flex items-center gap-1.5 text-success mb-1">
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Recordings migrated at {migrateRecRanAt}</span>
-                </div>
-                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[var(--color-textSecondary)] mt-1">
-                  <span>Envelopes</span>
-                  <span className="text-[var(--color-text)] font-mono">
-                    {migrateRecReport.envelopesMigrated} migrated /{" "}
-                    {migrateRecReport.envelopesSkipped} skipped
-                  </span>
-                  <span>Macros</span>
-                  <span className="text-[var(--color-text)] font-mono">
-                    {migrateRecReport.macrosMigrated} migrated /{" "}
-                    {migrateRecReport.macrosSkipped} skipped
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {migrateRecError && (
-              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>{migrateRecError}</span>
-              </div>
-            )}
-
-            {/* Live progress bar — visible only while a migration is
-                actively walking the storage root. The numerator stays
-                at 0 for the opening event of each stage (which carries
-                the total but no per-file step yet). */}
-            {migrateRecBusy && migrateRecProgress && (
-              <div
-                className="mt-2 space-y-1"
-                data-testid="rec-migration-progress"
-              >
-                <div className="flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
-                  <span>
-                    Migrating {migrateRecProgress.stage}…{" "}
-                    <span className="text-[var(--color-text)] font-mono">
-                      {migrateRecProgress.index}/{migrateRecProgress.total}
-                    </span>
-                  </span>
-                  {migrateRecCancelling && (
-                    <span className="text-warning text-xs">Cancelling…</span>
-                  )}
-                </div>
-                <div className="h-1.5 rounded-full bg-[var(--color-input)] overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-200"
-                    style={{
-                      width: `${
-                        migrateRecProgress.total > 0
-                          ? Math.round(
-                              (migrateRecProgress.index /
-                                migrateRecProgress.total) *
-                                100,
-                            )
-                          : 0
-                      }%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              {migrateRecBusy && (
-                <button
-                  type="button"
-                  onClick={handleCancelRecordingsMigration}
-                  disabled={migrateRecCancelling}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)] disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                  data-testid="rec-migration-cancel"
-                >
-                  Cancel
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleMigrateRecordings}
-                disabled={migrateRecBusy || !status?.unlocked}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-warning text-[var(--color-text)] hover:bg-warning/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-              >
-                {migrateRecBusy ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <FileWarning className="w-3.5 h-3.5" />
-                )}
-                Migrate recordings + macros
-              </button>
-            </div>
-          </Card>
-        </div>
-      )}
-
       {/* ── Change password ──────────────────────────────────────── */}
       {passwordModeActive && (
         <div
@@ -1185,112 +863,12 @@ const EncryptionAtRestSection: React.FC = () => {
         </div>
       )}
 
-      {/* ── Disable settings encryption ──────────────────────────── */}
-      {status?.settingsEncryptedOnDisk && status.unlocked && (
-        <div className="space-y-4" data-setting-key="encryptionAtRest.disable">
-          <SectionHeader
-            icon={<Trash2 className="w-4 h-4 text-error" />}
-            title="Disable settings encryption"
-          />
-          <Card>
-            <p className="text-xs text-[var(--color-textMuted)]">
-              Decrypts <code>settings.enc</code> back to plaintext
-              <code>settings.json</code> and deletes the encrypted file. The
-              master key stays alive so other artifacts (recordings, backups, …)
-              keep their encryption — this is a per-artifact opt-out, not a full
-              disable. Do not delete master-key files or vault entries to
-              disable protection: remaining encrypted artifacts can become
-              unrecoverable.
-            </p>
-            {disableError && (
-              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>{disableError}</span>
-              </div>
-            )}
-            {disableSuccess && (
-              <div className="flex items-center gap-1.5 p-2 rounded bg-success/10 border border-success/30 text-success text-xs">
-                <Check className="w-3.5 h-3.5" />
-                {disableSuccess}
-              </div>
-            )}
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleDisableSettings}
-                disabled={disableBusy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-error text-[var(--color-text)] hover:bg-error/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-              >
-                {disableBusy ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="w-3.5 h-3.5" />
-                )}
-                Disable & decrypt settings
-              </button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* ── Encrypted artifacts (read-only listing) ──────────────── */}
-      <div className="space-y-4" data-setting-key="encryptionAtRest.artifacts">
-        <SectionHeader
-          icon={<Database className="w-4 h-4 text-primary" />}
-          title="Artifact codecs and inspected status"
-        />
-        <Card>
-          <p className="text-xs text-[var(--color-textMuted)]">
-            Each artifact derives its own AES-256-GCM sub-key from the master
-            key via HKDF-SHA256 with the label shown below. Sub-keys are
-            domain-separated: a settings ciphertext cannot be decrypted with the
-            recordings key, and vice versa. An available codec does not prove
-            every corresponding file is encrypted on disk.
-          </p>
-          <div className="text-xs">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-[var(--color-textSecondary)] border-b border-[var(--color-border)]/40">
-                  <th className="py-1.5 pr-3 font-normal">Artifact</th>
-                  <th className="py-1.5 pr-3 font-normal">HKDF label</th>
-                  <th className="py-1.5 font-normal">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(status?.artifactLabels ?? []).map((label) => {
-                  const isSettings = label === "sorng-v1::settings";
-                  const isLive = isSettings && status?.settingsEncryptedOnDisk;
-                  return (
-                    <tr
-                      key={label}
-                      className="border-b border-[var(--color-border)]/20 last:border-0"
-                    >
-                      <td className="py-1.5 pr-3 text-[var(--color-text)]">
-                        {ARTIFACT_LABELS[label] ?? label}
-                      </td>
-                      <td className="py-1.5 pr-3 font-mono text-[10px] text-[var(--color-textMuted)]">
-                        {label}
-                      </td>
-                      <td className="py-1.5">
-                        {isLive ? (
-                          <span className="inline-flex items-center gap-1 text-success">
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            encrypted on disk
-                          </span>
-                        ) : (
-                          <span className="text-[var(--color-textMuted)]">
-                            codec ready
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+      <ArtifactProtectionPanel
+        refreshKey={`${status?.unlocked ?? "unavailable"}:${enc.lifecycleRevision}`}
+        onChanged={async () => {
+          await Promise.allSettled([enc.refresh(), diskProbe.refresh()]);
+        }}
+      />
 
       {/* ── Audit log ────────────────────────────────────────────── */}
       <div className="space-y-4" data-setting-key="encryptionAtRest.auditLog">

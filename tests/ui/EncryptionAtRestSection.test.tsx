@@ -11,9 +11,7 @@
  *     regression here would silently leave connections / backups /
  *     recordings on the old DEK),
  *   - the per-artifact rewrite report renders with the right counts,
- *   - the recordings-migration progress bar appears as progress
- *     events come in, and the Cancel button fires `rec_cancel_migration`
- *     + flips the "Cancelling…" badge.
+ *   - legacy migration controls are replaced by one artifact policy panel.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
@@ -30,11 +28,7 @@ vi.mock("react-i18next", () => ({
 
 import EncryptionAtRestSection from "../../src/components/SettingsDialog/sections/security/EncryptionAtRestSection";
 import type { EncryptionStatus } from "../../src/types/encryption/encryption";
-import type {
-  FullRotateReport,
-  RecordingMigrationReport,
-  RecordingMigrationProgressEvent,
-} from "../../src/hooks/settings/useEncryption";
+import type { FullRotateReport } from "../../src/hooks/settings/useEncryption";
 
 // ── Status fixtures ───────────────────────────────────────────────
 
@@ -101,6 +95,14 @@ function makeInvoke(impl: (cmd: string, args?: any) => Promise<any>) {
     } catch (e) {
       if (cmd === "encryption_lockout_state") return zeroLockout;
       if (cmd === "encryption_audit_read") return [];
+      if (cmd === "encryption_get_artifact_status")
+        return {
+          artifacts: [],
+          unlocked: true,
+          recoveryRequired: false,
+          busy: false,
+          warnings: [],
+        };
       throw e;
     }
   });
@@ -132,23 +134,6 @@ vi.mock("@tauri-apps/api/event", () => ({
     };
   },
 }));
-
-function emit(name: string, payload: unknown) {
-  const set = eventSubscribers.get(name);
-  if (!set) return;
-  set.forEach((cb) => cb({ payload }));
-}
-
-async function waitForSubscribers(name: string, count: number) {
-  await waitFor(
-    () => {
-      expect(eventSubscribers.get(name)?.size ?? 0).toBeGreaterThanOrEqual(
-        count,
-      );
-    },
-    { timeout: 3000, interval: 25 },
-  );
-}
 
 beforeEach(() => {
   invokeImpl = vi.fn();
@@ -298,103 +283,104 @@ describe("EncryptionAtRestSection", () => {
     });
   });
 
-  it("Migrate-recordings shows live progress and cancels via rec_cancel_migration", async () => {
-    // The card is gated on `settingsPlaintextPresent && unlocked` —
-    // use the legacy-settings variant so the recordings card mounts.
-
-    // Hold the migration Promise open so the progress UI stays
-    // mounted long enough for the test to interact with it.
-    let resolveMigration!: (r: RecordingMigrationReport) => void;
-    const migrationPromise = new Promise<RecordingMigrationReport>(
-      (resolve) => {
-        resolveMigration = resolve;
-      },
-    );
-    let cancelCalled = false;
-
+  it("uses one artifact policy panel instead of conflicting legacy migration controls", async () => {
     invokeImpl = makeInvoke(async (cmd) => {
       if (cmd === "encryption_status") return unlockedWithLegacySettings;
-      if (cmd === "rec_migrate_to_encrypted") return migrationPromise;
-      if (cmd === "rec_cancel_migration") {
-        cancelCalled = true;
-        return undefined;
-      }
       throw new Error(`unexpected ${cmd}`);
     });
-    const view = render(<EncryptionAtRestSection />);
-    // Wait for the recordings button to mount (status must be loaded
-    // AND `settingsPlaintextPresent` honoured by the gate).
-    const migrateBtn = await screen.findByRole("button", {
-      name: /Migrate recordings \+ macros/,
+    render(<EncryptionAtRestSection />);
+    await screen.findByText("Artifact protection");
+    expect(
+      screen.queryByRole("button", {
+        name: /Migrate recordings|Migrate plaintext|Disable settings encryption/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelector(
+        '[data-setting-key="encryptionAtRest.migratePlaintext"] [data-setting-key="encryptionAtRest.artifacts"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      invokeImpl.mock.calls.some(([command]) =>
+        [
+          "rec_migrate_to_encrypted",
+          "encryption_disable_settings",
+          "encryption_migrate_settings",
+        ].includes(command),
+      ),
+    ).toBe(false);
+  });
+
+  it("reinspects artifacts exactly once after apply despite the neighboring master-status refresh", async () => {
+    const row = {
+      id: "settings",
+      policy: "default",
+      diskState: "plaintext",
+      encryptedFiles: 0,
+      plaintextFiles: 1,
+      unverifiedFiles: 0,
+      bytes: 32,
+      mutable: true,
+    };
+    invokeImpl = makeInvoke(async (cmd, args) => {
+      // Return a new object on every refresh, as real IPC does.
+      if (cmd === "encryption_status") return { ...unlockedVaultStatus };
+      if (cmd === "encryption_get_artifact_status")
+        return {
+          artifacts: [row],
+          unlocked: true,
+          recoveryRequired: false,
+          busy: false,
+          warnings: [],
+        };
+      if (cmd === "encryption_preview_artifact_policy")
+        return {
+          token: "integration-preview",
+          target: "encrypted",
+          artifacts: [row],
+          totalFiles: 1,
+          totalBytes: 32,
+        };
+      if (cmd === "encryption_apply_artifact_policy")
+        return {
+          requestId: args.requestId,
+          outcome: "completed",
+          recoveryRequired: false,
+          results: [{ id: "settings", outcome: "committed", files: 1 }],
+        };
+      if (cmd === "encryption_release_artifact_preview") return;
+      throw new Error(`unexpected ${cmd}`);
     });
-
-    fireEvent.click(migrateBtn);
-
-    // The hook subscribes to the progress event BEFORE invoking the
-    // command. Wait for that subscription to land, then push events.
-    await waitForSubscribers("recording-migrate-progress", 1);
-
-    // Fire the opening event of the envelopes stage (index 0 carries
-    // the total but no per-file step yet), then a step event.
-    const openingEvent: RecordingMigrationProgressEvent = {
-      stage: "envelopes",
-      index: 0,
-      total: 5,
-      name: "",
-      skipped: false,
-    };
-    const stepEvent: RecordingMigrationProgressEvent = {
-      stage: "envelopes",
-      index: 2,
-      total: 5,
-      name: "abc.json",
-      skipped: false,
-    };
-
+    render(<EncryptionAtRestSection />);
+    await screen.findByText("Windows Credential Manager + DPAPI");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Encrypt all supported" }),
+      ).toBeEnabled(),
+    );
+    const before = invokeImpl.mock.calls.filter(
+      ([command]) => command === "encryption_get_artifact_status",
+    ).length;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Encrypt all supported" }),
+    );
+    fireEvent.click(await screen.findByTestId("confirm-yes"));
+    await screen.findByText(/Operation completed/);
+    await waitFor(() =>
+      expect(
+        invokeImpl.mock.calls.filter(
+          ([command]) => command === "encryption_status",
+        ).length,
+      ).toBeGreaterThan(1),
+    );
     await act(async () => {
-      emit("recording-migrate-progress", openingEvent);
-      emit("recording-migrate-progress", stepEvent);
+      await Promise.resolve();
       await Promise.resolve();
     });
-
-    // The progress bar appears with the current index/total.
-    const progress = await screen.findByTestId("rec-migration-progress");
-    expect(progress.textContent).toMatch(/2\/5/);
-    expect(progress.textContent).toMatch(/envelopes/);
-
-    // The cancel button only appears while the migration is busy.
-    const cancelBtn = screen.getByTestId("rec-migration-cancel");
-    await act(async () => {
-      fireEvent.click(cancelBtn);
-      await Promise.resolve();
-    });
-
-    await waitFor(() => {
-      expect(cancelCalled).toBe(true);
-    });
-
-    // "Cancelling…" badge replaces nothing — it's an additional
-    // text node next to the progress label. The component flips
-    // `migrateRecCancelling` on cancel-button click; the badge is
-    // visible while the migration Promise is still pending.
-    await waitFor(() => {
-      expect(screen.getByText(/Cancelling/)).toBeTruthy();
-    });
-
-    // Let the in-flight migration settle so React doesn't warn about
-    // act() on an unmount-during-pending-state.
-    await act(async () => {
-      resolveMigration({
-        envelopesMigrated: 5,
-        envelopesSkipped: 0,
-        macrosMigrated: 0,
-        macrosSkipped: 0,
-      });
-      await migrationPromise;
-    });
-    await waitFor(() => {
-      expect(screen.queryByTestId("rec-migration-progress")).toBeNull();
-    });
-    act(() => view.unmount());
+    expect(
+      invokeImpl.mock.calls.filter(
+        ([command]) => command === "encryption_get_artifact_status",
+      ),
+    ).toHaveLength(before + 1);
   });
 });

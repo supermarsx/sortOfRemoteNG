@@ -7,7 +7,7 @@ hide_page_header: true
 
 # Encryption at rest: boundaries and recovery
 
-Settings → Security separates **global master-key protection**, **the current database's optional password**, and **global policy/export defaults**. The toolbar shield opens this page. Configuring a master key is not proof that all existing files are encrypted.
+Settings → Security separates **global master-key protection**, **artifact protection**, **the current database's optional password**, and **global policy/export defaults**. The toolbar shield opens this page. Configuring a master key is not proof that all existing files are encrypted; an artifact family can also be deliberately configured for plaintext.
 
 ## Protection scopes
 
@@ -29,7 +29,7 @@ A native database payload has these nested layers:
 
 ```text
 SDBF durability header/checksum
-  native SORNG authenticated envelope, when global protection is configured
+  native SORNG authenticated envelope, when the artifact policy enables it
     optional per-database password envelope
       connection payload
 ```
@@ -50,6 +50,7 @@ Algorithm, cipher-mode, and generic benchmark preferences do not select these ac
 | Database connection payload             | `databases/<id>.json`                             | connections                                 |
 | Per-database trust decisions            | `databases/<id>.trust.json`                       | trust-store                                 |
 | Retained recovery keys                  | `dek-ring.enc`                                    | key-ring                                    |
+| Authenticated artifact-write policy     | `artifact-policy.enc`                             | artifact-policy                             |
 | Recording metadata/media and macros     | Recording storage root                            | recordings-meta / recordings-media / macros |
 | Managed backups                         | Configured backup destinations                    | backups                                     |
 | Native encrypted application-log output | Native log adapter output                         | logs                                        |
@@ -58,7 +59,31 @@ The native `log_adapter.rs` bridge exists. This does **not** mean every log is e
 
 Settings' database disk-status card calls `databases_encryption_status` with `verify: false`. This is read-only header inspection of selected current/fallback files, not a decryptability audit or a certificate that every backup generation is protected. Envelope counts do not prove that the active key can open those envelopes. Unknown, unreadable, pending-transaction, or recovery states require investigation. Native callers may explicitly request `verify: true` for key-opening checks.
 
-Setting up a master key does not retroactively encrypt every plaintext generation. Full rotation handles the managed database inventory and recovery generations; inspect the result and disk status. Do not mistake “key configured” or “codec ready” for “all files encrypted.”
+Setting up a master key does not retroactively encrypt every plaintext generation. Use artifact preview/apply to convert the managed inventory and inspect the result; review rotation results separately. Do not mistake “key configured” or “codec ready” for “all files encrypted.”
+
+### Manage existing files and future writes
+
+The **Artifact protection** panel replaces the separate legacy settings and recording/macros migration controls. Each row shows actual native inspection—encrypted, plaintext, mixed, absent, or unverified—with file counts, inspected bytes, restrictions, and its independent future-write policy. **Automatic / native default** means no explicit override; it is not a claim that existing files are encrypted. Refresh is explicit, not a polling scan. Browser previews have no native file-management fallback and cannot apply these changes.
+
+Choose a row, selected rows, or **all supported** families, then choose **Encrypt & enable** or **Decrypt & disable**. The native preview binds the exact selection and target to a short-lived token, with file/byte counts. Confirmation applies both the existing-file conversion and the future-write decision. A preview expires after five minutes; changed files or policy require a fresh preview and confirmation, never an automatic retry of decryption.
+
+Decrypting removes only the global artifact layer. It does not remove a database's separate password or independently password-protected backup/export layers, and it does not delete the master key or retained recovery keys. The key ring and authenticated policy remain protected, read-only infrastructure excluded from bulk actions. An unlocked master key is still needed to authenticate policy even when all supported data families are plaintext. This is distinct from locking or unlocking the application.
+
+Scope is physical managed stores, not every file related to a feature:
+
+- Connections includes the native legacy connection store and database payloads; the database index/names and trust sidecars are separate families. Recognized local recovery generations are inspected too.
+- Recording metadata includes native recording envelopes, recording configuration, and in-flight snapshots. Media sidecars have a separate policy. Macros covers native recording-service macro files; macros embedded in global preferences follow Settings.
+- Logs covers managed native runtime log files. The encryption audit deliberately stays plaintext, and frontend histories/action logs follow their own containing storage, not the native Logs switch.
+- Backups covers recognized archives and integrity sidecars in configured, accessible local roots. Remote, offline, unavailable, and unmanaged copies are not counted as converted. A restriction can exclude the entire family from **all supported**.
+- Legacy global `trust_store.json` and `rdp-cert-trust.json` inputs, including recognized generations, block TrustStore conversion as unverified. Follow Trust Center's migration/cleanup workflow; this panel does not delete or convert those legacy inputs automatically.
+
+The native recording configuration's `encrypt_at_rest` flag remains a legacy/default fallback. Explicit per-family policies from Settings → Security → Artifact protection take precedence; the recording flag does not override independently configured metadata, media, or macro protection.
+
+Unknown or corrupt files, conflicting plaintext/encrypted peers, inaccessible roots, active recordings, and pending recovery can prevent a transition. Review the visible reason rather than treating missing verification as an all-clear. A verified conversion removes managed obsolete representations; this is **not secure erasure** of SSD/free space, OS snapshots, external exports, or offline backups.
+
+Bulk actions use ordered per-family transactions, not one atomic transaction for the whole profile. The report distinguishes committed, unchanged, failed, and not-attempted families; earlier commits can remain when a later family fails. Progress and cancellation operate at safe boundaries before commit, and cancellation does not undo already committed families. **Recover interrupted transition** rolls back uncommitted work or finishes cleanup of committed work, then refreshes inspected state. A committed result with cleanup/recovery warnings must not be mistaken for an unchanged file or reverted policy.
+
+The frontend uses `encryption_get_artifact_status`, `encryption_preview_artifact_policy`, and token-bound `encryption_apply_artifact_policy`; cancellation, preview release, and interrupted-transition recovery have separate commands. Closing a preview releases its native reservation. These controls never receive renderer-supplied file paths or encryption keys.
 
 ## Locking and database password changes
 

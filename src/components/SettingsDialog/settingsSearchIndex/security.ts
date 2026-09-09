@@ -222,9 +222,9 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   },
   {
     key: "encryptionAtRest.migratePlaintext",
-    label: "Migrate plaintext settings",
+    label: "Encrypt and enable artifact protection",
     description:
-      "Rewrite a plaintext settings.json as an encrypted settings.enc under the master key.",
+      "Preview and encrypt existing managed files and enable future encryption for Settings or selected artifact families.",
     tags: [
       "migrate",
       "plaintext",
@@ -279,9 +279,9 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   },
   {
     key: "encryptionAtRest.disable",
-    label: "Disable settings encryption",
+    label: "Decrypt and disable artifact protection",
     description:
-      "Turn encryption at rest off and write settings back to disk in plaintext.",
+      "Preview and confirm plaintext files and future writes for Settings or selected artifact families; database passwords and retained keys stay unchanged.",
     tags: ["disable", "decrypt", "plaintext", "turn off", "encryption"],
     synonyms: ["remove encryption", "revert to plaintext"],
     section: "security",
@@ -289,9 +289,9 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   },
   {
     key: "encryptionAtRest.artifacts",
-    label: "Encrypted artifacts",
+    label: "Artifact protection",
     description:
-      "Which artifacts have their own AES-256-GCM sub-key derived from the master key via HKDF-SHA256, and their HKDF labels.",
+      "Inspect encrypted, plaintext, mixed, absent or unverified files and future-write policies; encrypt or decrypt individual, selected or all supported managed artifact families.",
     tags: [
       "artifacts",
       "hkdf",
@@ -301,6 +301,12 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "recordings",
       "macros",
       "logs",
+      "bulk",
+      "selected",
+      "future writes",
+      "decrypt",
+      "enable",
+      "disable",
     ],
     synonyms: ["sorng-v1::settings", "per-artifact key", "hkdf label"],
     values: ["AES-256-GCM", "HKDF-SHA256"],
