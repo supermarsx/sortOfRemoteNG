@@ -1,7 +1,6 @@
 import {
   AtSign,
   Bell,
-  FolderTree,
   LifeBuoy,
   Mail,
   Mailbox,
@@ -59,7 +58,7 @@ export const COMMUNICATION_ICONS = [
     "active-directory",
     "Active Directory",
     "communication",
-    createRoleIcon("ActiveDirectory", "server", Network),
+    Network,
     [
       "active directory",
       "activedirectory",
@@ -68,7 +67,7 @@ export const COMMUNICATION_ICONS = [
       "domain controller",
       "ldap",
     ],
-    "Active Directory service icon using an app server/directory hierarchy symbol, not an official Microsoft product logo.",
+    "Active Directory service icon using an app-authored directory hierarchy symbol, not an official Microsoft product logo.",
   ),
   defineIcon(
     "postfix",
@@ -104,7 +103,7 @@ export const COMMUNICATION_ICONS = [
     "active-directory-server",
     "Active Directory server",
     "communication",
-    createRoleIcon("ActiveDirectoryServer", "server", FolderTree),
+    createRoleIcon("ActiveDirectoryServer", "server", Network),
     [
       "ad server",
       "ad-server",

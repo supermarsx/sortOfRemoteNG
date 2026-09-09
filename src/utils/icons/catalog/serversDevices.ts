@@ -19,7 +19,7 @@ import {
   Power,
   Printer,
   Server,
-  ServerCog,
+  Settings,
   Smartphone,
   Tablet,
   Tv,
@@ -32,6 +32,7 @@ import { createRoleIcon } from "../createRoleIcon";
 import { INDUSTRIAL_ASSET_ICONS } from "./industrialAssets";
 
 const StorageServer = createRoleIcon("StorageServer", "server", HardDrive);
+const ServerCog = createRoleIcon("ManagedServer", "server", Settings);
 const Appliance = createLucideIcon("GenericAppliance", [
   [
     "rect",

@@ -54,21 +54,21 @@ const ROLE_FRAMES: Record<IconRole, RoleFrame> = {
   server: {
     outline: (
       <>
-        <rect x="2" y="3" width="20" height="18" rx="2" />
+        <path d="M10 21H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5" />
         <path d="M8 3v18M5 7h.01M5 12h.01M5 17h.01" />
       </>
     ),
-    inset: [9, 5, 12, 14],
+    inset: [12, 12, 11, 11],
   },
   "management-server": {
     outline: (
       <>
-        <path d="M12 22H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8M6 2v20M4 7h.01M4 12h.01M4 17h.01" />
-        <path d="M16 14h4v2h2v4h-2v2h-4v-2h-2v-4h2Z" />
-        <circle cx="18" cy="18" r="1.5" />
+        <path d="M10 22H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7M6 2v20M4 7h.01M4 12h.01M4 17h.01" />
+        <path d="M16 2h4v2h2v4h-2v2h-4V8h-2V4h2Z" />
+        <circle cx="18" cy="6" r="1.5" />
       </>
     ),
-    inset: [8, 3, 13, 10],
+    inset: [12, 12, 11, 11],
   },
   database: {
     outline: (

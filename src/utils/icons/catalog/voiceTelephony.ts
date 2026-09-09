@@ -27,13 +27,13 @@ export const VOICE_TELEPHONY_ICONS = [
     "telephony",
     "call",
   ]),
-  defineIcon("pbx-server", "PBX server", "voice-telephony", Voicemail, [
-    "pbx",
-    "voicemail",
-    "telephony",
-    "extension",
-    "voice",
-  ]),
+  defineIcon(
+    "pbx-server",
+    "PBX server",
+    "voice-telephony",
+    createRoleIcon("PbxServer", "server", Voicemail),
+    ["pbx", "voicemail", "telephony", "extension", "voice"],
+  ),
   defineIcon(
     "freepbx",
     "FreePBX",
@@ -130,4 +130,11 @@ export const VOICE_TELEPHONY_ICONS = [
     createRoleIcon("SamsungPhone", "phone", samsung),
     ["samsung", "smasung", "phone", "galaxy", "android", "mobile"],
   ),
+  defineIcon("voicemail", "Voicemail", "voice-telephony", Voicemail, [
+    "voicemail",
+    "voice mail",
+    "pbx",
+    "message",
+    "plain",
+  ]),
 ] as const;
