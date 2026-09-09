@@ -4,6 +4,7 @@ import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
 import type { Connection } from "../../../types/connection/connection";
+import { generateId } from "../../../utils/core/id";
 import {
   Activity,
   ChevronRight,
@@ -16,6 +17,7 @@ import {
   FileDown,
   FileText,
   FolderOpen,
+  FolderPlus,
   HardDrive,
   KeyRound,
   Monitor,
@@ -97,13 +99,39 @@ function TreeItemMenu({
   onConnectAll?: (folder: Connection) => void;
   onConnectAllRecursive?: (folder: Connection) => void;
 }) {
-  const { dispatch } = useConnections();
+  const { state, dispatch } = useConnections();
   const { settings } = useSettings();
   const { t } = useTranslation();
   const act = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
     fn();
     onClose();
+  };
+  const createSubfolder = () => {
+    const parent = state.connections.find((item) => item.id === connection.id);
+    if (!parent?.isGroup) return;
+    const now = new Date().toISOString();
+    // Match the existing New Folder action: create an empty folder, never
+    // duplicate the parent's credentials, protocol settings, or descendants.
+    const child: Connection = {
+      id: generateId(),
+      name: t("connections.newFolder"),
+      protocol: "rdp",
+      hostname: "",
+      port: 3389,
+      isGroup: true,
+      parentId: parent.id,
+      expanded: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    if (!parent.expanded)
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...parent, expanded: true },
+      });
+    dispatch({ type: "ADD_CONNECTION", payload: child });
+    onRename(child);
   };
   const enableWinrm =
     connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
@@ -205,6 +233,12 @@ function TreeItemMenu({
       dataTestId="connection-tree-item-menu"
       ariaLabel={t("connections.actions", "Connection actions")}
     >
+      {connection.isGroup && (
+        <button onClick={act(createSubfolder)} className="sor-menu-item">
+          <FolderPlus size={14} className="mr-2" />
+          {t("connections.newSubfolder", "New subfolder")}
+        </button>
+      )}
       {connection.isGroup && (
         <button
           onClick={act(() => onConnectAll?.(connection))}
