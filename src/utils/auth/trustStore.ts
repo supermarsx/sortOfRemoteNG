@@ -1729,17 +1729,9 @@ export async function verifyIdentity<T extends TrustRecordType>(
     }
     switch (result.status) {
       case "trusted": {
-        if (
-          type !== "ssh" &&
-          (received as CertIdentity).validTo &&
-          new Date((received as CertIdentity).validTo as string).getTime() <
-            Date.now()
-        ) {
-          return {
-            status: "expired",
-            identity: received as CertIdentity,
-          };
-        }
+        // Certificate validity is a separate warning, not expiration of the
+        // native exact-fingerprint approval. Native `expired` below is the
+        // trust permission's TTL and must continue to require a new decision.
         return { status: "trusted" };
       }
       case "first-use":
@@ -1753,7 +1745,13 @@ export async function verifyIdentity<T extends TrustRecordType>(
           identity: result.identity
             ? fromNativeIdentity(result.identity)
             : received,
-          ...(result.requiresApproval ? { requiresApproval: true } : {}),
+          ...(result.requiresApproval ||
+          (type !== "ssh" &&
+            !!(received as CertIdentity).validTo &&
+            new Date((received as CertIdentity).validTo as string).getTime() <
+              Date.now())
+            ? { requiresApproval: true }
+            : {}),
         };
       case "mismatch":
       case "chain-mismatch":
