@@ -36,6 +36,7 @@ interface SettingsContextType {
 }
 
 export const defaultSettings: GlobalSettings = {
+  iconLibrary: undefined,
   language: "en-US",
   autoDetectOsLanguage: true,
   region: "auto",
@@ -167,6 +168,7 @@ export const defaultSettings: GlobalSettings = {
   showImportExportIcon: true,
   showSettingsIcon: true,
   showTrustCenterIcon: true,
+  showIconExplorerIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
   showDevtoolsIcon: false,
@@ -660,7 +662,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
         throw new Error(
           "Global settings changed lock state while saving. Reload before retrying.",
         );
-      const merged = { ...settingsRef.current, ...updates };
+      const merged = {
+        ...settingsRef.current,
+        ...updates,
+        iconLibrary: settingsManager.getSettings().iconLibrary,
+      };
       settingsRef.current = merged;
       setSettings(merged);
 

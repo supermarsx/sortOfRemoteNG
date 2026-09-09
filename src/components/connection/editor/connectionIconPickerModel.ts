@@ -185,5 +185,6 @@ export function getRecommendedConnectionIconKeys(
     );
   }).map((definition) => definition.key);
 
-  return [automatic.key, ...related].slice(0, 4);
+  const automaticKey = getConnectionIconDefinition(automatic.key)?.key;
+  return (automaticKey ? [automaticKey, ...related] : related).slice(0, 4);
 }

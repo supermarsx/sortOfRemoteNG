@@ -26,6 +26,7 @@ import type {
   TrustPolicy,
 } from "../../utils/auth/trustStore";
 import type { McpServerConfig } from "../mcp/mcpServer";
+import type { IconLibraryData } from "../../utils/icons/iconLibrary";
 
 export const Themes = [
   "dark",
@@ -137,6 +138,8 @@ export const defaultExportSecuritySettings: ExportSecuritySettings = {
 };
 
 export interface GlobalSettings {
+  /** Validated custom vectors and personal catalog metadata; stored with global settings. */
+  iconLibrary?: IconLibraryData;
   // General Settings
   language: string;
   /** When true, the runtime language follows the OS/browser locale instead
@@ -356,6 +359,7 @@ export interface GlobalSettings {
   showImportExportIcon: boolean;
   showSettingsIcon: boolean;
   showTrustCenterIcon: boolean;
+  showIconExplorerIcon: boolean;
   showPerformanceMonitorIcon: boolean;
   showActionLogIcon: boolean;
   showDevtoolsIcon: boolean;

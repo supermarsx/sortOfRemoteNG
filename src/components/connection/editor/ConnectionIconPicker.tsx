@@ -14,10 +14,12 @@ import {
 import {
   CONNECTION_ICON_CATEGORIES,
   getConnectionIconDefinition,
-  type ConnectionIconCategory,
-  type ConnectionIconDefinition,
-  type ConnectionIconKey,
 } from "../../../utils/icons/connectionIconCatalog";
+import {
+  getIconLibrarySnapshot,
+  useIconLibraryRevision,
+  type SelectableConnectionIconKey as ConnectionIconKey,
+} from "../../../utils/icons/iconLibraryRuntime";
 import {
   getConnectionIntegrationKey,
   type EffectiveConnectionIcon,
@@ -28,6 +30,7 @@ import {
   getRecommendedConnectionIconKeys,
   resolveEditorConnectionIcon,
   type ConnectionIconPickerConnection,
+  type ConnectionIconPickerCategory as ConnectionIconCategory,
 } from "./connectionIconPickerModel";
 
 export interface ConnectionIconPickerProps {
@@ -35,7 +38,12 @@ export interface ConnectionIconPickerProps {
   onChange: (key: ConnectionIconKey | undefined) => void;
 }
 
-type CatalogDefinition = ConnectionIconDefinition<ConnectionIconKey>;
+type CatalogDefinition = {
+  key: ConnectionIconKey;
+  label: string;
+  icon: EffectiveConnectionIcon["icon"];
+  category: ConnectionIconCategory;
+};
 
 const getSourceCopy = (
   effective: EffectiveConnectionIcon,
@@ -119,6 +127,8 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
   connection,
   onChange,
 }) => {
+  useIconLibraryRevision();
+  const libraryEntries = getIconLibrarySnapshot().entries;
   const reactId = React.useId().replace(/:/g, "");
   const searchId = `connection-icon-search-${reactId}`;
   const paletteId = `connection-icon-palette-${reactId}`;
@@ -142,18 +152,40 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
   const recommendedKeys = getRecommendedConnectionIconKeys(connection);
   const recommendedDefinitions = recommendedKeys
     .map(getConnectionIconDefinition)
-    .filter((definition): definition is CatalogDefinition => !!definition);
+    .filter((definition) => !!definition);
   const hasManualOverride = !!connection.icon?.trim();
   const isFiltering = query.trim().length > 0;
-  const matches = React.useMemo(() => filterConnectionIcons(query), [query]);
+  const matches = React.useMemo<CatalogDefinition[]>(() => {
+    const aliasMatches = new Set(
+      filterConnectionIcons(query).map(
+        (definition) => definition.key as string,
+      ),
+    );
+    const tokens = query
+      .trim()
+      .toLocaleLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+    return libraryEntries.filter(
+      (entry) =>
+        aliasMatches.has(entry.key) ||
+        tokens.every((token) =>
+          `${entry.key} ${entry.label} ${entry.notes} ${entry.category} ${entry.keywords.join(" ")}`
+            .toLocaleLowerCase()
+            .includes(token),
+        ),
+    );
+  }, [query, libraryEntries]);
   const groupedMatches = React.useMemo(
     () =>
-      CONNECTION_ICON_CATEGORIES.map((category) => ({
-        category,
-        definitions: matches.filter(
-          (definition) => definition.category === category,
-        ),
-      })).filter((group) => group.definitions.length > 0),
+      ([...CONNECTION_ICON_CATEGORIES, "custom"] as ConnectionIconCategory[])
+        .map((category) => ({
+          category,
+          definitions: matches.filter(
+            (definition) => definition.category === category,
+          ),
+        }))
+        .filter((group) => group.definitions.length > 0),
     [matches],
   );
   const [expandedCategories, setExpandedCategories] = React.useState<
@@ -442,8 +474,8 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
                       const Icon = definition.icon;
                       const isSelected = effective.key === definition.key;
                       const isAutomatic = automatic.key === definition.key;
-                      const isRecommended = recommendedKeys.includes(
-                        definition.key,
+                      const isRecommended = recommendedKeys.some(
+                        (key) => key === definition.key,
                       );
                       return (
                         <button

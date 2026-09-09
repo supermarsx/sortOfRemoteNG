@@ -24,6 +24,11 @@ import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
 import { getInvoke as tauriInvoke } from "../tauri/invoke";
 import { normalizeSshReconnectSettings } from "../ssh/sshReconnectPolicy";
+import {
+  validateIconLibrary,
+  type IconLibraryData,
+} from "../icons/iconLibrary";
+import { publishIconLibrary } from "../icons/iconLibraryRuntime";
 
 /** Cached window label used as diagnostic metadata in sync envelopes. */
 let _windowLabel: string | null = null;
@@ -291,6 +296,7 @@ const delay = (ms: number): Promise<void> =>
  * fall back to these defaults.
  */
 const DEFAULT_SETTINGS: GlobalSettings = {
+  iconLibrary: undefined,
   language: "en-US",
   autoDetectOsLanguage: true,
   region: "auto",
@@ -434,6 +440,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showImportExportIcon: true,
   showSettingsIcon: true,
   showTrustCenterIcon: true,
+  showIconExplorerIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
   showDevtoolsIcon: false,
@@ -1038,6 +1045,7 @@ export class SettingsManager {
     this.loaded = false;
     this.loadPromise = null;
     this.settings = { ...DEFAULT_SETTINGS };
+    publishIconLibrary(undefined, { ready: false, locked });
   }
 
   /**
@@ -1275,6 +1283,7 @@ export class SettingsManager {
    */
   private async persistSettings(
     patch: Partial<GlobalSettings>,
+    expectedIconLibrary?: IconLibraryData,
   ): Promise<number | undefined> {
     const epoch = this.loadEpoch;
     const safePatch = this.sanitizeSettingsPatch(patch);
@@ -1300,6 +1309,7 @@ export class SettingsManager {
       try {
         const result = await invoke<unknown>("write_app_settings", {
           patch: safePatch,
+          ...(expectedIconLibrary !== undefined ? { expectedIconLibrary } : {}),
         });
         if (sawFailure) {
           // Recovered after one or more failed attempts.
@@ -1355,9 +1365,21 @@ export class SettingsManager {
    * longer use IndexedDB.
    */
   async resetStoredSettings(): Promise<void> {
-    this.settings = { ...DEFAULT_SETTINGS };
+    const epoch = this.loadEpoch;
+    await this.ensureLoaded();
+    if (epoch !== this.loadEpoch || this.storageLocked)
+      throw new Error("Global settings changed before reset.");
+    const expectedLibrary = validateIconLibrary(this.settings.iconLibrary);
+    const reset = {
+      ...DEFAULT_SETTINGS,
+      iconLibrary: validateIconLibrary(undefined),
+    };
+    await this.persistSettings(reset, expectedLibrary);
+    if (epoch !== this.loadEpoch || this.storageLocked)
+      throw new Error("Global settings changed lock state while resetting.");
+    this.settings = reset;
     this.loaded = true;
-    await this.persistSettings(DEFAULT_SETTINGS);
+    publishIconLibrary(reset.iconLibrary, { ready: true });
   }
 
   private async doLoadSettings(): Promise<GlobalSettings> {
@@ -1371,10 +1393,18 @@ export class SettingsManager {
         this.settings = this.normalizeSettingsSnapshot(stored);
       }
       this.loaded = true;
+      publishIconLibrary(this.settings.iconLibrary, { ready: true });
       return this.settings;
     } catch (error) {
       console.error("Failed to load settings:", error);
       if (epoch === this.loadEpoch) this.loaded = false;
+      if (epoch === this.loadEpoch)
+        publishIconLibrary(undefined, {
+          ready: false,
+          locked: this.storageLocked,
+          error:
+            "Unable to load icon settings. Reload global settings to retry.",
+        });
       throw error;
     }
   }
@@ -1400,6 +1430,17 @@ export class SettingsManager {
       if (epoch !== this.loadEpoch || this.storageLocked)
         throw new Error("Global settings changed lock state before saving.");
       const safeSettings = this.sanitizeSettingsPatch(settings);
+      if (
+        "iconLibrary" in settings &&
+        JSON.stringify(settings.iconLibrary) !==
+          JSON.stringify(this.settings.iconLibrary)
+      )
+        throw new Error(
+          "Use Icon Explorer's reviewed pack import to change the icon library; ordinary settings saves cannot replace it.",
+        );
+      // Library writes require their own reviewed commit path. A stale full
+      // preferences snapshot must not overwrite newer imported vectors/notes.
+      delete safeSettings.iconLibrary;
       this.settings = { ...this.settings, ...safeSettings };
       // Write only the patch: the backend shallow-merges it into
       // settings.json, so partial saves never drop sibling keys.
@@ -1424,6 +1465,41 @@ export class SettingsManager {
     }
   }
 
+  /** Commit-confirmed, exact-base library patch; never installs failed vectors. */
+  async saveIconLibrary(
+    data: IconLibraryData,
+    expected: IconLibraryData,
+  ): Promise<void> {
+    const epoch = this.loadEpoch;
+    const validated = validateIconLibrary(data);
+    const expectedLibrary = validateIconLibrary(expected);
+    const expectedJson = JSON.stringify(expectedLibrary);
+    await this.ensureLoaded();
+    if (
+      epoch !== this.loadEpoch ||
+      this.storageLocked ||
+      JSON.stringify(validateIconLibrary(this.settings.iconLibrary)) !==
+        expectedJson
+    )
+      throw new Error("Icon settings changed. Reload and review again.");
+    const generation = await this.persistSettings(
+      { iconLibrary: validated },
+      expectedLibrary,
+    );
+    if (epoch !== this.loadEpoch || this.storageLocked)
+      throw new Error("Global settings changed lock state while saving icons.");
+    if (
+      JSON.stringify(validateIconLibrary(this.settings.iconLibrary)) !==
+      expectedJson
+    )
+      throw new Error(
+        "A newer icon library arrived while the save completed. Review the latest library before continuing.",
+      );
+    this.settings = { ...this.settings, iconLibrary: validated };
+    publishIconLibrary(validated, { ready: true });
+    await this.broadcastSettingsSync({ iconLibrary: validated }, generation);
+  }
+
   /**
    * Update the in-memory settings without persisting to disk.
    * Used by the Settings dialog so that `getSettings()` always reflects
@@ -1431,7 +1507,8 @@ export class SettingsManager {
    */
   applyInMemory(settings: Partial<GlobalSettings>): void {
     if (this.storageLocked) return;
-    this.settings = { ...this.settings, ...settings };
+    const { iconLibrary: _library, ...ordinary } = settings;
+    this.settings = { ...this.settings, ...ordinary };
   }
 
   /**
@@ -1444,6 +1521,7 @@ export class SettingsManager {
     if (!validated) return null;
     this.settings = validated;
     this.loaded = true;
+    publishIconLibrary(validated.iconLibrary, { ready: true });
     return validated;
   }
 
@@ -1465,6 +1543,7 @@ export class SettingsManager {
       if (!this.settingsSyncRevisions.isCurrent(decision.payload)) return null;
       this.settings = decision.settings;
       this.loaded = true;
+      publishIconLibrary(this.settings.iconLibrary, { ready: true });
       return this.settings;
     });
     this.settingsSyncApplyChain = apply.catch(() => undefined);
@@ -1514,6 +1593,7 @@ export class SettingsManager {
 
       this.settings = safeSettings;
       this.loaded = true;
+      publishIconLibrary(safeSettings.iconLibrary, { ready: true });
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("settings-updated", { detail: safeSettings }),

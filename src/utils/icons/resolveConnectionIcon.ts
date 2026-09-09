@@ -10,6 +10,10 @@ import {
   type ConnectionIconKey,
 } from "./connectionIconCatalog";
 import { FOLDER_OPEN_ICONS } from "./catalog/folders";
+import {
+  getRuntimeIconEntry,
+  type SelectableConnectionIconKey,
+} from "./iconLibraryRuntime";
 
 export const GENERIC_CONNECTION_ICON_KEY: ConnectionIconKey = "monitor";
 
@@ -66,7 +70,7 @@ export type ConnectionIconDescriptor = Pick<
 >;
 
 export interface EffectiveConnectionIcon {
-  key: ConnectionIconKey;
+  key: SelectableConnectionIconKey;
   icon: NonNullable<ReturnType<typeof getConnectionIconDefinition>>["icon"];
   source: EffectiveConnectionIconSource;
   overrideState: ConnectionIconOverrideState;
@@ -76,7 +80,7 @@ export interface EffectiveConnectionIcon {
   label: string;
   ariaLabel: string;
   description: string;
-  category: ConnectionIconCategory;
+  category: ConnectionIconCategory | "custom";
   keywords: readonly string[];
 }
 
@@ -143,6 +147,20 @@ export function resolveEffectiveConnectionIcon(
   const normalizedOverride = normalizeConnectionIconKey(savedOverride);
   const overrideDefinition = getConnectionIconDefinition(normalizedOverride);
   const integrationKey = getConnectionIntegrationKey(connection);
+  const custom = getRuntimeIconEntry(normalizedOverride);
+  if (custom?.kind === "custom")
+    return {
+      key: custom.key,
+      icon: custom.icon,
+      source: "override",
+      overrideState: "valid",
+      integrationKey,
+      label: custom.label,
+      ariaLabel: `${custom.label} icon`,
+      description: custom.notes || "Imported custom icon",
+      category: "custom",
+      keywords: custom.keywords,
+    };
 
   if (overrideDefinition) {
     return buildResult(
@@ -226,9 +244,9 @@ function buildResult(
     overrideState,
     unknownOverrideKey,
     integrationKey,
-    label: definition.label,
-    ariaLabel: definition.ariaLabel,
-    description: definition.description,
+    label: getRuntimeIconEntry(key)?.label ?? definition.label,
+    ariaLabel: `${getRuntimeIconEntry(key)?.label ?? definition.label} icon`,
+    description: getRuntimeIconEntry(key)?.notes || definition.description,
     category: definition.category,
     keywords: definition.keywords,
   };

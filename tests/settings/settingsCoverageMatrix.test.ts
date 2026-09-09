@@ -8,6 +8,7 @@ import {
   _resetInMemorySettingsStore,
 } from "../../src/utils/settings/settingsManager";
 import { _resetInvokeCache } from "../../src/utils/tauri/invoke";
+import { validateIconLibrary } from "../../src/utils/icons/iconLibrary";
 
 const root = process.cwd();
 
@@ -100,6 +101,13 @@ function sampleValueFor(
   defaults: GlobalSettings,
 ): unknown {
   const special: Partial<Record<keyof GlobalSettings, unknown>> = {
+    iconLibrary: {
+      version: 1,
+      customIcons: [],
+      builtInOverrides: {
+        server: { label: "Coverage server", notes: "Coverage metadata" },
+      },
+    },
     language: "pt-PT",
     region: "GB",
     timeFormat: "24h",
@@ -259,7 +267,15 @@ describe("settings coverage matrix", () => {
       patch[key] = sampleValueFor(key, defaults[key], defaults);
     }
 
+    const iconLibrary = validateIconLibrary(patch.iconLibrary);
+    delete patch.iconLibrary;
     await manager.saveSettings(patch as Partial<GlobalSettings>);
+    // Library replacement uses its dedicated reviewed, commit-confirmed path.
+    await manager.saveIconLibrary(
+      iconLibrary,
+      validateIconLibrary(defaults.iconLibrary),
+    );
+    patch.iconLibrary = iconLibrary;
     SettingsManager.resetInstance();
 
     const reloaded = await SettingsManager.getInstance().loadSettings();

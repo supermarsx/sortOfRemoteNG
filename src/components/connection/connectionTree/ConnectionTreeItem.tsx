@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { useConnections } from "../../../contexts/useConnections";
 import { isToolProtocol } from "../../app/toolSession";
 import { getExpandedFolderIcon } from "../../../utils/icons/resolveConnectionIcon";
+import { useIconLibraryRevision } from "../../../utils/icons/iconLibraryRuntime";
 import {
   ChevronDown,
   ChevronRight,
@@ -74,6 +75,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
   folderSingleClickToggle,
   folderDoubleClickToggle,
 }: ConnectionTreeItemProps & RowState) {
+  useIconLibraryRevision();
   const { t } = useTranslation();
   const [showMenu, setShowMenu] = useState(false);
   const [showMultiMenu, setShowMultiMenu] = useState(false);

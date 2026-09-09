@@ -17,6 +17,8 @@ import { useConnections } from "../../src/contexts/useConnections";
 import { Connection } from "../../src/types/connection/connection";
 import type { ConnectionFilter } from "../../src/types/connection/connection";
 import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";
+import { publishIconLibrary } from "../../src/utils/icons/iconLibraryRuntime";
+import { parsePassiveSvg } from "../../src/utils/icons/iconLibrary";
 
 const mockConnections: Connection[] = [
   {
@@ -68,6 +70,56 @@ function InitConnections({
 }
 
 describe("ConnectionTree", () => {
+  it("redraws a memoized row on custom icon replacement and global lock without changing the connection", async () => {
+    const key = "custom:12345678-1234-4123-8123-123456789abc" as const;
+    const icon = {
+      key,
+      label: "Synthetic icon",
+      notes: "",
+      svg: parsePassiveSvg(
+        '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>',
+      ),
+    };
+    act(() =>
+      publishIconLibrary(
+        { version: 1, customIcons: [icon], builtInOverrides: {} },
+        { ready: true },
+      ),
+    );
+    const connections = [{ ...mockConnections[0], icon: key }];
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={connections} />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    const row = await screen.findByTestId("connection-group");
+    expect(row.querySelector('circle[r="8"]')).toBeInTheDocument();
+    act(() =>
+      publishIconLibrary(
+        {
+          version: 1,
+          customIcons: [
+            {
+              ...icon,
+              svg: parsePassiveSvg(
+                '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20"/></svg>',
+              ),
+            },
+          ],
+          builtInOverrides: {},
+        },
+        { ready: true },
+      ),
+    );
+    expect(row.querySelector('circle[r="8"]')).not.toBeInTheDocument();
+    expect(row.querySelector('rect[width="20"]')).toBeInTheDocument();
+    act(() => publishIconLibrary(undefined, { ready: false, locked: true }));
+    expect(row.querySelector('rect[width="20"]')).not.toBeInTheDocument();
+    expect(row.querySelector(".lucide-folder")).toBeInTheDocument();
+    act(() => publishIconLibrary(undefined, { ready: true }));
+  });
   it.each([
     { icon: "folder-lock", selector: '[data-role-frame="folder"]' },
     { icon: "server", selector: ".lucide-server" },
@@ -107,49 +159,66 @@ describe("ConnectionTree", () => {
     },
   );
 
-  it("opens every saved folder with its own emblem and restores closed geometry without modifying its key", async () => {
-    const connections = FOLDER_ICONS.map((entry) => ({
-      ...mockConnections[0],
-      id: entry.key,
-      name: entry.label,
-      icon: entry.key,
-    }));
-    let state!: ReturnType<typeof useConnections>["state"];
-    function Observe() {
-      state = useConnections().state;
-      return null;
-    }
-    render(
-      <ToastProvider>
-        <ConnectionProvider>
-          <Observe />
-          <InitConnections connections={connections} />
-        </ConnectionProvider>
-      </ToastProvider>,
-    );
-    const rows = await screen.findAllByTestId("connection-group");
-    expect(rows).toHaveLength(FOLDER_ICONS.length);
-    for (const entry of FOLDER_ICONS) {
-      const row = rows.find((item) => within(item).queryByText(entry.label))!;
-      const icon = () => within(row).getByLabelText(entry.ariaLabel);
-      const closed = icon().innerHTML;
-      fireEvent.click(within(row).getAllByRole("button")[0]);
-      expect(row).toHaveAttribute("aria-expanded", "true");
-      if (entry.key !== "folder-open")
-        expect(icon().innerHTML).not.toBe(closed);
-      expect(icon()).toHaveClass("text-warning");
-      if (entry.key !== "folder" && entry.key !== "folder-open")
+  it.each(
+    Array.from(
+      { length: Math.ceil(FOLDER_ICONS.length / 20) },
+      (_, index) =>
+        [index + 1, FOLDER_ICONS.slice(index * 20, index * 20 + 20)] as const,
+    ),
+  )(
+    "opens folder batch %i with matching emblems and restores geometry without changing saved keys",
+    async (_batch, folders) => {
+      const connections = folders.map((entry) => ({
+        ...mockConnections[0],
+        id: entry.key,
+        name: entry.label,
+        icon: entry.key,
+      }));
+      let state!: ReturnType<typeof useConnections>["state"];
+      function Observe() {
+        state = useConnections().state;
+        return null;
+      }
+      render(
+        <ToastProvider>
+          <ConnectionProvider>
+            <Observe />
+            <InitConnections connections={connections} />
+          </ConnectionProvider>
+        </ToastProvider>,
+      );
+      const rows = await screen.findAllByTestId("connection-group");
+      expect(rows).toHaveLength(folders.length);
+      const byConnectionId = new Map(
+        rows.map((row) => [
+          row
+            .querySelector("[data-connection-id]")
+            ?.getAttribute("data-connection-id"),
+          row,
+        ]),
+      );
+      for (const entry of folders) {
+        const row = byConnectionId.get(entry.key)!;
+        const icon = () => within(row).getByLabelText(entry.ariaLabel);
+        const closed = icon().innerHTML;
+        fireEvent.click(row.querySelector("button")!);
+        expect(row).toHaveAttribute("aria-expanded", "true");
+        if (entry.key !== "folder-open")
+          expect(icon().innerHTML).not.toBe(closed);
+        expect(icon()).toHaveClass("text-warning");
+        if (entry.key !== "folder" && entry.key !== "folder-open")
+          expect(
+            icon().querySelector('[data-role-frame="folder-open"]'),
+          ).not.toBeNull();
         expect(
-          icon().querySelector('[data-role-frame="folder-open"]'),
-        ).not.toBeNull();
-      expect(
-        state.connections.find((item) => item.id === entry.key)?.icon,
-      ).toBe(entry.key);
-      fireEvent.click(within(row).getAllByRole("button")[0]);
-      expect(row).toHaveAttribute("aria-expanded", "false");
-      expect(icon().innerHTML).toBe(closed);
-    }
-  });
+          state.connections.find((item) => item.id === entry.key)?.icon,
+        ).toBe(entry.key);
+        fireEvent.click(row.querySelector("button")!);
+        expect(row).toHaveAttribute("aria-expanded", "false");
+        expect(icon().innerHTML).toBe(closed);
+      }
+    },
+  );
 
   it.each([0, 40])(
     "does not re-render a %i-row non-virtual tree when it scrolls",
