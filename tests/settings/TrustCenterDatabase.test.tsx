@@ -248,6 +248,75 @@ beforeEach(async () => {
 });
 
 describe("Legacy Trust — explicit force cleanup", () => {
+  it("places force cleanup after normal delete and keeps warnings and inventory inside its confirmation popup", async () => {
+    legacyStatus = { ...legacyStatus, legacyPresent: true };
+    renderSection();
+    await settle();
+    const normal = screen.getByTestId("trust-delete-legacy");
+    const force = screen.getByRole("button", {
+      name: "Force delete legacy trust files…",
+    });
+    expect(
+      normal.compareDocumentPosition(force) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: "Force delete legacy trust files" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Force cleanup is separate from verified migration/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: /FORCE DELETE LEGACY TRUST/ }),
+    ).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_preview_force_delete_legacy",
+    );
+    await review();
+    const dialog = screen.getByRole("dialog", {
+      name: "Force delete legacy trust files",
+    });
+    expect(dialog).toContainElement(
+      screen.getByText(/Force cleanup is separate from verified migration/),
+    );
+    expect(dialog).toContainElement(
+      screen.getByRole("group", { name: "Review force deletion" }),
+    );
+    expect(dialog).toContainElement(
+      screen.getByRole("textbox", { name: /FORCE DELETE LEGACY TRUST/ }),
+    );
+    const body = dialog.querySelector(".sor-modal-body");
+    const footer = dialog.querySelector(".sor-modal-footer");
+    expect(body).toHaveClass("overflow-y-auto", "min-h-0");
+    expect(body).toContainElement(
+      screen.getByRole("group", { name: "Review force deletion" }),
+    );
+    expect(footer).toHaveClass("shrink-0");
+    expect(footer).toContainElement(
+      screen.getByRole("button", { name: "Cancel force deletion" }),
+    );
+    expect(footer).toContainElement(
+      screen.getByRole("button", {
+        name: "Preserve recovery copy and force delete",
+      }),
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "trust_cancel_force_delete_legacy",
+        { token: forceToken },
+      ),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Force delete legacy trust files" }),
+    ).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_force_delete_legacy",
+      expect.anything(),
+    );
+    expect(
+      screen.queryByText(/Force cleanup is separate from verified migration/),
+    ).not.toBeInTheDocument();
+  });
   async function review() {
     fireEvent.click(
       screen.getByRole("button", { name: "Force delete legacy trust files…" }),
@@ -267,6 +336,58 @@ describe("Legacy Trust — explicit force cleanup", () => {
       }),
     );
   }
+  it("keeps the dialog open and prevents cancellation once confirmed native cleanup has started", async () => {
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise((done) => {
+      resolve = done;
+    });
+    const original = invokeMock.getMockImplementation() as (
+      command: string,
+      ...args: unknown[]
+    ) => Promise<unknown>;
+    invokeMock.mockImplementation((command: string, ...args: unknown[]) =>
+      command === "trust_force_delete_legacy"
+        ? pending
+        : original(command, ...args),
+    );
+    renderSection();
+    await settle();
+    await review();
+    confirm();
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "trust_force_delete_legacy",
+        expect.anything(),
+      ),
+    );
+    expect(
+      screen.getByRole("button", { name: "Cancel force deletion" }),
+    ).toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(
+      screen.getByRole("dialog", { name: "Force delete legacy trust files" }),
+    ).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_cancel_force_delete_legacy",
+      expect.anything(),
+    );
+    resolve(forceResult);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", {
+          name: "Force delete legacy trust files",
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(
+        "Reviewed legacy files removed; verified recovery copies retained.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: /FORCE DELETE LEGACY TRUST/ }),
+    ).not.toBeInTheDocument();
+  });
   it("requires the exact phrase, bypasses incomplete migration only explicitly, and reports recovery", async () => {
     legacyStatus = {
       ...legacyStatus,
