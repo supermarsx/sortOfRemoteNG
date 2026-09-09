@@ -9,6 +9,7 @@ import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
 const requestedKeys = {
+  "admin-panels": ["webmin", "cockpit", "plesk", "cloudron", "cpanel"],
   "physical-mail": [
     "folder-mta-relay",
     "folder-bare-metal",
