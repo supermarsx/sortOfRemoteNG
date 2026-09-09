@@ -301,11 +301,7 @@ export function DatabaseBulkControls({
         </p>
       )}
       {bulk.results.length > 0 && (
-        <div
-          className="space-y-1 text-xs"
-          aria-label="Bulk database results"
-          aria-live="polite"
-        >
+        <div className="space-y-1 text-xs" aria-label="Bulk database results">
           <p>
             {
               bulk.results.filter((result) => result.status === "success")
@@ -325,11 +321,16 @@ export function DatabaseBulkControls({
             }{" "}
             cancelled
           </p>
-          {bulk.results.map((result) => (
-            <p key={result.id}>
-              {result.name}: {result.status} — {result.message}
-            </p>
-          ))}
+          <details>
+            <summary className="cursor-pointer py-1">
+              View operation results ({bulk.results.length})
+            </summary>
+            {bulk.results.map((result) => (
+              <p key={result.id}>
+                {result.name}: {result.status} — {result.message}
+              </p>
+            ))}
+          </details>
           {bulk.results.some((result) => result.status === "failed") && (
             <p>
               Review the refreshed list before retrying: a storage failure may

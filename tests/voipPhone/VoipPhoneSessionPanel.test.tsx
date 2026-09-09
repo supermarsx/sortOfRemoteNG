@@ -119,6 +119,9 @@ const toast = {
   error: vi.fn(),
   warning: vi.fn(),
   info: vi.fn(),
+  loading: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
 };
 
 function renderPanel(

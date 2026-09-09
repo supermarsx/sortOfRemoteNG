@@ -1,4 +1,6 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, screen, waitFor } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { useDatabaseBulkActions } from "../../src/hooks/connection/useDatabaseBulkActions";
 import {
@@ -158,9 +160,9 @@ describe("shared database action safety", () => {
 });
 
 describe("bulk database selection and outcomes", () => {
-  function mount() {
+  function mount(withNotifications = false) {
     const data = fixture();
-    const refresh = vi.fn(async () => undefined);
+    const refresh = vi.fn(async (): Promise<void> => undefined);
     const guard = { current: false };
     const rendered = renderHook(
       ({ collections }) =>
@@ -171,7 +173,13 @@ describe("bulk database selection and outcomes", () => {
           transitionGuard: guard,
           blocked: false,
         }),
-      { initialProps: { collections: data.collections } },
+      {
+        initialProps: { collections: data.collections },
+        wrapper: withNotifications
+          ? ({ children }: { children: ReactNode }) =>
+              createElement(ToastProvider, null, children)
+          : undefined,
+      },
     );
     return { ...data, ...rendered, refresh, guard };
   }
@@ -273,5 +281,161 @@ describe("bulk database selection and outcomes", () => {
       false,
       { collectionPassword: "secret" },
     );
+  });
+
+  it("uses one updating toast and keeps progress below completion until refresh finishes", async () => {
+    const { result, manager, refresh } = mount(true);
+    let releaseFirst!: () => void;
+    let releaseRefresh!: () => void;
+    manager.duplicateDatabase.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      return { ...alpha, id: "copy-a" };
+    });
+    refresh.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRefresh = resolve;
+        }),
+    );
+    let operation!: Promise<void>;
+    act(() => {
+      operation = result.current.run("clone", {}, ["a", "b"]);
+    });
+    await waitFor(() =>
+      expect(manager.duplicateDatabase).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.getByText("Clone: Alpha — 1 of 2")).toBeTruthy();
+    expect(document.querySelectorAll(".toast-item")).toHaveLength(1);
+    await act(async () => releaseFirst());
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    expect(
+      screen.getByText("Clone — refreshing the database list…"),
+    ).toBeTruthy();
+    expect(
+      Number(screen.getByRole("progressbar").getAttribute("aria-valuenow")),
+    ).toBeLessThan(100);
+    expect(result.current.running).toBe(true);
+    await act(async () => {
+      releaseRefresh();
+      await operation;
+    });
+    expect(document.querySelectorAll(".toast-item")).toHaveLength(1);
+    expect(
+      screen.getByText(
+        "Clone finished — 2 succeeded, 0 failed, 0 skipped, 0 cancelled.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
+      "100",
+    );
+  });
+
+  it("does not report prepared exports as saved and retains redacted failure details in the final toast", async () => {
+    const { result } = mount(true);
+    let rejectSave!: (error: Error) => void;
+    saveExport.mockImplementationOnce(
+      () =>
+        new Promise<"saved">((_, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    let operation!: Promise<void>;
+    act(() => {
+      operation = result.current.run(
+        "export",
+        {
+          passwords: { a: "private-password" },
+          export: {
+            encrypted: false,
+            password: "",
+            security: defaultExportSecuritySettings,
+          },
+        },
+        ["a", "b"],
+      );
+    });
+    await waitFor(() => expect(saveExport).toHaveBeenCalledOnce());
+    expect(screen.getByText(/2 prepared; not saved yet/)).toBeTruthy();
+    expect(
+      result.current.results.every((item) => item.status === "prepared"),
+    ).toBe(true);
+    expect(
+      Number(screen.getByRole("progressbar").getAttribute("aria-valuenow")),
+    ).toBeLessThan(100);
+    await act(async () => {
+      rejectSave(new Error("Cannot save private-password package"));
+      await operation;
+    });
+    expect(
+      screen.getByText(
+        "Export finished — 0 succeeded, 2 failed, 0 skipped, 0 cancelled.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Alpha: failed — Cannot save [redacted] package"),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toContain("private-password");
+    expect(screen.getByText("View details (2)")).toBeTruthy();
+  });
+
+  it("cancels remaining work and reports cancellation through the existing toast", async () => {
+    const { result, manager } = mount(true);
+    let release!: () => void;
+    manager.duplicateDatabase.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { ...alpha, id: "copy-a" };
+    });
+    let operation!: Promise<void>;
+    act(() => {
+      operation = result.current.run("clone", {}, ["a", "b"]);
+    });
+    await waitFor(() =>
+      expect(manager.duplicateDatabase).toHaveBeenCalledOnce(),
+    );
+    act(() => result.current.cancel());
+    expect(
+      screen.getByText("Stopping after the current database operation…"),
+    ).toBeTruthy();
+    await act(async () => {
+      release();
+      await operation;
+    });
+    expect(manager.duplicateDatabase).toHaveBeenCalledOnce();
+    expect(
+      screen.getByText(
+        "Clone finished — 1 succeeded, 0 failed, 0 skipped, 1 cancelled.",
+      ),
+    ).toBeTruthy();
+    expect(document.querySelectorAll(".toast-item")).toHaveLength(1);
+  });
+
+  it("finishes the active mutation but starts no more work or component refresh after unmount", async () => {
+    const { result, manager, refresh, unmount, guard } = mount(true);
+    let release!: () => void;
+    manager.duplicateDatabase.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { ...alpha, id: "copy-a" };
+    });
+    let operation!: Promise<void>;
+    act(() => {
+      operation = result.current.run("clone", {}, ["a", "b"]);
+    });
+    await waitFor(() =>
+      expect(manager.duplicateDatabase).toHaveBeenCalledOnce(),
+    );
+    unmount();
+    await act(async () => {
+      release();
+      await operation;
+    });
+    expect(manager.duplicateDatabase).toHaveBeenCalledOnce();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(guard.current).toBe(false);
   });
 });

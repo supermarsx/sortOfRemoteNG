@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { ToastContext } from "../../contexts/ToastContext";
 import type { ConnectionDatabase } from "../../types/connection/connection";
 import {
   flushDatabaseIfCurrent,
@@ -60,6 +61,12 @@ export function useDatabaseBulkActions({
   const [error, setError] = useState("");
   const [cancelRequested, setCancelRequested] = useState(false);
   const cancelled = useRef(false);
+  const mounted = useRef(true);
+  const notifications = useContext(ToastContext)?.toast;
+  const activeNotification = useRef<{
+    id: string;
+    toast: NonNullable<typeof notifications>;
+  } | null>(null);
   const inFlight = useRef(false);
   const latestContext = useRef(context);
   latestContext.current = context;
@@ -72,12 +79,17 @@ export function useDatabaseBulkActions({
     });
   }, [collections]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       cancelled.current = true;
-    },
-    [],
-  );
+      const active = activeNotification.current;
+      active?.toast.update(active.id, {
+        message: "Stopping database operations after the current operation…",
+      });
+    };
+  }, []);
 
   const select = (
     mode: "all" | "none" | "filtered" | "invert",
@@ -143,6 +155,28 @@ export function useDatabaseBulkActions({
     setResults([]);
     const outcomes: DatabaseBulkResult[] = [];
     const snapshots: DatabaseExportSnapshot[] = [];
+    const label = {
+      clone: "Clone",
+      export: "Export",
+      delete: "Delete",
+      lock: "Lock",
+      unlock: "Unlock",
+      metadata: "Update",
+    }[action];
+    const notificationId = notifications?.loading(
+      `${label} databases — preparing ${targets.length} operations…`,
+    );
+    if (notificationId && notifications)
+      activeNotification.current = { id: notificationId, toast: notifications };
+    const notifyProgress = (message: string) => {
+      if (notificationId)
+        notifications?.update(notificationId, {
+          message,
+          // Reserve the final unit for package save, refresh and cleanup.
+          progress: { completed: outcomes.length, total: targets.length + 1 },
+        });
+    };
+    let finalError = "";
     try {
       for (const [index, target] of targets.entries()) {
         if (cancelled.current) {
@@ -153,6 +187,9 @@ export function useDatabaseBulkActions({
           });
           continue;
         }
+        notifyProgress(
+          `${label}: ${target.name} — ${index + 1} of ${targets.length}`,
+        );
         try {
           if (action === "export") {
             const ctx = latestContext.current;
@@ -201,9 +238,12 @@ export function useDatabaseBulkActions({
             message: actionError(cause, sensitive),
           });
         }
-        setResults([...outcomes]);
+        if (mounted.current) setResults([...outcomes]);
       }
       if (action === "export" && snapshots.length > 0 && options.export) {
+        notifyProgress(
+          `Export — saving the database package (${snapshots.length} prepared; not saved yet)…`,
+        );
         try {
           const result = await saveDatabaseBulkExport(
             snapshots,
@@ -226,15 +266,42 @@ export function useDatabaseBulkActions({
             }
         }
       }
-      setResults([...outcomes]);
-      await refresh();
+      if (mounted.current) {
+        setResults([...outcomes]);
+        notifyProgress(`${label} — refreshing the database list…`);
+        await refresh();
+      }
     } catch (cause) {
-      setError(actionError(cause, sensitive));
+      finalError = actionError(cause, sensitive);
+      if (mounted.current) setError(finalError);
     } finally {
       for (const id of Object.keys(passwords)) delete passwords[id];
       transitionGuard.current = false;
       inFlight.current = false;
-      setRunning(false);
+      if (mounted.current) setRunning(false);
+      const count = (status: DatabaseBulkResult["status"]) =>
+        outcomes.filter((item) => item.status === status).length;
+      const details = outcomes
+        .filter((item) => item.status === "failed" || item.status === "skipped")
+        .map((item) => `${item.name}: ${item.status} — ${item.message}`);
+      if (finalError) details.push(`Finalization: ${finalError}`);
+      if (notificationId)
+        notifications?.update(notificationId, {
+          type:
+            count("failed") || finalError
+              ? "error"
+              : count("cancelled") || count("skipped")
+                ? "warning"
+                : "success",
+          message: `${label} finished — ${count("success")} succeeded, ${count("failed")} failed, ${count("skipped")} skipped, ${count("cancelled")} cancelled${finalError ? "; finalization needs attention" : ""}.`,
+          details,
+          duration: details.length ? 0 : 6000,
+          progress: {
+            completed: targets.length + 1,
+            total: targets.length + 1,
+          },
+        });
+      activeNotification.current = null;
     }
   };
 
@@ -250,6 +317,10 @@ export function useDatabaseBulkActions({
     cancel: () => {
       cancelled.current = true;
       setCancelRequested(true);
+      const active = activeNotification.current;
+      active?.toast.update(active.id, {
+        message: "Stopping after the current database operation…",
+      });
     },
   };
 }

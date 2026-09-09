@@ -909,6 +909,9 @@ describe("useSessionDetach", () => {
         error: vi.fn(),
         warning: vi.fn(),
         info: vi.fn(),
+        loading: vi.fn(),
+        update: vi.fn(),
+        remove: vi.fn(),
       };
       const inFlight = makeSession("ssh-toast", "ssh", {
         status: "connecting",

@@ -129,5 +129,11 @@ describe("actual database bulk controls", () => {
     );
     expect(mock.deleteDatabase).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/Alpha: failed/)).toBeTruthy();
+    const disclosure = screen
+      .getByText("View operation results (2)")
+      .closest("details");
+    expect(disclosure?.hasAttribute("open")).toBe(false);
+    fireEvent.click(screen.getByText("View operation results (2)"));
+    expect(disclosure?.hasAttribute("open")).toBe(true);
   });
 });

@@ -60,6 +60,9 @@ const toast = {
   error: toastFn(),
   warning: toastFn(),
   info: toastFn(),
+  loading: toastFn(),
+  update: vi.fn(),
+  remove: vi.fn(),
 };
 
 function renderWith(

@@ -11,6 +11,7 @@ import {
   ToastContainer,
   ToastMessage,
   ToastType,
+  ToastUpdate,
 } from "../components/ui/dialogs/Toast";
 
 interface ToastContextType {
@@ -19,6 +20,9 @@ interface ToastContextType {
     error: (message: string, duration?: number) => string;
     warning: (message: string, duration?: number) => string;
     info: (message: string, duration?: number) => string;
+    loading: (message: string) => string;
+    update: (id: string, patch: ToastUpdate) => void;
+    remove: (id: string) => void;
   };
   removeAll: () => void;
 }
@@ -45,7 +49,11 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
       const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       setToasts((prev) => {
         const next = [...prev, { id, type, message, duration }];
-        return next.length > MAX_TOASTS ? next.slice(-MAX_TOASTS) : next;
+        if (next.length <= MAX_TOASTS) return next;
+        // Ordinary notifications never evict an operation that is still active.
+        const disposable = next.findIndex((item) => item.type !== "loading");
+        if (disposable < 0) return prev;
+        return next.filter((_, index) => index !== disposable);
       });
       return id;
     },
@@ -60,6 +68,16 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
     setToasts([]);
   }, []);
 
+  const updateToast = useCallback((id: string, patch: ToastUpdate) => {
+    setToasts((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, ...patch, revision: (item.revision ?? 0) + 1 }
+          : item,
+      ),
+    );
+  }, []);
+
   const toast = useMemo(
     () => ({
       success: (message: string, duration?: number) =>
@@ -70,8 +88,11 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
         addToast("warning", message, duration),
       info: (message: string, duration?: number) =>
         addToast("info", message, duration),
+      loading: (message: string) => addToast("loading", message),
+      update: updateToast,
+      remove: removeToast,
     }),
-    [addToast],
+    [addToast, updateToast, removeToast],
   );
 
   const contextValue = useMemo(
