@@ -58,6 +58,7 @@ import {
 
 import { defineIcon } from "./types";
 import { ORGANIZATION_MARKER_ICONS } from "./organizationMarkers";
+import { FRUIT_ICONS } from "./fruits";
 import { BUILDING_TYPE_ICONS } from "./buildingTypes";
 
 const WinkFace = createLucideIcon("WinkFace", [
@@ -597,4 +598,5 @@ export const GENERIC_SHAPE_ICONS = [
   ]),
   ...ORGANIZATION_MARKER_ICONS,
   ...BUILDING_TYPE_ICONS,
+  ...FRUIT_ICONS,
 ] as const;
