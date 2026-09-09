@@ -24,6 +24,27 @@ const buildIndex = (
   });
 
 describe("connection editor search index", () => {
+  it("discovers folder and connection tab-group inheritance in Organize", () => {
+    for (const isGroup of [true, false]) {
+      const index = buildIndex({ isGroup, defaultTabGroupId: "operations" });
+      for (const query of [
+        "default tab group",
+        "nested",
+        "inherit",
+        "operations",
+      ]) {
+        expect(searchConnectionEditorIndex(index, query)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              tabId: "organize",
+              sectionId: "organize-tab-group",
+              fieldId: "defaultTabGroupId",
+            }),
+          ]),
+        );
+      }
+    }
+  });
   it("routes categorized application searches to Application without exposing hidden Basics credentials", () => {
     const index = buildIndex({
       protocol: "https",

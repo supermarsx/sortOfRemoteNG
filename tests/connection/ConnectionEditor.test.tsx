@@ -11,7 +11,7 @@ import { ConnectionEditor } from "../../src/components/connection/ConnectionEdit
 import { toPersistableIntegrationSettings } from "../../src/hooks/connection/useConnectionEditor";
 import { ToolTabViewer } from "../../src/components/app/ToolPanel";
 import { scrollConnectionEditorSearchTargetIntoView } from "../../src/components/connection/editor/useConnectionEditorSearch";
-import { Connection } from "../../src/types/connection/connection";
+import { Connection, TabGroup } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import { invoke } from "@tauri-apps/api/core";
@@ -234,9 +234,11 @@ const mockConnection: Connection = {
 const ConnectionStateProbe = ({
   onConnections,
   initialConnections,
+  initialTabGroups,
 }: {
   onConnections?: (connections: Connection[]) => void;
   initialConnections?: Connection[];
+  initialTabGroups?: TabGroup[];
 }) => {
   const { state, dispatch } = useConnections();
 
@@ -245,6 +247,10 @@ const ConnectionStateProbe = ({
       dispatch({ type: "SET_CONNECTIONS", payload: initialConnections });
     }
   }, [dispatch, initialConnections]);
+  useEffect(() => {
+    if (initialTabGroups)
+      dispatch({ type: "SET_TAB_GROUPS", payload: initialTabGroups });
+  }, [dispatch, initialTabGroups]);
 
   useEffect(() => {
     onConnections?.(state.connections);
@@ -257,12 +263,14 @@ const renderWithProviders = (
   props: any,
   onConnections?: (connections: Connection[]) => void,
   initialConnections?: Connection[],
+  initialTabGroups?: TabGroup[],
 ) => {
   return render(
     <ConnectionProvider>
       <ConnectionStateProbe
         onConnections={onConnections}
         initialConnections={initialConnections}
+        initialTabGroups={initialTabGroups}
       />
       <ConnectionEditor {...props} />
     </ConnectionProvider>,
@@ -964,6 +972,95 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Notes and Parent Folder", () => {
+    it("edits and persists a folder default in the real Organize tab without rewriting children", async () => {
+      const folder = {
+        ...mockConnection,
+        id: "folder-default",
+        name: "Folder",
+        isGroup: true,
+        defaultTabGroupId: undefined,
+      };
+      const child = {
+        ...mockConnection,
+        id: "folder-child",
+        name: "Child",
+        parentId: folder.id,
+      };
+      let latest: Connection[] = [];
+      renderWithProviders(
+        { isOpen: true, onClose: vi.fn(), connection: folder },
+        (connections) => {
+          latest = connections;
+        },
+        [folder, child],
+        [{ id: "operations", name: "Operations", color: "#4488cc" }],
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
+      const selector = screen.getByRole("combobox", {
+        name: "Default tab group",
+      });
+      expect(selector).toBeVisible();
+      expect(
+        screen.getByText(/including nested and future connections/),
+      ).toBeVisible();
+      fireEvent.click(selector);
+      fireEvent.mouseDown(screen.getByRole("option", { name: "Operations" }));
+      expect(selector).toHaveTextContent("Operations");
+      expect(
+        (
+          screen.getByTestId("connection-editor") as HTMLFormElement
+        ).checkValidity(),
+      ).toBe(true);
+      fireEvent.click(screen.getByTestId("editor-save"));
+      await waitFor(() =>
+        expect(
+          latest.find((item) => item.id === folder.id)?.defaultTabGroupId,
+        ).toBe("operations"),
+      );
+      expect(
+        latest.find((item) => item.id === child.id)?.defaultTabGroupId,
+      ).toBeUndefined();
+    });
+
+    it("shows inherited defaults for a connection and an actionable empty-state hint without groups", async () => {
+      const folder = {
+        ...mockConnection,
+        id: "parent-default",
+        isGroup: true,
+        defaultTabGroupId: "operations",
+      };
+      const child = {
+        ...mockConnection,
+        parentId: folder.id,
+        defaultTabGroupId: undefined,
+      };
+      const first = renderWithProviders(
+        { isOpen: true, onClose: vi.fn(), connection: child },
+        undefined,
+        [folder, child],
+        [{ id: "operations", name: "Operations", color: "#4488cc" }],
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
+      expect(
+        screen.getByRole("combobox", { name: "Default tab group" }),
+      ).toHaveTextContent("Inherit: Operations");
+      expect(
+        screen.getByText(/Overrides the parent folder default/),
+      ).toBeVisible();
+      first.unmount();
+      renderWithProviders({
+        isOpen: true,
+        onClose: vi.fn(),
+        connection: { ...folder, defaultTabGroupId: undefined },
+      });
+      fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
+      expect(
+        screen.getByRole("combobox", { name: "Default tab group" }),
+      ).toBeVisible();
+      expect(
+        screen.getByText(/Create a tab group in Tab Group Manager/),
+      ).toBeVisible();
+    });
     it("shows Notes directly and persists edited content without an accordion", async () => {
       let latestConnections: Connection[] = [];
       renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {

@@ -583,7 +583,7 @@ export interface Connection
    */
   powerShellRemoting?: PowerShellRemotingSettings;
 
-  /** Auto-assign new sessions for this connection to this tab group. */
+  /** Default for new sessions; folders pass it to descendants unless overridden. */
   defaultTabGroupId?: string;
 }
 

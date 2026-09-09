@@ -5,7 +5,15 @@ import {
   type SessionSnapshotReconciliationDiagnostics,
 } from "../../src/contexts/ConnectionProvider";
 import type { ConnectionState } from "../../src/contexts/ConnectionContextTypes";
-import type { ConnectionSession } from "../../src/types/connection/connection";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
+import {
+  prepareConnectionForClone,
+  prepareConnectionForExport,
+  normalizeImportedAdvancedProtocolConnection,
+} from "../../src/components/ImportExport/advancedProtocolPortability";
 
 const session: ConnectionSession = {
   id: "session-1",
@@ -40,6 +48,142 @@ const state: ConnectionState = {
   sidebarCollapsed: false,
   tabGroups: [],
 };
+
+describe("folder default tab-group inheritance", () => {
+  const connection = (
+    id: string,
+    overrides: Partial<Connection> = {},
+  ): Connection => ({
+    id,
+    name: id,
+    protocol: "ssh",
+    hostname: "fixture.example.test",
+    port: 22,
+    isGroup: false,
+    createdAt: "2026-09-09T00:00:00Z",
+    updatedAt: "2026-09-09T00:00:00Z",
+    ...overrides,
+  });
+  const groups = [
+    "root-group",
+    "near-group",
+    "own-group",
+    "explicit-group",
+  ].map((id) => ({ id, name: id, color: "#4488cc" }));
+  const tree = [
+    connection("root", { isGroup: true, defaultTabGroupId: "root-group" }),
+    connection("near", {
+      isGroup: true,
+      parentId: "root",
+      defaultTabGroupId: "near-group",
+    }),
+    connection("connection-1", {
+      parentId: "near",
+      defaultTabGroupId: "own-group",
+    }),
+  ];
+  const add = (connections = tree, explicit?: string) =>
+    connectionReducer(
+      { ...state, connections, tabGroups: groups },
+      {
+        type: "ADD_SESSION",
+        payload: { ...session, id: "new-session", tabGroupId: explicit },
+      },
+    );
+
+  it("prioritizes explicit session, connection, nearest folder, then outer folder defaults", () => {
+    expect(add(tree, "explicit-group").sessions.at(-1)?.tabGroupId).toBe(
+      "explicit-group",
+    );
+    expect(add().sessions.at(-1)?.tabGroupId).toBe("own-group");
+    const childInherits = tree.map((item) =>
+      item.id === "connection-1"
+        ? { ...item, defaultTabGroupId: undefined }
+        : item,
+    );
+    expect(add(childInherits).sessions.at(-1)?.tabGroupId).toBe("near-group");
+    const outerInherits = childInherits.map((item) =>
+      item.id === "near" ? { ...item, defaultTabGroupId: undefined } : item,
+    );
+    expect(add(outerInherits).sessions.at(-1)?.tabGroupId).toBe("root-group");
+  });
+
+  it("skips deleted group IDs and safely stops cycles, missing parents and non-folder parents", () => {
+    const deleted = tree.map((item) =>
+      item.id !== "root"
+        ? { ...item, defaultTabGroupId: "deleted-group" }
+        : item,
+    );
+    expect(
+      add(deleted, "deleted-session-group").sessions.at(-1)?.tabGroupId,
+    ).toBe("root-group");
+    for (const connections of [
+      [connection("connection-1", { parentId: "missing" })],
+      [
+        connection("connection-1", { parentId: "non-folder" }),
+        connection("non-folder", { defaultTabGroupId: "root-group" }),
+      ],
+      [
+        connection("connection-1", { parentId: "a" }),
+        connection("a", { isGroup: true, parentId: "b" }),
+        connection("b", { isGroup: true, parentId: "a" }),
+      ],
+      [],
+    ])
+      expect(
+        add(connections, "deleted-session-group").sessions.at(-1)?.tabGroupId,
+      ).toBeUndefined();
+  });
+
+  it("applies current folder defaults to future children without rewriting child records or open sessions", () => {
+    const child = connection("future", { parentId: "root" });
+    const before = {
+      ...state,
+      connections: [tree[0], child],
+      tabGroups: groups,
+      sessions: [{ ...session, tabGroupId: "own-group" }],
+    };
+    const edited = connectionReducer(before, {
+      type: "UPDATE_CONNECTION",
+      payload: { ...tree[0], defaultTabGroupId: "near-group" },
+    });
+    expect(edited.sessions).toBe(before.sessions);
+    const after = connectionReducer(edited, {
+      type: "ADD_SESSION",
+      payload: { ...session, id: "future-session", connectionId: "future" },
+    });
+    expect(after.sessions.at(-1)?.tabGroupId).toBe("near-group");
+    expect(after.connections).toBe(edited.connections);
+    expect(after.connections.find((item) => item.id === "future")).toBe(child);
+    expect(after.sessions[0]).toBe(before.sessions[0]);
+  });
+
+  it("retains the non-secret folder default through JSON export/import and clone preparation", () => {
+    const folder = { ...tree[0], password: "must-not-export" };
+    const portable = prepareConnectionForExport(folder, false);
+    expect(portable.defaultTabGroupId).toBe("root-group");
+    expect(JSON.stringify(portable)).not.toContain("must-not-export");
+    const imported = normalizeImportedAdvancedProtocolConnection(
+      JSON.parse(JSON.stringify(portable)),
+    );
+    expect(imported.defaultTabGroupId).toBe("root-group");
+    expect(prepareConnectionForClone(imported, false).defaultTabGroupId).toBe(
+      "root-group",
+    );
+    const withoutGroups = connectionReducer(
+      {
+        ...state,
+        connections: [
+          imported,
+          connection("connection-1", { parentId: imported.id }),
+        ],
+        tabGroups: [],
+      },
+      { type: "ADD_SESSION", payload: session },
+    );
+    expect(withoutGroups.sessions.at(-1)?.tabGroupId).toBeUndefined();
+  });
+});
 
 describe("connectionReducer UPDATE_SESSION", () => {
   it("merges a patch without erasing newer lifecycle fields", () => {

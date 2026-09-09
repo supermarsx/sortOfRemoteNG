@@ -14,6 +14,8 @@ Create folders for a team, environment, or purpose. Give connections recognizabl
 
 Use the connection editor's **Basics** for the destination, **Protocol** for protocol-specific options, **Organize** for placement and appearance, and **Notes** for context. Search the editor's settings when you know the option's name but not its tab.
 
+To group newly opened tabs automatically, edit a folder and choose **Organize → Default tab group**. Its children inherit that choice, including nested folders and connections added later. An explicit session choice wins, followed by a connection's own default and then its nearest folder with an available group. Leave the choice at **Inherit** to use the parent default, or no group when none exists. Create groups in Tab Group Manager first. This does not rewrite child records or move already-open tabs. JSON export/import and cloning retain the group reference, but the matching group must exist in the destination; connection-only exports do not create tab groups, and CSV/XML omit this field.
+
 Read [Connections & Editor]({{ '/connections-editor/' | relative_url }}) for the full editor map, and [Protocols]({{ '/protocols/' | relative_url }}) before choosing an unfamiliar client. Available choices depend on your native build and the destination's requirements.
 
 ## Work in sessions

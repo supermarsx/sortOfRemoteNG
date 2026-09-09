@@ -2920,6 +2920,32 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
     connectionOnly: true,
   },
   {
+    id: "organize-tab-group",
+    tabId: "organize",
+    label: "Default tab group",
+    keywords: [
+      "organize",
+      "folder",
+      "children",
+      "nested",
+      "inherit",
+      "automatic",
+      "tabs",
+      "group",
+    ],
+    copy: [
+      "Automatically groups new sessions for children, including nested and future connections.",
+      "Open tabs are not moved.",
+    ],
+    fields: [
+      {
+        id: "defaultTabGroupId",
+        label: "Default tab group",
+        valuePaths: ["defaultTabGroupId"],
+      },
+    ],
+  },
+  {
     id: "organize-icon",
     tabId: "organize",
     label: "Connection Icon",

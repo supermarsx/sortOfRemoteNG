@@ -45,6 +45,7 @@ describe("connection editor registry", () => {
       "behavior-focus",
       "behavior-connection",
       "behavior-automation",
+      "organize-tab-group",
       "organize-icon",
       "organize-tags",
       "notes-description",
@@ -75,6 +76,7 @@ describe("connection editor registry", () => {
     ).toEqual([
       "general-basics",
       "general-parent",
+      "organize-tab-group",
       "organize-icon",
       "organize-tags",
       "notes-description",

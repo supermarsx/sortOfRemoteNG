@@ -28,6 +28,7 @@ import {
   formatConnectionDiff,
 } from "../utils/connection/diffConnection";
 import { normalizeAdvancedProtocolConnection } from "../utils/connection/normalizeAdvancedProtocolConnection";
+import { resolveDefaultTabGroup } from "../utils/session/resolveDefaultTabGroup";
 import {
   mergeLocalSessionUpdate,
   reconcileSessionLifecycleSnapshot,
@@ -218,20 +219,18 @@ export const connectionReducer = (
       // Update connection list filters
       return { ...state, filter: { ...state.filter, ...action.payload } };
     case "ADD_SESSION": {
-      // Register a new connection session. If the session has no explicit
-      // tabGroupId, fall back to the source connection's defaultTabGroupId
-      // (only when that group still exists) so users can auto-route
-      // sessions for a given host into a chosen tab group.
-      let session = action.payload;
-      if (!session.tabGroupId && session.connectionId) {
-        const conn = state.connections.find(
-          (c) => c.id === session.connectionId,
-        );
-        const defaultId = conn?.defaultTabGroupId;
-        if (defaultId && state.tabGroups.some((g) => g.id === defaultId)) {
-          session = { ...session, tabGroupId: defaultId };
-        }
-      }
+      // Explicit session > connection > nearest ancestor folder. Missing group
+      // references are skipped, and existing tabs/child records remain untouched.
+      const tabGroupId = resolveDefaultTabGroup(
+        action.payload.connectionId,
+        state.connections,
+        state.tabGroups,
+        action.payload.tabGroupId,
+      );
+      const session =
+        tabGroupId === action.payload.tabGroupId
+          ? action.payload
+          : { ...action.payload, tabGroupId };
       return { ...state, sessions: [...state.sessions, session] };
     }
     case "UPDATE_SESSION":
