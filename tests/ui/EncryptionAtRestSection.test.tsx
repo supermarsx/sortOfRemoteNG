@@ -145,6 +145,71 @@ beforeEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────
 
 describe("EncryptionAtRestSection", () => {
+  it("inspects master-key evidence only on demand and refreshes status", async () => {
+    invokeImpl = makeInvoke(async (command) => {
+      if (command === "encryption_status") return unlockedVaultStatus;
+      if (command === "encryption_master_key_health")
+        return {
+          proven: true,
+          criticalFailure: false,
+          verified: ["artifact-policy.enc"],
+          issues: ["settings.enc could not be authenticated"],
+        };
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    render(<EncryptionAtRestSection />);
+    const inspect = await screen.findByRole("button", {
+      name: "Inspect master-key health",
+    });
+    expect(
+      invokeImpl.mock.calls.some(
+        ([name]) => name === "encryption_master_key_health",
+      ),
+    ).toBe(false);
+    const before = invokeImpl.mock.calls.filter(
+      ([name]) => name === "encryption_status",
+    ).length;
+    fireEvent.click(inspect);
+    expect(
+      await screen.findByText("Verified: artifact-policy.enc."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("settings.enc could not be authenticated"),
+    ).toBeInTheDocument();
+    expect(
+      invokeImpl.mock.calls.filter(
+        ([name]) => name === "encryption_master_key_health",
+      ),
+    ).toHaveLength(1);
+    await waitFor(() =>
+      expect(
+        invokeImpl.mock.calls.filter(([name]) => name === "encryption_status")
+          .length,
+      ).toBeGreaterThan(before),
+    );
+  });
+
+  it("surfaces explicit master-key inspection failure without claiming health", async () => {
+    invokeImpl = makeInvoke(async (command) => {
+      if (command === "encryption_status") return unlockedVaultStatus;
+      if (command === "encryption_master_key_health")
+        throw new Error("Profile evidence could not be inspected");
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    render(<EncryptionAtRestSection />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Inspect master-key health" }),
+    );
+    expect(
+      await screen.findByText("Profile evidence could not be inspected"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "The loaded key authenticated current profile evidence.",
+      ),
+    ).toBeNull();
+  });
+
   it("grants the selected portable export destination and ignores picker cancellation", async () => {
     invokeImpl = makeInvoke(async (command) => {
       if (command === "encryption_status") return unlockedVaultStatus;

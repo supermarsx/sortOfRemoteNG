@@ -38,6 +38,7 @@ import {
 import { useDatabaseEncryptionStatus } from "../../../../hooks/settings/useDatabaseEncryptionStatus";
 import DatabaseProtectionStatus from "./DatabaseProtectionStatus";
 import ArtifactProtectionPanel from "./ArtifactProtectionPanel";
+import { MasterKeyHealthPanel } from "../../../encryption/MasterKeyHealthPanel";
 
 const EncryptionAtRestSection: React.FC = () => {
   const enc = useEncryption();
@@ -396,6 +397,7 @@ const EncryptionAtRestSection: React.FC = () => {
               </span>
             </div>
           ) : null}
+          <MasterKeyHealthPanel onInspected={enc.refresh} />
         </Card>
       </div>
 

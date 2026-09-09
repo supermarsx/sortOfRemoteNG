@@ -168,6 +168,12 @@ pub fn unwrap(password: &str, file_bytes: &[u8]) -> Result<MasterDek, WrapError>
     if password.is_empty() {
         return Err(WrapError::EmptyPassword);
     }
+    let params = inspect_format(file_bytes)?;
+    unwrap_validated(password, file_bytes, params)
+}
+
+/// Read-only structural/KDF validation; does not authenticate a password or key.
+pub fn inspect_format(file_bytes: &[u8]) -> Result<Argon2Params, WrapError> {
     if file_bytes.len() < FILE_LEN {
         return Err(WrapError::Truncated(FILE_LEN));
     }
@@ -195,7 +201,14 @@ pub fn unwrap(password: &str, file_bytes: &[u8]) -> Result<MasterDek, WrapError>
         parallelism,
     };
     params.validate().map_err(WrapError::InvalidParams)?;
+    Ok(params)
+}
 
+fn unwrap_validated(
+    password: &str,
+    file_bytes: &[u8],
+    params: Argon2Params,
+) -> Result<MasterDek, WrapError> {
     let mut salt = [0u8; SALT_LEN];
     salt.copy_from_slice(&file_bytes[20..36]);
     let mut nonce_bytes = [0u8; NONCE_LEN];

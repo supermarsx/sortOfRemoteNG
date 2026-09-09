@@ -3,6 +3,7 @@ use connection_clone_cmds as connection_clone_commands;
 #[cfg(feature = "opkssh")]
 use opkssh_commands::inner as opkssh_inner_commands;
 use sorng_encryption::commands as encryption_commands;
+use sorng_encryption::master_recovery as master_recovery_commands;
 use sorng_probes::commands as probe_commands;
 
 mod runtime_capability_commands {
@@ -114,6 +115,10 @@ pub fn is_command(command: &str) -> bool {
             | "api_regenerate_key"
             | "api_reveal_key"
             | "encryption_status"
+            | "encryption_master_key_health"
+            | "encryption_prepare_master_recovery"
+            | "encryption_commit_master_recovery"
+            | "encryption_cancel_master_recovery"
             | "encryption_setup"
             | "encryption_unlock"
             | "encryption_lock"
@@ -1462,6 +1467,10 @@ define_command_group!(
         api_server_commands::api_regenerate_key,
         api_server_commands::api_reveal_key,
         encryption_commands::encryption_status,
+        master_recovery_commands::encryption_master_key_health,
+        master_recovery_commands::encryption_prepare_master_recovery,
+        master_recovery_commands::encryption_commit_master_recovery,
+        master_recovery_commands::encryption_cancel_master_recovery,
         encryption_commands::encryption_setup,
         encryption_commands::encryption_unlock,
         encryption_commands::encryption_lock,

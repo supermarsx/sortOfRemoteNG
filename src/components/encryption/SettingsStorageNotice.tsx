@@ -1,5 +1,88 @@
 import { useSettings } from "../../contexts/SettingsContext";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getInvoke } from "../../utils/tauri/invoke";
+import type { EncryptionStatus } from "../../types/encryption/encryption";
+
+function InterruptedStorageRecovery({
+  onRecovered,
+}: {
+  onRecovered: () => Promise<void>;
+}) {
+  const [available, setAvailable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  useEffect(() => {
+    let active = true;
+    const inspect = async () => {
+      const invoke = await getInvoke();
+      if (!invoke) return;
+      const status = await invoke<EncryptionStatus>("encryption_status");
+      if (active)
+        setAvailable(
+          status.unlocked && status.artifactRecoveryRequired === true,
+        );
+    };
+    void inspect().catch(() => undefined);
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event")
+      .then(async ({ listen }) => {
+        const stop = await listen("encryption:unlocked", () => {
+          void inspect().catch(() => undefined);
+        });
+        if (!active) stop();
+        else unlisten = stop;
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, []);
+  if (!available) return null;
+  const recover = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const invoke = await getInvoke();
+      if (!invoke) throw new Error("Native storage recovery is unavailable.");
+      await invoke("encryption_recover_artifact_transition");
+      await onRecovered();
+      setAvailable(false);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 text-sm">
+      <p>
+        The original key is loaded, but an interrupted storage transaction must
+        finish recovery before settings can load. Existing encrypted data has
+        not been reset.
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        className="rounded-md border border-[var(--color-border)] px-3 py-2 hover:bg-[var(--color-border)] disabled:opacity-50"
+        onClick={() => void recover()}
+      >
+        {busy
+          ? "Recovering interrupted storage…"
+          : "Recover interrupted storage operation"}
+      </button>
+      {error && (
+        <p role="alert" className="text-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** Never expose a defaults-based settings UI after a locked/failed persisted load. */
 export function SettingsStorageNotice() {
@@ -49,6 +132,9 @@ export function SettingsStorageNotice() {
           >
             Retry loading global settings
           </button>
+        )}
+        {settingsLoadError && (
+          <InterruptedStorageRecovery onRecovered={reloadSettings} />
         )}
       </div>
     </div>

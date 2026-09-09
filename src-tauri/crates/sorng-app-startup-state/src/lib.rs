@@ -308,15 +308,34 @@ pub fn register_infrastructure_prefix(
     let enc_state = sorng_encryption::EncryptionState::new();
     let dek_wrapper_probe = probe_dek_wrapper(&app_dir);
     if dek_wrapper_probe == DekWrapperProbe::ProbeFailed {
+        sorng_encryption::master_recovery::record_load_failure(&enc_state, "Master-password receipt could not be inspected. Preserve existing files and use verified recovery.");
         eprintln!("Encryption-at-rest: DEK wrapper presence could not be confirmed; vault bootstrap skipped.");
     }
     if should_bootstrap_vault(dek_wrapper_probe, sorng_vault::keychain::is_available()) {
-        match tauri::async_runtime::block_on(sorng_encryption::profile_guard::load_or_create_vault_dek(&app_dir)) {
+        match tauri::async_runtime::block_on(
+            sorng_encryption::profile_guard::load_or_create_vault_dek(&app_dir),
+        ) {
             Ok(dek) => {
-                tauri::async_runtime::block_on(enc_state.install(dek));
-                println!("Encryption-at-rest: vault DEK loaded and installed at boot.");
+                match sorng_encryption::master_recovery::validate_unlock_candidate(&app_dir, &dek) {
+                    Ok(health) => {
+                        tauri::async_runtime::block_on(enc_state.install(dek));
+                        sorng_encryption::master_recovery::cache_health(&enc_state, health);
+                        println!("Encryption-at-rest: verified vault DEK installed at boot.");
+                    }
+                    Err(_) => {
+                        sorng_encryption::master_recovery::record_load_failure(&enc_state, "Current encrypted profile rejected the OS-vault master key. Verified original-key recovery is required.");
+                        eprintln!("Encryption-at-rest: current profile rejected the vault key; verified recovery is required.");
+                    }
+                }
             }
-            Err(_) => eprintln!("Encryption-at-rest: existing key could not be recovered safely; startup remains locked."),
+            Err(_) => {
+                if sorng_encryption::profile_guard::probe_profile(&app_dir)
+                    != sorng_encryption::profile_guard::ProfileEvidence::Fresh
+                {
+                    sorng_encryption::master_recovery::record_load_failure(&enc_state, "The existing OS-vault master key could not be loaded safely. No replacement key was created.");
+                }
+                eprintln!("Encryption-at-rest: existing key could not be recovered safely; startup remains locked.");
+            }
         }
     }
     // This only verifies policy and detects interrupted work. Startup never

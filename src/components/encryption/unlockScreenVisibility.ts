@@ -9,7 +9,9 @@ import type { EncryptionStatus } from "../../types/encryption/encryption";
 export function shouldShowUnlockScreen(
   status: EncryptionStatus | null,
 ): boolean {
-  if (!status || status.unlocked) return false;
+  if (!status) return false;
+  if (status.criticalKeyFailure === true) return true;
+  if (status.unlocked) return false;
 
   return (
     status.vaultHasMasterDek ||

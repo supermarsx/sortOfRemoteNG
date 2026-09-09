@@ -63,6 +63,11 @@ pub struct EncryptionStatus {
     /// No usable receipt is available, but existing/uncertain profile evidence
     /// forbids creating a replacement key. The UI must offer recovery, not setup.
     pub recovery_required: bool,
+    /// Loaded key/receipt failed a current-profile integrity check. The unlock
+    /// overlay must remain available even if raw key bytes are in memory.
+    pub critical_key_failure: bool,
+    pub key_health_issues: Vec<String>,
+    pub artifact_recovery_required: bool,
 }
 
 /// Caller's setup method choice. Matches the `EncryptionSettings.
@@ -363,18 +368,47 @@ pub async fn encryption_status(
     let settings_encrypted_on_disk = settings_enc.as_ref().is_some_and(|p| p.exists());
     let settings_plaintext_present = settings_json.as_ref().is_some_and(|p| p.exists());
     let unlocked = state.is_unlocked().await;
-    let recovery_required = !unlocked
-        && !vault_has_master_dek
-        && !password_wrap_present
-        && (vault_probe_uncertain
-            || app
-                .path()
-                .app_data_dir()
-                .map(|dir| {
-                    crate::profile_guard::probe_profile(&dir)
-                        != crate::profile_guard::ProfileEvidence::Fresh
-                })
-                .unwrap_or(true));
+    let candidate_health = crate::master_recovery::cached_health(&state);
+    let mut key_health_issues = candidate_health
+        .as_ref()
+        .map(|health| health.issues.clone())
+        .unwrap_or_default();
+    let malformed_wrapper = if let Some(path) = dek_enc.as_ref().filter(|_| password_wrap_present) {
+        match read_bounded_regular_file(path, password_wrap::FILE_LEN as u64).and_then(|bytes| {
+            password_wrap::inspect_format(&bytes)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(()) => false,
+            Err(error) => {
+                key_health_issues.push(format!("Password receipt: {error}"));
+                true
+            }
+        }
+    } else {
+        false
+    };
+    if let Some(error) = state.artifact_policy_error().filter(|_| unlocked) {
+        key_health_issues.push(error);
+    }
+    let critical_key_failure = malformed_wrapper
+        || candidate_health
+            .as_ref()
+            .is_some_and(|health| health.critical_failure)
+        || (unlocked && state.artifact_policy_error().is_some());
+    let recovery_required = critical_key_failure
+        || (!unlocked
+            && !vault_has_master_dek
+            && !password_wrap_present
+            && (vault_probe_uncertain
+                || app
+                    .path()
+                    .app_data_dir()
+                    .map(|dir| {
+                        crate::profile_guard::probe_profile(&dir)
+                            != crate::profile_guard::ProfileEvidence::Fresh
+                    })
+                    .unwrap_or(true)));
 
     // Derive the "current" mode from the disk signals:
     let master_key_storage = match (
@@ -405,6 +439,9 @@ pub async fn encryption_status(
         settings_encrypted_on_disk,
         settings_plaintext_present,
         recovery_required,
+        critical_key_failure,
+        key_health_issues,
+        artifact_recovery_required: state.artifact_recovery_required(),
     })
 }
 
@@ -515,6 +552,35 @@ pub async fn encryption_unlock(
     let _settings_guard = crate::settings_coordinator::lock().await;
     let password = password.map(Zeroizing::new);
     if state.is_unlocked().await {
+        let root = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "Profile directory unavailable")?;
+        let generation = state.key_generation();
+        let candidate = state
+            .with_master(|key| MasterDek::from_bytes(key.bytes_for_password_wrap()).unwrap())
+            .await
+            .ok_or("Key changed during unlock validation")?;
+        let health = tokio::task::spawn_blocking(move || {
+            crate::master_recovery::inspect_candidate(&root, &candidate)
+        })
+        .await
+        .map_err(|_| "Key health inspection failed")?;
+        let health =
+            crate::master_recovery::accept_inspected_health(&state, generation, health).await?;
+        if health.critical_failure {
+            let _ = app.emit(EVENT_LOCKED, ());
+            return Err("The loaded master key does not authenticate current profile evidence; native storage is locked. Use verified recovery.".into());
+        }
+        if state.artifact_policy_error().is_some() {
+            state.lock().await;
+            crate::master_recovery::record_load_failure(
+                &state,
+                "The loaded key has an unresolved artifact-policy failure.",
+            );
+            let _ = app.emit(EVENT_LOCKED, ());
+            return Err("The loaded key has an unresolved artifact-policy failure; inspect or recover the existing profile before continuing.".into());
+        }
         return Ok(UnlockResult::AlreadyUnlocked);
     }
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
@@ -571,12 +637,20 @@ pub async fn encryption_unlock(
             .await
             .map_err(|e| format!("read_dek: {e}"))?;
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
+            let health = crate::master_recovery::validate_unlock_candidate(&dir, &dek)
+                .inspect_err(|_| {
+                    crate::master_recovery::record_load_failure(
+                        &state,
+                        "OS-vault key does not authenticate current profile evidence.",
+                    );
+                })?;
             record_security_audit(
                 &dir,
                 AuditEvent::UnlockSuccess,
                 serde_json::json!({ "method": "vault" }),
             )?;
             state.install(dek).await;
+            crate::master_recovery::cache_health(&state, health);
             let _ = app.emit(EVENT_UNLOCKED, ());
             // Vault unlock is silent and has no failed-attempt history
             // to reset; password-mode lockouts live in their own file
@@ -599,6 +673,9 @@ pub async fn encryption_unlock(
             let blob = read_bounded_regular_file(&dek_path, password_wrap::FILE_LEN as u64)?;
             match password_wrap::unwrap(pw, &blob) {
                 Ok(dek) => {
+                    let health = crate::master_recovery::validate_unlock_candidate(&dir, &dek).inspect_err(|_| {
+                        crate::master_recovery::record_load_failure(&state, "Password receipt contains a key that does not authenticate current profile evidence.");
+                    })?;
                     let lockout = update_lockout_state(&dir, LockoutState::record_success);
                     let lockout_result = persist_lockout_state(&dir, &lockout);
                     let audit_result = record_security_audit(
@@ -609,6 +686,7 @@ pub async fn encryption_unlock(
                     lockout_result?;
                     audit_result?;
                     state.install(dek).await;
+                    crate::master_recovery::cache_health(&state, health);
                     let _ = app.emit(EVENT_UNLOCKED, ());
                     Ok(UnlockResult::UnlockedFromPassword)
                 }

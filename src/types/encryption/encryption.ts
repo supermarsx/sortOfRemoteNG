@@ -49,6 +49,10 @@ export type SetupMethod =
 export interface EncryptionStatus {
   /** Encrypted/unverifiable profile evidence requires original-key recovery, never fresh setup. */
   recoveryRequired?: boolean;
+  /** Native last-validated key/receipt health; not an all-artifact scan. */
+  criticalKeyFailure?: boolean;
+  keyHealthIssues?: string[];
+  artifactRecoveryRequired?: boolean;
   schemaVersion: 0 | 2;
   masterKeyStorage: MasterKeyStorage | null;
   unlocked: boolean;

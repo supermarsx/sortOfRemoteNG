@@ -125,46 +125,31 @@ describe("shouldShowUnlockScreen", () => {
 });
 
 describe("UnlockScreen", () => {
-  it("uses the native selected portable key path and cancellation changes nothing", async () => {
-    const importPortableDek = vi.fn().mockResolvedValue(undefined);
+  it("selects a native recovery file without calling the destructive importer", async () => {
+    const importer = vi.fn();
     hookOverride = {
       status: baseStatus,
       lockout: zeroLockout,
       unlock: vi.fn(),
-      importPortableDek,
+      importPortableDek: importer,
     };
     portableDialog.open
+      .mockReset()
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce("/granted/recovery.dek");
     render(<UnlockScreen />);
     fireEvent.click(screen.getByTestId("unlock-import-toggle"));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Choose portable master key file" }),
-    );
+    fireEvent.click(screen.getByText("Choose portable master key file"));
     await waitFor(() => expect(portableDialog.open).toHaveBeenCalledTimes(1));
-    expect(importPortableDek).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Choose portable master key file" }),
-    );
+    expect(screen.queryByLabelText("Selected recovery file")).toBeNull();
+    fireEvent.click(screen.getByText("Choose portable master key file"));
     await waitFor(() =>
-      expect(
-        (
-          screen.getByPlaceholderText(
-            "/secure/backup/sorng-master.dek",
-          ) as HTMLInputElement
-        ).value,
-      ).toBe("/granted/recovery.dek"),
-    );
-    fireEvent.change(screen.getByPlaceholderText("Export password"), {
-      target: { value: "recovery-password" },
-    });
-    fireEvent.click(screen.getByTestId("unlock-import-submit"));
-    await waitFor(() =>
-      expect(importPortableDek).toHaveBeenCalledWith(
+      expect(screen.getByLabelText("Selected recovery file")).toHaveTextContent(
         "/granted/recovery.dek",
-        "recovery-password",
       ),
     );
+    expect(importer).not.toHaveBeenCalled();
+    expect(screen.getByText("Verify recovery key")).toBeDisabled();
   });
   it("renders nothing when status is null", () => {
     hookOverride = {
@@ -408,7 +393,7 @@ describe("UnlockScreen", () => {
     ).toBe(false);
   });
 
-  it("serializes password unlock and portable recovery while an operation is pending", async () => {
+  it("serializes password unlock and verified recovery while an operation is pending", async () => {
     let finish!: (result: UnlockResult) => void;
     const unlock = vi.fn(
       () =>
@@ -416,22 +401,9 @@ describe("UnlockScreen", () => {
           finish = resolve;
         }),
     );
-    const importPortableDek = vi.fn();
-    hookOverride = {
-      status: baseStatus,
-      lockout: zeroLockout,
-      unlock,
-      importPortableDek,
-    };
+    hookOverride = { status: baseStatus, lockout: zeroLockout, unlock };
     render(<UnlockScreen />);
     fireEvent.click(screen.getByTestId("unlock-import-toggle"));
-    fireEvent.change(
-      screen.getByPlaceholderText("/secure/backup/sorng-master.dek"),
-      { target: { value: "/key.dek" } },
-    );
-    fireEvent.change(screen.getByPlaceholderText("Export password"), {
-      target: { value: "export-secret" },
-    });
     fireEvent.change(screen.getByPlaceholderText("Master password"), {
       target: { value: "master-secret" },
     });
@@ -439,17 +411,11 @@ describe("UnlockScreen", () => {
     fireEvent.keyDown(screen.getByPlaceholderText("Master password"), {
       key: "Enter",
     });
-    fireEvent.keyDown(screen.getByPlaceholderText("Export password"), {
-      key: "Enter",
-    });
-    fireEvent.click(screen.getByTestId("unlock-import-submit"));
     expect(unlock).toHaveBeenCalledTimes(1);
-    expect(importPortableDek).not.toHaveBeenCalled();
+    expect(screen.getByText("Choose portable master key file")).toBeDisabled();
+    expect(screen.getByLabelText("Backup password")).toBeDisabled();
     await act(async () => finish("unlocked-from-password"));
-    expect(
-      (screen.getByPlaceholderText("Master password") as HTMLInputElement)
-        .value,
-    ).toBe("");
+    expect(screen.getByPlaceholderText("Master password")).toHaveValue("");
   });
 
   it("clears both password fields and notifies once when another window unlocks", () => {
@@ -464,7 +430,7 @@ describe("UnlockScreen", () => {
       target: { value: "secret" },
     });
     fireEvent.click(screen.getByTestId("unlock-import-toggle"));
-    fireEvent.change(screen.getByPlaceholderText("Export password"), {
+    fireEvent.change(screen.getByLabelText("Backup password"), {
       target: { value: "export-secret" },
     });
     hookOverride = {
@@ -481,113 +447,59 @@ describe("UnlockScreen", () => {
         .value,
     ).toBe("");
     expect(
-      (screen.getByPlaceholderText("Export password") as HTMLInputElement)
-        .value,
+      (screen.getByLabelText("Backup password") as HTMLInputElement).value,
     ).toBe("");
     expect(hookOverride.unlock).not.toHaveBeenCalled();
   });
 
-  it("renders the portable-dek import toggle when a password wrap is present", () => {
-    // The recovery panel is the vault-eviction escape hatch — gated on
-    // (passwordWrapPresent || !vaultAvailable). With a wrap on disk,
-    // the toggle must be discoverable so users locked out of an
-    // unreadable vault can still import a fresh .dek.
+  it("offers verified recovery when a password wrap is present", () => {
     hookOverride = {
       status: baseStatus,
       lockout: zeroLockout,
       unlock: vi.fn(),
     };
-    render(<UnlockScreen onUnlocked={() => {}} />);
-    const toggle = screen.getByTestId("unlock-import-toggle");
-    expect(toggle).toBeTruthy();
-
-    fireEvent.click(toggle);
-
-    // After expanding, the path + password inputs render and submit
-    // stays disabled until both are filled (prevents accidental empty
-    // submits).
+    render(<UnlockScreen />);
+    fireEvent.click(screen.getByTestId("unlock-import-toggle"));
+    expect(screen.getByLabelText("Backup password")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("/secure/backup/sorng-master.dek"),
-    ).toBeTruthy();
-    expect(screen.getByPlaceholderText("Export password")).toBeTruthy();
-    const submit = screen.getByTestId(
-      "unlock-import-submit",
-    ) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
+      screen.getByLabelText("New local master password"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Verify recovery key")).toBeDisabled();
   });
 
-  it("import-dek submits with the typed path and password", async () => {
-    // Lock the call shape: handleImportDek invokes the hook with
-    // positional (path, password) — if a refactor accidentally swaps
-    // them or drops one, the import would attempt to unwrap with the
-    // wrong material and the user would see a misleading
-    // wrong-password banner.
-    const importPortableDek = vi.fn().mockResolvedValue(undefined);
+  it("keeps recovery accessible for a loaded but rejected master key", () => {
+    const onUnlocked = vi.fn();
+    hookOverride = {
+      status: {
+        ...baseStatus,
+        unlocked: true,
+        criticalKeyFailure: true,
+        keyHealthIssues: ["Current profile rejected the loaded key"],
+      },
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+    };
+    render(<UnlockScreen onUnlocked={onUnlocked} />);
+    expect(
+      screen.getByText("Current profile rejected the loaded key"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("encryption-unlock-screen")).toBeInTheDocument();
+    expect(onUnlocked).not.toHaveBeenCalled();
+    expect(shouldShowUnlockScreen(hookOverride.status)).toBe(true);
+  });
+
+  it("never offers an unverified import-and-unlock button", () => {
     hookOverride = {
       status: baseStatus,
       lockout: zeroLockout,
       unlock: vi.fn(),
-      importPortableDek,
     };
-    render(<UnlockScreen onUnlocked={() => {}} />);
+    render(<UnlockScreen />);
     fireEvent.click(screen.getByTestId("unlock-import-toggle"));
-
-    fireEvent.change(
-      screen.getByPlaceholderText("/secure/backup/sorng-master.dek"),
-      { target: { value: "/secure/key.dek" } },
-    );
-    fireEvent.change(screen.getByPlaceholderText("Export password"), {
-      target: { value: "hunter2" },
-    });
-
-    const submit = screen.getByTestId(
-      "unlock-import-submit",
-    ) as HTMLButtonElement;
-    expect(submit.disabled).toBe(false);
-    fireEvent.click(submit);
-
-    await waitFor(() => {
-      expect(importPortableDek).toHaveBeenCalledWith(
-        "/secure/key.dek",
-        "hunter2",
-      );
-    });
-  });
-
-  it("import-dek failure surfaces the error and preserves the typed fields", async () => {
-    // After a wrong-password rejection the user should not have to
-    // retype the path or password — re-entering an absolute path is
-    // tedious on the unlock screen (no autocomplete) and the field is
-    // not a secret-handling regression because we don't auto-mask.
-    const importPortableDek = vi
-      .fn()
-      .mockRejectedValue(new Error("wrong export password"));
-    hookOverride = {
-      status: baseStatus,
-      lockout: zeroLockout,
-      unlock: vi.fn(),
-      importPortableDek,
-    };
-    render(<UnlockScreen onUnlocked={() => {}} />);
-    fireEvent.click(screen.getByTestId("unlock-import-toggle"));
-
-    const pathInput = screen.getByPlaceholderText(
-      "/secure/backup/sorng-master.dek",
-    ) as HTMLInputElement;
-    const pwInput = screen.getByPlaceholderText(
-      "Export password",
-    ) as HTMLInputElement;
-    fireEvent.change(pathInput, { target: { value: "/some/path.dek" } });
-    fireEvent.change(pwInput, { target: { value: "nope" } });
-
-    fireEvent.click(screen.getByTestId("unlock-import-submit"));
-
-    await waitFor(() => {
-      expect(screen.getByText(/wrong export password/i)).toBeTruthy();
-    });
-    // Fields should still hold what the user typed.
-    expect(pathInput.value).toBe("/some/path.dek");
-    expect(pwInput.value).toBe("nope");
+    expect(screen.queryByTestId("unlock-import-submit")).toBeNull();
+    expect(
+      screen.getByText(/Native validation must prove/),
+    ).toBeInTheDocument();
   });
 
   it("renders nothing when no master key on disk (needs-setup branch)", () => {

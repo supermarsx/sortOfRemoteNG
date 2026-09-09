@@ -62,6 +62,7 @@ impl EncryptionState {
         let mut guard = self.inner.write().await;
         if let Some(owner) = self.session_owner.get() {
             crate::database_sessions::revoke_owner(*owner);
+            crate::master_recovery::cancel_owner(*owner);
         }
         // Drop replaces the value with None; the old MasterDek's
         // Zeroizing field zeroes itself on Drop.
@@ -77,6 +78,7 @@ impl EncryptionState {
         let mut guard = self.inner.write().await;
         if let Some(owner) = self.session_owner.get() {
             crate::database_sessions::revoke_owner(*owner);
+            crate::master_recovery::cancel_owner(*owner);
         }
         self.ever_installed.store(true, Ordering::Release);
         *guard = Some(dek);

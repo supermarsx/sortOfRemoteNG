@@ -29,6 +29,7 @@ import type { UnlockResult } from "../../types/encryption/encryption";
 import { describeStorage } from "../../types/encryption/encryption";
 import { shouldShowUnlockScreen } from "./unlockScreenVisibility";
 import { useUnlockIsolation } from "./useUnlockIsolation";
+import { MasterKeyRecoveryPanel } from "./MasterKeyRecoveryPanel";
 
 interface UnlockScreenProps {
   /** Called once the state is unlocked. Optional — the overlay
@@ -114,15 +115,9 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   const [lastResult, setLastResult] = useState<UnlockResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Portable .dek import — vault-eviction recovery path. Visible only
-  // when the password wrap is absent AND the vault is reachable but
-  // unreadable (the OS keychain entry was wiped). The user pastes the
-  // file path of an exported `.dek` and supplies its export password.
+  // Same-profile recovery is separate from the destructive replacement importer.
   const [importExpanded, setImportExpanded] = useState(false);
-  const [importPath, setImportPath] = useState("");
-  const [importPassword, setImportPassword] = useState("");
   const [importBusy, setImportBusy] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   const operationBusy = useRef(false);
   const wasUnlocked = useRef(false);
   const onUnlockedRef = useRef(onUnlocked);
@@ -150,63 +145,17 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   // which window or method triggered it.
   useEffect(() => {
     if (!status) return;
-    if (status.unlocked && !wasUnlocked.current) {
+    if (status.unlocked && !status.criticalKeyFailure && !wasUnlocked.current) {
       wasUnlocked.current = true;
       setPassword("");
-      setImportPassword("");
       setShowPassword(false);
       setLastResult(null);
       setError(null);
       onUnlockedRef.current?.();
-    } else if (!status.unlocked) {
+    } else if (!status.unlocked || status.criticalKeyFailure) {
       wasUnlocked.current = false;
     }
   }, [status]);
-
-  const handleImportDek = async () => {
-    if (
-      operationBusy.current ||
-      busy ||
-      importPath.length === 0 ||
-      importPassword.length === 0
-    )
-      return;
-    operationBusy.current = true;
-    setImportBusy(true);
-    setImportError(null);
-    try {
-      await enc.importPortableDek(importPath, importPassword);
-      // On success the encryption state is now unlocked; the parent
-      // effect will pick that up on the next status refresh and
-      // dismiss the overlay automatically.
-      setImportPath("");
-      setImportPassword("");
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : String(e));
-    } finally {
-      operationBusy.current = false;
-      setImportBusy(false);
-    }
-  };
-
-  const choosePortableKey = async () => {
-    if (busy || operationBusy.current) return;
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const path = await open({
-        title: "Choose portable master key",
-        multiple: false,
-        directory: false,
-        filters: [{ name: "Portable master key", extensions: ["dek"] }],
-      });
-      if (typeof path === "string") {
-        setImportPath(path);
-        setImportError(null);
-      }
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : String(e));
-    }
-  };
 
   const handleSubmit = async () => {
     if (
@@ -260,7 +209,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
       data-testid="encryption-unlock-screen"
       className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/85 backdrop-blur-sm"
     >
-      <div className="bg-[var(--color-surface)] rounded-xl p-6 max-w-md w-full mx-4 border border-[var(--color-border)] shadow-2xl">
+      <div className="bg-[var(--color-surface)] rounded-xl p-6 max-w-md w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border)] shadow-2xl">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 rounded-lg bg-warning/15 text-warning">
             <Lock className="w-5 h-5" />
@@ -393,23 +342,29 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
             <span>{error}</span>
           </div>
         )}
+        {status?.criticalKeyFailure && (
+          <div role="alert" className="mt-3 space-y-1 text-xs text-error">
+            <p>
+              Critical key-load or receipt failure. Existing data has not been
+              reset.
+            </p>
+            {status.keyHealthIssues?.map((issue) => (
+              <p key={issue}>{issue}</p>
+            ))}
+          </div>
+        )}
 
-        {/* ── Portable .dek import expander ─────────────────────────
-              Vault-eviction recovery path. The OS keychain entry can
-              vanish (macOS keychain reset, Linux session logout that
-              drops libsecret) and would otherwise strand the user.
-              Shown whenever a master key exists on disk somewhere
-              other than the vault — pure-vault users have nothing to
-              import, while password / hybrid users can swap in a
-              fresh `.dek` from removable media.
-        */}
-        {(status?.passwordWrapPresent ||
+        {/* Same-profile recovery authenticates a saved portable backup before
+            replacing only the local password receipt. It never resets data. */}
+        {(status?.vaultHasMasterDek ||
+          status?.passwordWrapPresent ||
           !status?.vaultAvailable ||
           status?.settingsEncryptedOnDisk ||
           status?.recoveryRequired) && (
           <div className="mt-3 pt-3 border-t border-[var(--color-border)]/40">
             <button
               type="button"
+              disabled={busy}
               onClick={() => setImportExpanded((v) => !v)}
               className="text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] flex items-center gap-1"
               data-testid="unlock-import-toggle"
@@ -418,64 +373,13 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
               {importExpanded ? "Hide" : "Recover from portable .dek"}
             </button>
             {importExpanded && (
-              <div className="mt-2 space-y-2 text-xs">
-                <p className="text-[var(--color-textMuted)]">
-                  If your OS keychain was wiped or you're recovering on a new
-                  machine, paste the absolute path of an exported{" "}
-                  <code>.dek</code> file and the export password used when it
-                  was created.
-                </p>
-                <input
-                  type="text"
-                  value={importPath}
-                  onChange={(e) => setImportPath(e.target.value)}
-                  placeholder="/secure/backup/sorng-master.dek"
-                  disabled={busy}
-                  className="w-full px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 font-mono"
+              <div className="mt-3">
+                <MasterKeyRecoveryPanel
+                  key={enc.lifecycleRevision}
+                  onRestored={enc.refresh}
+                  onBusyChange={setImportBusy}
+                  disabled={submitting || enc.loading}
                 />
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void choosePortableKey()}
-                  className="text-xs underline"
-                >
-                  Choose portable master key file
-                </button>
-                <input
-                  type="password"
-                  value={importPassword}
-                  onChange={(e) => setImportPassword(e.target.value)}
-                  placeholder="Export password"
-                  disabled={busy}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleImportDek();
-                  }}
-                  className="w-full px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-                />
-                {importError && (
-                  <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-[10px]">
-                    <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                    <span>{importError}</span>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={handleImportDek}
-                  disabled={
-                    busy ||
-                    importPath.length === 0 ||
-                    importPassword.length === 0
-                  }
-                  data-testid="unlock-import-submit"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                >
-                  {importBusy ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Unlock className="w-3.5 h-3.5" />
-                  )}
-                  Import + unlock
-                </button>
               </div>
             )}
           </div>
