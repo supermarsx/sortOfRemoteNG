@@ -8,8 +8,8 @@ import path from "node:path";
 import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
-if (!["servers", "fruits"].includes(family))
-  throw new Error("Choose servers or fruits");
+if (!["servers", "fruits", "retraced"].includes(family))
+  throw new Error("Choose servers, fruits or retraced");
 const server = await createServer({
   configFile: false,
   appType: "custom",
@@ -21,6 +21,22 @@ try {
     "/src/utils/icons/connectionIconCatalog.ts",
   );
   const entries = CONNECTION_ICON_CATALOG.filter((entry) => {
+    if (family === "retraced")
+      return [
+        "ddwrt",
+        "ddwrt-router",
+        "meo",
+        "uzo",
+        "viva",
+        "draytek",
+        "draytek-router",
+        "draytek-switch",
+        "freepbx",
+        "freepbx-server",
+        "grandstream",
+        "grandstream-phone",
+        "hurricane-electric",
+      ].includes(entry.key);
     if (family === "fruits") return entry.key.startsWith("fruit-");
     const markup = renderToStaticMarkup(createElement(entry.icon));
     return (

@@ -299,7 +299,7 @@ export const NETWORK_ICONS = [
     "network",
     ddwrt,
     ["ddwrt", "dd-wrt", "dd wrt", "router firmware", "open firmware"],
-    "DD-WRT connection icon with an app-authored identifier; not an official DD-WRT logo.",
+    "DD-WRT rounded wordmark locally retraced from the publisher header, with the .com suffix omitted for compact display.",
   ),
   defineIcon(
     "ddwrt-router",
@@ -313,7 +313,7 @@ export const NETWORK_ICONS = [
       "firmware",
       "wireless router",
     ],
-    "DD-WRT router with an app-authored identifier; not an official DD-WRT logo.",
+    "DD-WRT router using the same locally retraced publisher wordmark.",
   ),
   ...VPN_TYPE_ICONS,
   ...NETWORK_VARIANT_ICONS,

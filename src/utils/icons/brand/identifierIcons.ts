@@ -1,9 +1,10 @@
 import { createLucideIcon } from "lucide-react";
 
 /**
- * App-authored geometric identifiers, NOT official brand logos. No font, image,
- * or external request is needed. Catalog descriptions disclose the distinction.
- * Keep outside BRAND_ICONS: these are distinct, searchable fallback symbols.
+ * Geometric identifiers and the explicitly documented publisher retraces below.
+ * No font, image, or external request is needed. Catalog descriptions disclose
+ * neutral identifiers, normalized publisher vectors, and local traces.
+ * The historical module/registry names remain stable for existing consumers.
  */
 export const dlinkIdentifier = createLucideIcon("DLinkIdentifier", [
   ["path", { d: "M3 5v14h3a7 7 0 0 0 0-14H3M16 5v14h5", key: "dl" }],
@@ -18,7 +19,17 @@ export const aristaIdentifier = createLucideIcon("AristaIdentifier", [
 ]);
 
 export const freepbxIdentifier = createLucideIcon("FreePBXIdentifier", [
-  ["path", { d: "M3 19V5h7M3 11h6M14 19V5h3a4 4 0 0 1 0 8h-3", key: "fp" }],
+  // Compact monochrome trace: FreePBX/framework release/17.0 admin/images/freepbx.png.
+  [
+    "path",
+    {
+      d: "M5.5 8.4V5.8C5.5 1.1 10.7.8 12 4.1c1.5-3.3 6.5-3 6.5 1.7v2.6c2 .9 3.7 2.4 4 4.3-1.5 1.2-2.5 3-3.4 4.5-1.7 3-4.4 4.4-7.6 4.3C6.9 21.4 2.2 18 .8 14.1c.4-2.6 2.4-4.4 4.7-5.7ZM8 6.1v2.1c0 1.5 2 1.5 2 0V6.1c0-1.6-2-1.6-2 0Zm6 0v2.1c0 1.5 2 1.5 2 0V6.1c0-1.6-2-1.6-2 0Zm-3.9 8.8c2.2 1.1 5.7 1.3 8.2-2.6-.4 3.9-2.4 6.4-4.9 6-1.3-.3-2.3-1.6-3.3-3.4Z",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      key: "freepbx-frog",
+    },
+  ],
 ]);
 
 export const brother = createLucideIcon("BrotherIdentifier", [
@@ -48,12 +59,24 @@ export const clevo = createLucideIcon("ClevoIdentifier", [
     },
   ],
 ]);
-export const grandstream = createLucideIcon("GrandstreamIdentifier", [
+export const grandstream = createLucideIcon("GrandstreamEmblemTrace", [
   [
     "path",
     {
-      d: "M10 6H6a3 3 0 0 0-3 3v6a3 3 0 0 0 3 3h4v-6H7M21 6h-4a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6h-4",
-      key: "grandstream-gs",
+      d: "M2.1 2.3C7.2-.1 13.5 1.2 20.1 5.1 14.4 3.6 8.7 4 5.5 6.9c2.9 6.1 8.1 9.3 14.8 9.2-2.6 2.7-5.7 4.5-9.4 5.9C6.5 18.1 3.4 9.5 2.1 2.3Z",
+      fill: "currentColor",
+      stroke: "none",
+      key: "grandstream-swoosh",
+    },
+  ],
+  [
+    "path",
+    {
+      d: "M13.1 9.1c4.6.8 8 2.9 8.8 5.1.5 1.4-.7 2.7-2.3 3.6l.7-1.7c-1.3-2.8-3.8-4.9-7.2-7Z",
+      fill: "currentColor",
+      stroke: "none",
+      opacity: "0.65",
+      key: "grandstream-arrow",
     },
   ],
 ]);
@@ -258,12 +281,57 @@ export const mremoteng = createLucideIcon("MRemoteNGIdentifier", [
     },
   ],
 ]);
-export const draytek = createLucideIcon("DrayTekIdentifier", [
+// Italic wordmark hand-traced from draytek.de/tl_files/cto_layout/img/logo.png.
+const DRAYTEK_DRAY =
+  "M5 1H14C29 1 27 24 11 24H0L5 1Zm5 5L7 19h4c9 0 11-13 3-13h-4Zm18 3h6l-.6 3c2-3 4-4 7-3l-1 6c-5-2-7 1-8 9h-6l2.6-15Zm25 0h6l-3 15h-6l.4-2c-7 6-15 0-12-8 2-7 10-8 14-3L53 9Zm-8 6c-1 6 6 6 7 0 1-5-6-5-7 0Zm14-6h6l2 8 5-8h7L63 31h-7l6-9-3-13Z";
+const DRAYTEK_TEK =
+  "M77 1h24l-1 5h-2l-.5-3h-6l-4 19 4 1-.3 1H77l.3-1 4-1 4-19h-6l-2 3h-2l2-5Zm24 15c-2 9 3 9 7 5l1 1c-7 7-15 2-12-6 2-6 8-10 12-6 4 4-3 7-8 6Zm0-2c4 0 8-4 5-4-2 0-4 2-5 4Zm16-14h6l-3 15 7-5-2-1 .2-1h10l-.2 1-4 1-6 5 4 7 3 1-.2 1h-8l-4-8-2 8h-5l5-22-2-1 .2-1Z";
+export const draytek = createLucideIcon("DrayTekWordmarkTrace", [
   [
     "path",
     {
-      d: "M3 4v16h4a8 8 0 0 0 0-16H3ZM13 4h9M17.5 4v16M14 21h7",
-      key: "draytek-identifier",
+      d: DRAYTEK_DRAY,
+      transform: "translate(1 9.4) scale(.163 .163)",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      key: "draytek-wordmark",
+    },
+  ],
+  [
+    "path",
+    {
+      d: DRAYTEK_TEK,
+      transform: "translate(1 9.4) scale(.163 .163)",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      key: "draytek-tek",
+    },
+  ],
+]);
+// The same letterforms stacked only for tiny appliance badges. Not a separate logo.
+export const draytekBadge = createLucideIcon("DrayTekCompactBadge", [
+  [
+    "path",
+    {
+      d: DRAYTEK_DRAY,
+      transform: "translate(1 1.5) scale(.28)",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      key: "draytek-badge-dray",
+    },
+  ],
+  [
+    "path",
+    {
+      d: DRAYTEK_TEK,
+      transform: "translate(-23 13) scale(.32)",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      key: "draytek-badge-tek",
     },
   ],
 ]);
@@ -278,34 +346,50 @@ export const dameware = createLucideIcon("DamewareIdentifier", [
   ],
 ]);
 
-export const meo = createLucideIcon("MEOIdentifier", [
+// Publisher vector: conteudos.meo.pt/Style Library/consumo/images/logo-meo.svg.
+// The three bars are transparent knockouts instead of a fixed white fill.
+export const meo = createLucideIcon("MEORoundel", [
   [
     "path",
     {
-      d: "M1.5 17V7l3 5 3-5v10M15 7h-5v10h5M10 12h4M18 9a2 2 0 0 1 4.5 0v6a2 2 0 0 1-4.5 0Z",
-      strokeWidth: "1.5",
-      key: "meo-identifier",
+      d: "M96 48a48 48 0 0 1-29.631 44.346 48 48 0 0 1-52.31-10.405A48 48 0 0 1 .922 57.364a48 48 0 0 1 2.731-27.733A48 48 0 0 1 48 0a48 48 0 0 1 48 48z M30.693 26.921l-5.4 39.9c-.3 2.22 7.65 3.3 7.95 1.086l5.4-39.9c.3-2.223-7.65-3.3-7.95-1.083z m13.295 1.119V68.27c0 2.241 8.021 2.241 8.021 0V28.043c0-2.236-8.021-2.236-8.021 0z m13.365-.039l5.4 39.9c.3 2.22 8.25 1.134 7.95-1.086l-5.4-39.9c-.3-2.223-8.25-1.14-7.95 1.083z",
+      transform: "translate(1 1) scale(.229166667)",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      key: "meo-roundel",
     },
   ],
 ]);
-export const uzo = createLucideIcon("UZOIdentifier", [
+// Publisher vector: conteudos.uzo.pt/Style Library/uzo/resources/images/logo/uzo-logo.svg.
+export const uzo = createLucideIcon("UZOWordmark", [
   [
     "path",
     {
-      d: "M1.5 7v7a3 3 0 0 0 6 0V7M10 7h5l-5 10h5M18 9a2 2 0 0 1 4.5 0v6a2 2 0 0 1-4.5 0Z",
-      strokeWidth: "1.5",
-      key: "uzo-identifier",
+      d: "M149.47,24.72h8.62v110.91c0,24.6-8.31,45.42-24.07,60.03-14.19,13.14-33.64,20.4-54.88,20.4C41.18,216.06.18,190.94.18,135.64V24.72h34.9l.53,110.91c0,31.75,21.87,46.05,43.63,46.05s43.84-14.19,43.84-46.05V24.72h26.39ZM519,119.45c.11,25.97-9.88,50.46-27.97,68.65-17.87,17.87-41.63,27.75-67.07,27.75-53.2,0-94.93-42.37-94.93-96.41s42.58-96.72,94.93-96.72,95.04,43.42,95.04,96.72ZM483.78,119.45c0-35.11-26.28-62.55-59.82-62.55s-59.82,27.44-59.82,62.55,26.28,62.34,59.82,62.34,59.93-27.44,59.82-62.34ZM324.61,24.72h-143.19v33.85h96.3l-96.09,118.59v37.01h12.41L324.61,55.84v-31.12ZM217.91,214.17h106.71v-33.85h-78.74l-27.96,33.85Z",
+      transform: "translate(1 6.94) scale(.04238921)",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
+      key: "uzo-wordmark",
     },
   ],
 ]);
 export const hurricaneelectric = createLucideIcon(
-  "HurricaneElectricIdentifier",
+  "HurricaneElectricMonogramTrace",
   [
+    // Publisher reference: https://he.net/images/helogo.gif; compact circled HE.
+    [
+      "circle",
+      { cx: "12", cy: "12", r: "10", strokeWidth: "1.3", key: "he-ring" },
+    ],
     [
       "path",
       {
-        d: "M3 4v16M3 12h7M10 4v16M21 4h-7v16h7M14 12h5",
-        key: "hurricaneelectric-identifier",
+        d: "M6.3 6h4v.5H9v3.8h4V6.5h-1.3V6h4v.5h-1.3v8.1h1.3v.5h-4v-.5H13v-3.8H9v3.8h1.3v.5h-4v-.5h1.3V6.5H6.3V6ZM11.3 10.8H18l.2 2.1h-.5c-.3-1.4-.8-1.6-2.5-1.6h-1.5v3h1.4c1.1 0 1.3-.3 1.4-1.2h.5v3h-.5c-.1-1-.3-1.3-1.4-1.3h-1.4v3.5h1.9c1.7 0 2.2-.6 2.6-2h.5l-.5 2.5h-6.9v-.5h1.1v-7h-1.1v-.5Z",
+        fill: "currentColor",
+        stroke: "none",
+        key: "he-serif-monogram",
       },
     ],
   ],
@@ -314,19 +398,25 @@ export const viva = createLucideIcon("VivaIdentifier", [
   [
     "path",
     {
-      d: "M1 7l2.5 10L6 7M9 7v10M12 7l2.5 10L17 7M18.5 17l2.25-10L23 17M19.5 13h2.5",
-      strokeWidth: "1.5",
+      d: "M1 7h1.8l1.7 7 1.7-7H8l-2.6 10H3.6L1 7Zm7.8 0h1.8v10H8.8V7Zm2.8 0h1.8l1.7 7 1.7-7h1.8L16 17h-1.8L11.6 7Zm6.5 10 2.6-10h1.8l2.6 10h-1.9l-.4-2h-2.4l-.4 2h-1.9Zm2.7-3.8h1.6l-.8-3.5-.8 3.5Z",
+      transform: "translate(.13 0) scale(.91 1)",
+      fill: "currentColor",
+      stroke: "none",
+      fillRule: "evenodd",
       key: "viva-identifier",
     },
   ],
 ]);
 
-export const ddwrt = createLucideIcon("DDWRTIdentifier", [
+// Rounded lowercase wordmark retraced from the publisher header; .com omitted.
+export const ddwrt = createLucideIcon("DDWRTWordmarkTrace", [
   [
     "path",
     {
-      d: "M2 5h4a5 7 0 0 1 0 14H2V5M14 5h3a5 7 0 0 1 0 14h-3V5",
-      key: "ddwrt-identifier",
+      d: "M4.6 6v10H2.9C.4 16 .4 11 2.9 11h1.7M9.5 6v10H7.8c-2.5 0-2.5-5 0-5h1.7M10.9 12.8h1.5M13.4 11l1.1 5 1.3-4.1 1.3 4.1 1.1-5M19.3 16v-3c0-1.4.7-2 2-2M22.3 7.7v6.7c0 1.3.5 1.6 1.4 1.6M21.6 11h2.1",
+      transform: "translate(.2 0) scale(.95 1)",
+      strokeWidth: "1.25",
+      key: "ddwrt-wordmark",
     },
   ],
 ]);
@@ -399,7 +489,9 @@ export const softether = createLucideIcon("SoftEtherIdentifier", [
   ],
 ]);
 
-/** Every explicitly nonofficial brand identifier, for source and uniqueness tests. */
+/** Historical compatibility group, including later publisher-derived retraces.
+ * This name is not an artwork-provenance or license classification.
+ */
 export const APP_AUTHORED_IDENTIFIER_ICONS = {
   softether,
   ddwrt,

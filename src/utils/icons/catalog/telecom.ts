@@ -110,7 +110,7 @@ export const TELECOM_ICONS = [
     "isp-providers",
     meo,
     ["meo", "telecom", "mobile operator", "broadband", "internet provider"],
-    "MEO connection icon with an app-authored identifier; not an official MEO logo.",
+    "MEO publisher roundel normalized to a monochrome vector with transparent three-bar cutouts.",
   ),
   defineIcon("nos", "NOS", "isp-providers", nos, [
     "nos",
@@ -142,7 +142,7 @@ export const TELECOM_ICONS = [
     "isp-providers",
     uzo,
     ["uzo", "telecom", "mobile operator", "broadband", "internet provider"],
-    "UZO connection icon with an app-authored identifier; not an official UZO logo.",
+    "UZO publisher SVG wordmark normalized for monochrome display.",
   ),
   defineIcon("tele2", "Tele2", "isp-providers", tele2, [
     "tele2",
@@ -190,7 +190,7 @@ export const TELECOM_ICONS = [
       "ipv6",
       "internet provider",
     ],
-    "Hurricane Electric connection icon with an app-authored HE identifier; not an official Hurricane Electric logo.",
+    "Hurricane Electric circled HE emblem locally hand-traced from the publisher artwork for monochrome display.",
   ),
   defineIcon(
     "nowo",

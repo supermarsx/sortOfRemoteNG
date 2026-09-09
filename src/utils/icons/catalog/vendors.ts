@@ -424,7 +424,7 @@ export const VENDOR_ICONS = [
     "vendors",
     draytek,
     ["draytek", "dray tek", "drautek", "vigor", "network", "hardware"],
-    "DrayTek device identifier authored by the app; not an official DrayTek logo.",
+    "DrayTek italic wordmark locally hand-traced from the publisher artwork for monochrome display.",
   ),
   defineIcon(
     "exchange",

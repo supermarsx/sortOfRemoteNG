@@ -90,7 +90,6 @@ describe("consistent branded and service appliance badges", () => {
     ["mariadb-database", "mariadb", "database"],
     ["postgresql-database", "postgresql", "database"],
     ["sqlite-database", "sqlite", "database"],
-    ["draytek-router", "draytek", "router"],
     ["synology-nas", "synology", "nas"],
   ])(
     "keeps %s and its unchanged standalone %s emblem separately selectable",

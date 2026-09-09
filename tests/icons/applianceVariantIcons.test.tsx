@@ -181,6 +181,20 @@ describe("appliance variants and complete plain counterparts", () => {
         (node) => node.tagName === "svg",
       );
       expect(glyph, key + " missing nested glyph").toBeDefined();
+      if (key === "draytek-router" || key === "draytek-switch") {
+        // Compact badges stack the same traced wordmark letterforms; only their
+        // placement differs from the selectable full-width publisher layout.
+        const withoutPlacement = (source: Element) => {
+          const clone = source.cloneNode(true) as Element;
+          for (const node of clone.querySelectorAll("path"))
+            node.removeAttribute("transform");
+          return fingerprint(clone);
+        };
+        expect(withoutPlacement(glyph!)).toBe(
+          withoutPlacement(svgFor("draytek")),
+        );
+        continue;
+      }
       if (!plain.has(fingerprint(glyph!))) missing.push(key);
     }
     expect(

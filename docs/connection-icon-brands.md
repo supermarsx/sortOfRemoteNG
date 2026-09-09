@@ -166,8 +166,8 @@ source references are:
 
 T-Mobile uses the historical path below; it is byte-identical to the installed
 Deutsche Telekom mark because both sources use the shared T symbol. Seven additional providers use
-verified publisher geometry. MEO, UZO, Hurricane Electric, and unresolved VIVA use
-the disclosed identifiers listed later. The saved Vodafone catalog key is preserved; telecom device/service variants use
+verified publisher geometry. MEO, UZO, and Hurricane Electric now use the
+[named publisher retraces](#named-publisher-retraces); unresolved VIVA remains a neutral identifier. The saved Vodafone catalog key is preserved; telecom device/service variants use
 the app's role frames, not fabricated provider product logos.
 
 ## Pinned historical paths
@@ -246,25 +246,26 @@ the UI color. Local role frames remain app symbols, not approved brand lockups.
 | Altice   | [Publisher source](https://altice.net/sites/default/files/favicons/safari-pinned-tab.svg): Preserve the complete negative-space pinned-tab favicon and its flipped coordinate system, fitting the original 260×260 canvas. The publisher site explicitly identifies itself as the **archived Altice Europe** website; no claim that this asset defines the current Altice France/International identity or grants a new artwork license.                                                                                                                                                                                                                                                                           |
 | Three    | [Publisher source](https://www.three.co.uk/content/dam/threedigital/static-files/components/header/three-logo.svg): Preserve the exact Three UK header symbol path, including the original containing `translate(8,6)`; uniformly scale the 44×44 source canvas. This is the Three mark, not the newer combined VodafoneThree corporate wordmark.                                                                                                                                                                                                                                                                                                                                                                  |
 
-## Explicitly nonofficial identifiers
+## Identifier compatibility group
 
-Forty-seven entries use explicit nonofficial identifiers. Most did not yield a
+The initial group used explicit nonofficial identifiers. Most did not yield a
 suitable compact vector source in the installed or checked historical collection
 and bounded publisher lookup; VIVA is intentionally neutral because the intended
 provider is unconfirmed. These entries are still distinct and usable:
 `identifierIcons.ts` draws geometric identifiers with SVG paths, not fonts or
-copies of unrelated logos. Catalog descriptions disclose that they are app-authored.
+copies of unrelated logos. Later publisher-derived replacements are called out
+below; catalog descriptions distinguish those traces from the remaining neutral identifiers.
 
 | Entries                       | App-authored symbol          | Publisher checked                                                                                                                                                                                     |
 | ----------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dlink`                       | DL monogram                  | [D-Link](https://www.dlink.com/); no verified reusable compact vector obtained.                                                                                                                       |
 | `levelone`, `levelone-switch` | L1 monogram                  | [LevelOne](https://www.level1.com/level1_en/); the public header is a wide raster wordmark.                                                                                                           |
 | `arista`, `arista-switch`     | A with network cross         | [Arista brand information](https://www.arista.com/en/company/company-overview); not a traced Arista wordmark.                                                                                         |
-| `freepbx`, `freepbx-server`   | FP monogram                  | [FreePBX](https://www.freepbx.org/); not the FreePBX mascot/logo.                                                                                                                                     |
+| `freepbx`, `freepbx-server`   | Upstream frog trace          | Replaces the initial FP fallback; see [named publisher retraces](#named-publisher-retraces).                                                                                                          |
 | `brother`, device variants    | B identifier                 | [Brother's public header asset](https://global.brother/-/media/global/common/img/header/logo-brother.ashx) is raster PNG; this is not a tracing of its wordmark.                                      |
 | `yealink`, phone variant      | Y with call waves            | [Yealink](https://www.yealink.com/) publishes raster header logos; this is not its official wordmark.                                                                                                 |
 | `clevo`, laptop variant       | CV monogram                  | [CLEVO](https://www.clevo.com.tw/); app-authored, not the publisher logo.                                                                                                                             |
-| `grandstream`, phone variant  | GS monogram                  | [Grandstream](https://www.grandstream.com/) uses a public raster header; the identifier is not that logo.                                                                                             |
+| `grandstream`, phone variant  | Publisher G-emblem trace     | Replaces the initial GS fallback; see [named publisher retraces](#named-publisher-retraces).                                                                                                          |
 | `freshtomato`                 | Tomato with stem/leaves      | [FreshTomato](https://freshtomato.org/) has raster public branding; this app drawing is not an official project mark.                                                                                 |
 | `meshcentral`                 | M with connected nodes       | [MeshCentral](https://meshcentral.com/); project raster artwork was not converted or relabeled as original SVG.                                                                                       |
 | `suricata`                    | S/sensor identifier          | [Suricata branding page](https://suricata.io/branding-images/) provides raster marks; this is not the meerkat logo.                                                                                   |
@@ -289,21 +290,22 @@ copies of unrelated logos. Catalog descriptions disclose that they are app-autho
 | `mailcow, mailcow-server`     | Cow/mail identifier          | [Publisher/project](https://mailcow.email/); Not an official Mailcow logo; unrelated SOGo SVGs in the project were deliberately not relabeled.                                                        |
 | `osticket`                    | Ticket identifier            | [Publisher/project](https://osticket.com/); Not a tracing of the osTicket mascot.                                                                                                                     |
 | `mremoteng`                   | M/remote identifier          | [Publisher/project](https://mremoteng.org/); The official website SVG favicon embeds a PNG, and the checked project tree supplied no SVG paths; that raster wrapper is not vendored.                  |
-| `draytek, device variants`    | DT monogram                  | [Publisher/project](https://www.draytek.co.uk/); The checked UK public assets were raster; the global site rejected retrieval. No claim to reproduce DrayTek's logo.                                  |
+| `draytek, device variants`    | Publisher wordmark trace     | Full standalone wordmark; compact two-line appliance adaptation. See [named publisher retraces](#named-publisher-retraces).                                                                           |
 | `dameware`                    | DW monogram                  | [Publisher/project](https://www.solarwinds.com/dameware); Dameware redirects to its publisher's page with raster SolarWinds branding; this is a distinct product identifier, not that publisher logo. |
-| `meo`                         | Full MEO identifier          | [MEO](https://www.meo.pt/) and the checked corporate/store domains returned HTTP 410; no verified compact SVG was obtained in the bounded lookup. This is not an official MEO logo.                   |
-| `uzo`                         | Full UZO identifier          | [UZO](https://www.uzo.pt/) and its checked mobile page returned HTTP 410; no verified compact SVG was obtained. This is not an official UZO mark.                                                     |
-| `hurricaneelectric`           | HE monogram                  | [Hurricane Electric](https://he.net/) publishes a raster GIF header in the checked page. The local HE paths are app-authored, not a conversion of that image.                                         |
+| `meo`                         | Publisher three-bar roundel  | Normalized official SVG replaces the initial typed-letter fallback; see [named publisher retraces](#named-publisher-retraces).                                                                        |
+| `uzo`                         | Publisher wordmark           | Normalized official SVG replaces the initial typed-letter fallback; see [named publisher retraces](#named-publisher-retraces).                                                                        |
+| `hurricane-electric`          | Publisher circled HE trace   | Replaces the initial plain HE fallback; see [named publisher retraces](#named-publisher-retraces).                                                                                                    |
 | `viva`                        | Neutral full VIVA identifier | Provider identity remains unconfirmed. No country, network, regional operator or Vivo association is asserted; this is deliberately not advertised as a sourced official VIVA logo.                   |
 
-These are a disclosed logo-coverage limitation, not fabricated official marks.
-They stay outside the `BRAND_ICONS` registry. Their device/server variants use
-the same identifier inside a different role silhouette, so variants are not
+The remaining neutral identifiers are a disclosed logo-coverage limitation, not
+fabricated official marks. This historical group stays outside the `BRAND_ICONS`
+registry, including its later publisher-derived replacements. Device/server variants use
+the same geometry inside a different role silhouette, so variants are not
 merely duplicate bare glyphs with different labels.
 
-The `APP_AUTHORED_IDENTIFIER_ICONS` registry enumerates all 47 exceptions, and
-tests assert their path geometry is pairwise distinct and none enters the
-`BRAND_ICONS` sourced-mark registry. New custom Lucide nodes carry stable React
+The `APP_AUTHORED_IDENTIFIER_ICONS` name is retained for compatibility; it is no
+longer a provenance classification. In particular, MEO/UZO are publisher vectors
+and the explicitly identified local traces are not arbitrary initials. New custom Lucide nodes carry stable React
 keys; a regression renders every brand without filtering unrelated console
 errors and asserts no missing-key warnings.
 
@@ -311,8 +313,9 @@ errors and asserts no missing-key warnings.
 
 The final source registry has 161 installed marks, 13 pinned historical marks,
 28 publisher-file marks and seven preserved/local marks (including the three
-publisher geometries described above). The 47 explicitly nonofficial identifiers
-are a separate registry and are not counted as sourced marks.
+publisher geometries described above). These are historical source-inventory
+counts, not a current logo-coverage claim; the compatibility group and subsequent
+publisher additions/retraces are documented separately below.
 
 Scaleway comes from the installed collection's `scaleway` path, whose publisher
 source is [Ultraviolet](https://ultraviolet.scaleway.com). Heroku uses the unchanged
@@ -565,3 +568,42 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
 HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Named publisher retraces
+
+These eight existing choices were refined on 2026-09-09 without changing saved
+keys. Publisher SVGs are normalized locally; raster references were visually
+inspected and hand-traced into compact paths, not embedded or relabelled as
+original publisher vectors. Traces simplify details for small sizes and are not
+claims of publisher approval or a new trademark license. Rendering is local,
+font-free, theme-color aware and free of image, mask, script or network dependencies.
+
+| Choice                            | Reference and adaptation                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meo`                             | [Publisher SVG](https://conteudos.meo.pt/Style%20Library/consumo/images/logo-meo.svg), linked by the official site's organization metadata. The 96×96 roundel and three bars are uniformly scaled; blue becomes currentColor and white bars become transparent even-odd cutouts. The redundant rectangular mask is omitted.                                 |
+| `uzo`                             | [Publisher SVG](https://conteudos.uzo.pt/Style%20Library/uzo/resources/images/logo/uzo-logo.svg), linked in the official header. Original 519×239 wordmark path retained, uniformly scaled and centered; no replacement font or guessed lettering.                                                                                                          |
+| `ddwrt`, router variant           | [Publisher header raster](https://www.dd-wrt.com/wp-content/themes/dd-wrt/assets/images/logo.png). Rounded lowercase **dd-wrt** letterforms are manually retraced as outline geometry. The `.com` suffix and decorative header tick strip are omitted. Both standalone and router choices reuse the trace.                                                  |
+| `draytek`, router/switch variants | [Publisher wordmark raster](https://www.draytek.de/tl_files/cto_layout/img/logo.png). Italic **DrayTek** letterforms are manually retraced. The pure key keeps the full horizontal wordmark; appliance badges stack the same **Dray** and **Tek** paths to stay legible. This compact two-line layout is an app adaptation, not another official logo.      |
+| `freepbx`, server variant         | [Pinned upstream frog artwork](https://raw.githubusercontent.com/FreePBX/framework/6cb2e29d83a5646a9f300851d53b9806f25ffa2b/amp_conf/htdocs/admin/images/freepbx.png), from `release/17.0`. The frog face is manually retraced; eye/mouth details become transparent cutouts, with color and fine shading omitted.                                          |
+| `grandstream`, phone variant      | [Publisher header raster](https://www.grandstream.com/hs-fs/hubfs/raw_assets/public/Grandstream_Feb_2021/images/logo-grandstream-low-web.png). The compact G/swoosh emblem is manually retraced, omitting the wordmark/tagline. Gradients become currentColor with a subdued secondary arrow; transparent interior geometry remains visible in both themes. |
+| `hurricane-electric`              | [Publisher header GIF](https://he.net/images/helogo.gif). The circled, overlapping serif **HE** emblem is manually retraced, not replaced by plain initials. The long company name/tagline is omitted and the emblem inherits the selected icon color.                                                                                                      |
+| `viva`                            | Deliberately **app-authored neutral VIVA lettering**. The intended regional operator remains unconfirmed, so no unrelated country's mark is substituted. The revised filled letterforms improve small-size contrast without asserting a sourced official logo.                                                                                              |
+
+Reference-byte SHA-256 values (not hashes of the adapted SVG):
+
+| Reference          | SHA-256                                                            |
+| ------------------ | ------------------------------------------------------------------ |
+| MEO                | `113e3a9b2054e50f8213ab5e2cc40248312ac4b71fa61277357933ba765ff1e5` |
+| UZO                | `ac326c956b045e3f4409b2b79f6e646d7bc3c4382eeba5ad7d3ab21ab32b790c` |
+| DD-WRT             | `18552be8e7fc907eb65861d43731bd725df8c8814d994a3d1f663c8c64af14c3` |
+| DrayTek            | `226102ffe6d1773478f8cd51937d56c6c5a9eb1b314e6a5ce4a6f20f64aae1e8` |
+| FreePBX            | `79c1614dcb979d96bacf1ec6896439650fb8fda7a25b56d8c4865afdd559cf83` |
+| Grandstream        | `9b324cfb2fcfbaf65f4c89467ad7f59f718c1676862a85e2ee068dd2c5b39583` |
+| Hurricane Electric | `13834f9f1468f97a38c50e47886b5aea03c929bc3b55b4e48ed7d5c516f6ec63` |
+
+`tests/icons/providerRetraces.test.tsx` checks saved keys, vector-only/theme-safe
+rendering and shared glyph paths. The DrayTek exception permits only placement
+changes for its identical letterforms; the exhaustive appliance test still
+requires an exact plain counterpart for other badges.
+`node scripts/catalog-icon-contact-sheet.mjs retraced` renders the actual catalog's
+pure and appliance variants at 16/20/24 pixels on dark and light backgrounds.

@@ -40,7 +40,7 @@ export const VOICE_TELEPHONY_ICONS = [
     "voice-telephony",
     freepbxIdentifier,
     ["freepbx", "pbx", "pbx gui", "telephony", "sip"],
-    "FreePBX connection icon: app-authored FP identifier, not the official FreePBX mascot/logo.",
+    "FreePBX frog mascot locally hand-traced from the upstream framework artwork as a compact monochrome vector.",
   ),
   defineIcon(
     "freepbx-server",
@@ -48,7 +48,7 @@ export const VOICE_TELEPHONY_ICONS = [
     "voice-telephony",
     createRoleIcon("FreePBXServer", "server", freepbxIdentifier),
     ["freepbx", "free pbx", "pbx server", "sip"],
-    "FreePBX server with an app-authored FP identifier; not the official FreePBX mascot/logo.",
+    "FreePBX server using the same compact monochrome trace of the upstream frog mascot.",
   ),
   defineIcon("asterisk", "Asterisk", "voice-telephony", asterisk, [
     "asterisk",
@@ -77,7 +77,7 @@ export const VOICE_TELEPHONY_ICONS = [
     "voice-telephony",
     grandstream,
     ["grandstream", "phone", "sip", "voip"],
-    "Grandstream device identifier authored by the app; not an official Grandstream logo.",
+    "Grandstream G emblem locally hand-traced from the publisher artwork, with gradients simplified for monochrome display.",
   ),
   defineIcon(
     "yealink-phone",
@@ -93,7 +93,7 @@ export const VOICE_TELEPHONY_ICONS = [
     "voice-telephony",
     createRoleIcon("GrandstreamPhone", "desk-phone", grandstream),
     ["grandstream", "phone", "sip", "voip", "desk phone"],
-    "Grandstream phone with an app-authored device identifier; not an official Grandstream logo.",
+    "Grandstream phone using the same locally traced monochrome G emblem.",
   ),
   defineIcon(
     "cisco-phone",
