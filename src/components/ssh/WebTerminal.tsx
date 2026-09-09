@@ -5,6 +5,7 @@ import { useTerminalBackground } from "../../hooks/ssh/useTerminalBackground";
 import { WebTerminalProps } from "./webTerminal/types";
 import TerminalToolbar from "./webTerminal/TerminalToolbar";
 import TerminalStatusBar from "./webTerminal/TerminalStatusBar";
+import SshQuickActionsBar from "./webTerminal/SshQuickActionsBar";
 import TerminalBackgroundLayer from "./webTerminal/TerminalBackgroundLayer";
 import ScriptSelectorModal from "./webTerminal/ScriptSelectorModal";
 import SshTrustDialog from "./webTerminal/SshTrustDialog";
@@ -52,6 +53,13 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
             <TerminalToolbar mgr={mgr} />
           </div>
           <TerminalStatusBar mgr={mgr} />
+          {mgr.isSsh && mgr.quickActions && (
+            <SshQuickActionsBar
+              actions={mgr.quickActions}
+              replaying={mgr.replayingMacro}
+              onStopReplay={mgr.handleStopReplay}
+            />
+          )}
         </div>
       )}
 

@@ -197,7 +197,12 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({
-    toast: vi.fn(),
+    toast: Object.assign(vi.fn(), {
+      error: vi.fn(),
+      warning: vi.fn(),
+      success: vi.fn(),
+      info: vi.fn(),
+    }),
   }),
 }));
 

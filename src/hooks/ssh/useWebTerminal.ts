@@ -66,6 +66,8 @@ import {
 } from "../../utils/network/sessionVpnLeaseCleanup";
 import { redactSecrets } from "../../utils/errors/redact";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
+import { useSshQuickActions } from "./useSshQuickActions";
+import { normalizeSessionQuickActions } from "../../utils/connection/sessionQuickActions";
 import { appendSSHSessionActivity } from "../../utils/ssh/sshSessionActivity";
 import {
   classifySshFailure,
@@ -442,6 +444,7 @@ export function useWebTerminal(
   const [savedMacros, setSavedMacros] = useState<TerminalMacro[]>([]);
   const [replayingMacro, setReplayingMacro] = useState(false);
   const replayAbortRef = useRef<AbortController | null>(null);
+  const scriptRunBusyRef = useRef(false);
   const macroListRef = useRef<HTMLDivElement>(null);
 
   /* ── SSH command history ── */
@@ -646,6 +649,7 @@ export function useWebTerminal(
       statusRef.current = next;
       isConnecting.current = next === "connecting" || next === "reconnecting";
       isSshReady.current = next === "connected";
+      if (next !== "connected") replayAbortRef.current?.abort();
       if (next === "connected") {
         // Only an accepted current actor reaches this transition. Retire its
         // previous failure/progress message together with the retry state.
@@ -2436,114 +2440,102 @@ export function useWebTerminal(
 
   /* ── Run script ── */
 
+  const captureQuickActionSession = useCallback(() => {
+    const ownerDatabaseId = sessionRef.current.ownerDatabaseId;
+    const assertDatabase = captureSessionDatabaseAccess(sessionRef.current);
+    const actorId = sshSessionId.current;
+    const frontendId = sessionRef.current.id;
+    const attempt = sshInitGenRef.current;
+    const actorGeneration = getSessionLifecycleActorGeneration(
+      sessionRef.current,
+    );
+    const assertCurrent = () => {
+      if (
+        !ownerDatabaseId ||
+        sessionRef.current.ownerDatabaseId !== ownerDatabaseId
+      )
+        throw new Error(
+          "Open and unlock the owning database before running SSH actions.",
+        );
+      assertDatabase();
+      if (
+        !isSsh ||
+        !actorId ||
+        isDisposed.current ||
+        !isSshReady.current ||
+        isConnecting.current ||
+        statusRef.current !== "connected" ||
+        actorId !== sshSessionId.current ||
+        frontendId !== sessionRef.current.id ||
+        attempt !== sshInitGenRef.current ||
+        actorGeneration !==
+          getSessionLifecycleActorGeneration(sessionRef.current) ||
+        disconnectIntentRef.current !== "none" ||
+        hasSessionVpnCleanupQuarantine(sessionRef.current)
+      )
+        throw new Error(
+          "The authenticated SSH session changed or is not ready. Reconnect and explicitly run the action again.",
+        );
+    };
+    assertCurrent();
+    return assertCurrent;
+  }, [isSsh]);
+
   const runScript = useCallback(
     async (script: ManagedScript) => {
       if (
         !isSsh ||
         !sshSessionId.current ||
         !isSshReady.current ||
-        isConnecting.current
+        isConnecting.current ||
+        scriptRunBusyRef.current
       )
         return;
-      const targetSessionId = sshSessionId.current;
-      const currentSession = sessionRef.current;
-      const lines = script.script
-        .split("\n")
-        .filter((line) => !line.startsWith("#!"));
-      const command = lines.join("\n");
-      const isSingleLine = lines.length === 1;
-      const recordExecution = (
-        execution: Omit<
-          CommandExecution,
-          "sessionId" | "sessionName" | "hostname" | "source"
-        >,
-      ) => {
-        addCommandHistoryEntry(command, [
-          {
-            sessionId: currentSession.id,
-            connectionId: currentSession.connectionId,
-            sessionName: currentSession.name,
-            hostname: currentSession.hostname ?? "",
-            source: "web-terminal-script",
-            ...execution,
-          },
-        ]);
-      };
+      scriptRunBusyRef.current = true;
+      try {
+        const assertCurrent = captureQuickActionSession();
+        const reviewed = structuredClone(script);
+        if (
+          normalizeSessionQuickActions(settingsRef.current.sessionQuickActions)
+            .confirmBeforeScriptRun &&
+          !window.confirm(
+            `Run script "${reviewed.name}" on ${sessionRef.current.name || sessionRef.current.hostname}?\n\nThis executes commands on this SSH session. Cancel to make no changes.`,
+          )
+        )
+          return;
+        assertCurrent();
+        script = reviewed;
+        const targetSessionId = sshSessionId.current;
+        const currentSession = sessionRef.current;
+        const lines = script.script
+          .split("\n")
+          .filter((line) => !line.startsWith("#!"));
+        const command = lines.join("\n");
+        const isSingleLine = lines.length === 1;
+        const recordExecution = (
+          execution: Omit<
+            CommandExecution,
+            "sessionId" | "sessionName" | "hostname" | "source"
+          >,
+        ) => {
+          // A completed/ambiguous command belongs to its captured owner, never
+          // the database that happened to become current while native awaited.
+          assertCurrent();
+          addCommandHistoryEntry(command, [
+            {
+              sessionId: currentSession.id,
+              connectionId: currentSession.connectionId,
+              sessionName: currentSession.name,
+              hostname: currentSession.hostname ?? "",
+              source: "web-terminal-script",
+              ...execution,
+            },
+          ]);
+        };
 
-      if (isSingleLine) {
-        try {
-          // Single-line: pipe directly into the shell
-          await invoke("send_ssh_input", {
-            sessionId: targetSessionId,
-            data: command + "\n",
-          });
-          recordExecution({
-            status: "pending",
-            evidence: "dispatch-accepted",
-            executedAt: new Date().toISOString(),
-          });
-        } catch (dispatchError) {
-          recordExecution({
-            status: "cancelled",
-            evidence: "dispatch-failed",
-            errorMessage: formatErrorDetails(dispatchError).message,
-            executedAt: new Date().toISOString(),
-          });
-          console.error("Failed to run script:", dispatchError);
-        }
-      } else {
-        // Multi-line: upload as temp file on the remote server, execute, capture output, clean up
-        const interpreter =
-          script.language === "powershell"
-            ? "powershell"
-            : script.language === "sh"
-              ? "sh"
-              : "bash";
-        const startedAt = Date.now();
-        try {
-          const result = await invoke<{
-            stdout: string;
-            stderr: string;
-            exitCode: number;
-          }>("execute_script", {
-            sessionId: targetSessionId,
-            script: command,
-            interpreter,
-          });
-          const completedAt = new Date().toISOString();
-          recordExecution({
-            status: result.exitCode === 0 ? "success" : "error",
-            evidence: "remote-completion",
-            executedAt: completedAt,
-            output: result.stdout || undefined,
-            stderr: result.stderr || undefined,
-            errorMessage:
-              result.exitCode !== 0 ? result.stderr || undefined : undefined,
-            exitCode: result.exitCode,
-            durationMs: Math.max(0, Date.now() - startedAt),
-          });
-          if (termRef.current) {
-            safeWrite(`\r\n\x1b[90m── Script: ${script.name} ──\x1b[0m\r\n`);
-            if (result.stdout) {
-              for (const line of result.stdout.split("\n")) {
-                safeWrite(line + "\r\n");
-              }
-            }
-            if (result.stderr) {
-              safeWrite(`\x1b[31m${result.stderr}\x1b[0m\r\n`);
-            }
-            const codeColor = result.exitCode === 0 ? "32" : "31";
-            safeWrite(
-              `\x1b[90m── Exit: \x1b[${codeColor}m${result.exitCode}\x1b[90m ──\x1b[0m\r\n`,
-            );
-          }
-        } catch (execErr) {
-          // Fall back to shell piping if execute_script fails
-          console.warn(
-            "execute_script failed, falling back to shell piping:",
-            execErr,
-          );
+        if (isSingleLine) {
           try {
+            // Single-line: pipe directly into the shell
             await invoke("send_ssh_input", {
               sessionId: targetSessionId,
               data: command + "\n",
@@ -2554,6 +2546,7 @@ export function useWebTerminal(
               executedAt: new Date().toISOString(),
             });
           } catch (dispatchError) {
+            assertCurrent();
             recordExecution({
               status: "cancelled",
               evidence: "dispatch-failed",
@@ -2562,9 +2555,77 @@ export function useWebTerminal(
             });
             console.error("Failed to run script:", dispatchError);
           }
+        } else {
+          // Multi-line: upload as temp file on the remote server, execute, capture output, clean up
+          const interpreter =
+            script.language === "powershell"
+              ? "powershell"
+              : script.language === "sh"
+                ? "sh"
+                : "bash";
+          const startedAt = Date.now();
+          try {
+            const result = await invoke<{
+              stdout: string;
+              stderr: string;
+              exitCode: number;
+            }>("execute_script", {
+              sessionId: targetSessionId,
+              script: command,
+              interpreter,
+            });
+            assertCurrent();
+            const completedAt = new Date().toISOString();
+            recordExecution({
+              status: result.exitCode === 0 ? "success" : "error",
+              evidence: "remote-completion",
+              executedAt: completedAt,
+              output: result.stdout || undefined,
+              stderr: result.stderr || undefined,
+              errorMessage:
+                result.exitCode !== 0 ? result.stderr || undefined : undefined,
+              exitCode: result.exitCode,
+              durationMs: Math.max(0, Date.now() - startedAt),
+            });
+            if (termRef.current) {
+              safeWrite(`\r\n\x1b[90m── Script: ${script.name} ──\x1b[0m\r\n`);
+              if (result.stdout) {
+                for (const line of result.stdout.split("\n")) {
+                  safeWrite(line + "\r\n");
+                }
+              }
+              if (result.stderr) {
+                safeWrite(`\x1b[31m${result.stderr}\x1b[0m\r\n`);
+              }
+              const codeColor = result.exitCode === 0 ? "32" : "31";
+              safeWrite(
+                `\x1b[90m── Exit: \x1b[${codeColor}m${result.exitCode}\x1b[90m ──\x1b[0m\r\n`,
+              );
+            }
+          } catch {
+            assertCurrent();
+            // An execution request may fail after starting remotely. Replaying it
+            // through the shell would duplicate effects, so never redispatch.
+            recordExecution({
+              status: "error",
+              evidence: "dispatch-failed",
+              errorMessage:
+                "Execution could not be confirmed; the script was not retried.",
+              executedAt: new Date().toISOString(),
+            });
+            toastRef.current.error(
+              "Script execution could not be confirmed. It was not retried; inspect the remote state before running it again.",
+            );
+          }
         }
+        closeScriptSelector();
+      } catch {
+        toastRef.current.error(
+          "The SSH action was cancelled or its session is no longer ready. No automatic retry was performed.",
+        );
+      } finally {
+        scriptRunBusyRef.current = false;
       }
-      closeScriptSelector();
     },
     [
       addCommandHistoryEntry,
@@ -2572,6 +2633,7 @@ export function useWebTerminal(
       formatErrorDetails,
       isSsh,
       safeWrite,
+      captureQuickActionSession,
     ],
   );
 
@@ -3225,6 +3287,7 @@ export function useWebTerminal(
       setProxyCommandPrompt(null);
       cancelSessionLifecycleActorAttempts(mountedSessionId);
       isDisposed.current = true;
+      replayAbortRef.current?.abort();
       disconnectIntentRef.current = "user";
       clearReconnectTimer();
       for (const timer of sshAttemptWatchdogTimers) {
@@ -3402,6 +3465,7 @@ export function useWebTerminal(
   }, [toast]);
 
   const sendCancel = useCallback(async () => {
+    replayAbortRef.current?.abort();
     if (!isSsh || !sshSessionId.current || !isSshReady.current) return;
     try {
       await invoke("send_ssh_input", {
@@ -3473,7 +3537,32 @@ export function useWebTerminal(
 
   const handleReplayMacro = useCallback(
     async (macro: TerminalMacro) => {
-      if (!sshSessionId.current || replayingMacro) return;
+      if (!sshSessionId.current || replayAbortRef.current) return;
+      let assertCurrent: () => void;
+      try {
+        assertCurrent = captureQuickActionSession();
+      } catch {
+        toastRef.current.error(
+          "Connect and authenticate this SSH session before replaying a macro.",
+        );
+        return;
+      }
+      const reviewed = structuredClone(macro);
+      try {
+        if (
+          settingsRef.current.macros?.confirmBeforeReplay !== false &&
+          !window.confirm(
+            `Replay macro "${reviewed.name}" (${reviewed.steps.length} steps) on ${sessionRef.current.name || sessionRef.current.hostname}?`,
+          )
+        )
+          return;
+        assertCurrent();
+      } catch {
+        toastRef.current.error(
+          "The SSH session changed while reviewing this macro. Nothing was replayed.",
+        );
+        return;
+      }
       setShowMacroList(false);
       setReplayingMacro(true);
       const controller = new AbortController();
@@ -3481,18 +3570,21 @@ export function useWebTerminal(
       try {
         await macroService.replayMacro(
           sshSessionId.current,
-          macro,
-          undefined,
+          reviewed,
+          () => assertCurrent(),
           controller.signal,
         );
-      } catch (err) {
-        console.error("Macro replay failed:", err);
+      } catch {
+        if (!controller.signal.aborted)
+          toastRef.current.error(
+            "Macro replay stopped because the SSH session changed or a step failed.",
+          );
       } finally {
         setReplayingMacro(false);
         replayAbortRef.current = null;
       }
     },
-    [replayingMacro],
+    [captureQuickActionSession],
   );
 
   const handleStopReplay = useCallback(() => {
@@ -3500,10 +3592,35 @@ export function useWebTerminal(
   }, []);
 
   useEffect(() => {
-    if (showMacroList) macroService.loadMacros().then(setSavedMacros);
+    if (!showMacroList) return;
+    let current = true;
+    macroService
+      .loadMacros()
+      .then((macros) => {
+        if (current) setSavedMacros(macros);
+      })
+      .catch(() => {
+        if (!current) return;
+        setSavedMacros([]);
+        toastRef.current.error(
+          "Macro library unavailable. Open the desktop app and unlock its data store, then retry.",
+        );
+      });
+    return () => {
+      current = false;
+    };
   }, [showMacroList]);
 
   /* ── TOTP ── */
+
+  const quickActions = useSshQuickActions({
+    session,
+    ready: status === "connected",
+    active: isTerminalActive,
+    captureSession: captureQuickActionSession,
+    runScript,
+    replayMacro: handleReplayMacro,
+  });
 
   const totpConfigs = connection?.totpConfigs ?? [];
 
@@ -3560,6 +3677,7 @@ export function useWebTerminal(
     sshFailure,
     isFullscreen,
     statusToneClass,
+    quickActions,
     /* script selector */
     showScriptSelector,
     setShowScriptSelector,

@@ -41,6 +41,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SSH session status badges", () => {
+  it("keeps the connection status compact without changing non-SSH badge sizing", () => {
+    const view = render(<TerminalStatusBar mgr={manager()} />);
+    expect(screen.getByTestId("terminal-connection-status")).toHaveStyle({
+      padding: "1px 5px",
+      fontSize: "10px",
+      lineHeight: "14px",
+      textTransform: "none",
+    });
+    view.rerender(<TerminalStatusBar mgr={manager({ isSsh: false })} />);
+    expect(screen.getByTestId("terminal-connection-status").style.cssText).toBe(
+      "",
+    );
+  });
   it.each([
     ["connected", "Connected"],
     ["reconnecting", "Reconnecting"],

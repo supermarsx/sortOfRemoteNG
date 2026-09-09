@@ -10,6 +10,7 @@ import {
 } from "../../utils/session/sessionLifecycle";
 import { resolveRuntimeNetworkPath } from "../../utils/network/resolveRuntimeNetworkPath";
 import type { SessionVpnType } from "../../utils/network/vpnProviderCatalog";
+import * as macroService from "../../utils/recording/macroService";
 
 const mocks = vi.hoisted(() => {
   class MockTerminal {
@@ -330,6 +331,7 @@ const emitTauriEvent = (event: string, payload: unknown) => {
 };
 
 beforeEach(() => {
+  vi.mocked(macroService.replayMacro).mockReset().mockResolvedValue(undefined);
   mocks.databaseId = "database-ssh-fixture";
   mocks.databaseAccessible = true;
   resetSessionLifecycleAllocatorForTests();
@@ -1960,7 +1962,7 @@ describe("useWebTerminal input lifecycle", () => {
     const view = render(<Harness />);
     await waitFor(() => expect(model?.status).toBe("connected"));
     await waitFor(() => {
-      expect(mocks.loadManagedScripts).toHaveBeenCalledOnce();
+      expect(mocks.loadManagedScripts).toHaveBeenCalledTimes(2); // Existing selector and favorites metadata library.
       expect(mocks.listeners.has("request-terminal-buffer")).toBe(true);
       expect(mocks.listeners.has("ssh-output")).toBe(true);
       expect(mocks.listeners.has("ssh-error")).toBe(true);
@@ -2000,16 +2002,11 @@ describe("useWebTerminal input lifecycle", () => {
   });
 
   it.each([
-    ["accepted", undefined, "pending", "dispatch-accepted"],
-    [
-      "failed",
-      new Error("transport unavailable"),
-      "cancelled",
-      "dispatch-failed",
-    ],
+    ["available", undefined],
+    ["unavailable", new Error("transport unavailable")],
   ])(
-    "records fallback script dispatch as %s",
-    async (_label, fallbackError, expectedStatus, expectedEvidence) => {
+    "never redispatches an ambiguous script failure even when the shell is %s",
+    async (_label, fallbackError) => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
       mocks.invoke.mockImplementation((command: string) => {
@@ -2050,24 +2047,174 @@ describe("useWebTerminal input lifecycle", () => {
         expect.objectContaining({
           sessionId: "frontend-ssh-1",
           source: "web-terminal-script",
-          status: expectedStatus,
-          evidence: expectedEvidence,
+          status: "error",
+          evidence: "dispatch-failed",
+          errorMessage:
+            "Execution could not be confirmed; the script was not retried.",
         }),
       ]);
-      expect(warn).toHaveBeenCalledWith(
-        "execute_script failed, falling back to shell piping:",
-        expect.any(Error),
-      );
-      if (fallbackError) {
-        expect(error).toHaveBeenCalledWith(
-          "Failed to run script:",
-          fallbackError,
-        );
-      } else {
-        expect(error).not.toHaveBeenCalled();
-      }
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "send_ssh_input",
+        ),
+      ).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
       warn.mockRestore();
       error.mockRestore();
+    },
+  );
+
+  it.each([true, false])(
+    "honors script confirmation policy (%s) and never dispatches a cancelled review",
+    async (confirmationRequired) => {
+      mocks.settingsContext.settings = {
+        sessionQuickActions: { confirmBeforeScriptRun: confirmationRequired },
+      };
+      mocks.confirmPaste.mockReturnValue(false);
+      let model: WebTerminalMgr | null = null;
+      render(<ScriptHarness />);
+      function ScriptHarness() {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      }
+      await waitFor(() => expect(model?.status).toBe("connected"));
+      await act(async () => {
+        await model?.runScript({
+          id: "confirm",
+          name: "Fixture",
+          description: "",
+          script: "echo fixture",
+          language: "bash",
+          category: "Test",
+          osTags: ["linux"],
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      });
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "send_ssh_input",
+        ),
+      ).toHaveLength(confirmationRequired ? 0 : 1);
+      expect(mocks.confirmPaste).toHaveBeenCalledTimes(
+        confirmationRequired ? 1 : 0,
+      );
+    },
+  );
+
+  it("does not publish stale script completion or classify it as a dispatch failure after a database switch", async () => {
+    const implementation = mocks.invoke.getMockImplementation()!;
+    let complete!: (value: {
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+    }) => void;
+    mocks.invoke.mockImplementation((command: string, args: unknown) =>
+      command === "execute_script"
+        ? new Promise((resolve) => {
+            complete = resolve;
+          })
+        : implementation(command, args),
+    );
+    let model: WebTerminalMgr | null = null;
+    function Harness() {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    let running!: Promise<void>;
+    act(() => {
+      running = model!.runScript({
+        id: "pending",
+        name: "Fixture",
+        description: "",
+        script: "echo one\necho two",
+        language: "bash",
+        category: "Test",
+        osTags: ["linux"],
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      });
+    });
+    mocks.databaseId = "different-db";
+    await act(async () => {
+      complete({ stdout: "private fixture output", stderr: "", exitCode: 0 });
+      await running;
+    });
+    expect(mocks.addHistoryEntry).not.toHaveBeenCalled();
+    expect(
+      mocks.MockTerminal.instances[0].write.mock.calls.flat().join(""),
+    ).not.toContain("private fixture output");
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "execute_script",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it.each(["cancel", "locked after first step", "stop during pending step"])(
+    "safely handles macro %s without sending another command",
+    async (reason) => {
+      const actual = await vi.importActual<
+        typeof import("../../utils/recording/macroService")
+      >("../../utils/recording/macroService");
+      vi.mocked(macroService.replayMacro).mockImplementation(
+        actual.replayMacro,
+      );
+      mocks.settingsContext.settings = {
+        macros: { confirmBeforeReplay: reason === "cancel" },
+      };
+      mocks.confirmPaste.mockReturnValue(false);
+      const implementation = mocks.invoke.getMockImplementation()!;
+      let complete!: () => void;
+      mocks.invoke.mockImplementation((command: string, args: unknown) =>
+        command === "send_ssh_input"
+          ? new Promise<void>((resolve) => {
+              complete = resolve;
+            })
+          : implementation(command, args),
+      );
+      let model: WebTerminalMgr | null = null;
+      function Harness() {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      }
+      render(<Harness />);
+      await waitFor(() => expect(model?.status).toBe("connected"));
+      let running!: Promise<void>;
+      act(() => {
+        running = model!.handleReplayMacro({
+          id: "macro",
+          name: "Fixture",
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+          steps: [
+            {
+              command: "first",
+              delayMs: reason === "stop during pending step" ? 3_600_000 : 0,
+              sendNewline: true,
+            },
+            { command: "second", delayMs: 0, sendNewline: true },
+          ],
+        });
+      });
+      if (reason !== "cancel") {
+        if (reason === "locked after first step")
+          mocks.databaseAccessible = false;
+        else act(() => model!.handleStopReplay());
+        complete();
+      }
+      await act(async () => {
+        await running;
+      });
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "send_ssh_input",
+        ),
+      ).toHaveLength(reason === "cancel" ? 0 : 1);
+      expect(model!.replayingMacro).toBe(false);
     },
   );
 
