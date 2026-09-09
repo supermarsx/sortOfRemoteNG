@@ -7,11 +7,17 @@ import {
 import { useConnections } from "../../contexts/useConnections";
 import { useSessionThumbnails } from "./useSessionThumbnails";
 import {
+  sameSessionSnapshot,
+  useVisibleSessionRefresh,
+  type SessionRefreshLease,
+} from "../session/useVisibleSessionRefresh";
+import {
   loadSessionHistory,
   saveSessionHistory,
   clearSessionHistory as clearStoredHistory,
   resolveRdpHistoryConnection,
   RDPSessionHistoryEntry,
+  RDP_SESSION_HISTORY_CHANGED,
 } from "../../utils/rdp/rdpSessionHistory";
 import {
   cleanupSessionVpnBackend,
@@ -78,6 +84,9 @@ interface UseRDPSessionPanelParams {
   thumbnailsEnabled?: boolean;
   thumbnailPolicy?: "realtime" | "on-blur" | "on-detach" | "manual";
   thumbnailInterval?: number;
+  collectStats?: boolean;
+  invalidationKey?: string;
+  historyVisible?: boolean;
 }
 
 export function useRDPSessionPanel({
@@ -87,6 +96,9 @@ export function useRDPSessionPanel({
   thumbnailsEnabled = true,
   thumbnailPolicy = "realtime",
   thumbnailInterval = 5,
+  collectStats,
+  invalidationKey = "",
+  historyVisible,
 }: UseRDPSessionPanelParams) {
   const { state, dispatch } = useConnections();
   const [sessions, setSessions] = useState<RDPSessionInfo[]>([]);
@@ -94,17 +106,38 @@ export function useRDPSessionPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const autoRefreshRef = useRef(autoRefresh);
-  const fetchInFlightRef = useRef(false);
-  const visibleRef = useRef(isVisible);
-  visibleRef.current = isVisible;
+  const loadedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<PanelTab>("sessions");
+  const statsEnabled = collectStats ?? activeTab === "sessions";
   const [rebootConfirmSessionId, setRebootConfirmSessionId] = useState<
     string | null
   >(null);
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
   const [sessionHistory, setSessionHistory] =
     useState<RDPSessionHistoryEntry[]>(loadSessionHistory);
+  const observeHistory =
+    historyVisible ?? (isVisible && activeTab === "history");
+  useEffect(() => {
+    if (!observeHistory) return;
+    const refreshHistory = () => {
+      if (document.hidden) return;
+      const next = loadSessionHistory();
+      setSessionHistory((previous) =>
+        sameSessionSnapshot(previous, next) ? previous : next,
+      );
+    };
+    refreshHistory();
+    window.addEventListener(RDP_SESSION_HISTORY_CHANGED, refreshHistory);
+    window.addEventListener("storage", refreshHistory);
+    window.addEventListener("focus", refreshHistory);
+    document.addEventListener("visibilitychange", refreshHistory);
+    return () => {
+      window.removeEventListener(RDP_SESSION_HISTORY_CHANGED, refreshHistory);
+      window.removeEventListener("storage", refreshHistory);
+      window.removeEventListener("focus", refreshHistory);
+      document.removeEventListener("visibilitychange", refreshHistory);
+    };
+  }, [observeHistory]);
   const sessionsRef = useRef(sessions);
   const frontendSessionsRef = useRef(state.sessions);
   const retainedCleanupRowsRef = useRef(new Map<string, RDPSessionInfo>());
@@ -125,10 +158,6 @@ export function useRDPSessionPanel({
       thumbnailsEnabled &&
       thumbnailPolicy === "realtime",
   );
-
-  useEffect(() => {
-    autoRefreshRef.current = autoRefresh;
-  }, [autoRefresh]);
 
   const getSessionDisplayName = useCallback(
     (session: RDPSessionInfo): { name: string; subtitle: string } => {
@@ -237,56 +266,64 @@ export function useRDPSessionPanel({
     [connections],
   );
 
-  const fetchData = useCallback(async () => {
-    if (fetchInFlightRef.current) return;
-    fetchInFlightRef.current = true;
-    try {
-      setIsLoading(true);
-      const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
-      const liveIds = new Set(list.map((session) => session.id));
-      setSessions([
-        ...list,
-        ...[...retainedCleanupRowsRef.current.values()].filter(
-          (session) => !liveIds.has(session.id),
-        ),
-      ]);
-      const newStats: Record<string, RDPStats> = {};
-      for (const s of list) {
-        if (!visibleRef.current) break;
-        try {
-          const st = await invoke<RDPStats>("get_rdp_stats", {
-            sessionId: s.id,
-          });
-          newStats[s.id] = st;
-        } catch {
-          // Session may have ended
+  const fetchData = useCallback(
+    async (lease: SessionRefreshLease) => {
+      try {
+        if (!loadedRef.current) setIsLoading(true);
+        const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
+        if (!lease.isCurrent()) return;
+        const liveIds = new Set(list.map((session) => session.id));
+        const next = [
+          ...list,
+          ...[...retainedCleanupRowsRef.current.values()].filter(
+            (session) => !liveIds.has(session.id),
+          ),
+        ];
+        setSessions((previous) =>
+          sameSessionSnapshot(previous, next) ? previous : next,
+        );
+        loadedRef.current = true;
+        const newStats: Record<string, RDPStats> = {};
+        for (const s of statsEnabled ? list : []) {
+          if (!lease.isCurrent()) return;
+          try {
+            const st = await invoke<RDPStats>("get_rdp_stats", {
+              sessionId: s.id,
+            });
+            newStats[s.id] = st;
+          } catch {
+            // Session may have ended
+          }
         }
+        if (!lease.isCurrent()) return;
+        if (statsEnabled)
+          setStatsMap((previous) =>
+            sameSessionSnapshot(previous, newStats) ? previous : newStats,
+          );
+        if (retainedCleanupRowsRef.current.size === 0) setError("");
+      } catch (e) {
+        if (lease.isCurrent()) setError(String(e));
+      } finally {
+        if (lease.isCurrent()) setIsLoading(false);
       }
-      setStatsMap(newStats);
-      if (retainedCleanupRowsRef.current.size === 0) setError("");
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      fetchInFlightRef.current = false;
-      setIsLoading(false);
-    }
-  }, []);
-
-  const handleRefresh = useCallback(() => {
-    fetchData();
-  }, [fetchData]);
-
+    },
+    [statsEnabled],
+  );
+  const { refresh: handleRefresh, invalidate: invalidateRefresh } =
+    useVisibleSessionRefresh({
+      enabled: isVisible,
+      load: fetchData,
+      invalidationKey: `${statsEnabled}:${invalidationKey}`,
+      intervalMs: autoRefresh ? 15_000 : 0,
+    });
   useEffect(() => {
-    if (!isVisible) return;
-    fetchData();
-    const timer = setInterval(() => {
-      if (autoRefreshRef.current) fetchData();
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [isVisible, fetchData]);
+    if (!isVisible) setIsLoading(false);
+  }, [isVisible]);
 
   const handleDisconnect = useCallback(
     async (sessionId: string) => {
+      invalidateRefresh();
+      setIsLoading(false);
       const nativeSession =
         sessionsRef.current.find((session) => session.id === sessionId) ??
         retainedCleanupRowsRef.current.get(sessionId);
@@ -350,43 +387,49 @@ export function useRDPSessionPanel({
       if (retainedCleanupRowsRef.current.size === 0) setError("");
       return true;
     },
-    [addToHistory, dispatch],
+    [addToHistory, dispatch, invalidateRefresh],
   );
 
   const handleDetach = useCallback(
     async (sessionId: string) => {
+      invalidateRefresh();
+      setIsLoading(false);
       try {
         await invoke("detach_rdp_session", { sessionId });
-        fetchData();
+        void handleRefresh();
       } catch (e) {
         setError(`Detach failed: ${String(e)}`);
       }
     },
-    [fetchData],
+    [invalidateRefresh, handleRefresh],
   );
 
   const handleSignOut = useCallback(
     async (sessionId: string) => {
+      invalidateRefresh();
+      setIsLoading(false);
       try {
         await invoke("rdp_sign_out", { sessionId });
-        fetchData();
+        void handleRefresh();
       } catch (e) {
         setError(`Sign out failed: ${String(e)}`);
       }
     },
-    [fetchData],
+    [invalidateRefresh, handleRefresh],
   );
 
   const handleForceReboot = useCallback(
     async (sessionId: string) => {
+      invalidateRefresh();
+      setIsLoading(false);
       try {
         await invoke("rdp_force_reboot", { sessionId });
-        fetchData();
+        void handleRefresh();
       } catch (e) {
         setError(`Force reboot failed: ${String(e)}`);
       }
     },
-    [fetchData],
+    [invalidateRefresh, handleRefresh],
   );
 
   const handleDisconnectAll = useCallback(async () => {

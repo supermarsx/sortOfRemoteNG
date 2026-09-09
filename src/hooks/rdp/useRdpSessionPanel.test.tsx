@@ -31,6 +31,7 @@ vi.mock("../../utils/rdp/rdpSessionHistory", () => ({
   saveSessionHistory: vi.fn(),
   clearSessionHistory: vi.fn(),
   resolveRdpHistoryConnection: vi.fn(),
+  RDP_SESSION_HISTORY_CHANGED: "sortofremoteng:rdp-session-history-changed",
 }));
 
 import { useRDPSessionPanel, type RDPSessionInfo } from "./useRdpSessionPanel";
@@ -124,7 +125,9 @@ describe("useRDPSessionPanel VPN cleanup", () => {
     );
     try {
       await act(() => vi.advanceTimersByTimeAsync(12000));
-      act(() => result.current.handleRefresh());
+      act(() => {
+        void result.current.handleRefresh();
+      });
       expect(mocks.invoke).toHaveBeenCalledTimes(1);
       rerender({ isVisible: false });
       await act(async () =>
@@ -132,7 +135,8 @@ describe("useRDPSessionPanel VPN cleanup", () => {
       );
       await act(() => vi.advanceTimersByTimeAsync(12000));
       expect(mocks.invoke).toHaveBeenCalledTimes(1);
-      expect(result.current.sessions).toHaveLength(2);
+      // A read from the old visible activation must not publish after hiding.
+      expect(result.current.sessions).toHaveLength(0);
       rerender({ isVisible: true });
       expect(mocks.invoke).toHaveBeenCalledTimes(2);
       await act(async () => resolveList([]));

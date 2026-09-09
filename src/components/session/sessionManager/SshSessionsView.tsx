@@ -338,6 +338,7 @@ function executionSearchTerms(execution: CommandExecution): string[] {
 }
 
 interface SshSessionsViewProps {
+  isActive?: boolean;
   connections?: readonly Connection[];
   sessions?: readonly ConnectionSession[];
   onReconnect?: (connection: Connection) => void | Promise<unknown>;
@@ -346,6 +347,7 @@ const EMPTY_CONNECTIONS: readonly Connection[] = [];
 const EMPTY_SESSIONS: readonly ConnectionSession[] = [];
 
 export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
+  isActive = true,
   connections = EMPTY_CONNECTIONS,
   sessions = EMPTY_SESSIONS,
   onReconnect,
@@ -438,7 +440,9 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
+    if (!isActive) return;
     const refreshLifecycle = () => {
+      if (document.hidden) return;
       const nextLifecycle = readPersistedLifecycleActivity();
       if (nextLifecycle.raw !== rawLifecycleRef.current) {
         rawLifecycleRef.current = nextLifecycle.raw;
@@ -446,8 +450,14 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
       }
     };
     const refreshHistoryFromMemory = () => {
+      if (document.hidden) return;
       setEntries(getSSHCommandHistoryMemorySnapshot());
     };
+    const refreshVisible = () => {
+      refreshLifecycle();
+      refreshHistoryFromMemory();
+    };
+    refreshVisible();
     window.addEventListener("storage", refreshLifecycle);
     window.addEventListener("focus", refreshLifecycle);
     window.addEventListener(
@@ -455,7 +465,7 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
       refreshHistoryFromMemory,
     );
     window.addEventListener(SSH_SESSION_ACTIVITY_SYNC_EVENT, refreshLifecycle);
-    const timer = window.setInterval(refreshLifecycle, 3000);
+    document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       window.removeEventListener("storage", refreshLifecycle);
       window.removeEventListener("focus", refreshLifecycle);
@@ -467,9 +477,9 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
         SSH_SESSION_ACTIVITY_SYNC_EVENT,
         refreshLifecycle,
       );
-      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisible);
     };
-  }, []);
+  }, [isActive]);
 
   const activateTab = (tab: SshSessionsTab, moveFocus = false) => {
     setActiveTab(tab);

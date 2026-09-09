@@ -180,6 +180,33 @@ describe("SSH saved reconnect targets", () => {
 });
 
 describe("SSH reconnect controls", () => {
+  it("uses activity events without a storage polling timer and catches up when visible", async () => {
+    vi.useFakeTimers();
+    const stored = vi.spyOn(Storage.prototype, "getItem");
+    const activityReads = () =>
+      stored.mock.calls.filter(
+        ([key]) => key === SSH_SESSION_ACTIVITY_STORAGE_KEY,
+      ).length;
+    const view = render(<SshSessionsView isActive />);
+    try {
+      const initialReads = activityReads();
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(activityReads()).toBe(initialReads);
+      view.rerender(<SshSessionsView isActive={false} />);
+      appendSSHSessionActivity({
+        sessionId: "while-hidden",
+        sessionName: "Hidden update",
+        hostname: "fixture",
+        kind: "connected",
+      });
+      expect(screen.queryByText("Hidden update")).not.toBeInTheDocument();
+      view.rerender(<SshSessionsView isActive />);
+      expect(screen.getByText("Hidden update")).toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
   it("opens lifecycle records with current saved settings and displays safe failure feedback", async () => {
     const saved = connection("original", {
       hostname: "new.example.test",

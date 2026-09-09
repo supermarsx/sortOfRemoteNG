@@ -2,6 +2,8 @@ import { SettingsManager } from "../settings/settingsManager";
 import type { Connection } from "../../types/connection/connection";
 
 const STORAGE_KEY = "rdp-session-history";
+export const RDP_SESSION_HISTORY_CHANGED =
+  "sortofremoteng:rdp-session-history-changed";
 const DEFAULT_MAX_ENTRIES = 1000;
 
 function getMaxEntries(): number {
@@ -64,6 +66,7 @@ export function saveSessionHistory(entries: RDPSessionHistoryEntry[]): void {
   try {
     const max = getMaxEntries();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, max)));
+    window.dispatchEvent(new Event(RDP_SESSION_HISTORY_CHANGED));
   } catch {
     /* ignore */
   }
@@ -77,4 +80,5 @@ export function recordRdpSessionHistory(entry: RDPSessionHistoryEntry): void {
 
 export function clearSessionHistory(): void {
   localStorage.removeItem(STORAGE_KEY);
+  window.dispatchEvent(new Event(RDP_SESSION_HISTORY_CHANGED));
 }

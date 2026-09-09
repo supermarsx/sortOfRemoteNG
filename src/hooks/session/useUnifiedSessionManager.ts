@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useSessionObservationActivity } from "./useSessionObservationActivity";
 import {
   Connection,
   ConnectionSession,
@@ -66,11 +67,7 @@ export type UnifiedSessionBucket = "rdp" | "ssh" | "proxy" | TabKind;
 
 /** Normalized status across both sources. */
 export type UnifiedSessionStatus =
-  | "connected"
-  | "disconnected"
-  | "detached"
-  | "error"
-  | "waiting";
+  "connected" | "disconnected" | "detached" | "error" | "waiting";
 
 export interface UnifiedSessionRow {
   /** Stable cross-source id: `${kind}:${nativeId}`. */
@@ -125,6 +122,13 @@ export interface UseUnifiedSessionManagerParams {
   thumbnailsEnabled?: boolean;
   thumbnailPolicy?: "realtime" | "on-blur" | "on-detach" | "manual";
   thumbnailInterval?: number;
+  activeView?:
+    | "sessions"
+    | "ssh-sessions"
+    | "rdp-logs"
+    | "rdp-history"
+    | "proxy-logs"
+    | "proxy-stats";
 }
 
 /** Classify a proxy session's normalized status. */
@@ -266,12 +270,30 @@ export function useUnifiedSessionManager({
   thumbnailsEnabled = true,
   thumbnailPolicy = "realtime",
   thumbnailInterval = 5,
+  activeView = "sessions",
 }: UseUnifiedSessionManagerParams) {
   const { state } = useConnections();
+  const observationActive = useSessionObservationActivity(isVisible);
+  const lifecycleKey = useMemo(
+    () =>
+      JSON.stringify(
+        state.sessions.map((session) => [
+          session.id,
+          session.connectionId,
+          session.backendSessionId,
+          session.status,
+          session.layout?.isDetached,
+          session.lifecycleRevision,
+        ]),
+      ),
+    [state.sessions],
+  );
 
   // ── Source 1: RDP sessions (rich panel hook — keeps all RDP actions) ──
   const rdp = useRDPSessionPanel({
-    isVisible,
+    isVisible: observationActive && activeView === "sessions",
+    historyVisible: observationActive && activeView === "rdp-history",
+    invalidationKey: lifecycleKey,
     connections,
     activeBackendSessionIds,
     thumbnailsEnabled,
@@ -280,9 +302,24 @@ export function useUnifiedSessionManager({
   });
 
   // ── Source 2: internal HTTP/HTTPS proxy sessions ──
-  const proxy = useInternalProxyManager(isVisible);
+  const proxy = useInternalProxyManager(
+    observationActive &&
+      ["sessions", "proxy-logs", "proxy-stats"].includes(activeView),
+    {
+      view:
+        activeView === "proxy-logs"
+          ? "logs"
+          : activeView === "proxy-stats"
+            ? "stats"
+            : "sessions",
+      invalidationKey: lifecycleKey,
+    },
+  );
   // ── Source 3: native SSH sessions ──
-  const ssh = useSshSessionPanel(isVisible);
+  const ssh = useSshSessionPanel(
+    observationActive && activeView === "sessions",
+    lifecycleKey,
+  );
   const {
     sessions: rdpSessions,
     statsMap: rdpStatsMap,
@@ -536,6 +573,7 @@ export function useUnifiedSessionManager({
   };
 
   return {
+    observationActive,
     // Aggregated view
     rows: allRows,
     rdpRows,

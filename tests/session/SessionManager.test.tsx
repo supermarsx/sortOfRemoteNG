@@ -377,6 +377,19 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();
   });
 
+  it("updates automatically without manual refresh controls", async () => {
+    renderManager();
+    expect(
+      await screen.findByText("Updates automatically"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Refresh" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Auto-refresh", { exact: true }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders RDP and proxy sessions in an accessible management table", async () => {
     renderManager();
     expect(await screen.findByText("Prod RDP")).toBeInTheDocument();

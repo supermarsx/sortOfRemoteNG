@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useSessionObservationActivity } from "../session/useSessionObservationActivity";
 
 interface ThumbnailSession {
   id: string;
@@ -20,6 +21,9 @@ export function useSessionThumbnails(
   intervalMs: number = 5000,
   enabled: boolean = true,
 ): Record<string, string> {
+  const observationActive = useSessionObservationActivity(
+    enabled && sessions.length > 0,
+  );
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const prevUrlsRef = useRef<Record<string, string>>({});
   const sessionsRef = useRef(sessions);
@@ -46,7 +50,7 @@ export function useSessionThumbnails(
 
   const hasSessions = sessions.length > 0;
   useEffect(() => {
-    if (!enabled || !hasSessions) return;
+    if (!observationActive || !hasSessions) return;
     let cancelled = false;
     const capture = async () => {
       if (cancelled || inFlightRef.current) return;
@@ -117,7 +121,7 @@ export function useSessionThumbnails(
       if (captureRef.current === capture) captureRef.current = null;
       clearInterval(timer);
     };
-  }, [enabled, hasSessions, intervalMs]);
+  }, [observationActive, hasSessions, intervalMs]);
 
   // Cleanup blob URLs on unmount
   useEffect(() => {

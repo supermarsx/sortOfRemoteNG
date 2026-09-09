@@ -1202,6 +1202,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
   thumbnailInterval = 5,
 }) => {
   const { state, dispatch } = useConnections();
+  const [view, setView] = useState<ManagerView>("sessions");
   const mgr = useUnifiedSessionManager({
     isVisible,
     connections,
@@ -1211,8 +1212,8 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     thumbnailsEnabled: false,
     thumbnailPolicy,
     thumbnailInterval,
+    activeView: view,
   });
-  const [view, setView] = useState<ManagerView>("sessions");
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
 
   const handleViewRdpLogs = (sessionId: string) => {
@@ -1316,30 +1317,14 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             >
               {sessionSourceSummary}
             </div>
-            <label className="flex items-center gap-1.5 text-[11px] text-[var(--color-textSecondary)] cursor-pointer">
-              <Checkbox
-                checked={
-                  mgr.rdp.autoRefresh &&
-                  mgr.ssh.autoRefresh &&
-                  mgr.proxy.autoRefresh
-                }
-                onChange={(v: boolean) => {
-                  mgr.rdp.setAutoRefresh(v);
-                  mgr.ssh.setAutoRefresh(v);
-                  mgr.proxy.setAutoRefresh(v);
-                }}
-              />
-              <span>Auto-refresh</span>
-            </label>
-            <button
-              onClick={mgr.handleRefresh}
-              disabled={mgr.isLoading}
-              aria-busy={mgr.isLoading}
-              className="sor-btn sor-btn-secondary sor-btn-xs w-full disabled:opacity-60"
+            <p
+              className="text-[11px] text-[var(--color-textMuted)]"
+              data-tooltip="Updates automatically while this view is visible; background polling pauses when hidden or minimized."
             >
-              <RefreshCw size={12} />{" "}
-              {mgr.isLoading ? "Refreshing..." : "Refresh"}
-            </button>
+              {mgr.isLoading
+                ? "Loading session details…"
+                : "Updates automatically"}
+            </p>
           </div>
         </div>
 
@@ -1364,6 +1349,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           )}
           {view === "ssh-sessions" && (
             <SshSessionsView
+              isActive={mgr.observationActive}
               connections={connections}
               sessions={state.sessions}
               onReconnect={onReconnect}
@@ -1371,7 +1357,10 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           )}
           {view === "rdp-logs" && (
             <div className="flex-1 min-h-0">
-              <RDPLogViewer isVisible sessionFilter={logSessionFilter} />
+              <RDPLogViewer
+                isVisible={mgr.observationActive}
+                sessionFilter={logSessionFilter}
+              />
             </div>
           )}
           {view === "rdp-history" && (

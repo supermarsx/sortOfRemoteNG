@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  sameSessionSnapshot,
+  useVisibleSessionRefresh,
+  type SessionRefreshLease,
+} from "../session/useVisibleSessionRefresh";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -87,69 +92,62 @@ export const getMethodColor = (method: string): string => {
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
 
-export function useInternalProxyManager(isOpen: boolean) {
+export function useInternalProxyManager(
+  isOpen: boolean,
+  options: { view?: ManagerTab; invalidationKey?: string } = {},
+) {
   const [sessions, setSessions] = useState<ProxySessionDetail[]>([]);
   const [requestLog, setRequestLog] = useState<ProxyRequestLogEntry[]>([]);
   const [activeTab, setActiveTab] = useState<ManagerTab>("sessions");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const autoRefreshRef = useRef(autoRefresh);
-  const fetchInFlightRef = useRef(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadedRef = useRef(false);
+  const loadLogs = (options.view ?? activeTab) === "logs";
 
-  const fetchData = useCallback(async (): Promise<boolean> => {
-    if (fetchInFlightRef.current) return false;
-    fetchInFlightRef.current = true;
-    try {
-      const [sessionsData, logData] = await Promise.all([
-        invoke<ProxySessionDetail[]>("get_proxy_session_details"),
-        invoke<ProxyRequestLogEntry[]>("get_proxy_request_log"),
-      ]);
-      setSessions(sessionsData);
-      setRequestLog(logData);
-      setError("");
-      return true;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      return false;
-    } finally {
-      fetchInFlightRef.current = false;
-    }
-  }, []);
-
-  const handleRefresh = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      await fetchData();
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fetchData]);
-
-  // Initial load + auto-refresh
-  useEffect(() => {
-    if (!isOpen) return;
-    handleRefresh();
-
-    intervalRef.current = setInterval(() => {
-      if (autoRefreshRef.current) {
-        fetchData();
+  const fetchData = useCallback(
+    async (lease: SessionRefreshLease): Promise<void> => {
+      if (!loadedRef.current) setIsLoading(true);
+      try {
+        const [sessionsData, logData] = await Promise.all([
+          invoke<ProxySessionDetail[]>("get_proxy_session_details"),
+          loadLogs
+            ? invoke<ProxyRequestLogEntry[]>("get_proxy_request_log")
+            : Promise.resolve(null),
+        ]);
+        if (!lease.isCurrent()) return;
+        setSessions((previous) =>
+          sameSessionSnapshot(previous, sessionsData) ? previous : sessionsData,
+        );
+        if (logData)
+          setRequestLog((previous) =>
+            sameSessionSnapshot(previous, logData) ? previous : logData,
+          );
+        loadedRef.current = true;
+        setError("");
+      } catch (e) {
+        if (lease.isCurrent())
+          setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (lease.isCurrent()) setIsLoading(false);
       }
-    }, 3000);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [isOpen, handleRefresh, fetchData]);
-
+    },
+    [loadLogs],
+  );
+  const observation = useVisibleSessionRefresh({
+    enabled: isOpen,
+    load: fetchData,
+    invalidationKey: `${loadLogs}:${options.invalidationKey ?? ""}`,
+    intervalMs: autoRefresh ? 15_000 : 0,
+  });
+  const handleRefresh = observation.refresh;
   useEffect(() => {
-    autoRefreshRef.current = autoRefresh;
-  }, [autoRefresh]);
+    if (!isOpen) setIsLoading(false);
+  }, [isOpen]);
 
   const handleStopSession = async (sessionId: string): Promise<boolean> => {
+    observation.invalidate();
+    setIsLoading(false);
     try {
       await invoke("stop_basic_auth_proxy", { sessionId });
     } catch (e) {
@@ -164,26 +162,29 @@ export function useInternalProxyManager(isOpen: boolean) {
     setSessions((current) =>
       current.filter((session) => session.session_id !== sessionId),
     );
-    await fetchData();
+    observation.refresh();
     return true;
   };
 
   const handleStopAll = async () => {
+    observation.invalidate();
+    setIsLoading(false);
     try {
-      const count = await invoke<number>("stop_all_proxy_sessions");
+      await invoke<number>("stop_all_proxy_sessions");
       setError("");
-      if (count > 0) {
-        await fetchData();
-      }
+      observation.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
   const handleClearLog = async () => {
+    observation.invalidate();
+    setIsLoading(false);
     try {
       await invoke("clear_proxy_request_log");
-      await fetchData();
+      setRequestLog([]);
+      observation.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

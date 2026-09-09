@@ -3,6 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
+  sameSessionSnapshot,
+  useVisibleSessionRefresh,
+  type SessionRefreshLease,
+} from "../session/useVisibleSessionRefresh";
+import {
   cleanupSessionVpnBackend,
   findAssociatedVpnSessions,
   vpnLeaseCleanupFailureMessage,
@@ -62,14 +67,13 @@ function sanitizeSessionInfo(value: unknown): SshSessionInfo | null {
  * frontend tabs. That also exposes orphaned/detached backend sessions and
  * gives the manager a reliable disconnect surface.
  */
-export function useSshSessionPanel(isVisible: boolean) {
+export function useSshSessionPanel(isVisible: boolean, invalidationKey = "") {
   const { state, dispatch } = useConnections();
   const [sessions, setSessions] = useState<SshSessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const autoRefreshRef = useRef(autoRefresh);
-  const fetchInFlightRef = useRef(false);
+  const loadedRef = useRef(false);
   const sessionsRef = useRef(sessions);
   const frontendSessionsRef = useRef(state.sessions);
   const retainedCleanupRowsRef = useRef(new Map<string, SshSessionInfo>());
@@ -79,13 +83,8 @@ export function useSshSessionPanel(isVisible: boolean) {
   sessionsRef.current = sessions;
   frontendSessionsRef.current = state.sessions;
 
-  useEffect(() => {
-    autoRefreshRef.current = autoRefresh;
-  }, [autoRefresh]);
-
-  const fetchData = useCallback(async () => {
-    if (fetchInFlightRef.current) return;
-    fetchInFlightRef.current = true;
+  const fetchData = useCallback(async (lease: SessionRefreshLease) => {
+    if (!loadedRef.current) setIsLoading(true);
     try {
       const result = await invoke<unknown>("list_sessions");
       const liveSessions = Array.isArray(result)
@@ -94,40 +93,41 @@ export function useSshSessionPanel(isVisible: boolean) {
             .filter((session): session is SshSessionInfo => session !== null)
         : [];
       const liveIds = new Set(liveSessions.map((session) => session.id));
-      setSessions([
+      if (!lease.isCurrent()) return;
+      const next = [
         ...liveSessions,
         ...[...retainedCleanupRowsRef.current.values()].filter(
           (session) => !liveIds.has(session.id),
         ),
-      ]);
+      ];
+      setSessions((previous) =>
+        sameSessionSnapshot(previous, next) ? previous : next,
+      );
+      loadedRef.current = true;
       if (retainedCleanupRowsRef.current.size === 0) setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (lease.isCurrent())
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      fetchInFlightRef.current = false;
+      if (lease.isCurrent()) setIsLoading(false);
     }
   }, []);
 
-  const handleRefresh = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      await fetchData();
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fetchData]);
-
+  const { refresh: handleRefresh, invalidate: invalidateRefresh } =
+    useVisibleSessionRefresh({
+      enabled: isVisible,
+      load: fetchData,
+      invalidationKey,
+      intervalMs: autoRefresh ? 15_000 : 0,
+    });
   useEffect(() => {
-    if (!isVisible) return;
-    void handleRefresh();
-    const timer = setInterval(() => {
-      if (autoRefreshRef.current) void fetchData();
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [fetchData, handleRefresh, isVisible]);
+    if (!isVisible) setIsLoading(false);
+  }, [isVisible]);
 
   const disconnectSession = useCallback(
     async (sessionId: string) => {
+      invalidateRefresh();
+      setIsLoading(false);
       const nativeSession =
         sessionsRef.current.find((session) => session.id === sessionId) ??
         retainedCleanupRowsRef.current.get(sessionId);
@@ -190,7 +190,7 @@ export function useSshSessionPanel(isVisible: boolean) {
       if (retainedCleanupRowsRef.current.size === 0) setError("");
       return true;
     },
-    [dispatch],
+    [dispatch, invalidateRefresh],
   );
 
   const handleDisconnect = useCallback(
