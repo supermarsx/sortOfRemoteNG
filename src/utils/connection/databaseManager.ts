@@ -20,6 +20,13 @@ import {
 } from "../crypto/webCryptoAes";
 
 import { getInvoke } from "../tauri/invoke";
+import { databaseProtection } from "./databaseProtection";
+import type {
+  DatabaseAccessState,
+  DatabaseProtectionUnlockResult,
+  DatabaseProtectionTarget,
+  DatabaseProtectionChangeResult,
+} from "../../types/encryption/databaseProtection";
 // Type-only: keeps the trust export document owned by `trustStore.ts` (single
 // owner) without creating a runtime import edge. The dependency runs the other
 // way — the trust store subscribes to `onCurrentDatabaseChange` below.
@@ -272,6 +279,16 @@ export type CurrentDatabaseChangeListener = (
  * survive that reset.
  */
 const currentDatabaseListeners = new Set<CurrentDatabaseChangeListener>();
+const databaseAccessListeners = new Set<(state: DatabaseAccessState) => void>();
+
+export function onDatabaseAccessChange(
+  listener: (state: DatabaseAccessState) => void,
+): () => void {
+  databaseAccessListeners.add(listener);
+  return () => {
+    databaseAccessListeners.delete(listener);
+  };
+}
 
 /**
  * Subscribe to active-database transitions. Returns an unsubscribe function.
@@ -381,6 +398,306 @@ export class DatabaseManager {
   private readonly credentialSecurityRevisions = new Map<string, string>();
   private securityEpoch = 0;
   private readonly databaseSecurityEpochs = new Map<string, number>();
+  private readonly managedSessions = new Map<
+    string,
+    Omit<DatabaseProtectionUnlockResult, "data">
+  >();
+  private readonly managedAccess = new Map<string, DatabaseAccessState>();
+  private readonly managedTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private managedListener: Promise<void> | null = null;
+  private managedUnlisten: (() => void) | null = null;
+  private disposed = false;
+
+  private emitAccess(state: DatabaseAccessState): void {
+    this.managedAccess.set(state.databaseId, state);
+    for (const listener of databaseAccessListeners) {
+      try {
+        listener(state);
+      } catch (error) {
+        console.warn("Database access listener failed", error);
+      }
+    }
+  }
+
+  private suspendManagedDatabase(
+    id: string,
+    reason: DatabaseAccessState["reason"],
+  ): void {
+    const revision =
+      this.managedSessions.get(id)?.securityRevision ??
+      this.managedAccess.get(id)?.securityRevision ??
+      this.currentDatabase?.securityRevision ??
+      "";
+    this.forgetUnlockedDatabase(id);
+    this.emitAccess({
+      databaseId: id,
+      securityRevision: revision,
+      accessEpoch: this.captureDatabaseEpoch(id),
+      status: "suspended",
+      reason,
+    });
+  }
+
+  private async ensureManagedListener(): Promise<void> {
+    this.managedListener ??= import("@tauri-apps/api/event")
+      .then(async ({ listen }) => {
+        const unlisten = await listen<{ databaseId: string }>(
+          "database-protection:locked",
+          ({ payload }) => {
+            if (
+              typeof payload?.databaseId === "string" &&
+              (this.managedAccess.has(payload.databaseId) ||
+                this.currentDatabase?.id === payload.databaseId)
+            ) {
+              this.suspendManagedDatabase(payload.databaseId, "locked");
+            }
+          },
+        );
+        if (this.disposed) unlisten();
+        else this.managedUnlisten = unlisten;
+      })
+      .catch((error) => {
+        this.managedListener = null;
+        throw error;
+      });
+    await this.managedListener;
+  }
+
+  getDatabaseAccessState(id: string): DatabaseAccessState | null {
+    const state = this.managedAccess.get(id);
+    if (
+      state?.status === "ready" &&
+      (state.sessionExpiresAt ?? 0) <= Date.now()
+    )
+      return { ...state, status: "suspended", reason: "expired" };
+    if (state) return state;
+    return this.currentDatabase?.id === id &&
+      this.currentDatabase.protectionFormat === "sorng-db"
+      ? {
+          databaseId: id,
+          securityRevision: this.currentDatabase.securityRevision ?? "",
+          accessEpoch: this.captureDatabaseEpoch(id),
+          status: "suspended",
+          reason: "locked",
+        }
+      : null;
+  }
+
+  async getDatabaseProtectionStatus(id: string) {
+    return databaseProtection.status(id);
+  }
+
+  async getDatabaseProtectionCapabilities() {
+    return databaseProtection.capabilities();
+  }
+
+  /** Caller holds the database mutation queue and durably flushes current edits first. */
+  async changeManagedDatabaseProtection(
+    id: string,
+    target: DatabaseProtectionTarget | null,
+    options: {
+      currentPassword?: string;
+      confirmRemoveProtection?: boolean;
+      confirmDeviceBoundOnly?: boolean;
+      initializeWithData?: StorageData;
+      expectedSecurityRevision?: string;
+    } = {},
+  ): Promise<DatabaseProtectionChangeResult> {
+    const epoch = this.captureDatabaseEpoch(id);
+    await this.ensureManagedListener();
+    const collection = await this.getDatabase(id);
+    if (!collection) throw new DatabaseNotFoundError();
+    if (
+      options.expectedSecurityRevision !== undefined &&
+      (collection.securityRevision ?? "") !== options.expectedSecurityRevision
+    )
+      throw new Error(
+        "Database protection changed since review. Refresh and confirm the new unlock methods before applying.",
+      );
+    const managed = collection.protectionFormat === "sorng-db";
+    const data = await this.loadDatabaseData(id, options.currentPassword);
+    if (!data) throw new DatabaseNotFoundError();
+    const invoke = await getInvoke();
+    if (!invoke)
+      throw new Error("Managed protection requires the desktop app.");
+    const raw = managed
+      ? (
+          await invoke<LoadResultEnvelope<object | string>>(
+            "load_database_data",
+            { databaseId: id },
+          )
+        ).value
+      : this.loadedRepresentations.get(data);
+    if (typeof raw !== "string" && (typeof raw !== "object" || raw === null))
+      throw new Error("Database has no verified storage representation.");
+    this.assertDatabaseEpoch(id, epoch);
+    const result = await databaseProtection.change({
+      databaseId: id,
+      expectedSecurityRevision: collection.securityRevision ?? "",
+      expectedData: raw,
+      ...(managed
+        ? { sourceSessionId: this.requireManagedSession(id).sessionId }
+        : { legacyVerifiedData: options.initializeWithData ?? data }),
+      target,
+      confirmRemoveProtection: options.confirmRemoveProtection,
+      confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
+      ...(options.initializeWithData
+        ? { initializeEmptyDestination: true }
+        : {}),
+    });
+    if (!result.committed)
+      throw new Error("Database protection change was not committed.");
+    if (this.captureDatabaseEpoch(id) !== epoch || this.disposed)
+      return {
+        ...result,
+        warnings: [
+          ...result.warnings,
+          "Protection changed, but database access was locked meanwhile. Unlock again before continuing.",
+        ],
+      };
+    if (target) {
+      if (!result.sessionId || !result.sessionExpiresAt) {
+        this.suspendManagedDatabase(id, "security-changed");
+        return {
+          ...result,
+          warnings: [
+            ...result.warnings,
+            "Protection changed; unlock again to obtain a new database session.",
+          ],
+        };
+      }
+      this.installManagedSession(id, {
+        ...result,
+        sessionId: result.sessionId,
+        sessionExpiresAt: result.sessionExpiresAt,
+        data: options.initializeWithData ?? data,
+      });
+    } else {
+      this.forgetUnlockedDatabase(id);
+      this.managedAccess.delete(id);
+      this.credentialSecurityRevisions.set(id, result.securityRevision);
+      if (this.currentDatabase?.id === id) {
+        this.currentDatabase = {
+          ...this.currentDatabase,
+          isEncrypted: false,
+          protectionFormat: undefined,
+          securityRevision: result.securityRevision,
+        };
+        this.currentPassword = null;
+        emitCurrentDatabaseChange({
+          reason: "security-change",
+          database: this.currentDatabase,
+          databaseId: id,
+          previousDatabaseId: id,
+          connectionIds: this.connectionIdsOf(data),
+          trustActivation: Promise.resolve(),
+        });
+      }
+    }
+    return result;
+  }
+
+  private requireManagedSession(id: string) {
+    const session = this.managedSessions.get(id);
+    if (!session || session.sessionExpiresAt <= Date.now()) {
+      if (session) this.suspendManagedDatabase(id, "expired");
+      throw new Error(
+        "Database access is locked or expired. Unlock this database again; pending edits are retained.",
+      );
+    }
+    return session;
+  }
+
+  private installManagedSession(
+    id: string,
+    result: DatabaseProtectionUnlockResult,
+  ): void {
+    if (
+      !result.sessionId ||
+      !Number.isFinite(result.sessionExpiresAt) ||
+      result.sessionExpiresAt <= Date.now() ||
+      typeof result.securityRevision !== "string" ||
+      !Array.isArray(result.data?.connections)
+    )
+      throw new Error("Invalid native database session response.");
+    this.forgetUnlockedDatabase(id);
+    const { sessionId, sessionExpiresAt, securityRevision } = result;
+    this.managedSessions.set(id, {
+      sessionId,
+      sessionExpiresAt,
+      securityRevision,
+    });
+    this.credentialSecurityRevisions.set(id, securityRevision);
+    this.managedTimers.set(
+      id,
+      setTimeout(
+        () => this.suspendManagedDatabase(id, "expired"),
+        Math.min(sessionExpiresAt - Date.now(), 2147483647),
+      ),
+    );
+    if (this.currentDatabase?.id === id) {
+      this.currentPassword = null;
+      this.currentDatabase = {
+        ...this.currentDatabase,
+        isEncrypted: true,
+        protectionFormat: "sorng-db",
+        securityRevision,
+      };
+      emitCurrentDatabaseChange({
+        reason: "security-change",
+        database: this.currentDatabase,
+        databaseId: id,
+        previousDatabaseId: id,
+        connectionIds: this.connectionIdsOf(result.data),
+        trustActivation: Promise.resolve(),
+      });
+    }
+    this.emitAccess({
+      databaseId: id,
+      securityRevision,
+      accessEpoch: this.captureDatabaseEpoch(id),
+      status: "ready",
+      reason: "unlocked",
+      sessionExpiresAt,
+    });
+  }
+
+  async unlockManagedDatabase(
+    id: string,
+    slotId: string,
+    password?: string,
+  ): Promise<void> {
+    const epoch = this.captureDatabaseEpoch(id);
+    await this.ensureManagedListener();
+    this.assertDatabaseEpoch(id, epoch);
+    const result = await databaseProtection.unlock(id, slotId, password);
+    this.assertDatabaseEpoch(id, epoch);
+    if (this.disposed) throw new Error("Database manager was disposed.");
+    this.installManagedSession(id, result);
+  }
+
+  private async lockManagedDatabase(id: string): Promise<void> {
+    const outcome = await databaseProtection.lock(id);
+    if (outcome?.locked !== true)
+      throw new Error("Native database lock returned no verified completion.");
+    this.suspendManagedDatabase(id, "locked");
+    if (outcome.notificationPending || outcome.warnings.length) {
+      // Mask first. Logging problems must never turn a committed lock into an unlock.
+      try {
+        SettingsManager.getInstance().logAction(
+          "warn",
+          "Database locked; other-window notification needs attention",
+          undefined,
+          outcome.warnings.join(" "),
+        );
+      } catch {
+        /* Native key revocation is already authoritative. */
+      }
+    }
+  }
   private readonly loadedRepresentations = new WeakMap<StorageData, unknown>();
   private readonly loadedSecurityRevisions = new WeakMap<StorageData, string>();
   private readonly indexSnapshots = new WeakMap<
@@ -406,6 +723,13 @@ export class DatabaseManager {
   }
 
   static resetInstance(): void {
+    const previous = DatabaseManager.instance;
+    if (previous) {
+      previous.disposed = true;
+      previous.managedUnlisten?.();
+      for (const timer of previous.managedTimers.values()) clearTimeout(timer);
+      previous.managedSessions.clear();
+    }
     (DatabaseManager as any).instance = undefined;
   }
 
@@ -415,6 +739,8 @@ export class DatabaseManager {
     this.unlockedDatabasePasswords.clear();
     this.credentialSecurityRevisions.clear();
     this.currentPassword = null;
+    for (const id of this.managedAccess.keys())
+      this.suspendManagedDatabase(id, "global-lock");
   }
 
   private captureDatabaseEpoch(id: string): string {
@@ -436,7 +762,9 @@ export class DatabaseManager {
   ): void {
     if (latest && (latest.securityRevision ?? "") === expected) return;
     if (this.credentialSecurityRevisions.get(id) === expected) {
-      this.forgetUnlockedDatabase(id);
+      if (this.managedAccess.has(id))
+        this.suspendManagedDatabase(id, "security-changed");
+      else this.forgetUnlockedDatabase(id);
       if (this.currentDatabase?.id === id) this.currentPassword = null;
     }
     throw new Error(
@@ -794,11 +1122,16 @@ export class DatabaseManager {
       throw new DatabaseNotFoundError();
     }
 
-    const resolvedPassword = collection.isEncrypted
-      ? password || this.getUnlockedPasswordForDatabase(collection.id)
-      : undefined;
+    const resolvedPassword =
+      collection.isEncrypted && collection.protectionFormat !== "sorng-db"
+        ? password || this.getUnlockedPasswordForDatabase(collection.id)
+        : undefined;
 
-    if (collection.isEncrypted && !resolvedPassword) {
+    if (
+      collection.isEncrypted &&
+      collection.protectionFormat !== "sorng-db" &&
+      !resolvedPassword
+    ) {
       throw new InvalidPasswordError(
         "Password required for encrypted collection",
       );
@@ -899,6 +1232,14 @@ export class DatabaseManager {
     if (!collection) {
       throw new DatabaseNotFoundError();
     }
+    if (collection.protectionFormat === "sorng-db") {
+      const status = await this.getDatabaseProtectionStatus(id);
+      const slots = status.slots.filter((slot) => slot.type === "password");
+      if (slots.length !== 1)
+        throw new Error("Choose an unlock method for this managed database.");
+      await this.unlockManagedDatabase(id, slots[0].id, password);
+      return;
+    }
     if (!collection.isEncrypted) {
       // Nothing to unlock. Treat as success so callers don't have
       // to special-case non-encrypted databases.
@@ -935,9 +1276,21 @@ export class DatabaseManager {
    * was nothing to close — callers use that to decide whether to clear
    * downstream UI state (connections panel, auto-open-last setting).
    */
-  closeCurrentDatabase(reason: "close" | "lock" = "close"): string | null {
+  closeCurrentDatabase(
+    reason: "close" | "lock" = "close",
+  ): string | null | Promise<string | null> {
     const closing = this.currentDatabase;
     if (!closing) return null;
+    if (
+      closing.protectionFormat === "sorng-db" &&
+      this.managedSessions.has(closing.id)
+    ) {
+      return this.lockManagedDatabase(closing.id).then(() => {
+        return this.currentDatabase === closing
+          ? this.closeCurrentDatabase(reason)
+          : null;
+      });
+    }
     this.currentDatabase = null;
     this.currentPassword = null;
     // "Close" means "lock too" — the unlock cache exists so the user
@@ -972,13 +1325,21 @@ export class DatabaseManager {
    *
    * Non-encrypted databases short-circuit — there is nothing to lock.
    */
-  lockDatabase(id: string): void {
+  async lockDatabase(id: string): Promise<void> {
     if (this.currentDatabase?.id === id) {
-      this.closeCurrentDatabase("lock");
+      await this.closeCurrentDatabase("lock");
+      return;
+    }
+    if (this.managedAccess.has(id)) {
+      await this.lockManagedDatabase(id);
       return;
     }
     if (!this.unlockedDatabasePasswords.has(id)) {
       this.forgetUnlockedDatabase(id);
+      // A different window may hold a managed lease even when this window has none.
+      const collection = await this.getDatabase(id);
+      if (collection?.protectionFormat === "sorng-db")
+        await this.lockManagedDatabase(id);
       return;
     }
     this.forgetUnlockedDatabase(id);
@@ -1000,6 +1361,14 @@ export class DatabaseManager {
   }
 
   isDatabaseUnlocked(databaseId: string): boolean {
+    if (
+      this.managedAccess.has(databaseId) ||
+      (this.currentDatabase?.id === databaseId &&
+        this.currentDatabase.protectionFormat === "sorng-db")
+    ) {
+      const session = this.managedSessions.get(databaseId);
+      return Boolean(session && session.sessionExpiresAt > Date.now());
+    }
     if (this.unlockedDatabasePasswords.has(databaseId)) {
       return true;
     }
@@ -1013,6 +1382,8 @@ export class DatabaseManager {
 
   getUnlockedDatabaseIds(): string[] {
     const unlockedIds = new Set(this.unlockedDatabasePasswords.keys());
+    for (const id of this.managedSessions.keys())
+      if (this.isDatabaseUnlocked(id)) unlockedIds.add(id);
     if (
       this.currentDatabase &&
       this.isDatabaseUnlocked(this.currentDatabase.id)
@@ -1029,7 +1400,7 @@ export class DatabaseManager {
     return collections.map((collection) => {
       const isCurrent = collection.id === currentId;
       const isUnlocked = collection.isEncrypted
-        ? Boolean(this.getUnlockedPasswordForDatabase(collection.id))
+        ? this.isDatabaseUnlocked(collection.id)
         : true;
       const isExportable = !collection.isEncrypted || isUnlocked;
 
@@ -1073,6 +1444,9 @@ export class DatabaseManager {
   }
 
   private forgetUnlockedDatabase(databaseId: string): void {
+    clearTimeout(this.managedTimers.get(databaseId));
+    this.managedTimers.delete(databaseId);
+    this.managedSessions.delete(databaseId);
     this.databaseSecurityEpochs.set(
       databaseId,
       (this.databaseSecurityEpochs.get(databaseId) ?? 0) + 1,
@@ -1095,6 +1469,10 @@ export class DatabaseManager {
     collection: ConnectionDatabase,
     providedPassword?: string,
   ): string | undefined {
+    if (collection.protectionFormat === "sorng-db") {
+      this.requireManagedSession(collection.id);
+      return undefined;
+    }
     if (!collection.isEncrypted) {
       return undefined;
     }
@@ -1218,6 +1596,8 @@ export class DatabaseManager {
     options?: {
       password?: string;
       name?: string;
+      protectionTarget?: DatabaseProtectionTarget;
+      confirmDeviceBoundOnly?: boolean;
       /** Copy the source database's trust records into the clone (t62 / D6). */
       includeTrust?: boolean;
     },
@@ -1226,6 +1606,50 @@ export class DatabaseManager {
     const sourceCollection = await this.getDatabase(collectionId);
     if (!sourceCollection) {
       throw new DatabaseNotFoundError();
+    }
+    if (
+      sourceCollection.protectionFormat === "sorng-db" ||
+      options?.protectionTarget
+    ) {
+      if (!options?.protectionTarget)
+        throw new Error(
+          "Managed database cloning requires new destination unlock methods. Source passwords and OS-vault references cannot be copied.",
+        );
+      const source = await this.loadDatabaseData(
+        collectionId,
+        options.password,
+      );
+      if (!source) throw new DatabaseNotFoundError();
+      this.assertDatabaseEpoch(collectionId, epoch);
+      await this.assertSnapshotCurrent(collectionId, source);
+      const rows = await this.getAllDatabases();
+      this.assertDatabaseEpoch(collectionId, epoch);
+      const created = await this.createManagedDatabase(
+        buildDuplicateDatabaseName(sourceCollection.name, rows, options.name),
+        options.protectionTarget,
+        {
+          description: sourceCollection.description,
+          data: source,
+          confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
+        },
+      );
+      try {
+        this.assertDatabaseEpoch(collectionId, epoch);
+        await this.applyTrustRecords(
+          created.id,
+          await this.readTrustRecords(
+            collectionId,
+            options.includeTrust !== false,
+          ),
+          options.includeTrust !== false,
+          "replace",
+        );
+      } catch {
+        throw new Error(
+          `Protected clone "${created.name}" (${created.id}) was committed, but trust copying did not finish. Review the created database before retrying.`,
+        );
+      }
+      return created;
     }
 
     const duplicatePassword = sourceCollection.isEncrypted
@@ -1365,6 +1789,48 @@ export class DatabaseManager {
     if (revision !== undefined)
       this.assertSecurityRevision(collectionId, revision, collection);
     if (!collection) throw new DatabaseNotFoundError();
+    if (collection.protectionFormat === "sorng-db") {
+      this.assertDatabaseEpoch(collectionId, epoch);
+      const session = this.requireManagedSession(collectionId);
+      let outcome;
+      try {
+        outcome = await databaseProtection.save(
+          collectionId,
+          session.sessionId,
+          session.securityRevision,
+          data,
+        );
+      } catch (error) {
+        // A missed cross-window notification must not leave revoked access visible.
+        if (this.captureDatabaseEpoch(collectionId) === epoch)
+          this.suspendManagedDatabase(collectionId, "security-changed");
+        throw error;
+      }
+      this.assertDatabaseEpoch(collectionId, epoch);
+      if (!outcome.committed) {
+        this.suspendManagedDatabase(collectionId, "security-changed");
+        throw new Error("Native database save was not committed.");
+      }
+      if (outcome.securityRevision !== session.securityRevision) {
+        this.suspendManagedDatabase(collectionId, "security-changed");
+        throw new Error(
+          "Native save returned an unexpected security revision.",
+        );
+      }
+      if (outcome.cleanupPending || outcome.warnings.length) {
+        try {
+          SettingsManager.getInstance().logAction(
+            "warn",
+            "Database saved; recovery cleanup needs attention",
+            undefined,
+            outcome.warnings.join(" "),
+          );
+        } catch {
+          /* The save is committed even if the notification fails. */
+        }
+      }
+      return;
+    }
     if (collection?.isEncrypted && !password) {
       throw new InvalidPasswordError(
         "A password is required to save an encrypted database; plaintext overwrite was blocked.",
@@ -1459,6 +1925,35 @@ export class DatabaseManager {
     const collection = await this.getDatabase(collectionId);
     const revision = credentialRevision ?? collection?.securityRevision ?? "";
     this.assertSecurityRevision(collectionId, revision, collection);
+    if (collection?.protectionFormat === "sorng-db") {
+      this.assertDatabaseEpoch(collectionId, epoch);
+      const session = this.requireManagedSession(collectionId);
+      let result;
+      try {
+        result = await databaseProtection.load(
+          collectionId,
+          session.sessionId,
+          session.securityRevision,
+        );
+      } catch (error) {
+        if (this.captureDatabaseEpoch(collectionId) === epoch)
+          this.suspendManagedDatabase(collectionId, "security-changed");
+        throw error;
+      }
+      this.assertDatabaseEpoch(collectionId, epoch);
+      if (
+        result.sessionId !== session.sessionId ||
+        result.securityRevision !== session.securityRevision ||
+        result.sessionExpiresAt !== session.sessionExpiresAt ||
+        !Array.isArray(result.data?.connections)
+      ) {
+        this.suspendManagedDatabase(collectionId, "security-changed");
+        throw new Error("Native database load returned an invalid session.");
+      }
+      this.requireManagedSession(collectionId);
+      this.loadedSecurityRevisions.set(result.data, result.securityRevision);
+      return result.data;
+    }
     let stored: any = null;
 
     if (collection?.isEncrypted && !password) {
@@ -1796,6 +2291,10 @@ export class DatabaseManager {
     const epoch = this.captureDatabaseEpoch(collectionId);
     const collection = await this.getDatabase(collectionId);
     if (!collection) throw new Error("Collection not found");
+    if (collection.protectionFormat === "sorng-db")
+      throw new Error(
+        "Use managed database protection to review and replace unlock methods.",
+      );
 
     const data = collection.isEncrypted
       ? await this.loadDatabaseData(collectionId, currentPassword)
@@ -1911,12 +2410,54 @@ export class DatabaseManager {
     return outcome;
   }
 
+  async createManagedDatabase(
+    name: string,
+    target: DatabaseProtectionTarget,
+    options: {
+      description?: string;
+      data?: StorageData;
+      confirmDeviceBoundOnly?: boolean;
+    } = {},
+  ): Promise<ConnectionDatabase> {
+    if (target.keepSlotIds.length || !target.newSlots.length)
+      throw new Error(
+        "A new database requires newly enrolled unlock methods; existing slot references cannot be copied.",
+      );
+    // Capability/listener failure must occur before publishing even an empty row.
+    await databaseProtection.capabilities();
+    await this.ensureManagedListener();
+    const created = await this.createDatabase(name, options.description);
+    try {
+      const result = await this.changeManagedDatabaseProtection(
+        created.id,
+        target,
+        {
+          initializeWithData: options.data,
+          confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
+        },
+      );
+      return {
+        ...created,
+        isEncrypted: true,
+        protectionFormat: "sorng-db",
+        securityRevision: result.securityRevision,
+      };
+    } catch (error) {
+      // No unconditional delete: another window may have changed the indexed row.
+      throw new Error(
+        `Database "${created.name}" (${created.id}) was created, but managed initialization did not finish. It may be empty or already protected; inspect it before retrying. ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   async importDatabase(
     content: string,
     options?: {
       importPassword?: string;
       collectionName?: string;
       encryptPassword?: string;
+      protectionTarget?: DatabaseProtectionTarget;
+      confirmDeviceBoundOnly?: boolean;
       /**
        * Apply the export's `trustRecords` to the new database (t62 / D6).
        * Defaults to `true`. Exports written before t62 simply have no
@@ -1988,6 +2529,37 @@ export class DatabaseManager {
           : conn.basicAuthPassword,
     }));
 
+    const importedData: StorageData = {
+      connections,
+      settings: parsed?.settings ?? {},
+      timestamp: Date.now(),
+      tabGroups: Array.isArray(parsed?.tabGroups) ? parsed.tabGroups : [],
+      colorTags:
+        parsed?.colorTags && typeof parsed.colorTags === "object"
+          ? parsed.colorTags
+          : {},
+    };
+    if (options?.protectionTarget) {
+      if (options.encryptPassword)
+        throw new Error(
+          "Choose managed protection or a legacy database password, not both.",
+        );
+      const created = await this.createManagedDatabase(
+        collectionName,
+        options.protectionTarget,
+        {
+          description: parsed?.collection?.description,
+          data: importedData,
+          confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
+        },
+      );
+      await this.applyTrustRecords(
+        created.id,
+        parsed?.trustRecords as TrustExportDocument | undefined,
+        options.includeTrust !== false,
+      );
+      return created;
+    }
     const collection = await this.createDatabase(
       collectionName,
       parsed?.collection?.description,

@@ -6,6 +6,7 @@ import { performDatabaseAction } from "../../../../utils/connection/databaseActi
 import { performDatabaseSecurityAction } from "../../../../utils/connection/databaseSecurityActions";
 import { Card } from "../../../ui/settings/SettingsPrimitives";
 import { ConfirmDialog } from "../../../ui/dialogs/ConfirmDialog";
+import { ManagedDatabaseProtectionSection } from "./ManagedDatabaseProtectionSection";
 
 export interface DatabaseSecurityCallbacks {
   onDatabaseSelect?: (id: string, password?: string) => Promise<void> | void;
@@ -33,6 +34,7 @@ export default function CurrentDatabaseSecuritySection(
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [showManagedOptions, setShowManagedOptions] = useState(false);
   const clearSecrets = () => {
     setPassword("");
     setNewPassword("");
@@ -162,11 +164,11 @@ export default function CurrentDatabaseSecuritySection(
       className="space-y-3"
     >
       <h3 className="text-sm font-medium">
-        Current database — separate password protection
+        Current database — inner protection
       </h3>
       <Card>
         <p className="text-xs text-[var(--color-textMuted)]">
-          This password protects only this database's connection payload. It
+          Inner protection covers only this database's connection payload. It
           does not protect database names, the index, trust records, application
           settings, or other databases. The global master key and export
           passwords are separate.
@@ -191,13 +193,15 @@ export default function CurrentDatabaseSecuritySection(
               : <strong>{target.name}</strong>
             </p>
             <p className="text-xs">
-              Separate password:{" "}
+              {target.protectionFormat === "sorng-db"
+                ? "Managed inner protection: "
+                : "Separate password: "}
               {target.isEncrypted ? "enabled" : "not enabled"}.{" "}
               {current === target.id
                 ? "Open in this window."
                 : "Not open in this window."}
             </p>
-            {target.isEncrypted && (
+            {target.isEncrypted && target.protectionFormat !== "sorng-db" && (
               <label className="block text-xs">
                 Database password
                 <input
@@ -211,7 +215,30 @@ export default function CurrentDatabaseSecuritySection(
                 />
               </label>
             )}
-            {current === target.id ? (
+            {target.protectionFormat === "sorng-db" ? (
+              <>
+                <ManagedDatabaseProtectionSection
+                  key={target.id}
+                  database={target}
+                  onOpen={
+                    current !== target.id && callbacks.onDatabaseSelect
+                      ? async () => {
+                          await callbacks.onDatabaseSelect?.(target.id);
+                        }
+                      : undefined
+                  }
+                />
+                {current === target.id && (
+                  <button
+                    type="button"
+                    disabled={busy || !callbacks.onBeforeCurrentLock}
+                    onClick={() => void run("lock")}
+                  >
+                    Lock current database
+                  </button>
+                )}
+              </>
+            ) : current === target.id ? (
               <>
                 <label className="block text-xs">
                   New database password
@@ -271,6 +298,21 @@ export default function CurrentDatabaseSecuritySection(
                     </button>
                   )}
                 </div>
+                <details
+                  onToggle={(event) =>
+                    setShowManagedOptions(event.currentTarget.open)
+                  }
+                >
+                  <summary className="cursor-pointer text-xs">
+                    Native cipher and unlock-method options
+                  </summary>
+                  {showManagedOptions && (
+                    <ManagedDatabaseProtectionSection
+                      key={target.id}
+                      database={target}
+                    />
+                  )}
+                </details>
               </>
             ) : (
               <button

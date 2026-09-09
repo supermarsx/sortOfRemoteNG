@@ -85,6 +85,8 @@ import {
 import { MemoryWatchdogController } from "../../src/components/app/MemoryWatchdogController";
 import { UnlockScreen } from "../../src/components/encryption/UnlockScreen";
 import { SettingsStorageNotice } from "../../src/components/encryption/SettingsStorageNotice";
+import { DatabaseAccessSuspensionScreen } from "../../src/components/encryption/DatabaseAccessSuspensionScreen";
+import { useDatabaseAccessSuspension } from "../../src/hooks/settings/useDatabaseAccessSuspension";
 import { useGlobalEncryptionGuard } from "../../src/hooks/settings/useGlobalEncryptionGuard";
 import { useLockShortcut } from "../../src/hooks/settings/useLockShortcut";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
@@ -2301,12 +2303,26 @@ const DetachedSecurityBoundary: React.FC<{ children: React.ReactNode }> = ({
     await DatabaseManager.getInstance().closeCurrentDatabase("lock");
   }, [dispatch]);
   const locked = useGlobalEncryptionGuard({ clearViews });
+  const databaseAccess = useDatabaseAccessSuspension();
   // No second auto-lock policy controller: requests go to main's durable lock queue.
   useLockShortcut();
   return (
     <>
-      {!locked && children}
+      {!locked && (
+        <div
+          hidden={databaseAccess.blocked}
+          inert={databaseAccess.blocked}
+          aria-hidden={databaseAccess.blocked || undefined}
+          style={{ display: databaseAccess.blocked ? "none" : "contents" }}
+        >
+          {children}
+        </div>
+      )}
       <SettingsStorageNotice />
+      <DatabaseAccessSuspensionScreen
+        access={databaseAccess}
+        globallyLocked={locked}
+      />
       <UnlockScreen />
     </>
   );

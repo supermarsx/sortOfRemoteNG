@@ -118,6 +118,37 @@ pub struct SaveResult {
     warnings: Vec<String>,
     security_revision: String,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockResult {
+    locked: bool,
+    notification_pending: bool,
+    warnings: Vec<String>,
+}
+
+fn revoke_database_sessions(
+    owner: u64,
+    profile: &str,
+    database_id: &str,
+    notify: impl FnOnce() -> Result<(), String>,
+) -> Result<LockResult, String> {
+    database_sessions::global()
+        .lock()
+        .map_err(|_| "database session registry unavailable")?
+        .revoke_database(owner, profile, database_id);
+    // Revocation is authoritative. A later event delivery error cannot turn it
+    // into an apparent failed lock and leave the initiating window exposed.
+    let notification_pending = notify().is_err();
+    Ok(LockResult {
+        locked: true,
+        notification_pending,
+        warnings: if notification_pending {
+            vec!["Database locked, but other-window notification failed. Other windows can no longer use their native unlock sessions.".into()]
+        } else {
+            Vec::new()
+        },
+    })
+}
 fn revision(snapshot: &ManagedSnapshot) -> &str {
     snapshot
         .row
@@ -321,22 +352,24 @@ pub async fn database_protection_lock<R: Runtime>(
     window: WebviewWindow<R>,
     state: State<'_, EncryptionState>,
     database_id: String,
-) -> Result<(), String> {
+) -> Result<LockResult, String> {
     let _guard = sorng_encryption::settings_coordinator::lock().await;
     sorng_storage::database_transaction::validate_database_id(&database_id)?;
     let profile = profile_binding(&native_root(&window, &state)?)?;
-    database_sessions::global()
-        .lock()
-        .map_err(|_| "database session registry unavailable")?
-        .revoke_database(state.database_session_owner(), &profile, &database_id);
-    window
-        .app_handle()
-        .emit(
-            "database-protection:locked",
-            json!({"databaseId":database_id}),
-        )
-        .map_err(|_| "database locked, but other-window notification failed")?;
-    Ok(())
+    revoke_database_sessions(
+        state.database_session_owner(),
+        &profile,
+        &database_id,
+        || {
+            window
+                .app_handle()
+                .emit(
+                    "database-protection:locked",
+                    json!({"databaseId":database_id}),
+                )
+                .map_err(|_| "database locked, but other-window notification failed".into())
+        },
+    )
 }
 
 #[tauri::command]

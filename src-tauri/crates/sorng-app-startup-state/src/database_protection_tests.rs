@@ -108,7 +108,10 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
     assert_eq!(reloaded["data"], request["data"]);
     assert_eq!(reloaded["sessionId"], opened["sessionId"]);
     assert_eq!(reloaded["sessionExpiresAt"], opened["sessionExpiresAt"]);
-    invoke(&main, names[3], json!({"databaseId":"db"})).unwrap();
+    let locked = invoke(&main, names[3], json!({"databaseId":"db"})).unwrap();
+    assert_eq!(locked["locked"], true);
+    assert_eq!(locked["notificationPending"], false);
+    assert_eq!(locked["warnings"], json!([]));
     assert!(invoke(&other, names[4], request).is_err());
     assert!(invoke(&other, names[6], load_request).is_err());
     assert_eq!(

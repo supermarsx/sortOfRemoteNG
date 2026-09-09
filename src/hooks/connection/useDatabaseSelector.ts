@@ -12,6 +12,7 @@ import { InvalidPasswordError } from "../../utils/core/errors";
 import { useConnections } from "../../contexts/useConnections";
 import { useTranslation } from "react-i18next";
 import { useDatabaseBulkActions } from "./useDatabaseBulkActions";
+import type { DatabaseProtectionStatus } from "../../types/encryption/databaseProtection";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -128,6 +129,35 @@ export function useDatabaseSelector(
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showImportForm, setShowImportForm] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [managedUnlock, setManagedUnlock] = useState<{
+    database: ConnectionDatabase;
+    status: DatabaseProtectionStatus;
+    openAfterUnlock: boolean;
+  } | null>(null);
+  const managedRequest = useRef(0);
+  useEffect(() => {
+    if (!isOpen) {
+      managedRequest.current += 1;
+      setManagedUnlock(null);
+    }
+    return () => {
+      managedRequest.current += 1;
+    };
+  }, [isOpen]);
+  const closeManagedUnlock = () => {
+    managedRequest.current += 1;
+    setManagedUnlock(null);
+  };
+  const finishManagedUnlock = async () => {
+    const pending = managedUnlock;
+    if (!pending) return;
+    const request = managedRequest.current;
+    if (!databaseManager.isDatabaseUnlocked(pending.database.id))
+      throw new Error("Database access is no longer unlocked.");
+    if (pending.openAfterUnlock) await onDatabaseSelect(pending.database.id);
+    if (request === managedRequest.current) setManagedUnlock(null);
+    await loadDatabases();
+  };
   const [selectedCollection, setSelectedCollection] =
     useState<ConnectionDatabase | null>(null);
   const [passwordDialogMode, setPasswordDialogMode] =
@@ -505,6 +535,13 @@ export function useDatabaseSelector(
 
   const handleCloneCollection = useCallback(
     async (collection: ConnectionDatabase) => {
+      if (collection.protectionFormat === "sorng-db") {
+        closeCollectionMenu();
+        setError(
+          "Managed database cloning requires new destination unlock methods. This quick-clone form cannot copy native slots; export with a separate portable export password and import into a newly protected destination instead.",
+        );
+        return;
+      }
       const isCurrentEncryptedCollection =
         collection.isEncrypted &&
         databaseManager.getCurrentDatabase()?.id === collection.id;
@@ -530,7 +567,31 @@ export function useDatabaseSelector(
     closeCollectionMenu();
     setError("");
 
-    if (collection.isEncrypted) {
+    if (
+      collection.protectionFormat === "sorng-db" &&
+      !databaseManager.isDatabaseUnlocked(collection.id)
+    ) {
+      const request = ++managedRequest.current;
+      try {
+        const status = await databaseManager.getDatabaseProtectionStatus(
+          collection.id,
+        );
+        if (request === managedRequest.current)
+          setManagedUnlock({
+            database: collection,
+            status,
+            openAfterUnlock: true,
+          });
+      } catch (error) {
+        if (request === managedRequest.current)
+          setError(
+            getActionError(error, "Unable to inspect database unlock methods."),
+          );
+      }
+      return;
+    }
+
+    if (collection.isEncrypted && collection.protectionFormat !== "sorng-db") {
       setSelectedCollection(collection);
       setPasswordDialogMode("unlock");
       setShowPasswordDialog(true);
@@ -597,10 +658,10 @@ export function useDatabaseSelector(
           );
           return;
         }
-        databaseManager.closeCurrentDatabase();
+        await databaseManager.closeCurrentDatabase();
         await Promise.resolve(onDatabaseClose?.());
       } else if (collection.isEncrypted) {
-        databaseManager.lockDatabase(collection.id);
+        await databaseManager.lockDatabase(collection.id);
       }
 
       // Refresh so any `isCurrent`/`isUnlocked` consumers in the row
@@ -715,12 +776,34 @@ export function useDatabaseSelector(
     }
   };
 
-  const handleExportCollection = (collection: ConnectionDatabase) => {
+  const handleExportCollection = async (collection: ConnectionDatabase) => {
     setExportingCollection(collection);
     setIncludePasswords(false);
     setExportPassword("");
     setCollectionPassword("");
     setError("");
+    if (
+      collection.protectionFormat === "sorng-db" &&
+      !databaseManager.isDatabaseUnlocked(collection.id)
+    ) {
+      const request = ++managedRequest.current;
+      try {
+        const status = await databaseManager.getDatabaseProtectionStatus(
+          collection.id,
+        );
+        if (request === managedRequest.current)
+          setManagedUnlock({
+            database: collection,
+            status,
+            openAfterUnlock: false,
+          });
+      } catch (error) {
+        if (request === managedRequest.current)
+          setError(
+            getActionError(error, "Unable to inspect database unlock methods."),
+          );
+      }
+    }
   };
 
   const handleExportDownload = async () => {
@@ -985,6 +1068,9 @@ export function useDatabaseSelector(
     showImportForm,
     setShowImportForm,
     showPasswordDialog,
+    managedUnlock,
+    closeManagedUnlock,
+    finishManagedUnlock,
     closePasswordDialog,
     selectedCollection,
     passwordDialogMode,

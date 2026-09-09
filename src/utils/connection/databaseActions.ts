@@ -145,7 +145,9 @@ export function performDatabaseAction(
         }
         if (
           !wasCurrent &&
-          (!collection.isEncrypted || !manager.isDatabaseUnlocked(id))
+          (!collection.isEncrypted ||
+            (!manager.isDatabaseUnlocked(id) &&
+              collection.protectionFormat !== "sorng-db"))
         ) {
           return {
             status: "skipped",
@@ -154,8 +156,8 @@ export function performDatabaseAction(
               : "Not open or encrypted",
           };
         }
-        if (collection.isEncrypted) manager.lockDatabase(id);
-        else manager.closeCurrentDatabase();
+        if (collection.isEncrypted) await manager.lockDatabase(id);
+        else await manager.closeCurrentDatabase();
         if (wasCurrent) await context.onCurrentClosed?.();
         return {
           status: "success",

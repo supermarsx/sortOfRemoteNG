@@ -1807,6 +1807,8 @@ export interface ConnectionDatabase {
   isEncrypted: boolean;
   /** Native-coordinated password generation; absent for legacy databases. */
   securityRevision?: string;
+  /** Native managed inner container; never reinterpret as a legacy password envelope. */
+  protectionFormat?: "sorng-db";
   createdAt: string;
   updatedAt: string;
   lastAccessed: string;

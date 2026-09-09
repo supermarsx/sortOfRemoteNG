@@ -66,6 +66,46 @@ fn password_target(cipher: &str) -> ProtectionTarget {
     serde_json::from_value(json!({"dataCipher":cipher,"keepSlotIds":[],"newSlots":[{"type":"password","label":"Recovery","password":"fixture-only","argon2":{"memoryKib":8192,"timeCost":1,"parallelism":1}}]})).unwrap()
 }
 
+#[test]
+fn managed_database_lock_reports_revocation_even_when_notification_fails() {
+    let state = EncryptionState::new();
+    let scope = SessionScope {
+        owner: state.database_session_owner(),
+        profile: "lock-notification-fixture",
+        database: "db",
+        revision: "r0",
+        window: "main",
+        generation: state.key_generation(),
+    };
+    let other = SessionScope {
+        window: "detached",
+        ..scope
+    };
+    let main_id = database_sessions::global()
+        .lock()
+        .unwrap()
+        .insert(&scope, DatabaseKey::generate())
+        .unwrap();
+    let other_id = database_sessions::global()
+        .lock()
+        .unwrap()
+        .insert(&other, DatabaseKey::generate())
+        .unwrap();
+    let result = revoke_database_sessions(scope.owner, scope.profile, scope.database, || {
+        // The event is emitted only after every window's lease is gone.
+        let mut registry = database_sessions::global().lock().unwrap();
+        assert!(registry.key(&main_id, &scope).is_err());
+        assert!(registry.key(&other_id, &other).is_err());
+        Err("fixture-only notification failure".into())
+    })
+    .unwrap();
+    let wire = serde_json::to_value(result).unwrap();
+    assert_eq!(wire["locked"], true);
+    assert_eq!(wire["notificationPending"], true);
+    assert_eq!(wire["warnings"].as_array().unwrap().len(), 1);
+    assert!(!wire.to_string().contains("fixture-only"));
+}
+
 #[tokio::test]
 async fn managed_database_empty_destination_initialization_never_persists_source_plaintext() {
     let _coordinator = sorng_encryption::settings_coordinator::lock().await;

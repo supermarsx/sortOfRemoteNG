@@ -18,6 +18,14 @@ const mockGetAllDatabases = vi.fn(async () => [] as ConnectionDatabase[]);
 const mockLoadDatabaseData = vi.fn(async () => ({}));
 const mockDuplicateDatabase = vi.fn(async () => makeCollection({ id: "dup" }));
 const mockIsDatabaseUnlocked = vi.fn(() => false);
+const mockProtectionStatus = vi.fn(async () => ({
+  kind: "managed",
+  securityRevision: "r1",
+  unlocked: false,
+  slots: [
+    { id: "vault", type: "os-vault", label: "Device", deviceBound: true },
+  ],
+}));
 const mockSaveData = vi.fn(async () => {});
 const mockFlushPendingSave = vi.fn(async () => {});
 const mockCloseCurrentDatabase = vi.fn(() => "plain");
@@ -30,6 +38,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       loadDatabaseData: mockLoadDatabaseData,
       duplicateDatabase: mockDuplicateDatabase,
       isDatabaseUnlocked: mockIsDatabaseUnlocked,
+      getDatabaseProtectionStatus: mockProtectionStatus,
       closeCurrentDatabase: mockCloseCurrentDatabase,
     }),
   },
@@ -103,10 +112,49 @@ function renderSelector(
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetCurrentDatabase.mockReturnValue(null);
+  mockIsDatabaseUnlocked.mockReturnValue(false);
   mockFlushPendingSave.mockResolvedValue(undefined);
 });
 
 describe("useDatabaseSelector — fail-closed close", () => {
+  it("opens the managed slot form without automatic vault unlock or a legacy password prompt", async () => {
+    const select = vi.fn();
+    const { result } = renderSelector(select);
+    const managed = makeCollection({
+      id: "managed",
+      isEncrypted: true,
+      protectionFormat: "sorng-db",
+    });
+    await act(async () => {
+      await result.current.handleSelectCollection(managed);
+    });
+    expect(result.current.managedUnlock?.database.id).toBe("managed");
+    expect(result.current.showPasswordDialog).toBe(false);
+    expect(select).not.toHaveBeenCalled();
+    mockIsDatabaseUnlocked.mockReturnValue(true);
+    await act(async () => {
+      await result.current.finishManagedUnlock();
+    });
+    expect(select).toHaveBeenCalledWith("managed");
+  });
+  it("unlocks a managed export source without selecting it", async () => {
+    const select = vi.fn();
+    const { result } = renderSelector(select);
+    const managed = makeCollection({
+      id: "managed",
+      isEncrypted: true,
+      protectionFormat: "sorng-db",
+    });
+    await act(async () => {
+      await result.current.handleExportCollection(managed);
+    });
+    expect(result.current.managedUnlock?.openAfterUnlock).toBe(false);
+    mockIsDatabaseUnlocked.mockReturnValue(true);
+    await act(async () => {
+      await result.current.finishManagedUnlock();
+    });
+    expect(select).not.toHaveBeenCalled();
+  });
   it("keeps the current collection open when pending edits cannot be flushed", async () => {
     mockGetCurrentDatabase.mockReturnValue({ id: "plain" });
     mockFlushPendingSave.mockRejectedValueOnce(new Error("disk unavailable"));

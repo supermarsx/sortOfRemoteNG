@@ -38,7 +38,17 @@ The SDBF checksum is corruption detection, not encryption or an authentication b
 
 Native master passwords wrap the DEK using Argon2id. The application's default is 64 MiB, time cost 3, parallelism 4; stored wrapper parameters govern existing files. New database password envelopes use WebCrypto AES-256-GCM with PBKDF2-SHA256, defaulting to **150,000 iterations**, with parameters embedded in the versioned envelope. The legacy `salt.iv.ciphertext` reader uses the fixed 150,000-iteration compatibility default because that format does not store its iteration count. A future strength/performance adjustment requires version-aware handling rather than changing the legacy reader's default. Existing supported legacy readers are compatibility paths, not permission to downgrade malformed authenticated data.
 
-Algorithm, cipher-mode, and generic benchmark preferences do not select these actual formats. Security displays the actual formats read-only. Export KDF settings remain separate, consumed export defaults.
+Algorithm, cipher-mode, and generic benchmark preferences do not select these actual formats. Export KDF settings remain separate, consumed export defaults.
+
+### Native managed inner database protection
+
+The current database's native protection panel can convert an unprotected or verified legacy-password database to the versioned `sorng-db` inner container. Its independent random database key supports AES-256-GCM or ChaCha20-Poly1305. Password slots use native Argon2id; OS-vault slots are tied to the device/account. These choices do not change the outer global artifact cipher. Passkey/security-key and biometric methods are not offered as working encryption protectors by this frontend baseline.
+
+Managed keys stay native; the renderer holds an opaque, window-bound lease with an absolute 15-minute expiry. Loading, autosaving, and exporting re-read through that lease instead of replaying a cached password. Explicit database lock revokes access across windows; expiry or external lock masks loaded views and requires reauthentication without silently replacing unsaved edits. Global master lock also revokes these leases. OS-vault unlock is an explicit action, not a promise of a fresh biometric challenge.
+
+Removing or replacing an old unlock method requires re-enrolling every desired remaining method and rotates the database key. Cipher changes that keep all old slots retain those grants. Removing inner protection requires confirmation and leaves global artifact protection unchanged. Committed operations with recovery-cleanup warnings are reported as committed, not retried as failed writes.
+
+Portable exports remain a separate password-encrypted export format (or plaintext when no export password is chosen); they never contain native session handles or copied OS-vault slot references. Managed clone/import APIs require fresh destination protectors and initialize only an empty indexed destination before committing protected source content. The quick-clone UI deliberately refuses managed sources because it does not collect new destination protectors; a complete managed clone/import enrollment form is not part of this baseline. A failed initialization can leave a named empty or protected destination to inspect, rather than risk deleting concurrent work. Existing legacy-password clone/import flows remain available.
 
 ## Native artifacts and inspection
 

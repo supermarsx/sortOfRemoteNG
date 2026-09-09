@@ -54,6 +54,8 @@ import { useSessionFullscreenController } from "./hooks/session/useSessionFullsc
 import { UnlockScreen } from "./components/encryption/UnlockScreen";
 import { useGlobalEncryptionGuard } from "./hooks/settings/useGlobalEncryptionGuard";
 import { SettingsStorageNotice } from "./components/encryption/SettingsStorageNotice";
+import { DatabaseAccessSuspensionScreen } from "./components/encryption/DatabaseAccessSuspensionScreen";
+import { useDatabaseAccessSuspension } from "./hooks/settings/useDatabaseAccessSuspension";
 import { AutoLockController } from "./components/encryption/AutoLockController";
 import { Sidebar } from "./components/connection/Sidebar";
 import { SessionTabs } from "./components/session/SessionTabs";
@@ -825,6 +827,8 @@ const AppContent: React.FC = () => {
     prepareViews: beforeCurrentDatabaseLock,
     clearViews: clearGloballyLockedViews,
   });
+  const databaseAccess = useDatabaseAccessSuspension();
+  const storageViewsBlocked = globallyLocked || databaseAccess.blocked;
 
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (): void => {
@@ -1675,9 +1679,9 @@ const AppContent: React.FC = () => {
     <>
       <div
         data-testid="app-shell"
-        inert={globallyLocked}
-        aria-hidden={globallyLocked || undefined}
-        hidden={globallyLocked}
+        inert={storageViewsBlocked}
+        aria-hidden={storageViewsBlocked || undefined}
+        hidden={storageViewsBlocked}
         className={`relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden text-[var(--color-text)] app-shell ${
           appSettings.backgroundGlowEnabled ? "app-glow" : ""
         } ${
@@ -1690,7 +1694,7 @@ const AppContent: React.FC = () => {
         style={
           {
             "--animation-duration": `${appSettings.animationDuration || 200}ms`,
-            display: globallyLocked ? "none" : undefined,
+            display: storageViewsBlocked ? "none" : undefined,
           } as React.CSSProperties
         }
       >
@@ -1984,6 +1988,10 @@ const AppContent: React.FC = () => {
         <CheckConnectionsModalMount />
       </div>
       <SettingsStorageNotice />
+      <DatabaseAccessSuspensionScreen
+        access={databaseAccess}
+        globallyLocked={globallyLocked}
+      />
       <UnlockScreen />
     </>
   );

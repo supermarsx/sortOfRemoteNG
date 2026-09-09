@@ -959,7 +959,15 @@ const ExportDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
         </>
       }
     >
-      {target.isEncrypted && (
+      {target.protectionFormat === "sorng-db" && (
+        <p className="text-xs text-[var(--color-textMuted)]">
+          Unlock this managed database explicitly before exporting. The portable
+          export uses the separate export password below; native session handles
+          and device-bound vault slots are never included. Without an export
+          password, the exported file is plaintext.
+        </p>
+      )}
+      {target.isEncrypted && target.protectionFormat !== "sorng-db" && (
         <div className="space-y-1">
           <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
             {t("databaseCenter.collections.collectionPasswordLabel")}

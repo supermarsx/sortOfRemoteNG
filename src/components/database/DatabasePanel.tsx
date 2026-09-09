@@ -1,6 +1,7 @@
 import React from "react";
 import { useDatabaseSelector } from "../../hooks/connection/useDatabaseSelector";
 import DatabaseList from "./list/DatabaseList";
+import { ManagedDatabaseUnlockForm } from "../encryption/ManagedDatabaseUnlockForm";
 
 interface DatabasePanelProps {
   /** Tool-panel close handler (closes the tab). */
@@ -46,6 +47,29 @@ export const DatabasePanel: React.FC<DatabasePanelProps> = ({
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
       <div className="flex-1 overflow-y-auto min-h-0">
+        {mgr.managedUnlock && (
+          <section
+            className="m-3 rounded-lg border border-[var(--color-border)] p-4"
+            aria-label="Unlock selected database"
+          >
+            <h3 className="mb-2 font-medium">
+              Unlock {mgr.managedUnlock.database.name}
+            </h3>
+            <ManagedDatabaseUnlockForm
+              key={`${mgr.managedUnlock.database.id}:${mgr.managedUnlock.status.securityRevision}`}
+              databaseId={mgr.managedUnlock.database.id}
+              status={mgr.managedUnlock.status}
+              onUnlockComplete={mgr.finishManagedUnlock}
+            />
+            <button
+              type="button"
+              className="mt-3 text-sm"
+              onClick={mgr.closeManagedUnlock}
+            >
+              Cancel database unlock
+            </button>
+          </section>
+        )}
         <DatabaseList mgr={mgr} onClose={onClose} />
       </div>
     </div>
