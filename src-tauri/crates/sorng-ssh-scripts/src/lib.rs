@@ -13,5 +13,6 @@ pub mod history;
 pub mod hooks;
 pub mod scheduler;
 pub mod store;
+pub mod tooling;
 pub mod types;
 pub mod variables;

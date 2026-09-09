@@ -49,6 +49,7 @@ mod portable_commands;
 #[path = "../../sorng-commands-ops/src/scheduler_commands.rs"]
 mod scheduler_commands;
 
+mod script_tooling_commands;
 mod tools_handler;
 
 pub fn is_command(command: &str) -> bool {

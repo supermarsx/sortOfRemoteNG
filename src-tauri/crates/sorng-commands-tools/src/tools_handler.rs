@@ -3,7 +3,10 @@ use crate::*;
 pub fn is_command(command: &str) -> bool {
     matches!(
         command,
-        "warpgate_connect"
+        "script_tooling_capabilities"
+            | "script_tooling_analyze"
+            | "script_tooling_format"
+            | "warpgate_connect"
             | "warpgate_disconnect"
             | "warpgate_list_connections"
             | "warpgate_ping"
@@ -422,6 +425,9 @@ pub fn is_command(command: &str) -> bool {
 pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // Warpgate bastion host admin commands
+        script_tooling_commands::script_tooling_capabilities,
+        script_tooling_commands::script_tooling_analyze,
+        script_tooling_commands::script_tooling_format,
         warpgate_commands::warpgate_connect,
         warpgate_commands::warpgate_disconnect,
         warpgate_commands::warpgate_list_connections,
@@ -851,4 +857,29 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         scheduler_commands::sched_pause_all,
         scheduler_commands::sched_resume_all,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn script_tooling_commands_have_actual_handler_and_dispatch_parity() {
+        let _handler = build();
+        let source = include_str!("tools_handler.rs");
+        for command in [
+            "script_tooling_capabilities",
+            "script_tooling_analyze",
+            "script_tooling_format",
+        ] {
+            assert!(is_command(command));
+            assert_eq!(
+                source
+                    .matches(&format!("script_tooling_commands::{command},"))
+                    .count(),
+                1
+            );
+        }
+        assert!(!is_command("script_tooling_execute"));
+    }
 }
