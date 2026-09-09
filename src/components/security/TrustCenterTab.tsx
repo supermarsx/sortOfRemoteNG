@@ -18,6 +18,7 @@ import {
 } from "../../hooks/security/useTrustCenter";
 import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
 import { Modal, ModalBody, ModalHeader } from "../ui/overlays/Modal";
+import TrustIdentityInspector from "./TrustIdentityInspector";
 import { useConnections } from "../../contexts/useConnections";
 import type { TrustPolicy } from "../../utils/auth/trustStore";
 
@@ -31,6 +32,16 @@ const actionLabels: Record<TrustCenterAction, string> = {
   forget: "Forget",
   policy: "Change policy",
   tags: "Replace tags",
+};
+const actionHints: Record<TrustCenterAction, string> = {
+  revoke:
+    "Block these exact stored identities after review; existing sessions are not disconnected",
+  reinstate:
+    "Remove the revocation block after review; other trust checks still apply",
+  forget:
+    "Remove remembered identities after review; first-use policy applies to a future connection",
+  policy: "Review how future connections verify this identity",
+  tags: "Review replacing all existing tags; fingerprints and trust are unchanged",
 };
 
 export default function TrustCenterTab({
@@ -214,6 +225,7 @@ export default function TrustCenterTab({
             className={button}
             disabled={mgr.loading || mgr.busy}
             onClick={() => void mgr.refresh()}
+            data-tooltip="Reload current records and verification counts from the native Trust Center"
           >
             <RefreshCw
               size={14}
@@ -229,6 +241,7 @@ export default function TrustCenterTab({
             className={button}
             disabled={disabled}
             onClick={() => void mgr.importFile()}
+            data-tooltip="Preview a trust export and review its identities before merging"
           >
             <Upload size={14} aria-hidden="true" />
             Import identities
@@ -238,6 +251,7 @@ export default function TrustCenterTab({
             className={button}
             disabled={disabled}
             onClick={() => void mgr.importKnownHosts()}
+            data-tooltip="Preview supported identities from the default SSH known_hosts file; no automatic import"
           >
             Review default known_hosts
           </button>
@@ -246,6 +260,7 @@ export default function TrustCenterTab({
             className={button}
             disabled={disabled}
             onClick={() => void mgr.importKnownHosts(true)}
+            data-tooltip="Choose an SSH known_hosts file and review supported identities before merging"
           >
             Choose known_hosts file
           </button>
@@ -254,6 +269,7 @@ export default function TrustCenterTab({
             className={button}
             disabled={disabled || !mgr.rows.length}
             onClick={() => void mgr.exportRows()}
+            data-tooltip="Export all stored public identities in this database, including filtered-out rows"
           >
             <Download size={14} aria-hidden="true" />
             Export all
@@ -266,6 +282,7 @@ export default function TrustCenterTab({
             type="button"
             className={button}
             disabled={disabled || !mgr.visible.length}
+            data-tooltip="Add every filtered identity across all pages to the selection"
             onClick={() =>
               mgr.setSelected(
                 (previous) =>
@@ -279,6 +296,7 @@ export default function TrustCenterTab({
             type="button"
             className={button}
             disabled={disabled || !pageRows.length}
+            data-tooltip="Add only the identities on the current page to the selection"
             onClick={() =>
               mgr.setSelected(
                 (previous) =>
@@ -293,6 +311,7 @@ export default function TrustCenterTab({
             className={button}
             disabled={mgr.busy || !selected.length}
             onClick={() => mgr.setSelected(new Set())}
+            data-tooltip="Clear selected identities on every page without changing records"
           >
             Clear selection
           </button>
@@ -310,6 +329,7 @@ export default function TrustCenterTab({
             className={button}
             disabled={disabled || !selected.length}
             onClick={() => void mgr.exportRows(selected)}
+            data-tooltip="Export the selected public identities, including selected rows hidden by filters"
           >
             Export selected
           </button>
@@ -320,6 +340,7 @@ export default function TrustCenterTab({
               className={button}
               disabled={disabled || !selected.length}
               onClick={() => request(action, selected)}
+              data-tooltip={actionHints[action]}
             >
               {actionLabels[action]} selected
             </button>
@@ -328,6 +349,7 @@ export default function TrustCenterTab({
             aria-label="Tags for selected identities"
             className={field}
             placeholder="Tags, comma separated"
+            data-tooltip="Tags replace existing labels after review; they do not change certificate trust"
             value={bulkTags}
             onChange={(event) => setBulkTags(event.target.value)}
           />
@@ -509,6 +531,11 @@ export default function TrustCenterTab({
                         className={button}
                         disabled={disabled}
                         aria-label={`${row.record.revoked ? "Reinstate" : "Revoke"} ${row.record.host}`}
+                        data-tooltip={
+                          actionHints[
+                            row.record.revoked ? "reinstate" : "revoke"
+                          ]
+                        }
                         onClick={() =>
                           request(row.record.revoked ? "reinstate" : "revoke", [
                             row,
@@ -526,6 +553,7 @@ export default function TrustCenterTab({
                         className={button}
                         disabled={disabled}
                         aria-label={`Forget ${row.record.host}`}
+                        data-tooltip={actionHints.forget}
                         onClick={() => request("forget", [row])}
                       >
                         <Trash2 size={14} aria-hidden="true" />
@@ -564,17 +592,17 @@ export default function TrustCenterTab({
           </button>
         </div>
       </nav>
-      <Modal
-        isOpen={!!detail}
-        onClose={() => setDetail(null)}
-        panelClassName="max-w-2xl"
-        dataTestId="trust-identity-details"
-      >
-        <ModalHeader
-          title={`Identity — ${detail?.record.host ?? ""}`}
+      {detail && (
+        <TrustIdentityInspector
+          key={detail.id}
+          row={detail}
+          databaseName={mgr.databaseName ?? "Current database"}
+          connectionName={connectionName(detail)}
+          inspection={mgr.inspection}
+          loading={mgr.busy}
+          error={mgr.error}
           onClose={() => setDetail(null)}
-        />
-        <ModalBody>
+        >
           <label className="block text-xs">
             Label
             <input
@@ -589,6 +617,7 @@ export default function TrustCenterTab({
             className={`${button} mt-2`}
             disabled={disabled}
             onClick={() => detail && void mgr.rename(detail, nickname)}
+            data-tooltip="Save a display label without changing the accepted fingerprint"
           >
             Save label
           </button>
@@ -654,148 +683,8 @@ export default function TrustCenterTab({
           >
             Review tag replacement
           </button>
-          <p className="my-3 text-xs">
-            Public identity details and recorded history. Editing a label does
-            not change the accepted fingerprint.
-          </p>
-          {detail && (
-            <dl className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,3fr)] gap-x-3 gap-y-2 text-xs">
-              <dt className="text-[var(--color-textMuted)]">Fingerprint</dt>
-              <dd className="break-all font-mono">
-                {detail.record.identity.fingerprint}
-              </dd>
-              <dt className="text-[var(--color-textMuted)]">Trust status</dt>
-              <dd>
-                {detail.record.revoked ? "Revoked / blocked" : "Not revoked"};{" "}
-                {detail.record.userApproved
-                  ? "user approved"
-                  : "not user approved"}
-              </dd>
-              <dt className="text-[var(--color-textMuted)]">Trust expiry</dt>
-              <dd>
-                {detail.record.trustExpires ?? "No explicit trust expiry"}
-              </dd>
-              {Object.entries(detail.record.identity)
-                .filter(
-                  ([key, value]) =>
-                    value != null &&
-                    [
-                      "subject",
-                      "issuer",
-                      "validFrom",
-                      "validTo",
-                      "keyType",
-                      "keyBits",
-                      "keyAlgorithm",
-                      "keySize",
-                      "signatureAlgorithm",
-                      "firstSeen",
-                      "lastSeen",
-                    ].includes(key),
-                )
-                .map(([key, value]) => (
-                  <div key={key} className="contents">
-                    <dt className="text-[var(--color-textMuted)]">
-                      {key
-                        .replace(/([A-Z])/g, " $1")
-                        .replace(/^./, (letter) => letter.toUpperCase())}
-                    </dt>
-                    <dd className="break-words">{String(value)}</dd>
-                  </div>
-                ))}
-            </dl>
-          )}
-          {detail && mgr.inspection?.rowId === detail.id && (
-            <>
-              <h3 className="mb-2 mt-4 text-sm font-medium">
-                Verification statistics
-              </h3>
-              <dl className="grid grid-cols-2 gap-2 text-xs">
-                {Object.entries(
-                  mgr.inspection.stats &&
-                    typeof mgr.inspection.stats === "object"
-                    ? mgr.inspection.stats
-                    : {},
-                ).map(([key, value]) => (
-                  <div key={key}>
-                    <dt className="text-[var(--color-textMuted)]">
-                      {key.replace(/_/g, " ")}
-                    </dt>
-                    <dd>{value == null ? "Never" : String(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-              <h3 className="mb-2 mt-4 text-sm font-medium">
-                Recent identity history
-              </h3>
-              {Array.isArray(mgr.inspection.history) &&
-              mgr.inspection.history.length ? (
-                <ol className="max-h-48 space-y-2 overflow-auto text-xs">
-                  {mgr.inspection.history
-                    .slice(-50)
-                    .reverse()
-                    .map((entry, index) => (
-                      <li
-                        key={`${index}:${entry.changed_at ?? ""}`}
-                        className="rounded border border-[var(--color-border)] p-2"
-                      >
-                        <span className="font-medium">
-                          {String(entry.reason ?? "Identity change").replace(
-                            /_/g,
-                            " ",
-                          )}
-                        </span>{" "}
-                        · {String(entry.changed_at ?? "Unknown time")}
-                        <span className="block break-all font-mono">
-                          {String(entry.identity?.fingerprint ?? "")}
-                        </span>
-                        {entry.note && (
-                          <span className="block">{String(entry.note)}</span>
-                        )}
-                      </li>
-                    ))}
-                </ol>
-              ) : (
-                <p className="text-xs text-[var(--color-textMuted)]">
-                  No recorded identity changes.
-                </p>
-              )}
-              <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-                Up to 50 latest history entries shown; the complete record is
-                available below.
-              </p>
-            </>
-          )}
-          <details className="mt-4">
-            <summary className="cursor-pointer text-xs font-medium">
-              Advanced raw identity and history
-            </summary>
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--color-background)] p-3 text-xs">
-              {detail
-                ? JSON.stringify(
-                    {
-                      identity: detail.record.identity,
-                      history:
-                        mgr.inspection?.rowId === detail.id
-                          ? mgr.inspection.history
-                          : (detail.record.history ?? []),
-                      statistics:
-                        mgr.inspection?.rowId === detail.id
-                          ? mgr.inspection.stats
-                          : "Loading native statistics…",
-                      tags: detail.record.tags ?? [],
-                      revoked: !!detail.record.revoked,
-                      hostPolicy: detail.record.hostPolicy ?? "inherit",
-                      trustExpires: detail.record.trustExpires,
-                    },
-                    null,
-                    2,
-                  )
-                : ""}
-            </pre>
-          </details>
-        </ModalBody>
-      </Modal>
+        </TrustIdentityInspector>
+      )}
       <ConfirmDialog
         isOpen={!!review && review.action !== "import"}
         title={
