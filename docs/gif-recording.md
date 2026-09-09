@@ -7,6 +7,10 @@ permalink: /gif-recording/
 
 GIF is intended for short clips. RDP GIF capture runs at up to 10 frames per second and scales the canvas to fit within 1280×720 pixels, preserving its aspect ratio. This only affects the recording; it does not change the remote desktop resolution or frame rate.
 
+Open the **Recording Manager** to find saved recordings by source and name. Expanding an SSH recording exposes its available export formats. A listing does not imply that every format or protocol supports live video capture.
+
+{% include app-screenshot.html file="recordings.png" width="1440" height="1000" alt="Recording Manager with two named SSH recordings, durations, tags and separate RDP and web source tabs" caption="Keep recordings recognizable with names and tags, then choose the appropriate source tab." %}
+
 Encoding runs in a worker while recording. If encoding is busy, capture skips frames and preserves elapsed playback time in the next frame delay. Paused time is excluded. The recorder keeps at most one RGBA frame in flight and one indexed frame in the encoder, plus the bounded encoded output.
 
 RDP GIF recording automatically stops at five minutes of active recording or 64 MiB of encoded output and saves the valid captured portion to the recording library. A warning explains which limit was reached. A failure to capture, encode, or save produces an error instead of claiming success. Closing the session cancels unfinished work and releases its resources. Starting another recording is disabled while a requested save is being finalized.

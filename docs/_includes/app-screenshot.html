@@ -1,0 +1,20 @@
+<figure class="app-screenshot">
+  <a
+    href="{{ '/assets/screenshots/' | append: include.file | relative_url }}"
+    aria-label="{{ include.alt | prepend: 'View full-size: ' | escape }}"
+  >
+    <img
+      src="{{ '/assets/screenshots/' | append: include.file | relative_url }}"
+      alt="{{ include.alt | escape }}"
+      width="{{ include.width }}"
+      height="{{ include.height }}"
+      loading="lazy"
+      decoding="async"
+    />
+  </a>
+  <figcaption>
+    {{ include.caption | escape }} Actual application components with synthetic
+    demo data—no live connection. Native responses are fixtures, not proof of
+    remote connectivity or encryption. Select the image for full size.
+  </figcaption>
+</figure>

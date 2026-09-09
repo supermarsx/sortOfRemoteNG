@@ -1,0 +1,103 @@
+{
+  "capturedAt": "2026-09-09T11:49:37.272Z",
+  "notice": "Actual application components, synthetic documentation data and native responses. No live session, app profile, secret, native file or network endpoint.",
+  "views": [
+    {
+      "view": "editor",
+      "commands": [
+        "read_app_data",
+        "get_runtime_capabilities"
+      ],
+      "refused": [],
+      "storageReads": [],
+      "text": "sortOfRemoteNG · Documentation demo · Synthetic data — no live connection\nEdit Connection\n\nEditing \"Operations dashboard\"\n\nReset\nSave\nBasics\nProtocol\nBehavior\nOrganize\nNotes\nFolder/Group\nFavorite\nConnection Name *\nParent Folder\nProtocol\nHTTPS Secure Web\nHostname / IP *\nPort\nUsername\nPassword\nPress\nEnter\nto save\nEsc\nto cancel",
+      "file": "editor.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "5160637830a350a86c6aec7bf7bdc639565b41322a7052d26145367e0a791ccb"
+    },
+    {
+      "view": "editor-organize",
+      "file": "editor-organize.png",
+      "refused": [],
+      "width": 1440,
+      "height": 1000,
+      "sha256": "ebad5de829230164f7a09134ee48c7f2f2c1a9d19e4d31d606173d2022d0da70"
+    },
+    {
+      "view": "artifacts",
+      "commands": [
+        "encryption_get_artifact_status"
+      ],
+      "refused": [],
+      "storageReads": [],
+      "text": "sortOfRemoteNG · Documentation demo · Synthetic data — no live connection\nArtifact protection\n\nManage the global master-key layer for existing app-managed files and future writes. Database passwords, export passwords, and master lock/unlock are separate. “All” means supported artifact families in this profile and configured local backup roots—not remote, offline, or unmanaged copies.\n\nMacros covers native macro files; macros embedded in settings follow Settings. Logs covers managed native application logs, not the intentionally plaintext encryption audit or separate frontend action/history logs.\n\nRefresh artifact protection\n0 selected · 9 supported families\n\nDocumentation demo data. No application files were inspected or changed.\n\nInspected artifact protection and future-write policy\n\tArtifact\tInspected files\tFuture writes\tActions\n\tConnections database\nsorng-v1::connections\n\tEncrypted\n1 encrypted · 0 plaintext · 0 unverified\n1 MB inspected\n\tEncryption enabled\t\n\n\tDatabase names and index\nsorng-v1::databases-index\n\tEncrypted\n2 encrypted · 0 plaintext · 0 unverified\n2 MB inspected\n\tEncryption enabled\t\n\n\tDatabase trust records\nsorng-v1::trust-store\n\tEncrypted\n3 encrypted · 0 plaintext · 0 unverified\n3 MB inspected\n\tEncryption enabled\t\n\n\tSettings\nsorng-v1::settings\n\tEncrypted\n4 encrypted · 0 plaintext · 0 unverified\n4 MB inspected\n\tEncryption enabled\t\n\n\tRecording metadata\nsorng-v1::recordings-meta\n\tMixed protection\n5 encrypted · 2 plaintext · 0 unverified\n5 MB inspected\n\tEncryption enabled\t\n\n\tRecording media files\nsorng-v1::recordings-media\n\tEncrypted\n6 encrypted · 0 plaintext · 0 unverified\n6 MB inspected\n\tEncryption enabled\t\n\n\tBackups\nsorng-v1::backups\n\tEncrypted\n7 encrypted · 0 plaintext · 0 unverified\n7 MB inspected\n\tEncryption enabled\t\n\n\tLogs\nsorng-v1::logs\n\tEncrypted\n8 encrypted · 0 plaintext · 0 unverified\n8 MB inspected\n\tEncryption enabled\t\n\n\tMacros library\nsorng-v1::macros\n\tEncrypted\n9 encrypted · 0 plaintext · 0 unverified\n9 MB inspected\n\tEncryption enabled\t\n\n\tRetained master-key recovery ring\nsorng-v1::key-ring\n\nProtected key infrastructure; excluded from bulk changes.\n\n\tEncrypted\n1 encrypted · 0 plaintext · 0 unverified\n2 KB inspected\n\tEncryption enabled\tRead-only protection\n\tArtifact protection policy\nsorng-v1::artifact-policy\n\nProtected key infrastructure; excluded from bulk changes.\n\n\tEncrypted\n1 encrypted · 0 plaintext · 0 unverified\n2 KB inspected\n\tEncryption enabled\tRead-only protection\nSelected\nAll supported\n\nThe recovery key ring and artifact policy are protected infrastructure, never included in bulk actions. Enabling encryption is distinct from unlocking the key; decrypting does not delete any keys. The unlocked master key is still needed to authenticate policy even when all supported data families are plaintext. Removing obsolete plaintext copies is not secure erasure of free space, OS snapshots, or external copies.",
+      "file": "artifacts.png",
+      "width": 1440,
+      "height": 1500,
+      "sha256": "347c35c23c0fe6beb2e46b89ef21455b7f73fd12f4431bb10b650ef3d68f1f56"
+    },
+    {
+      "view": "database",
+      "commands": [
+        "database_protection_unlock",
+        "database_protection_status",
+        "database_protection_capabilities"
+      ],
+      "refused": [],
+      "storageReads": [],
+      "text": "sortOfRemoteNG · Documentation demo · Synthetic data — no live connection\nCurrent database — inner protection\n\nInner protection covers only this database's connection payload. It does not protect database names, the index, trust records, application settings, or other databases. The global master key and export passwords are separate.\n\nClosing or locking the current database closes sensitive session and editor views in this window, including sessions not attributed to this database. Other database passwords and the global master key are unchanged.\n\nCurrent database: Documentation demo\n\nManaged inner protection: enabled. Open in this window.\n\nCipher and unlock methods\n\nNative database protection is separate from the global master key and exported-file passwords. Browser storage cannot use this format. Unlock sessions expire after 15 minutes; unsaved edits require reauthentication before saving.\n\nFormat: managed. Session expires 1:04:34 PM.\n\nRecovery password — password\nThis computer — os-vault (device-bound)\nData cipher\nAES-256-GCM (recommended)\nChaCha20-Poly1305 (portable software option)\nTwofish-256-EAX (advanced)\nSerpent-256-EAX (advanced)\n\nThis choice changes only this database's inner payload cipher, not the global artifact cipher or password/OS-vault key wrapping. AES-256-GCM remains the recommended default.\n\nReplace all existing unlock methods (re-enroll every method you want to keep)\nReview protection change\nRemove inner protection\nLock current database",
+      "file": "database.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "84e79c378e803bd7f7d983e22e18f814e12e25bb75d7cd8a6efe3861aed2a0c7"
+    },
+    {
+      "view": "sessions",
+      "commands": [
+        "list_rdp_sessions",
+        "get_proxy_session_details",
+        "list_sessions",
+        "get_rdp_stats"
+      ],
+      "refused": [],
+      "storageReads": [],
+      "text": "sortOfRemoteNG · Documentation demo · Synthetic data — no live connection\nSessions\n4\nSSH Sessions\n1\nRDP Logs\nRDP History\nProxy Log\nProxy Stats\n1 RDP · 1 SSH · 1 proxy · 1 tabs\n\nUpdates automatically\n\nSearch sessions\nDisconnect RDP\nDisconnect SSH\nStop Proxies\nAll\nRDP\nSSH\nProxy\nConnections\nTools\nWindows\nIntegrations\nActive session management\n\tName / target\n\tProtocol\n\tStatus\n\tStarted\n\tLast activity\n\tDetails\tActions\n\t\nOperations desktop\ndesktop.example.test:3389 (demo.operator)\n\tRDP\tCONNECTED\tSep 9, 12:28 PM\t—\t1920×1080 · 20m 40s uptime · connected · 30 fps · ↓ 30.0 MB · ↑ 512.0 KB\t\n\n\t\nApplication server\ndemo.operator@app.example.test:22\n\tSSH\tCONNECTED\tSep 9, 10:00 AM\tSep 9, 10:00 AM\tConnection docs-dem\t\n\n\t\nOperations dashboard\ndemo.operator@dashboard.example.test:443\n\tHTTPS\tCONNECTED\tSep 9, 10:00 AM\t—\tConnection docs-dem\t\n\n\t\nhttps://dashboard.example.test/\n(demo.operator)\n\tHTTP / HTTPS Proxy\tHEALTHY\tSep 9, 10:00 AM\t—\t48 requests · 0 errors\t\n1–4 of 4\nRows\n25\n50\n100\nPage 1 of 1",
+      "file": "sessions.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "2bae780ff86249c3b352695818b797d0303b7dfec97ddb19c62aedcb9fedfc91"
+    },
+    {
+      "view": "recordings",
+      "commands": [],
+      "refused": [],
+      "storageReads": [
+        "mremote-session-recordings",
+        "mremote-rdp-recordings",
+        "mremote-web-recordings",
+        "mremote-web-video-recordings"
+      ],
+      "text": "sortOfRemoteNG · Documentation demo · Synthetic data — no live connection\nSSH Terminal\n2\nRDP Screen\nWeb (HAR)\nWeb (Video)\nClear All\n2 recordings\n6m 37s total\nDeployment walkthrough\napp.example.test\n·\ndemo.operator@\n·\n5m 5s\n·\n2 entries\n·\n120x36\n·\n9/9/2026, 10:15:00 AM\ndemo\nrunbook\nService health review\napp.example.test\n·\ndemo.operator@\n·\n1m 32s\n·\n2 entries\n·\n120x36\n·\n9/9/2026, 10:15:00 AM\ndemo\ndiagnostics\nDocumentation demo · Synthetic data — no live connection",
+      "file": "recordings.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "9e40bad4cbeb17b8a582edac12d1fc5090926c795fa98d54380192269cd62c49"
+    },
+    {
+      "view": "trust",
+      "commands": [
+        "trust_get_active_database",
+        "trust_get_all_records",
+        "trust_get_summary"
+      ],
+      "refused": [],
+      "storageReads": [],
+      "text": "sortOfRemoteNG · Documentation demo · Synthetic data — no live connection\nTrust Center\n\nTrusted identities in Documentation demo\n\nCertificates and SSH host identities—not passwords, private keys, or the credential vault. Trust is database-scoped. Global verification policies remain in Settings → Trust Center.\n\nAll identity types\nHTTPS\nCERTIFICATE\nRDP\nSSH\nTLS\nAll statuses\nNot revoked\nRevoked\nAll scopes\nDatabase-wide\nConnection-specific\nHost A–Z\nType, then host\nRecently seen\nRefresh\nImport identities\nReview default known_hosts\nChoose known_hosts file\nExport all\n2 visible / 2 identities · 0 selected\nSelect all filtered\nSelect page\nClear selection\nSelected (including hidden):\nExport selected\nRevoke selected\nReinstate selected\nForget selected\nReplace selected tags\n\nNative summary: 2 records · 0 revoked · 0 expired · 24 verifications · 0 mismatches · average score 100/100\n\nStored trusted certificates and host identities\n\tIdentity\tType / status\tScope\tFingerprint\tLast seen\tActions\n\tApplication server\napp.example.test:22\n\tSSH\nNot revoked\n\tDatabase-wide\tSHA256:DEMOExampleHostKey00000000000000000000000000\t2026-09-09T09:00:00Z\t\n\n\tOperations dashboard\ndashboard.example.test:443\n\tTLS\nNot revoked\n\tDatabase-wide\t20:21:22:23:24:25:26:27:28:29:2a:2b:2c:2d:2e:2f:30:31:32:33:34:35:36:37:38:39:3a:3b:3c:3d:3e:3f\t2026-09-09T09:00:00Z\t\nPage 1 of 1 · up to 100 identities per page\nPrevious page\nNext page",
+      "file": "trust.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "b2896a525b38b5e2e091887dd1933d768024aa19236a3ad9eb912ff90083d958"
+    }
+  ]
+}

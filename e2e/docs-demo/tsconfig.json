@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "types": ["vite/client", "@webgpu/types"]
+  },
+  "include": ["./*.ts", "./*.tsx"],
+  "exclude": ["../../node_modules", "../../src-tauri"]
+}

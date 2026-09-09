@@ -35,6 +35,10 @@ flowchart LR
 
 For repeatable connection and disconnection actions, see [Behaviors]({{ '/behaviors/' | relative_url }}). For recording a supported session, see [GIF recording]({{ '/gif-recording/' | relative_url }}); recording formats and sources have their own limits.
 
+Open **Session Manager** to filter active sessions, review their status, and use the action for the correct entry. Visible views update automatically; you do not need to keep pressing Refresh.
+
+{% include app-screenshot.html file="sessions.png" width="1440" height="1000" alt="Session Manager with example RDP, SSH, HTTPS and internal proxy rows, protocol filters and per-entry actions" caption="Review different session types together without confusing a saved connection with its running session." %}
+
 ## Reach systems on another network
 
 Check whether the destination needs a proxy, VPN, tunnel, or SSH jump host. Configure a route deliberately instead of assuming every protocol follows the same proxy setting. [Network paths]({{ '/network-paths/' | relative_url }}) explains the supported combinations and how referenced connections are resolved.
@@ -56,6 +60,8 @@ Managed database key slots are not portable copies of credentials. Database prot
 The dedicated **Trust Center** manages remembered host keys, certificates, and identity decisions for the open database. It is not a password vault. Review changes to a host's fingerprint through an independent trusted channel before accepting them. Forgetting a record removes the remembered decision; it does not mean "always trust this host."
 
 [Security overview]({{ '/security-overview/' | relative_url }}) explains trust scope and the threat model. [Encryption & recovery]({{ '/security/encryption-at-rest/' | relative_url }}) separates global artifact protection, individual database protection, and portable exports. [Master-key recovery]({{ '/master-key-recovery/' | relative_url }}) covers recovery material and verified restoration.
+
+For an individual managed database, [Advanced database ciphers]({{ '/security/database-ciphers/' | relative_url }}) explains the optional authenticated Twofish and Serpent choices, their compatibility limits, and why AES-256-GCM remains the default.
 
 <figure class="diagram-frame">
 <pre class="mermaid">

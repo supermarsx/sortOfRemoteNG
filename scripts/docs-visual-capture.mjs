@@ -73,6 +73,7 @@ export async function captureDocs({
   output = ".artifacts/docs-visual",
   binary = process.env.DOCS_CHROME_BINARY ??
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  screenshotFiguresOnly = false,
 } = {}) {
   const { remote } = await import("webdriverio");
   const server = await startDocsServer(directory);
@@ -104,13 +105,20 @@ export async function captureDocs({
       await browser.setWindowSize(width, height);
       // Chrome's outer-window minimum can otherwise silently turn 390px into 500px.
       await browser.setViewport({ width, height, devicePixelRatio: 1 });
-      for (const route of [
-        "",
-        "getting-started/",
-        "user-guide/",
-        "architecture/",
-        "releases/",
-      ]) {
+      for (const route of screenshotFiguresOnly
+        ? [
+            "connections-editor/",
+            "user-guide/",
+            "gif-recording/",
+            "security-overview/",
+          ]
+        : [
+            "",
+            "getting-started/",
+            "user-guide/",
+            "architecture/",
+            "releases/",
+          ]) {
         await browser.url(`${server.url}/${route}`);
         await browser.$("main h1").waitForDisplayed();
         await browser.execute(() => {
@@ -133,7 +141,10 @@ export async function captureDocs({
             { timeout: 20000 },
           );
         }
-        if ((await browser.$$("pre.mermaid")).length) {
+        if (
+          !screenshotFiguresOnly &&
+          (await browser.$$("pre.mermaid")).length
+        ) {
           await browser.waitUntil(
             async () =>
               browser.execute(() =>
@@ -144,6 +155,14 @@ export async function captureDocs({
             { timeout: 20000 },
           );
         }
+        const appScreenshots = screenshotFiguresOnly
+          ? await inspectAppScreenshotFigures(browser, {
+              route,
+              width,
+              output,
+              label,
+            })
+          : [];
         const metrics = await browser.execute(() => ({
           width: innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
@@ -183,7 +202,7 @@ export async function captureDocs({
           throw new Error(
             `Expected ${width}px viewport, got ${metrics.width}px`,
           );
-        for (const diagram of metrics.diagrams) {
+        for (const diagram of screenshotFiguresOnly ? [] : metrics.diagrams) {
           if (diagram.state !== "ready") continue;
           const dimensions = diagram.viewBox?.split(/\s+/).map(Number);
           if (
@@ -216,7 +235,9 @@ export async function captureDocs({
         }
         const name = `${route.replaceAll("/", "") || "home"}-${label}.png`;
         await browser.saveScreenshot(path.join(output, name));
-        const diagrams = await browser.$$(".diagram-frame");
+        const diagrams = screenshotFiguresOnly
+          ? []
+          : await browser.$$(".diagram-frame");
         for (let index = 0; index < diagrams.length; index++) {
           await browser.execute((element) => {
             element.style.scrollMarginTop = "80px";
@@ -229,26 +250,36 @@ export async function captureDocs({
             ),
           );
         }
-        report.push({ route, viewport: label, ...metrics, screenshot: name });
+        report.push({
+          route,
+          viewport: label,
+          ...metrics,
+          appScreenshots,
+          screenshot: name,
+        });
       }
     }
-    await browser.url(`${server.url}/releases/#release-engineering`);
-    await browser.waitUntil(
-      async () =>
-        browser.execute(
-          () =>
-            document.querySelector("#release-engineering")?.closest("details")
-              ?.open === true,
-        ),
-      { timeout: 10000 },
-    );
+    if (!screenshotFiguresOnly) {
+      await browser.url(`${server.url}/releases/#release-engineering`);
+      await browser.waitUntil(
+        async () =>
+          browser.execute(
+            () =>
+              document.querySelector("#release-engineering")?.closest("details")
+                ?.open === true,
+          ),
+        { timeout: 10000 },
+      );
+    }
     await writeFile(
       path.join(output, "report.json"),
       JSON.stringify(
         {
           generatedAt: new Date().toISOString(),
           source: path.resolve(directory),
-          note: "Actual built docs in isolated Chrome. Release API may be unavailable; screenshots retain its real status. No app data or live sessions used.",
+          note: screenshotFiguresOnly
+            ? "Actual built docs screenshot figures at desktop and mobile widths; intrinsic sizes, captions, local full-size image links and overflow checked. No app data or live sessions used."
+            : "Actual built docs in isolated Chrome. Release API may be unavailable; screenshots retain its real status. No app data or live sessions used.",
           pages: report,
         },
         null,
@@ -279,14 +310,117 @@ export async function captureDocs({
   }
 }
 
+/** Real lazy-image loading and layout checks, including figures below the fold. */
+export async function inspectAppScreenshotFigures(
+  browser,
+  { route, width, output, label },
+) {
+  const figures = await browser.$$("figure.app-screenshot");
+  const expected = {
+    "connections-editor/": 2,
+    "user-guide/": 1,
+    "gif-recording/": 1,
+    "security-overview/": 3,
+  };
+  if (figures.length !== expected[route])
+    throw new Error(
+      `${route}: expected ${expected[route]} app figures, found ${figures.length}`,
+    );
+  const result = [];
+  for (let index = 0; index < figures.length; index++) {
+    const figure = figures[index];
+    await figure.scrollIntoView({ block: "center" });
+    await browser.waitUntil(
+      async () =>
+        browser.execute((element) => {
+          const image = element.querySelector("img");
+          return (
+            image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0
+          );
+        }, figure),
+      {
+        timeout: 15000,
+        timeoutMsg: `${route}: screenshot ${index + 1} did not load`,
+      },
+    );
+    const metrics = await browser.execute(async (element) => {
+      const image = element.querySelector("img");
+      await image.decode();
+      const link = image.closest("a");
+      const box = image.getBoundingClientRect();
+      const caption = element
+        .querySelector("figcaption")
+        ?.textContent.replace(/\s+/g, " ")
+        .trim();
+      const href = link?.href;
+      if (
+        !href ||
+        href !== image.currentSrc ||
+        new URL(href).origin !== location.origin
+      )
+        throw new Error(
+          "Full-size link must target the exact local screenshot",
+        );
+      const response = await fetch(href);
+      return {
+        src: new URL(image.currentSrc).pathname,
+        href: new URL(href).pathname,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight,
+        declaredWidth: Number(image.getAttribute("width")),
+        declaredHeight: Number(image.getAttribute("height")),
+        renderedWidth: box.width,
+        renderedHeight: box.height,
+        left: box.left,
+        right: box.right,
+        alt: image.alt,
+        caption,
+        loading: image.loading,
+        imageResponseOk:
+          response.ok &&
+          response.headers.get("content-type")?.startsWith("image/png"),
+      };
+    }, figure);
+    if (
+      metrics.naturalWidth !== metrics.declaredWidth ||
+      metrics.naturalHeight !== metrics.declaredHeight ||
+      metrics.renderedWidth <= 0 ||
+      metrics.left < -1 ||
+      metrics.right > width + 1 ||
+      !metrics.imageResponseOk ||
+      metrics.loading !== "lazy" ||
+      metrics.alt.length < 20 ||
+      !metrics.caption?.includes("synthetic demo data—no live connection") ||
+      !metrics.caption.includes(
+        "not proof of remote connectivity or encryption",
+      )
+    )
+      throw new Error(
+        `${route}: invalid app screenshot figure ${JSON.stringify(metrics)}`,
+      );
+    await figure.saveScreenshot(
+      path.join(
+        output,
+        `${route.replaceAll("/", "")}-${label}-app-${index + 1}.png`,
+      ),
+    );
+    result.push(metrics);
+  }
+  return result;
+}
+
 if (
   process.argv[1] &&
   pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url
 )
-  captureDocs()
+  captureDocs(
+    process.argv.includes("--app-screenshots")
+      ? { screenshotFiguresOnly: true, output: ".artifacts/docs-app-visual" }
+      : {},
+  )
     .then((report) =>
       console.log(
-        `Captured ${report.length} real docs views in .artifacts/docs-visual`,
+        `Captured ${report.length} real docs views in ${process.argv.includes("--app-screenshots") ? ".artifacts/docs-app-visual" : ".artifacts/docs-visual"}`,
       ),
     )
     .catch((error) => {

@@ -23,6 +23,10 @@ The tree supports nested folders, tags, favorites, custom icons, ordering, and c
 
 Folders intentionally hide connection-only tabs. Protocol subtabs change when the protocol or target operating system changes.
 
+{% include app-screenshot.html file="editor.png" width="1440" height="1000" alt="Connection editor Basics showing a named HTTPS dashboard, folder, hostname and credential fields" caption="Start with the destination and a recognizable connection name." %}
+
+{% include app-screenshot.html file="editor-organize.png" width="1440" height="1000" alt="Connection editor Organize icon picker showing protocol recommendations, search and the built-in icon palette" caption="Choose a recognizable icon; appearance does not change how the connection authenticates." %}
+
 ## Search settings instead of hunting
 
 The editor’s settings search indexes visible labels, help copy, option text, safe current values, and protocol-aware destinations. Selecting a result opens the owning top-level tab and, when applicable, the exact Protocol subtab.

@@ -21,7 +21,11 @@ sortOfRemoteNG handles credentials and opens privileged remote sessions. Securit
 
 ## Trust decisions are database state
 
-Every host key and server certificate you approve is a Trust Center record, and each record belongs to one user database. The store lives beside that database's payload:
+Every host key and server certificate you approve is a Trust Center record, and each record belongs to one user database.
+
+{% include app-screenshot.html file="trust.png" width="1440" height="1000" alt="Trust Center listing an example SSH host key and HTTPS certificate with fingerprints, filters and reviewed actions" caption="Inspect a remembered identity in the database that owns it. Forgetting it and revoking it are different decisions." %}
+
+The store lives beside that database's payload:
 
 ```
 <app_data>/databases/<id>.json         connections
@@ -38,11 +42,19 @@ Every host key and server certificate you approve is a Trust Center record, and 
 
 Earlier builds kept one global `trust_store.json` beside the application data plus a separate `rdp-cert-trust.json` for RDP server certificates — both plaintext and shared by every database. In Settings → Trust Center, **Review legacy trust migration** inspects the pending databases before an explicit migration. Existing ready databases can be processed sequentially; locked databases require an intentional password or supported managed-key-slot unlock. Migration does not select another database, close dirty tabs, or automatically unlock from a vault. Global records are considered for each database, connection-scoped records only for connections it owns, and RDP pins become ordinary `rdp` records. Missing decisions are added without replacing existing identities, policies or revocations; identities previously removed with Forget remain excluded. Per-database progress, preserved/added counts and errors remain visible, and cancellation stops before the next database. **Legacy files remain unchanged inputs.** Separate confirmed deletion is enabled only when native receipts verify coverage against the current source, database payload and destination decisions; opening every database once or merely finding a trust sidecar is not sufficient. Drift, unreadable files or incomplete migration keep cleanup blocked and require review or retry.
 
+Normal cleanup remains guarded by that migration coverage. The separate **Force delete legacy trust files…** action bypasses coverage only: it requires typing `FORCE DELETE LEGACY TRUST`, verifies recovery copies before removal, and refuses changed or unsafe files. It does not remove current per-database trust records; unmigrated approvals may be lost and future connections follow your trust policy. Recovery copies retain their original format, may contain plaintext trust metadata, and are outside artifact encryption management. They are not automatically imported, and deletion is not secure erasure.
+
 ### SSH host keys and `known_hosts`
 
 Accepted SSH, SFTP, and SCP host keys are Trust Center records too, keyed by `host:port`, so one accepted key covers the terminal, the file browser, and SCP for the same endpoint. OpenSSH's `known_hosts` becomes an import source rather than the authority: a key already listed there is adopted into the Trust Center and accepted instead of re-prompting, and Settings → Trust Center can import the whole file on demand (hashed `|1|…` entries are skipped, because their host names are unrecoverable, and an endpoint already recorded is never overwritten). By default an accepted key is still appended to `known_hosts` so other tools sharing that file keep working; the per-connection `also_write_known_hosts` option — present on SSH, SFTP, and SCP connections and on by default — turns that dual write off and keeps the decision inside the database only.
 
 ## At-rest threat model
+
+Use **Security → Artifact protection** for app-managed files and future-write policy. Use **Current database** for just one database's inner payload cipher and unlock methods. Neither control changes a remote host's trust decision or an already exported copy.
+
+{% include app-screenshot.html file="artifacts.png" width="1440" height="1500" alt="Artifact protection table separating inspected encrypted and plaintext file counts from future-write policy and protected key infrastructure" caption="Read inspected file state and future-write policy separately; configuring encryption is not proof that every existing file is protected." %}
+
+{% include app-screenshot.html file="database.png" width="1440" height="1000" alt="Current database security showing an AES-256-GCM payload with password and device-bound OS-vault unlock methods" caption="An individual database can have its own payload cipher and unlock methods, separate from the global master key." %}
 
 The encryption design primarily protects against offline access to application data and backups. It does not protect plaintext already available to an attacker controlling the unlocked process or operating system account.
 
