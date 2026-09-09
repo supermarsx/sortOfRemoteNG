@@ -41,6 +41,16 @@ function svgFor(key: string) {
 }
 
 describe("food and fruit connection markers", () => {
+  it("finds all fruits with the plural category query and common berry spelling", () => {
+    expect(
+      filterConnectionIcons("fruits")
+        .map((entry) => entry.key)
+        .sort(),
+    ).toEqual(FRUIT_ICONS.map((entry) => entry.key).sort());
+    expect(
+      filterConnectionIcons("strawberries").map((entry) => entry.key),
+    ).toContain("fruit-strawberry");
+  });
   it("registers exactly the requested 17 fruits without brand/category collisions", () => {
     expect(FRUIT_ICONS.map((entry) => entry.key)).toEqual(
       expected.map((name) => `fruit-${name}`),
