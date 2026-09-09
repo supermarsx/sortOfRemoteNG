@@ -51,6 +51,7 @@ export const BRAND_ICON_SLUGS = [
   "ovh",
   "portainer",
   "proxmox",
+  "qemu",
   "vmware",
 
   // Vendors and hardware

@@ -44,6 +44,7 @@ import {
 
 import { defineIcon } from "./types";
 import { FRUIT_ICONS } from "./fruits";
+import { ALPHANUMERIC_MARKER_ICONS } from "./alphanumericMarkers";
 
 const RisingSun = createLucideIcon("RisingSun", [
   ["path", { d: "M6 15a6 6 0 0 1 12 0M2 15h20M5 19h14", key: "sun-horizon" }],
@@ -427,4 +428,5 @@ export const GENERIC_SHAPE_ICONS = [
     "plain",
   ]),
   ...FRUIT_ICONS,
+  ...ALPHANUMERIC_MARKER_ICONS,
 ] as const;

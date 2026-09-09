@@ -13,7 +13,7 @@ these composites are app UI symbols, not official alternate brand logos.
 
 ## Installed Simple Icons
 
-`src/utils/icons/brand/brandIconSlugs.ts` is the source of truth for the 171 paths
+`src/utils/icons/brand/brandIconSlugs.ts` is the source of truth for the installed paths
 vendored from the installed `simple-icons` 16.28.0 package. Regenerate with
 `npm run icons:brand:generate`; validate with `npm run icons:brand:check`.
 Never hand-edit `generatedBrandIcons.ts`. The generator reads only requested
@@ -26,6 +26,16 @@ paths. Exact publisher source/guideline links are retained in the installed
 under [CC0-1.0](https://github.com/simple-icons/simple-icons/blob/16.28.0/LICENSE.md),
 but that does not waive third-party trademark rights or individual asset terms.
 See its [disclaimer](https://github.com/simple-icons/simple-icons/blob/16.28.0/DISCLAIMER.md).
+
+QEMU uses the unchanged single-path mark from Simple Icons 16.28.0, whose source
+metadata points to the [QEMU project logo page](https://wiki.qemu.org/Logo).
+The [project website](https://www.qemu.org/) identifies QEMU as a machine emulator
+and virtualizer. The logo page was access-protected during this addition; this
+is a pinned collection asset, not a newly downloaded publisher SVG. Its geometry
+is preserved and only its fill follows the selected icon color. The separate
+`virtual-machine` and `cryptography` symbols are app-authored generic vectors;
+they do not imply a particular hypervisor, cryptocurrency, or encryption mode.
+
 In particular, the [Git logo](https://git-scm.com/community/logos) is by Jason Long
 and licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Here its
 geometry is preserved, its fill inherits the UI color, and its server variant

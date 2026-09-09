@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Vault,
+  createLucideIcon,
 } from "lucide-react";
 
 import {
@@ -27,7 +28,35 @@ import {
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
 
+/** Key inside a six-sided cipher boundary, distinct from the plain padlock. */
+const CryptographyIcon = createLucideIcon("Cryptography", [
+  ["path", { d: "m12 2 9 5v10l-9 5-9-5V7l9-5Z", key: "cipher-boundary" }],
+  ["circle", { cx: "9", cy: "9.5", r: "2.5", key: "key-bow" }],
+  [
+    "path",
+    { d: "m10.8 11.3 5.7 5.7m-2-2 2-2m-4 0 2-2", key: "key-shaft-and-bits" },
+  ],
+]);
+
 export const SECURITY_ICONS = [
+  defineIcon(
+    "cryptography",
+    "Cryptography",
+    "security",
+    CryptographyIcon,
+    [
+      "cryptography",
+      "cryptographic",
+      "encryption",
+      "decryption",
+      "cipher",
+      "crypto",
+      "key management",
+      "symmetric key",
+      "public key",
+    ],
+    "Generic cryptography key and cipher boundary; not a cryptocurrency logo or a claim about the connection's encryption.",
+  ),
   defineIcon("shield", "Shield", "security", Shield, [
     "security",
     "protection",

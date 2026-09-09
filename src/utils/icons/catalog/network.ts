@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { NETWORK_VARIANT_ICONS } from "./networkVariants";
 import { PROXY_ICONS } from "./proxyIcons";
+import { IP_VERSION_ICONS } from "./ipVersionIcons";
 
 import {
   apple,
@@ -76,6 +77,7 @@ const WirelessRouter = createLucideIcon("WirelessRouter", [
 ]);
 
 export const NETWORK_ICONS = [
+  ...IP_VERSION_ICONS,
   ...PROXY_ICONS,
   defineIcon("globe", "Web", "network", Globe, ["http", "https", "internet"]),
   defineIcon("network", "Network", "network", Network, [

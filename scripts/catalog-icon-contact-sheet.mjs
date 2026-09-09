@@ -9,6 +9,21 @@ import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
 const requestedKeys = {
+  "virtualization-aircraft-markers": [
+    "qemu",
+    "virtual-machine",
+    "cryptography",
+    "stealth-bomber",
+    "fighter-jet",
+    "black-hawk-helicopter",
+    "ipv4",
+    "ipv6",
+    ...Array.from({ length: 10 }, (_, index) => `number-${index}`),
+    ...Array.from(
+      { length: 26 },
+      (_, index) => `letter-${String.fromCharCode(97 + index)}`,
+    ),
+  ],
   "admin-panels": ["webmin", "cockpit", "plesk", "cloudron", "cpanel"],
   "physical-mail": [
     "folder-mta-relay",

@@ -1,4 +1,4 @@
-import { Container, Layers, MonitorCog } from "lucide-react";
+import { Container, Layers, createLucideIcon } from "lucide-react";
 
 import {
   docker,
@@ -8,10 +8,24 @@ import {
   microsoft,
   portainer,
   proxmox,
+  qemu,
   vmware,
 } from "../brand";
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
+
+/** Host display with two overlapping guest windows; not a vendor logo. */
+const VirtualMachineIcon = createLucideIcon("VirtualMachine", [
+  [
+    "rect",
+    { x: "2", y: "3", width: "20", height: "15", rx: "2", key: "host-display" },
+  ],
+  ["path", { d: "M5 11V6h8v1M8 22h8m-4-4v4", key: "guest-back-and-stand" }],
+  [
+    "rect",
+    { x: "10", y: "9", width: "8", height: "6", rx: "0.7", key: "guest-front" },
+  ],
+]);
 
 /**
  * Virtualization and container icons. Seeded with generic Lucide entries so the
@@ -23,8 +37,34 @@ export const VIRTUALIZATION_ICONS = [
     "virtual-machine",
     "Virtual machine",
     "virtualization",
-    MonitorCog,
-    ["vm", "virtual machine", "guest", "instance", "virtualization"],
+    VirtualMachineIcon,
+    [
+      "vm",
+      "virtual machine",
+      "virtualmachine",
+      "virtual computer",
+      "guest",
+      "guest os",
+      "instance",
+      "virtualization",
+    ],
+    "Generic virtual machine: overlapping guest windows inside a host display. The saved virtual-machine key is unchanged.",
+  ),
+  defineIcon(
+    "qemu",
+    "QEMU",
+    "virtualization",
+    qemu,
+    [
+      "qemu",
+      "qemu kvm",
+      "qemu-kvm",
+      "machine emulator",
+      "system emulation",
+      "virtualizer",
+      "virtual machine",
+    ],
+    "QEMU's pure mark, vendored from Simple Icons 16.28.0 using its QEMU project logo source; no server frame or runtime package import.",
   ),
   defineIcon("hypervisor", "Hypervisor", "virtualization", Layers, [
     "hypervisor",

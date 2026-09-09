@@ -23,6 +23,7 @@ import {
 
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
+import { AIRCRAFT_ICONS } from "./aircraft";
 
 const Stream = createLucideIcon("LiveStream", [
   ["path", { d: "m10 7 7 5-7 5V7Z", key: "play" }],
@@ -691,4 +692,5 @@ export const INDUSTRIAL_ASSET_ICONS = [
     createRoleIcon("RFIDAccessControl", "wall-terminal", Nfc),
     ["access control rfid", "contactless entry", "access control variant"],
   ),
+  ...AIRCRAFT_ICONS,
 ] as const;
