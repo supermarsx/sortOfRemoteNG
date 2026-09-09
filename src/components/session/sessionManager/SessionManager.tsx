@@ -796,7 +796,7 @@ const SessionsView: React.FC<{
                 setPage(1);
               }}
               placeholder="Search name, target, protocol, user, or status…"
-              className="sor-form-input w-full pl-8"
+              className="sor-form-input sor-form-input-icon-left w-full"
               data-testid="session-search"
             />
           </label>

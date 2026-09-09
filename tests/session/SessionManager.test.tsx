@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   render,
   renderHook,
@@ -388,6 +389,27 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(
       screen.queryByText("Auto-refresh", { exact: true }),
     ).not.toBeInTheDocument();
+  });
+
+  it("reserves the shared icon gutter for the session search placeholder", async () => {
+    const rules = readFileSync("src/styles/forms.css", "utf8").match(
+      /\.sor-form-input\.sor-form-input-icon-left\s*\{[^}]+\}/,
+    )?.[0];
+    expect(rules).toContain("padding-left: 2.25rem !important");
+    const style = document.createElement("style");
+    style.textContent = rules ?? "";
+    document.head.appendChild(style);
+    try {
+      renderManager();
+      await screen.findByText("Prod RDP");
+      expect(
+        getComputedStyle(
+          screen.getByRole("searchbox", { name: "Search sessions" }),
+        ).paddingLeft,
+      ).toBe("2.25rem");
+    } finally {
+      style.remove();
+    }
   });
 
   it("renders RDP and proxy sessions in an accessible management table", async () => {
