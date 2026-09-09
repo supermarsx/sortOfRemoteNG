@@ -43,6 +43,7 @@ vi.mock("../../src/utils/auth/trustStore", () => ({
   }),
   refreshTrustStoreScope: vi.fn().mockResolvedValue(undefined),
   retryTrustStoreHydration: fixture.hydrate,
+  refreshTrustStoreRecords: fixture.hydrate,
   getTrustRecordStorageKey: (record: TrustRecord) =>
     `${record.type}:${record.host}`,
   parseTrustRecordAddress: (record: TrustRecord) => ({

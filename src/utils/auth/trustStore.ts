@@ -366,6 +366,7 @@ let scopeResolution: Promise<TrustStoreScope> | null = null;
  * result: those records belong to the database the user just left.
  */
 let scopeGeneration = 0;
+let cacheReadSequence = 0;
 /**
  * Barrier for the in-flight `trust_set_active_database`. Every read and every
  * mutation waits on it, so a connection attempted the instant a database
@@ -995,6 +996,7 @@ function installNativeRecords(records: NativeTrustRecord[]): void {
 }
 
 function clearCache(): void {
+  cacheReadSequence += 1;
   hydrated = false;
   globalCache = new Map();
   connectionCache = new Map();
@@ -1019,24 +1021,33 @@ function notifyTrustStoreChanged(): void {
   }
 }
 
-async function refreshNativeCache(notify = true): Promise<void> {
+async function refreshNativeCache(
+  notify = true,
+  markHydrated = true,
+): Promise<boolean> {
   const generation = scopeGeneration;
+  const readSequence = ++cacheReadSequence;
+  const databaseId = activeScope.databaseId;
   try {
     const records = await invokeTrustNative<NativeTrustRecord[]>(
       "trust_get_all_records",
+      databaseId ? { expectedDatabaseId: databaseId } : undefined,
     );
-    // The active database changed while this read was in flight. Installing
-    // now would show database A's records under database B.
-    if (generation !== scopeGeneration) return;
+    // Only the latest read in the same database may install. An older read
+    // could contain a pre-Forget snapshot even without a database switch.
+    if (generation !== scopeGeneration || readSequence !== cacheReadSequence)
+      return false;
     installNativeRecords(records);
     // Live count of what this scope actually holds — fresher than the count
     // `trust_get_active_database` reported at activation time.
     activeScope = { ...activeScope, recordCount: records.length };
-    hydrated = true;
+    if (markHydrated) hydrated = true;
     if (notify) notifyTrustStoreChanged();
+    return true;
   } catch (error) {
     // A stale failure must not wipe the cache the new scope just filled.
-    if (generation !== scopeGeneration) return;
+    if (generation !== scopeGeneration || readSequence !== cacheReadSequence)
+      return false;
     clearCache();
     throw error;
   }
@@ -1303,11 +1314,11 @@ async function migrateLegacyLocalStorage(): Promise<void> {
 
 async function hydrateTrustStore(): Promise<void> {
   const generation = scopeGeneration;
-  await refreshNativeCache(false);
+  if (!(await refreshNativeCache(false, false))) return;
   if (generation !== scopeGeneration) return;
   await migrateLegacyLocalStorage();
   if (generation !== scopeGeneration) return;
-  await refreshNativeCache(false);
+  if (!(await refreshNativeCache(false, false))) return;
   if (generation !== scopeGeneration) return;
   hydrated = true;
   hydrationState = "ready";
@@ -1467,6 +1478,7 @@ export async function ensureTrustStoreReady(): Promise<void> {
   if (scope.resolved && scope.databaseId === null) {
     throw new NoActiveDatabaseError();
   }
+  if (hydrationPromise) return hydrationPromise;
   if (hydrated) return;
   if (Date.now() < nextHydrationAttemptAt) {
     throw new Error(
@@ -1500,11 +1512,48 @@ export async function retryTrustStoreHydration(): Promise<void> {
   await ensureTrustStoreReady();
 }
 
+/** Read current native records after an out-of-band reviewed mutation.
+ * This is deliberately not bootstrap hydration: a refresh must never replay
+ * retained legacy localStorage input and resurrect an explicitly forgotten key.
+ */
+export async function refreshTrustStoreRecords(): Promise<void> {
+  const generation = scopeGeneration;
+  await scopeActivation;
+  const scope = await resolveTrustStoreScope();
+  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+  if (scope.resolved && scope.databaseId === null)
+    throw new NoActiveDatabaseError();
+  // Let a bootstrap already in flight finish before issuing the fresh read.
+  if (hydrationPromise) await hydrationPromise;
+  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+  try {
+    const applied = await refreshNativeCache(false);
+    if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+    if (!applied) throw new TrustRefreshSupersededError();
+    hydrationState = "ready";
+    hydrationFailureCount = 0;
+    nextHydrationAttemptAt = 0;
+    notifyTrustStoreChanged();
+  } catch (error) {
+    if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+    if (error instanceof TrustRefreshSupersededError) throw error;
+    throw markTrustStoreUnavailable();
+  }
+}
+
 function startHydrationForDisplay(): void {
   void ensureTrustStoreReady().catch(() => {
     // Display consumers remain empty. Connection decisions call the async API
     // and receive the failure explicitly.
   });
+}
+
+class TrustRefreshSupersededError extends Error {
+  constructor() {
+    super(
+      "A newer Trust Center refresh superseded this read; use the current records or refresh again",
+    );
+  }
 }
 
 class TrustScopeChangedError extends Error {

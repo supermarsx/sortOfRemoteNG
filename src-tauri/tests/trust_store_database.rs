@@ -367,6 +367,7 @@ async fn legacy_sidecars_seed_each_database_with_its_own_connection_scope() {
             ..Default::default()
         },
         records: Default::default(),
+        legacy_suppressed_keys: Default::default(),
     };
     for (key, host, kind, identity) in [
         (

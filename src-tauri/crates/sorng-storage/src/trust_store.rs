@@ -343,6 +343,11 @@ pub struct TrustStoreData {
     #[serde(default)]
     pub policy_config: TrustPolicyConfig,
     pub records: HashMap<String, TrustRecord>,
+    /// Keys explicitly forgotten here must not be restored by automatic
+    /// legacy imports if the old browser/sidecar source could not be removed.
+    /// These are not revocations and retain no identity or fingerprint.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub legacy_suppressed_keys: std::collections::BTreeSet<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +451,9 @@ impl StoreBackend {
 pub struct TrustStoreService {
     data: TrustStoreData,
     backend: StoreBackend,
+    /// Cached async writes must match the exact database and persisted state
+    /// loaded by their command. Runtime/sync writers use a separate mutex.
+    shared_baseline: Option<(String, serde_json::Value)>,
 }
 
 impl TrustStoreService {
@@ -460,6 +468,7 @@ impl TrustStoreService {
         Arc::new(Mutex::new(TrustStoreService {
             data,
             backend: StoreBackend::Legacy(Arc::new(std::sync::Mutex::new(path))),
+            shared_baseline: None,
         }))
     }
 
@@ -470,6 +479,7 @@ impl TrustStoreService {
         Arc::new(Mutex::new(TrustStoreService {
             data: TrustStoreData::default(),
             backend: StoreBackend::Shared,
+            shared_baseline: None,
         }))
     }
 
@@ -492,6 +502,7 @@ impl TrustStoreService {
         Ok(Self {
             data: self.data.clone(),
             backend,
+            shared_baseline: None,
         })
     }
 
@@ -516,13 +527,46 @@ impl TrustStoreService {
         Ok(())
     }
 
-    fn persist(&self) -> Result<(), String> {
+    fn persist(&mut self) -> Result<(), String> {
+        if matches!(self.backend, StoreBackend::Shared) {
+            let (database_id, baseline) = self
+                .shared_baseline
+                .as_ref()
+                .ok_or("Trust state must be reloaded before writing")?;
+            let rt = runtime()?;
+            let _io = rt.io_guard()?;
+            if rt.active_database_id().as_deref() != Some(database_id.as_str()) {
+                return Err("Trust database changed; refresh and review the action again".into());
+            }
+            let current = rt.load_active()?;
+            if serde_json::to_value(&current).map_err(|e| e.to_string())? != *baseline {
+                return Err("Trust records changed; refresh and review the action again".into());
+            }
+            rt.persist_active(&self.data)?;
+            self.shared_baseline = Some((
+                database_id.clone(),
+                serde_json::to_value(&self.data).map_err(|e| e.to_string())?,
+            ));
+            return Ok(());
+        }
         self.backend.store(&self.data)
     }
 
     /// Reload validated persisted state before an operation from the external
     /// Tauri command adapter, keeping async commands coherent with sync writers.
     pub fn reload_from_disk(&mut self) -> Result<(), String> {
+        if matches!(self.backend, StoreBackend::Shared) {
+            // Drop the previous write authority even if this reload fails.
+            self.shared_baseline = None;
+            let rt = runtime()?;
+            let _io = rt.io_guard()?;
+            let id = rt.active_database_id().ok_or("No active trust database")?;
+            let data = rt.load_active()?;
+            self.shared_baseline =
+                Some((id, serde_json::to_value(&data).map_err(|e| e.to_string())?));
+            self.data = data;
+            return Ok(());
+        }
         self.data = self.backend.load()?;
         Ok(())
     }
@@ -650,7 +694,7 @@ impl TrustStoreService {
         note: Option<String>,
     ) -> Result<(), String> {
         let key = Self::record_key(&record_type, &host);
-        if self.data.records.contains_key(&key) {
+        if self.data.records.contains_key(&key) || self.data.legacy_suppressed_keys.contains(&key) {
             return Ok(());
         }
         let now = Utc::now().to_rfc3339();
@@ -690,10 +734,11 @@ impl TrustStoreService {
     /// Remove a trust record for a host.
     pub async fn remove_identity(&mut self, host: &str, record_type: &str) -> Result<(), String> {
         let key = Self::record_key(record_type, host);
-        self.data
-            .records
-            .remove(&key)
-            .ok_or_else(|| "Trust record not found".to_string())?;
+        if !self.data.records.contains_key(&key) {
+            return Err("Trust record not found".into());
+        }
+        suppress_legacy_keys(&mut self.data, std::iter::once(key.clone()))?;
+        self.data.records.remove(&key);
         self.persist()
     }
 
@@ -710,6 +755,8 @@ impl TrustStoreService {
 
     /// Clear all trust records.
     pub async fn clear_all_trust_records(&mut self) -> Result<(), String> {
+        let keys: Vec<String> = self.data.records.keys().cloned().collect();
+        suppress_legacy_keys(&mut self.data, keys)?;
         self.data.records.clear();
         self.persist()
     }
@@ -1051,6 +1098,12 @@ fn trust_identity_in_data(
     note: Option<String>,
 ) {
     let key = TrustStoreService::record_key(&record_type, &host);
+    if user_approved {
+        // A new explicit approval can intentionally restore trust. Ordinary
+        // TOFU may still trust FirstUse under its existing policy, but does not
+        // authorize replaying an older legacy decision on the next startup.
+        data.legacy_suppressed_keys.remove(&key);
+    }
     let now_str = Utc::now().to_rfc3339();
 
     // Compute trust expiry if using TofuWithExpiry
@@ -1154,7 +1207,35 @@ fn validate_identity(identity: &Identity, expected_type: &str) -> Result<(), Str
     Ok(())
 }
 
+fn validate_suppressed_keys(keys: &std::collections::BTreeSet<String>) -> Result<(), String> {
+    if keys.len() > MAX_TRUST_RECORDS {
+        return Err("Too many legacy trust suppression keys; no changes written".into());
+    }
+    for key in keys {
+        let (kind, host) = key
+            .split_once(':')
+            .ok_or("Invalid legacy trust suppression key")?;
+        if !matches!(kind, "https" | "certificate" | "rdp" | "ssh" | "tls") {
+            return Err("Invalid legacy trust suppression key type".into());
+        }
+        validate_short_string(host, "legacy trust suppression host", MAX_HOST_BYTES)?;
+    }
+    Ok(())
+}
+
+fn suppress_legacy_keys(
+    data: &mut TrustStoreData,
+    keys: impl IntoIterator<Item = String>,
+) -> Result<(), String> {
+    let mut suppressed = data.legacy_suppressed_keys.clone();
+    suppressed.extend(keys);
+    validate_suppressed_keys(&suppressed)?;
+    data.legacy_suppressed_keys = suppressed;
+    Ok(())
+}
+
 fn validate_trust_store_data(data: &TrustStoreData) -> Result<(), String> {
+    validate_suppressed_keys(&data.legacy_suppressed_keys)?;
     if data.records.len() > MAX_TRUST_RECORDS {
         return Err("trust store contains too many records".to_string());
     }
@@ -2005,6 +2086,14 @@ impl TrustRuntime {
                 return Err("Trust identity changed; no batch changes were written".into());
             }
         }
+        if matches!(action, ReviewedTrustAction::Forget) {
+            suppress_legacy_keys(
+                &mut data,
+                targets
+                    .iter()
+                    .map(|target| TrustStoreService::record_key(&target.record_type, &target.host)),
+            )?;
+        }
         for target in &targets {
             let key = TrustStoreService::record_key(&target.record_type, &target.host);
             if matches!(action, ReviewedTrustAction::Forget) {
@@ -2115,6 +2204,7 @@ impl TrustRuntime {
                 policy: document.policy.clone(),
                 policy_config: document.policy_config.clone(),
                 records: HashMap::new(),
+                legacy_suppressed_keys: current.legacy_suppressed_keys,
             },
             TrustImportMode::Merge => current,
         };
@@ -2521,6 +2611,219 @@ mod runtime_tests {
     use super::*;
     use sorng_encryption::MasterDek;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn shared_stale_verification_cannot_resurrect_reviewed_forget_or_revoke() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "selected");
+        let rt = &guard.runtime;
+        for action in [ReviewedTrustAction::Forget, ReviewedTrustAction::Revoke] {
+            SyncTrustStore::shared()
+                .trust_identity_blocking(
+                    "device:443".into(),
+                    "https".into(),
+                    tls_identity("aa"),
+                    true,
+                )
+                .unwrap();
+            let service = TrustStoreService::shared();
+            let mut stale = service.lock().await;
+            stale.reload_from_disk().unwrap();
+            // Reviewed UI mutations use the runtime I/O lease independently
+            // of the async service mutex. Reproduce that exact interleaving.
+            rt.apply_reviewed_batch(
+                "selected",
+                action,
+                vec![ReviewedTrustTarget {
+                    host: "device:443".into(),
+                    record_type: "https".into(),
+                    fingerprint: "aa".into(),
+                }],
+                None,
+                None,
+            )
+            .unwrap();
+            let path = rt.trust_file_path("selected").unwrap();
+            let reviewed_bytes = std::fs::read(&path).unwrap();
+            assert!(
+                stale
+                    .verify_identity("device:443", "https", tls_identity("aa"))
+                    .await
+                    .is_err(),
+                "a stale verification must not replace the reviewed store"
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), reviewed_bytes);
+            let fresh = TrustStoreService::shared();
+            let mut fresh = fresh.lock().await;
+            fresh.reload_from_disk().unwrap();
+            let result = fresh
+                .verify_identity("device:443", "https", tls_identity("aa"))
+                .await
+                .unwrap();
+            match action {
+                ReviewedTrustAction::Forget => {
+                    assert!(matches!(result, TrustVerifyResult::FirstUse { .. }))
+                }
+                ReviewedTrustAction::Revoke => {
+                    assert!(matches!(result, TrustVerifyResult::Revoked { .. }))
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn shared_stale_writer_cannot_follow_database_switch_and_fresh_writes_advance_baseline() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "first");
+        SyncTrustStore::shared()
+            .trust_identity_blocking("h:443".into(), "https".into(), tls_identity("aa"), true)
+            .unwrap();
+        let service = TrustStoreService::shared();
+        let mut stale = service.lock().await;
+        stale.reload_from_disk().unwrap();
+        guard
+            .runtime
+            .activate_database(Some("second".into()), &[])
+            .await
+            .unwrap();
+        // Identical contents do not grant authority over another database.
+        guard
+            .runtime
+            .write_file(
+                &guard.runtime.trust_file_path("second").unwrap(),
+                &stale.data,
+            )
+            .unwrap();
+        let path = guard.runtime.trust_file_path("second").unwrap();
+        let unchanged = std::fs::read(&path).unwrap();
+        assert!(stale.set_trust_policy(TrustPolicy::Strict).await.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), unchanged);
+        stale.reload_from_disk().unwrap();
+        stale
+            .set_trust_policy(TrustPolicy::AlwaysAsk)
+            .await
+            .unwrap();
+        stale.set_trust_policy(TrustPolicy::Strict).await.unwrap();
+        assert_eq!(
+            guard.runtime.export(Some("second")).unwrap().policy,
+            TrustPolicy::Strict
+        );
+    }
+
+    #[tokio::test]
+    async fn forgotten_keys_suppress_automatic_legacy_reimport_without_becoming_revocations() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "selected");
+        for removal in ["remove", "clear", "reviewed"] {
+            let host = format!("{removal}:443");
+            SyncTrustStore::shared()
+                .trust_identity_blocking(
+                    host.clone(),
+                    "https".into(),
+                    tls_identity("forgotten-fingerprint"),
+                    true,
+                )
+                .unwrap();
+            let service = TrustStoreService::shared();
+            let mut service = service.lock().await;
+            service.reload_from_disk().unwrap();
+            match removal {
+                "remove" => service.remove_identity(&host, "https").await.unwrap(),
+                "clear" => service.clear_all_trust_records().await.unwrap(),
+                _ => {
+                    guard
+                        .runtime
+                        .apply_reviewed_batch(
+                            "selected",
+                            ReviewedTrustAction::Forget,
+                            vec![ReviewedTrustTarget {
+                                host: host.clone(),
+                                record_type: "https".into(),
+                                fingerprint: "forgotten-fingerprint".into(),
+                            }],
+                            None,
+                            None,
+                        )
+                        .unwrap();
+                }
+            }
+            // A new service simulates another window/bootstrap replay after
+            // localStorage source removal previously failed.
+            let restarted = TrustStoreService::shared();
+            let mut restarted = restarted.lock().await;
+            restarted.reload_from_disk().unwrap();
+            restarted
+                .migrate_legacy_identity(
+                    host.clone(),
+                    "https".into(),
+                    tls_identity("forgotten-fingerprint"),
+                    true,
+                    vec![],
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .unwrap();
+            assert!(restarted
+                .get_stored_identity(&host, "https")
+                .await
+                .is_none());
+            assert!(matches!(
+                restarted
+                    .verify_identity(&host, "https", tls_identity("new-fingerprint"))
+                    .await
+                    .unwrap(),
+                TrustVerifyResult::FirstUse { .. }
+            ));
+            let path = guard.runtime.trust_file_path("selected").unwrap();
+            let persisted = guard.runtime.read_file(&path).unwrap();
+            assert!(persisted
+                .legacy_suppressed_keys
+                .contains(&format!("https:{host}")));
+            assert!(!serde_json::to_string(&persisted.legacy_suppressed_keys)
+                .unwrap()
+                .contains("fingerprint"));
+            restarted
+                .trust_identity(
+                    host.clone(),
+                    "https".into(),
+                    tls_identity("new-fingerprint"),
+                    true,
+                )
+                .await
+                .unwrap();
+            assert!(!guard
+                .runtime
+                .read_file(&path)
+                .unwrap()
+                .legacy_suppressed_keys
+                .contains(&format!("https:{host}")));
+        }
+    }
+
+    #[test]
+    fn legacy_suppression_keys_are_bounded_and_never_silently_dropped() {
+        let mut data = TrustStoreData::default();
+        suppress_legacy_keys(
+            &mut data,
+            (0..MAX_TRUST_RECORDS).map(|n| format!("https:host-{n}:443")),
+        )
+        .unwrap();
+        let before = data.legacy_suppressed_keys.clone();
+        assert!(suppress_legacy_keys(&mut data, ["https:overflow:443".into()]).is_err());
+        assert_eq!(data.legacy_suppressed_keys, before);
+        for invalid in ["no-prefix", "unknown:host", "https:", "https:bad\0host"] {
+            assert!(
+                validate_suppressed_keys(&std::collections::BTreeSet::from([invalid.into()]))
+                    .is_err()
+            );
+        }
+    }
 
     fn tls_identity(fp: &str) -> Identity {
         let now = Utc::now().to_rfc3339();

@@ -100,8 +100,10 @@ pub async fn trust_get_identity(
 #[tauri::command]
 pub async fn trust_get_all_records(
     state: tauri::State<'_, TrustStoreServiceState>,
+    expected_database_id: Option<String>,
 ) -> Result<Vec<TrustRecord>, String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
     Ok(svc.get_all_trust_records().await)
 }

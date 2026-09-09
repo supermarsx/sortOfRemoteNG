@@ -4,7 +4,7 @@ import {
   getAllPerConnectionTrustRecords,
   getTrustStoreScope,
   getTrustRecordStorageKey,
-  retryTrustStoreHydration,
+  refreshTrustStoreRecords,
   refreshTrustStoreScope,
   updateTrustRecordNickname,
   parseTrustRecordAddress,
@@ -94,7 +94,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
     if (clearError) setError(null);
     try {
       await refreshTrustStoreScope();
-      await retryTrustStoreHydration();
+      await refreshTrustStoreRecords();
       if (
         !mounted.current ||
         epoch !== generation.current ||
