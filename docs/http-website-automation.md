@@ -9,9 +9,13 @@ Open an HTTP or HTTPS connection's **Protocol → Advanced** settings to opt int
 
 ## Record a website macro
 
-Choose **Record website interactions** beside the bookmarks. Click public page controls or change non-secret fields, then choose **Stop recording and review macro**. Give the macro a name and select **Save macro**. Use its favorite star to add a replay chip beside the bookmarks for this connection.
+Choose **Record macro** beside the bookmarks. If this connection has not opted in, review **Enable website macros?** first. Enabling saves only that connection's macro permission; it does not start recording, enable JavaScript, or change dark mode. Click **Record macro** again when ready. The library also offers **Record new macro**.
+
+Click public page controls or change non-secret fields. The pinned recording controls show **Stop & review** and the captured step count even when a long bookmark list scrolls. Choose **Stop & review**, give the macro a name, and select **Save macro**. Unsaved steps can be reviewed again or explicitly discarded; discarding a capture does not delete saved library macros. Starting over or leaving an edited draft asks before dropping it. Use a saved macro's favorite star to add a replay chip for this connection.
 
 Website macros are not HAR recordings, videos, or terminal command macros. They contain up to 200 structural click, checkbox/radio, and field-fill steps. They do **not** store typed values, page text, URLs, request bodies, element IDs, or credentials. A field-fill step asks for a temporary value during replay. Recognized password, authentication/OTP, file and hidden fields are excluded; a hidden CSRF bookkeeping field does not prevent recording unrelated public controls. Do not use this feature to automate sign-in or enter secrets.
+
+Public buttons and submit inputs are supported, but buttons belonging to a recognized login or credential form are excluded, including externally associated form controls. Text, search, email, URL, telephone, number, date/time, month/week, range and color inputs, text areas and selection fields use the same supported types for capture and replay. Their values are still never recorded. Reset and image inputs are not captured.
 
 Review the current page before replay: a structural position can point at a different button after the website layout changes. There is no promise of detecting such replacements. These macros operate on one loaded document; navigation cancels pending steps. Nested frames, shadow DOM, arbitrary SPA state, drag gestures, uploads and multi-page workflows are not captured. Website actions can change remote data; stopping cannot undo completed actions.
 

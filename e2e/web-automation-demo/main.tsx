@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../../app/globals.css";
-import { WebAutomationControls } from "../../src/components/protocol/webBrowser/WebAutomationControls";
+import BookmarkBar from "../../src/components/protocol/webBrowser/BookmarkBar";
+import type { WebBrowserMgr } from "../../src/components/protocol/webBrowser/types";
+import type { Connection } from "../../src/types/connection/connection";
 import type { useWebAutomation } from "../../src/hooks/protocol/useWebAutomation";
 import type {
   WebAutomationItem,
@@ -67,7 +69,16 @@ const scripts = [
 ];
 export function Demo() {
   const view = new URL(location.href).searchParams.get("view") ?? "library";
-  const [open, setOpen] = useState(view !== "bar" && view !== "review");
+  const [open, setOpen] = useState(["library", "macro"].includes(view));
+  const [enabled, setEnabled] = useState(view !== "setup");
+  const [recording, setRecording] = useState(
+    ["recording", "capture-review", "discard"].includes(view),
+  );
+  const [steps, setSteps] = useState(
+    ["macro", "recording", "capture-review", "discard"].includes(view)
+      ? macro.steps
+      : [],
+  );
   const [pendingRun, setPendingRun] = useState<WebAutomationItem | null>(
     view === "review" ? scripts[0] : null,
   );
@@ -79,7 +90,7 @@ export function Demo() {
   const automation: ReturnType<typeof useWebAutomation> = {
     permissions: {
       showActionBar: true,
-      interactionMacrosEnabled: true,
+      interactionMacrosEnabled: enabled,
       scriptInjectionEnabled: true,
       forceDark: false,
       confirmBeforeScriptRun: true,
@@ -93,10 +104,30 @@ export function Demo() {
     setOpen,
     busy: false,
     saving: false,
-    recording: false,
-    steps: view === "macro" ? macro.steps : [],
-    startRecording: async () => refuse("recording"),
-    stopRecording: async () => refuse("recording"),
+    recording,
+    recordingPending: false,
+    recordingScopeKey: "demo-database:1:demo-connection:https:1",
+    recordingUnavailableReason: null,
+    canEnableMacroRecording: !enabled,
+    enableMacroRecording: async () => {
+      setEnabled(true);
+      return true;
+    },
+    discardRecording: () => {
+      setRecording(false);
+      setSteps([]);
+    },
+    steps,
+    // Synthetic state transitions only: no page agent, bridge or real capture.
+    startRecording: async () => {
+      setRecording(true);
+      setSteps(macro.steps);
+      return true;
+    },
+    stopRecording: async () => {
+      setRecording(false);
+      setOpen(true);
+    },
     requestRun: setPendingRun,
     pendingRun,
     setPendingRun,
@@ -107,11 +138,51 @@ export function Demo() {
     remove: async () => refuse("storage deletion"),
     favorite: async () => refuse("connection mutation"),
     recordedMacro: () => macro,
-    clearSteps: () => undefined,
+    clearSteps: () => setSteps([]),
     valuePrompt: null,
     answerValue: () => refuse("value entry"),
     pageReady: true,
   };
+  const bookmarkProps = {
+    automation,
+    connection: {
+      id: "demo-connection",
+      name: "Demo website",
+      protocol: "https",
+      hostname: "demo.example.test",
+      port: 443,
+      isGroup: false,
+      httpBookmarks: Array.from({ length: 24 }, (_, index) => ({
+        name: `Demo bookmark ${index + 1}`,
+        path: `/demo/${index + 1}`,
+      })),
+    } satisfies Connection,
+    buildTargetUrl: () => "https://demo.example.test",
+    currentPath: "/demo/1",
+    isCurrentPageBookmarked: true,
+    editingBmIdx: null,
+    dragOverIdx: null,
+    bmContextMenu: null,
+    bmBarContextMenu: null,
+    handleDragStart: () => () => refuse("bookmark drag"),
+    handleDragOver: () => () => refuse("bookmark drag"),
+    handleDrop: () => () => refuse("bookmark drop"),
+    handleDragEnd: () => refuse("bookmark drag"),
+    navigateToUrl: () => refuse("website navigation"),
+    setBmContextMenu: () => refuse("bookmark menu"),
+    setBmBarContextMenu: () => refuse("bookmark menu"),
+  };
+  // Only the real bar's render surface is provided; unexpected manager access
+  // fails the fixture instead of touching application state.
+  const manager = new Proxy(bookmarkProps, {
+    get(target, property) {
+      // React's development profiler checks whether arbitrary props are elements.
+      if (property === "$$typeof" || property === Symbol.toStringTag)
+        return undefined;
+      if (property in target) return Reflect.get(target, property);
+      return refuse(`unprovided browser manager property ${String(property)}`);
+    },
+  }) as unknown as WebBrowserMgr;
   return (
     <div
       style={{
@@ -145,18 +216,7 @@ export function Demo() {
       >
         Website workspace · demo.example.test
       </header>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          padding: 12,
-          overflowX: "auto",
-          gap: 8,
-        }}
-      >
-        <span className="sor-option-chip shrink-0">★ Dashboard</span>
-        <WebAutomationControls automation={automation} />
-      </div>
+      <BookmarkBar mgr={manager} />
       <main style={{ padding: 24, color: "#94a3b8" }}>
         The website stays separate from its saved macros and scripts.
       </main>
