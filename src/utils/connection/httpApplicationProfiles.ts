@@ -113,6 +113,23 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     "management",
     "Use the iLO web account. Form detection is generic and firmware-dependent; Redfish/RIBCL session tokens do not sign into the browser. MFA remains manual.",
   ),
+  {
+    id: "webmin",
+    label: "Webmin",
+    category: "management",
+    capability: "known-form",
+    // Reviewed Webmin and Authentic Theme session_login.cgi sources. Target only
+    // the login submit, never the separate OTP/forgot-password controls.
+    selectors: {
+      usernameSelector: 'form[action$="/session_login.cgi"] input[name="user"]',
+      passwordSelector:
+        'form[action$="/session_login.cgi"] input[name="pass"][type="password"]',
+      submitSelector:
+        'form[action$="/session_login.cgi"] button[data-submit="login"], form[action$="/session_login.cgi"] input[type="submit"]',
+    },
+    description:
+      "Reviewed classic and Authentic Theme username/password forms. Webmin commonly uses HTTPS port 10000; your configured HTTP/HTTPS port is kept unchanged. Login banners, two-factor codes, and password resets remain manual; use explicit Basic only when the server requires HTTP authentication.",
+  },
   generic("idrac", "Dell iDRAC", "management"),
   generic("lenovo", "Lenovo XClarity", "management"),
   generic("supermicro", "Supermicro BMC", "management"),

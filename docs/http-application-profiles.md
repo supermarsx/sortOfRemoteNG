@@ -25,6 +25,8 @@ Portainer, Nginx Proxy Manager, Proxmox VE, and pfSense reuse the app's existing
 
 HP/HPE iLO, other BMCs, and the other generic-form profiles use optional generic form detection. Their firmware/application-specific sign-in is not claimed verified. In particular, iLO Redfish/RIBCL sessions are not browser login sessions. Manual-only profiles do not offer unsupported automatic authentication. MFA, CAPTCHA, external SSO, and rejected passwords remain manual; this feature does not bypass them.
 
+Webmin has reviewed username/password selectors for its classic and Authentic Theme session-login forms. The usual endpoint is HTTPS on port 10000, but selecting Webmin never changes an existing host, port, path, or TLS policy. Banners, two-factor codes, and password reset remain manual. This is a form-profile fixture check, not a live server sign-in guarantee. See the [official connection instructions](https://webmin.com/download/), [classic form source](https://github.com/webmin/webmin/blob/master/session_login.cgi), and [Authentic Theme form source](https://github.com/webmin/authentic-theme/blob/master/session_login.cgi).
+
 ## Form overrides and safety
 
 For a website without a preset, choose **Custom websites → Custom application**. It also starts in Manual browsing. After opting into form login, enter all three CSS selectors—for example `input[name="username"]`, `input[type="password"]`, and `button[type="submit"]`. The selectors identify visible controls in the same login form, not API endpoints. Custom form login refuses missing, invalid, or unmatched selectors and never falls back to generic detection. Each selector is limited to 512 characters; no script or custom JavaScript is accepted.

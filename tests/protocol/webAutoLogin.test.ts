@@ -187,6 +187,33 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     },
   );
 
+  it("preserves Webmin's explicit nonstandard port and sends only the reviewed form credential path", async () => {
+    connections.push({
+      id: "conn-1",
+      hostname: "device.local",
+      protocol: "http",
+      port: 10000,
+      username: "webmin-user",
+      password: "fixture-password",
+      httpApplication: { version: 1, id: "webmin", loginMode: "form" },
+    });
+    renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+    expect(lastProxyConfig()).toMatchObject({
+      target_url: "http://device.local:10000/",
+      upstream_auth_mode: "none",
+      http_auto_login: true,
+      username: "webmin-user",
+      password: "fixture-password",
+      http_auto_login_selectors: {
+        username_selector:
+          'form[action$="/session_login.cgi"] input[name="user"]',
+        password_selector:
+          'form[action$="/session_login.cgi"] input[name="pass"][type="password"]',
+      },
+    });
+  });
+
   it("uses the same form-only policy in the legacy HTTP viewer", async () => {
     connections.push({
       id: "conn-1",

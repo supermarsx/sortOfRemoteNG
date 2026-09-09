@@ -27,6 +27,7 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   netbox: "netbox",
   vmware: "vmware",
   cpanel: "cpanel",
+  webmin: "webmin",
   draytek: "draytek",
   grafana: "grafana",
   budibase: "budibase",
