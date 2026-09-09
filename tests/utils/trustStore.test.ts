@@ -35,6 +35,7 @@ import {
   resolveEffectiveTrustPolicy,
   trustIdentity,
   verifyIdentity,
+  validateCertificateIdentity,
 } from "../../src/utils/auth/trustStore";
 import type {
   CertIdentity,
@@ -169,6 +170,110 @@ describe("native-backed trustStore", () => {
     installNativeMock();
     resetTrustStoreCacheForTests();
   });
+
+  it.each(["", null, undefined])(
+    "accepts unavailable chain display metadata (%s) without losing fingerprints",
+    async (display) => {
+      const identity = {
+        ...makeTlsIdentity("SHA256:leaf"),
+        chain: [
+          {
+            subject: display,
+            issuer: display,
+            validFrom: display,
+            validTo: display,
+            fingerprint: "SHA256:chain",
+          },
+        ],
+      } as unknown as CertIdentity;
+      const result = await verifyIdentity("10.10.10.2", 443, "https", identity);
+      expect(result.status).toBe("first-use");
+      if (result.status === "first-use")
+        expect((result.identity as CertIdentity).chain).toEqual([
+          {
+            subject: "",
+            issuer: "",
+            validFrom: "",
+            validTo: "",
+            fingerprint: "SHA256:chain",
+          },
+        ]);
+      const call = native.invoke.mock.calls.find(
+        ([name]) => name === "trust_verify_identity",
+      );
+      expect(call?.[1].identity.chain_fingerprints).toEqual(["SHA256:chain"]);
+    },
+  );
+
+  it("preserves a valid SAN-only certificate's empty subject", () => {
+    const identity = {
+      ...makeTlsIdentity("SHA256:leaf"),
+      subject: "",
+      san: ["DNS:device.example"],
+      chain: [
+        {
+          subject: "",
+          issuer: "CN:Issuer",
+          validFrom: "2026-01-01",
+          validTo: "2027-01-01",
+          fingerprint: "SHA256:chain",
+        },
+      ],
+    };
+    expect(validateCertificateIdentity(identity)).toMatchObject(identity);
+  });
+
+  it.each(["subject", "issuer", "validFrom", "validTo"])(
+    "rejects malformed rather than absent chain %s",
+    (field) => {
+      for (const value of [
+        1,
+        {},
+        "bad\u0000value",
+        "x".repeat(field.startsWith("valid") ? 129 : 4097),
+      ]) {
+        const identity = {
+          ...makeTlsIdentity("SHA256:leaf"),
+          chain: [
+            {
+              subject: "",
+              issuer: "",
+              validFrom: "",
+              validTo: "",
+              fingerprint: "SHA256:chain",
+              [field]: value,
+            },
+          ],
+        } as unknown as CertIdentity;
+        expect(() => validateCertificateIdentity(identity)).toThrow();
+      }
+    },
+  );
+
+  it.each(["", null, undefined, 123, "bad\u0000fingerprint", "x".repeat(513)])(
+    "never drops invalid leaf or chain fingerprints (%s)",
+    (fingerprint) => {
+      const chain = {
+        subject: "",
+        issuer: "",
+        validFrom: "",
+        validTo: "",
+        fingerprint,
+      };
+      expect(() =>
+        validateCertificateIdentity({
+          ...makeTlsIdentity("SHA256:leaf"),
+          chain: [chain],
+        } as unknown as CertIdentity),
+      ).toThrow();
+      expect(() =>
+        validateCertificateIdentity({
+          ...makeTlsIdentity("SHA256:leaf"),
+          fingerprint,
+        } as unknown as CertIdentity),
+      ).toThrow();
+    },
+  );
 
   it("fails closed while native hydration is unavailable", async () => {
     native.failReads = true;

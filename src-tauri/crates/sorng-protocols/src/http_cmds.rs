@@ -95,11 +95,10 @@ fn proxy_client_builder(
         builder = builder.proxy(validate_upstream_proxy(proxy_url)?);
     }
 
-    if let Some(fingerprint) = accepted_cert_fingerprint
-        .map(normalize_cert_fingerprint)
-        .filter(|fp| !fp.is_empty())
-    {
-        builder = builder.use_preconfigured_tls(build_pinned_tls_config(fingerprint)?);
+    if let Some(fingerprint) = accepted_cert_fingerprint {
+        // Some(pin) is an explicit identity requirement, never an invitation
+        // to fall back to unverified TLS when the supplied pin is malformed.
+        builder = builder.use_preconfigured_tls(build_pinned_tls_config(fingerprint.into())?);
     } else {
         builder = builder.danger_accept_invalid_certs(!verify_ssl);
     }
@@ -929,7 +928,13 @@ pub async fn diagnose_http_connection(
     proxy_url: Option<String>,
 ) -> Result<DiagnosticReport, String> {
     let run_start = std::time::Instant::now();
-    let mut steps: Vec<DiagnosticStep> = Vec::new();
+    let mut steps: Vec<DiagnosticStep> = vec![DiagnosticStep {
+        name: "Authentication Context".into(),
+        status: "info".into(),
+        message: "This is an anonymous target request; no saved connection credentials are sent.".into(),
+        duration_ms: 0,
+        detail: Some("Diagnostics test reachability and the HTTP response, not whether the saved username or password is valid. Configured upstream proxy authentication is separate. Trust approval is still required before the embedded viewer sends target credentials.".into()),
+    }];
     let mut resolved_ip: Option<String> = None;
     let timeout_secs = connect_timeout_secs.unwrap_or(15);
     let timeout = std::time::Duration::from_secs(timeout_secs);
@@ -1182,6 +1187,26 @@ pub async fn diagnose_http_connection(
                     headers.len()
                 )),
             });
+
+            if status_code == 401 {
+                let values: Vec<&str> = headers
+                    .get_all(reqwest::header::WWW_AUTHENTICATE)
+                    .iter()
+                    .take(32)
+                    .filter_map(|value| value.to_str().ok())
+                    .collect();
+                let schemes = authentication_challenge_schemes(&values);
+                steps.push(DiagnosticStep {
+                    name: "HTTP Authentication".into(),
+                    status: "warn".into(),
+                    message: "The anonymous request received HTTP 401; no saved connection credentials were sent.".into(),
+                    duration_ms: 0,
+                    detail: Some(format!(
+                        "This is not evidence that the saved password was rejected. Approve the certificate identity before testing target authentication in the viewer. Advertised authentication schemes: {}. Challenge parameters are intentionally omitted.",
+                        if schemes.is_empty() { "not reported or not recognized".into() } else { schemes.join(", ") }
+                    )),
+                });
+            }
 
             // ── Step 5: Redirect check ──────────────────────────────────
             if status.is_redirection() {
@@ -1549,6 +1574,164 @@ pub fn export_web_recording_har(recording: WebRecording) -> Result<String, Strin
     });
 
     serde_json::to_string_pretty(&har).map_err(|e| format!("JSON serialization failed: {}", e))
+}
+
+#[cfg(test)]
+#[path = "http_tls_test_fixture.rs"]
+mod tls_test_fixture;
+
+#[cfg(test)]
+mod http_authentication_diagnostic_tests {
+    use super::*;
+    use base64::Engine;
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    async fn request_head(stream: &mut (impl AsyncRead + Unpin)) -> String {
+        let mut bytes = Vec::new();
+        while !bytes.ends_with(b"\r\n\r\n") {
+            bytes.push(stream.read_u8().await.unwrap());
+            assert!(bytes.len() < 16 * 1024);
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn explicitly_supplied_malformed_pins_never_fall_back_to_unverified_tls() {
+        let _ = tls_test_fixture::test_acceptor();
+        for verify in [true, false] {
+            for malformed in [
+                "",
+                "zzz",
+                "SHA256:",
+                "ab",
+                &"f".repeat(63),
+                &"f".repeat(65),
+                &format!("{}z", "f".repeat(64)),
+                &format!("{}\0", "f".repeat(64)),
+            ] {
+                let error = proxy_client_builder(verify, Some(malformed), "1.2", None)
+                    .expect_err("bad explicit pin rejected");
+                assert_eq!(
+                    error,
+                    "Accepted TLS certificate fingerprint must be a SHA-256 hex digest"
+                );
+            }
+            assert!(proxy_client_builder(verify, None, "1.2", None).is_ok());
+            for valid in [
+                "ab".repeat(32),
+                format!("SHA256:{}", vec!["AB"; 32].join(":")),
+            ] {
+                assert!(proxy_client_builder(verify, Some(&valid), "1.2", None).is_ok());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn diagnostic_401_is_anonymous_and_reports_only_bounded_challenge_schemes() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let proxy = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = request_head(&mut socket).await;
+            assert!(request.starts_with("GET http://device.invalid:8080/ HTTP/1.1"));
+            assert!(!request.to_ascii_lowercase().contains("authorization:"));
+            assert!(!request.to_ascii_lowercase().contains("cookie:"));
+            socket.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 97\r\nContent-Type: text/plain\r\nWWW-Authenticate: Digest realm=\"private, Basic secret\", nonce=\"hidden-nonce\", Basic realm=\"hidden-realm\", Negotiate\r\nConnection: close\r\n\r\n").await.unwrap();
+            socket.write_all(&[b'x'; 97]).await.unwrap();
+        });
+        let report = diagnose_http_connection(
+            "device.invalid".into(),
+            8080,
+            false,
+            None,
+            None,
+            None,
+            Some(3),
+            Some(true),
+            Some(format!("http://127.0.0.1:{port}")),
+        )
+        .await
+        .unwrap();
+        proxy.await.unwrap();
+        let wire = serde_json::to_value(report).unwrap();
+        let steps = wire["steps"].as_array().unwrap();
+        assert!(steps
+            .iter()
+            .any(|step| step["name"] == "Authentication Context"));
+        let auth = steps
+            .iter()
+            .find(|step| step["name"] == "HTTP Authentication")
+            .unwrap();
+        assert!(auth["message"]
+            .as_str()
+            .unwrap()
+            .contains("no saved connection credentials were sent"));
+        let detail = auth["detail"].as_str().unwrap();
+        assert!(detail.contains("Basic"));
+        assert!(detail.contains("Digest"));
+        assert!(detail.contains("Negotiate"));
+        assert!(detail.contains("not evidence"));
+        for secret in ["hidden-nonce", "hidden-realm", "private, Basic secret"] {
+            assert!(!wire.to_string().contains(secret));
+        }
+        assert!(steps.iter().any(|step| step["name"] == "HTTP Response"
+            && step["message"].as_str().unwrap().contains("401")));
+    }
+
+    #[tokio::test]
+    async fn proxy_client_keeps_approved_pin_when_ca_verification_is_disabled() {
+        let acceptor = tls_test_fixture::test_acceptor();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let proxy = tokio::spawn(async move {
+            for approved in [true, false] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let connect = request_head(&mut socket).await;
+                assert!(connect.starts_with("CONNECT device.invalid:443 HTTP/1.1"));
+                socket
+                    .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                    .await
+                    .unwrap();
+                let tls = acceptor.accept(socket).await;
+                if approved {
+                    let mut tls = tls.unwrap();
+                    let request = request_head(&mut tls).await;
+                    assert!(request.starts_with("GET / HTTP/1.1"));
+                    assert!(request
+                        .to_ascii_lowercase()
+                        .contains("authorization: basic "));
+                    tls.write_all(b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"fixture\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+                } else {
+                    // Changed identity never receives an HTTP request/secret.
+                    assert!(tls.is_err());
+                }
+            }
+        });
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(tls_test_fixture::TEST_CERT)
+            .unwrap();
+        let pin = hex::encode(Sha256::digest(&der));
+        let proxy_url = format!("http://127.0.0.1:{port}");
+        let client = proxy_client_builder(false, Some(&pin), "1.2", Some(&proxy_url)).unwrap();
+        let response = client
+            .get("https://device.invalid/")
+            .basic_auth("fixture-user", Some("fixture-password"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 401);
+        let wrong_pin = "0".repeat(64);
+        let client =
+            proxy_client_builder(false, Some(&wrong_pin), "1.2", Some(&proxy_url)).unwrap();
+        assert!(client
+            .get("https://device.invalid/")
+            .basic_auth("fixture-user", Some("fixture-password"))
+            .send()
+            .await
+            .is_err());
+        proxy.await.unwrap();
+    }
 }
 
 #[cfg(test)]

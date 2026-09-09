@@ -28,7 +28,8 @@ vi.mock("../../src/hooks/recording/useDisplayRecorder", () => ({
   useDisplayRecorder: () => ({}),
 }));
 vi.mock("../../src/utils/recording/macroService", () => ({}));
-vi.mock("../../src/utils/auth/trustStore", () => ({
+vi.mock("../../src/utils/auth/trustStore", async (original) => ({
+  ...(await original<typeof import("../../src/utils/auth/trustStore")>()),
   verifyIdentity: vi.fn().mockResolvedValue({ status: "trusted" }),
   trustIdentity: vi.fn(),
   resolveEffectiveTrustPolicy: () => "tofu",

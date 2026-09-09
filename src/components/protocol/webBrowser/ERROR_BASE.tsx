@@ -76,6 +76,17 @@ function presentationFor(
           "Only change certificate verification after confirming the server identity.",
         ],
       };
+    case "trust_failure":
+      return {
+        eyebrow: "Database trust decision unavailable",
+        icon: ShieldAlert,
+        tone: "warning",
+        suggestions: [
+          "Open and unlock the database that owns this connection.",
+          "Inspect its Trust Center for storage or identity validation errors.",
+          "The certificate was inspected; changing TLS verification will not repair a trust-store failure.",
+        ],
+      };
     case "timeout":
       return {
         eyebrow: "The server took too long",
@@ -305,6 +316,12 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
                 </h3>
                 <p className="mt-1 text-xs text-[var(--color-textMuted)]">
                   DNS, TCP, TLS, HTTP, redirects, and response checks
+                </p>
+                <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                  Read-only anonymous connectivity probe: saved credentials and
+                  browser cookies are not sent. HTTP 401 here can be an expected
+                  authentication challenge, not evidence that your saved
+                  password failed.
                 </p>
               </div>
               {mgr.diagnosticReport && (

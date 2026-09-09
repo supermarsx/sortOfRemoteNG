@@ -18,6 +18,7 @@ import {
   verifyIdentity,
   trustIdentity,
   resolveEffectiveTrustPolicy,
+  validateCertificateIdentity,
   type CertIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
@@ -25,6 +26,7 @@ import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostn
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -50,6 +52,7 @@ export type ProxyFailureKind =
   | "http_status"
   | "invalid_navigation"
   | "proxy_start_failed"
+  | "trust_failure"
   | "certificate_rejected";
 
 export interface ProxyNavigationFailure {
@@ -161,6 +164,7 @@ function localNavigationFailure(
     | "invalid_navigation"
     | "proxy_start_failed"
     | "certificate_rejected"
+    | "trust_failure"
     | "tls_failure"
   >,
   title: string,
@@ -280,26 +284,10 @@ export function useWebBrowser(session: ConnectionSession) {
   const normalizedHostname = targetResolution.hostname;
 
   // ── Derived auth ────────────────────────────────────────────
-  const resolvedCreds = useMemo<{
-    username: string;
-    password: string;
-  } | null>(() => {
-    if (!connection) return null;
-    if (
-      connection.authType === "basic" &&
-      connection.basicAuthUsername &&
-      connection.basicAuthPassword
-    ) {
-      return {
-        username: connection.basicAuthUsername,
-        password: connection.basicAuthPassword,
-      };
-    }
-    if (connection.username && connection.password) {
-      return { username: connection.username, password: connection.password };
-    }
-    return null;
-  }, [connection]);
+  const resolvedCreds = useMemo(
+    () => resolveHttpBasicCredentials(connection),
+    [connection],
+  );
 
   const hasAuth = resolvedCreds !== null;
 
@@ -481,6 +469,8 @@ export function useWebBrowser(session: ConnectionSession) {
       // detect whether a newer navigation has superseded us after the
       // await completes (e.g. React StrictMode double-mount race).
       const genBefore = navGenRef.current;
+      let stage: "inspection" | "identity" | "verification" | "persistence" =
+        "inspection";
 
       try {
         const info = await invoke<{
@@ -525,7 +515,8 @@ export function useWebBrowser(session: ConnectionSession) {
         if (genBefore !== navGenRef.current) return false;
 
         const now = new Date().toISOString();
-        const identity: CertIdentity = {
+        stage = "identity";
+        const identity = validateCertificateIdentity({
           fingerprint: info.fingerprint,
           subject: info.subject ?? undefined,
           issuer: info.issuer ?? undefined,
@@ -557,13 +548,14 @@ export function useWebBrowser(session: ConnectionSession) {
             validFrom: c.valid_from,
             validTo: c.valid_to,
           })),
-        };
+        });
         setCertIdentity(identity);
         if (policy === "always-trust") {
           acceptedCertFingerprintRef.current = identity.fingerprint;
           return true;
         }
         const connId = connection?.id;
+        stage = "verification";
         const result = await verifyIdentity(
           normalizedHostname,
           port,
@@ -579,6 +571,7 @@ export function useWebBrowser(session: ConnectionSession) {
           return true;
         }
         if (result.status === "first-use" && policy === "tofu") {
+          stage = "persistence";
           await trustIdentity(
             normalizedHostname,
             port,
@@ -613,14 +606,24 @@ export function useWebBrowser(session: ConnectionSession) {
         return false;
       } catch (err) {
         if (genBefore !== navGenRef.current) return false;
-        debugLog("WebBrowser", "Failed to fetch HTTPS cert info", { err });
+        debugLog("WebBrowser", "HTTPS trust pipeline failed", { stage, err });
         acceptedCertFingerprintRef.current = null;
         applyNavigationFailure(
           localNavigationFailure(
-            "tls_failure",
-            "Unable to inspect the HTTPS certificate",
+            stage === "inspection" || stage === "identity"
+              ? "tls_failure"
+              : "trust_failure",
+            stage === "inspection"
+              ? "Unable to inspect the HTTPS certificate"
+              : stage === "identity"
+                ? "Invalid HTTPS certificate identity"
+                : stage === "persistence"
+                  ? "Unable to save the HTTPS trust decision"
+                  : "Unable to verify HTTPS trust",
             activeNavigationUrlRef.current,
-            "Certificate inspection failed on the configured route. The connection was not opened without the trust check.",
+            stage === "inspection" || stage === "identity"
+              ? "Certificate inspection or identity validation failed on the configured route. The connection was not opened without the trust check."
+              : "The certificate was inspected, but the database Trust Center could not complete its decision. Open or unlock the correct database and inspect its Trust Center; TLS verification was not bypassed.",
             err instanceof Error ? err.message : String(err),
           ),
         );
@@ -639,6 +642,7 @@ export function useWebBrowser(session: ConnectionSession) {
   );
 
   const handleTrustAccept = useCallback(async () => {
+    const generation = navGenRef.current;
     if (trustPrompt && certIdentity) {
       const port = connection?.port || 443;
       try {
@@ -650,10 +654,22 @@ export function useWebBrowser(session: ConnectionSession) {
           true,
           connection?.id,
         );
+        if (generation !== navGenRef.current) return;
       } catch (err) {
+        if (generation !== navGenRef.current) return;
         debugLog("WebBrowser", "Failed to persist HTTPS trust decision", {
           err,
         });
+        acceptedCertFingerprintRef.current = null;
+        applyNavigationFailure(
+          localNavigationFailure(
+            "trust_failure",
+            "Unable to save the HTTPS trust decision",
+            activeNavigationUrlRef.current,
+            "The certificate was inspected, but the Trust Center could not persist your decision. The connection remains blocked.",
+            err instanceof Error ? err.message : String(err),
+          ),
+        );
         setTrustPrompt(null);
         trustResolveRef.current?.(false);
         trustResolveRef.current = null;
@@ -667,7 +683,13 @@ export function useWebBrowser(session: ConnectionSession) {
     setTrustPrompt(null);
     trustResolveRef.current?.(true);
     trustResolveRef.current = null;
-  }, [trustPrompt, certIdentity, normalizedHostname, connection]);
+  }, [
+    trustPrompt,
+    certIdentity,
+    normalizedHostname,
+    connection,
+    applyNavigationFailure,
+  ]);
 
   const handleTrustReject = useCallback(() => {
     const errorMessage = "Connection aborted: certificate not trusted by user.";
@@ -848,17 +870,14 @@ export function useWebBrowser(session: ConnectionSession) {
                 username: resolvedCreds?.username ?? "",
                 password: resolvedCreds?.password ?? "",
                 local_port: 0,
-                // Keep normal verification unless the connection record
-                // explicitly disables it. When the frontend trust flow accepted
-                // a self-signed/untrusted cert, send the accepted SHA-256 leaf
-                // fingerprint so the backend pins to that cert instead of
-                // accepting arbitrary certificates for the session.
+                // CA/hostname verification and explicit trust are separate.
+                // Always retain the accepted HTTPS fingerprint: disabling CA
+                // verification must not erase the user's certificate pin.
                 verify_ssl:
                   ((connection as unknown as Record<string, unknown>)
                     ?.httpVerifySsl ?? true) !== false,
                 accepted_cert_fingerprint:
-                  ((connection as unknown as Record<string, unknown>)
-                    ?.httpVerifySsl ?? true) !== false
+                  urlObj.protocol === "https:"
                     ? acceptedCertFingerprintRef.current
                     : null,
                 connection_id: connection?.id ?? "",
@@ -1347,7 +1366,7 @@ export function useWebBrowser(session: ConnectionSession) {
           connectTimeoutSecs:
             settings.diagnostics?.protocolDiagTimeoutSecs ?? 15,
           verifySsl,
-          proxyUrl: getGlobalHttpProxyUrl(),
+          proxyUrl: getGlobalHttpProxyUrl({ failClosed: true }),
         },
       );
       setDiagnosticReport(report);

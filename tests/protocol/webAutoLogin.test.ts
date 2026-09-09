@@ -56,7 +56,8 @@ vi.mock("../../src/utils/recording/macroService", () => ({
   saveWebRecording: vi.fn(),
   trimWebRecordings: vi.fn(),
 }));
-vi.mock("../../src/utils/auth/trustStore", () => ({
+vi.mock("../../src/utils/auth/trustStore", async (original) => ({
+  ...(await original<typeof import("../../src/utils/auth/trustStore")>()),
   verifyIdentity: vi.fn(),
   trustIdentity: vi.fn(),
   resolveEffectiveTrustPolicy: vi.fn(),

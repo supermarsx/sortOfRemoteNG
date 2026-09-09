@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 import { ConnectionSession } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
@@ -105,21 +106,7 @@ export function useHTTPViewer(session: ConnectionSession) {
     username: string;
     password: string;
   } | null => {
-    if (!connection) return null;
-    if (
-      connection.authType === "basic" &&
-      connection.basicAuthUsername &&
-      connection.basicAuthPassword
-    ) {
-      return {
-        username: connection.basicAuthUsername,
-        password: connection.basicAuthPassword,
-      };
-    }
-    if (connection.username && connection.password) {
-      return { username: connection.username, password: connection.password };
-    }
-    return null;
+    return resolveHttpBasicCredentials(connection);
   }, [connection]);
 
   const stopProxy = useCallback(async (sessionId: string) => {

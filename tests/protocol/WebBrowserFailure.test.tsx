@@ -106,6 +106,40 @@ describe("proxy failure bridge validation", () => {
 });
 
 describe("embedded web failure recovery screen", () => {
+  it("distinguishes Trust Center failures and labels anonymous diagnostic authentication challenges", () => {
+    render(
+      <ErrorPage
+        mgr={manager({
+          navigationFailure: {
+            ...failure,
+            kind: "trust_failure",
+            title: "Unable to verify HTTPS trust",
+            reason:
+              "The certificate was inspected, but the database Trust Center is locked.",
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByText("Database trust decision unavailable"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Unable to verify HTTPS trust"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Open and unlock the database/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Read-only anonymous connectivity probe/),
+    ).toHaveTextContent(
+      "HTTP 401 here can be an expected authentication challenge",
+    );
+    expect(
+      screen.queryByText(
+        "Check the certificate expiry date and issuing chain.",
+      ),
+    ).toBeNull();
+  });
   it("keeps the failed iframe mounted so Retry can navigate the same frame", () => {
     const iframeRef = createRef<HTMLIFrameElement>();
     const handleRefresh = vi.fn(() => {

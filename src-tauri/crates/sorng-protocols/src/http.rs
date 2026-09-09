@@ -224,6 +224,16 @@ pub fn normalize_cert_fingerprint(fingerprint: &str) -> String {
 }
 
 pub fn build_pinned_tls_config(fingerprint: String) -> Result<rustls::ClientConfig, String> {
+    let value = fingerprint.trim();
+    let value = value.strip_prefix("SHA256:").unwrap_or(value);
+    if fingerprint.len() > 256
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() || byte == b':' || byte.is_ascii_whitespace())
+        || normalize_cert_fingerprint(&fingerprint).len() != 64
+    {
+        return Err("Accepted TLS certificate fingerprint must be a SHA-256 hex digest".into());
+    }
     rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(PinnedCertificateVerification::new(fingerprint)))
@@ -314,7 +324,9 @@ pub fn parse_chain_entry_from_der(der: &[u8]) -> Option<TlsCertificateChainEntry
     })
 }
 
-/// Fallback chain entry parser when tls-cert-details is disabled.
+/// Fingerprint-only chain entry when optional X.509 display parsing is disabled.
+/// Empty display fields mean unavailable, not a malformed trust identity. The
+/// SHA-256 fingerprint still identifies the actual peer DER used for pinning.
 #[cfg(not(feature = "tls-cert-details"))]
 pub fn parse_chain_entry_from_der(der: &[u8]) -> Option<TlsCertificateChainEntry> {
     let mut hasher = Sha256::new();
@@ -1206,10 +1218,9 @@ pub async fn axum_proxy_handler(
                 // 303-redirect back to it after the credentials
                 // land in the session.
                 let error_hint = if !existing_user.is_empty() {
-                    // A saved username exists but the server still
-                    // refused, so the saved password is probably
-                    // wrong — surface that distinct case to the user.
-                    Some("The saved password was rejected by the server. Try again.")
+                    // A 401 cannot identify whether the username, password,
+                    // account policy, or authentication method was rejected.
+                    Some("The server still requires authentication. Check the saved username/password and the server's supported authentication method.")
                 } else {
                     None
                 };
@@ -1657,7 +1668,8 @@ pub struct ProxyHealthResult {
 // TLS Certificate Info
 // ---------------------------------------------------------------------------
 
-/// A single entry in the certificate chain.
+/// A single entry in the certificate chain. Only the fingerprint is an identity
+/// field; display strings may be empty (including a valid SAN-only subject).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TlsCertificateChainEntry {
     pub subject: String,
@@ -1899,7 +1911,9 @@ pub fn parse_tls_certificate_details(
     fingerprint: &str,
 ) -> ParsedTlsCertificateDetails {
     ParsedTlsCertificateDetails {
-        diagnostic_detail: Some(format!("Fingerprint: SHA256:{fingerprint}")),
+        diagnostic_detail: Some(format!(
+            "Fingerprint: SHA256:{fingerprint}\nDetailed certificate metadata is unavailable in this build (tls-cert-details disabled)."
+        )),
         ..ParsedTlsCertificateDetails::default()
     }
 }
@@ -1907,6 +1921,9 @@ pub fn parse_tls_certificate_details(
 // ─── Deep HTTP/HTTPS Connection Diagnostics ─────────────────────────────────
 
 pub use sorng_core::diagnostics::{self as diagnostics, DiagnosticReport, DiagnosticStep};
+// http_cmds.rs is also included by commands-core, whose root does not expose
+// themed_auth; keep the shared scheme-only parser accessible via http.
+pub use crate::themed_auth::authentication_challenge_schemes;
 
 // t20: re-export the web auto-login credential endpoint path + handler through
 // the `http` module so they resolve via `crate::http::...` from BOTH crates that

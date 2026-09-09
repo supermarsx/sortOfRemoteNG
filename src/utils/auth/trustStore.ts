@@ -424,6 +424,16 @@ function boundedNativeString(
   return value;
 }
 
+/** Chain display metadata is optional in the lean TLS extractor, and a valid
+ * SAN-only certificate can have an empty subject. Missing display text is not
+ * missing identity: every chain fingerprint remains independently required. */
+function boundedCertificateDisplay(
+  value: unknown,
+  maximumLength: number,
+): string {
+  return boundedNativeString(value, maximumLength) ?? "";
+}
+
 function boundedNativeStrings(
   value: unknown,
   maximumEntries: number,
@@ -546,23 +556,18 @@ function boundedNativeChain(value: unknown): CertChainEntry[] | undefined {
       throw new Error("Malformed bounded native certificate chain");
     }
     return {
-      subject: boundedNativeString(
+      subject: boundedCertificateDisplay(
         entry.subject,
         MAX_IDENTITY_FIELD_BYTES,
-        true,
-      )!,
-      issuer: boundedNativeString(
-        entry.issuer,
-        MAX_IDENTITY_FIELD_BYTES,
-        true,
-      )!,
+      ),
+      issuer: boundedCertificateDisplay(entry.issuer, MAX_IDENTITY_FIELD_BYTES),
       fingerprint: boundedNativeString(
         entry.fingerprint,
         MAX_FINGERPRINT_LENGTH,
         true,
       )!,
-      validFrom: boundedNativeString(entry.valid_from, 128, true)!,
-      validTo: boundedNativeString(entry.valid_to, 128, true)!,
+      validFrom: boundedCertificateDisplay(entry.valid_from, 128),
+      validTo: boundedCertificateDisplay(entry.valid_to, 128),
     };
   });
 }
@@ -745,8 +750,8 @@ function fromNativeIdentity(identity: NativeIdentity): TrustIdentity {
     issuer: boundedNativeString(identity.issuer, MAX_IDENTITY_FIELD_BYTES),
     firstSeen: identity.first_seen,
     lastSeen: identity.last_seen,
-    validFrom: identity.valid_from ?? undefined,
-    validTo: identity.valid_to ?? undefined,
+    validFrom: boundedNativeString(identity.valid_from, 128),
+    validTo: boundedNativeString(identity.valid_to, 128),
     pem: boundedNativeString(identity.pem, MAX_PEM_BYTES),
     serial: boundedNativeString(identity.serial, 512),
     signatureAlgorithm: boundedNativeString(identity.signature_algorithm, 256),
@@ -800,7 +805,8 @@ function toNativeIdentity(
   if (
     typeof identity.fingerprint !== "string" ||
     identity.fingerprint.length === 0 ||
-    identity.fingerprint.length > MAX_FINGERPRINT_LENGTH
+    identity.fingerprint.length > MAX_FINGERPRINT_LENGTH ||
+    identity.fingerprint.includes("\0")
   ) {
     throw new Error("Invalid trust identity fingerprint");
   }
@@ -835,19 +841,15 @@ function toNativeIdentity(
     throw new Error("Certificate chain exceeds the Trust Center safety limit");
   }
   const chain = cert.chain?.map((entry) => ({
-    subject: boundedNativeString(
-      entry.subject,
-      MAX_IDENTITY_FIELD_BYTES,
-      true,
-    )!,
-    issuer: boundedNativeString(entry.issuer, MAX_IDENTITY_FIELD_BYTES, true)!,
+    subject: boundedCertificateDisplay(entry.subject, MAX_IDENTITY_FIELD_BYTES),
+    issuer: boundedCertificateDisplay(entry.issuer, MAX_IDENTITY_FIELD_BYTES),
     fingerprint: boundedNativeString(
       entry.fingerprint,
       MAX_FINGERPRINT_LENGTH,
       true,
     )!,
-    valid_from: boundedNativeString(entry.validFrom, 128, true)!,
-    valid_to: boundedNativeString(entry.validTo, 128, true)!,
+    valid_from: boundedCertificateDisplay(entry.validFrom, 128),
+    valid_to: boundedCertificateDisplay(entry.validTo, 128),
   }));
   return {
     kind: "tls",
@@ -856,8 +858,8 @@ function toNativeIdentity(
     issuer: boundedNativeString(cert.issuer, MAX_IDENTITY_FIELD_BYTES),
     first_seen: firstSeen,
     last_seen: lastSeen,
-    valid_from: cert.validFrom,
-    valid_to: cert.validTo,
+    valid_from: boundedNativeString(cert.validFrom, 128),
+    valid_to: boundedNativeString(cert.validTo, 128),
     pem: boundedNativeString(cert.pem, MAX_PEM_BYTES),
     serial: boundedNativeString(cert.serial, 512),
     signature_algorithm: boundedNativeString(cert.signatureAlgorithm, 256),
@@ -891,6 +893,16 @@ function toNativeIdentity(
     chain,
     chain_fingerprints: chain?.map((entry) => entry.fingerprint) ?? [],
   };
+}
+
+/** Validate the certificate before policy dispatch, including explicit
+ * always-trust. This normalizes display metadata without authorizing trust. */
+export function validateCertificateIdentity(
+  identity: CertIdentity,
+): CertIdentity {
+  return fromNativeIdentity(
+    toNativeIdentity("https", identity),
+  ) as CertIdentity;
 }
 
 function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {

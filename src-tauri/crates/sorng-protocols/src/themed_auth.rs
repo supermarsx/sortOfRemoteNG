@@ -39,6 +39,62 @@ pub enum ChallengeDecision {
     PassThrough,
 }
 
+/// Bounded, scheme-only view of WWW-Authenticate. Never expose challenge
+/// parameters (realm, nonce, tokens), and never confuse quoted commas or an
+/// auth-param value with a second authentication scheme.
+pub fn authentication_challenge_schemes<S: AsRef<str>>(values: &[S]) -> Vec<&'static str> {
+    const SCHEMES: [&str; 8] = [
+        "Basic",
+        "Digest",
+        "Bearer",
+        "Negotiate",
+        "NTLM",
+        "HOBA",
+        "Mutual",
+        "AWS4-HMAC-SHA256",
+    ];
+    let mut remaining = 16 * 1024;
+    let mut result = Vec::new();
+    for value in values.iter().take(32) {
+        let value = value.as_ref();
+        if value.len() > remaining {
+            break;
+        }
+        remaining -= value.len();
+        let mut quoted = false;
+        let mut escaped = false;
+        for part in value.split(|ch| {
+            if escaped {
+                escaped = false;
+            } else if quoted && ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                quoted = !quoted;
+            } else if !quoted && ch == ',' {
+                return true;
+            }
+            false
+        }) {
+            let part = part.trim_ascii_start();
+            let Some(token) = part.split_ascii_whitespace().next() else {
+                continue;
+            };
+            if part[token.len()..].trim_ascii_start().starts_with('=') {
+                continue; // Optional whitespace before an auth-param's '='.
+            }
+            if let Some(scheme) = SCHEMES
+                .iter()
+                .find(|scheme| token.eq_ignore_ascii_case(scheme))
+            {
+                if !result.contains(scheme) {
+                    result.push(*scheme);
+                }
+            }
+        }
+    }
+    result
+}
+
 /// Inspect the upstream status and any `WWW-Authenticate` header
 /// values to decide whether we should swap the response for a themed
 /// challenge. Takes the header values as a borrowed slice so the call
@@ -52,17 +108,10 @@ pub fn intercept_basic_auth_challenge<S: AsRef<str>>(
     if status != 401 {
         return ChallengeDecision::PassThrough;
     }
-    // Look for any `WWW-Authenticate` header that starts with
-    // "basic" (case-insensitive). Servers sometimes send multiple
-    // challenge schemes; we trigger if Basic is offered at all.
-    for v in www_auth_values {
-        if v.as_ref()
-            .trim_start()
-            .to_ascii_lowercase()
-            .starts_with("basic")
-        {
-            return ChallengeDecision::Challenge;
-        }
+    // A single header may contain several challenges. BasicSomething is not
+    // Basic, and a quoted realm containing ", Basic" is not an offer either.
+    if authentication_challenge_schemes(www_auth_values).contains(&"Basic") {
+        return ChallengeDecision::Challenge;
     }
     ChallengeDecision::PassThrough
 }
@@ -89,10 +138,9 @@ pub fn render_challenge_page(
     let safe_user = escape_html(existing_username);
     let theme_css = theme.css_block();
     let error_block = match error_hint {
-        Some(msg) if !msg.is_empty() => format!(
-            r#"<p class="error" role="alert">{}</p>"#,
-            escape_html(msg)
-        ),
+        Some(msg) if !msg.is_empty() => {
+            format!(r#"<p class="error" role="alert">{}</p>"#, escape_html(msg))
+        }
         _ => String::new(),
     };
 
@@ -359,6 +407,40 @@ mod tests {
             intercept_basic_auth_challenge(401, h),
             ChallengeDecision::Challenge
         ));
+    }
+
+    #[test]
+    fn combined_challenges_use_exact_scheme_tokens_outside_quoted_parameters() {
+        let values = [
+            r#"Digest realm="private, Basic secret", nonce="fixture-nonce", Basic realm="device", Negotiate"#,
+        ];
+        assert_eq!(
+            authentication_challenge_schemes(&values),
+            vec!["Digest", "Basic", "Negotiate"]
+        );
+        assert!(matches!(
+            intercept_basic_auth_challenge(401, &values),
+            ChallengeDecision::Challenge
+        ));
+        for value in [
+            r#"Digest realm="private, Basic secret", nonce="fixture-nonce"#,
+            r#"Digest realm="escaped\", Basic secret", nonce="fixture-nonce"#,
+            "BasicSomething realm=device",
+            "Digest realm=Basic",
+            "Digest realm=device, Basic = challenge-parameter",
+        ] {
+            assert!(
+                matches!(
+                    intercept_basic_auth_challenge(401, &[value]),
+                    ChallengeDecision::PassThrough
+                ),
+                "{value}"
+            );
+        }
+        assert!(
+            authentication_challenge_schemes(&[format!("Basic {}", "x".repeat(16 * 1024))])
+                .is_empty()
+        );
     }
 
     #[test]
