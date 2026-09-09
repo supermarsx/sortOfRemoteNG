@@ -1,10 +1,17 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useConnections } from '../../contexts/useConnections';
-import SettingsContext, { useSettings } from '../../contexts/SettingsContext';
-import { Connection } from '../../types/connection/connection';
-import { SecureStorage } from '../../utils/storage/storage';
-import { generateId } from '../../utils/core/id';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useContext,
+  useRef,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { useConnections } from "../../contexts/useConnections";
+import SettingsContext, { useSettings } from "../../contexts/SettingsContext";
+import { Connection } from "../../types/connection/connection";
+import { SecureStorage } from "../../utils/storage/storage";
+import { generateId } from "../../utils/core/id";
 
 type SettingsContextValue = ReturnType<typeof useSettings>;
 
@@ -19,11 +26,42 @@ interface SidebarColorTagFilter {
 export function useSidebar() {
   const { t } = useTranslation();
   const { state, dispatch } = useConnections();
-  const settingsContext = useContext(SettingsContext) as SettingsContextValue | undefined;
+  const settingsContext = useContext(SettingsContext) as
+    SettingsContextValue | undefined;
   const colorTags = settingsContext?.settings.colorTags;
   const [showFilters, setShowFilters] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [isStorageEncrypted, setIsStorageEncrypted] = useState(false);
+  const [savingReorder, setSavingReorder] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+  const savingReorderRef = useRef(false);
+  const reorderReady = settingsContext?.settingsReady !== false;
+  const canChangeReorder = !!settingsContext?.updateSettings && reorderReady;
+
+  const updateConnectionReorder = useCallback(
+    async (enabled: boolean) => {
+      if (!canChangeReorder || savingReorderRef.current) return;
+      savingReorderRef.current = true;
+      setSavingReorder(true);
+      setReorderError(null);
+      try {
+        await settingsContext!.updateSettings({
+          enableConnectionReorder: enabled,
+        });
+      } catch {
+        setReorderError(
+          t(
+            "connections.positionLockSaveFailed",
+            "Could not update the position lock. Check the current state and retry.",
+          ),
+        );
+      } finally {
+        savingReorderRef.current = false;
+        setSavingReorder(false);
+      }
+    },
+    [canChangeReorder, settingsContext, t],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -45,7 +83,7 @@ export function useSidebar() {
         new Set(
           state.connections
             .flatMap((conn) => conn.tags || [])
-            .filter((tag) => tag.trim() !== ''),
+            .filter((tag) => tag.trim() !== ""),
         ),
       ).sort(),
     [state.connections],
@@ -55,7 +93,10 @@ export function useSidebar() {
     const usageCounts = new Map<string, number>();
     for (const conn of state.connections) {
       if (conn.colorTag) {
-        usageCounts.set(conn.colorTag, (usageCounts.get(conn.colorTag) || 0) + 1);
+        usageCounts.set(
+          conn.colorTag,
+          (usageCounts.get(conn.colorTag) || 0) + 1,
+        );
       }
     }
 
@@ -70,14 +111,17 @@ export function useSidebar() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [colorTags, state.connections]);
 
-  const activeFilterCount = state.filter.tags.length + state.filter.colorTags.length + state.filter.protocols.length;
+  const activeFilterCount =
+    state.filter.tags.length +
+    state.filter.colorTags.length +
+    state.filter.protocols.length;
 
   const isStorageUnlocked = SecureStorage.isStorageUnlocked();
   const isFavoritesActive = state.filter.showFavorites;
 
   const handleSearch = useCallback(
     (term: string) => {
-      dispatch({ type: 'SET_FILTER', payload: { searchTerm: term } });
+      dispatch({ type: "SET_FILTER", payload: { searchTerm: term } });
     },
     [dispatch],
   );
@@ -88,7 +132,7 @@ export function useSidebar() {
       const newTags = currentTags.includes(tag)
         ? currentTags.filter((t) => t !== tag)
         : [...currentTags, tag];
-      dispatch({ type: 'SET_FILTER', payload: { tags: newTags } });
+      dispatch({ type: "SET_FILTER", payload: { tags: newTags } });
     },
     [dispatch, state.filter.tags],
   );
@@ -99,7 +143,7 @@ export function useSidebar() {
       const newTags = currentTags.includes(tagId)
         ? currentTags.filter((id) => id !== tagId)
         : [...currentTags, tagId];
-      dispatch({ type: 'SET_FILTER', payload: { colorTags: newTags } });
+      dispatch({ type: "SET_FILTER", payload: { colorTags: newTags } });
     },
     [dispatch, state.filter.colorTags],
   );
@@ -107,27 +151,27 @@ export function useSidebar() {
   const handleNewGroup = useCallback(() => {
     const groupConnection: Connection = {
       id: generateId(),
-      name: t('connections.newFolder'),
-      protocol: 'rdp',
-      hostname: '',
+      name: t("connections.newFolder"),
+      protocol: "rdp",
+      hostname: "",
       port: 3389,
       isGroup: true,
       expanded: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    dispatch({ type: 'ADD_CONNECTION', payload: groupConnection });
+    dispatch({ type: "ADD_CONNECTION", payload: groupConnection });
   }, [dispatch, t]);
 
   const toggleSidebar = useCallback(() => {
-    dispatch({ type: 'TOGGLE_SIDEBAR' });
+    dispatch({ type: "TOGGLE_SIDEBAR" });
   }, [dispatch]);
 
   const clearFilters = useCallback(() => {
     dispatch({
-      type: 'SET_FILTER',
+      type: "SET_FILTER",
       payload: {
-        searchTerm: '',
+        searchTerm: "",
         tags: [],
         colorTags: [],
         protocols: [],
@@ -140,7 +184,10 @@ export function useSidebar() {
   const expandAllFolders = useCallback(() => {
     state.connections.forEach((conn) => {
       if (conn.isGroup) {
-        dispatch({ type: 'UPDATE_CONNECTION', payload: { ...conn, expanded: true } });
+        dispatch({
+          type: "UPDATE_CONNECTION",
+          payload: { ...conn, expanded: true },
+        });
       }
     });
   }, [state.connections, dispatch]);
@@ -148,7 +195,10 @@ export function useSidebar() {
   const collapseAllFolders = useCallback(() => {
     state.connections.forEach((conn) => {
       if (conn.isGroup) {
-        dispatch({ type: 'UPDATE_CONNECTION', payload: { ...conn, expanded: false } });
+        dispatch({
+          type: "UPDATE_CONNECTION",
+          payload: { ...conn, expanded: false },
+        });
       }
     });
   }, [state.connections, dispatch]);
@@ -163,6 +213,11 @@ export function useSidebar() {
     setShowSortMenu,
     isStorageEncrypted,
     isStorageUnlocked,
+    savingReorder,
+    reorderReady,
+    reorderError,
+    canChangeReorder,
+    updateConnectionReorder,
     isFavoritesActive,
     allTags,
     allColorTags,

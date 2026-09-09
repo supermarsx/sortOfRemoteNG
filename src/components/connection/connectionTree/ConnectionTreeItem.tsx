@@ -219,16 +219,23 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
         onContextMenu={handleContextMenu}
         draggable={enableReorder}
         onDragStart={(e) => {
-          if (!enableReorder) return;
+          if (!enableReorder) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           e.dataTransfer.effectAllowed = "all";
           e.dataTransfer.dropEffect = "move";
           e.dataTransfer.setData("text/plain", connection.id);
           onDragStart(connection.id);
         }}
         onDragOver={(e) => {
-          if (!enableReorder) return;
           e.preventDefault();
           e.stopPropagation();
+          if (!enableReorder) {
+            e.dataTransfer.dropEffect = "none";
+            return;
+          }
           e.dataTransfer.dropEffect = "move";
           onDragOver(
             connection.id,
@@ -244,9 +251,12 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
         }}
         onDragEnd={onDragEnd}
         onDrop={(e) => {
-          if (!enableReorder) return;
           e.preventDefault();
           e.stopPropagation();
+          if (!enableReorder) {
+            e.dataTransfer.dropEffect = "none";
+            return;
+          }
           onDrop(
             connection.id,
             calcDropPosition(

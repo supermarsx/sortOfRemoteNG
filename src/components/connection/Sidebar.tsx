@@ -354,34 +354,73 @@ const SidebarToolbar: React.FC<{
   onNewConnection: () => void;
   noCollection: boolean;
   onOpenBulkEditor?: () => void;
-}> = ({ mgr, onNewConnection, noCollection, onOpenBulkEditor }) => (
-  <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center space-x-1">
-    <button
-      onClick={onNewConnection}
-      disabled={noCollection}
-      className="p-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-primary"
-      title={mgr.t("connections.new")}
-      data-testid="toolbar-new-connection"
-    >
-      <Plus size={14} />
-    </button>
-    <button
-      onClick={mgr.handleNewGroup}
-      disabled={noCollection}
-      className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
-      title={mgr.t("connections.newFolder")}
-    >
-      <FolderPlus size={14} />
-    </button>
-    <div className="flex-1" />
-    <button
-      onClick={() => onOpenBulkEditor?.()}
-      disabled={noCollection || !onOpenBulkEditor}
-      className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
-      title={mgr.t("connections.bulkEdit", "Bulk Edit")}
-    >
-      <TableProperties size={14} />
-    </button>
+  enableReorder: boolean;
+}> = ({
+  mgr,
+  onNewConnection,
+  noCollection,
+  onOpenBulkEditor,
+  enableReorder,
+}) => (
+  <div className="px-3 py-2 border-b border-[var(--color-border)]">
+    <div className="flex items-center space-x-1">
+      <button
+        onClick={onNewConnection}
+        disabled={noCollection}
+        className="p-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-primary"
+        title={mgr.t("connections.new")}
+        data-testid="toolbar-new-connection"
+      >
+        <Plus size={14} />
+      </button>
+      <button
+        onClick={mgr.handleNewGroup}
+        disabled={noCollection}
+        className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+        title={mgr.t("connections.newFolder")}
+      >
+        <FolderPlus size={14} />
+      </button>
+      <div className="flex-1" />
+      <button
+        type="button"
+        onClick={() => void mgr.updateConnectionReorder(!enableReorder)}
+        disabled={!mgr.canChangeReorder || mgr.savingReorder}
+        aria-pressed={!enableReorder}
+        aria-busy={mgr.savingReorder}
+        aria-label={mgr.t(
+          "connections.freezePositions",
+          "Freeze connection positions",
+        )}
+        data-tooltip={
+          enableReorder
+            ? mgr.t(
+                "connections.freezePositionsHint",
+                "Freeze positions to prevent accidental dragging and reparenting",
+              )
+            : mgr.t(
+                "connections.unfreezePositionsHint",
+                "Unfreeze positions to allow dragging and reparenting",
+              )
+        }
+        className={`p-1.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${enableReorder ? "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]" : "text-primary bg-primary/15 hover:bg-primary/25"}`}
+      >
+        {enableReorder ? <Unlock size={14} /> : <Lock size={14} />}
+      </button>
+      <button
+        onClick={() => onOpenBulkEditor?.()}
+        disabled={noCollection || !onOpenBulkEditor}
+        className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+        title={mgr.t("connections.bulkEdit", "Bulk Edit")}
+      >
+        <TableProperties size={14} />
+      </button>
+    </div>
+    {mgr.reorderError && (
+      <p role="alert" className="mt-2 text-xs text-error">
+        {mgr.reorderError}
+      </p>
+    )}
   </div>
 );
 
@@ -422,6 +461,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   noCollection,
 }) => {
   const mgr = useSidebar();
+  // Stop a drag immediately while the preference is committing; on failure the
+  // persisted setting remains authoritative and the visible toggle reverts.
+  const canReorder =
+    enableConnectionReorder && mgr.reorderReady && !mgr.savingReorder;
   const sideBorder = sidebarPosition === "left" ? "border-r" : "border-l";
 
   return (
@@ -444,6 +487,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onNewConnection={onNewConnection}
               noCollection={noCollection}
               onOpenBulkEditor={onOpenBulkEditor}
+              enableReorder={canReorder}
             />
 
             <ConnectionTree
@@ -454,7 +498,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onDiagnostics={onDiagnostics}
               onSessionDetach={onSessionDetach}
               onActivateSession={onActivateSession}
-              enableReorder={enableConnectionReorder}
+              enableReorder={canReorder}
               onOpenImport={onOpenImport}
             />
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
@@ -35,6 +35,17 @@ export function useConnectionTree(
   const [dropPosition, setDropPosition] = useState<
     "before" | "after" | "inside" | null
   >(null);
+  const reorderEnabledRef = useRef(enableReorder);
+  reorderEnabledRef.current = enableReorder;
+  const currentDragRef = useRef(draggedId);
+  currentDragRef.current = draggedId;
+  useEffect(() => {
+    if (!enableReorder) {
+      setDraggedId(null);
+      setDragOverId(null);
+      setDropPosition(null);
+    }
+  }, [enableReorder]);
 
   /* ── Rename state ── */
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
@@ -252,7 +263,7 @@ export function useConnectionTree(
     () => new WeakMap<Connection[], Map<string | undefined, Connection[]>>(),
     // The cached sibling arrays are sorted, so changing the sort invalidates them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [enableReorder, state.filter.sortBy, state.filter.sortDirection],
+    [state.filter.sortBy, state.filter.sortDirection],
   );
   const buildTree = useCallback(
     (connections: Connection[], parentId?: string): Connection[] => {
@@ -273,7 +284,7 @@ export function useConnectionTree(
           if (a.isGroup && !b.isGroup) return -1;
           if (!a.isGroup && b.isGroup) return 1;
 
-          if (enableReorder && sortBy === "custom") {
+          if (sortBy === "custom") {
             const orderA = a.order ?? 0;
             const orderB = b.order ?? 0;
             if (orderA !== orderB) return (orderA - orderB) * multiplier;
@@ -316,12 +327,7 @@ export function useConnectionTree(
       treeIndexes.set(connections, index);
       return index.get(parentId) ?? [];
     },
-    [
-      treeIndexes,
-      enableReorder,
-      state.filter.sortBy,
-      state.filter.sortDirection,
-    ],
+    [treeIndexes, state.filter.sortBy, state.filter.sortDirection],
   );
 
   const hasActiveConnectionFilter = useMemo(() => {
@@ -424,20 +430,31 @@ export function useConnectionTree(
     (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!enableReorder) return;
+      if (!reorderEnabledRef.current) {
+        e.dataTransfer.dropEffect = "none";
+        return;
+      }
       e.dataTransfer.dropEffect = "move";
       if (draggedId) {
         setDragOverId(null);
         setDropPosition(null);
       }
     },
-    [enableReorder, draggedId],
+    [draggedId],
   );
 
   const handlePanelDrop = useCallback(
     (e: React.DragEvent) => {
-      if (!enableReorder || !draggedId) return;
       e.preventDefault();
+      e.stopPropagation();
+      if (
+        !reorderEnabledRef.current ||
+        !draggedId ||
+        currentDragRef.current !== draggedId
+      ) {
+        e.dataTransfer.dropEffect = "none";
+        return;
+      }
 
       const draggedConnection = state.connections.find(
         (conn) => conn.id === draggedId,
@@ -477,19 +494,25 @@ export function useConnectionTree(
       setDragOverId(null);
       setDropPosition(null);
     },
-    [enableReorder, draggedId, state.connections, dispatch],
+    [draggedId, state.connections, dispatch],
   );
 
   /* ── Per-item drag handlers (passed to each tree item) ── */
 
   const handleItemDragStart = useCallback((connectionId: string) => {
+    if (!reorderEnabledRef.current) return;
     setDraggedId(connectionId);
     setDropPosition(null);
   }, []);
 
   const handleItemDragOver = useCallback(
     (connectionId: string, position: "before" | "after" | "inside") => {
-      if (connectionId === draggedId) return;
+      if (
+        !reorderEnabledRef.current ||
+        !draggedId ||
+        connectionId === draggedId
+      )
+        return;
       setDragOverId(connectionId);
       setDropPosition(position);
     },
@@ -504,7 +527,12 @@ export function useConnectionTree(
 
   const handleItemDrop = useCallback(
     (targetId: string, position: "before" | "after" | "inside") => {
-      if (!draggedId || draggedId === targetId) {
+      if (
+        !reorderEnabledRef.current ||
+        !draggedId ||
+        currentDragRef.current !== draggedId ||
+        draggedId === targetId
+      ) {
         setDraggedId(null);
         setDragOverId(null);
         setDropPosition(null);
