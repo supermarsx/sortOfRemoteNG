@@ -78,6 +78,117 @@ afterEach(() => {
 });
 
 describe("embedded browser proxy lifecycle", () => {
+  it("keeps double-slash document and route paths on the saved authority", async () => {
+    const { result, unmount } = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    act(() => result.current.attachIframe(iframe));
+    const navigation = new URL(iframe.src);
+    const report = {
+      version: 1,
+      sessionId: response.session_id,
+      documentSequence: 1,
+      documentToken: "a".repeat(32),
+      navigationToken: navigation.searchParams.get("__sorng_navigation_v1"),
+      url: response.proxy_url,
+    };
+    const emit = (data: Record<string, unknown>) =>
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: navigation.origin,
+            data,
+          }),
+        ),
+      );
+    emit({ ...report, type: "proxy_document_start" });
+    emit({ ...report, type: "proxy_dom_ready" });
+    emit({
+      type: "proxy_navigate",
+      url: `${navigation.origin}//not-the-target.example/path?x=a%20b+~#hash`,
+    });
+    expect(result.current.currentUrl).toBe(
+      "http://fixture.invalid//not-the-target.example/path?x=a%20b+~#hash",
+    );
+    emit({
+      ...report,
+      type: "proxy_document_start",
+      documentSequence: 2,
+      documentToken: "b".repeat(32),
+      navigationToken: null,
+      url: `${navigation.origin}//still-not-the-target.example/new`,
+    });
+    expect(result.current.currentUrl).toBe(
+      "http://fixture.invalid//still-not-the-target.example/new",
+    );
+    expect(result.current.backHistory.map((entry) => entry.url)).toContain(
+      "http://fixture.invalid//not-the-target.example/path?x=a%20b+~#hash",
+    );
+    unmount();
+    iframe.remove();
+  });
+  it("jumps multiple history entries without truncating Forward until a genuine new navigation", async () => {
+    const { result } = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    for (const path of ["one", "two", "three"]) {
+      await act(async () =>
+        result.current.navigateToUrl(`http://fixture.invalid/${path}`),
+      );
+    }
+    expect(result.current.backHistory.map((entry) => entry.url)).toEqual([
+      "http://fixture.invalid/two",
+      "http://fixture.invalid/one",
+      "http://fixture.invalid/",
+    ]);
+    await act(async () => result.current.handleHistoryJump(1));
+    expect(result.current.currentUrl).toBe("http://fixture.invalid/one");
+    expect(result.current.forwardHistory.map((entry) => entry.url)).toEqual([
+      "http://fixture.invalid/two",
+      "http://fixture.invalid/three",
+    ]);
+    await act(async () => result.current.handleRefresh());
+    expect(result.current.forwardHistory).toHaveLength(2);
+    await act(async () => result.current.handleHistoryJump(3));
+    expect(result.current.currentUrl).toBe("http://fixture.invalid/three");
+    expect(result.current.backHistory).toHaveLength(3);
+    await act(async () => result.current.handleHistoryJump(1));
+    await act(async () =>
+      result.current.navigateToUrl("http://fixture.invalid/new"),
+    );
+    expect(result.current.forwardHistory).toHaveLength(0);
+    expect(result.current.backHistory.map((entry) => entry.url)).toEqual([
+      "http://fixture.invalid/one",
+      "http://fixture.invalid/",
+    ]);
+    await act(async () => result.current.handleHistoryJump(999));
+    expect(result.current.currentUrl).toBe("http://fixture.invalid/new");
+  });
+  it("hands a pending navigation to a late-mounted frame without rewriting encoded query bytes", async () => {
+    const { result } = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    const query = "?signed=a%20b+c~&empty=&encoded=%2f%2F&flag";
+    await act(async () =>
+      result.current.navigateToUrl(`http://fixture.invalid/login${query}#view`),
+    );
+    const iframe = document.createElement("iframe");
+    act(() => result.current.attachIframe(iframe));
+    expect(iframe.src).toMatch(
+      new RegExp("__sorng_navigation_v1=[0-9a-f]{32}#view$"),
+    );
+    expect(iframe.src).toBe(
+      `${response.proxy_url}login${query}&__sorng_navigation_v1=${new URL(iframe.src).searchParams.get("__sorng_navigation_v1")}#view`,
+    );
+    expect(
+      invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
+    expect(result.current.currentUrl).toBe(
+      `http://fixture.invalid/login${query}#view`,
+    );
+  });
   it.each(["http", "https"] as const)(
     "mediates unauthenticated %s through the protected loopback iframe",
     async (protocol) => {
@@ -97,7 +208,12 @@ describe("embedded browser proxy lifecycle", () => {
         result.current.iframeRef as { current: HTMLIFrameElement | null }
       ).current = iframe;
       await act(async () => {});
-      expect(iframe.src).toBe(response.proxy_url);
+      const navigationUrl = new URL(iframe.src);
+      expect(navigationUrl.searchParams.get("__sorng_navigation_v1")).toMatch(
+        /^[0-9a-f]{32}$/,
+      );
+      navigationUrl.searchParams.delete("__sorng_navigation_v1");
+      expect(navigationUrl.toString()).toBe(response.proxy_url);
       expect(invoke).toHaveBeenCalledWith("start_basic_auth_proxy", {
         config: expect.objectContaining({
           target_url: `${protocol}://fixture.invalid/`,
@@ -278,7 +394,7 @@ describe("embedded browser proxy lifecycle", () => {
       useWebBrowser({ ...session, protocol: "https" }),
     );
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
-    expect(result.current.navigationFailure?.kind).toBe("timeout");
+    expect(result.current.navigationFailure?.kind).toBe("page_load_timeout");
     expect(result.current.isLoading).toBe(false);
     await act(async () =>
       pendingCert.resolve({ fingerprint: "late-cert", san: [], chain: [] }),

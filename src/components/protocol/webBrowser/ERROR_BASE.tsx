@@ -87,6 +87,27 @@ function presentationFor(
           "The certificate was inspected; changing TLS verification will not repair a trust-store failure.",
         ],
       };
+    case "page_load_timeout":
+      return {
+        eyebrow: "Page readiness was not confirmed",
+        icon: Clock3,
+        tone: "warning",
+        suggestions: [
+          "The server may already have responded; document loading or page scripts can still be pending.",
+          "Retry the page or open it externally to compare browser behavior.",
+          "Deep diagnostics tests connectivity separately, without saved login credentials.",
+        ],
+      };
+    case "navigation_cancelled":
+      return {
+        eyebrow: "Navigation stopped",
+        icon: XCircle,
+        tone: "warning",
+        suggestions: [
+          "Retry when you are ready to load the page.",
+          "Stopping navigation does not indicate a server or network failure.",
+        ],
+      };
     case "timeout":
       return {
         eyebrow: "The server took too long",

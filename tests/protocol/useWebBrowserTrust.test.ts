@@ -230,7 +230,7 @@ describe("HTTPS certificate and native trust stages", () => {
   it("keeps the existing 30-second timeout immediate once reached", async () => {
     const { result } = await loadingFixture();
     act(() => vi.advanceTimersByTime(30_000));
-    expect(result.current.navigationFailure?.kind).toBe("timeout");
+    expect(result.current.navigationFailure?.kind).toBe("page_load_timeout");
     expect(result.current.isLoading).toBe(false);
     expect(result.current.showLoadingIndicator).toBe(false);
   });
@@ -375,6 +375,30 @@ describe("HTTPS certificate and native trust stages", () => {
       false,
       "fixture",
     );
+    expect(result.current.trustPrompt).toBeNull();
+  });
+
+  it("pins an explicit session-only acceptance without persisting an unchecked Remember decision", async () => {
+    mocks.verify.mockResolvedValue({
+      status: "first-use",
+      identity: cert,
+      requiresApproval: true,
+    });
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(result.current.trustPrompt).not.toBeNull());
+    await act(async () => result.current.handleTrustAccept(false));
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.some(
+          ([name]) => name === "start_basic_auth_proxy",
+        ),
+      ).toBe(true),
+    );
+    expect(mocks.trust).not.toHaveBeenCalled();
+    const config = mocks.invoke.mock.calls.find(
+      ([name]) => name === "start_basic_auth_proxy",
+    )?.[1].config;
+    expect(config.accepted_cert_fingerprint).toBe(cert.fingerprint);
     expect(result.current.trustPrompt).toBeNull();
   });
 

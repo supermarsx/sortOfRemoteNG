@@ -50,6 +50,8 @@ export const PROXY_FAILURE_MESSAGE_TYPE = "sorng_proxy_failure" as const;
 
 export type ProxyFailureKind =
   | "timeout"
+  | "page_load_timeout"
+  | "navigation_cancelled"
   | "connection_refused"
   | "dns_failure"
   | "tls_failure"
@@ -169,6 +171,8 @@ function localNavigationFailure(
   kind: Extract<
     ProxyFailureKind,
     | "timeout"
+    | "page_load_timeout"
+    | "navigation_cancelled"
     | "invalid_navigation"
     | "proxy_start_failed"
     | "certificate_rejected"
@@ -193,6 +197,13 @@ function localNavigationFailure(
 }
 
 const PROTECTED_PROXY_HOST_RE = /^p[0-9a-f]{32}\.localhost$/u;
+const NAVIGATION_QUERY_KEY = "__sorng_navigation_v1";
+
+function navigationToken(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
 
 export function validateProtectedProxyUrl(
   response: ProxyMediatorResponse,
@@ -331,6 +342,9 @@ export function useWebBrowser(session: ConnectionSession) {
   const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
   const [inputUrl, setInputUrl] = useState(currentUrl);
   const [isLoading, setIsLoading] = useState(!targetResolution.error);
+  const [waitingForTrust, setWaitingForTrust] = useState(
+    session.protocol === "https",
+  );
   const [loadingIndicatorReady, setLoadingIndicatorReady] = useState(false);
   const [loadError, setLoadError] = useState<string>(
     targetResolution.error ?? "",
@@ -351,8 +365,26 @@ export function useWebBrowser(session: ConnectionSession) {
   const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
   const [isSecure, setIsSecure] = useState(session.protocol === "https");
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [navigationHistory, setNavigationHistory] = useState<{
+    entries: string[];
+    index: number;
+  }>({ entries: [], index: -1 });
+  const historyRef = useRef(navigationHistory);
+  const history = navigationHistory.entries;
+  const historyIndex = navigationHistory.index;
+  const appendHistory = useCallback((url: string) => {
+    const previous = historyRef.current;
+    if (previous.entries[previous.index] === url) return;
+    // Session-only history, capped to bound menu and memory cost. A genuine new
+    // navigation replaces the forward branch; reloads and history jumps do not.
+    const entries = [
+      ...previous.entries.slice(0, previous.index + 1),
+      url,
+    ].slice(-200);
+    const next = { entries, index: entries.length - 1 };
+    historyRef.current = next;
+    setNavigationHistory(next);
+  }, []);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // ── Certificate trust ──────────────────────────────────────
@@ -391,7 +423,57 @@ export function useWebBrowser(session: ConnectionSession) {
     null,
   );
   const pendingNavigationRef = useRef(false);
+  const pendingInternalNavigationRef = useRef(false);
   const awaitingFrameGenerationRef = useRef<number | null>(null);
+  const currentDocumentRef = useRef<{
+    generation: number;
+    sessionId: string;
+    token: string;
+    sequence: number;
+    navigationToken: string | null;
+    url: string;
+  } | null>(null);
+  const pendingFrameRef = useRef<{
+    generation: number;
+    url: string;
+    cleanUrl: string;
+    token: string;
+    sessionId: string;
+  } | null>(null);
+  const attachIframe = useCallback((iframe: HTMLIFrameElement | null) => {
+    iframeRef.current = iframe;
+    const pending = pendingFrameRef.current;
+    if (
+      iframe &&
+      pending &&
+      pending.generation === navGenRef.current &&
+      pending.sessionId === proxySessionIdRef.current
+    ) {
+      awaitingFrameGenerationRef.current = pending.generation;
+      if (iframe.getAttribute("src") !== pending.url) iframe.src = pending.url;
+    }
+  }, []);
+  const navigateFrame = useCallback(
+    (url: string, generation: number, sessionId: string) => {
+      const target = new URL(url);
+      if (target.searchParams.has(NAVIGATION_QUERY_KEY))
+        throw new Error(
+          "The navigation uses a reserved internal query parameter.",
+        );
+      const token = navigationToken();
+      const cleanUrl = target.toString();
+      target.search = `${target.search}${target.search ? "&" : "?"}${NAVIGATION_QUERY_KEY}=${token}`;
+      pendingFrameRef.current = {
+        generation,
+        url: target.toString(),
+        cleanUrl,
+        token,
+        sessionId,
+      };
+      if (iframeRef.current) attachIframe(iframeRef.current);
+    },
+    [attachIframe],
+  );
   const clearLoadingIndicator = useCallback(() => {
     if (loadingIndicatorTimerRef.current !== null) {
       clearTimeout(loadingIndicatorTimerRef.current);
@@ -401,6 +483,23 @@ export function useWebBrowser(session: ConnectionSession) {
   }, []);
   const proxyRecoveryBusyRef = useRef(false);
   const mountedRef = useRef(true);
+  const beginLoadingPresentation = useCallback(
+    (generation: number) => {
+      clearLoadingIndicator();
+      setIsLoading(true);
+      loadingIndicatorTimerRef.current = setTimeout(() => {
+        if (
+          !mountedRef.current ||
+          generation !== navGenRef.current ||
+          !pendingNavigationRef.current
+        )
+          return;
+        loadingIndicatorTimerRef.current = null;
+        setLoadingIndicatorReady(true);
+      }, 200);
+    },
+    [clearLoadingIndicator],
+  );
   const activeNavigationUrlRef = useRef(currentUrl);
   const previousCertificateScope = useRef(certificateScope);
   useEffect(() => {
@@ -438,6 +537,7 @@ export function useWebBrowser(session: ConnectionSession) {
       setLoadError(failure.detail || failure.reason);
       setIsLoading(false);
       pendingNavigationRef.current = false;
+      pendingInternalNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
       clearLoadingIndicator();
       setDiagnosticReport(null);
@@ -453,6 +553,29 @@ export function useWebBrowser(session: ConnectionSession) {
    */
   const acceptedCertFingerprintRef = useRef<string | null>(null);
   const LOAD_TIMEOUT_MS = 30_000;
+  const armNavigationDeadline = useCallback(
+    (generation: number, url: string) => {
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = setTimeout(() => {
+        if (generation !== navGenRef.current || !pendingNavigationRef.current)
+          return;
+        navGenRef.current += 1;
+        trustResolveRef.current?.(false);
+        trustResolveRef.current = null;
+        setTrustPrompt(null);
+        applyNavigationFailure(
+          localNavigationFailure(
+            "page_load_timeout",
+            "Page did not become ready",
+            url,
+            "The browser did not report a ready document before the navigation deadline.",
+            `Page readiness was not confirmed within ${LOAD_TIMEOUT_MS / 1000} seconds. Proxy startup, page scripts or resources, and browser loading can cause this; it does not prove the server failed to respond.`,
+          ),
+        );
+      }, LOAD_TIMEOUT_MS);
+    },
+    [applyNavigationFailure],
+  );
 
   const sslVerifyDisabled =
     connection &&
@@ -654,6 +777,10 @@ export function useWebBrowser(session: ConnectionSession) {
             trustResolveRef.current = null;
           }
           return new Promise<boolean>((resolve) => {
+            // Human review is not a network timeout. Acceptance resumes a fresh
+            // bounded navigation deadline; a late timeout must not dismiss trust.
+            if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+            loadTimeoutRef.current = null;
             trustResolveRef.current = resolve;
             setTrustPrompt(result);
           });
@@ -697,55 +824,60 @@ export function useWebBrowser(session: ConnectionSession) {
     ],
   );
 
-  const handleTrustAccept = useCallback(async () => {
-    const generation = navGenRef.current;
-    if (trustPrompt && certIdentity) {
-      const port = connection?.port || 443;
-      try {
-        await trustIdentity(
-          normalizedHostname,
-          port,
-          "https",
-          certIdentity,
-          true,
-          connection?.id,
-        );
-        if (generation !== navGenRef.current) return;
-      } catch (err) {
-        if (generation !== navGenRef.current) return;
-        debugLog("WebBrowser", "Failed to persist HTTPS trust decision", {
-          err,
-        });
-        acceptedCertFingerprintRef.current = null;
-        applyNavigationFailure(
-          localNavigationFailure(
-            "trust_failure",
-            "Unable to save the HTTPS trust decision",
-            activeNavigationUrlRef.current,
-            "The certificate was inspected, but the Trust Center could not persist your decision. The connection remains blocked.",
-            err instanceof Error ? err.message : String(err),
-          ),
-        );
-        setTrustPrompt(null);
-        trustResolveRef.current?.(false);
-        trustResolveRef.current = null;
-        return;
+  const handleTrustAccept = useCallback(
+    async (remember = true) => {
+      const generation = navGenRef.current;
+      armNavigationDeadline(generation, activeNavigationUrlRef.current);
+      if (trustPrompt && certIdentity && remember) {
+        const port = connection?.port || 443;
+        try {
+          await trustIdentity(
+            normalizedHostname,
+            port,
+            "https",
+            certIdentity,
+            true,
+            connection?.id,
+          );
+          if (generation !== navGenRef.current) return;
+        } catch (err) {
+          if (generation !== navGenRef.current) return;
+          debugLog("WebBrowser", "Failed to persist HTTPS trust decision", {
+            err,
+          });
+          acceptedCertFingerprintRef.current = null;
+          applyNavigationFailure(
+            localNavigationFailure(
+              "trust_failure",
+              "Unable to save the HTTPS trust decision",
+              activeNavigationUrlRef.current,
+              "The certificate was inspected, but the Trust Center could not persist your decision. The connection remains blocked.",
+              err instanceof Error ? err.message : String(err),
+            ),
+          );
+          setTrustPrompt(null);
+          trustResolveRef.current?.(false);
+          trustResolveRef.current = null;
+          return;
+        }
       }
-    }
-    // Persist the user's accepted fingerprint so the next `navigateToUrl`
-    // can pass a cert pin to the proxy. The proxy must not disable TLS
-    // validation for arbitrary certificates after this trust decision.
-    acceptedCertFingerprintRef.current = certIdentity?.fingerprint ?? null;
-    setTrustPrompt(null);
-    trustResolveRef.current?.(true);
-    trustResolveRef.current = null;
-  }, [
-    trustPrompt,
-    certIdentity,
-    normalizedHostname,
-    connection,
-    applyNavigationFailure,
-  ]);
+      // Retain the user's accepted fingerprint so the next `navigateToUrl`
+      // can pass a cert pin to the proxy. The proxy must not disable TLS
+      // validation for arbitrary certificates after this trust decision.
+      acceptedCertFingerprintRef.current = certIdentity?.fingerprint ?? null;
+      setTrustPrompt(null);
+      trustResolveRef.current?.(true);
+      trustResolveRef.current = null;
+    },
+    [
+      trustPrompt,
+      certIdentity,
+      normalizedHostname,
+      connection,
+      applyNavigationFailure,
+      armNavigationDeadline,
+    ],
+  );
 
   const handleTrustReject = useCallback(() => {
     const errorMessage = "Connection aborted: certificate not trusted by user.";
@@ -820,27 +952,19 @@ export function useWebBrowser(session: ConnectionSession) {
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
       const gen = ++navGenRef.current;
-      clearLoadingIndicator();
       pendingNavigationRef.current = true;
+      pendingInternalNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
-      // Presentation only: certificate inspection, timeout and navigation still
-      // start immediately. Fast pages never replace the retained frame with a spinner.
-      loadingIndicatorTimerRef.current = setTimeout(() => {
-        if (
-          !mountedRef.current ||
-          gen !== navGenRef.current ||
-          !pendingNavigationRef.current
-        )
-          return;
-        loadingIndicatorTimerRef.current = null;
-        setLoadingIndicatorReady(true);
-      }, 200);
+      pendingFrameRef.current = null;
+      setWaitingForTrust(session.protocol === "https");
+      // Presentation only: inspection and navigation start immediately.
+      // Fast pages never show a progress line over the retained frame.
+      beginLoadingPresentation(gen);
       setCertificateCapture(null);
       setShowCertPopup(false);
       setTrustPrompt(null);
       trustResolveRef.current?.(false);
       trustResolveRef.current = null;
-      setIsLoading(true);
       clearNavigationFailure();
       activeNavigationUrlRef.current = url;
       if (loadTimeoutRef.current) {
@@ -872,6 +996,7 @@ export function useWebBrowser(session: ConnectionSession) {
           (urlObj.protocol !== "http:" && urlObj.protocol !== "https:") ||
           urlObj.username ||
           urlObj.password ||
+          urlObj.searchParams.has(NAVIGATION_QUERY_KEY) ||
           urlObj.origin !== configuredTarget.origin ||
           urlObj.hostname !== targetResolution.hostname
         ) {
@@ -894,29 +1019,15 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       activeNavigationUrlRef.current = urlObj.toString();
-      loadTimeoutRef.current = setTimeout(() => {
-        if (gen !== navGenRef.current) return;
-        navGenRef.current += 1;
-        trustResolveRef.current?.(false);
-        trustResolveRef.current = null;
-        setTrustPrompt(null);
-        const errorMessage = `Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`;
-        applyNavigationFailure(
-          localNavigationFailure(
-            "timeout",
-            "Connection timed out",
-            url,
-            "The server did not respond before the browser timeout expired.",
-            errorMessage,
-          ),
-        );
-      }, LOAD_TIMEOUT_MS);
+      armNavigationDeadline(gen, url);
       try {
         const upstreamProxyUrl = getGlobalHttpProxyUrl({ failClosed: true });
         if (urlObj.protocol === "https:") {
           const trusted = await fetchAndVerifyCert(upstreamProxyUrl);
           if (!trusted || gen !== navGenRef.current) return;
+          armNavigationDeadline(gen, url);
         }
+        setWaitingForTrust(false);
         // ── Universal proxy mediation (P1) ──
         // Every http/https tab now routes through `start_basic_auth_proxy`
         // regardless of whether Basic Auth is configured. Reasons:
@@ -941,10 +1052,7 @@ export function useWebBrowser(session: ConnectionSession) {
         const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
         if (proxySessionIdRef.current && proxyUrlRef.current) {
           const proxyBase = proxyUrlRef.current.replace(/\/+$/, "");
-          if (iframeRef.current) {
-            awaitingFrameGenerationRef.current = gen;
-            iframeRef.current.src = proxyBase + pagePath;
-          }
+          navigateFrame(proxyBase + pagePath, gen, proxySessionIdRef.current);
         } else {
           await stopProxy();
           if (gen !== navGenRef.current) return;
@@ -1025,32 +1133,33 @@ export function useWebBrowser(session: ConnectionSession) {
           }
           proxySessionIdRef.current = response.session_id;
           proxyUrlRef.current = protectedProxyUrl;
+          navigateFrame(
+            protectedProxyUrl.replace(/\/+$/, "") + pagePath,
+            gen,
+            response.session_id,
+          );
           if (
             settings.webRecording?.autoRecordWebSessions &&
             response.session_id
           ) {
-            try {
-              await webRecorder.startRecording(
+            // Recording is optional: its IPC cannot hold the page behind the
+            // navigation deadline or delay form injection/presentation.
+            void webRecorder
+              .startRecording(
                 response.session_id,
                 settings.webRecording?.recordHeaders ?? false,
-              );
-            } catch (err) {
-              console.error("Auto-record failed:", err);
-            }
+              )
+              .catch(() => {
+                console.error("Auto-record failed");
+              });
           }
           if (gen !== navGenRef.current) return;
-          if (iframeRef.current) {
-            const proxyBase = protectedProxyUrl.replace(/\/+$/, "");
-            awaitingFrameGenerationRef.current = gen;
-            iframeRef.current.src = proxyBase + pagePath;
-          }
         }
         setCurrentUrl(url);
         setInputUrl(url);
         setIsSecure(url.startsWith("https"));
         if (addToHistory) {
-          setHistory((prev) => [...prev.slice(0, historyIndex + 1), url]);
-          setHistoryIndex((prev) => prev + 1);
+          appendHistory(url);
         }
         markSessionConnected();
         debugLog("WebBrowser", "Navigation initiated", { url, hasAuth });
@@ -1085,7 +1194,7 @@ export function useWebBrowser(session: ConnectionSession) {
       targetResolution,
       stopProxy,
       readThemeTokens,
-      historyIndex,
+      appendHistory,
       fetchAndVerifyCert,
       settings.webRecording,
       webRecorder,
@@ -1093,7 +1202,10 @@ export function useWebBrowser(session: ConnectionSession) {
       session.hostname,
       clearNavigationFailure,
       applyNavigationFailure,
-      clearLoadingIndicator,
+      beginLoadingPresentation,
+      armNavigationDeadline,
+      navigateFrame,
+      session.protocol,
     ],
   );
 
@@ -1159,6 +1271,7 @@ export function useWebBrowser(session: ConnectionSession) {
         clearTimeout(loadingIndicatorTimerRef.current);
       pendingNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
+      pendingFrameRef.current = null;
       const id = proxySessionIdRef.current;
       proxySessionIdRef.current = "";
       proxyUrlRef.current = "";
@@ -1241,17 +1354,28 @@ export function useWebBrowser(session: ConnectionSession) {
       proxyUrlRef.current = protectedProxyUrl;
       setProxyAlive(true);
       clearNavigationFailure();
-      if (iframeRef.current) {
-        const urlObj = new URL(activeNavigationUrlRef.current);
-        iframeRef.current.src =
-          protectedProxyUrl.replace(/\/+$/, "") +
+      const urlObj = new URL(activeNavigationUrlRef.current);
+      pendingNavigationRef.current = true;
+      pendingInternalNavigationRef.current = false;
+      beginLoadingPresentation(gen);
+      armNavigationDeadline(gen, urlObj.toString());
+      navigateFrame(
+        protectedProxyUrl.replace(/\/+$/, "") +
           urlObj.pathname +
           urlObj.search +
-          urlObj.hash;
-      }
+          urlObj.hash,
+        gen,
+        resp.session_id,
+      );
       return true;
     },
-    [clearNavigationFailure, stopProxy],
+    [
+      clearNavigationFailure,
+      stopProxy,
+      armNavigationDeadline,
+      navigateFrame,
+      beginLoadingPresentation,
+    ],
   );
 
   useEffect(() => {
@@ -1344,7 +1468,155 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       if (event.origin !== expectedOrigin) return;
+      const targetUrlFor = (reported: URL) => {
+        // Assign components rather than resolving a path: a leading // is a
+        // legitimate path here, never permission to change the saved authority.
+        const target = new URL(baseTargetRef.current);
+        target.pathname = reported.pathname;
+        target.search = reported.search;
+        target.hash = reported.hash;
+        return target.toString();
+      };
 
+      if (
+        [
+          "proxy_document_start",
+          "proxy_navigation_start",
+          "proxy_dom_ready",
+        ].includes(event.data?.type)
+      ) {
+        const report = event.data;
+        if (
+          navigationFailureRef.current ||
+          report.version !== 1 ||
+          report.sessionId !== proxySessionIdRef.current ||
+          typeof report.documentToken !== "string" ||
+          !/^[0-9a-f]{32}$/.test(report.documentToken) ||
+          !Number.isSafeInteger(report.documentSequence) ||
+          report.documentSequence <= 0 ||
+          (report.navigationToken !== null &&
+            (typeof report.navigationToken !== "string" ||
+              !/^[0-9a-f]{32}$/.test(report.navigationToken))) ||
+          typeof report.url !== "string" ||
+          report.url.length > 16_384
+        )
+          return;
+        let reported: URL;
+        try {
+          reported = new URL(report.url);
+          if (
+            reported.origin !== expectedOrigin ||
+            reported.username ||
+            reported.password ||
+            reported.searchParams.has(NAVIGATION_QUERY_KEY)
+          )
+            return;
+        } catch {
+          return;
+        }
+        const url = reported.toString();
+        const current = currentDocumentRef.current;
+        const sameDocument =
+          current !== null &&
+          current.sessionId === report.sessionId &&
+          current.token === report.documentToken &&
+          current.sequence === report.documentSequence &&
+          current.navigationToken === report.navigationToken &&
+          current.url === url;
+        const startInternalNavigation = () => {
+          const generation = ++navGenRef.current;
+          pendingFrameRef.current = null;
+          pendingInternalNavigationRef.current = true;
+          pendingNavigationRef.current = true;
+          awaitingFrameGenerationRef.current = generation;
+          beginLoadingPresentation(generation);
+          armNavigationDeadline(generation, activeNavigationUrlRef.current);
+        };
+        if (report.type === "proxy_navigation_start") {
+          // A prior document may unload while the app is already checking a new
+          // certificate or navigating. It cannot supersede that generation.
+          if (
+            !sameDocument ||
+            current?.generation !== navGenRef.current ||
+            (pendingNavigationRef.current &&
+              pendingInternalNavigationRef.current)
+          )
+            return;
+          startInternalNavigation();
+          return;
+        }
+        if (report.type === "proxy_document_start") {
+          if (sameDocument) return;
+          if (
+            current !== null &&
+            current.sessionId === report.sessionId &&
+            report.documentSequence <= current.sequence
+          )
+            return;
+          const pending = pendingFrameRef.current;
+          if (report.navigationToken !== null) {
+            if (
+              !pending ||
+              pending.generation !== navGenRef.current ||
+              pending.sessionId !== report.sessionId ||
+              report.navigationToken !== pending.token ||
+              url !== pending.cleanUrl
+            )
+              return;
+          } else {
+            // Markerless documents are normal links/forms/redirects, never a
+            // replacement for an app-issued nonce or a pending trust decision.
+            if (
+              pendingNavigationRef.current &&
+              !pendingInternalNavigationRef.current
+            ) {
+              // A validated current app document may immediately redirect
+              // before DOM-ready. The newer document continues that load;
+              // an older frame or a trust-pending navigation cannot authorize it.
+              if (
+                current === null ||
+                current.generation !== navGenRef.current ||
+                current.sessionId !== report.sessionId
+              )
+                return;
+              pendingInternalNavigationRef.current = true;
+              pendingFrameRef.current = null;
+            }
+            if (!pendingNavigationRef.current) startInternalNavigation();
+          }
+          currentDocumentRef.current = {
+            generation: navGenRef.current,
+            sessionId: report.sessionId,
+            token: report.documentToken,
+            sequence: report.documentSequence,
+            navigationToken: report.navigationToken,
+            url,
+          };
+          const realUrl = targetUrlFor(reported);
+          activeNavigationUrlRef.current = realUrl;
+          setCurrentUrl(realUrl);
+          setInputUrl(realUrl);
+          setIsSecure(realUrl.startsWith("https:"));
+          if (report.navigationToken === null) appendHistory(realUrl);
+          return;
+        }
+        if (
+          !sameDocument ||
+          current?.generation !== navGenRef.current ||
+          !pendingNavigationRef.current ||
+          awaitingFrameGenerationRef.current !== navGenRef.current
+        )
+          return;
+        if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+        pendingNavigationRef.current = false;
+        pendingInternalNavigationRef.current = false;
+        awaitingFrameGenerationRef.current = null;
+        setIsLoading(false);
+        clearLoadingIndicator();
+        // DOM readiness is not successful authentication or full resource load.
+        return;
+      }
       const failure = parseProxyFailurePayload(
         event.data,
         proxySessionIdRef.current,
@@ -1356,27 +1628,35 @@ export function useWebBrowser(session: ConnectionSession) {
       }
 
       if (event.data?.type !== "proxy_navigate") return;
+      if (pendingNavigationRef.current || navigationFailureRef.current) return;
       const reportedUrl = boundedString(event.data.url, 16_384);
       if (!reportedUrl) return;
       try {
         const reportedProxyUrl = new URL(reportedUrl);
-        if (reportedProxyUrl.origin !== expectedOrigin) return;
-        const path = `${reportedProxyUrl.pathname}${reportedProxyUrl.search}${reportedProxyUrl.hash}`;
-        const realUrl = new URL(
-          path || "/",
-          `${baseTargetRef.current}/`,
-        ).toString();
+        if (
+          reportedProxyUrl.origin !== expectedOrigin ||
+          reportedProxyUrl.searchParams.has(NAVIGATION_QUERY_KEY)
+        )
+          return;
+        const realUrl = targetUrlFor(reportedProxyUrl);
         activeNavigationUrlRef.current = realUrl;
         setCurrentUrl(realUrl);
         setInputUrl(realUrl);
         setIsSecure(realUrl.startsWith("https:"));
+        appendHistory(realUrl);
       } catch {
         // Ignore malformed or cross-origin navigation reports.
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [applyNavigationFailure]);
+  }, [
+    applyNavigationFailure,
+    clearLoadingIndicator,
+    beginLoadingPresentation,
+    armNavigationDeadline,
+    appendHistory,
+  ]);
 
   // ── Navigation handlers ────────────────────────────────────
   const handleUrlSubmit = useCallback(
@@ -1415,6 +1695,7 @@ export function useWebBrowser(session: ConnectionSession) {
     }
     setIsLoading(false);
     pendingNavigationRef.current = false;
+    pendingInternalNavigationRef.current = false;
     awaitingFrameGenerationRef.current = null;
     clearLoadingIndicator();
     if (navigationFailureRef.current) return;
@@ -1452,21 +1733,31 @@ export function useWebBrowser(session: ConnectionSession) {
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
 
+  const handleHistoryJump = useCallback(
+    (index: number) => {
+      const previous = historyRef.current;
+      if (
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        index >= previous.entries.length ||
+        index === previous.index
+      )
+        return;
+      const next = { ...previous, index };
+      historyRef.current = next;
+      setNavigationHistory(next);
+      void navigateToUrl(previous.entries[index], false);
+    },
+    [navigateToUrl],
+  );
+
   const handleBack = useCallback(() => {
-    if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      navigateToUrl(history[newIndex], false);
-    }
-  }, [historyIndex, history, navigateToUrl]);
+    handleHistoryJump(historyRef.current.index - 1);
+  }, [handleHistoryJump]);
 
   const handleForward = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      navigateToUrl(history[newIndex], false);
-    }
-  }, [historyIndex, history, navigateToUrl]);
+    handleHistoryJump(historyRef.current.index + 1);
+  }, [handleHistoryJump]);
 
   const handleOpenInNewTab = useCallback(() => {
     if (!connection) return;
@@ -1904,16 +2195,17 @@ export function useWebBrowser(session: ConnectionSession) {
 
   const handleCancelLoading = useCallback(() => {
     navGenRef.current += 1;
+    pendingFrameRef.current = null;
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
     if (iframeRef.current) iframeRef.current.src = "about:blank";
     applyNavigationFailure(
       localNavigationFailure(
-        "timeout",
+        "navigation_cancelled",
         "Loading cancelled",
         currentUrl,
-        "The navigation was cancelled before the server finished responding.",
+        "The navigation was stopped before the page became ready.",
         `Loading ${currentUrl} was cancelled.`,
       ),
     );
@@ -1939,7 +2231,17 @@ export function useWebBrowser(session: ConnectionSession) {
     isSecure,
     canGoBack,
     canGoForward,
+    backHistory: history
+      .slice(0, historyIndex)
+      .map((url, index) => ({ url, index }))
+      .reverse(),
+    forwardHistory: history
+      .slice(historyIndex + 1)
+      .map((url, index) => ({ url, index: historyIndex + index + 1 })),
+    handleHistoryJump,
     iframeRef,
+    attachIframe,
+    pageInteractionBlocked: waitingForTrust || !!trustPrompt || !!loadError,
     handleUrlSubmit,
     handleIframeLoad,
     handleRefresh,

@@ -2,7 +2,7 @@ import type { SectionProps } from "./types";
 import { ErrorPage } from "./ERROR_BASE";
 import React from "react";
 import { WifiOff, RefreshCw } from "lucide-react";
-import { LoadingElement } from "../../ui/display/loadingElement";
+import progressStyles from "./NavigationProgress.module.css";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
   <div className="flex-1 relative" aria-busy={mgr.isLoading}>
@@ -31,27 +31,14 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
       mgr.showLoadingIndicator &&
       !mgr.trustPrompt &&
       !mgr.loadError && (
-        <div className="absolute inset-0 bg-[var(--color-background)] flex items-center justify-center z-10">
-          <div className="text-center">
-            <div className="flex justify-center mb-4">
-              <LoadingElement
-                size={48}
-                ariaLabel={`Loading ${mgr.currentUrl}`}
-              />
-            </div>
-            <p className="text-[var(--color-textSecondary)] mb-2">
-              Loading {mgr.currentUrl}...
-            </p>
-            <p className="text-[var(--color-textMuted)] text-xs">
-              Taking too long?{" "}
-              <button
-                onClick={mgr.handleCancelLoading}
-                className="text-primary hover:text-primary underline"
-              >
-                Cancel
-              </button>
-            </p>
-          </div>
+        <div
+          className={progressStyles.track}
+          data-testid="web-navigation-progress"
+          role="progressbar"
+          aria-label="Loading page"
+          aria-valuetext="Waiting for the page to become ready"
+        >
+          <span className={progressStyles.segment} aria-hidden="true" />
         </div>
       )}
 
@@ -60,14 +47,20 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
         iframeRef null for that navigation, so the replacement frame reopened
         at about:blank instead of the requested page. */}
     <iframe
-      ref={mgr.iframeRef}
+      ref={mgr.attachIframe ?? mgr.iframeRef}
       src="about:blank"
       className={`h-full w-full border-0 ${
         mgr.loadError ? "invisible pointer-events-none" : ""
       }`}
       aria-hidden={mgr.loadError ? true : undefined}
-      inert={mgr.isLoading || !!mgr.loadError}
-      tabIndex={mgr.isLoading || mgr.loadError ? -1 : undefined}
+      inert={
+        !!mgr.pageInteractionBlocked || !!mgr.trustPrompt || !!mgr.loadError
+      }
+      tabIndex={
+        mgr.pageInteractionBlocked || mgr.trustPrompt || mgr.loadError
+          ? -1
+          : undefined
+      }
       title={mgr.session.name}
       onLoad={mgr.handleIframeLoad}
       // Cookie-backed managed UIs require same-origin behavior. The proxy

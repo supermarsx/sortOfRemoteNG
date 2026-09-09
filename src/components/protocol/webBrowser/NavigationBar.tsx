@@ -1,7 +1,7 @@
 import type { SectionProps } from "./types";
 import RecordingControls from "./RecordingControls";
 import SecurityIcon, { AuthIcon } from "./SecurityIcon";
-import React from "react";
+import React, { useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,12 +14,37 @@ import {
   Copy,
   Download,
   ClipboardCopy,
+  X,
+  ChevronDown,
 } from "lucide-react";
 import RDPTotpPanel from "../../rdp/RDPTotpPanel";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
 import { useCertificateTrustRecord } from "../../../hooks/security/useCertificateTrustRecord";
+import { MenuSurface } from "../../ui/overlays/MenuSurface";
 
 const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
+  const [historyMenu, setHistoryMenu] = useState<{
+    direction: "back" | "forward";
+    x: number;
+    y: number;
+  } | null>(null);
+  const backMenuRef = useRef<HTMLButtonElement>(null);
+  const forwardMenuRef = useRef<HTMLButtonElement>(null);
+  const historyEntries =
+    historyMenu?.direction === "back"
+      ? (mgr.backHistory ?? [])
+      : (mgr.forwardHistory ?? []);
+  const openHistory = (
+    direction: "back" | "forward",
+    button: HTMLButtonElement,
+  ) => {
+    const rect = button.getBoundingClientRect();
+    setHistoryMenu((previous) =>
+      previous?.direction === direction
+        ? null
+        : { direction, x: rect.left, y: rect.bottom + 4 },
+    );
+  };
   const trust = useCertificateTrustRecord(
     mgr.showCertPopup && mgr.isSecure,
     mgr.certificateHost,
@@ -40,8 +65,22 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
               : "text-[var(--color-textMuted)] cursor-not-allowed"
           }`}
           title="Back"
+          aria-label="Back"
         >
           <ArrowLeft size={16} />
+        </button>
+        <button
+          ref={backMenuRef}
+          type="button"
+          onClick={(event) => openHistory("back", event.currentTarget)}
+          disabled={!mgr.canGoBack}
+          title="Back history"
+          aria-label="Back history"
+          aria-haspopup="menu"
+          aria-expanded={historyMenu?.direction === "back"}
+          className="sor-icon-btn-sm px-1 disabled:opacity-40"
+        >
+          <ChevronDown size={12} />
         </button>
         <button
           onClick={mgr.handleForward}
@@ -52,17 +91,67 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
               : "text-[var(--color-textMuted)] cursor-not-allowed"
           }`}
           title="Forward"
+          aria-label="Forward"
         >
           <ArrowRight size={16} />
         </button>
         <button
-          onClick={mgr.handleRefresh}
-          className="sor-icon-btn-sm"
-          title="Refresh"
+          ref={forwardMenuRef}
+          type="button"
+          onClick={(event) => openHistory("forward", event.currentTarget)}
+          disabled={!mgr.canGoForward}
+          title="Forward history"
+          aria-label="Forward history"
+          aria-haspopup="menu"
+          aria-expanded={historyMenu?.direction === "forward"}
+          className="sor-icon-btn-sm px-1 disabled:opacity-40"
         >
-          <RotateCcw size={16} />
+          <ChevronDown size={12} />
+        </button>
+        <button
+          onClick={mgr.isLoading ? mgr.handleCancelLoading : mgr.handleRefresh}
+          className="sor-icon-btn-sm"
+          title={mgr.isLoading ? "Stop loading" : "Refresh"}
+          aria-label={mgr.isLoading ? "Stop loading" : "Refresh"}
+          type="button"
+        >
+          {mgr.isLoading ? <X size={16} /> : <RotateCcw size={16} />}
         </button>
       </div>
+      <MenuSurface
+        isOpen={historyMenu !== null}
+        onClose={() => setHistoryMenu(null)}
+        position={historyMenu}
+        ignoreRefs={[backMenuRef, forwardMenuRef]}
+        ariaLabel={
+          historyMenu?.direction === "back" ? "Back history" : "Forward history"
+        }
+        className="w-80 max-w-[calc(100vw-1rem)] max-h-[min(60vh,24rem)] overflow-y-auto rounded-lg py-1"
+      >
+        <div className="px-3 py-2 text-xs text-[var(--color-textMuted)]">
+          Jump {historyMenu?.direction === "back" ? "back" : "forward"} to a
+          page
+        </div>
+        {historyEntries.map((entry, distance) => (
+          <button
+            key={entry.index}
+            type="button"
+            role="menuitem"
+            className="sor-menu-item gap-2 py-2 text-xs"
+            title={entry.url}
+            aria-label={`${distance + 1} ${distance === 0 ? "page" : "pages"} ${historyMenu?.direction === "back" ? "back" : "forward"}: ${entry.url}`}
+            onClick={() => {
+              mgr.handleHistoryJump(entry.index);
+              setHistoryMenu(null);
+            }}
+          >
+            <span className="shrink-0 tabular-nums text-[var(--color-textMuted)]">
+              {distance + 1}
+            </span>
+            <span className="min-w-0 truncate">{entry.url}</span>
+          </button>
+        ))}
+      </MenuSurface>
 
       {/* URL Bar */}
       <form onSubmit={mgr.handleUrlSubmit} className="flex-1 flex items-center">

@@ -1,9 +1,12 @@
 import { createRef } from "react";
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ErrorPage } from "../../src/components/protocol/webBrowser/ERROR_BASE";
 import ContentArea from "../../src/components/protocol/webBrowser/ContentArea";
+import NavigationBar from "../../src/components/protocol/webBrowser/NavigationBar";
+import progressStyles from "../../src/components/protocol/webBrowser/NavigationProgress.module.css";
 import {
   parseProxyFailurePayload,
   type ProxyNavigationFailure,
@@ -106,7 +109,7 @@ describe("proxy failure bridge validation", () => {
 });
 
 describe("embedded web failure recovery screen", () => {
-  it("retains the same visible but inert frame during grace and restores interaction on completion", () => {
+  it("keeps page and bookmarks interactive beneath an indeterminate top progress line", () => {
     const mgr = manager({
       loadError: "",
       navigationFailure: null,
@@ -117,21 +120,80 @@ describe("embedded web failure recovery screen", () => {
     const { container, rerender } = render(<ContentArea mgr={mgr} />);
     const iframe = container.querySelector("iframe")!;
     expect(iframe).not.toHaveClass("invisible");
-    expect(iframe).toHaveAttribute("inert");
-    expect(iframe).toHaveAttribute("tabindex", "-1");
-    expect(screen.queryByText(/Taking too long/)).toBeNull();
+    expect(iframe).not.toHaveAttribute("inert");
+    expect(iframe).not.toHaveAttribute("tabindex", "-1");
+    expect(screen.queryByTestId("web-navigation-progress")).toBeNull();
     rerender(<ContentArea mgr={{ ...mgr, showLoadingIndicator: true }} />);
-    expect(screen.getByText(/Taking too long/)).toBeVisible();
+    expect(screen.getByTestId("web-navigation-progress")).toBeVisible();
+    expect(screen.getByTestId("web-navigation-progress")).not.toHaveClass(
+      "inset-0",
+    );
+    const progress = screen.getByRole("progressbar", { name: "Loading page" });
+    expect(progress).toHaveClass(progressStyles.track);
+    expect(progress.firstElementChild).toHaveClass(progressStyles.segment);
+    expect(progress).not.toHaveAttribute("aria-valuenow");
+    expect(iframe).not.toHaveAttribute("inert");
     expect(container.querySelector("iframe")).toBe(iframe);
     rerender(<ContentArea mgr={{ ...mgr, isLoading: false }} />);
     expect(iframe).not.toHaveAttribute("inert");
-    expect(screen.queryByText(/Taking too long/)).toBeNull();
+    expect(screen.queryByTestId("web-navigation-progress")).toBeNull();
+  });
+  it("uses only smooth transform/opacity animation and a static visible reduced-motion line", () => {
+    const css = readFileSync(
+      "src/components/protocol/webBrowser/NavigationProgress.module.css",
+      "utf8",
+    );
+    expect(css).toContain("height: 2px");
+    expect(css).toContain("pointer-events: none");
+    expect(css).toMatch(/@keyframes travel[\s\S]*?transform: translateX/);
+    expect(css).toMatch(/@keyframes pulse[\s\S]*?opacity:/);
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation: none;[\s\S]*?transform: none;[\s\S]*?width: 100%;[\s\S]*?opacity: 1;/,
+    );
+  });
+  it("opens bounded history menus, jumps directly, and exposes Stop loading in the toolbar", () => {
+    const jump = vi.fn();
+    const stop = vi.fn();
+    const mgr = manager({
+      loadError: "",
+      isLoading: true,
+      canGoForward: true,
+      backHistory: [
+        { url: "http://fixture.invalid/previous", index: 2 },
+        { url: "http://fixture.invalid/oldest", index: 0 },
+      ],
+      forwardHistory: [{ url: "http://fixture.invalid/next", index: 4 }],
+      handleHistoryJump: jump,
+      handleCancelLoading: stop,
+      webRecorder: { isRecording: false } as WebBrowserMgr["webRecorder"],
+      displayRecorder: {
+        state: { isRecording: false },
+      } as WebBrowserMgr["displayRecorder"],
+      proxySessionIdRef: { current: "fixture" },
+      totpConfigs: [],
+    });
+    render(<NavigationBar mgr={mgr} />);
+    fireEvent.click(screen.getByRole("button", { name: "Stop loading" }));
+    expect(stop).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Back history" }));
+    const menu = screen.getByRole("menu", { name: "Back history" });
+    expect(menu).toHaveClass("overflow-y-auto");
+    fireEvent.click(
+      screen.getByRole("menuitem", {
+        name: /2 pages back: http:\/\/fixture.invalid\/oldest/,
+      }),
+    );
+    expect(jump).toHaveBeenCalledWith(0);
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Forward history" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
   });
   it("never puts a delayed spinner over a trust prompt or error", () => {
     const mgr = manager({ isLoading: true, showLoadingIndicator: true });
     const { rerender } = render(<ContentArea mgr={mgr} />);
     expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
-    expect(screen.queryByText(/Taking too long/)).toBeNull();
+    expect(screen.queryByTestId("web-navigation-progress")).toBeNull();
     rerender(
       <ContentArea
         mgr={{
@@ -144,7 +206,51 @@ describe("embedded web failure recovery screen", () => {
         }}
       />,
     );
-    expect(screen.queryByText(/Taking too long/)).toBeNull();
+    expect(screen.queryByTestId("web-navigation-progress")).toBeNull();
+  });
+  it("distinguishes local document readiness and cancellation from a real network timeout", () => {
+    const { rerender } = render(
+      <ErrorPage
+        mgr={manager({
+          navigationFailure: {
+            ...failure,
+            kind: "page_load_timeout",
+            title: "Page did not become ready",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("Page readiness was not confirmed")).toBeVisible();
+    expect(
+      screen.getByText(/The server may already have responded/),
+    ).toBeVisible();
+    expect(screen.queryByText("The server took too long")).toBeNull();
+    rerender(
+      <ErrorPage
+        mgr={manager({
+          navigationFailure: {
+            ...failure,
+            kind: "navigation_cancelled",
+            title: "Loading cancelled",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("Navigation stopped")).toBeVisible();
+    expect(screen.queryByText("The server took too long")).toBeNull();
+    rerender(
+      <ErrorPage
+        mgr={manager({
+          navigationFailure: {
+            ...failure,
+            kind: "timeout",
+            title: "Connection timed out",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("The server took too long")).toBeVisible();
+    expect(screen.queryByText("Page readiness was not confirmed")).toBeNull();
   });
   it("distinguishes Trust Center failures and labels anonymous diagnostic authentication challenges", () => {
     render(
