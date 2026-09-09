@@ -23,7 +23,7 @@
 //!   unlock. Auto-lock policies in Phase 4 call this on idle.
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
 use tokio::sync::RwLock;
@@ -39,6 +39,8 @@ use crate::envelope::MasterKeyStorage;
 pub struct EncryptionState {
     inner: Arc<RwLock<Option<MasterDek>>>,
     ever_installed: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+    pub(crate) artifact_policy: Arc<crate::artifact_policy::PolicyRuntime>,
 }
 
 impl EncryptionState {
@@ -60,6 +62,8 @@ impl EncryptionState {
         // Drop replaces the value with None; the old MasterDek's
         // Zeroizing field zeroes itself on Drop.
         *guard = None;
+        crate::log_adapter::release_all_artifact_previews();
+        self.generation.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Replace the in-memory DEK. Used by [`setup`] and by every
@@ -69,12 +73,94 @@ impl EncryptionState {
         let mut guard = self.inner.write().await;
         self.ever_installed.store(true, Ordering::Release);
         *guard = Some(dek);
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        drop(guard);
+        crate::artifact_policy::refresh(self).await;
+    }
+
+    /// Must be called inside the global writer/key barrier. The synchronous
+    /// cache supports trust and logger callbacks without blocking Tokio.
+    pub fn resolve_write_policy(
+        &self,
+        kind: ArtifactKind,
+        legacy_encrypt: bool,
+    ) -> Result<bool, String> {
+        let unlocked = self
+            .with_sub_key_sync(kind, |key| key.is_some())
+            .map_err(str::to_string)?;
+        let cache = self
+            .artifact_policy
+            .0
+            .read()
+            .map_err(|_| "artifact policy state poisoned")?;
+        if cache.recovery_required {
+            return Err("artifact transition requires recovery; writes are blocked".into());
+        }
+        if let Some(error) = &cache.error {
+            return Err(error.clone());
+        }
+        if !unlocked && (self.has_installed_key() || cache.configured_profile) {
+            return Err("master encryption is locked; artifact writes are blocked".into());
+        }
+        let encrypt = match cache.document.overrides.get(&kind) {
+            Some(crate::artifact_policy::ProtectionMode::Encrypted) => true,
+            Some(crate::artifact_policy::ProtectionMode::Plaintext) => false,
+            None => legacy_encrypt,
+        };
+        if encrypt && !unlocked {
+            return Err("unlock the master key before encrypted writes".into());
+        }
+        Ok(encrypt)
+    }
+
+    pub fn artifact_policy_document(
+        &self,
+    ) -> Result<crate::artifact_policy::PolicyDocument, String> {
+        let cache = self
+            .artifact_policy
+            .0
+            .read()
+            .map_err(|_| "artifact policy state poisoned")?;
+        if let Some(error) = &cache.error {
+            return Err(error.clone());
+        }
+        Ok(cache.document.clone())
+    }
+
+    pub fn artifact_policy_root(&self) -> Option<std::path::PathBuf> {
+        self.artifact_policy.0.read().ok()?.root.clone()
+    }
+
+    pub fn artifact_policy_error(&self) -> Option<String> {
+        self.artifact_policy
+            .0
+            .read()
+            .map(|c| c.error.clone())
+            .unwrap_or_else(|_| Some("artifact policy state poisoned".into()))
+    }
+
+    pub fn artifact_recovery_required(&self) -> bool {
+        self.artifact_policy
+            .0
+            .read()
+            .map(|c| c.recovery_required)
+            .unwrap_or(true)
+    }
+
+    pub fn set_artifact_recovery_required(&self, required: bool) {
+        if let Ok(mut cache) = self.artifact_policy.0.write() {
+            cache.recovery_required = required;
+        }
     }
 
     /// A later lock must not turn a previously encrypted runtime into a fresh
     /// plaintext profile merely because an artifact has not been created yet.
     pub fn has_installed_key(&self) -> bool {
         self.ever_installed.load(Ordering::Acquire)
+    }
+
+    pub fn key_generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
     }
 
     /// Derive a sub-key for the given artifact. Returns `None` when the
@@ -128,6 +214,15 @@ impl EncryptionState {
         let copy = MasterDek::from_bytes(dek.bytes_for_password_wrap())?;
         let cloned = Self::new();
         cloned.install(copy).await;
+        if let (Ok(source), Ok(mut target)) = (
+            self.artifact_policy.0.read(),
+            cloned.artifact_policy.0.write(),
+        ) {
+            *target = source.clone();
+            // A key snapshot carries the current decisions, but must not reload
+            // the live receipt while rotation stages a different master key.
+            target.root = None;
+        }
         Some(cloned)
     }
 

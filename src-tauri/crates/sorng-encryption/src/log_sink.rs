@@ -5,10 +5,8 @@
 //! `redact_sensitive_lines` filter; combines them into a buffered
 //! sink that can be driven by any `log::Log` adapter.
 //!
-//! **Not yet** wired into `tauri_plugin_log` — the plugin owns its
-//! own file writer and replacing it is a separate, riskier commit.
-//! This module ships the sink primitive plus tests so the next
-//! commit (or a downstream user) can swap it in confidently.
+//! The application tracing subscriber forwards release and debug events via
+//! `log_adapter::tracing_writer`; no competing global logger is installed.
 //!
 //! ## Why a buffered sink, not per-line encrypt
 //!
@@ -136,6 +134,21 @@ impl EncryptedLogSink {
     /// 0. The next flush after unlock drains everything in one
     /// envelope.
     pub async fn flush(&self) -> Result<usize, FlushError> {
+        if crate::log_adapter::artifact_preview_paused() {
+            return Ok(0);
+        }
+        // Never wait while a protocol logger may already hold a service lock.
+        // Keep the buffer untouched during a representation/key transition.
+        let Ok(_coordinator) = crate::settings_coordinator::try_lock() else {
+            return Ok(0);
+        };
+        if !self.state.is_unlocked().await {
+            return Ok(0);
+        }
+        let encrypt = self
+            .state
+            .resolve_write_policy(crate::ArtifactKind::Logs, true)
+            .map_err(FlushError::Encrypt)?;
         // Take the buffer out of the mutex to release it before
         // awaiting on encryption.
         let plaintext = {
@@ -159,40 +172,74 @@ impl EncryptedLogSink {
             return Ok(0);
         }
 
-        let payload = if self.redact {
-            let text =
-                std::str::from_utf8(&plaintext).map_err(|e| FlushError::Utf8(e.to_string()))?;
-            logs::redact_sensitive_lines(text).into_bytes()
-        } else {
-            plaintext
-        };
+        let result = async {
+            let payload = if self.redact {
+                let text =
+                    std::str::from_utf8(&plaintext).map_err(|e| FlushError::Utf8(e.to_string()))?;
+                logs::redact_sensitive_lines(text).into_bytes()
+            } else {
+                plaintext.clone()
+            };
 
-        let blob = logs::write(
-            &self.state,
-            &payload,
-            MasterKeyStorage::Vault,
-            Argon2Params::OWASP,
-            [0u8; SALT_LEN],
-        )
-        .await
-        .map_err(|e| FlushError::Encrypt(e.to_string()))?;
+            let blob = if encrypt {
+                logs::write(
+                    &self.state,
+                    &payload,
+                    MasterKeyStorage::Vault,
+                    Argon2Params::OWASP,
+                    [0u8; SALT_LEN],
+                )
+                .await
+                .map_err(|e| FlushError::Encrypt(e.to_string()))?
+            } else {
+                payload
+            };
 
-        // Append to today's file. Multiple flushes per day concatenate
-        // envelopes; each envelope is independently decryptable.
-        std::fs::create_dir_all(&self.dir)
-            .map_err(|e| FlushError::Io(format!("mkdir: {}", e)))?;
-        let path = self.dir.join(format!("encrypted-{}.log.enc", today_utc_date()));
-        use std::io::Write;
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(|e| FlushError::Io(format!("open {}: {}", path.display(), e)))?;
-        f.write_all(&blob)
-            .map_err(|e| FlushError::Io(format!("write: {}", e)))?;
-        f.flush().map_err(|e| FlushError::Io(format!("fsync: {}", e)))?;
+            // Append to today's file. Multiple flushes per day concatenate
+            // envelopes; each envelope is independently decryptable.
+            std::fs::create_dir_all(&self.dir)
+                .map_err(|e| FlushError::Io(format!("mkdir: {}", e)))?;
+            let suffix = if encrypt { ".log.enc" } else { ".log" };
+            let path = self
+                .dir
+                .join(format!("encrypted-{}{suffix}", today_utc_date()));
+            crate::artifact_transaction::validate_regular_path(&self.dir, &path, true)
+                .map_err(FlushError::Io)?;
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .map_err(|e| FlushError::Io(format!("open {}: {}", path.display(), e)))?;
+            let original_len = f
+                .metadata()
+                .map_err(|e| FlushError::Io(e.to_string()))?
+                .len();
+            if let Err(error) = f.write_all(&blob).and_then(|_| f.sync_all()) {
+                f.set_len(original_len)
+                    .and_then(|_| f.sync_all())
+                    .map_err(|e| {
+                        FlushError::Io(format!(
+                            "log append failed and rollback requires repair: {e}"
+                        ))
+                    })?;
+                return Err(FlushError::Io(error.to_string()));
+            }
 
-        Ok(len)
+            Ok(len)
+        }
+        .await;
+        if result.is_err() {
+            let mut buffer = self.buffer.lock().expect("log buffer mutex poisoned");
+            let mut restored = plaintext;
+            restored.extend_from_slice(&buffer);
+            if restored.len() > self.max_buffer_bytes {
+                let start = restored.len() - self.max_buffer_bytes;
+                restored.drain(..start);
+            }
+            *buffer = restored;
+        }
+        result
     }
 
     /// Current in-memory buffer size. Tests use this to verify
@@ -242,6 +289,9 @@ fn days_to_ymd(days: i64) -> (i32, u32, u32) {
 }
 
 #[cfg(test)]
+pub(crate) static LOG_FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::dek::MasterDek;
@@ -255,6 +305,7 @@ mod tests {
 
     #[tokio::test]
     async fn submit_then_flush_writes_envelope_file() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = unlocked(7).await;
         let sink = EncryptedLogSink::new(state, tmp.path().to_path_buf(), false);
@@ -277,6 +328,7 @@ mod tests {
 
     #[tokio::test]
     async fn locked_state_preserves_buffer_until_unlock() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = Arc::new(EncryptionState::new()); // locked
         let sink = EncryptedLogSink::new(state.clone(), tmp.path().to_path_buf(), false);
@@ -291,7 +343,9 @@ mod tests {
             "nothing must be written while locked"
         );
         // Unlock and flush again — file should appear.
-        state.install(MasterDek::from_bytes(&[1u8; 32]).unwrap()).await;
+        state
+            .install(MasterDek::from_bytes(&[1u8; 32]).unwrap())
+            .await;
         let n = sink.flush().await.unwrap();
         assert!(n > 0);
         assert!(std::fs::read_dir(tmp.path()).unwrap().next().is_some());
@@ -299,9 +353,10 @@ mod tests {
 
     #[tokio::test]
     async fn flush_threshold_signal() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let state = unlocked(5).await;
-        let sink = EncryptedLogSink::new(state, std::env::temp_dir(), false)
-            .with_flush_threshold(50);
+        let sink =
+            EncryptedLogSink::new(state, std::env::temp_dir(), false).with_flush_threshold(50);
         // First short submit: no signal.
         assert!(!sink.submit("short"));
         // Cumulative size crosses 50 bytes → signal.
@@ -310,13 +365,16 @@ mod tests {
 
     #[tokio::test]
     async fn redaction_runs_pre_encrypt() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = unlocked(9).await;
         let sink = EncryptedLogSink::new(state.clone(), tmp.path().to_path_buf(), true);
         sink.submit("INFO bearer token: Bearer abcdef1234567890");
         sink.flush().await.unwrap();
         // Decrypt the file and confirm the bearer-token redactor ran.
-        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let path = tmp
+            .path()
+            .join(format!("encrypted-{}.log.enc", today_utc_date()));
         let bytes = std::fs::read(&path).unwrap();
         // Each flush is one envelope; read whichever envelope length
         // we just wrote (currently one).
@@ -332,10 +390,11 @@ mod tests {
 
     #[tokio::test]
     async fn overflow_drops_oldest_half_with_sentinel() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = unlocked(11).await;
-        let sink =
-            EncryptedLogSink::new(state, tmp.path().to_path_buf(), false).with_max_buffer_bytes(200);
+        let sink = EncryptedLogSink::new(state, tmp.path().to_path_buf(), false)
+            .with_max_buffer_bytes(200);
         for i in 0..500 {
             sink.submit(&format!("line {}", i));
         }
@@ -346,7 +405,9 @@ mod tests {
         // The flushed file must contain the overflow sentinel.
         sink.flush().await.unwrap();
         // Decrypt to confirm.
-        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let path = tmp
+            .path()
+            .join(format!("encrypted-{}.log.enc", today_utc_date()));
         let bytes = std::fs::read(&path).unwrap();
         let s = EncryptionState::new();
         s.install(MasterDek::from_bytes(&[11u8; 32]).unwrap()).await;
@@ -379,6 +440,7 @@ mod tests {
 
     #[tokio::test]
     async fn overflow_at_real_default_cap_drops_oldest_preserves_newest() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = unlocked(13).await;
         // No `with_max_buffer_bytes` override — we want the real cap.
@@ -410,7 +472,9 @@ mod tests {
         // Drain through a real flush so we can verify what *survived*
         // the overflow on disk, not just the in-memory residue.
         sink.flush().await.unwrap();
-        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let path = tmp
+            .path()
+            .join(format!("encrypted-{}.log.enc", today_utc_date()));
         let bytes = std::fs::read(&path).unwrap();
         let s = EncryptionState::new();
         s.install(MasterDek::from_bytes(&[13u8; 32]).unwrap()).await;
@@ -459,7 +523,10 @@ mod tests {
         // drain preserves submission order, only chopping from the
         // front. This catches accidental reordering or double-drain
         // regressions.
-        let last_line = text.lines().last().expect("plaintext has at least one line");
+        let last_line = text
+            .lines()
+            .last()
+            .expect("plaintext has at least one line");
         assert!(
             last_line.starts_with(&last_marker),
             "expected last line to start with {:?}, got {:?}",
@@ -470,6 +537,7 @@ mod tests {
 
     #[tokio::test]
     async fn repeated_overflows_keep_buffer_bounded() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         // Simulates "user locked the vault and walked away" — log lines
         // keep arriving for hours, flush is never called, and we must
         // not OOM the process no matter how many times the cap is
@@ -520,9 +588,13 @@ mod tests {
         // in the buffer at the end. We deliberately do *not* expose a
         // `pub` peek API — the flush+decrypt route mirrors what the
         // operator would do during incident review.
-        state.install(MasterDek::from_bytes(&[17u8; 32]).unwrap()).await;
+        state
+            .install(MasterDek::from_bytes(&[17u8; 32]).unwrap())
+            .await;
         sink.flush().await.unwrap();
-        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let path = tmp
+            .path()
+            .join(format!("encrypted-{}.log.enc", today_utc_date()));
         let bytes = std::fs::read(&path).unwrap();
         let (_h, plain) = crate::envelope::read_envelope(
             &state.sub_key(crate::ArtifactKind::Logs).await.unwrap(),
@@ -567,6 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_unlock_drain_preserves_newest_content() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         // Pins the "locked → ingest under overflow → unlock → flush"
         // path: even when the locked window triggered drops, the
         // unlock+flush must still surface the *newest* content (the
@@ -586,13 +659,17 @@ mod tests {
 
         // Unlock then flush — the same sequence a user would hit when
         // re-entering their passphrase.
-        state.install(MasterDek::from_bytes(&[23u8; 32]).unwrap()).await;
+        state
+            .install(MasterDek::from_bytes(&[23u8; 32]).unwrap())
+            .await;
         let n = sink.flush().await.unwrap();
         assert!(n > 0, "post-unlock flush must drain something");
 
         // Exactly one envelope file should exist at today's date —
         // confirms we didn't accidentally double-write or rotate.
-        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let path = tmp
+            .path()
+            .join(format!("encrypted-{}.log.enc", today_utc_date()));
         let bytes = std::fs::read(&path).unwrap();
         let (_h, plain) = crate::envelope::read_envelope(
             &state.sub_key(crate::ArtifactKind::Logs).await.unwrap(),
@@ -622,6 +699,7 @@ mod tests {
 
     #[test]
     fn sustained_pressure_does_not_panic_or_grow_unbounded() {
+        let _fixture = LOG_FIXTURE.blocking_lock();
         // Concurrency stress: four producer threads slam `submit` while
         // the encryption state is locked, so every line piles into the
         // buffer and overflow is hit many, many times. We're proving
@@ -649,12 +727,7 @@ mod tests {
                         // never produce the same line content. Width
                         // is roughly 64 bytes for parity with the
                         // other gap-4 tests.
-                        sink.submit(&format!(
-                            "line t{:02} {:08} {}",
-                            tid,
-                            i,
-                            "x".repeat(44)
-                        ));
+                        sink.submit(&format!("line t{:02} {:08} {}", tid, i, "x".repeat(44)));
                     }
                 })
             })
@@ -684,12 +757,16 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            state.install(MasterDek::from_bytes(&[29u8; 32]).unwrap()).await;
+            state
+                .install(MasterDek::from_bytes(&[29u8; 32]).unwrap())
+                .await;
             let n = sink.flush().await.unwrap();
             assert!(n > 0, "flush after concurrent ingest must be non-empty");
         });
 
-        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let path = tmp
+            .path()
+            .join(format!("encrypted-{}.log.enc", today_utc_date()));
         let bytes = std::fs::read(&path).unwrap();
         assert!(!bytes.is_empty(), "envelope file must be non-empty");
         // Quick sanity: the file decrypts cleanly. We don't pin which

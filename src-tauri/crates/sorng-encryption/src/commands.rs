@@ -827,6 +827,7 @@ pub async fn encryption_migrate_settings(
 ) -> Result<MigrationReport, String> {
     let dir = ensure_app_data_dir(&app)?;
     let _settings_guard = crate::settings_coordinator::lock().await;
+    crate::artifact_policy::require_legacy_mutation_allowed(&state)?;
     if !state.is_unlocked().await {
         return Err("state is locked; unlock before migrating".into());
     }
@@ -956,6 +957,7 @@ pub async fn disable_settings_inner(
     state: &EncryptionState,
 ) -> Result<DisableSettingsReport, String> {
     let _settings_guard = crate::settings_coordinator::lock().await;
+    crate::artifact_policy::require_legacy_mutation_allowed(state)?;
     disable_settings_locked_with(dir, state, &FilesystemSettingsTransitionIo).await
 }
 
@@ -1324,6 +1326,9 @@ pub async fn encryption_import_portable_dek(
     let _coordinator = crate::settings_coordinator::lock().await;
     let password = Zeroizing::new(password);
     let dir = ensure_app_data_dir(&app)?;
+    if crate::artifact_transaction::has_pending(&dir)? {
+        return Err("recover the artifact transition before replacing the master key".into());
+    }
     let source = PathBuf::from(&source_path);
     require_renderer_scoped_path(&app, &source)?;
     let scan = portable_import_guard(&dir, acknowledge_local_data_loss.unwrap_or(false))?;
@@ -1416,6 +1421,39 @@ where
     W: Fn(Option<Zeroizing<Vec<u8>>>) -> F,
     F: std::future::Future<Output = Result<(), String>>,
 {
+    let policy_path = path
+        .parent()
+        .ok_or("DEK receipt has no parent")?
+        .join(crate::artifact_policy::POLICY_FILENAME);
+    crate::artifact_transaction::validate_regular_path(path.parent().unwrap(), &policy_path, true)?;
+    let previous_policy = if policy_path.try_exists().map_err(|e| e.to_string())? {
+        Some(read_bounded_regular_file(
+            &policy_path,
+            crate::artifact_policy::MAX_POLICY_BYTES,
+        )?)
+    } else {
+        None
+    };
+    let replacement_policy = if let Some(bytes) = &previous_policy {
+        let replacement = EncryptionState::new();
+        replacement
+            .install(
+                MasterDek::from_bytes(dek.bytes_for_password_wrap())
+                    .ok_or("invalid imported master key")?,
+            )
+            .await;
+        // Locked recovery can import the SAME key; never reset policy when
+        // neither current nor candidate key authenticates the existing receipt.
+        let policy = match crate::artifact_policy::decode(state, bytes).await {
+            Ok(policy) => policy,
+            Err(_) => crate::artifact_policy::decode(&replacement, bytes)
+                .await
+                .map_err(|_| "neither current nor imported key authenticates artifact policy")?,
+        };
+        Some(crate::artifact_policy::encode(&replacement, &policy).await?)
+    } else {
+        None
+    };
     let previous = if path
         .try_exists()
         .map_err(|_| "could not inspect existing DEK wrapper")?
@@ -1431,10 +1469,17 @@ where
             vault_attempted = true;
             write_vault(Some(Zeroizing::new(dek.bytes_for_password_wrap().to_vec()))).await?;
         }
+        if let Some(bytes) = &replacement_policy {
+            io.write(&policy_path, bytes)?;
+        }
         finish()
     }
     .await;
     if let Err(error) = outcome {
+        let policy_rollback = match &previous_policy {
+            Some(bytes) => io.write(&policy_path, bytes),
+            None => Ok(()),
+        };
         let rollback = match previous {
             Some(bytes) => io.write(path, &bytes),
             None if path.try_exists().unwrap_or(true) => io.remove(path),
@@ -1446,6 +1491,10 @@ where
                 format!("{error}; original DEK wrapper rollback failed; preserve recovery receipts")
             }
         };
+        if policy_rollback.is_err() {
+            error
+                .push_str("; original artifact policy rollback failed; preserve recovery receipts");
+        }
         if vault_attempted && write_vault(old_vault.flatten()).await.is_err() {
             error.push_str(
                 "; original OS vault receipt rollback failed; preserve recovery receipts",
@@ -1493,6 +1542,7 @@ mod tests {
 
     #[tokio::test]
     async fn requested_lock_waits_for_rotation_then_remains_locked() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         let state = EncryptionState::new();
         state.install(MasterDek::generate()).await;
         let coordinator = crate::settings_coordinator::lock().await;
@@ -1513,6 +1563,7 @@ mod tests {
 
     #[tokio::test]
     async fn portable_import_restores_receipts_and_live_key_on_handled_failures() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         for failure in ["file", "vault", "audit"] {
             let dir = tempdir().unwrap();
             let path = dir.path().join("dek.enc");
@@ -1565,6 +1616,7 @@ mod tests {
 
     #[tokio::test]
     async fn portable_import_installs_only_after_receipts_and_verification() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let path = dir.path().join("dek.enc");
         let state = transition_test_state().await;
@@ -1595,6 +1647,110 @@ mod tests {
             state.sub_key(ArtifactKind::Settings).await.unwrap().bytes(),
             &expected
         );
+    }
+
+    #[tokio::test]
+    async fn portable_import_recovers_locked_policy_only_with_the_matching_key() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
+        use crate::artifact_policy::{self, PolicyDocument, ProtectionMode};
+        for matching in [false, true] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("dek.enc");
+            let state = transition_test_state().await;
+            let original = state.master_bytes_raw().await.unwrap();
+            let policy = PolicyDocument::default()
+                .with_mode(ArtifactKind::Settings, ProtectionMode::Plaintext)
+                .unwrap();
+            let receipt = artifact_policy::encode(&state, &policy).await.unwrap();
+            std::fs::write(dir.path().join(artifact_policy::POLICY_FILENAME), &receipt).unwrap();
+            std::fs::write(dir.path().join(artifact_policy::POLICY_MARKER), b"1").unwrap();
+            artifact_policy::initialize(&state, dir.path()).await;
+            state.lock().await;
+            let candidate = if matching {
+                MasterDek::from_bytes(&original).unwrap()
+            } else {
+                MasterDek::generate()
+            };
+            let result = commit_import_receipts_with(
+                &path,
+                &state,
+                candidate,
+                b"recovered wrapper",
+                None,
+                &FilesystemSettingsTransitionIo,
+                |_| async { panic!("fixture cannot access vault") },
+                || Ok(()),
+            )
+            .await;
+            if matching {
+                result.unwrap();
+                assert!(state.is_unlocked().await);
+                assert_eq!(state.artifact_policy_document().unwrap(), policy);
+                assert!(!state
+                    .resolve_write_policy(ArtifactKind::Settings, true)
+                    .unwrap());
+            } else {
+                assert!(result.is_err());
+                assert!(!state.is_unlocked().await);
+                assert!(!path.exists());
+                assert_eq!(
+                    std::fs::read(dir.path().join(artifact_policy::POLICY_FILENAME)).unwrap(),
+                    receipt
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn portable_import_rewraps_policy_and_rolls_it_back_on_handled_failure() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
+        use crate::artifact_policy::{self, PolicyDocument, ProtectionMode};
+        for fail in [false, true] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("dek.enc");
+            std::fs::write(&path, b"old wrapper").unwrap();
+            let state = transition_test_state().await;
+            let old = state.master_bytes_raw().await.unwrap();
+            let policy = PolicyDocument::default()
+                .with_mode(ArtifactKind::Connections, ProtectionMode::Plaintext)
+                .unwrap();
+            let receipt = artifact_policy::encode(&state, &policy).await.unwrap();
+            std::fs::write(dir.path().join(artifact_policy::POLICY_FILENAME), &receipt).unwrap();
+            artifact_policy::initialize(&state, dir.path()).await;
+            let result = commit_import_receipts_with(
+                &path,
+                &state,
+                MasterDek::generate(),
+                b"new wrapper",
+                None,
+                &FilesystemSettingsTransitionIo,
+                |_| async { panic!("fixture cannot access vault") },
+                || {
+                    if fail {
+                        Err("injected post-receipt failure".into())
+                    } else {
+                        Ok(())
+                    }
+                },
+            )
+            .await;
+            if fail {
+                assert!(result.is_err());
+                assert_eq!(state.master_bytes_raw().await.unwrap(), old);
+                assert_eq!(
+                    std::fs::read(dir.path().join(artifact_policy::POLICY_FILENAME)).unwrap(),
+                    receipt
+                );
+                assert_eq!(std::fs::read(path).unwrap(), b"old wrapper");
+            } else {
+                result.unwrap();
+                assert_ne!(state.master_bytes_raw().await.unwrap(), old);
+                assert_eq!(state.artifact_policy_document().unwrap(), policy);
+                assert!(!state
+                    .resolve_write_policy(ArtifactKind::Connections, true)
+                    .unwrap());
+            }
+        }
     }
 
     #[test]
@@ -1771,6 +1927,7 @@ mod tests {
 
     #[tokio::test]
     async fn migration_failures_roll_back_to_the_plaintext_source() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         for failure in ["write", "verify", "delete"] {
             let dir = tempdir().unwrap();
             let source = dir.path().join(SETTINGS_JSON_FILENAME);
@@ -1803,6 +1960,7 @@ mod tests {
 
     #[tokio::test]
     async fn disable_failures_roll_back_to_the_encrypted_source() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         for failure in ["write", "verify", "delete"] {
             let dir = tempdir().unwrap();
             let source = dir.path().join(artifact_settings::SETTINGS_ENC_FILENAME);
@@ -1845,6 +2003,7 @@ mod tests {
 
     #[tokio::test]
     async fn disable_delete_failure_restores_preexisting_plaintext_bytes() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let source = dir.path().join(artifact_settings::SETTINGS_ENC_FILENAME);
         let destination = dir.path().join(SETTINGS_JSON_FILENAME);
@@ -1882,6 +2041,7 @@ mod tests {
 
     #[tokio::test]
     async fn disable_rejects_empty_envelope_without_committing_plaintext() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let source = dir.path().join(artifact_settings::SETTINGS_ENC_FILENAME);
         let destination = dir.path().join(SETTINGS_JSON_FILENAME);
@@ -1916,6 +2076,7 @@ mod tests {
 
     #[tokio::test]
     async fn fresh_master_key_invalidates_old_ciphertext() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         // Install a fresh DEK and verify old ciphertext fails to decrypt
         // under the new state while new ciphertext still round-trips.
         let enc_state = EncryptionState::new();
@@ -1964,6 +2125,7 @@ mod tests {
 
     #[tokio::test]
     async fn portable_export_then_import_yields_same_master() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         // Wrap the master DEK with a password (export), then unwrap
         // (import) and confirm a sub-key derived from each yields the
         // same bytes — i.e. the master survived the round-trip.
@@ -1992,6 +2154,7 @@ mod tests {
 
     #[tokio::test]
     async fn disable_settings_logic_recovers_original_plaintext() {
+        let _test_profile = crate::log_sink::LOG_FIXTURE.lock().await;
         // The disable path reads the envelope and writes plaintext
         // JSON. Compose: encrypt a payload, decrypt it via the same
         // artifact module, confirm the recovered JSON matches the

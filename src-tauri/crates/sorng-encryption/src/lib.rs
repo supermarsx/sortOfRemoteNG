@@ -56,6 +56,8 @@ pub mod state;
 pub use dek::{ArtifactKind, MasterDek, SubKey};
 pub use envelope::{EnvelopeError, EnvelopeHeader, MasterKeyStorage};
 pub use lockout::{LockoutState, LOCKOUT_FILENAME};
+pub mod artifact_policy;
+pub mod artifact_transaction;
 pub use password_wrap::{Argon2Params, WrapError};
 pub use state::EncryptionState;
 
@@ -75,6 +77,12 @@ pub const COMMAND_NAMES: &[&str] = &[
     "encryption_import_portable_dek",
     "encryption_audit_read",
     "encryption_audit_clear",
+    "encryption_get_artifact_status",
+    "encryption_preview_artifact_policy",
+    "encryption_apply_artifact_policy",
+    "encryption_cancel_artifact_policy",
+    "encryption_release_artifact_preview",
+    "encryption_recover_artifact_transition",
 ];
 
 /// Returns `true` if the given Tauri command name belongs to this crate.

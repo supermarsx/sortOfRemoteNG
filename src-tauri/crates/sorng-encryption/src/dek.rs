@@ -35,7 +35,10 @@ const HKDF_INFO_PREFIX: &str = "sorng-v1::";
 /// **Stability:** the byte representation of [`Self::label`] is part of
 /// the on-disk crypto. Renaming a variant breaks every encrypted file of
 /// that artifact. To rotate, add a new variant and migrate; never rename.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum ArtifactKind {
     /// `data.json` — the connections database. Already encrypted today
     /// via a password-derived key; Phase 0 leaves it untouched, Phase 1+
@@ -72,6 +75,9 @@ pub enum ArtifactKind {
     /// See `crate::key_ring` for the format and the forward-secrecy
     /// trade-off this represents.
     KeyRing,
+    /// Authenticated future-write policy; protected infrastructure, never a
+    /// target of user data decryption.
+    ArtifactPolicy,
 }
 
 impl ArtifactKind {
@@ -89,6 +95,7 @@ impl ArtifactKind {
             ArtifactKind::DatabasesIndex => "sorng-v1::databases-index",
             ArtifactKind::TrustStore => "sorng-v1::trust-store",
             ArtifactKind::KeyRing => "sorng-v1::key-ring",
+            ArtifactKind::ArtifactPolicy => "sorng-v1::artifact-policy",
         }
     }
 
@@ -106,6 +113,7 @@ impl ArtifactKind {
             ArtifactKind::DatabasesIndex,
             ArtifactKind::TrustStore,
             ArtifactKind::KeyRing,
+            ArtifactKind::ArtifactPolicy,
         ]
     }
 }

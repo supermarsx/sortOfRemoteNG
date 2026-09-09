@@ -45,8 +45,8 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use log::{LevelFilter, Log, Metadata, Record};
 use tokio::sync::mpsc::error::TrySendError;
@@ -68,6 +68,76 @@ const PERIODIC_FLUSH: Duration = Duration::from_secs(2);
 /// memory or blocking the logging thread.
 const LOG_CHANNEL_CAPACITY: usize = 8192;
 
+static TRACING_BRIDGE: OnceLock<EncryptedLogAdapter> = OnceLock::new();
+static PREVIEW_PAUSE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+
+pub fn pause_for_artifact_preview(token: &str, ttl: Duration) {
+    if let Ok(mut pause) = PREVIEW_PAUSE.lock() {
+        *pause = Some((
+            token.to_string(),
+            Instant::now() + ttl.min(Duration::from_secs(300)),
+        ));
+    }
+}
+
+pub fn release_artifact_preview(token: &str) {
+    if let Ok(mut pause) = PREVIEW_PAUSE.lock() {
+        if pause.as_ref().is_some_and(|(current, _)| current == token) {
+            *pause = None;
+        }
+    }
+}
+
+pub fn release_all_artifact_previews() {
+    if let Ok(mut pause) = PREVIEW_PAUSE.lock() {
+        *pause = None;
+    }
+}
+
+pub(crate) fn artifact_preview_paused() -> bool {
+    let Ok(mut pause) = PREVIEW_PAUSE.lock() else {
+        return true;
+    };
+    if pause
+        .as_ref()
+        .is_some_and(|(_, expiry)| *expiry > Instant::now())
+    {
+        return true;
+    }
+    *pause = None;
+    false
+}
+
+/// Writer for the application's existing tracing subscriber. It does not
+/// register another global logger (LogTracer already owns that registration).
+#[derive(Default)]
+pub struct TracingLogWriter(Vec<u8>);
+
+pub fn tracing_writer() -> TracingLogWriter {
+    TracingLogWriter::default()
+}
+
+impl std::io::Write for TracingLogWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        // Bound one formatted event as well as the adapter's event queue.
+        let remaining = (64 * 1024usize).saturating_sub(self.0.len());
+        self.0
+            .extend_from_slice(&bytes[..bytes.len().min(remaining)]);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for TracingLogWriter {
+    fn drop(&mut self) {
+        if let Some(adapter) = TRACING_BRIDGE.get() {
+            adapter.submit_line(String::from_utf8_lossy(&self.0).trim_end().to_string());
+        }
+    }
+}
+
 /// `log::Log` implementation that hands every record off to the
 /// encrypted log sink via an async channel. Cheap to install once
 /// per process at boot; never re-installed.
@@ -80,6 +150,31 @@ pub struct EncryptedLogAdapter {
 }
 
 impl EncryptedLogAdapter {
+    /// Attach persistent logs to the preinstalled tracing route in every build.
+    /// The caller configures the tracing layer with its secret-safety filter.
+    pub fn install_tracing_bridge(
+        state: Arc<EncryptionState>,
+        dir: PathBuf,
+        level: LevelFilter,
+    ) -> Result<(), InstallError> {
+        let sink = EncryptedLogSink::new(state, dir, true);
+        let (adapter, rx) = Self::new(level);
+        let dropped = adapter.dropped.clone();
+        TRACING_BRIDGE
+            .set(adapter)
+            .map_err(|_| InstallError::SetLogger("tracing log bridge already installed".into()))?;
+        Self::spawn_drainer(sink, rx, dropped);
+        Ok(())
+    }
+
+    fn submit_line(&self, line: String) {
+        match self.tx.try_send(line) {
+            Ok(()) | Err(TrySendError::Closed(_)) => {}
+            Err(TrySendError::Full(_)) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
     /// Build the adapter, spawn the drain task, register as the
     /// global logger, and set the max level. Call once per process,
     /// after the `EncryptionState` is created (it doesn't have to be
@@ -217,10 +312,7 @@ fn now_iso_8601() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let (y, mo, da, h, mi, s) = secs_to_civil(secs);
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, mo, da, h, mi, s
-    )
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, da, h, mi, s)
 }
 
 /// Mirror of `audit::secs_to_civil` — kept private here so this
@@ -306,6 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn multiple_records_produce_file_on_flush() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = unlocked_state(7).await;
         let (adapter, sink, mut rx) =
@@ -328,6 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_log_does_not_lose_records() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = unlocked_state(13).await;
         let (adapter, sink, mut rx) =
@@ -342,11 +436,7 @@ mod tests {
             let a = adapter.clone();
             handles.push(std::thread::spawn(move || {
                 for i in 0..100u32 {
-                    log_at!(
-                        a,
-                        log::Level::Info,
-                        format!("thread {} line {}", t, i)
-                    );
+                    log_at!(a, log::Level::Info, format!("thread {} line {}", t, i));
                 }
             }));
         }
@@ -373,6 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn lock_cycle_does_not_panic_and_post_unlock_flush_writes_file() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = Arc::new(EncryptionState::new()); // locked
         let (adapter, sink, mut rx) =
@@ -395,7 +486,9 @@ mod tests {
         // Install a master and flush. We don't assert *which* lines
         // survived — the sink's own lock-cycle test covers that —
         // only that nothing panicked and an envelope file appears.
-        state.install(MasterDek::from_bytes(&[42u8; 32]).unwrap()).await;
+        state
+            .install(MasterDek::from_bytes(&[42u8; 32]).unwrap())
+            .await;
         let n = sink.flush().await.unwrap();
         assert!(n > 0);
         assert!(std::fs::read_dir(tmp.path()).unwrap().next().is_some());
@@ -403,6 +496,7 @@ mod tests {
 
     #[tokio::test]
     async fn level_filter_is_respected() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let state = unlocked_state(3).await;
         let (adapter, sink, mut rx) =
@@ -423,6 +517,7 @@ mod tests {
 
     #[tokio::test]
     async fn full_channel_sheds_and_counts_rather_than_growing() {
+        let _fixture = crate::log_sink::LOG_FIXTURE.lock().await;
         // With no drainer draining the receiver, the bounded channel fills at
         // LOG_CHANNEL_CAPACITY; every record past that is dropped and counted.
         let tmp = tempdir().unwrap();

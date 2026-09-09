@@ -50,6 +50,8 @@ fn inspect_directory(
             return ProfileEvidence::Uncertain;
         };
         let marker = name.contains(".enc")
+            || name == crate::artifact_policy::POLICY_MARKER
+            || name.starts_with(".sorng-artifact-")
             || name.contains(".sorng-rotation-")
             || name.contains("transaction");
         if marker {
@@ -167,6 +169,21 @@ where
 mod tests {
     use super::*;
     use sorng_vault::types::VaultError;
+
+    #[test]
+    fn artifact_policy_and_interrupted_stage_are_existing_profile_evidence() {
+        for name in [
+            crate::artifact_policy::POLICY_FILENAME,
+            crate::artifact_policy::POLICY_MARKER,
+            crate::artifact_transaction::JOURNAL_FILENAME,
+            "artifact-transition.enc.pending",
+            ".sorng-artifact-fixture-0.stage",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join(name), b"fixture").unwrap();
+            assert_eq!(probe_profile(dir.path()), ProfileEvidence::Existing);
+        }
+    }
 
     #[tokio::test]
     async fn vault_creation_requires_confirmed_absence_and_fresh_profile() {

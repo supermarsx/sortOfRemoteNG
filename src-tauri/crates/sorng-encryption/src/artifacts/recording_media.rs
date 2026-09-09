@@ -153,6 +153,117 @@ fn validate_chunk_size(cs: u32) -> Result<u32, MediaError> {
     Ok(cs)
 }
 
+/// Stream the existing media format without materializing a recording in RAM.
+/// The caller owns the storage coordinator and a private, uncommitted output.
+/// Input length is checked, so a changing source cannot produce a valid stage.
+pub fn encrypt_stream_with_key(
+    key: &SubKey,
+    input: &mut impl std::io::Read,
+    output: &mut impl std::io::Write,
+    plaintext_len: u64,
+    progress: &mut dyn FnMut(u64) -> Result<(), String>,
+) -> Result<u64, String> {
+    let mut header = MediaHeader::new(MasterKeyStorage::Vault, DEFAULT_CHUNK_SIZE);
+    header.last_chunk_plain_len = (plaintext_len % u64::from(header.chunk_size)) as u32;
+    let count = plaintext_len.div_ceil(u64::from(header.chunk_size));
+    if count > u64::from(u32::MAX) {
+        return Err("media exceeds the supported chunk count".into());
+    }
+    output
+        .write_all(&header.encode())
+        .map_err(|e| e.to_string())?;
+    let cipher = Aes256Gcm::new(key.bytes().into());
+    let mut buffer = vec![0; header.chunk_size as usize];
+    let mut processed = 0;
+    for index in 0..count {
+        progress(processed)?;
+        let len = (plaintext_len - processed).min(u64::from(header.chunk_size)) as usize;
+        input
+            .read_exact(&mut buffer[..len])
+            .map_err(|e| e.to_string())?;
+        let nonce = chunk_nonce(&header.nonce_prefix, index as u32);
+        let aad = chunk_aad(index as u32);
+        let encrypted = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &buffer[..len],
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| "media encryption failed".to_string())?;
+        output.write_all(&encrypted).map_err(|e| e.to_string())?;
+        processed += len as u64;
+    }
+    if input.read(&mut buffer[..1]).map_err(|e| e.to_string())? != 0 {
+        return Err("media source changed while encrypting".into());
+    }
+    progress(processed)?;
+    Ok(processed)
+}
+
+/// Authenticate every existing media chunk while streaming plaintext to a
+/// private stage (or `std::io::sink()` for inspection). No format changes.
+pub fn decrypt_stream_with_key(
+    key: &SubKey,
+    input: &mut impl std::io::Read,
+    output: &mut impl std::io::Write,
+    encrypted_len: u64,
+    progress: &mut dyn FnMut(u64) -> Result<(), String>,
+) -> Result<u64, String> {
+    let mut bytes = [0; HEADER_LEN];
+    input.read_exact(&mut bytes).map_err(|e| e.to_string())?;
+    let header = decode_header(&bytes).map_err(|e| e.to_string())?;
+    let body_len = encrypted_len
+        .checked_sub(HEADER_LEN as u64)
+        .ok_or("truncated media")?;
+    let stride = u64::from(header.chunk_size) + TAG_LEN as u64;
+    let count = body_len.div_ceil(stride);
+    if count > u64::from(u32::MAX) || header.last_chunk_plain_len >= header.chunk_size {
+        return Err("invalid media chunk lengths".into());
+    }
+    let cipher = Aes256Gcm::new(key.bytes().into());
+    let mut buffer = vec![0; stride as usize];
+    let mut consumed = 0;
+    let mut plaintext_len = 0;
+    for index in 0..count {
+        progress(plaintext_len)?;
+        let len = (body_len - consumed).min(stride) as usize;
+        if len <= TAG_LEN {
+            return Err("truncated media authentication tag".into());
+        }
+        input
+            .read_exact(&mut buffer[..len])
+            .map_err(|e| e.to_string())?;
+        let nonce = chunk_nonce(&header.nonce_prefix, index as u32);
+        let aad = chunk_aad(index as u32);
+        let plain = cipher
+            .decrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &buffer[..len],
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| format!("media chunk {index} authentication failed"))?;
+        if index + 1 == count
+            && plain.len() % header.chunk_size as usize != header.last_chunk_plain_len as usize
+        {
+            return Err("media trailing length does not match its header".into());
+        }
+        output.write_all(&plain).map_err(|e| e.to_string())?;
+        consumed += len as u64;
+        plaintext_len += plain.len() as u64;
+    }
+    if (count == 0 && header.last_chunk_plain_len != 0)
+        || input.read(&mut buffer[..1]).map_err(|e| e.to_string())? != 0
+    {
+        return Err("media source length changed or is invalid".into());
+    }
+    progress(plaintext_len)?;
+    Ok(plaintext_len)
+}
+
 /// Decode a header from the first [`HEADER_LEN`] bytes. Does not touch
 /// the chunked body — callers can then decrypt chunks independently.
 pub fn decode_header(buf: &[u8]) -> Result<MediaHeader, MediaError> {
@@ -170,8 +281,7 @@ pub fn decode_header(buf: &[u8]) -> Result<MediaHeader, MediaError> {
     if kind != KIND_CHUNKED_STREAM {
         return Err(MediaError::WrongKind(kind));
     }
-    let storage =
-        MasterKeyStorage::from_u8(buf[8]).ok_or(MediaError::UnknownStorage(buf[8]))?;
+    let storage = MasterKeyStorage::from_u8(buf[8]).ok_or(MediaError::UnknownStorage(buf[8]))?;
     let chunk_size = u32::from_le_bytes(buf[12..16].try_into().unwrap());
     validate_chunk_size(chunk_size)?;
     let mut nonce_prefix = [0u8; 8];
@@ -217,9 +327,7 @@ pub async fn write_one_shot(
     let cipher = Aes256Gcm::new(sub_key.bytes().into());
 
     let mut out = Vec::with_capacity(
-        HEADER_LEN
-            + plaintext.len()
-            + (plaintext.len().div_ceil(chunk_size_usize)) * TAG_LEN,
+        HEADER_LEN + plaintext.len() + (plaintext.len().div_ceil(chunk_size_usize)) * TAG_LEN,
     );
     out.extend_from_slice(&header.encode());
 
@@ -244,10 +352,7 @@ pub async fn write_one_shot(
 /// Decrypt and concatenate every chunk. The mirror of [`write_one_shot`]
 /// — used by playback paths that load the whole recording into memory
 /// (small recordings, GIFs).
-pub async fn read_all(
-    state: &EncryptionState,
-    file_bytes: &[u8],
-) -> Result<Vec<u8>, MediaError> {
+pub async fn read_all(state: &EncryptionState, file_bytes: &[u8]) -> Result<Vec<u8>, MediaError> {
     let sub_key = state
         .sub_key(ArtifactKind::RecordingsMedia)
         .await
@@ -276,9 +381,7 @@ pub async fn read_all(
             .map_err(|_| MediaError::AuthenticationFailed { chunk: idx as u64 })?;
         out.extend_from_slice(&pt);
         pos = end;
-        idx = idx
-            .checked_add(1)
-            .ok_or(MediaError::OutOfRange(u64::MAX))?;
+        idx = idx.checked_add(1).ok_or(MediaError::OutOfRange(u64::MAX))?;
     }
     Ok(out)
 }
@@ -341,6 +444,127 @@ fn chunk_aad(i: u32) -> [u8; 4] {
 type _SubKey = SubKey;
 
 #[cfg(test)]
+mod streaming_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[tokio::test]
+    async fn existing_codec_and_bounded_streams_interoperate_empty_full_and_partial() {
+        let state = EncryptionState::new();
+        state.install(crate::MasterDek::generate()).await;
+        let key = state.sub_key(ArtifactKind::RecordingsMedia).await.unwrap();
+        for len in [
+            0,
+            DEFAULT_CHUNK_SIZE as usize,
+            DEFAULT_CHUNK_SIZE as usize * 3 + 17,
+        ] {
+            let plain: Vec<u8> = (0..len).map(|index| (index % 251) as u8).collect();
+            let mut streamed = Vec::new();
+            encrypt_stream_with_key(
+                &key,
+                &mut Cursor::new(&plain),
+                &mut streamed,
+                len as u64,
+                &mut |_| Ok(()),
+            )
+            .unwrap();
+            assert_eq!(read_all(&state, &streamed).await.unwrap(), plain);
+            let original = write_one_shot(&state, &plain, MasterKeyStorage::Vault, None)
+                .await
+                .unwrap();
+            let mut decoded = Vec::new();
+            assert_eq!(
+                decrypt_stream_with_key(
+                    &key,
+                    &mut Cursor::new(&original),
+                    &mut decoded,
+                    original.len() as u64,
+                    &mut |_| Ok(())
+                )
+                .unwrap(),
+                len as u64
+            );
+            assert_eq!(decoded, plain);
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_wrong_key_tampering_truncation_length_drift_and_cancel() {
+        let state = EncryptionState::new();
+        state.install(crate::MasterDek::generate()).await;
+        let key = state.sub_key(ArtifactKind::RecordingsMedia).await.unwrap();
+        let other = crate::MasterDek::generate().sub_key(ArtifactKind::RecordingsMedia);
+        let plain = vec![37; DEFAULT_CHUNK_SIZE as usize + 31];
+        let original = write_one_shot(&state, &plain, MasterKeyStorage::Vault, None)
+            .await
+            .unwrap();
+        assert!(decrypt_stream_with_key(
+            &other,
+            &mut Cursor::new(&original),
+            &mut std::io::sink(),
+            original.len() as u64,
+            &mut |_| Ok(())
+        )
+        .is_err());
+        let mut tampered = original.clone();
+        tampered[HEADER_LEN + 5] ^= 1;
+        assert!(decrypt_stream_with_key(
+            &key,
+            &mut Cursor::new(&tampered),
+            &mut std::io::sink(),
+            tampered.len() as u64,
+            &mut |_| Ok(())
+        )
+        .is_err());
+        for len in [HEADER_LEN - 1, original.len() - 1, original.len() - TAG_LEN] {
+            assert!(decrypt_stream_with_key(
+                &key,
+                &mut Cursor::new(&original[..len]),
+                &mut std::io::sink(),
+                len as u64,
+                &mut |_| Ok(())
+            )
+            .is_err());
+        }
+        for wrong_len in [plain.len() - 1, plain.len() + 1] {
+            assert!(encrypt_stream_with_key(
+                &key,
+                &mut Cursor::new(&plain),
+                &mut std::io::sink(),
+                wrong_len as u64,
+                &mut |_| Ok(())
+            )
+            .is_err());
+        }
+        let mut partial = Vec::new();
+        let error = decrypt_stream_with_key(
+            &key,
+            &mut Cursor::new(&original),
+            &mut partial,
+            original.len() as u64,
+            &mut |done| {
+                if done > 0 {
+                    Err("cancelled".into())
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error, "cancelled");
+        assert_eq!(partial.len(), DEFAULT_CHUNK_SIZE as usize);
+        assert!(encrypt_stream_with_key(
+            &key,
+            &mut Cursor::new(&plain),
+            &mut std::io::sink(),
+            plain.len() as u64,
+            &mut |_| Err("cancelled".into())
+        )
+        .is_err());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::dek::MasterDek;
@@ -367,10 +591,9 @@ mod tests {
         let state = EncryptionState::new();
         state.install(MasterDek::generate()).await;
         let data = pt(1024);
-        let blob =
-            write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(256))
-                .await
-                .unwrap();
+        let blob = write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(256))
+            .await
+            .unwrap();
         let recovered = read_all(&state, &blob).await.unwrap();
         assert_eq!(recovered, data);
     }
@@ -382,10 +605,9 @@ mod tests {
         let state = EncryptionState::new();
         state.install(MasterDek::generate()).await;
         let data = pt(1024);
-        let blob =
-            write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(256))
-                .await
-                .unwrap();
+        let blob = write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(256))
+            .await
+            .unwrap();
         let header = decode_header(&blob).unwrap();
         assert_eq!(header.last_chunk_plain_len, 0);
         let recovered = read_all(&state, &blob).await.unwrap();
@@ -399,10 +621,9 @@ mod tests {
         let state = EncryptionState::new();
         state.install(MasterDek::generate()).await;
         let data = pt(1025);
-        let blob =
-            write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(256))
-                .await
-                .unwrap();
+        let blob = write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(256))
+            .await
+            .unwrap();
         let header = decode_header(&blob).unwrap();
         assert_eq!(header.last_chunk_plain_len, 1);
         let recovered = read_all(&state, &blob).await.unwrap();
@@ -469,10 +690,9 @@ mod tests {
         let state = EncryptionState::new();
         state.install(MasterDek::generate()).await;
         let data = pt(256);
-        let mut blob =
-            write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(64))
-                .await
-                .unwrap();
+        let mut blob = write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(64))
+            .await
+            .unwrap();
         let stride = 64 + TAG_LEN;
         // Swap chunk 0 (HEADER_LEN..HEADER_LEN+stride) with chunk 1.
         let mut buf0 = vec![0u8; stride];
@@ -493,10 +713,9 @@ mod tests {
         let state = EncryptionState::new();
         state.install(MasterDek::generate()).await;
         let data = pt(200);
-        let mut blob =
-            write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(64))
-                .await
-                .unwrap();
+        let mut blob = write_one_shot(&state, &data, MasterKeyStorage::Vault, Some(64))
+            .await
+            .unwrap();
         // Flip a byte deep inside the second chunk.
         blob[HEADER_LEN + 64 + TAG_LEN + 5] ^= 0xFF;
         assert!(matches!(
@@ -523,8 +742,13 @@ mod tests {
             Err(MediaError::InvalidChunkSize(0))
         ));
         assert!(matches!(
-            write_one_shot(&state, b"x", MasterKeyStorage::Vault, Some(64 * 1024 * 1024))
-                .await,
+            write_one_shot(
+                &state,
+                b"x",
+                MasterKeyStorage::Vault,
+                Some(64 * 1024 * 1024)
+            )
+            .await,
             Err(MediaError::InvalidChunkSize(_))
         ));
     }
