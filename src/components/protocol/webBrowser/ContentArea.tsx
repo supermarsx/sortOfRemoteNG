@@ -5,7 +5,7 @@ import { WifiOff, RefreshCw } from "lucide-react";
 import { LoadingElement } from "../../ui/display/loadingElement";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
-  <div className="flex-1 relative">
+  <div className="flex-1 relative" aria-busy={mgr.isLoading}>
     {/* Proxy-dead banner */}
     {!mgr.proxyAlive && !mgr.isLoading && !mgr.loadError && (
       <div className="absolute top-0 inset-x-0 z-20 bg-error/90 border-b border-error px-4 py-2 flex items-center justify-between text-xs text-error">
@@ -27,27 +27,33 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
       </div>
     )}
 
-    {mgr.isLoading && (
-      <div className="absolute inset-0 bg-[var(--color-background)] flex items-center justify-center z-10">
-        <div className="text-center">
-          <div className="flex justify-center mb-4">
-            <LoadingElement size={48} ariaLabel={`Loading ${mgr.currentUrl}`} />
+    {mgr.isLoading &&
+      mgr.showLoadingIndicator &&
+      !mgr.trustPrompt &&
+      !mgr.loadError && (
+        <div className="absolute inset-0 bg-[var(--color-background)] flex items-center justify-center z-10">
+          <div className="text-center">
+            <div className="flex justify-center mb-4">
+              <LoadingElement
+                size={48}
+                ariaLabel={`Loading ${mgr.currentUrl}`}
+              />
+            </div>
+            <p className="text-[var(--color-textSecondary)] mb-2">
+              Loading {mgr.currentUrl}...
+            </p>
+            <p className="text-[var(--color-textMuted)] text-xs">
+              Taking too long?{" "}
+              <button
+                onClick={mgr.handleCancelLoading}
+                className="text-primary hover:text-primary underline"
+              >
+                Cancel
+              </button>
+            </p>
           </div>
-          <p className="text-[var(--color-textSecondary)] mb-2">
-            Loading {mgr.currentUrl}...
-          </p>
-          <p className="text-[var(--color-textMuted)] text-xs">
-            Taking too long?{" "}
-            <button
-              onClick={mgr.handleCancelLoading}
-              className="text-primary hover:text-primary underline"
-            >
-              Cancel
-            </button>
-          </p>
         </div>
-      </div>
-    )}
+      )}
 
     {/* Keep the iframe mounted while the recovery screen is visible. Retry and
         Back clear the error and navigate synchronously; unmounting here made
@@ -60,6 +66,8 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
         mgr.loadError ? "invisible pointer-events-none" : ""
       }`}
       aria-hidden={mgr.loadError ? true : undefined}
+      inert={mgr.isLoading || !!mgr.loadError}
+      tabIndex={mgr.isLoading || mgr.loadError ? -1 : undefined}
       title={mgr.session.name}
       onLoad={mgr.handleIframeLoad}
       // Cookie-backed managed UIs require same-origin behavior. The proxy

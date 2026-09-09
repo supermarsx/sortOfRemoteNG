@@ -106,6 +106,46 @@ describe("proxy failure bridge validation", () => {
 });
 
 describe("embedded web failure recovery screen", () => {
+  it("retains the same visible but inert frame during grace and restores interaction on completion", () => {
+    const mgr = manager({
+      loadError: "",
+      navigationFailure: null,
+      isLoading: true,
+      showLoadingIndicator: false,
+      iframeRef: createRef<HTMLIFrameElement>(),
+    });
+    const { container, rerender } = render(<ContentArea mgr={mgr} />);
+    const iframe = container.querySelector("iframe")!;
+    expect(iframe).not.toHaveClass("invisible");
+    expect(iframe).toHaveAttribute("inert");
+    expect(iframe).toHaveAttribute("tabindex", "-1");
+    expect(screen.queryByText(/Taking too long/)).toBeNull();
+    rerender(<ContentArea mgr={{ ...mgr, showLoadingIndicator: true }} />);
+    expect(screen.getByText(/Taking too long/)).toBeVisible();
+    expect(container.querySelector("iframe")).toBe(iframe);
+    rerender(<ContentArea mgr={{ ...mgr, isLoading: false }} />);
+    expect(iframe).not.toHaveAttribute("inert");
+    expect(screen.queryByText(/Taking too long/)).toBeNull();
+  });
+  it("never puts a delayed spinner over a trust prompt or error", () => {
+    const mgr = manager({ isLoading: true, showLoadingIndicator: true });
+    const { rerender } = render(<ContentArea mgr={mgr} />);
+    expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
+    expect(screen.queryByText(/Taking too long/)).toBeNull();
+    rerender(
+      <ContentArea
+        mgr={{
+          ...mgr,
+          loadError: "",
+          trustPrompt: {
+            status: "first-use",
+            identity: { fingerprint: "fixture" },
+          } as WebBrowserMgr["trustPrompt"],
+        }}
+      />,
+    );
+    expect(screen.queryByText(/Taking too long/)).toBeNull();
+  });
   it("distinguishes Trust Center failures and labels anonymous diagnostic authentication challenges", () => {
     render(
       <ErrorPage

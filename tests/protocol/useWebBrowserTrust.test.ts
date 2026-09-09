@@ -111,7 +111,129 @@ describe("HTTPS certificate and native trust stages", () => {
       return undefined;
     });
   });
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+  async function loadingFixture(value = session) {
+    vi.useFakeTimers();
+    const hook = renderHook(() => useWebBrowser(value));
+    const iframe = document.createElement("iframe");
+    iframe.src = "about:blank";
+    hook.result.current.iframeRef.current = iframe;
+    await act(async () => {});
+    expect(iframe.src).toContain(proxy.proxy_url);
+    return { ...hook, iframe };
+  }
+  it("never shows the loading screen for a page that finishes inside 200ms", async () => {
+    const { result } = await loadingFixture();
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.showLoadingIndicator).toBe(false);
+    act(() => vi.advanceTimersByTime(199));
+    act(() => result.current.handleIframeLoad());
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.showLoadingIndicator).toBe(false);
+  });
+  it("also skips the loading screen for fast plain HTTP without bypassing its proxy", async () => {
+    const { result } = await loadingFixture({ ...session, protocol: "http" });
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([name]) => name === "get_tls_certificate_info",
+      ),
+    ).toBe(false);
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([name]) => name === "start_basic_auth_proxy",
+      ),
+    ).toBe(true);
+    act(() => result.current.handleIframeLoad());
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.showLoadingIndicator).toBe(false);
+  });
+  it("shows slow navigation at 200ms and hides it immediately when the frame loads, including an auth document", async () => {
+    const { result } = await loadingFixture();
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.showLoadingIndicator).toBe(true);
+    act(() => result.current.handleIframeLoad());
+    expect(result.current.showLoadingIndicator).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+  });
+  it("resets the grace for consecutive bookmarks and ignores old frame loads during certificate inspection", async () => {
+    const { result } = await loadingFixture();
+    act(() => result.current.handleIframeLoad());
+    let finish!: (value: typeof cert) => void;
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "get_tls_certificate_info"
+        ? new Promise<typeof cert>((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    act(() => {
+      void result.current.navigateToUrl("https://10.10.10.2/first");
+    });
+    act(() => vi.advanceTimersByTime(150));
+    act(() => {
+      void result.current.navigateToUrl("https://10.10.10.2/second");
+    });
+    act(() => result.current.handleIframeLoad());
+    expect(result.current.isLoading).toBe(true);
+    act(() => vi.advanceTimersByTime(199));
+    expect(result.current.showLoadingIndicator).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.showLoadingIndicator).toBe(true);
+    await act(async () => finish(cert));
+    act(() => result.current.handleIframeLoad());
+    expect(result.current.showLoadingIndicator).toBe(false);
+  });
+  it("never obscures required trust approval and clears pending indicators on rejection", async () => {
+    mocks.verify.mockResolvedValue({
+      status: "first-use",
+      identity: cert,
+      requiresApproval: true,
+    });
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    expect(result.current.trustPrompt).not.toBeNull();
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.showLoadingIndicator).toBe(false);
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([name]) => name === "start_basic_auth_proxy",
+      ),
+    ).toBe(false);
+    act(() => result.current.handleTrustReject());
+    expect(result.current.loadError).not.toBe("");
+    expect(result.current.showLoadingIndicator).toBe(false);
+  });
+  it("clears indicators on cancel, invalid navigation and unmount", async () => {
+    const { result, unmount } = await loadingFixture();
+    act(() => result.current.handleCancelLoading());
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.showLoadingIndicator).toBe(false);
+    await act(async () =>
+      result.current.navigateToUrl("https://unrelated.example.test/"),
+    );
+    expect(result.current.loadError).not.toBe("");
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.showLoadingIndicator).toBe(false);
+    await act(async () =>
+      result.current.navigateToUrl("https://10.10.10.2/pending-at-unmount"),
+    );
+    expect(result.current.isLoading).toBe(true);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("keeps the existing 30-second timeout immediate once reached", async () => {
+    const { result } = await loadingFixture();
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(result.current.navigationFailure?.kind).toBe("timeout");
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.showLoadingIndicator).toBe(false);
+  });
   it("keeps full peer details ephemeral while preserving populated legacy trust fields", async () => {
     mocks.invoke.mockImplementation(async (command: string) =>
       command === "get_tls_certificate_info"

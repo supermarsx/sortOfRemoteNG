@@ -316,6 +316,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
   const [inputUrl, setInputUrl] = useState(currentUrl);
   const [isLoading, setIsLoading] = useState(!targetResolution.error);
+  const [loadingIndicatorReady, setLoadingIndicatorReady] = useState(false);
   const [loadError, setLoadError] = useState<string>(
     targetResolution.error ?? "",
   );
@@ -371,6 +372,18 @@ export function useWebBrowser(session: ConnectionSession) {
   const proxyUrlRef = useRef<string>("");
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
+  const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const pendingNavigationRef = useRef(false);
+  const awaitingFrameGenerationRef = useRef<number | null>(null);
+  const clearLoadingIndicator = useCallback(() => {
+    if (loadingIndicatorTimerRef.current !== null) {
+      clearTimeout(loadingIndicatorTimerRef.current);
+      loadingIndicatorTimerRef.current = null;
+    }
+    setLoadingIndicatorReady(false);
+  }, []);
   const proxyRecoveryBusyRef = useRef(false);
   const mountedRef = useRef(true);
   const activeNavigationUrlRef = useRef(currentUrl);
@@ -379,12 +392,14 @@ export function useWebBrowser(session: ConnectionSession) {
     if (previousCertificateScope.current === certificateScope) return;
     previousCertificateScope.current = certificateScope;
     navGenRef.current += 1;
+    clearLoadingIndicator();
+    awaitingFrameGenerationRef.current = null;
     setCertificateCapture(null);
     setShowCertPopup(false);
     setTrustPrompt(null);
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
-  }, [certificateScope]);
+  }, [certificateScope, clearLoadingIndicator]);
   const navigationFailureRef = useRef<ProxyNavigationFailure | null>(
     navigationFailure,
   );
@@ -407,10 +422,13 @@ export function useWebBrowser(session: ConnectionSession) {
       setNavigationFailure(failure);
       setLoadError(failure.detail || failure.reason);
       setIsLoading(false);
+      pendingNavigationRef.current = false;
+      awaitingFrameGenerationRef.current = null;
+      clearLoadingIndicator();
       setDiagnosticReport(null);
       setDiagnosticError(null);
     },
-    [],
+    [clearLoadingIndicator],
   );
   /**
    * Set once `fetchAndVerifyCert` has resolved trust for this tab.
@@ -787,6 +805,21 @@ export function useWebBrowser(session: ConnectionSession) {
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
       const gen = ++navGenRef.current;
+      clearLoadingIndicator();
+      pendingNavigationRef.current = true;
+      awaitingFrameGenerationRef.current = null;
+      // Presentation only: certificate inspection, timeout and navigation still
+      // start immediately. Fast pages never replace the retained frame with a spinner.
+      loadingIndicatorTimerRef.current = setTimeout(() => {
+        if (
+          !mountedRef.current ||
+          gen !== navGenRef.current ||
+          !pendingNavigationRef.current
+        )
+          return;
+        loadingIndicatorTimerRef.current = null;
+        setLoadingIndicatorReady(true);
+      }, 200);
       setCertificateCapture(null);
       setShowCertPopup(false);
       setTrustPrompt(null);
@@ -882,6 +915,7 @@ export function useWebBrowser(session: ConnectionSession) {
         if (proxySessionIdRef.current && proxyUrlRef.current) {
           const proxyBase = proxyUrlRef.current.replace(/\/+$/, "");
           if (iframeRef.current) {
+            awaitingFrameGenerationRef.current = gen;
             iframeRef.current.src = proxyBase + pagePath;
           }
         } else {
@@ -974,6 +1008,7 @@ export function useWebBrowser(session: ConnectionSession) {
           if (gen !== navGenRef.current) return;
           if (iframeRef.current) {
             const proxyBase = protectedProxyUrl.replace(/\/+$/, "");
+            awaitingFrameGenerationRef.current = gen;
             iframeRef.current.src = proxyBase + pagePath;
           }
         }
@@ -1022,6 +1057,7 @@ export function useWebBrowser(session: ConnectionSession) {
       session.hostname,
       clearNavigationFailure,
       applyNavigationFailure,
+      clearLoadingIndicator,
     ],
   );
 
@@ -1040,6 +1076,10 @@ export function useWebBrowser(session: ConnectionSession) {
       trustResolveRef.current?.(false);
       trustResolveRef.current = null;
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      if (loadingIndicatorTimerRef.current !== null)
+        clearTimeout(loadingIndicatorTimerRef.current);
+      pendingNavigationRef.current = false;
+      awaitingFrameGenerationRef.current = null;
       const id = proxySessionIdRef.current;
       proxySessionIdRef.current = "";
       proxyUrlRef.current = "";
@@ -1283,11 +1323,21 @@ export function useWebBrowser(session: ConnectionSession) {
     ) {
       return;
     }
+    // A previous document may finish while a new HTTPS certificate is still
+    // being checked. It must not complete or dismiss that newer navigation.
+    if (
+      pendingNavigationRef.current &&
+      awaitingFrameGenerationRef.current !== navGenRef.current
+    )
+      return;
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;
     }
     setIsLoading(false);
+    pendingNavigationRef.current = false;
+    awaitingFrameGenerationRef.current = null;
+    clearLoadingIndicator();
     if (navigationFailureRef.current) return;
     try {
       const doc = iframe.contentDocument;
@@ -1313,7 +1363,7 @@ export function useWebBrowser(session: ConnectionSession) {
       // Cross-origin
     }
     setLoadError("");
-  }, [applyNavigationFailure, currentUrl]);
+  }, [applyNavigationFailure, clearLoadingIndicator, currentUrl]);
 
   const handleRefresh = useCallback(() => {
     if (!proxyAlive) void handleRestartProxy();
@@ -1800,6 +1850,8 @@ export function useWebBrowser(session: ConnectionSession) {
     inputUrl,
     setInputUrl,
     isLoading,
+    showLoadingIndicator:
+      isLoading && loadingIndicatorReady && !trustPrompt && !loadError,
     loadError,
     navigationFailure,
     diagnosticReport,
