@@ -378,6 +378,14 @@ function redactConnectionSecrets(connection: Connection): Connection {
   delete next.privateKey;
   delete next.passphrase;
   delete next.totpSecret;
+  if (next.totpConfigs) {
+    next.totpConfigs = next.totpConfigs.map((config) => {
+      const metadata = { ...config };
+      Reflect.deleteProperty(metadata, "secret");
+      Reflect.deleteProperty(metadata, "backupCodes");
+      return metadata;
+    });
+  }
   delete next.rustdeskPassword;
 
   if (next.cloudProvider) {
