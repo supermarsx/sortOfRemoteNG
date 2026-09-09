@@ -26,86 +26,21 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-describe("useSidebar lifecycle", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("does not dispatch storage status after unmount", async () => {
-    let resolveStorageStatus!: (encrypted: boolean) => void;
-    const storageStatus = new Promise<boolean>((resolve) => {
-      resolveStorageStatus = resolve;
-    });
-    const storageSpy = vi
+describe("Connections header storage badge removal", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it("does not query legacy global storage to describe the active database", () => {
+    const encrypted = vi
       .spyOn(SecureStorage, "isStorageEncrypted")
-      .mockReturnValue(storageStatus);
-    const consoleErrorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    const unhandledRejections: unknown[] = [];
-    const recordUnhandledRejection = (reason: unknown) => {
-      unhandledRejections.push(reason);
-    };
-    process.on("unhandledRejection", recordUnhandledRejection);
-
-    const { unmount } = renderHook(() => useSidebar());
-    expect(storageSpy).toHaveBeenCalledOnce();
+      .mockResolvedValue(true);
+    const unlocked = vi
+      .spyOn(SecureStorage, "isStorageUnlocked")
+      .mockReturnValue(false);
+    const { result, unmount } = renderHook(() => useSidebar());
+    expect(encrypted).not.toHaveBeenCalled();
+    expect(unlocked).not.toHaveBeenCalled();
+    expect(result.current).not.toHaveProperty("isStorageEncrypted");
+    expect(result.current).not.toHaveProperty("isStorageUnlocked");
+    expect(result.current).toHaveProperty("updateConnectionReorder");
     unmount();
-
-    const windowDescriptor = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "window",
-    );
-    expect(windowDescriptor?.configurable).toBe(true);
-
-    try {
-      Reflect.deleteProperty(globalThis, "window");
-      resolveStorageStatus(true);
-      await Promise.resolve();
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    } finally {
-      if (windowDescriptor) {
-        Object.defineProperty(globalThis, "window", windowDescriptor);
-      }
-      process.off("unhandledRejection", recordUnhandledRejection);
-    }
-
-    expect(unhandledRejections).toEqual([]);
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
-  });
-
-  it("handles a rejected storage probe without an unhandled rejection", async () => {
-    const probeError = new Error("storage probe failed");
-    let rejectStorageStatus!: (reason: Error) => void;
-    const storageStatus = new Promise<boolean>((_resolve, reject) => {
-      rejectStorageStatus = reject;
-    });
-    const storageSpy = vi
-      .spyOn(SecureStorage, "isStorageEncrypted")
-      .mockReturnValue(storageStatus);
-    const consoleErrorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    const unhandledRejections: unknown[] = [];
-    const recordUnhandledRejection = (reason: unknown) => {
-      unhandledRejections.push(reason);
-    };
-    process.on("unhandledRejection", recordUnhandledRejection);
-
-    const { unmount } = renderHook(() => useSidebar());
-    expect(storageSpy).toHaveBeenCalledOnce();
-    unmount();
-
-    try {
-      rejectStorageStatus(probeError);
-      await Promise.resolve();
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    } finally {
-      process.off("unhandledRejection", recordUnhandledRejection);
-    }
-
-    expect(consoleErrorSpy).toHaveBeenCalledOnce();
-    expect(consoleErrorSpy).toHaveBeenCalledWith(probeError);
-    expect(unhandledRejections).toEqual([]);
   });
 });

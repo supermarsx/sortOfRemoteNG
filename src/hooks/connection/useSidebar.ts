@@ -1,16 +1,8 @@
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useContext,
-  useRef,
-} from "react";
+import { useState, useCallback, useMemo, useContext, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useConnections } from "../../contexts/useConnections";
 import SettingsContext, { useSettings } from "../../contexts/SettingsContext";
 import { Connection } from "../../types/connection/connection";
-import { SecureStorage } from "../../utils/storage/storage";
 import { generateId } from "../../utils/core/id";
 
 type SettingsContextValue = ReturnType<typeof useSettings>;
@@ -31,7 +23,6 @@ export function useSidebar() {
   const colorTags = settingsContext?.settings.colorTags;
   const [showFilters, setShowFilters] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const [isStorageEncrypted, setIsStorageEncrypted] = useState(false);
   const [savingReorder, setSavingReorder] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
   const savingReorderRef = useRef(false);
@@ -62,20 +53,6 @@ export function useSidebar() {
     },
     [canChangeReorder, settingsContext, t],
   );
-
-  useEffect(() => {
-    let isMounted = true;
-    SecureStorage.isStorageEncrypted()
-      .then((encrypted) => {
-        if (isMounted) {
-          setIsStorageEncrypted(encrypted);
-        }
-      })
-      .catch(console.error);
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   const allTags = useMemo(
     () =>
@@ -116,7 +93,6 @@ export function useSidebar() {
     state.filter.colorTags.length +
     state.filter.protocols.length;
 
-  const isStorageUnlocked = SecureStorage.isStorageUnlocked();
   const isFavoritesActive = state.filter.showFavorites;
 
   const handleSearch = useCallback(
@@ -211,8 +187,6 @@ export function useSidebar() {
     setShowFilters,
     showSortMenu,
     setShowSortMenu,
-    isStorageEncrypted,
-    isStorageUnlocked,
     savingReorder,
     reorderReady,
     reorderError,

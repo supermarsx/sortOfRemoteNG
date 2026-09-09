@@ -45,21 +45,6 @@ const SidebarHeader: React.FC<{
           <h2 className="text-sm font-light text-[var(--color-text)] tracking-wide">
             {mgr.t("connections.title")}
           </h2>
-          {mgr.isStorageEncrypted && (
-            <div className="flex items-center">
-              {mgr.isStorageUnlocked ? (
-                <span
-                  title={mgr.t("security.storageUnlocked", "Storage unlocked")}
-                >
-                  <Unlock size={14} className="text-success" />
-                </span>
-              ) : (
-                <span title={mgr.t("security.storageLocked", "Storage locked")}>
-                  <Lock size={14} className="text-error" />
-                </span>
-              )}
-            </div>
-          )}
         </div>
       )}
       <div
