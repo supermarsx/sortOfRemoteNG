@@ -237,7 +237,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     return <RDPInternalsTab session={session} onClose={onClose} />;
   }
   if (session.protocol === TRUST_CENTER_PROTOCOL)
-    return <TrustCenterTab onClose={onClose} />;
+    return <TrustCenterTab onClose={onClose} showClose={false} />;
   if (
     session.protocol === RECORDING_PLAYER_PROTOCOL &&
     session.recordingPlayer

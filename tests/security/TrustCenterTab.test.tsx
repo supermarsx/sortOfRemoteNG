@@ -185,6 +185,37 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("dedicated Trust Center", () => {
+  it("preserves the Close action for a standalone manager", async () => {
+    const onClose = vi.fn();
+    render(<TrustCenterTab onClose={onClose} />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close Trust Center" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("hides only the manager Close action when the tab owns closing", async () => {
+    const onClose = vi.fn();
+    render(<TrustCenterTab onClose={onClose} showClose={false} />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Close Trust Center" }),
+    ).not.toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Inspect alpha:443" }),
+      );
+    });
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("bounds large tables and preserves distinct page/all-filtered selection scopes", async () => {
     fixture.records = Array.from({ length: 1_005 }, (_, index) =>
       record(`host-${String(index).padStart(4, "0")}:443`),

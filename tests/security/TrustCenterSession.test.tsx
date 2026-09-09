@@ -25,8 +25,16 @@ vi.mock("../../src/contexts/SessionRenderActivityContext", () => ({
   useSessionRenderActivity: () => ({ isActive: true }),
 }));
 vi.mock("../../src/components/security/TrustCenterTab", () => ({
-  default: ({ onClose }: { onClose: () => void }) => (
-    <button onClick={onClose}>Close dedicated manager</button>
+  default: ({
+    onClose,
+    showClose = true,
+  }: {
+    onClose: () => void;
+    showClose?: boolean;
+  }) => (
+    <section aria-label="Dedicated manager">
+      {showClose && <button onClick={onClose}>Close dedicated manager</button>}
+    </section>
   ),
 }));
 vi.mock("../../src/components/SettingsDialog/index", () => ({
@@ -67,15 +75,18 @@ describe("Trust Center tab navigation", () => {
     });
     expect(activate).toHaveBeenLastCalledWith("trust-center-main");
   });
-  it("renders the dedicated manager and closes only its tool tab", async () => {
+  it("renders the dedicated manager without a duplicate tab Close button", async () => {
     const close = vi.fn();
     render(
       <ToolTabViewer session={createTrustCenterSession()} onClose={close} />,
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Close dedicated manager" }),
-    );
-    expect(close).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole("region", { name: "Dedicated manager" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Close dedicated manager" }),
+    ).not.toBeInTheDocument();
+    expect(close).not.toHaveBeenCalled();
   });
   it("opens the manager from the real Settings tool routing", async () => {
     const activate = vi.fn();

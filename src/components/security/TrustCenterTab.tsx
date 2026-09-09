@@ -33,7 +33,13 @@ const actionLabels: Record<TrustCenterAction, string> = {
   tags: "Replace tags",
 };
 
-export default function TrustCenterTab({ onClose }: { onClose: () => void }) {
+export default function TrustCenterTab({
+  onClose,
+  showClose = true,
+}: {
+  onClose: () => void;
+  showClose?: boolean;
+}) {
   const { state } = useConnections();
   const connectionNames = useMemo(
     () =>
@@ -130,14 +136,16 @@ export default function TrustCenterTab({ onClose }: { onClose: () => void }) {
             policies remain in Settings → Trust Center.
           </p>
         </div>
-        <button
-          type="button"
-          className={button}
-          onClick={onClose}
-          aria-label="Close Trust Center"
-        >
-          <X size={16} aria-hidden="true" />
-        </button>
+        {showClose && (
+          <button
+            type="button"
+            className={button}
+            onClick={onClose}
+            aria-label="Close Trust Center"
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        )}
       </header>
       <div className="space-y-3 border-b border-[var(--color-border)] p-4">
         <div className="flex flex-wrap items-center gap-2">
