@@ -35,8 +35,9 @@ type RoleFrame = {
   inset: readonly [x: number, y: number, width: number, height: number];
 };
 
-// Every mark has its own clear interior: no masking, external images, font
-// glyphs or hard-coded background colors. Coordinates are on Lucide's 24px grid.
+// Role emblems share a bottom-right badge. Outlines stop before that corner,
+// so no masking or hard-coded background color is needed on either theme.
+// Coordinates are on Lucide's 24px grid; plain brand icons bypass this helper.
 const ROLE_FRAMES: Record<IconRole, RoleFrame> = {
   folder: {
     outline: <path d="M10 20H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5l2 3h11v3" />,
@@ -74,204 +75,188 @@ const ROLE_FRAMES: Record<IconRole, RoleFrame> = {
     outline: (
       <>
         <ellipse cx="12" cy="4.5" rx="9" ry="2.5" />
-        <path d="M3 4.5v14c0 1.4 4 2.5 9 2.5s9-1.1 9-2.5v-14" />
+        <path d="M3 4.5v14c0 1.2 3 2.2 7 2.5M21 4.5V10M3 11c0 1.2 3 2.2 7 2.5" />
       </>
     ),
-    inset: [6, 8, 12, 11],
+    inset: [12, 12, 11, 11],
   },
   "access-point": {
     outline: (
       <>
-        <circle cx="12" cy="12" r="10" />
-        <path d="M10 20h4" />
+        <path d="M10 21.8A10 10 0 1 1 21.8 10M7 7a7 7 0 0 1 10 0M9 10a4 4 0 0 1 6 0" />
       </>
     ),
-    inset: [5, 5, 14, 13],
+    inset: [12, 12, 11, 11],
   },
   switch: {
     outline: (
       <>
-        <rect x="2" y="3" width="20" height="18" rx="2" />
-        <path d="M2 16h20M6 16v3M10 16v3M14 16v3M18 16v3" />
+        <path d="M10 21H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5M2 9h20M5 5h2v4H5ZM11 5h2v4h-2ZM17 5h2v4h-2ZM5 17h.01M8 17h.01" />
       </>
     ),
-    inset: [6, 4, 12, 11],
+    inset: [12, 12, 11, 11],
   },
   router: {
     outline: (
       <>
         <path d="M5 2v5M19 2v5" />
-        <rect x="2" y="7" width="20" height="14" rx="2" />
+        <path d="M10 21H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1" />
         <path d="M5 18h.01M8 18h.01" />
       </>
     ),
-    inset: [6, 8, 12, 10],
+    inset: [12, 12, 11, 11],
   },
   "wired-router": {
     outline: (
       <>
-        <rect x="2" y="3" width="20" height="17" rx="2" />
-        <path d="M2 15h20M6 17h3v3H6ZM15 17h3v3h-3ZM7.5 20v2M16.5 20v2" />
+        <path d="M10 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5M6 6h3v4H6ZM15 6h3v4h-3ZM7.5 20v2" />
       </>
     ),
-    inset: [6, 4, 12, 10],
+    inset: [12, 12, 11, 11],
   },
   nas: {
     outline: (
       <>
-        <rect x="3" y="2" width="18" height="20" rx="2" />
-        <path d="M3 17h18M7 19.5h.01M12 19.5h.01M17 19.5h.01" />
+        <path d="M10 22H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M7 6h10M7 10h3M7 15v1M7 19h.01" />
       </>
     ),
-    inset: [5, 3, 14, 13],
+    inset: [12, 12, 11, 11],
   },
   cloud: {
     outline: (
-      <path d="M6 20h12a4 4 0 0 0 2-7.5A6 6 0 0 0 8.5 6a4 4 0 0 0-5 6.5A4 4 0 0 0 6 20Z" />
+      <path d="M10 20H6a4 4 0 0 1-1-7.9A6 6 0 0 1 16.5 8a4 4 0 0 1 5.5 2" />
     ),
-    inset: [6, 9, 12, 10],
+    inset: [12, 12, 11, 11],
   },
   printer: {
     outline: (
       <>
-        <path d="M6 7V2h12v5M6 19v3h12v-3" />
-        <rect x="2" y="7" width="20" height="12" rx="2" />
+        <path d="M6 7V2h12v5M10 22H6v-7h4M10 19H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1M6 11h2" />
       </>
     ),
-    inset: [6, 8, 12, 10],
+    inset: [12, 12, 11, 11],
   },
   laptop: {
     outline: (
       <>
-        <rect x="3" y="3" width="18" height="14" rx="2" />
-        <path d="m3 17-2 4h22l-2-4M10 19h4" />
+        <path d="M10 17H3V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5M3 17l-2 4h9" />
       </>
     ),
-    inset: [6, 4, 12, 12],
+    inset: [12, 12, 11, 11],
   },
   desktop: {
     outline: (
       <>
-        <rect x="2" y="2" width="20" height="15" rx="2" />
-        <path d="M12 17v5M8 22h8" />
+        <path d="M10 17H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v6M8 17v5M5 22h5" />
       </>
     ),
-    inset: [6, 3, 12, 13],
+    inset: [12, 12, 11, 11],
   },
   "remote-desktop": {
     outline: (
       <>
-        <rect x="2" y="2" width="20" height="13" rx="2" />
-        <path d="M5 20h14m-3-3 3 3-3 3M8 17l-3 3 3 3" />
+        <path d="M10 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v6" />
+        <path d="M4 20h6m-2-2 2 2-2 2M6 18l-2 2 2 2" />
       </>
     ),
-    inset: [6, 3, 12, 11],
+    inset: [12, 12, 11, 11],
   },
   phone: {
     outline: (
       <>
-        <rect x="4" y="1" width="16" height="22" rx="3" />
-        <path d="M9 3h6M10 20h4" />
+        <path d="M10 23H7a3 3 0 0 1-3-3V4a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v6M9 3h6M8 20h2" />
       </>
     ),
-    inset: [6, 5, 12, 13],
+    inset: [12, 12, 11, 11],
   },
   "desk-phone": {
     outline: (
       <>
-        <rect x="8" y="3" width="14" height="18" rx="2" />
-        <path d="M3 3h2v5H4v8h1v5H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM12 17h.01M17 17h.01M12 19h.01M17 19h.01" />
+        <path d="M10 21a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M12 7h6M12 10h.01M17 10h.01" />
+        <path d="M3 3h2v5H4v8h1v5H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
       </>
     ),
-    inset: [9, 5, 12, 10],
+    inset: [12, 12, 11, 11],
   },
   olt: {
     outline: (
       <>
-        <rect x="2" y="3" width="20" height="14" rx="2" />
-        <path d="M6 14v6M12 14v8M18 14v6M4 14h4M10 14h4M16 14h4" />
+        <path d="M10 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5M6 14v6M4 14h4M7 7h11" />
       </>
     ),
-    inset: [6, 4, 12, 9],
+    inset: [12, 12, 11, 11],
   },
   "wall-terminal": {
     outline: (
       <>
-        <path d="M5 2h11l5 5v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" />
-        <path d="M3 17h18M7 20h4M16 20h.01" />
+        <path d="M10 22H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h11l5 5v3M3 17h7M7 20h3" />
       </>
     ),
-    inset: [6, 4, 12, 12],
+    inset: [12, 12, 11, 11],
   },
   tablet: {
     outline: (
       <>
-        <rect x="2" y="3" width="20" height="18" rx="2" />
-        <path d="M20 11v2" />
+        <path d="M10 21H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5M19 7v2" />
       </>
     ),
-    inset: [4, 5, 14, 14],
+    inset: [12, 12, 11, 11],
   },
   ups: {
     outline: (
       <>
-        <rect x="4" y="2" width="16" height="20" rx="2" />
-        <path d="M4 16h16M7 19h6M17 19h.01" />
+        <path d="M10 22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6M9 5l-2 5h4l-2 5M7 19h3" />
       </>
     ),
-    inset: [6, 3, 12, 12],
+    inset: [12, 12, 11, 11],
   },
   pdu: {
     outline: (
       <>
-        <rect x="2" y="2" width="20" height="20" rx="2" />
-        <path d="M2 14h20M7 17v2M10 17v2M15 17v2M18 17v2" />
+        <path d="M10 22H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v6M5 5v3M8 5v3M15 5v3M18 5v3M5 13v3M8 13v3" />
       </>
     ),
-    inset: [6, 3, 12, 10],
+    inset: [12, 12, 11, 11],
   },
   iot: {
     outline: (
       <>
-        <rect x="4" y="4" width="16" height="16" rx="2" />
-        <path d="M8 1v3M16 1v3M8 20v3M16 20v3M1 8h3M1 16h3M20 8h3M20 16h3" />
+        <path d="M10 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4M8 1v3M16 1v3M8 20v3M1 8h3M1 16h3M20 8h3" />
       </>
     ),
-    inset: [6, 6, 12, 12],
+    inset: [12, 12, 11, 11],
   },
   firewall: {
     outline: (
       <>
-        <rect x="2" y="3" width="20" height="18" rx="1" />
-        <path d="M2 8h20M2 16h20M8 3v5M16 3v5M5 8v8M19 8v8M8 16v5M16 16v5" />
+        <path d="M10 21H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h18a1 1 0 0 1 1 1v6M2 8h20M2 16h8M8 3v5M16 3v5M5 8v8M8 16v5" />
       </>
     ),
-    inset: [6, 9, 12, 6],
+    inset: [12, 12, 11, 11],
   },
   vpn: {
-    outline: <path d="m12 2 10 4v7c0 5-4.5 8-10 10C6.5 21 2 18 2 13V6l10-4Z" />,
-    inset: [6, 6, 12, 12],
+    outline: <path d="M10 22C6 20 2 17.5 2 13V6l10-4 10 4v4" />,
+    inset: [12, 12, 11, 11],
   },
   camera: {
     outline: (
       <>
-        <path d="M2 5h17v12H2V5ZM19 8l3-2v10l-3-2M8 17v4M5 21h6" />
+        <path d="M10 17H2V5h17v5M19 8l3-2v4M8 17v4M5 21h5" />
       </>
     ),
-    inset: [4, 6, 13, 10],
+    inset: [12, 12, 11, 11],
   },
   recorder: {
     outline: (
       <>
-        <rect x="2" y="5" width="20" height="14" rx="2" />
-        <path d="M2 15h20M5 17h.01M8 17h.01M15 17h4" />
+        <path d="M10 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3M2 11h8M5 16h.01M8 16h.01" />
       </>
     ),
-    inset: [6, 6, 12, 8],
+    inset: [12, 12, 11, 11],
   },
 };
 
-/** Combine a recognizable role silhouette with a distinct inset mark. */
+/** Combine a recognizable role silhouette with a bottom-right emblem. */
 export function createRoleIcon(
   name: string,
   role: IconRole,

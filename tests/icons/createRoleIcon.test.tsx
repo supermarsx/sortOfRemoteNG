@@ -81,6 +81,10 @@ describe("role icon composites", () => {
       const glyph = svg.querySelector("svg");
       expect(glyph).toHaveAttribute("aria-hidden", "true");
       expect(glyph).toHaveAttribute("focusable", "false");
+      expect(glyph).toHaveAttribute("x", "12");
+      expect(glyph).toHaveAttribute("y", "12");
+      expect(glyph).toHaveAttribute("width", "11");
+      expect(glyph).toHaveAttribute("height", "11");
       expect(Number(glyph?.getAttribute("x"))).toBeGreaterThanOrEqual(0);
       expect(Number(glyph?.getAttribute("y"))).toBeGreaterThanOrEqual(0);
       expect(
@@ -122,11 +126,13 @@ describe("role icon composites", () => {
       expect(svg).toHaveAttribute("viewBox", "0 0 24 24");
       expect(svg).toHaveAttribute("aria-hidden", "true");
       expect(svg?.querySelector("svg")).toHaveAttribute("viewBox", "0 0 24 24");
-      expect(svg?.querySelector("svg")).toHaveAttribute("width", "12");
+      expect(svg?.querySelector("svg")).toHaveAttribute("width", "11");
       expect(svg?.querySelector("svg")).toHaveAttribute("height", "11");
       expect(
-        svg?.querySelector('[data-role-frame="remote-desktop"] path'),
-      ).toHaveAttribute("d", "M5 20h14m-3-3 3 3-3 3M8 17l-3 3 3 3");
+        svg?.querySelector(
+          '[data-role-frame="remote-desktop"] path:last-child',
+        ),
+      ).toHaveAttribute("d", "M4 20h6m-2-2 2 2-2 2M6 18l-2 2 2 2");
     },
   );
 

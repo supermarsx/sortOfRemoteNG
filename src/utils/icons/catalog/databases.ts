@@ -1,4 +1,4 @@
-import { Database, DatabaseBackup, DatabaseZap, Table2 } from "lucide-react";
+import { Archive, Database, Table2, Zap } from "lucide-react";
 
 import {
   mariadb,
@@ -26,13 +26,16 @@ export const DATABASE_ICONS = [
     "database-backup",
     "Database backup",
     "databases",
-    DatabaseBackup,
+    createRoleIcon("DatabaseBackup", "database", Archive),
     ["backup", "restore"],
   ),
-  defineIcon("database-zap", "Live database", "databases", DatabaseZap, [
-    "query",
-    "performance",
-  ]),
+  defineIcon(
+    "database-zap",
+    "Live database",
+    "databases",
+    createRoleIcon("LiveDatabase", "database", Zap),
+    ["query", "performance"],
+  ),
   defineIcon("table", "Data table", "databases", Table2, ["rows", "records"]),
   defineIcon("mongodb", "MongoDB", "databases", mongodb, [
     "mongodb",
