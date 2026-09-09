@@ -353,14 +353,67 @@ pub async fn write_app_settings(
     app: tauri::AppHandle,
     enc_state: State<'_, EncryptionState>,
     patch: Value,
+    expected_icon_library: Option<Value>,
 ) -> Result<u64, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    write_app_settings_reviewed_inner(&dir, &enc_state, patch, expected_icon_library).await
+}
+
+fn normalized_icon_library(value: Option<&Value>) -> Value {
+    match value {
+        Some(value) if !value.is_null() => value.clone(),
+        _ => serde_json::json!({"version":1,"customIcons":[],"builtInOverrides":{}}),
+    }
+}
+
+/// Renderer icon edits are reviewed replacements, not last-writer-wins patches.
+/// Only absent/null stored libraries normalize to empty; never discard unknown
+/// fields or silently repair malformed data when comparing the reviewed base.
+fn require_icon_library_review(
+    existing: &Value,
+    patch: &Value,
+    expected: Option<&Value>,
+) -> Result<(), String> {
+    if !existing.is_object() {
+        return Err("existing settings root must be a JSON object".into());
+    }
+    let patch = patch.as_object().ok_or("patch must be a JSON object")?;
+    if !patch.contains_key("iconLibrary") {
+        return Ok(());
+    }
+    // Tauri's Option<Value> treats explicit null like a missing argument. The
+    // client sends the concrete empty v1 document when reviewing a first save.
+    let expected = expected.filter(|value| !value.is_null()).ok_or(
+        "Icon library changes require the reviewed base; refresh Icon Explorer before saving",
+    )?;
+    if normalized_icon_library(existing.get("iconLibrary")) != *expected {
+        return Err("Icon library changed in another window; refresh and review again. No settings changes were saved".into());
+    }
+    Ok(())
+}
+
+/// Same boundary as the renderer command, with an explicit temporary-profile
+/// seam for tests. Trusted native callers keep write_app_settings_inner's API.
+pub async fn write_app_settings_reviewed_inner(
+    dir: &std::path::Path,
+    enc_state: &EncryptionState,
+    patch: Value,
+    expected_icon_library: Option<Value>,
+) -> Result<u64, String> {
     reject_rest_api_secret_patch(&patch)?;
-    // Keep the optional legacy-secret migration and the caller's patch in one
-    // transaction. Both helpers below assume this guard is already held.
     let _write_guard = sorng_encryption::settings_coordinator::lock().await;
-    let _ = read_app_settings_secure_locked(&dir, &enc_state).await?;
-    write_app_settings_locked(&dir, &enc_state, patch).await
+    let current = read_app_settings_inner(dir, enc_state).await?;
+    require_icon_library_review(
+        current.as_ref().unwrap_or(&serde_json::json!({})),
+        &patch,
+        expected_icon_library.as_ref(),
+    )?;
+    // The CAS precedes even legacy-secret migration: a stale review must not
+    // mutate settings or touch the credential vault as a side effect.
+    if let Some(current) = current {
+        migrate_rest_api_secrets_locked(dir, enc_state, current).await?;
+    }
+    write_app_settings_locked(dir, enc_state, patch).await
 }
 
 /// Number of attempts the atomic writer makes before giving up. Rides
@@ -655,6 +708,223 @@ mod tests {
     use sorng_encryption::MasterDek;
     use sorng_encryption::MasterKeyStorage;
     use tempfile::tempdir;
+
+    fn icon_library(label: &str) -> Value {
+        serde_json::json!({"version":1,"customIcons":[],"builtInOverrides":{
+            "folder":{"label":label,"notes":"fixture metadata"}
+        }})
+    }
+
+    #[tokio::test]
+    async fn icon_library_requires_review_and_rejects_stale_whole_patch_before_any_side_effect() {
+        let temp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let path = temp.path().join(SETTINGS_FILENAME);
+        let empty = normalized_icon_library(None);
+        let first = icon_library("First");
+        for expected in [None, Some(Value::Null)] {
+            assert!(write_app_settings_reviewed_inner(
+                temp.path(),
+                &state,
+                serde_json::json!({"iconLibrary":first}),
+                expected
+            )
+            .await
+            .unwrap_err()
+            .contains("reviewed base"));
+            assert!(!path.exists());
+        }
+        let generation = write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":first,"theme":"dark","updater":{"enabled":false}}),
+            Some(empty.clone()),
+        )
+        .await
+        .unwrap();
+        // Empty legacy secret fields still trigger a sanitized settings write.
+        // They cannot reach the OS vault even if an ordering regression moves
+        // migration before CAS; the unchanged-byte assertion detects that bug.
+        let mut stored: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        stored["restApi"] = serde_json::json!({"apiKey":""});
+        std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let error = write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":icon_library("Stale"),"theme":"light"}),
+            Some(empty),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("another window"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        // Remove the fixture-only legacy field directly.
+        stored.as_object_mut().unwrap().remove("restApi");
+        std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        let next = write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"theme":"light"}),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(next > generation);
+        let after = read_app_settings_inner(temp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after["iconLibrary"], first);
+        assert_eq!(after["theme"], "light");
+        assert_eq!(after["updater"], serde_json::json!({"enabled":false}));
+    }
+
+    #[tokio::test]
+    async fn icon_library_null_base_and_explicit_reviewed_reset_are_normalized_without_losing_siblings(
+    ) {
+        let temp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        write_app_settings_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":null,"theme":"dark"}),
+        )
+        .await
+        .unwrap();
+        let empty = normalized_icon_library(None);
+        let library = icon_library("Custom label");
+        write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":library}),
+            Some(empty.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":empty}),
+            None
+        )
+        .await
+        .is_err());
+        write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":empty}),
+            Some(library),
+        )
+        .await
+        .unwrap();
+        let after = read_app_settings_inner(temp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after["iconLibrary"], empty);
+        assert_eq!(after["theme"], "dark");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn icon_library_competing_reviewed_writers_commit_exactly_one_library_and_its_sibling_patch(
+    ) {
+        let temp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let mut writers = Vec::new();
+        for label in ["A", "B"] {
+            let dir = temp.path().to_owned();
+            let state = state.clone();
+            writers.push(tokio::spawn(async move {
+                write_app_settings_reviewed_inner(
+                    &dir,
+                    &state,
+                    serde_json::json!({"iconLibrary":icon_library(label),"theme":label}),
+                    Some(normalized_icon_library(None)),
+                )
+                .await
+            }));
+        }
+        let mut successes = 0;
+        for writer in writers {
+            match writer.await.unwrap() {
+                Ok(_) => successes += 1,
+                Err(error) => assert!(error.contains("another window")),
+            }
+        }
+        assert_eq!(successes, 1);
+        let after = read_app_settings_inner(temp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            after["iconLibrary"]["builtInOverrides"]["folder"]["label"],
+            after["theme"]
+        );
+    }
+
+    #[tokio::test]
+    async fn icon_library_encrypted_stale_and_locked_reviews_never_downgrade_or_touch_vault() {
+        let temp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        state
+            .install(MasterDek::from_bytes(&[0x31; 32]).unwrap())
+            .await;
+        let library = icon_library("Encrypted");
+        let document = serde_json::json!({"iconLibrary":library,"theme":"dark"});
+        // Direct codec fixture avoids any OS-vault provider call or receipt.
+        let bytes = artifact_settings::write(
+            &state,
+            &document,
+            MasterKeyStorage::Password,
+            Argon2Params::OWASP,
+            [0; SALT_LEN],
+        )
+        .await
+        .unwrap();
+        let path = temp.path().join(SETTINGS_ENC_FILENAME);
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":normalized_icon_library(None),"theme":"light"}),
+            Some(normalized_icon_library(None))
+        )
+        .await
+        .unwrap_err()
+        .contains("another window"));
+        state.lock().await;
+        let error = write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":normalized_icon_library(None)}),
+            Some(library),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("locked") || error.contains("unlock"));
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(!temp.path().join(SETTINGS_FILENAME).exists());
+    }
+
+    #[test]
+    fn icon_library_review_does_not_ignore_unknown_fields_or_malformed_settings_roots() {
+        let empty = normalized_icon_library(None);
+        let mut unexpected = empty.clone();
+        unexpected["futureField"] = serde_json::json!(true);
+        assert!(require_icon_library_review(
+            &serde_json::json!({"iconLibrary":unexpected}),
+            &serde_json::json!({"iconLibrary":empty}),
+            Some(&empty)
+        )
+        .is_err());
+        assert!(require_icon_library_review(
+            &serde_json::json!([]),
+            &serde_json::json!({"iconLibrary":empty}),
+            Some(&empty)
+        )
+        .is_err());
+    }
 
     #[test]
     fn merges_frontend_keys_and_preserves_updater() {
