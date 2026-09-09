@@ -34,6 +34,7 @@ const fixture = vi.hoisted(() => ({
   read: vi.fn(),
   write: vi.fn(),
   stat: vi.fn(),
+  reassign: vi.fn(),
 }));
 vi.mock("../../src/utils/auth/trustStore", async (importOriginal) => ({
   decodeNativeHost: (
@@ -48,8 +49,9 @@ vi.mock("../../src/utils/auth/trustStore", async (importOriginal) => ({
   refreshTrustStoreScope: vi.fn().mockResolvedValue(undefined),
   retryTrustStoreHydration: fixture.hydrate,
   refreshTrustStoreRecords: fixture.hydrate,
-  getTrustRecordStorageKey: (record: TrustRecord) =>
-    `${record.type}:${record.host}`,
+  // Fixture native keys mirror the cache entries supplied by mocked hydration.
+  getTrustRecordStorageKey: (record: TrustRecord, connectionId?: string) =>
+    `${record.type}:${connectionId ? `@sorng/connection/v1/${encodeURIComponent(connectionId)}/${encodeURIComponent(record.host.split(":")[0])}/${record.host.split(":")[1]}` : record.host}`,
   parseTrustRecordAddress: (record: TrustRecord) => ({
     host: record.host.split(":")[0],
     port: 443,
@@ -63,6 +65,7 @@ vi.mock("../../src/utils/auth/trustStore", async (importOriginal) => ({
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
+      reassignTrustScope: fixture.reassign,
       getCurrentDatabase: () =>
         fixture.databaseId
           ? { id: fixture.databaseId, name: "Team database" }
@@ -79,7 +82,16 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: {
-      connections: [{ id: "connection-1", name: "Production gateway" }],
+      connections: [
+        {
+          id: "connection-1",
+          name: "Production gateway",
+          protocol: "https",
+          hostname: "gateway",
+          port: 443,
+          isGroup: false,
+        },
+      ],
     },
   }),
 }));
@@ -102,6 +114,13 @@ const record = (host: string, revoked = false): TrustRecord => ({
   type: "tls",
   revoked,
   userApproved: true,
+  scopeDecision: {
+    userApproved: true,
+    revoked,
+    trustExpires: null,
+    hostPolicy: null,
+    hostPolicyConfig: null,
+  },
   identity: {
     fingerprint: `FP-${host}`,
     firstSeen: "2026-01-01",
@@ -145,6 +164,11 @@ beforeEach(() => {
   fixture.rename.mockResolvedValue(undefined);
   fixture.policy.mockResolvedValue(undefined);
   fixture.tags.mockResolvedValue(undefined);
+  fixture.reassign
+    .mockReset()
+    .mockImplementation(async (_id: string, targets: unknown[]) => ({
+      updated: targets.length,
+    }));
   fixture.stat.mockResolvedValue({ size: 100 });
   fixture.open.mockResolvedValue("fixture-import.json");
   fixture.save.mockResolvedValue("fixture-export.json");
@@ -190,6 +214,240 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("dedicated Trust Center", () => {
+  it("moves a reviewed connection identity to database-wide scope through one captured manager call", async () => {
+    await mount();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change scope for gateway:443" }),
+    );
+    expect(fixture.reassign).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "New identity scope" }),
+    );
+    fireEvent.mouseDown(
+      within(screen.getByRole("listbox")).getByRole("option", {
+        name: /Database-wide/,
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Review identity scope change" }),
+      ).getByRole("checkbox"),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply reviewed scope" }),
+    );
+    await waitFor(() =>
+      expect(fixture.reassign).toHaveBeenCalledExactlyOnceWith(
+        "db-a",
+        [
+          {
+            host: "@sorng/connection/v1/connection-1/gateway/443",
+            recordType: "tls",
+            fingerprint: "FP-gateway:443",
+            expectedDecision: {
+              userApproved: true,
+              revoked: false,
+              trustExpires: null,
+              hostPolicy: null,
+              hostPolicyConfig: null,
+            },
+          },
+        ],
+        null,
+      ),
+    );
+    expect(
+      fixture.invoke.mock.calls.some(
+        ([name]) => name === "trust_apply_reviewed_batch",
+      ),
+    ).toBe(false);
+    await screen.findByText(/1 of 1 reviewed identities changed scope/);
+  });
+  it("applies the whole selected batch once, surfaces destination conflicts and accepts honest no-op counts", async () => {
+    fixture.reassign.mockRejectedValueOnce(
+      new Error(
+        "Destination already contains a different identity; nothing changed",
+      ),
+    );
+    await mount();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all filtered" }),
+    );
+    const choose = () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Change selected scope" }),
+      );
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "New identity scope" }),
+      );
+      fireEvent.mouseDown(
+        screen.getByRole("option", {
+          name: /Production gateway — HTTPS · gateway:443/,
+        }),
+      );
+      fireEvent.click(
+        within(
+          screen.getByRole("dialog", { name: "Review identity scope change" }),
+        ).getByRole("checkbox"),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Apply reviewed scope" }),
+      );
+    };
+    choose();
+    await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Destination already contains a different identity",
+    );
+    expect(fixture.reassign).toHaveBeenCalledTimes(1);
+    expect(fixture.reassign.mock.calls[0][1]).toHaveLength(3);
+    expect(fixture.reassign.mock.calls[0][2]).toBe("connection-1");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Change selected scope" }),
+      ).toBeEnabled(),
+    );
+    fixture.reassign.mockResolvedValueOnce({ updated: 0 });
+    choose();
+    await screen.findByText(
+      /0 of 3 reviewed identities changed scope.*3 already had that scope/,
+    );
+    expect(fixture.reassign).toHaveBeenCalledTimes(2);
+  });
+  it("discards a pending scope review when the active database changes", async () => {
+    await mount();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change scope for alpha:443" }),
+    );
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "New identity scope" }),
+    );
+    fireEvent.mouseDown(
+      within(screen.getByRole("listbox")).getByRole("option", {
+        name: /Database-wide/,
+      }),
+    );
+    act(() => {
+      fixture.databaseId = "db-b";
+      fixture.changed?.();
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Review identity scope change" }),
+    ).not.toBeInTheDocument();
+    expect(fixture.reassign).not.toHaveBeenCalled();
+  });
+  it("blocks duplicate scope mutations while a reviewed move is pending", async () => {
+    let finish!: (value: { updated: number }) => void;
+    fixture.reassign.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await mount();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all filtered" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change selected scope" }),
+    );
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "New identity scope" }),
+    );
+    fireEvent.mouseDown(
+      within(screen.getByRole("listbox")).getByRole("option", {
+        name: /Database-wide/,
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Review identity scope change" }),
+      ).getByRole("checkbox"),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply reviewed scope" }),
+    );
+    await waitFor(() => expect(fixture.reassign).toHaveBeenCalledTimes(1));
+    expect(
+      screen.getByRole("button", { name: "Change selected scope" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change selected scope" }),
+    );
+    expect(fixture.reassign).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({ updated: 1 });
+    });
+    await screen.findByText(
+      /1 of 3 reviewed identities changed scope.*2 already had that scope/,
+    );
+  });
+  it("captures advanced security policy before review and refuses missing native decision metadata", async () => {
+    const source = fixture.connectionRecords[0].records[0];
+    source.scopeDecision = {
+      userApproved: true,
+      revoked: false,
+      trustExpires: "2027-01-01",
+      hostPolicy: "conditional-trust",
+      hostPolicyConfig: { allowed_networks: ["192.0.2.0/24"] },
+    };
+    fixture.reassign.mockRejectedValueOnce(
+      new Error("Reviewed security decision changed; refresh before moving"),
+    );
+    await mount();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change scope for gateway:443" }),
+    );
+    source.scopeDecision.hostPolicyConfig!.allowed_networks!.push(
+      "198.51.100.0/24",
+    );
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "New identity scope" }),
+    );
+    fireEvent.mouseDown(
+      within(screen.getByRole("listbox")).getByRole("option", {
+        name: /Database-wide/,
+      }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Review identity scope change",
+    });
+    expect(
+      within(dialog).getByText("Policy: conditional-trust"),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply reviewed scope" }),
+    );
+    await screen.findByRole("alert");
+    expect(fixture.reassign.mock.calls[0][1][0].expectedDecision).toEqual({
+      userApproved: true,
+      revoked: false,
+      trustExpires: "2027-01-01",
+      hostPolicy: "conditional-trust",
+      hostPolicyConfig: { allowed_networks: ["192.0.2.0/24"] },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Reviewed security decision changed",
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Change scope for alpha:443" }),
+      ).toBeEnabled(),
+    );
+    fixture.records[0].scopeDecision = undefined;
+    act(() => window.dispatchEvent(new Event("trustStoreChanged")));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change scope for alpha:443" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Review identity scope change" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Native reviewed security metadata is unavailable",
+    );
+    expect(fixture.reassign).toHaveBeenCalledTimes(1);
+  });
   it("keeps an inspector opened as its database first becomes ready", async () => {
     let clicked = false;
     render(

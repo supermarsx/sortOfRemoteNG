@@ -26,7 +26,7 @@ export interface TrustCenterRow {
   connectionId?: string;
 }
 export type TrustCenterAction =
-  "revoke" | "reinstate" | "forget" | "policy" | "tags";
+  "revoke" | "reinstate" | "forget" | "policy" | "tags" | "scope";
 interface TrustSummary {
   total_records: number;
   revoked_count: number;
@@ -242,6 +242,13 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
   ) => {
     if (busyRef.current || loading || !targets.length) return;
     try {
+      if (
+        action === "scope" &&
+        targets.some((row) => !row.record.scopeDecision)
+      )
+        throw new Error(
+          "Native reviewed security metadata is unavailable. Refresh the Trust Center before changing scope.",
+        );
       const next: Review = {
         ...capture(),
         action,
@@ -249,7 +256,13 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
         tags,
         rows: targets.map((row) => ({
           ...row,
-          record: { ...row.record, identity: { ...row.record.identity } },
+          record: {
+            ...row.record,
+            identity: { ...row.record.identity },
+            scopeDecision: row.record.scopeDecision
+              ? structuredClone(row.record.scopeDecision)
+              : undefined,
+          },
         })),
       };
       reviewRef.current = next;
@@ -262,8 +275,9 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
     reviewRef.current = null;
     setReview(null);
   };
-  const apply = async () => {
+  const apply = async (targetConnectionId?: string | null) => {
     const target = reviewRef.current;
+    if (target?.action === "scope" && targetConnectionId === undefined) return;
     if (!target || !begin()) return;
     dismissReview();
     try {
@@ -293,40 +307,59 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
           recordType: row.record.type,
           fingerprint: row.record.identity.fingerprint,
         }));
-        const invoke = await getInvoke();
-        if (!invoke)
-          throw new Error("Trust management requires the desktop app.");
+        const result =
+          target.action === "scope"
+            ? await DatabaseManager.getInstance().reassignTrustScope(
+                target.databaseId,
+                targets.map((entry, index) => {
+                  const expectedDecision =
+                    target.rows[index].record.scopeDecision;
+                  if (!expectedDecision)
+                    throw new Error(
+                      "Reviewed security metadata is missing; refresh before changing scope.",
+                    );
+                  return { ...entry, expectedDecision };
+                }),
+                targetConnectionId ?? null,
+              )
+            : await (async () => {
+                const invoke = await getInvoke();
+                if (!invoke)
+                  throw new Error("Trust management requires the desktop app.");
+                assertCurrent(target);
+                return invoke<{ updated: number }>(
+                  "trust_apply_reviewed_batch",
+                  {
+                    databaseId: target.databaseId,
+                    action: target.action,
+                    targets,
+                    ...(target.action === "policy"
+                      ? { policy: target.policy ?? null }
+                      : {}),
+                    ...(target.action === "tags"
+                      ? {
+                          tags: [
+                            ...new Set(
+                              (target.tags ?? [])
+                                .map((tag) => tag.trim())
+                                .filter(Boolean),
+                            ),
+                          ],
+                        }
+                      : {}),
+                  },
+                );
+              })();
         assertCurrent(target);
-        const result = await invoke<{ updated: number }>(
-          "trust_apply_reviewed_batch",
-          {
-            databaseId: target.databaseId,
-            action: target.action,
-            targets,
-            ...(target.action === "policy"
-              ? { policy: target.policy ?? null }
-              : {}),
-            ...(target.action === "tags"
-              ? {
-                  tags: [
-                    ...new Set(
-                      (target.tags ?? [])
-                        .map((tag) => tag.trim())
-                        .filter(Boolean),
-                    ),
-                  ],
-                }
-              : {}),
-          },
-        );
-        assertCurrent(target);
-        if (result.updated !== targets.length)
+        if (target.action !== "scope" && result.updated !== targets.length)
           throw new Error(
             "Native batch result was incomplete; refresh before retrying.",
           );
         setSelected(new Set());
         setMessage(
-          `${target.action}: ${result.updated} identities updated in ${target.databaseName}.`,
+          target.action === "scope"
+            ? `${result.updated} of ${targets.length} reviewed identities changed scope in ${target.databaseName}; ${targets.length - result.updated} already had that scope. Endpoints, fingerprints, approval, revocation and policies were preserved.`
+            : `${target.action}: ${result.updated} identities updated in ${target.databaseName}.`,
         );
       }
     } catch (e) {

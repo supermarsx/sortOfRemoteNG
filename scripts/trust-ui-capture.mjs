@@ -149,6 +149,62 @@ try {
     report.push(layout);
     console.log(`Verified actual certificate inspector at ${width}px`);
   }
+  for (const width of [1440, 390]) {
+    await browser.setViewport({ width, height: 900, devicePixelRatio: 1 });
+    await browser.url("http://127.0.0.1:4320/?view=scope");
+    await browser.$('[role="dialog"]').waitForDisplayed({ timeout: 30000 });
+    const apply = await browser.$("button=Apply reviewed scope");
+    if (await apply.isEnabled())
+      throw new Error("Scope enabled without review");
+    await browser.$('[role="combobox"]').click();
+    await browser.$('[role="option"]').click();
+    await browser.waitUntil(async () =>
+      (await browser.$(".sor-modal-body").getText()).includes(
+        "This broadens 2",
+      ),
+    );
+    if (await apply.isEnabled())
+      throw new Error("Scope enabled without acknowledgment");
+    const layout = await browser.execute(async () => {
+      await document.fonts.ready;
+      const panel = document.querySelector('[role="dialog"]');
+      const body = panel.querySelector(".sor-modal-body");
+      const rect = panel.getBoundingClientRect();
+      const foot = panel
+        .querySelector(".sor-modal-footer")
+        .getBoundingClientRect();
+      body.scrollTop = 0;
+      return {
+        kind: "scope",
+        width: innerWidth,
+        left: rect.left,
+        right: rect.right,
+        bottom: rect.bottom,
+        footerBottom: foot.bottom,
+        viewportHeight: innerHeight,
+        overflow: panel.scrollWidth > panel.clientWidth,
+        refused: window.__TRUST_DEMO__.refused,
+      };
+    });
+    if (
+      layout.refused.length ||
+      layout.left < 8 ||
+      layout.right > width - 8 ||
+      layout.bottom > layout.viewportHeight ||
+      layout.footerBottom > layout.viewportHeight ||
+      layout.overflow
+    )
+      throw new Error(JSON.stringify(layout));
+    await browser.saveScreenshot(path.join(output, `scope-${width}.png`));
+    await browser.$(".sor-modal-body").execute((body) => {
+      body.scrollTop = body.scrollHeight;
+    });
+    await browser.saveScreenshot(
+      path.join(output, `scope-${width}-scrolled.png`),
+    );
+    report.push(layout);
+    console.log(`Verified actual scope review at ${width}px`);
+  }
   await writeFile(
     path.join(output, "report.json"),
     JSON.stringify(report, null, 2),

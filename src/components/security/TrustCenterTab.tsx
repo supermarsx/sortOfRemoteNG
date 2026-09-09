@@ -11,6 +11,7 @@ import {
   Search,
   X,
   Settings,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
   useTrustCenter,
@@ -19,6 +20,7 @@ import {
 } from "../../hooks/security/useTrustCenter";
 import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
 import { TrustIdentityImportDialog } from "./TrustIdentityImportDialog";
+import { TrustIdentityScopeDialog } from "./TrustIdentityScopeDialog";
 import TrustIdentityInspector from "./TrustIdentityInspector";
 import { useConnections } from "../../contexts/useConnections";
 import type { TrustPolicy } from "../../utils/auth/trustStore";
@@ -33,6 +35,7 @@ const actionLabels: Record<TrustCenterAction, string> = {
   forget: "Forget",
   policy: "Change policy",
   tags: "Replace tags",
+  scope: "Change scope",
 };
 const actionHints: Record<TrustCenterAction, string> = {
   revoke:
@@ -43,6 +46,8 @@ const actionHints: Record<TrustCenterAction, string> = {
     "Remove remembered identities after review; first-use policy applies to a future connection",
   policy: "Review how future connections verify this identity",
   tags: "Review replacing all existing tags; fingerprints and trust are unchanged",
+  scope:
+    "Review database-wide or saved-connection scope without changing this endpoint or fingerprint",
 };
 
 export default function TrustCenterTab({
@@ -110,7 +115,7 @@ export default function TrustCenterTab({
   const request = (action: TrustCenterAction, rows: TrustCenterRow[]) =>
     mgr.requestAction(action, rows);
   const confirmation =
-    review && review.action !== "import"
+    review && review.action !== "import" && review.action !== "scope"
       ? `${review.rows.length} identities in ${review.databaseName}. ${review.action === "tags" ? `Replace all existing tags with: ${review.tags?.filter((tag) => tag.trim()).join(", ") || "no tags (clear tags)"}. This does not change trust or fingerprints.` : review.action === "policy" ? `Set per-host policy to ${review.policy ?? "inherit global"}. This changes future verification; always-trust bypasses identity checks. Existing fingerprints are not replaced.` : review.action === "forget" ? "Forgetting removes remembered identity and revocation history. A future connection may prompt again; this does not block the host." : review.action === "reinstate" ? "Reinstating removes the revocation block on these exact stored fingerprints; other trust and expiry checks remain." : "Revocation blocks these stored identities. It does not terminate existing connections."} The entire record batch is validated before one write; any changed target rejects the batch.`
       : "";
   return (
@@ -346,6 +351,16 @@ export default function TrustCenterTab({
               {actionLabels[action]} selected
             </button>
           ))}
+          <button
+            type="button"
+            className={button}
+            disabled={disabled || !selected.length}
+            onClick={() => request("scope", selected)}
+            data-tooltip={actionHints.scope}
+          >
+            <ArrowRightLeft size={14} aria-hidden="true" />
+            Change selected scope
+          </button>
           <input
             aria-label="Tags for selected identities"
             className={field}
@@ -559,6 +574,16 @@ export default function TrustCenterTab({
                       >
                         <Trash2 size={14} aria-hidden="true" />
                       </button>
+                      <button
+                        type="button"
+                        className={button}
+                        disabled={disabled}
+                        aria-label={`Change scope for ${row.record.host}`}
+                        data-tooltip={actionHints.scope}
+                        onClick={() => request("scope", [row])}
+                      >
+                        <ArrowRightLeft size={14} aria-hidden="true" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -687,7 +712,9 @@ export default function TrustCenterTab({
         </TrustIdentityInspector>
       )}
       <ConfirmDialog
-        isOpen={!!review && review.action !== "import"}
+        isOpen={
+          !!review && review.action !== "import" && review.action !== "scope"
+        }
         title={
           review?.action === "import"
             ? "Import reviewed trust identities?"
@@ -712,6 +739,13 @@ export default function TrustCenterTab({
         busy={mgr.busy}
         onClose={mgr.dismissReview}
         onConfirm={() => void mgr.apply()}
+      />
+      <TrustIdentityScopeDialog
+        review={review?.action === "scope" ? review : null}
+        connections={state.connections}
+        busy={mgr.busy || mgr.loading}
+        onClose={mgr.dismissReview}
+        onConfirm={(connectionId) => void mgr.apply(connectionId)}
       />
     </section>
   );

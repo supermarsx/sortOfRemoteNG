@@ -6,6 +6,11 @@ import english from "../../src/i18n/locales/en-US.json";
 import { CertificateInfoPopup } from "../../src/components/security/CertificateInfoPopup";
 import { certificateInfoFixture } from "../../tests/fixtures/certificateInspection";
 import {
+  TrustIdentityScopeDialog,
+  type TrustScopeReview,
+} from "../../src/components/security/TrustIdentityScopeDialog";
+import type { Connection } from "../../src/types/connection/connection";
+import {
   TrustIdentityImportDialog,
   type TrustIdentityImportReview,
 } from "../../src/components/security/TrustIdentityImportDialog";
@@ -51,6 +56,54 @@ const review: TrustIdentityImportReview = {
   ],
 };
 Object.assign(window, { __TRUST_DEMO__: { refused } });
+const scopeConnections: Connection[] = [
+  {
+    id: "demo-dashboard",
+    name: "Operations dashboard",
+    hostname: "dashboard.example.test",
+    protocol: "https",
+    port: 443,
+    isGroup: false,
+    createdAt: "2026-09-09",
+    updatedAt: "2026-09-09",
+  },
+  {
+    id: "demo-shell",
+    name: "Maintenance shell",
+    hostname: "shell.example.test",
+    protocol: "ssh",
+    port: 22,
+    isGroup: false,
+    createdAt: "2026-09-09",
+    updatedAt: "2026-09-09",
+  },
+];
+const scopeReview: TrustScopeReview = {
+  databaseId: "synthetic-database",
+  databaseName: "Operations · demonstration database",
+  rows: Array.from({ length: 3 }, (_, index) => ({
+    id: `scope-${index}`,
+    connectionId: index === 2 ? undefined : "demo-dashboard",
+    record: {
+      host: `dashboard-${index}.example.test:443`,
+      type: "https",
+      userApproved: index !== 1,
+      revoked: index === 1,
+      identity: {
+        fingerprint: `SHA256:${"A1:B2:C3:D4:".repeat(7)}00:11:22:33`,
+        firstSeen: "2026-09-09",
+        lastSeen: "2026-09-09",
+      },
+      scopeDecision: {
+        userApproved: index !== 1,
+        revoked: index === 1,
+        trustExpires: "2027-09-01T00:00:00Z",
+        hostPolicy: null,
+        hostPolicyConfig: null,
+      },
+    },
+  })),
+};
 export function CertificateDemo() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const certificate = {
@@ -97,6 +150,16 @@ createRoot(document.getElementById("root")!).render(
     </p>
     {new URLSearchParams(location.search).get("view") === "certificate" ? (
       <CertificateDemo />
+    ) : new URLSearchParams(location.search).get("view") === "scope" ? (
+      <TrustIdentityScopeDialog
+        review={scopeReview}
+        connections={scopeConnections}
+        busy={false}
+        onClose={() => {}}
+        onConfirm={() => {
+          refused.push("Unexpected scope confirmation in visual fixture");
+        }}
+      />
     ) : (
       <TrustIdentityImportDialog
         review={review}
