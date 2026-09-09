@@ -629,30 +629,22 @@ pub fn import_known_hosts(path: Option<String>) -> Result<KnownHostsImportOutcom
         None => default_known_hosts_path()?,
     };
 
-    let entries = {
-        let _known_hosts_guard = lock_known_hosts_file()?;
-        let session =
-            Session::new().map_err(|e| format!("Failed to create an SSH session handle: {e}"))?;
-        let mut known_hosts = session
-            .known_hosts()
-            .map_err(|e| format!("Failed to create known_hosts handle: {e}"))?;
-        read_known_hosts_if_present(&mut known_hosts, Path::new(&path))?;
-        known_hosts
-            .hosts()
-            .map_err(|e| format!("Failed to enumerate known_hosts entries: {e}"))?
-            .iter()
-            .map(|host| (host.name().map(str::to_string), host.key().to_string()))
-            .collect::<Vec<_>>()
-    };
+    // Compatibility importer uses the same bounded, marker-aware parser as
+    // preview. Revocations must never become newly trusted leaf identities.
+    let parsed = read_known_hosts_preview_entries(Path::new(&path), true)?;
 
     let store = sorng_storage::trust_store::SyncTrustStore::shared();
     let mut outcome = KnownHostsImportOutcome {
         imported: 0,
-        skipped: 0,
+        skipped: parsed.skipped,
         path,
     };
 
-    for (name, key) in entries {
+    for (name, key, revoked) in parsed.entries {
+        if revoked {
+            outcome.skipped += 1;
+            continue;
+        }
         // A hashed entry (`HashKnownHosts yes`) has no recoverable host name.
         let Some(name) = name else {
             outcome.skipped += 1;
@@ -706,6 +698,196 @@ pub fn import_known_hosts(path: Option<String>) -> Result<KnownHostsImportOutcom
         outcome.skipped
     );
     Ok(outcome)
+}
+
+const KNOWN_HOSTS_PREVIEW_MAX_BYTES: u64 = 4 * 1024 * 1024;
+const KNOWN_HOSTS_PREVIEW_MAX_ENTRIES: usize = 10_000;
+
+struct KnownHostsPreviewEntries {
+    entries: Vec<(Option<String>, String, bool)>,
+    skipped: u32,
+}
+
+/// Public data only. Import remains an explicit, separately reviewed action.
+#[derive(serde::Serialize)]
+pub struct KnownHostsPreview {
+    #[serde(flatten)]
+    pub document: sorng_storage::trust_store::TrustExportDocument,
+    pub skipped: u32,
+    pub warnings: Vec<String>,
+}
+
+fn read_known_hosts_preview_entries(
+    path: &Path,
+    missing_is_empty: bool,
+) -> Result<KnownHostsPreviewEntries, String> {
+    use std::io::Read;
+    let _guard = lock_known_hosts_file()?;
+    for ancestor in path.ancestors() {
+        let metadata = match std::fs::symlink_metadata(ancestor) {
+            Ok(metadata) => metadata,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && ancestor == path
+                    && missing_is_empty =>
+            {
+                return Ok(KnownHostsPreviewEntries {
+                    entries: vec![],
+                    skipped: 0,
+                })
+            }
+            Err(_) => return Err("known_hosts path is unavailable".into()),
+        };
+        #[cfg(windows)]
+        let reparse = {
+            use std::os::windows::fs::MetadataExt;
+            metadata.file_attributes() & 0x400 != 0
+        };
+        #[cfg(not(windows))]
+        let reparse = false;
+        if metadata.file_type().is_symlink() || reparse {
+            return Err("known_hosts symbolic links and reparse paths are not supported".into());
+        }
+    }
+    let file = std::fs::File::open(path).map_err(|_| "known_hosts file is unavailable")?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "could not inspect known_hosts")?;
+    if !metadata.is_file() || metadata.len() > KNOWN_HOSTS_PREVIEW_MAX_BYTES {
+        return Err("known_hosts must be a regular file of at most 4 MiB".into());
+    }
+    let mut bytes = Vec::new();
+    file.take(KNOWN_HOSTS_PREVIEW_MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "could not read known_hosts")?;
+    if bytes.len() as u64 > KNOWN_HOSTS_PREVIEW_MAX_BYTES {
+        return Err("known_hosts exceeded the 4 MiB limit while reading".into());
+    }
+    let text = std::str::from_utf8(&bytes).map_err(|_| "known_hosts is not valid UTF-8")?;
+    let session = Session::new().map_err(|_| "could not create known_hosts parser")?;
+    let mut output = KnownHostsPreviewEntries {
+        entries: vec![],
+        skipped: 0,
+    };
+    for (index, line) in text.lines().enumerate() {
+        if index >= KNOWN_HOSTS_PREVIEW_MAX_ENTRIES {
+            return Err("known_hosts exceeds the 10,000-line preview limit".into());
+        }
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.len() > 16 * 1024 {
+            return Err("known_hosts contains an oversized entry".into());
+        }
+        let (revoked, line) = if let Some(rest) = line
+            .strip_prefix("@revoked ")
+            .or_else(|| line.strip_prefix("@revoked\t"))
+        {
+            (true, rest.trim_start())
+        } else {
+            (false, line)
+        };
+        let name = line.split_whitespace().next().unwrap_or("");
+        if name.starts_with('@') || name.contains(['*', '?', '!', '|']) {
+            output.skipped += 1;
+            continue;
+        }
+        let mut parser = session
+            .known_hosts()
+            .map_err(|_| "could not create known_hosts parser")?;
+        if parser
+            .read_str(line, ssh2::KnownHostFileKind::OpenSSH)
+            .is_err()
+        {
+            output.skipped += 1;
+            continue;
+        }
+        let entries = parser
+            .hosts()
+            .map_err(|_| "could not enumerate known_hosts")?;
+        for entry in entries {
+            output.entries.push((
+                entry.name().map(str::to_owned),
+                entry.key().to_owned(),
+                revoked,
+            ));
+        }
+    }
+    Ok(output)
+}
+
+/// Read a selected/default known_hosts file without consulting or mutating the
+/// active Trust Center. Callers must scope renderer-supplied paths natively.
+pub fn preview_known_hosts(path: Option<String>) -> Result<KnownHostsPreview, String> {
+    use sorng_storage::trust_store::{TrustExportDocument, TrustRecord};
+    let path = path
+        .filter(|value| !value.trim().is_empty())
+        .map(Ok)
+        .unwrap_or_else(default_known_hosts_path)?;
+    let parsed = read_known_hosts_preview_entries(Path::new(&path), false)?;
+    let mut skipped = parsed.skipped;
+    let mut records = Vec::new();
+    for (name, key, revoked) in parsed.entries {
+        let Some((name, info)) = name.zip(known_hosts_entry_info(&key)) else {
+            skipped += 1;
+            continue;
+        };
+        let endpoints = parse_known_hosts_name(&name);
+        if endpoints.is_empty() {
+            skipped += 1;
+            continue;
+        }
+        for (host, port) in endpoints {
+            if records.len() >= KNOWN_HOSTS_PREVIEW_MAX_ENTRIES {
+                return Err("too many known_hosts endpoints".into());
+            }
+            records.push(TrustRecord {
+                host: host_key_trust::trust_host(&host, port),
+                record_type: "ssh".into(),
+                identity: host_key_trust::identity(&info),
+                user_approved: false,
+                nickname: None,
+                history: vec![],
+                host_policy: None,
+                host_policy_config: None,
+                stats: Default::default(),
+                first_trusted: None,
+                trust_expires: None,
+                revoked,
+                tags: vec![],
+            });
+        }
+    }
+    // This Trust Center represents one current key per endpoint. Do not choose
+    // one silently when known_hosts contains several algorithms/identities.
+    let mut counts = std::collections::HashMap::new();
+    for record in &records {
+        *counts.entry(record.host.clone()).or_insert(0usize) += 1;
+    }
+    records.retain(|record| {
+        if counts[&record.host] > 1 {
+            skipped += 1;
+            false
+        } else {
+            true
+        }
+    });
+    let warnings = if skipped > 0 {
+        vec![format!("Skipped {skipped} unsupported or ambiguous entries (hashed/pattern hosts, certificate authorities, malformed keys, or multiple keys per endpoint). No skipped entry will be trusted.")]
+    } else {
+        vec![]
+    };
+    Ok(KnownHostsPreview {
+        document: TrustExportDocument {
+            version: 1,
+            records,
+            policy: Default::default(),
+            policy_config: Default::default(),
+        },
+        skipped,
+        warnings,
+    })
 }
 
 /// Generate a TOTP code from a secret
@@ -11476,6 +11658,73 @@ mod tests {
             before,
             "known_hosts is an import source and must never be rewritten"
         );
+    }
+
+    #[test]
+    fn known_hosts_preview_preserves_revocations_and_skips_non_leaf_host_semantics() {
+        use base64::Engine;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("known_hosts");
+        let key = base64::engine::general_purpose::STANDARD.encode(b"preview-key-fixture");
+        let lines = format!(
+            "plain.example.test ssh-rsa {key}\n@revoked revoked.example.test ssh-rsa {key}\n@cert-authority ca.example.test ssh-rsa {key}\n*.wild.example.test ssh-rsa {key}\n!negative.example.test ssh-rsa {key}\n|1|salt|hash ssh-rsa {key}\n"
+        );
+        std::fs::write(&path, &lines).unwrap();
+        let result = preview_known_hosts(Some(path.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(result.document.version, 1);
+        assert_eq!(result.document.records.len(), 2);
+        assert_eq!(result.skipped, 4);
+        assert_eq!(result.warnings.len(), 1);
+        let revoked = result
+            .document
+            .records
+            .iter()
+            .find(|row| row.host == "revoked.example.test:22")
+            .unwrap();
+        assert!(revoked.revoked);
+        assert!(
+            !result
+                .document
+                .records
+                .iter()
+                .find(|row| row.host == "plain.example.test:22")
+                .unwrap()
+                .revoked
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), lines);
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn known_hosts_preview_is_bounded_and_does_not_choose_ambiguous_endpoint_keys() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("known_hosts");
+        write_fixture_known_hosts(
+            &path,
+            &[
+                ("duplicate.example.test", b"first"),
+                ("duplicate.example.test", b"second"),
+            ],
+        );
+        let result = preview_known_hosts(Some(path.to_string_lossy().into_owned())).unwrap();
+        assert!(result.document.records.is_empty());
+        assert_eq!(result.skipped, 2);
+        assert!(preview_known_hosts(Some(root.path().to_string_lossy().into_owned())).is_err());
+        assert!(preview_known_hosts(Some(
+            root.path().join("missing").to_string_lossy().into_owned()
+        ))
+        .is_err());
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(KNOWN_HOSTS_PREVIEW_MAX_BYTES + 1)
+            .unwrap();
+        assert!(preview_known_hosts(Some(path.to_string_lossy().into_owned())).is_err());
+        std::fs::write(
+            &path,
+            "# fixture\n".repeat(KNOWN_HOSTS_PREVIEW_MAX_ENTRIES + 1),
+        )
+        .unwrap();
+        assert!(preview_known_hosts(Some(path.to_string_lossy().into_owned())).is_err());
     }
 
     #[test]

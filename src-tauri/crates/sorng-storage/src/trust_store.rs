@@ -364,6 +364,11 @@ pub type TrustStoreServiceState = Arc<Mutex<TrustStoreService>>;
 enum StoreBackend {
     Legacy(Arc<std::sync::Mutex<PathBuf>>),
     Shared,
+    /// A UI decision bound to the database selected when it was queued.
+    ScopedShared {
+        database_id: String,
+        baseline: Arc<std::sync::Mutex<Option<serde_json::Value>>>,
+    },
 }
 
 impl StoreBackend {
@@ -383,13 +388,43 @@ impl StoreBackend {
                 }
                 Ok(out)
             }
-            StoreBackend::Shared => {
+            StoreBackend::Shared | StoreBackend::ScopedShared { .. } => {
                 let rt = runtime()?;
                 let _io = rt.io_guard()?;
+                if let StoreBackend::ScopedShared { database_id, .. } = self {
+                    if rt.active_database_id().as_deref() != Some(database_id.as_str()) {
+                        return Err(
+                            "Trust database changed; refresh and review the action again".into(),
+                        );
+                    }
+                }
                 let mut data = rt.load_active()?;
+                let mut baseline = match self {
+                    StoreBackend::ScopedShared { baseline, .. } => Some(
+                        baseline
+                            .lock()
+                            .map_err(|_| "Trust review lock poisoned".to_string())?,
+                    ),
+                    _ => None,
+                };
+                if let Some(ref mut baseline) = baseline {
+                    let actual = serde_json::to_value(&data).map_err(|e| e.to_string())?;
+                    if baseline
+                        .as_ref()
+                        .is_some_and(|expected| expected != &actual)
+                    {
+                        return Err(
+                            "Trust records changed; refresh and review the action again".into()
+                        );
+                    }
+                    **baseline = Some(actual);
+                }
                 let (out, dirty) = f(&mut data);
                 if dirty {
                     rt.persist_active(&data)?;
+                    if let Some(ref mut baseline) = baseline {
+                        **baseline = Some(serde_json::to_value(&data).map_err(|e| e.to_string())?);
+                    }
                 }
                 Ok(out)
             }
@@ -436,6 +471,49 @@ impl TrustStoreService {
             data: TrustStoreData::default(),
             backend: StoreBackend::Shared,
         }))
+    }
+
+    /// Scoped command view; the expected database is checked inside every
+    /// backend I/O lease, including the final read-modify-write operation.
+    pub fn scoped_to_database(&self, expected: Option<String>) -> Result<Self, String> {
+        let backend = match expected {
+            Some(id) => {
+                validate_database_id(&id)?;
+                if matches!(self.backend, StoreBackend::Legacy(_)) {
+                    return Err("Database-scoped trust requires the native database runtime".into());
+                }
+                StoreBackend::ScopedShared {
+                    database_id: id,
+                    baseline: Arc::new(std::sync::Mutex::new(None)),
+                }
+            }
+            None => self.backend.clone(),
+        };
+        Ok(Self {
+            data: self.data.clone(),
+            backend,
+        })
+    }
+
+    /// Bind an approval to the exact identity reviewed, not merely its host.
+    /// Scoped persistence also checks that the loaded snapshot has not drifted.
+    pub fn require_identity_fingerprint(
+        &self,
+        host: &str,
+        record_type: &str,
+        expected: Option<&str>,
+    ) -> Result<(), String> {
+        if let Some(expected) = expected {
+            let record = self
+                .data
+                .records
+                .get(&Self::record_key(record_type, host))
+                .ok_or_else(|| "Trust identity changed; refresh and review it again".to_string())?;
+            if Self::identity_fingerprint(&record.identity) != expected {
+                return Err("Trust identity changed; refresh and review it again".into());
+            }
+        }
+        Ok(())
     }
 
     fn persist(&self) -> Result<(), String> {
@@ -825,6 +903,29 @@ pub struct TrustSummary {
     pub total_verifications: u64,
     pub total_mismatches: u64,
     pub average_trust_score: u8,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReviewedTrustTarget {
+    pub host: String,
+    pub record_type: String,
+    pub fingerprint: String,
+}
+
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReviewedTrustAction {
+    Forget,
+    Revoke,
+    Reinstate,
+    Policy,
+    Tags,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ReviewedTrustOutcome {
+    pub updated: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -1854,6 +1955,97 @@ impl TrustRuntime {
 
     // -- portability ---------------------------------------------------------
 
+    /// One bounded transaction for a user-reviewed selection. Every target is
+    /// validated before any in-memory mutation, and persistence happens once.
+    pub fn apply_reviewed_batch(
+        &self,
+        database_id: &str,
+        action: ReviewedTrustAction,
+        targets: Vec<ReviewedTrustTarget>,
+        policy: Option<TrustPolicy>,
+        tags: Option<Vec<String>>,
+    ) -> Result<ReviewedTrustOutcome, String> {
+        validate_database_id(database_id)?;
+        if targets.is_empty() || targets.len() > MAX_TRUST_RECORDS {
+            return Err("Select between 1 and 10000 trust identities".into());
+        }
+        let mut keys = std::collections::HashSet::with_capacity(targets.len());
+        for target in &targets {
+            validate_short_string(&target.host, "host", MAX_HOST_BYTES)?;
+            validate_short_string(&target.fingerprint, "fingerprint", MAX_FINGERPRINT_BYTES)?;
+            if !matches!(
+                target.record_type.as_str(),
+                "https" | "certificate" | "rdp" | "ssh" | "tls"
+            ) {
+                return Err("Unknown trust record type".into());
+            }
+            if !keys.insert(TrustStoreService::record_key(
+                &target.record_type,
+                &target.host,
+            )) {
+                return Err("Duplicate trust target in reviewed batch".into());
+            }
+        }
+        let tags = tags.unwrap_or_default();
+        if tags.len() > MAX_TAGS || tags.iter().any(|tag| tag.len() > 256 || tag.contains('\0')) {
+            return Err("Invalid trust tags".into());
+        }
+        let _io = self.io_guard()?;
+        if self.active_database_id().as_deref() != Some(database_id) {
+            return Err("Trust database changed; refresh and review the action again".into());
+        }
+        let path = self.trust_file_path(database_id)?;
+        let mut data = self.read_file(&path)?;
+        for target in &targets {
+            let key = TrustStoreService::record_key(&target.record_type, &target.host);
+            let record = data.records.get(&key).ok_or_else(|| {
+                "Trust identity changed; refresh and review the batch again".to_string()
+            })?;
+            if TrustStoreService::identity_fingerprint(&record.identity) != target.fingerprint {
+                return Err("Trust identity changed; no batch changes were written".into());
+            }
+        }
+        for target in &targets {
+            let key = TrustStoreService::record_key(&target.record_type, &target.host);
+            if matches!(action, ReviewedTrustAction::Forget) {
+                data.records.remove(&key);
+                continue;
+            }
+            let record = data
+                .records
+                .get_mut(&key)
+                .expect("all targets validated above");
+            match action {
+                ReviewedTrustAction::Revoke => {
+                    if !record.revoked {
+                        record.revoked = true;
+                        record.history.push(IdentityHistoryEntry {
+                            identity: record.identity.clone(),
+                            changed_at: Utc::now().to_rfc3339(),
+                            reason: IdentityChangeReason::AdminOverride,
+                            approved_by: Some("user".into()),
+                            note: Some("Identity revoked in Trust Center".into()),
+                            verification_count: record.stats.total_checks,
+                            trust_score: record.stats.trust_score,
+                        });
+                    }
+                }
+                ReviewedTrustAction::Reinstate => record.revoked = false,
+                ReviewedTrustAction::Policy => {
+                    record.host_policy = policy.clone();
+                    record.host_policy_config = None;
+                }
+                ReviewedTrustAction::Tags => record.tags = tags.clone(),
+                ReviewedTrustAction::Forget => unreachable!(),
+            }
+        }
+        validate_trust_store_data(&data)?;
+        self.write_file(&path, &data)?;
+        Ok(ReviewedTrustOutcome {
+            updated: targets.len(),
+        })
+    }
+
     /// Export a database's trust store (`None` = active). Any database's
     /// file can be read because the sub-key is per artifact kind, not per
     /// database.
@@ -1878,6 +2070,18 @@ impl TrustRuntime {
         document: TrustExportDocument,
         mode: TrustImportMode,
     ) -> Result<TrustImportOutcome, String> {
+        self.import_reviewed(database_id, document, mode, None)
+    }
+
+    /// Reviewed imports fail closed if any destination record changed while
+    /// confirmation was open. The comparison and merge share one I/O lease.
+    pub fn import_reviewed(
+        &self,
+        database_id: Option<&str>,
+        document: TrustExportDocument,
+        mode: TrustImportMode,
+        expected_records: Option<Vec<TrustRecord>>,
+    ) -> Result<TrustImportOutcome, String> {
         if document.version != TRUST_EXPORT_VERSION {
             return Err(format!(
                 "unsupported trust export version {}",
@@ -1886,13 +2090,33 @@ impl TrustRuntime {
         }
         let path = self.resolve_db(database_id)?;
         let _io = self.io_guard()?;
+        let current = self.read_file(&path)?;
+        if let Some(expected_records) = expected_records {
+            if database_id != self.active_database_id().as_deref() {
+                return Err("Trust database changed; refresh and review the import again".into());
+            }
+            let expected: HashMap<_, _> = expected_records
+                .into_iter()
+                .map(|record| {
+                    (
+                        TrustStoreService::record_key(&record.record_type, &record.host),
+                        record,
+                    )
+                })
+                .collect();
+            if serde_json::to_value(&expected).map_err(|e| e.to_string())?
+                != serde_json::to_value(&current.records).map_err(|e| e.to_string())?
+            {
+                return Err("Destination trust identities changed; review the import again".into());
+            }
+        }
         let mut data = match mode {
             TrustImportMode::Replace => TrustStoreData {
                 policy: document.policy.clone(),
                 policy_config: document.policy_config.clone(),
                 records: HashMap::new(),
             },
-            TrustImportMode::Merge => self.read_file(&path)?,
+            TrustImportMode::Merge => current,
         };
         let outcome = merge_records_into(&mut data, document.records, mode);
         self.write_file(&path, &data)?;
@@ -2512,6 +2736,245 @@ mod runtime_tests {
             store.verify_identity_blocking("h:443", "tls", tls_identity("aa")),
             Ok(TrustVerifyResult::Trusted)
         ));
+    }
+
+    #[tokio::test]
+    async fn reviewed_mutation_rejects_database_switch_and_identity_drift() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_runtime_for_tests(dir.path().join("databases"), None);
+        guard
+            .runtime
+            .activate_database(Some("db-a".into()), &[])
+            .await
+            .unwrap();
+        let sync = SyncTrustStore::shared();
+        sync.trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        let service = TrustStoreService::shared();
+        let service = service.lock().await;
+        let mut scoped = service.scoped_to_database(Some("db-a".into())).unwrap();
+        scoped.reload_from_disk().unwrap();
+        scoped
+            .require_identity_fingerprint("h:443", "tls", Some("aa"))
+            .unwrap();
+        let a_before = std::fs::read(dir.path().join("databases/db-a.trust.json")).unwrap();
+        guard
+            .runtime
+            .activate_database(Some("db-b".into()), &[])
+            .await
+            .unwrap();
+        sync.trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("bb"), true)
+            .unwrap();
+        let b_before = std::fs::read(dir.path().join("databases/db-b.trust.json")).unwrap();
+        assert!(scoped
+            .reinstate_identity("h:443", "tls")
+            .await
+            .unwrap_err()
+            .contains("database changed"));
+        assert_eq!(
+            std::fs::read(dir.path().join("databases/db-a.trust.json")).unwrap(),
+            a_before
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("databases/db-b.trust.json")).unwrap(),
+            b_before
+        );
+
+        guard
+            .runtime
+            .activate_database(Some("db-a".into()), &[])
+            .await
+            .unwrap();
+        let mut scoped = service.scoped_to_database(Some("db-a".into())).unwrap();
+        scoped.reload_from_disk().unwrap();
+        sync.trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("new"), true)
+            .unwrap();
+        let changed = std::fs::read(dir.path().join("databases/db-a.trust.json")).unwrap();
+        assert!(scoped
+            .reinstate_identity("h:443", "tls")
+            .await
+            .unwrap_err()
+            .contains("records changed"));
+        assert_eq!(
+            std::fs::read(dir.path().join("databases/db-a.trust.json")).unwrap(),
+            changed
+        );
+        let mut fresh = service.scoped_to_database(Some("db-a".into())).unwrap();
+        fresh.reload_from_disk().unwrap();
+        assert!(fresh
+            .require_identity_fingerprint("h:443", "tls", Some("aa"))
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn reviewed_import_rejects_replaced_identity_and_database_switch() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_runtime_for_tests(dir.path().join("databases"), None);
+        guard
+            .runtime
+            .activate_database(Some("db-a".into()), &[])
+            .await
+            .unwrap();
+        let sync = SyncTrustStore::shared();
+        sync.trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        let reviewed = guard.runtime.export(Some("db-a")).unwrap();
+        sync.trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("bb"), true)
+            .unwrap();
+        let before = std::fs::read(dir.path().join("databases/db-a.trust.json")).unwrap();
+        assert!(guard
+            .runtime
+            .import_reviewed(
+                Some("db-a"),
+                reviewed.clone(),
+                TrustImportMode::Merge,
+                Some(reviewed.records.clone())
+            )
+            .unwrap_err()
+            .contains("changed"));
+        assert_eq!(
+            std::fs::read(dir.path().join("databases/db-a.trust.json")).unwrap(),
+            before
+        );
+        let current = guard.runtime.export(Some("db-a")).unwrap();
+        guard
+            .runtime
+            .activate_database(Some("db-b".into()), &[])
+            .await
+            .unwrap();
+        assert!(guard
+            .runtime
+            .import_reviewed(
+                Some("db-a"),
+                current.clone(),
+                TrustImportMode::Merge,
+                Some(current.records)
+            )
+            .unwrap_err()
+            .contains("database changed"));
+        assert_eq!(
+            std::fs::read(dir.path().join("databases/db-a.trust.json")).unwrap(),
+            before
+        );
+    }
+
+    #[tokio::test]
+    async fn reviewed_batch_validates_all_before_one_commit_and_preserves_unselected_records() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_runtime_for_tests(dir.path().join("databases"), None);
+        guard
+            .runtime
+            .activate_database(Some("db-a".into()), &[])
+            .await
+            .unwrap();
+        let sync = SyncTrustStore::shared();
+        for host in ["a:443", "b:443", "untouched:443"] {
+            sync.trust_identity_blocking(host.into(), "tls".into(), tls_identity(host), true)
+                .unwrap();
+        }
+        let targets = || {
+            ["a:443", "b:443"]
+                .into_iter()
+                .map(|host| ReviewedTrustTarget {
+                    host: host.into(),
+                    record_type: "tls".into(),
+                    fingerprint: host.into(),
+                })
+                .collect::<Vec<_>>()
+        };
+        let path = dir.path().join("databases/db-a.trust.json");
+        let before = std::fs::read(&path).unwrap();
+        let mut drifted = targets();
+        drifted[1].fingerprint = "different".into();
+        assert!(guard
+            .runtime
+            .apply_reviewed_batch("db-a", ReviewedTrustAction::Forget, drifted, None, None)
+            .is_err());
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "no first-target deletion on later drift"
+        );
+        let mut duplicate = targets();
+        duplicate.push(duplicate[0].clone());
+        assert!(guard
+            .runtime
+            .apply_reviewed_batch("db-a", ReviewedTrustAction::Revoke, duplicate, None, None)
+            .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let result = guard
+            .runtime
+            .apply_reviewed_batch("db-a", ReviewedTrustAction::Revoke, targets(), None, None)
+            .unwrap();
+        assert_eq!(result.updated, 2);
+        assert_eq!(
+            std::fs::read(sdbf::sibling(&path, "bak")).unwrap(),
+            before,
+            "exactly one commit for the entire selection"
+        );
+        let records = guard.runtime.export(Some("db-a")).unwrap().records;
+        assert!(records
+            .iter()
+            .filter(|r| r.host != "untouched:443")
+            .all(|r| r.revoked));
+        assert!(
+            !records
+                .iter()
+                .find(|r| r.host == "untouched:443")
+                .unwrap()
+                .revoked
+        );
+        guard
+            .runtime
+            .apply_reviewed_batch(
+                "db-a",
+                ReviewedTrustAction::Reinstate,
+                targets(),
+                None,
+                None,
+            )
+            .unwrap();
+        guard
+            .runtime
+            .apply_reviewed_batch(
+                "db-a",
+                ReviewedTrustAction::Tags,
+                targets(),
+                None,
+                Some(vec!["fleet".into()]),
+            )
+            .unwrap();
+        guard
+            .runtime
+            .apply_reviewed_batch(
+                "db-a",
+                ReviewedTrustAction::Policy,
+                targets(),
+                Some(TrustPolicy::Strict),
+                None,
+            )
+            .unwrap();
+        let records = guard.runtime.export(Some("db-a")).unwrap().records;
+        assert!(records
+            .iter()
+            .filter(|r| r.host != "untouched:443")
+            .all(|r| !r.revoked
+                && r.tags == ["fleet"]
+                && r.host_policy == Some(TrustPolicy::Strict)));
+        let before_switch = std::fs::read(&path).unwrap();
+        guard
+            .runtime
+            .activate_database(Some("db-b".into()), &[])
+            .await
+            .unwrap();
+        assert!(guard
+            .runtime
+            .apply_reviewed_batch("db-a", ReviewedTrustAction::Forget, targets(), None, None)
+            .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before_switch);
     }
 
     #[tokio::test]

@@ -19,8 +19,10 @@ pub async fn trust_store_identity(
     record_type: String,
     identity: Identity,
     user_approved: bool,
+    expected_database_id: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
     svc.trust_identity(host, record_type, identity, user_approved)
         .await
@@ -76,8 +78,10 @@ pub async fn trust_remove_identity(
     state: tauri::State<'_, TrustStoreServiceState>,
     host: String,
     record_type: String,
+    expected_database_id: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
     svc.remove_identity(&host, &record_type).await
 }
@@ -105,8 +109,10 @@ pub async fn trust_get_all_records(
 #[tauri::command]
 pub async fn trust_clear_all(
     state: tauri::State<'_, TrustStoreServiceState>,
+    expected_database_id: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
     svc.clear_all_trust_records().await
 }
@@ -117,8 +123,10 @@ pub async fn trust_update_nickname(
     host: String,
     record_type: String,
     nickname: Option<String>,
+    expected_database_id: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
     svc.update_trust_record_nickname(&host, &record_type, nickname)
         .await
@@ -169,9 +177,13 @@ pub async fn trust_set_host_policy(
     record_type: String,
     policy: Option<TrustPolicy>,
     config: Option<TrustPolicyConfig>,
+    expected_database_id: Option<String>,
+    expected_fingerprint: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
+    svc.require_identity_fingerprint(&host, &record_type, expected_fingerprint.as_deref())?;
     svc.set_host_policy(&host, &record_type, policy, config)
         .await
 }
@@ -181,9 +193,13 @@ pub async fn trust_revoke_identity(
     state: tauri::State<'_, TrustStoreServiceState>,
     host: String,
     record_type: String,
+    expected_database_id: Option<String>,
+    expected_fingerprint: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
+    svc.require_identity_fingerprint(&host, &record_type, expected_fingerprint.as_deref())?;
     svc.revoke_identity(&host, &record_type).await
 }
 
@@ -192,9 +208,13 @@ pub async fn trust_reinstate_identity(
     state: tauri::State<'_, TrustStoreServiceState>,
     host: String,
     record_type: String,
+    expected_database_id: Option<String>,
+    expected_fingerprint: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
+    svc.require_identity_fingerprint(&host, &record_type, expected_fingerprint.as_deref())?;
     svc.reinstate_identity(&host, &record_type).await
 }
 
@@ -204,9 +224,13 @@ pub async fn trust_set_record_tags(
     host: String,
     record_type: String,
     tags: Vec<String>,
+    expected_database_id: Option<String>,
+    expected_fingerprint: Option<String>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
+    svc.require_identity_fingerprint(&host, &record_type, expected_fingerprint.as_deref())?;
     svc.set_record_tags(&host, &record_type, tags).await
 }
 
@@ -215,9 +239,13 @@ pub async fn trust_get_identity_history(
     state: tauri::State<'_, TrustStoreServiceState>,
     host: String,
     record_type: String,
+    expected_database_id: Option<String>,
+    expected_fingerprint: Option<String>,
 ) -> Result<Vec<IdentityHistoryEntry>, String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
+    svc.require_identity_fingerprint(&host, &record_type, expected_fingerprint.as_deref())?;
     svc.get_identity_history(&host, &record_type).await
 }
 
@@ -226,17 +254,23 @@ pub async fn trust_get_verification_stats(
     state: tauri::State<'_, TrustStoreServiceState>,
     host: String,
     record_type: String,
+    expected_database_id: Option<String>,
+    expected_fingerprint: Option<String>,
 ) -> Result<VerificationStats, String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
+    svc.require_identity_fingerprint(&host, &record_type, expected_fingerprint.as_deref())?;
     svc.get_verification_stats(&host, &record_type).await
 }
 
 #[tauri::command]
 pub async fn trust_get_summary(
     state: tauri::State<'_, TrustStoreServiceState>,
+    expected_database_id: Option<String>,
 ) -> Result<TrustSummary, String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
     Ok(svc.get_trust_summary().await)
 }
@@ -262,6 +296,18 @@ pub async fn trust_set_active_database(
 
 /// Snapshot of the active trust database (`databaseId: null` when none).
 #[tauri::command]
+pub async fn trust_apply_reviewed_batch(
+    database_id: String,
+    action: ReviewedTrustAction,
+    targets: Vec<ReviewedTrustTarget>,
+    policy: Option<TrustPolicy>,
+    tags: Option<Vec<String>>,
+) -> Result<ReviewedTrustOutcome, String> {
+    runtime()?.apply_reviewed_batch(&database_id, action, targets, policy, tags)
+}
+
+/// Snapshot of the active trust database (`databaseId: null` when none).
+#[tauri::command]
 pub async fn trust_get_active_database() -> Result<ActiveTrustDatabase, String> {
     runtime()?.active_info()
 }
@@ -281,11 +327,13 @@ pub async fn trust_import_database(
     database_id: Option<String>,
     document: TrustExportDocument,
     mode: Option<TrustImportMode>,
+    expected_records: Option<Vec<TrustRecord>>,
 ) -> Result<TrustImportOutcome, String> {
-    runtime()?.import(
+    runtime()?.import_reviewed(
         database_id.as_deref(),
         document,
         mode.unwrap_or(TrustImportMode::Merge),
+        expected_records,
     )
 }
 

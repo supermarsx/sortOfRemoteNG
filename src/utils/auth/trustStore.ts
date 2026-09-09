@@ -81,6 +81,7 @@ export interface TrustRecord {
   revoked?: boolean;
   hostPolicy?: TrustPolicy;
   trustExpires?: string;
+  tags?: string[];
 }
 
 export type TrustVerifyResult =
@@ -280,6 +281,7 @@ interface NativeTrustRecord {
   record_type: string;
   identity: NativeIdentity;
   user_approved: boolean;
+  tags?: string[];
   nickname?: string | null;
   history: NativeHistoryEntry[];
   host_policy?: string | null;
@@ -307,6 +309,8 @@ const MAX_LEGACY_STORE_BYTES = 8 * 1024 * 1024;
 const MAX_LEGACY_RECORDS = 2_000;
 const MAX_TOTAL_LEGACY_MIGRATIONS = 5_000;
 const MAX_LEGACY_HISTORY = 256;
+const MAX_NATIVE_RECORDS = 10_000;
+const MAX_NATIVE_HISTORY = 1_000;
 const MAX_CONNECTION_STORES = 500;
 const MAX_HOST_LENGTH = 253;
 const MAX_NATIVE_HOST_LENGTH = 8_192;
@@ -709,6 +713,7 @@ function cloneRecord(record: TrustRecord): TrustRecord {
     ...record,
     identity: cloneIdentity(record.identity),
     history: record.history?.map((identity) => cloneIdentity(identity)),
+    tags: record.tags ? [...record.tags] : undefined,
   };
 }
 
@@ -898,7 +903,7 @@ function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
     !VALID_RECORD_TYPES.has(nativeRecord.record_type as TrustRecordType) ||
     typeof nativeRecord.user_approved !== "boolean" ||
     !Array.isArray(nativeRecord.history) ||
-    nativeRecord.history.length > MAX_LEGACY_HISTORY
+    nativeRecord.history.length > MAX_NATIVE_HISTORY
   ) {
     throw new Error("Malformed native trust record");
   }
@@ -939,12 +944,17 @@ function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
         ? (nativeRecord.host_policy as TrustPolicy)
         : undefined,
       trustExpires: boundedNativeString(nativeRecord.trust_expires, 128),
+      tags: Array.isArray(nativeRecord.tags)
+        ? nativeRecord.tags
+            .filter((tag): tag is string => typeof tag === "string")
+            .slice(0, 100)
+        : [],
     },
   };
 }
 
 function installNativeRecords(records: NativeTrustRecord[]): void {
-  if (!Array.isArray(records) || records.length > MAX_LEGACY_RECORDS) {
+  if (!Array.isArray(records) || records.length > MAX_NATIVE_RECORDS) {
     throw new Error("Malformed native trust-store response");
   }
 
@@ -1485,14 +1495,48 @@ function startHydrationForDisplay(): void {
   });
 }
 
-function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+class TrustScopeChangedError extends Error {
+  constructor() {
+    super("Trust database changed; refresh and review the action again");
+  }
+}
+
+function serializeMutation<T>(
+  operation: (invokeMutation: typeof invokeTrustNative) => Promise<T>,
+): Promise<T> {
   if (pendingMutations >= MAX_PENDING_MUTATIONS) {
     return Promise.reject(
       new Error("Too many Trust Center operations are already queued"),
     );
   }
+  const expectedGeneration = scopeGeneration;
+  const expectedDatabaseId = activeScope.databaseId;
+  const assertScope = () => {
+    if (
+      expectedGeneration !== scopeGeneration ||
+      expectedDatabaseId !== activeScope.databaseId
+    )
+      throw new TrustScopeChangedError();
+  };
+  const invokeMutation = <T>(
+    command: string,
+    args?: Record<string, unknown>,
+  ): Promise<T> => {
+    assertScope();
+    return invokeTrustNative<T>(command, {
+      ...args,
+      ...(expectedDatabaseId ? { expectedDatabaseId } : {}),
+    }).then((result) => {
+      assertScope();
+      return result;
+    });
+  };
   pendingMutations += 1;
-  const result = mutationTail.then(operation, operation);
+  const execute = () => {
+    assertScope();
+    return operation(invokeMutation);
+  };
+  const result = mutationTail.then(execute, execute);
   const tracked = result.finally(() => {
     pendingMutations -= 1;
   });
@@ -1594,12 +1638,12 @@ export function trustIdentity<T extends TrustRecordType>(
   userApproved = true,
   connectionId?: string,
 ): Promise<void> {
-  return serializeMutation(async () => {
+  return serializeMutation(async (invokeMutation) => {
     await ensureTrustStoreReady();
     const existing = cachedRecord(host, port, type, connectionId);
     const nativeIdentity = toNativeIdentity(type, identity);
     try {
-      await invokeTrustNative<void>("trust_store_identity", {
+      await invokeMutation<void>("trust_store_identity", {
         host:
           existing?.nativeHost ?? encodeNativeHost(host, port, connectionId),
         recordType: type,
@@ -1607,7 +1651,8 @@ export function trustIdentity<T extends TrustRecordType>(
         userApproved,
       });
       await refreshNativeCache();
-    } catch {
+    } catch (error) {
+      if (error instanceof TrustScopeChangedError) throw error;
       throw markTrustStoreUnavailable();
     }
   });
@@ -1619,17 +1664,18 @@ export function removeIdentity(
   type: TrustRecordType,
   connectionId?: string,
 ): Promise<void> {
-  return serializeMutation(async () => {
+  return serializeMutation(async (invokeMutation) => {
     await ensureTrustStoreReady();
     const existing = cachedRecord(host, port, type, connectionId);
     if (!existing) return;
     try {
-      await invokeTrustNative<void>("trust_remove_identity", {
+      await invokeMutation<void>("trust_remove_identity", {
         host: existing.nativeHost,
         recordType: type,
       });
       await refreshNativeCache();
-    } catch {
+    } catch (error) {
+      if (error instanceof TrustScopeChangedError) throw error;
       throw markTrustStoreUnavailable();
     }
   });
@@ -1666,8 +1712,25 @@ export function getAllPerConnectionTrustRecords(): ConnectionTrustGroup[] {
   }));
 }
 
+/** Match selected display rows to portable records without rebuilding scoped host encodings. */
+export function getTrustRecordStorageKey(
+  record: TrustRecord,
+  connectionId?: string,
+): string {
+  const address = parseTrustRecordAddress(record);
+  const existing = cachedRecord(
+    address.host,
+    address.port,
+    record.type,
+    connectionId,
+  );
+  if (!existing)
+    throw new Error("Trust record changed; refresh before exporting");
+  return `${record.type}:${existing.nativeHost}`;
+}
+
 export function clearAllTrustRecords(connectionId?: string): Promise<void> {
-  return serializeMutation(async () => {
+  return serializeMutation(async (invokeMutation) => {
     await ensureTrustStoreReady();
     const normalizedConnectionId = normalizeConnectionId(connectionId);
     const targets = normalizedConnectionId
@@ -1675,25 +1738,27 @@ export function clearAllTrustRecords(connectionId?: string): Promise<void> {
       : Array.from(globalCache.values());
     try {
       for (const target of targets) {
-        await invokeTrustNative<void>("trust_remove_identity", {
+        await invokeMutation<void>("trust_remove_identity", {
           host: target.nativeHost,
           recordType: target.record.type,
         });
       }
       await refreshNativeCache();
-    } catch {
+    } catch (error) {
+      if (error instanceof TrustScopeChangedError) throw error;
       throw markTrustStoreUnavailable();
     }
   });
 }
 
 export function clearEntireTrustStore(): Promise<void> {
-  return serializeMutation(async () => {
+  return serializeMutation(async (invokeMutation) => {
     await ensureTrustStoreReady();
     try {
-      await invokeTrustNative<void>("trust_clear_all");
+      await invokeMutation<void>("trust_clear_all");
       await refreshNativeCache();
-    } catch {
+    } catch (error) {
+      if (error instanceof TrustScopeChangedError) throw error;
       throw markTrustStoreUnavailable();
     }
   });
@@ -1704,7 +1769,7 @@ export function setTrustRecordRevoked(
   revoked: boolean,
   connectionId?: string,
 ): Promise<void> {
-  return serializeMutation(async () => {
+  return serializeMutation(async (invokeMutation) => {
     await ensureTrustStoreReady();
     const address = parseTrustRecordAddress(record);
     const existing = cachedRecord(
@@ -1715,17 +1780,49 @@ export function setTrustRecordRevoked(
     );
     if (!existing) throw new Error("Trust record not found");
     try {
-      await invokeTrustNative<void>(
+      await invokeMutation<void>(
         revoked ? "trust_revoke_identity" : "trust_reinstate_identity",
         {
           host: existing.nativeHost,
           recordType: record.type,
+          expectedFingerprint: record.identity.fingerprint,
         },
       );
       await refreshNativeCache();
-    } catch {
+    } catch (error) {
+      if (error instanceof TrustScopeChangedError) throw error;
       throw markTrustStoreUnavailable();
     }
+  });
+}
+
+export function setTrustRecordTags(
+  record: TrustRecord,
+  tags: string[],
+  connectionId?: string,
+): Promise<void> {
+  return serializeMutation(async (invokeMutation) => {
+    await ensureTrustStoreReady();
+    const normalized = [
+      ...new Set(tags.map((tag) => tag.trim()).filter(Boolean)),
+    ];
+    if (normalized.length > 100 || normalized.some((tag) => tag.length > 128))
+      throw new Error("Use at most 100 tags, each at most 128 characters.");
+    const address = parseTrustRecordAddress(record);
+    const existing = cachedRecord(
+      address.host,
+      address.port,
+      record.type,
+      connectionId,
+    );
+    if (!existing) throw new Error("Trust record not found");
+    await invokeMutation<void>("trust_set_record_tags", {
+      host: existing.nativeHost,
+      recordType: record.type,
+      tags: normalized,
+      expectedFingerprint: record.identity.fingerprint,
+    });
+    await refreshNativeCache();
   });
 }
 
@@ -1734,7 +1831,7 @@ export function setTrustRecordPolicy(
   policy: TrustPolicy | undefined,
   connectionId?: string,
 ): Promise<void> {
-  return serializeMutation(async () => {
+  return serializeMutation(async (invokeMutation) => {
     await ensureTrustStoreReady();
     const address = parseTrustRecordAddress(record);
     const existing = cachedRecord(
@@ -1745,14 +1842,16 @@ export function setTrustRecordPolicy(
     );
     if (!existing) throw new Error("Trust record not found");
     try {
-      await invokeTrustNative<void>("trust_set_host_policy", {
+      await invokeMutation<void>("trust_set_host_policy", {
         host: existing.nativeHost,
         recordType: record.type,
+        expectedFingerprint: record.identity.fingerprint,
         policy: policy ?? null,
         config: null,
       });
       await refreshNativeCache();
-    } catch {
+    } catch (error) {
+      if (error instanceof TrustScopeChangedError) throw error;
       throw markTrustStoreUnavailable();
     }
   });
@@ -1765,7 +1864,7 @@ export function updateTrustRecordNickname(
   nickname: string,
   connectionId?: string,
 ): Promise<void> {
-  return serializeMutation(async () => {
+  return serializeMutation(async (invokeMutation) => {
     await ensureTrustStoreReady();
     const existing = cachedRecord(host, port, type, connectionId);
     if (!existing) throw new Error("Trust record not found");
@@ -1774,13 +1873,14 @@ export function updateTrustRecordNickname(
       throw new Error("Trust record nickname is too long");
     }
     try {
-      await invokeTrustNative<void>("trust_update_nickname", {
+      await invokeMutation<void>("trust_update_nickname", {
         host: existing.nativeHost,
         recordType: type,
         nickname: normalizedNickname || null,
       });
       await refreshNativeCache();
-    } catch {
+    } catch (error) {
+      if (error instanceof TrustScopeChangedError) throw error;
       throw markTrustStoreUnavailable();
     }
   });

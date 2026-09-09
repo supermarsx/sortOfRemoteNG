@@ -139,6 +139,30 @@ pub fn trust_import_known_hosts(
     redact_ssh_command_result(crate::ssh::service::import_known_hosts(path))
 }
 
+/// Preview public host keys only; selected paths require the native picker grant.
+#[tauri::command]
+pub async fn trust_preview_known_hosts<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    path: Option<String>,
+) -> Result<crate::ssh::service::KnownHostsPreview, String> {
+    use tauri_plugin_fs::FsExt;
+    if let Some(selected) = &path {
+        let selected = std::path::Path::new(selected);
+        if !selected.is_absolute()
+            || !app
+                .try_fs_scope()
+                .is_some_and(|scope| scope.is_allowed(selected))
+        {
+            return Err("known_hosts file must be selected through the native file picker".into());
+        }
+    }
+    let result =
+        tokio::task::spawn_blocking(move || crate::ssh::service::preview_known_hosts(path))
+            .await
+            .map_err(|_| "known_hosts preview task failed".to_string())?;
+    redact_ssh_command_result(result)
+}
+
 // ── Include command wrappers ───────────────────────────────────────────
 
 #[allow(dead_code)]

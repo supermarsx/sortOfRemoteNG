@@ -1,20 +1,12 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { GlobalSettings } from "../../types/settings/settings";
 import {
   getAllTrustRecords,
   getAllPerConnectionTrustRecords,
   getTrustStoreScope,
-  refreshTrustStoreScope,
-  removeIdentity,
-  clearEntireTrustStore,
   ensureTrustStoreReady,
   getTrustStoreAvailability,
-  parseTrustRecordAddress,
   retryTrustStoreHydration,
-  setTrustRecordPolicy,
-  setTrustRecordRevoked,
-  type TrustPolicy,
-  updateTrustRecordNickname,
   type TrustRecord,
   type TrustStoreScope,
   type ConnectionTrustGroup,
@@ -23,14 +15,7 @@ import {
   DatabaseManager,
   onCurrentDatabaseChange,
 } from "../../utils/connection/databaseManager";
-import {
-  applyTrustDocument,
-  isTrustExportDocument,
-  readTrustDocument,
-  type TrustExportDocument,
-} from "../../utils/services/trustPortability";
 import { getInvoke } from "../../utils/tauri/invoke";
-import { useConnections } from "../../contexts/useConnections";
 
 export interface ClassifiedTrustRecords {
   httpsRecords: TrustRecord[];
@@ -56,11 +41,7 @@ export interface TrustLegacyStatus {
 }
 
 /** Which long-running Trust Center action is in flight, if any. */
-export type TrustDatabaseAction =
-  | "export"
-  | "import"
-  | "known-hosts"
-  | "delete-legacy";
+export type TrustDatabaseAction = "delete-legacy";
 
 /**
  * A translatable outcome banner. The hook deliberately reports a key plus
@@ -72,20 +53,6 @@ export interface TrustActionMessage {
   tone: "success" | "error";
   key: string;
   values?: Record<string, string | number>;
-}
-
-/**
- * Accept either a bare export document or any wrapper that carries one under
- * `trustRecords` — a full database export written by the Import/Export wizard
- * is a perfectly reasonable thing for a user to point this importer at.
- */
-function extractTrustDocument(value: unknown): TrustExportDocument | null {
-  if (isTrustExportDocument(value)) return value;
-  if (value && typeof value === "object") {
-    const nested = (value as { trustRecords?: unknown }).trustRecords;
-    if (isTrustExportDocument(nested)) return nested;
-  }
-  return null;
 }
 
 export function classifyTrustRecords(
@@ -116,10 +83,8 @@ export function useTrustVerificationSettings(
   const [connectionGroups, setConnectionGroups] = useState<
     ConnectionTrustGroup[]
   >(() => getAllPerConnectionTrustRecords());
-  const [showConfirmClear, setShowConfirmClear] = useState(false);
   const [storeLoading, setStoreLoading] = useState(true);
   const [storeError, setStoreError] = useState<string>();
-  const [busyRecord, setBusyRecord] = useState<string>();
   const [scope, setScope] = useState<TrustStoreScope>(() =>
     getTrustStoreScope(),
   );
@@ -134,7 +99,6 @@ export function useTrustVerificationSettings(
   const [actionMessage, setActionMessage] = useState<TrustActionMessage | null>(
     null,
   );
-  const { state: connectionState } = useConnections();
 
   const refreshRecords = useCallback(() => {
     setTrustRecords(getAllTrustRecords());
@@ -218,171 +182,6 @@ export function useTrustVerificationSettings(
     void refreshLegacyStatus();
   }, [refreshLegacyStatus]);
 
-  /**
-   * Re-read everything the native side owns after a mutation that bypassed the
-   * display cache (a JSON import, a known_hosts import). `retryTrustStoreHydration`
-   * is the forced-refetch path; the scope read updates the record count.
-   */
-  const reloadFromNative = useCallback(async () => {
-    await refreshTrustStoreScope();
-    setScope(getTrustStoreScope());
-    await loadRecords(true);
-  }, [loadRecords]);
-
-  const handleExportJson = useCallback(async () => {
-    setActionBusy("export");
-    setActionMessage(null);
-    try {
-      const invoke = await getInvoke();
-      if (!invoke) {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.unavailable",
-        });
-        return;
-      }
-      const document = await readTrustDocument(scope.databaseId ?? undefined);
-      if (!document) {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.exportFailed",
-        });
-        return;
-      }
-      if (document.records.length === 0) {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.exportEmpty",
-        });
-        return;
-      }
-      const { save } = await import("@tauri-apps/plugin-dialog");
-      const path = await save({
-        defaultPath: `trust-center-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: "JSON", extensions: ["json"] }],
-      });
-      // A cancelled dialog is not a failure — leave the banner clear.
-      if (!path) return;
-      const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-      await writeTextFile(path, `${JSON.stringify(document, null, 2)}\n`);
-      setActionMessage({
-        tone: "success",
-        key: "trustCenter.status.exported",
-        values: { path },
-      });
-    } catch {
-      setActionMessage({
-        tone: "error",
-        key: "trustCenter.status.exportFailed",
-      });
-    } finally {
-      setActionBusy(undefined);
-    }
-  }, [scope.databaseId]);
-
-  const handleImportJson = useCallback(async () => {
-    setActionBusy("import");
-    setActionMessage(null);
-    try {
-      const invoke = await getInvoke();
-      if (!invoke) {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.unavailable",
-        });
-        return;
-      }
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "JSON", extensions: ["json"] }],
-      });
-      const path = typeof selected === "string" ? selected : null;
-      if (!path) return;
-      const { readTextFile } = await import("@tauri-apps/plugin-fs");
-      const raw = await readTextFile(path);
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.importInvalid",
-        });
-        return;
-      }
-      const document = extractTrustDocument(parsed);
-      if (!document) {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.importInvalid",
-        });
-        return;
-      }
-
-      const outcome = await applyTrustDocument(document, {
-        databaseId: scope.databaseId ?? undefined,
-        mode: "merge",
-      });
-      if (!outcome) {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.importFailed",
-        });
-        return;
-      }
-      await reloadFromNative();
-      setActionMessage({
-        tone: "success",
-        key: "trustCenter.status.imported",
-        values: { imported: outcome.imported, skipped: outcome.skipped },
-      });
-    } catch {
-      setActionMessage({
-        tone: "error",
-        key: "trustCenter.status.importFailed",
-      });
-    } finally {
-      setActionBusy(undefined);
-    }
-  }, [reloadFromNative, scope.databaseId]);
-
-  const handleImportKnownHosts = useCallback(async () => {
-    setActionBusy("known-hosts");
-    setActionMessage(null);
-    try {
-      const invoke = await getInvoke();
-      if (!invoke) {
-        setActionMessage({
-          tone: "error",
-          key: "trustCenter.status.unavailable",
-        });
-        return;
-      }
-      const result = await invoke<{ imported?: number } | number | null>(
-        "trust_import_known_hosts",
-        {},
-      );
-      const imported =
-        typeof result === "number" ? result : (result?.imported ?? 0);
-      await reloadFromNative();
-      setActionMessage({
-        tone: "success",
-        key: "trustCenter.status.knownHostsImported",
-        values: { total: imported },
-      });
-    } catch {
-      setActionMessage({
-        tone: "error",
-        key: "trustCenter.status.knownHostsFailed",
-      });
-    } finally {
-      setActionBusy(undefined);
-    }
-  }, [reloadFromNative]);
-
   const handleDeleteLegacyStores = useCallback(async () => {
     setActionBusy("delete-legacy");
     setActionMessage(null);
@@ -413,120 +212,6 @@ export function useTrustVerificationSettings(
     }
   }, [refreshLegacyStatus]);
 
-  /** Resolve a connection ID to its name, falling back to a truncated ID. */
-  const connectionName = useCallback(
-    (id: string): string => {
-      const conn = connectionState.connections.find((c) => c.id === id);
-      return conn?.name || `Connection ${id.slice(0, 8)}…`;
-    },
-    [connectionState.connections],
-  );
-
-  const classifiedTrustRecords = useMemo(
-    () => classifyTrustRecords(trustRecords),
-    [trustRecords],
-  );
-
-  const handleRemoveRecord = useCallback(
-    async (record: TrustRecord, connectionId?: string) => {
-      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
-      setBusyRecord(operationKey);
-      setStoreError(undefined);
-      try {
-        const { host, port } = parseTrustRecordAddress(record);
-        await removeIdentity(host, port, record.type, connectionId);
-        refreshRecords();
-      } catch {
-        setStoreError("The trust record could not be removed safely.");
-      } finally {
-        setBusyRecord(undefined);
-      }
-    },
-    [refreshRecords],
-  );
-
-  const handleClearAll = useCallback(async () => {
-    setBusyRecord("clear-all");
-    setStoreError(undefined);
-    try {
-      await clearEntireTrustStore();
-      refreshRecords();
-      setShowConfirmClear(false);
-    } catch {
-      setStoreError("The Trust Center could not be cleared safely.");
-    } finally {
-      setBusyRecord(undefined);
-    }
-  }, [refreshRecords]);
-
-  const handleSetRevoked = useCallback(
-    async (record: TrustRecord, revoked: boolean, connectionId?: string) => {
-      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
-      setBusyRecord(operationKey);
-      setStoreError(undefined);
-      try {
-        await setTrustRecordRevoked(record, revoked, connectionId);
-        refreshRecords();
-      } catch {
-        setStoreError(
-          revoked
-            ? "The trust record could not be revoked safely."
-            : "The trust record could not be reinstated safely.",
-        );
-      } finally {
-        setBusyRecord(undefined);
-      }
-    },
-    [refreshRecords],
-  );
-
-  const handleSetPolicy = useCallback(
-    async (
-      record: TrustRecord,
-      policy: TrustPolicy | undefined,
-      connectionId?: string,
-    ) => {
-      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
-      setBusyRecord(operationKey);
-      setStoreError(undefined);
-      try {
-        await setTrustRecordPolicy(record, policy, connectionId);
-        refreshRecords();
-      } catch {
-        setStoreError("The scoped trust policy could not be saved safely.");
-      } finally {
-        setBusyRecord(undefined);
-      }
-    },
-    [refreshRecords],
-  );
-
-  const handleUpdateNickname = useCallback(
-    async (record: TrustRecord, nickname: string, connectionId?: string) => {
-      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
-      setBusyRecord(operationKey);
-      setStoreError(undefined);
-      try {
-        const { host, port } = parseTrustRecordAddress(record);
-        await updateTrustRecordNickname(
-          host,
-          port,
-          record.type,
-          nickname,
-          connectionId,
-        );
-        refreshRecords();
-        return true;
-      } catch {
-        setStoreError("The trust record nickname could not be saved.");
-        return false;
-      } finally {
-        setBusyRecord(undefined);
-      }
-    },
-    [refreshRecords],
-  );
-
   const totalCount =
     trustRecords.length +
     connectionGroups.reduce((sum, g) => sum + g.records.length, 0);
@@ -545,20 +230,10 @@ export function useTrustVerificationSettings(
     updateSettings,
     trustRecords,
     connectionGroups,
-    showConfirmClear,
-    setShowConfirmClear,
     storeLoading,
     storeError,
-    busyRecord,
     retryLoad: () => loadRecords(true),
     refreshRecords,
-    connectionName,
-    ...classifiedTrustRecords,
-    handleRemoveRecord,
-    handleClearAll,
-    handleSetRevoked,
-    handleSetPolicy,
-    handleUpdateNickname,
     totalCount,
     scope,
     databaseName,
@@ -571,9 +246,6 @@ export function useTrustVerificationSettings(
     actionMessage,
     clearActionMessage: () => setActionMessage(null),
     refreshLegacyStatus,
-    handleExportJson,
-    handleImportJson,
-    handleImportKnownHosts,
     handleDeleteLegacyStores,
   };
 }

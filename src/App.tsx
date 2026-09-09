@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from "react";
 import dynamic from "next/dynamic";
+import { useTrustCenterSession } from "./hooks/security/useTrustCenterSession";
 import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -278,6 +279,7 @@ const AppContent: React.FC = () => {
     setActiveSessionId,
   );
   useCloseTabShortcut(state.sessions, activeSessionId, handleSessionClose);
+  const openTrustCenter = useTrustCenterSession(setActiveSessionId);
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();
@@ -1941,6 +1943,7 @@ const AppContent: React.FC = () => {
         />
 
         <AppDialogs
+          onOpenTrustCenter={openTrustCenter}
           appSettings={appSettings}
           showDatabasePanel={showDatabasePanel}
           showQuickConnect={showQuickConnect}

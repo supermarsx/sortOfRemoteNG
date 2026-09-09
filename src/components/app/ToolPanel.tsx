@@ -13,7 +13,9 @@ import {
   ToolKey,
   RDP_INTERNALS_PROTOCOL,
   RECORDING_PLAYER_PROTOCOL,
+  TRUST_CENTER_PROTOCOL,
 } from "./toolSession";
+import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 
 const PerformanceMonitor = dynamic(
@@ -23,6 +25,9 @@ const PerformanceMonitor = dynamic(
     ),
   { ssr: false },
 );
+const TrustCenterTab = dynamic(() => import("../security/TrustCenterTab"), {
+  ssr: false,
+});
 const ActionLogViewer = dynamic(
   () =>
     import("../monitoring/ActionLogViewer").then(
@@ -217,6 +222,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   const { settings } = useSettings();
   const { isActive } = useSessionRenderActivity();
   const toolKey = getToolKeyFromProtocol(session.protocol);
+  const openTrustCenter = useTrustCenterSession(onActivateSession, session);
 
   const activeRdpBackendIds = useMemo(
     () =>
@@ -230,6 +236,8 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   if (session.protocol === RDP_INTERNALS_PROTOCOL) {
     return <RDPInternalsTab session={session} onClose={onClose} />;
   }
+  if (session.protocol === TRUST_CENTER_PROTOCOL)
+    return <TrustCenterTab onClose={onClose} />;
   if (
     session.protocol === RECORDING_PLAYER_PROTOCOL &&
     session.recordingPlayer
@@ -300,6 +308,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         })()}
       {toolKey === "settings" && (
         <SettingsTabContent
+          onOpenTrustCenter={onActivateSession ? openTrustCenter : undefined}
           onDatabaseSelect={onDatabaseSelect}
           onDatabaseClose={onDatabaseClose}
           onBeforeCurrentLock={onBeforeCurrentLock}

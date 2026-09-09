@@ -112,9 +112,14 @@ const trustDocument = {
   policy: "tofu",
 };
 
+const openTrustCenter = vi.fn();
 function renderSection() {
   return render(
-    <TrustVerificationSettings settings={settings} updateSettings={vi.fn()} />,
+    <TrustVerificationSettings
+      settings={settings}
+      updateSettings={vi.fn()}
+      onOpenTrustCenter={openTrustCenter}
+    />,
   );
 }
 
@@ -124,6 +129,7 @@ async function settle() {
 }
 
 beforeEach(async () => {
+  openTrustCenter.mockClear();
   await i18n.changeLanguage("en-US");
   scope = {
     databaseId: "db-1",
@@ -196,7 +202,7 @@ describe("Trust Center — database banner", () => {
     expect(screen.getByTestId("trust-database-seeded")).toHaveTextContent("5");
   });
 
-  it("warns and disables every action when no database is open", async () => {
+  it("warns when no database is open and routes management to the empty-state tab", async () => {
     scope = { ...scope, databaseId: null, resolved: true };
     currentDatabase = null;
     renderSection();
@@ -208,9 +214,12 @@ describe("Trust Center — database banner", () => {
         .getAttribute("data-scope-state"),
     ).toBe("none");
     expect(screen.getByText("No database is open")).toBeInTheDocument();
-    expect(screen.getByTestId("trust-export-json")).toBeDisabled();
-    expect(screen.getByTestId("trust-import-json")).toBeDisabled();
-    expect(screen.getByTestId("trust-import-known-hosts")).toBeDisabled();
+    expect(screen.queryByTestId("trust-export-json")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("trust-import-json")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open dedicated Trust Center" }),
+    );
+    expect(openTrustCenter).toHaveBeenCalledOnce();
   });
 
   // An unanswered `trust_get_active_database` must not claim a lock-out: the
@@ -225,7 +234,9 @@ describe("Trust Center — database banner", () => {
         .getByTestId("trust-database-banner")
         .getAttribute("data-scope-state"),
     ).toBe("unresolved");
-    expect(screen.getByTestId("trust-export-json")).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Open dedicated Trust Center" }),
+    ).toBeEnabled();
   });
 
   // The de-DE bundle is loaded and activated for real, so this fails if the
@@ -243,119 +254,43 @@ describe("Trust Center — database banner", () => {
     expect(screen.getByTestId("trust-database-encryption")).toHaveTextContent(
       "Verschlüsselt",
     );
-    expect(screen.getByTestId("trust-export-json")).toHaveTextContent(
-      "JSON exportieren",
-    );
-    expect(screen.getByTestId("trust-import-known-hosts")).toHaveTextContent(
-      "Aus known_hosts importieren",
-    );
+    expect(
+      screen.getByRole("button", { name: /JSON exportieren/ }),
+    ).toHaveTextContent("JSON exportieren");
+    expect(
+      screen.getByRole("button", { name: /Aus known_hosts importieren/ }),
+    ).toHaveTextContent("Aus known_hosts importieren");
   });
 });
 
-describe("Trust Center — JSON portability", () => {
-  it("exports the active database's document through the save dialog", async () => {
+describe("Trust Center — management moved to its dedicated tab", () => {
+  it("keeps search destinations as launchers and never runs the old unreviewed import/export paths", async () => {
     renderSection();
     await settle();
-
-    fireEvent.click(screen.getByTestId("trust-export-json"));
-
-    await waitFor(() => expect(writtenFiles).toHaveLength(1));
-    expect(invokeMock).toHaveBeenCalledWith("trust_export_database", {
-      databaseId: "db-1",
-    });
-    expect(saveDialog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filters: [{ name: "JSON", extensions: ["json"] }],
-      }),
-    );
-    const [path, contents] = writtenFiles[0];
-    expect(path).toBe("/tmp/trust.json");
-    expect(JSON.parse(contents)).toEqual(trustDocument);
-    expect(screen.getByTestId("trust-action-message")).toHaveAttribute(
-      "data-tone",
-      "success",
-    );
-  });
-
-  it("writes nothing when the save dialog is cancelled", async () => {
-    savePath = null;
-    renderSection();
-    await settle();
-
-    fireEvent.click(screen.getByTestId("trust-export-json"));
-
-    await waitFor(() => expect(saveDialog).toHaveBeenCalled());
-    expect(writeTextFile).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("trust-action-message")).toBeNull();
-  });
-
-  it("imports a document as a merge and reports the outcome", async () => {
-    renderSection();
-    await settle();
-
-    fireEvent.click(screen.getByTestId("trust-import-json"));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("trust_import_database", {
-        databaseId: "db-1",
-        document: trustDocument,
-        mode: "merge",
-      }),
-    );
-    const message = await screen.findByTestId("trust-action-message");
-    expect(message).toHaveAttribute("data-tone", "success");
-    expect(message).toHaveTextContent("4");
-    expect(message).toHaveTextContent("1");
-  });
-
-  // A user is far more likely to point this at a full database export than at
-  // a bare trust document, so the nested form is accepted too.
-  it("accepts a full database export that nests the document", async () => {
-    fileContents = JSON.stringify({
-      connections: [],
-      trustRecords: trustDocument,
-    });
-    renderSection();
-    await settle();
-
-    fireEvent.click(screen.getByTestId("trust-import-json"));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "trust_import_database",
-        expect.objectContaining({ document: trustDocument }),
-      ),
-    );
-  });
-
-  it("rejects a file that is not a Trust Center export", async () => {
-    fileContents = JSON.stringify({ hello: "world" });
-    renderSection();
-    await settle();
-
-    fireEvent.click(screen.getByTestId("trust-import-json"));
-
-    const message = await screen.findByTestId("trust-action-message");
-    expect(message).toHaveAttribute("data-tone", "error");
-    expect(message).toHaveTextContent("not a Trust Center export");
+    for (const name of [
+      "Open dedicated Trust Center",
+      "Export JSON → Trust Center",
+      "Import JSON → Trust Center",
+      "Import from known_hosts → Trust Center",
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name }));
+    }
+    expect(openTrustCenter).toHaveBeenCalledTimes(4);
     expect(invokeMock).not.toHaveBeenCalledWith(
       "trust_import_database",
       expect.anything(),
     );
-  });
-
-  it("imports OpenSSH host keys from known_hosts", async () => {
-    renderSection();
-    await settle();
-
-    fireEvent.click(screen.getByTestId("trust-import-known-hosts"));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("trust_import_known_hosts", {}),
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_import_known_hosts",
+      expect.anything(),
     );
-    const message = await screen.findByTestId("trust-action-message");
-    expect(message).toHaveAttribute("data-tone", "success");
-    expect(message).toHaveTextContent("7");
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_export_database",
+      expect.anything(),
+    );
+    expect(screen.queryByText(/Stored Identities [(]/)).not.toBeInTheDocument();
+    expect(saveDialog).not.toHaveBeenCalled();
+    expect(openDialog).not.toHaveBeenCalled();
   });
 });
 

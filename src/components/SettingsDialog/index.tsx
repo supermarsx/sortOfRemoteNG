@@ -55,6 +55,7 @@ import {
    ═══════════════════════════════════════════════════════════════ */
 
 interface SettingsDialogProps extends DatabaseSecurityCallbacks {
+  onOpenTrustCenter?: () => void;
   isOpen: boolean;
   onClose: () => void;
   /** Deep-link target; applied on every open, not only the first. */
@@ -172,8 +173,11 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
    ═══════════════════════════════════════════════════════════════ */
 
 const ContentPanel: React.FC<
-  { mgr: SettingsDialogMgr } & DatabaseSecurityCallbacks
-> = ({ mgr, ...securityCallbacks }) => {
+  {
+    mgr: SettingsDialogMgr;
+    onOpenTrustCenter?: () => void;
+  } & DatabaseSecurityCallbacks
+> = ({ mgr, onOpenTrustCenter, ...securityCallbacks }) => {
   if (!mgr.settings) return null;
   const s = mgr.settings;
   const u = mgr.updateSettings;
@@ -213,7 +217,11 @@ const ContentPanel: React.FC<
           />
         )}
         {mgr.activeTab === "trust" && (
-          <TrustVerificationSettings settings={s} updateSettings={u} />
+          <TrustVerificationSettings
+            settings={s}
+            updateSettings={u}
+            onOpenTrustCenter={onOpenTrustCenter}
+          />
         )}
         {mgr.activeTab === "performance" && (
           <PerformanceSettings settings={s} updateSettings={u} />
@@ -417,6 +425,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
    ═══════════════════════════════════════════════════════════════ */
 
 interface SettingsTabContentProps extends DatabaseSecurityCallbacks {
+  onOpenTrustCenter?: () => void;
   onClose: () => void;
   /**
    * Deep-link target. This variant is always mounted once its tab exists, so

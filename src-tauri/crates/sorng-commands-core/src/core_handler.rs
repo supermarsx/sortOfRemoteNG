@@ -161,6 +161,8 @@ pub fn is_command(command: &str) -> bool {
             | "connect_ssh"
             | "ssh_respond_to_host_key_prompt"
             | "trust_import_known_hosts"
+            | "trust_preview_known_hosts"
+            | "trust_apply_reviewed_batch"
             | "start_shell"
             | "execute_command"
             | "execute_command_interactive"
@@ -1466,6 +1468,7 @@ define_command_group!(
         artifact_encryption_commands::encryption_recover_artifact_transition,
         // Trust store commands
         trust_store_commands::trust_verify_identity,
+        trust_store_commands::trust_apply_reviewed_batch,
         trust_store_commands::trust_store_identity,
         trust_store_commands::trust_store_identity_with_reason,
         trust_store_commands::trust_remove_identity,
@@ -1563,6 +1566,7 @@ define_command_group!(
         // t62: the Trust Center's known_hosts importer lives beside the
         // host-key prompt because it needs libssh2's known_hosts parser.
         ssh_commands::trust_import_known_hosts,
+        ssh_commands::trust_preview_known_hosts,
         ssh_commands::start_shell,
         ssh_commands::execute_command,
         ssh_commands::execute_command_interactive,

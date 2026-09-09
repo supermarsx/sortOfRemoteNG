@@ -235,7 +235,7 @@ export const TRUST_SEARCH_ENTRIES: SettingSearchEntry[] = [
     label: "Import JSON",
     labelKey: "trustCenter.actions.importJson",
     description:
-      "Merge trusted hosts and certificates from a JSON file. Revoked entries are never re-trusted.",
+      "Open the dedicated Trust Center to review JSON identities, fingerprint conflicts and trust intent before merging.",
     descriptionKey: "trustCenter.actions.importJsonHint",
     tags: ["import", "json", "restore", "merge", "trust", "certificate"],
     synonyms: ["load trust records", "restore trust store"],
@@ -247,7 +247,7 @@ export const TRUST_SEARCH_ENTRIES: SettingSearchEntry[] = [
     label: "Import from known_hosts",
     labelKey: "trustCenter.actions.importKnownHosts",
     description:
-      "Read OpenSSH's ~/.ssh/known_hosts and add every host key it contains to this database.",
+      "Open the dedicated Trust Center to preview supported OpenSSH known_hosts identities before an explicitly reviewed import.",
     descriptionKey: "trustCenter.actions.importKnownHostsHint",
     tags: [
       "known_hosts",
@@ -288,7 +288,7 @@ export const TRUST_SEARCH_ENTRIES: SettingSearchEntry[] = [
     key: "trustStoredIdentities",
     label: "Stored Identities",
     description:
-      "Every memorized HTTPS certificate, general certificate, RDP certificate, SSH host key and legacy TLS identity — review, rename, re-scope, revoke or remove them.",
+      "Open the dedicated Trust Center tab to search and manage certificates and SSH identities individually or in bulk: inspect history and statistics, rename, tag, review policies, revoke, reinstate or forget.",
     tags: [
       "stored",
       "identities",

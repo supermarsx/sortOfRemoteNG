@@ -11,6 +11,21 @@ export const RDP_INTERNALS_PROTOCOL = "tool:rdpInternals";
 export const RDP_INTERNALS_WINDOW_MESSAGE =
   "RDP Internals stays in the desktop viewer's window. Open it from the RDP desktop after moving that session.";
 export const RECORDING_PLAYER_PROTOCOL = "tool:recordingPlayer";
+export const TRUST_CENTER_PROTOCOL = "tool:trustCenter";
+
+export const createTrustCenterSession = (
+  source?: ConnectionSession,
+): ConnectionSession => ({
+  id: `trust-center-${source?.layout?.isDetached ? (source.layout.windowId ?? source.id) : "main"}`,
+  connectionId: "tool-trust-center",
+  name: "Trust Center",
+  status: "connected",
+  startTime: new Date(),
+  protocol: TRUST_CENTER_PROTOCOL,
+  hostname: "",
+  tabGroupId: source?.tabGroupId,
+  ...(source?.layout?.isDetached ? { layout: { ...source.layout } } : {}),
+});
 
 export const createRdpInternalsSession = (
   source: ConnectionSession,

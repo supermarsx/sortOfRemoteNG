@@ -24,6 +24,7 @@ import { SessionRenderActivityProvider } from "../../src/components/session/Sess
 import {
   RDP_INTERNALS_PROTOCOL,
   RECORDING_PLAYER_PROTOCOL,
+  TRUST_CENTER_PROTOCOL,
 } from "../../src/components/app/toolSession";
 import { ConfirmDialog } from "../../src/components/ui/dialogs/ConfirmDialog";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
@@ -141,6 +142,9 @@ const reviveConnection = (connection: Connection): Connection => ({
 
 /** Only these local, non-transport tools may survive a main-window sync. */
 const isLocalUiTool = (session: ConnectionSession): boolean =>
+  (session.protocol === TRUST_CENTER_PROTOCOL &&
+    session.connectionId === "tool-trust-center" &&
+    session.id.startsWith("trust-center-")) ||
   (session.protocol === RDP_INTERNALS_PROTOCOL &&
     session.id === `rdp-internals-${session.rdpInternals?.sessionId}` &&
     Boolean(session.rdpInternals?.sessionId)) ||

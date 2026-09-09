@@ -39,6 +39,7 @@ interface AppDialogsProps {
   showDatabasePanel: boolean;
   showQuickConnect: boolean;
   showSettings: boolean;
+  onOpenTrustCenter?: () => void;
   showDiagnostics: boolean;
   setShowDatabasePanel: (v: boolean) => void;
   setShowQuickConnect: (v: boolean) => void;
@@ -172,6 +173,14 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         )}
       >
         <SettingsDialog
+          onOpenTrustCenter={
+            props.onOpenTrustCenter
+              ? () => {
+                  setShowSettings(false);
+                  props.onOpenTrustCenter?.();
+                }
+              : undefined
+          }
           onDatabaseSelect={handleDatabaseSelect}
           onDatabaseClose={props.handleDatabaseClose}
           onBeforeCurrentLock={props.onBeforeCurrentLock}
