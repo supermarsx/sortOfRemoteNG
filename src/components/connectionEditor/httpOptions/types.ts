@@ -3,7 +3,8 @@ import type { Connection } from "../../../types/connection/connection";
 
 export type Mgr = ReturnType<typeof useHTTPOptions>;
 
-export type HTTPOptionsSection = "authentication" | "security" | "advanced";
+export type HTTPOptionsSection =
+  "application" | "authentication" | "security" | "advanced";
 
 export interface HTTPOptionsProps {
   formData: Partial<Connection>;

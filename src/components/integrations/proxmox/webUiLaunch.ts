@@ -143,6 +143,11 @@ export function buildProxmoxWebUiConnection(
     createdAt: stamp,
     updatedAt: stamp,
     httpAutoLogin: canAutoLogin,
+    httpApplication: {
+      version: 1,
+      id: "proxmox",
+      loginMode: canAutoLogin ? "form" : "manual",
+    },
   };
   if (canAutoLogin) {
     connection.username = username;

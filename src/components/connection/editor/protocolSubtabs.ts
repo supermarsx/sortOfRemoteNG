@@ -25,6 +25,13 @@ export interface ProtocolSubtabDescriptor {
 }
 
 const SUBTABS: Record<ProtocolSubtabId, ProtocolSubtabDescriptor> = {
+  application: {
+    id: "application",
+    label: "Application",
+    description:
+      "Website application and explicitly chosen browser login behavior.",
+    icon: Cloud,
+  },
   connection: {
     id: "connection",
     label: "Connection",
@@ -281,7 +288,7 @@ export function getProtocolSubtabs(
   if (protocol === "http" || protocol === "https") {
     return selectSubtabs(
       withWindowsManagement(
-        ["authentication", "security", "advanced", "recovery"],
+        ["application", "authentication", "security", "advanced", "recovery"],
         formData,
       ),
     );

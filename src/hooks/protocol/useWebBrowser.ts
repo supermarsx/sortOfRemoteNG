@@ -26,7 +26,10 @@ import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostn
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
-import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
+import {
+  resolveHttpApplicationLogin,
+  sameHttpApplicationLogin,
+} from "../../utils/auth/httpApplicationLogin";
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
@@ -289,10 +292,22 @@ export function useWebBrowser(session: ConnectionSession) {
   const normalizedHostname = targetResolution.hostname;
 
   // ── Derived auth ────────────────────────────────────────────
-  const resolvedCreds = useMemo(
-    () => resolveHttpBasicCredentials(connection),
-    [connection],
-  );
+  const applicationAuth = useMemo(() => {
+    try {
+      return { login: resolveHttpApplicationLogin(connection), error: null };
+    } catch {
+      return {
+        login: null,
+        error:
+          "Review this connection's Application settings: the profile, login mode, website credentials, or selectors are invalid.",
+      };
+    }
+  }, [connection]);
+  const resolvedCreds = applicationAuth.login?.credentials ?? null;
+  const previousApplicationAuth = useRef({
+    auth: applicationAuth,
+    profile: connection?.httpApplication,
+  });
 
   const hasAuth = resolvedCreds !== null;
 
@@ -832,6 +847,18 @@ export function useWebBrowser(session: ConnectionSession) {
         clearTimeout(loadTimeoutRef.current);
         loadTimeoutRef.current = null;
       }
+      if (applicationAuth.error) {
+        applyNavigationFailure(
+          localNavigationFailure(
+            "invalid_navigation",
+            "Application login needs review",
+            url || session.hostname,
+            "No connection was started with these application settings.",
+            applicationAuth.error,
+          ),
+        );
+        return;
+      }
       let urlObj: URL;
       try {
         if (!targetResolution.url) {
@@ -931,6 +958,12 @@ export function useWebBrowser(session: ConnectionSession) {
                 // basic_auth() call on every upstream request.
                 username: resolvedCreds?.username ?? "",
                 password: resolvedCreds?.password ?? "",
+                ...(applicationAuth.login?.upstreamAuthMode
+                  ? {
+                      upstream_auth_mode:
+                        applicationAuth.login.upstreamAuthMode,
+                    }
+                  : {}),
                 local_port: 0,
                 // CA/hostname verification and explicit trust are separate.
                 // Always retain the accepted HTTPS fingerprint: disabling CA
@@ -957,15 +990,15 @@ export function useWebBrowser(session: ConnectionSession) {
                 // the snake_case `BasicAuthProxyConfig` keys the proxy
                 // expects (mirrors basicAuthUsername→username,
                 // httpVerifySsl→verify_ssl above). See t20-e2 contract.
-                http_auto_login: connection?.httpAutoLogin ?? false,
-                http_auto_login_selectors: connection?.httpAutoLoginSelectors
+                http_auto_login: applicationAuth.login?.autoLogin ?? false,
+                http_auto_login_selectors: applicationAuth.login?.selectors
                   ? {
                       username_selector:
-                        connection.httpAutoLoginSelectors.usernameSelector,
+                        applicationAuth.login.selectors.usernameSelector,
                       password_selector:
-                        connection.httpAutoLoginSelectors.passwordSelector,
+                        applicationAuth.login.selectors.passwordSelector,
                       submit_selector:
-                        connection.httpAutoLoginSelectors.submitSelector,
+                        applicationAuth.login.selectors.submitSelector,
                     }
                   : undefined,
                 // P7: ship the live theme snapshot so themed pages
@@ -1027,9 +1060,11 @@ export function useWebBrowser(session: ConnectionSession) {
         const msg = error instanceof Error ? error.message : String(error);
         const errorMessage =
           msg.includes("401") || msg.includes("Unauthorized")
-            ? !resolvedCreds
-              ? "Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials."
-              : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings."
+            ? applicationAuth.login?.upstreamAuthMode === "none"
+              ? "The website requires authentication. Review its Application login mode or sign in manually; form credentials are not sent as HTTP Basic."
+              : !resolvedCreds
+                ? "Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials."
+                : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings."
             : `Failed to load page: ${msg}`;
         applyNavigationFailure(
           localNavigationFailure(
@@ -1045,6 +1080,7 @@ export function useWebBrowser(session: ConnectionSession) {
     [
       hasAuth,
       resolvedCreds,
+      applicationAuth,
       connection,
       targetResolution,
       stopProxy,
@@ -1062,6 +1098,49 @@ export function useWebBrowser(session: ConnectionSession) {
   );
 
   // ── Effects ────────────────────────────────────────────────
+  // Profile edits revoke the prior one-shot credential dispenser. Do not send
+  // newly edited credentials until an explicit navigation/reload. Unrelated
+  // connection metadata updates must not interrupt a working page.
+  useEffect(() => {
+    const previous = previousApplicationAuth.current;
+    previousApplicationAuth.current = {
+      auth: applicationAuth,
+      profile: connection?.httpApplication,
+    };
+    if (
+      previous.profile === undefined &&
+      connection?.httpApplication === undefined
+    )
+      return;
+    if (
+      previous.profile?.id === connection?.httpApplication?.id &&
+      previous.auth.error === applicationAuth.error &&
+      sameHttpApplicationLogin(previous.auth.login, applicationAuth.login)
+    )
+      return;
+    navGenRef.current += 1;
+    trustResolveRef.current?.(false);
+    trustResolveRef.current = null;
+    setTrustPrompt(null);
+    if (iframeRef.current) iframeRef.current.src = "about:blank";
+    void stopProxy();
+    applyNavigationFailure(
+      localNavigationFailure(
+        "invalid_navigation",
+        "Application login settings changed",
+        activeNavigationUrlRef.current,
+        "The previous website session was stopped. Reload to use the reviewed settings.",
+        applicationAuth.error ??
+          "Reload to start a new protected website session.",
+      ),
+    );
+  }, [
+    applicationAuth,
+    connection?.httpApplication,
+    stopProxy,
+    applyNavigationFailure,
+  ]);
+
   // Initial load
   useEffect(() => {
     navigateToUrl(currentUrl);
@@ -1873,6 +1952,11 @@ export function useWebBrowser(session: ConnectionSession) {
     handleCancelLoading,
     // Auth
     hasAuth,
+    authLabel:
+      applicationAuth.login?.upstreamAuthMode === "none" &&
+      applicationAuth.login.autoLogin
+        ? "Form login"
+        : "Basic Auth",
     resolvedCreds,
     sslVerifyDisabled,
     iconPadding,

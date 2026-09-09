@@ -98,7 +98,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
                 <ShieldOff size={14} className="text-error" />
               </span>
             )}
-            <AuthIcon hasAuth={mgr.hasAuth} />
+            <AuthIcon hasAuth={mgr.hasAuth} authLabel={mgr.authLabel} />
             <Globe
               size={14}
               className="text-[var(--color-textSecondary)] flex-shrink-0"

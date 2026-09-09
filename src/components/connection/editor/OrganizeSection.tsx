@@ -3,6 +3,7 @@ import { Tag } from "lucide-react";
 import type { ConnectionEditorMgr } from "../../../hooks/connection/useConnectionEditor";
 import { TagManager } from "../TagManager";
 import { ConnectionIconPicker } from "./ConnectionIconPicker";
+import ApplicationIconSuggestion from "../../connectionEditor/httpOptions/ApplicationIconSuggestion";
 
 export const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div
@@ -12,6 +13,10 @@ export const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     <h3 className="mb-2 text-xs font-semibold text-[var(--color-textSecondary)]">
       {mgr.formData.isGroup ? "Folder Icon" : "Connection Icon"}
     </h3>
+    <ApplicationIconSuggestion
+      formData={mgr.formData}
+      setFormData={mgr.setFormData}
+    />
     <ConnectionIconPicker
       connection={{
         icon: mgr.formData.icon,

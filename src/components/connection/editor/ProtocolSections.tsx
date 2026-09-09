@@ -388,7 +388,10 @@ const ProtocolSubtabContent: React.FC<{
       <HTTPOptions
         formData={mgr.formData}
         setFormData={mgr.setFormData}
-        sections={[subtabId as "authentication" | "security" | "advanced"]}
+        sections={[
+          subtabId as
+            "application" | "authentication" | "security" | "advanced",
+        ]}
       />
     );
   }

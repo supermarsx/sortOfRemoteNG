@@ -22,10 +22,15 @@ const SecurityIcon: React.FC<SectionProps> = ({ mgr }) => {
   return <ShieldAlert size={14} className="text-warning" />;
 };
 
-const AuthIcon: React.FC<{ hasAuth: boolean }> = ({ hasAuth }) => {
+const AuthIcon: React.FC<{ hasAuth: boolean; authLabel?: string }> = ({
+  hasAuth,
+  authLabel = "Basic Auth",
+}) => {
   if (!hasAuth) return null;
   return (
-    <span data-tooltip="Basic Authentication">
+    <span
+      data-tooltip={`${authLabel} configured; this is not proof of successful sign-in`}
+    >
       <User size={14} className="text-primary" />
     </span>
   );

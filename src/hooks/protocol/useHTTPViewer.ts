@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
+import { resolveHttpApplicationLogin } from "../../utils/auth/httpApplicationLogin";
 import { ConnectionSession } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
@@ -32,6 +32,7 @@ export function useHTTPViewer(session: ConnectionSession) {
   const [proxyUrl, setProxyUrl] = useState<string>("");
   const [proxySessionId, setProxySessionId] = useState<string>("");
   const proxySessionIdRef = useRef<string>("");
+  const proxyGenerationRef = useRef(0);
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const { isFullscreen, toggleFullscreen } = useSessionFullscreen(session.id);
   const [showSettings, setShowSettings] = useState(false);
@@ -102,11 +103,12 @@ export function useHTTPViewer(session: ConnectionSession) {
     }
   }, [connection, session.protocol]);
 
-  const resolveCredentials = useCallback((): {
-    username: string;
-    password: string;
-  } | null => {
-    return resolveHttpBasicCredentials(connection);
+  const resolveCredentials = useCallback(() => {
+    try {
+      return resolveHttpApplicationLogin(connection).credentials;
+    } catch {
+      return null;
+    }
   }, [connection]);
 
   const stopProxy = useCallback(async (sessionId: string) => {
@@ -119,6 +121,7 @@ export function useHTTPViewer(session: ConnectionSession) {
   }, []);
 
   const initProxy = useCallback(async () => {
+    const generation = ++proxyGenerationRef.current;
     if (!connection) {
       setStatus("error");
       setError("Connection not found");
@@ -129,11 +132,15 @@ export function useHTTPViewer(session: ConnectionSession) {
     setError("");
 
     if (proxySessionIdRef.current) {
-      await stopProxy(proxySessionIdRef.current);
+      const oldSession = proxySessionIdRef.current;
       proxySessionIdRef.current = "";
       setProxySessionId("");
+      if (iframeRef.current) iframeRef.current.src = "about:blank";
+      await stopProxy(oldSession);
+      if (generation !== proxyGenerationRef.current) return;
     }
 
+    let startedSession: string | undefined;
     try {
       const targetUrl = buildTargetUrl();
       if (!targetUrl) {
@@ -144,23 +151,25 @@ export function useHTTPViewer(session: ConnectionSession) {
       setCurrentUrl(targetUrl);
       setIsSecure(targetUrl.startsWith("https"));
 
-      const creds = resolveCredentials();
+      const login = resolveHttpApplicationLogin(connection);
+      const creds = login.credentials;
       const proxyConfig = {
         target_url: targetUrl,
         username: creds?.username ?? "",
         password: creds?.password ?? "",
+        ...(login.upstreamAuthMode
+          ? { upstream_auth_mode: login.upstreamAuthMode }
+          : {}),
         local_port: 0,
         verify_ssl: connection.httpVerifySsl ?? true,
         connection_id: connection.id,
         upstream_proxy_url: getGlobalHttpProxyUrl(),
-        http_auto_login: connection.httpAutoLogin ?? false,
-        http_auto_login_selectors: connection.httpAutoLoginSelectors
+        http_auto_login: login.autoLogin,
+        http_auto_login_selectors: login.selectors
           ? {
-              username_selector:
-                connection.httpAutoLoginSelectors.usernameSelector,
-              password_selector:
-                connection.httpAutoLoginSelectors.passwordSelector,
-              submit_selector: connection.httpAutoLoginSelectors.submitSelector,
+              username_selector: login.selectors.usernameSelector,
+              password_selector: login.selectors.passwordSelector,
+              submit_selector: login.selectors.submitSelector,
             }
           : undefined,
       };
@@ -168,6 +177,11 @@ export function useHTTPViewer(session: ConnectionSession) {
         "start_basic_auth_proxy",
         { config: proxyConfig },
       );
+      if (generation !== proxyGenerationRef.current) {
+        await stopProxy(response.session_id);
+        return;
+      }
+      startedSession = response.session_id;
       const protectedProxyUrl = validateProtectedProxyUrl(response);
       proxySessionIdRef.current = response.session_id;
       setProxyUrl(protectedProxyUrl);
@@ -176,20 +190,27 @@ export function useHTTPViewer(session: ConnectionSession) {
       setHistoryIndex(0);
       setStatus("connected");
     } catch (err) {
+      if (startedSession) await stopProxy(startedSession);
+      if (generation !== proxyGenerationRef.current) return;
       proxySessionIdRef.current = "";
       const safeMessage =
         err instanceof Error &&
         err.message === "Connection host or port is not a valid HTTP authority"
           ? err.message
-          : "Failed to initialize HTTP proxy";
+          : connection.httpApplication !== undefined
+            ? "Unable to open this website application. Review its login mode, website credentials, and selectors, then retry."
+            : "Failed to initialize HTTP proxy";
       console.error("Failed to initialize HTTP proxy");
       setStatus("error");
       setError(safeMessage);
     }
-  }, [connection, buildTargetUrl, resolveCredentials, stopProxy]);
+  }, [connection, buildTargetUrl, stopProxy]);
 
   useEffect(() => {
-    initProxy();
+    void initProxy();
+    return () => {
+      proxyGenerationRef.current += 1;
+    };
   }, [initProxy]);
 
   useEffect(() => {
@@ -285,6 +306,12 @@ export function useHTTPViewer(session: ConnectionSession) {
     handleUpdateTotpConfigs,
     buildTargetUrl,
     resolveCredentials,
+    authLabel:
+      connection?.httpApplication?.loginMode === "form"
+        ? "Form login"
+        : resolveCredentials()
+          ? "Basic Auth"
+          : "None",
     initProxy,
     goBack,
     goForward,

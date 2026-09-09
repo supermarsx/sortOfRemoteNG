@@ -29,6 +29,8 @@
       url: /integrations/
     - title: Web viewer troubleshooting
       url: /http-viewer-trust/
+    - title: Website application profiles
+      url: /http-application-profiles/
 
 - label: Security & your data
   items:

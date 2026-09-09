@@ -141,6 +141,11 @@ export function buildNpmWebUiConnection(
     createdAt: stamp,
     updatedAt: stamp,
     httpAutoLogin: canAutoLogin,
+    httpApplication: {
+      version: 1,
+      id: "nginxProxyMgr",
+      loginMode: canAutoLogin ? "form" : "manual",
+    },
   };
   if (canAutoLogin) {
     connection.username = email;

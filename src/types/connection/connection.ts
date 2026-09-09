@@ -71,6 +71,17 @@ export interface HttpAutoLoginSelectors {
   submitSelector?: string;
 }
 
+/** Non-secret website profile. Credentials remain in the existing connection fields. */
+export interface HttpApplicationSettings {
+  version: 1;
+  id: string;
+  loginMode: "manual" | "form" | "basic";
+  /** Proxmox account realm; applied only to the volatile login username. */
+  realm?: string;
+  /** Preserves fail-closed status when imported profile metadata is malformed. */
+  invalid?: true;
+}
+
 export const INTEGRATION_PROTOCOL_PREFIX = "integration:" as const;
 
 export type BuiltInConnectionProtocol =
@@ -268,6 +279,7 @@ export interface Connection
    * field, and the form's own submit control).
    */
   httpAutoLoginSelectors?: HttpAutoLoginSelectors;
+  httpApplication?: HttpApplicationSettings;
 
   // Database specific
   database?: string;

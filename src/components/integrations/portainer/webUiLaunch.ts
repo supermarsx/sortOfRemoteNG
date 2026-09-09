@@ -119,6 +119,11 @@ export function buildPortainerWebUiConnection(
     createdAt: stamp,
     updatedAt: stamp,
     httpAutoLogin: canAutoLogin,
+    httpApplication: {
+      version: 1,
+      id: "portainer",
+      loginMode: canAutoLogin ? "form" : "manual",
+    },
   };
   if (canAutoLogin) {
     connection.username = username;

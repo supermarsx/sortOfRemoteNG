@@ -23,7 +23,8 @@ const SecurityInfoBar: React.FC<SectionProps> = ({ mgr }) => (
       <>
         <span className="text-[var(--color-textMuted)]">•</span>
         <span className="text-primary">
-          Basic Auth: {mgr.resolvedCreds?.username}
+          {mgr.authLabel ?? "Basic Auth"} configured:{" "}
+          {mgr.resolvedCreds?.username}
         </span>
       </>
     )}

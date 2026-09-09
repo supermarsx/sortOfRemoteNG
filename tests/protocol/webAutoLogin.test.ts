@@ -74,6 +74,7 @@ import {
   validateProtectedProxyUrl,
 } from "../../src/hooks/protocol/useWebBrowser";
 import type { ConnectionSession } from "../../src/types/connection/connection";
+import { useHTTPViewer } from "../../src/hooks/protocol/useHTTPViewer";
 
 const mockInvoke = vi.mocked(invoke);
 const mockVerifyIdentity = vi.mocked(verifyIdentity);
@@ -148,6 +149,205 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     // The credential is NOT a new field — it rides the existing username/password.
     expect(config?.username).toBe("admin");
     expect(config?.password).toBe("devpass");
+  });
+
+  it.each(["manual", "form", "basic"] as const)(
+    "maps an explicit application's %s mode into the protected native proxy",
+    async (loginMode) => {
+      connections.push({
+        id: "conn-1",
+        hostname: "device.local",
+        protocol: "http",
+        username: "app-user",
+        password: "app-password",
+        httpAutoLogin: true,
+        httpApplication: { version: 1, id: "portainer", loginMode },
+      });
+      const { result } = renderHook(() => useWebBrowser(session));
+      await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+      expect(result.current.authLabel).toBe(
+        loginMode === "form" ? "Form login" : "Basic Auth",
+      );
+      expect(lastProxyConfig()).toMatchObject({
+        target_url: "http://device.local/",
+        username: loginMode === "manual" ? "" : "app-user",
+        password: loginMode === "manual" ? "" : "app-password",
+        upstream_auth_mode: loginMode === "basic" ? "basic" : "none",
+        http_auto_login: loginMode === "form",
+      });
+      expect(lastProxyConfig()?.http_auto_login_selectors).toEqual(
+        loginMode === "form"
+          ? {
+              username_selector: "input#username",
+              password_selector: "input#password",
+              submit_selector: "button[type=submit]",
+            }
+          : undefined,
+      );
+    },
+  );
+
+  it("uses the same form-only policy in the legacy HTTP viewer", async () => {
+    connections.push({
+      id: "conn-1",
+      hostname: "device.local",
+      protocol: "http",
+      username: "app-user",
+      password: "app-password",
+      httpApplication: { version: 1, id: "ilo", loginMode: "form" },
+    });
+    renderHook(() => useHTTPViewer(session));
+    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+    expect(lastProxyConfig()).toMatchObject({
+      username: "app-user",
+      password: "app-password",
+      upstream_auth_mode: "none",
+      http_auto_login: true,
+    });
+  });
+
+  it("disposes the legacy viewer's late form grant after unmount", async () => {
+    let finish!: (value: unknown) => void;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    mockInvoke.mockImplementation(async (command) =>
+      command === "start_basic_auth_proxy" ? pending : undefined,
+    );
+    connections.push({
+      id: "conn-1",
+      hostname: "device.local",
+      protocol: "http",
+      username: "app-user",
+      password: "app-password",
+      httpApplication: { version: 1, id: "ilo", loginMode: "form" },
+    });
+    const { unmount } = renderHook(() => useHTTPViewer(session));
+    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+    unmount();
+    await act(async () =>
+      finish({
+        local_port: 9000,
+        session_id: "legacy-late",
+        proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+      }),
+    );
+    expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: "legacy-late",
+    });
+  });
+
+  it.each([
+    null,
+    { version: 1, id: "unknown", loginMode: "form" },
+    { version: 1, id: "ilo", loginMode: "digest" },
+  ])(
+    "blocks malformed imported application before any remote probe or proxy %j",
+    async (httpApplication) => {
+      connections.push({
+        id: "conn-1",
+        protocol: "https",
+        port: 443,
+        username: "do-not-send",
+        password: "do-not-send",
+        httpApplication,
+      });
+      const { result } = renderHook(() =>
+        useWebBrowser({ ...session, protocol: "https" }),
+      );
+      await act(async () => {});
+      expect(result.current.navigationFailure?.title).toBe(
+        "Application login needs review",
+      );
+      expect(
+        mockInvoke.mock.calls.some(
+          ([command]) =>
+            command === "start_basic_auth_proxy" ||
+            command === "get_tls_certificate_info",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("revokes a previously armed application proxy when login settings change, without auto-sending new credentials", async () => {
+    connections.push({
+      id: "conn-1",
+      protocol: "http",
+      username: "app-user",
+      password: "old-password",
+      httpApplication: { version: 1, id: "portainer", loginMode: "form" },
+    });
+    const { result, rerender } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+    const frame = document.createElement("iframe");
+    (
+      result.current.iframeRef as { current: HTMLIFrameElement | null }
+    ).current = frame;
+    const starts = () =>
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      );
+    connections[0] = { ...connections[0], name: "Unrelated rename" };
+    rerender();
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "stop_basic_auth_proxy",
+      expect.anything(),
+    );
+    connections[0] = { ...connections[0], password: "new-password" };
+    rerender();
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "proxy-1",
+      }),
+    );
+    expect(frame.src).toBe("about:blank");
+    expect(starts()).toHaveLength(1);
+    await act(async () => {
+      await result.current.navigateToUrl("http://device.local/");
+    });
+    expect(starts()).toHaveLength(2);
+    expect(
+      (starts()[1][1] as { config: Record<string, unknown> }).config.password,
+    ).toBe("new-password");
+  });
+
+  it("disposes an in-flight old grant after switching application to manual", async () => {
+    let finish!: (value: unknown) => void;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    mockInvoke.mockImplementation(async (command) =>
+      command === "start_basic_auth_proxy" ? pending : undefined,
+    );
+    connections.push({
+      id: "conn-1",
+      protocol: "http",
+      username: "app-user",
+      password: "old-password",
+      httpApplication: { version: 1, id: "portainer", loginMode: "form" },
+    });
+    const { rerender } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+    connections[0] = {
+      ...connections[0],
+      httpApplication: { version: 1, id: "portainer", loginMode: "manual" },
+    };
+    rerender();
+    await act(async () =>
+      finish({
+        local_port: 9000,
+        session_id: "late-old-proxy",
+        proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+      }),
+    );
+    expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: "late-old-proxy",
+    });
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
   });
 
   it("sends http_auto_login=false and omits selectors when not opted in", async () => {

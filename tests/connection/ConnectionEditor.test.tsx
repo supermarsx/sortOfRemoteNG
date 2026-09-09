@@ -330,6 +330,64 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Modal Display", () => {
+    it.each(["http", "https"] as const)(
+      "redirects %s application credentials from Basics to the Application subtab",
+      async (protocol) => {
+        renderWithProviders({
+          connection: {
+            ...mockConnection,
+            protocol,
+            httpApplication: {
+              version: 1,
+              id: "portainer",
+              loginMode: "manual",
+            },
+          },
+          isOpen: true,
+          onClose: vi.fn(),
+        });
+        expect(
+          await screen.findByTestId("http-application-credentials-notice"),
+        ).toHaveTextContent("configured in Application settings");
+        expect(screen.queryByTestId("editor-username")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
+        fireEvent.click(
+          screen.getByRole("button", { name: "Open Application settings" }),
+        );
+        expect(
+          screen.getByTestId("connection-editor-tab-protocol"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(
+          screen.getByRole("tab", { name: "Application" }),
+        ).toHaveAttribute("aria-selected", "true");
+      },
+    );
+
+    it("keeps generic HTTP credential inputs and existing SSH layout unchanged", async () => {
+      const { unmount } = renderWithProviders({
+        connection: { ...mockConnection, protocol: "http" },
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+      expect(await screen.findByTestId("editor-username")).toHaveValue(
+        "testuser",
+      );
+      expect(screen.getByTestId("editor-password")).toHaveValue("testpass");
+      expect(
+        screen.queryByTestId("http-application-credentials-notice"),
+      ).not.toBeInTheDocument();
+      unmount();
+      renderWithProviders({
+        connection: { ...mockConnection, protocol: "ssh" },
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+      expect(
+        screen.queryByTestId("http-application-credentials-notice"),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-username")).not.toBeInTheDocument();
+    });
+
     it("should not render when isOpen is false", () => {
       renderWithProviders({ isOpen: false, onClose: vi.fn() });
 
@@ -1598,9 +1656,10 @@ describe("ConnectionEditor", () => {
         screen.getByRole("option", { name: /^HTTP\s+Web Service/i }),
       );
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
-      expect(
-        screen.getByRole("tab", { name: "Authentication" }),
-      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "Application" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       expect(screen.getByRole("tab", { name: "Security" })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "Advanced" })).toBeInTheDocument();
       expect(

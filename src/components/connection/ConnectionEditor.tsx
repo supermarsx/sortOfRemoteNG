@@ -1689,9 +1689,15 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
   );
 };
 
-const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+const ConnectionFields: React.FC<{
+  mgr: ConnectionEditorMgr;
+  onOpenApplication: () => void;
+}> = ({ mgr, onOpenApplication }) => {
   const { t } = useTranslation();
   const p = mgr.formData.protocol || "";
+  const hasHttpApplication =
+    (p === "http" || p === "https") &&
+    mgr.formData.httpApplication !== undefined;
   if (isIntegrationConnectionProtocol(p)) {
     return <IntegrationConnectionFields mgr={mgr} />;
   }
@@ -1746,110 +1752,130 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
           />
         </div>
       </div>
-      {![
-        "ssh",
-        "raw",
-        "rlogin",
-        "ard",
-        "ftp",
-        "sftp",
-        "scp",
-        "postgresql",
-        "spice",
-        "xdmcp",
-        "x2go",
-        "nx",
-      ].includes(p) && (
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-              {t("connectionEditor.connectionFields.username", "Username")}
-              <InfoTooltip
-                text={
-                  p === "rdp"
-                    ? t(
-                        "connectionEditor.connectionFields.usernameHelp.rdp",
-                        "Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).",
-                      )
-                    : p === "winrm"
-                      ? t(
-                          "connectionEditor.connectionFields.usernameHelp.winrm",
-                          "Legacy process-shell account used by the current PowerShell Remoting adapter. Domain accounts use the Domain field below.",
-                        )
-                      : p === "vnc"
-                        ? t(
-                            "connectionEditor.connectionFields.usernameHelp.vnc",
-                            "VNC authentication usually only needs a password, not a username.",
-                          )
-                        : t(
-                            "connectionEditor.connectionFields.usernameHelp.default",
-                            "Username for authentication with the remote service.",
-                          )
-                }
-              />
-            </label>
-            <input
-              type="text"
-              data-testid="editor-username"
-              value={mgr.formData.username || ""}
-              onChange={(e) =>
-                mgr.setFormData({ ...mgr.formData, username: e.target.value })
-              }
-              className="sor-form-input text-sm"
-              placeholder={
-                p === "rdp"
-                  ? "Administrator"
-                  : p === "winrm"
-                    ? "Administrator"
-                    : p === "vnc"
-                      ? t(
-                          "connectionEditor.connectionFields.optionalPlaceholder",
-                          "(optional)",
-                        )
-                      : "admin"
-              }
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-              {t("connectionEditor.connectionFields.password", "Password")}
-              <InfoTooltip
-                text={
-                  p === "rdp"
-                    ? t(
-                        "connectionEditor.connectionFields.passwordHelp.rdp",
-                        "Windows account password. Sent via CredSSP/NLA during the RDP handshake.",
-                      )
-                    : p === "winrm"
-                      ? t(
-                          "connectionEditor.connectionFields.passwordHelp.winrm",
-                          "Legacy process-shell credential used by the current PowerShell Remoting adapter. Use HTTPS for transport confidentiality.",
-                        )
-                      : p === "vnc"
-                        ? t(
-                            "connectionEditor.connectionFields.passwordHelp.vnc",
-                            "VNC server password. Most VNC servers only use password authentication.",
-                          )
-                        : t(
-                            "connectionEditor.connectionFields.passwordHelp.default",
-                            "Password for authentication with the remote service.",
-                          )
-                }
-              />
-            </label>
-            <PasswordInput
-              data-testid="editor-password"
-              value={mgr.formData.password || ""}
-              onChange={(e) =>
-                mgr.setFormData({ ...mgr.formData, password: e.target.value })
-              }
-              isSaved={!mgr.isNewConnection && !!mgr.formData.password}
-              className="sor-form-input text-sm"
-              placeholder="••••••••"
-            />
-          </div>
+      {hasHttpApplication && (
+        <div
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] p-3 text-sm"
+          data-testid="http-application-credentials-notice"
+        >
+          <p>
+            Website credentials and login mode are configured in Application
+            settings. Existing saved credentials are preserved; manual browsing
+            sends none.
+          </p>
+          <button
+            type="button"
+            className="sor-option-chip mt-2"
+            onClick={onOpenApplication}
+          >
+            Open Application settings
+          </button>
         </div>
       )}
+      {!hasHttpApplication &&
+        ![
+          "ssh",
+          "raw",
+          "rlogin",
+          "ard",
+          "ftp",
+          "sftp",
+          "scp",
+          "postgresql",
+          "spice",
+          "xdmcp",
+          "x2go",
+          "nx",
+        ].includes(p) && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+                {t("connectionEditor.connectionFields.username", "Username")}
+                <InfoTooltip
+                  text={
+                    p === "rdp"
+                      ? t(
+                          "connectionEditor.connectionFields.usernameHelp.rdp",
+                          "Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).",
+                        )
+                      : p === "winrm"
+                        ? t(
+                            "connectionEditor.connectionFields.usernameHelp.winrm",
+                            "Legacy process-shell account used by the current PowerShell Remoting adapter. Domain accounts use the Domain field below.",
+                          )
+                        : p === "vnc"
+                          ? t(
+                              "connectionEditor.connectionFields.usernameHelp.vnc",
+                              "VNC authentication usually only needs a password, not a username.",
+                            )
+                          : t(
+                              "connectionEditor.connectionFields.usernameHelp.default",
+                              "Username for authentication with the remote service.",
+                            )
+                  }
+                />
+              </label>
+              <input
+                type="text"
+                data-testid="editor-username"
+                value={mgr.formData.username || ""}
+                onChange={(e) =>
+                  mgr.setFormData({ ...mgr.formData, username: e.target.value })
+                }
+                className="sor-form-input text-sm"
+                placeholder={
+                  p === "rdp"
+                    ? "Administrator"
+                    : p === "winrm"
+                      ? "Administrator"
+                      : p === "vnc"
+                        ? t(
+                            "connectionEditor.connectionFields.optionalPlaceholder",
+                            "(optional)",
+                          )
+                        : "admin"
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+                {t("connectionEditor.connectionFields.password", "Password")}
+                <InfoTooltip
+                  text={
+                    p === "rdp"
+                      ? t(
+                          "connectionEditor.connectionFields.passwordHelp.rdp",
+                          "Windows account password. Sent via CredSSP/NLA during the RDP handshake.",
+                        )
+                      : p === "winrm"
+                        ? t(
+                            "connectionEditor.connectionFields.passwordHelp.winrm",
+                            "Legacy process-shell credential used by the current PowerShell Remoting adapter. Use HTTPS for transport confidentiality.",
+                          )
+                        : p === "vnc"
+                          ? t(
+                              "connectionEditor.connectionFields.passwordHelp.vnc",
+                              "VNC server password. Most VNC servers only use password authentication.",
+                            )
+                          : t(
+                              "connectionEditor.connectionFields.passwordHelp.default",
+                              "Password for authentication with the remote service.",
+                            )
+                  }
+                />
+              </label>
+              <PasswordInput
+                data-testid="editor-password"
+                value={mgr.formData.password || ""}
+                onChange={(e) =>
+                  mgr.setFormData({ ...mgr.formData, password: e.target.value })
+                }
+                isSaved={!mgr.isNewConnection && !!mgr.formData.password}
+                className="sor-form-input text-sm"
+                placeholder="••••••••"
+              />
+            </div>
+          </div>
+        )}
     </div>
   );
 };
@@ -2078,7 +2104,13 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 {!mgr.formData.isGroup && (
                   <>
                     <ProtocolGrid mgr={mgr} />
-                    <ConnectionFields mgr={mgr} />
+                    <ConnectionFields
+                      mgr={mgr}
+                      onOpenApplication={() => {
+                        activateProtocolSubtab("application");
+                        setActiveTab("protocol");
+                      }}
+                    />
                   </>
                 )}
               </>

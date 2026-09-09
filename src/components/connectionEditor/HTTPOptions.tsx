@@ -10,6 +10,7 @@ import CustomHeadersSection from "./httpOptions/CustomHeadersSection";
 import BookmarksSection from "./httpOptions/BookmarksSection";
 import BookmarkModal from "./httpOptions/BookmarkModal";
 import HeaderModal from "./httpOptions/HeaderModal";
+import ApplicationSection from "./httpOptions/ApplicationSection";
 
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   formData,
@@ -24,14 +25,21 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
 
   return (
     <>
-      {shows("authentication") && (
-        <>
-          <AuthTypeSection mgr={mgr} />
-          <BasicAuthFields mgr={mgr} />
-          <CustomHeadersSection mgr={mgr} />
-          <HeaderModal mgr={mgr} />
-        </>
-      )}
+      {shows("application") && <ApplicationSection mgr={mgr} />}
+      {shows("authentication") &&
+        (formData.httpApplication !== undefined ? (
+          <p className="text-sm text-[var(--color-textSecondary)]">
+            This website profile uses the login mode and credentials in the
+            Application subtab. TLS and trust remain in Security.
+          </p>
+        ) : (
+          <>
+            <AuthTypeSection mgr={mgr} />
+            <BasicAuthFields mgr={mgr} />
+            <CustomHeadersSection mgr={mgr} />
+            <HeaderModal mgr={mgr} />
+          </>
+        ))}
       {shows("security") && (
         <>
           <TlsVerifySection mgr={mgr} />
@@ -40,7 +48,9 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
       )}
       {shows("advanced") && (
         <>
-          <AutoLoginSection mgr={mgr} />
+          {formData.httpApplication === undefined && (
+            <AutoLoginSection mgr={mgr} />
+          )}
           <BookmarksSection mgr={mgr} />
           <BookmarkModal mgr={mgr} />
         </>

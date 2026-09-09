@@ -10,18 +10,19 @@ import { RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connection
 import { RLOGIN_CONNECTION_EDITOR_SEARCH_DESCRIPTORS } from "../../connectionEditor/rloginOptions/searchMetadata";
 import { POWERSHELL_REMOTING_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connectionEditor/powerShellRemoting/searchMetadata";
 import { normalizeArdSettings } from "../../../types/protocols/ard";
+import {
+  HTTP_APPLICATION_PROFILES,
+  HTTP_APPLICATION_CATEGORIES,
+} from "../../../utils/connection/httpApplicationProfiles";
 
 export type ConnectionEditorTabId =
-  | "general"
-  | "protocol"
-  | "behavior"
-  | "organize"
-  | "notes";
+  "general" | "protocol" | "behavior" | "organize" | "notes";
 
 export type ConnectionEditorExpandableSectionId = "advanced";
 
 export type ConnectionEditorProtocolSubtabId =
   | "connection"
+  | "application"
   | "authentication"
   | "security"
   | "display-input"
@@ -1131,6 +1132,9 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       {
         id: "username",
         label: "Username",
+        visibleWhen: (formData) =>
+          !["http", "https"].includes(String(formData.protocol)) ||
+          formData.httpApplication === undefined,
         keywords: ["user", "account"],
         copy: [
           "Windows account name",
@@ -1158,6 +1162,9 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       {
         id: "password",
         label: "Password",
+        visibleWhen: (formData) =>
+          !["http", "https"].includes(String(formData.protocol)) ||
+          formData.httpApplication === undefined,
         keywords: ["credential", "sign in"],
         copy: [
           "Windows account password",
@@ -2448,10 +2455,38 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         ],
       },
       {
+        id: "http-application",
+        focusId: "http-application-profile",
+        label: "Website application",
+        protocolSubtabId: "application",
+        protocols: ["http", "https"],
+        optionText: [
+          "Generic website",
+          ...HTTP_APPLICATION_PROFILES.map((profile) => profile.label),
+          ...Object.values(HTTP_APPLICATION_CATEGORIES),
+        ],
+        copy: [
+          "Manual browsing",
+          "Automatic form login",
+          "HTTP Basic",
+          "Application login mode",
+          "Website username",
+          "Website password",
+          "Account realm",
+          "Selector overrides",
+        ],
+        valuePaths: [
+          "httpApplication.id",
+          "httpApplication.loginMode",
+          "httpApplication.realm",
+        ],
+      },
+      {
         id: "http-authentication",
         focusId: "protocol-options",
         label: "Authentication Type",
         protocols: ["http", "https"],
+        visibleWhen: (formData) => formData.httpApplication === undefined,
         optionText: ["Basic Authentication", "Custom Headers"],
         valuePaths: ["authType"],
       },
@@ -2460,7 +2495,9 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         focusId: "protocol-options",
         label: "Basic Auth Username",
         protocols: ["http", "https"],
-        visibleWhen: (formData) => (formData.authType ?? "basic") === "basic",
+        visibleWhen: (formData) =>
+          formData.httpApplication === undefined &&
+          (formData.authType ?? "basic") === "basic",
         valuePaths: ["basicAuthUsername"],
       },
       {
@@ -2468,14 +2505,18 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         focusId: "protocol-options",
         label: "Basic Auth Password",
         protocols: ["http", "https"],
-        visibleWhen: (formData) => (formData.authType ?? "basic") === "basic",
+        visibleWhen: (formData) =>
+          formData.httpApplication === undefined &&
+          (formData.authType ?? "basic") === "basic",
       },
       {
         id: "http-realm",
         focusId: "protocol-options",
         label: "Realm (Optional)",
         protocols: ["http", "https"],
-        visibleWhen: (formData) => (formData.authType ?? "basic") === "basic",
+        visibleWhen: (formData) =>
+          formData.httpApplication === undefined &&
+          (formData.authType ?? "basic") === "basic",
         valuePaths: ["basicAuthRealm"],
       },
       {
@@ -2483,6 +2524,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         focusId: "protocol-options",
         label: "Auto-login to this site",
         protocols: ["http", "https"],
+        visibleWhen: (formData) => formData.httpApplication === undefined,
         copy: [
           "Automatically fills and submits this connection's saved credentials.",
           "Multi-factor / CAPTCHA prompts are left to you.",
@@ -2493,7 +2535,9 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         focusId: "protocol-options",
         label: "Advanced: form field selectors (optional)",
         protocols: ["http", "https"],
-        visibleWhen: (formData) => formData.httpAutoLogin === true,
+        visibleWhen: (formData) =>
+          formData.httpAutoLogin === true &&
+          formData.httpApplication === undefined,
         copy: [
           "Username field selector",
           "Password field selector",

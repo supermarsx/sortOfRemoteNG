@@ -11,6 +11,7 @@ import {
 } from "../../types/protocols/serial";
 import { normalizePowerShellRemotingSettings } from "../powershell/normalizePowerShellRemoting";
 import { normalizeRloginSettings } from "../rlogin/rloginSettings";
+import { normalizeHttpApplicationSettings } from "./httpApplicationProfiles";
 
 export type AdvancedProtocolConnectionInput = Omit<
   Partial<Connection>,
@@ -71,6 +72,11 @@ export function normalizeAdvancedProtocolConnection(
           ? "mongodb"
           : sourceProtocol || input.protocol);
   const next: AdvancedProtocolConnectionInput = { ...input, protocol };
+  if (input.httpApplication !== undefined) {
+    next.httpApplication = normalizeHttpApplicationSettings(
+      input.httpApplication,
+    );
+  }
   const canInitialize = input.isGroup !== true;
 
   if (

@@ -127,7 +127,7 @@ function UrlBar({ m }: { m: Mgr }) {
       {m.resolveCredentials() && (
         <span className="flex items-center gap-1 text-xs text-primary flex-shrink-0">
           <Shield className="w-3 h-3" />
-          Authenticated
+          {m.authLabel} configured
         </span>
       )}
     </div>
@@ -228,9 +228,7 @@ function SettingsPanel({ m }: { m: Mgr }) {
           <span className="text-[var(--color-textSecondary)]">
             Authentication:
           </span>
-          <p className="text-[var(--color-text)]">
-            {m.resolveCredentials() ? "Basic Auth" : "None"}
-          </p>
+          <p className="text-[var(--color-text)]">{m.authLabel}</p>
         </div>
         <div>
           <span className="text-[var(--color-textSecondary)]">Protocol:</span>

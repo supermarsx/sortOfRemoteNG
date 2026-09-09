@@ -45,6 +45,8 @@ Check whether the destination needs a proxy, VPN, tunnel, or SSH jump host. Conf
 
 For a web management interface, consult [Web viewer trust and authentication]({{ '/http-viewer-trust/' | relative_url }}). A successful TLS diagnostic followed by HTTP 401 can be an anonymous authentication challenge; it is not proof that a saved password was rejected.
 
+[Website application profiles]({{ '/http-application-profiles/' | relative_url }}) adds categorized HTTP/HTTPS application choices, explicit manual/form/Basic login modes, and Custom application selectors. Choosing a profile does not change the host or silently enable automatic sign-in.
+
 ## Use administration tools
 
 [Integrations]({{ '/integrations/' | relative_url }}) lists the actual saved-instance setup, authentication requirements, and known limits for service panels. Choose the appropriate tool rather than a generic protocol as a substitute. An unavailable native capability is a build limitation, not a reason to overwrite an existing connection with another protocol.

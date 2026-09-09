@@ -24,6 +24,34 @@ const buildIndex = (
   });
 
 describe("connection editor search index", () => {
+  it("routes categorized application searches to Application without exposing hidden Basics credentials", () => {
+    const index = buildIndex({
+      protocol: "https",
+      isGroup: false,
+      username: "hidden-user",
+      password: "hidden-password",
+      httpApplication: { version: 1, id: "ilo", loginMode: "manual" },
+    });
+    for (const query of ["HP / HPE iLO", "Mail / storage", "Budibase"]) {
+      expect(searchConnectionEditorIndex(index, query)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            fieldId: "http-application",
+            protocolSubtabId: "application",
+          }),
+        ]),
+      );
+    }
+    expect(searchConnectionEditorIndex(index, "hidden-password")).toEqual([]);
+    expect(searchConnectionEditorIndex(index, "hidden-user")).toEqual([]);
+    expect(
+      index.some(
+        (entry) =>
+          entry.fieldId === "http-basic-password" ||
+          entry.fieldId === "password",
+      ),
+    ).toBe(false);
+  });
   it("indexes visible copy, option text, dynamic choices, and safe current values", () => {
     const index = buildIndex(
       {

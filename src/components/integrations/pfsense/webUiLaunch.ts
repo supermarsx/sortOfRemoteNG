@@ -63,6 +63,11 @@ export function buildPfsenseWebUiConnection(
     createdAt: stamp,
     updatedAt: stamp,
     httpAutoLogin: canAutoLogin,
+    httpApplication: {
+      version: 1,
+      id: "pfsense",
+      loginMode: canAutoLogin ? "form" : "manual",
+    },
   };
   if (canAutoLogin) {
     connection.username = username;
