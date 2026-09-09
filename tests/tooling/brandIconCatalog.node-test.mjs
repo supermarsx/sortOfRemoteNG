@@ -261,7 +261,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     ],
     noip: [
       1,
-      "6d5e44025a36dcb0f8944de7e3a622f0742af643d3cca010cdf1c433d0cc1fd9",
+      "35fc525c02a0833949c8bc0c3104bb875671d83cde844887833f70d874b92a06",
     ],
   };
 

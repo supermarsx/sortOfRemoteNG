@@ -169,7 +169,7 @@ export const VENDOR_ICONS = [
     "vendors",
     brother,
     ["brother", "printer", "printers", "scanner"],
-    "Brother device identifier authored by the app; not an official Brother logo.",
+    "Brother's leading lowercase b, locally traced from the publisher wordmark for compact display.",
   ),
   defineIcon("kyocera", "Kyocera", "vendors", kyocera, [
     "kyocera",
@@ -472,7 +472,7 @@ export const VENDOR_ICONS = [
     "vendors",
     dahua,
     ["dahua", "dahua technology", "camera", "security", "surveillance"],
-    "Dahua identifier authored by the app; not an official Dahua logo.",
+    "Dahua's compact loop and letterform emblem, locally traced from publisher raster artwork.",
   ),
   defineIcon(
     "axis",
@@ -488,7 +488,7 @@ export const VENDOR_ICONS = [
     "vendors",
     hanwha,
     ["hanwha", "hanwha vision", "wisenet", "camera", "surveillance"],
-    "Hanwha Vision identifier authored by the app; not an official Hanwha Vision logo.",
+    "Hanwha Vision's three-ring publisher SVG emblem, uniformly scaled in the selected icon color.",
   ),
   defineIcon("uniview", "Uniview", "vendors", uniview, [
     "uniview",
@@ -503,6 +503,6 @@ export const VENDOR_ICONS = [
     "vendors",
     amcrest,
     ["amcrest", "camera", "security", "surveillance"],
-    "Amcrest identifier authored by the app; not an official Amcrest logo.",
+    "Amcrest's compact hexagon and lens emblem, locally traced from publisher raster artwork.",
   ),
 ] as const;

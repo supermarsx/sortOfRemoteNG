@@ -1,4 +1,6 @@
 import { createLucideIcon } from "lucide-react";
+import { amcrest, brother, dahua, hanwha } from "./refinedApplianceBrandIcons";
+export { amcrest, brother, dahua, hanwha } from "./refinedApplianceBrandIcons";
 
 /**
  * Geometric identifiers and the explicitly documented publisher retraces below.
@@ -32,15 +34,6 @@ export const freepbxIdentifier = createLucideIcon("FreePBXIdentifier", [
   ],
 ]);
 
-export const brother = createLucideIcon("BrotherIdentifier", [
-  [
-    "path",
-    {
-      d: "M5 4h7a4 4 0 0 1 0 8H5V4Zm0 8h8a4 4 0 0 1 0 8H5v-8M20 5v14",
-      key: "brother-b",
-    },
-  ],
-]);
 export const yealink = createLucideIcon("YealinkIdentifier", [
   [
     "path",
@@ -450,30 +443,6 @@ export const hikvision = createLucideIcon("HikvisionIdentifier", [
     {
       d: "M3 4v16M9 4v16M3 12h6M14 4v16M22 4l-8 8 8 8",
       key: "hikvision-identifier",
-    },
-  ],
-]);
-export const dahua = createLucideIcon("DahuaIdentifier", [
-  [
-    "path",
-    {
-      d: "M3 5h4a5 7 0 0 1 0 14H3V5M14 19l4-14 4 14M16 13h4",
-      key: "dahua-identifier",
-    },
-  ],
-]);
-export const hanwha = createLucideIcon("HanwhaVisionIdentifier", [
-  [
-    "path",
-    { d: "M2 4v16M8 4v16M2 12h6M13 5l4 14 5-14", key: "hanwha-identifier" },
-  ],
-]);
-export const amcrest = createLucideIcon("AmcrestIdentifier", [
-  [
-    "path",
-    {
-      d: "M2 19 7 5l5 14M4 13h6M22 7a6 7 0 1 0 0 10",
-      key: "amcrest-identifier",
     },
   ],
 ]);

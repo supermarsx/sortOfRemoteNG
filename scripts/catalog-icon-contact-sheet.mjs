@@ -8,8 +8,12 @@ import path from "node:path";
 import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
-if (!["servers", "fruits", "retraced"].includes(family))
-  throw new Error("Choose servers, fruits or retraced");
+if (!["servers", "fruits", "retraced", "appliance-refined"].includes(family))
+  throw new Error("Choose servers, fruits, retraced or appliance-refined");
+const refined = family === "appliance-refined";
+const sizes = refined ? [16, 24, 32, 96] : [16, 20, 24];
+const columnWidth = refined ? 620 : 460;
+const rowHeight = refined ? 112 : 44;
 const server = await createServer({
   configFile: false,
   appType: "custom",
@@ -21,6 +25,19 @@ try {
     "/src/utils/icons/connectionIconCatalog.ts",
   );
   const entries = CONNECTION_ICON_CATALOG.filter((entry) => {
+    if (refined)
+      return [
+        "amcrest",
+        "amcrest-camera",
+        "hanwha",
+        "hanwha-camera",
+        "dahua",
+        "dahua-camera",
+        "dahua-dvr",
+        "brother",
+        "brother-printer",
+        "noip",
+      ].includes(entry.key);
     if (family === "retraced")
       return [
         "ddwrt",
@@ -50,25 +67,25 @@ try {
   await mkdir(output, { recursive: true });
   for (let offset = 0; offset < entries.length; offset += 15) {
     const page = entries.slice(offset, offset + 15);
-    const height = page.length * 44 + 44;
+    const height = page.length * rowHeight + 44;
     const parts = [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="920" height="${height}" viewBox="0 0 920 ${height}">`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${columnWidth * 2}" height="${height}" viewBox="0 0 ${columnWidth * 2} ${height}">`,
     ];
     for (const [start, background, color] of [
       [0, "#101827", "#f8fafc"],
-      [460, "#ffffff", "#172033"],
+      [columnWidth, "#ffffff", "#172033"],
     ]) {
       parts.push(
-        `<rect x="${start}" width="460" height="${height}" fill="${background}"/><text x="${start + 12}" y="24" fill="${color}" font-family="sans-serif" font-size="13">${family} · 16 / 20 / 24 pixels</text>`,
+        `<rect x="${start}" width="${columnWidth}" height="${height}" fill="${background}"/><text x="${start + 12}" y="24" fill="${color}" font-family="sans-serif" font-size="13">${family} · ${sizes.join(" / ")} pixels</text>`,
       );
       page.forEach((entry, index) => {
-        const y = 44 + index * 44;
+        const y = 44 + index * rowHeight;
         parts.push(
           `<text x="${start + 12}" y="${y + 20}" fill="${color}" font-family="sans-serif" font-size="12">${entry.key}</text>`,
         );
-        [16, 20, 24].forEach((size, column) => {
+        sizes.forEach((size, column) => {
           parts.push(
-            `<g color="${color}" transform="translate(${start + 252 + column * 66} ${y + (28 - size) / 2})">${renderToStaticMarkup(createElement(entry.icon, { size, color }))}</g>`,
+            `<g color="${color}" transform="translate(${start + 252 + column * 66} ${y + (rowHeight - 16 - size) / 2})">${renderToStaticMarkup(createElement(entry.icon, { size, color }))}</g>`,
           );
         });
       });
@@ -83,7 +100,7 @@ try {
     await sharp(Buffer.from(svg)).png().toFile(`${base}.png`);
   }
   console.log(
-    `Rendered ${entries.length} ${family} choices at 16/20/24px on dark/light backgrounds: ${output}`,
+    `Rendered ${entries.length} ${family} choices at ${sizes.join("/")}px on dark/light backgrounds: ${output}`,
   );
 } finally {
   await server.close();

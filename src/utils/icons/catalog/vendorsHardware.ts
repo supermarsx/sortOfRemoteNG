@@ -187,7 +187,7 @@ export const VENDORS_HARDWARE_ICONS = [
     "vendors-hardware",
     createRoleIcon("BrotherPrinter", "printer", brother),
     ["brother", "printer", "printers", "laser"],
-    "Brother printer with an app-authored device identifier; not an official Brother logo.",
+    "Printer silhouette with Brother's leading lowercase b, locally traced from the publisher wordmark.",
   ),
   defineIcon(
     "kyocera-printer",
@@ -747,7 +747,7 @@ export const VENDORS_HARDWARE_ICONS = [
     "vendors-hardware",
     createRoleIcon("DahuaCamera", "camera", dahua),
     ["dahua camera", "dahua", "ip camera", "security"],
-    "Dahua camera with an app-authored identifier; not an official Dahua logo.",
+    "Camera silhouette with a local trace of Dahua's publisher emblem.",
   ),
   defineIcon(
     "axis-camera",
@@ -763,7 +763,7 @@ export const VENDORS_HARDWARE_ICONS = [
     "vendors-hardware",
     createRoleIcon("HanwhaCamera", "camera", hanwha),
     ["hanwha camera", "hanwha vision", "wisenet", "ip camera"],
-    "Hanwha Vision camera with an app-authored identifier; not an official Hanwha Vision logo.",
+    "Camera silhouette with Hanwha Vision's three-ring publisher SVG emblem.",
   ),
   defineIcon(
     "uniview-camera",
@@ -778,7 +778,7 @@ export const VENDORS_HARDWARE_ICONS = [
     "vendors-hardware",
     createRoleIcon("AmcrestCamera", "camera", amcrest),
     ["amcrest camera", "amcrest", "ip camera", "security"],
-    "Amcrest camera with an app-authored identifier; not an official Amcrest logo.",
+    "Camera silhouette with a local trace of Amcrest's publisher hexagon and lens emblem.",
   ),
   defineIcon(
     "tplink-camera",
@@ -825,6 +825,6 @@ export const VENDORS_HARDWARE_ICONS = [
     "vendors-hardware",
     createRoleIcon("DahuaDvr", "recorder", dahua),
     ["dahua dvr", "dahua", "digital video recorder", "recorder"],
-    "Dahua DVR with an app-authored identifier; not an official Dahua logo.",
+    "Recorder silhouette with a local trace of Dahua's publisher emblem.",
   ),
 ] as const;
