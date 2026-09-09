@@ -13,6 +13,16 @@ import type { SettingSearchEntry } from "./types";
  */
 export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "proxyRequestLogLimit",
+    label: "Proxy request log limit",
+    description:
+      "Retain the newest diagnostic requests. Apply zero to clear and disable this log; HAR recordings are unaffected.",
+    tags: ["proxy", "requests", "log", "limit", "retention", "capacity"],
+    synonyms: ["10000", "newest first", "request history", "disable proxy log"],
+    section: "proxy",
+    sectionLabel: "Proxy",
+  },
+  {
     key: "proxyEnabled",
     label: "Enable global proxy",
     description: "Route all connections through a proxy server",

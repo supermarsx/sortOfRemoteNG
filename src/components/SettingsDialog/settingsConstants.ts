@@ -362,7 +362,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   rdpDefaults: ["rdpDefaults"],
   backup: ["backup"],
   cloudSync: ["cloudSync"],
-  proxy: ["globalProxy"],
+  proxy: ["globalProxy", "proxyRequestLogLimit"],
   vpn: ["vpnSettings"],
   advanced: [
     "enableTabDetachment",
@@ -504,6 +504,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   enableActionLog: true,
   logLevel: "info",
   maxLogEntries: 1000,
+  proxyRequestLogLimit: 10000,
   exportEncryption: false,
   exportSecurity: defaultExportSecuritySettings,
   globalProxy: {

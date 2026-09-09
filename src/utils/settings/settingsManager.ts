@@ -23,6 +23,10 @@ import { SecureStorage } from "../storage/storage";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
 import { getInvoke as tauriInvoke } from "../tauri/invoke";
+import {
+  normalizeProxyRequestLogLimit,
+  validateProxyRequestLogLimit,
+} from "./proxyRequestLog";
 import { normalizeSshReconnectSettings } from "../ssh/sshReconnectPolicy";
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQuickActions";
 import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
@@ -677,6 +681,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   proxyKeepaliveIntervalSeconds: 10,
   proxyAutoRestart: true,
   proxyMaxAutoRestarts: 5,
+  proxyRequestLogLimit: 10000,
   confirmDeleteAllBookmarks: true,
 
   // Windows Remote Management Tools
@@ -1137,6 +1142,9 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      proxyRequestLogLimit: normalizeProxyRequestLogLimit(
+        normalizedStored.proxyRequestLogLimit,
+      ),
       sessionQuickActions: normalizeSessionQuickActions(
         normalizedStored.sessionQuickActions,
       ),
@@ -1248,6 +1256,10 @@ export class SettingsManager {
     const safePatch = { ...patch } as Partial<GlobalSettings> & {
       restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
     };
+    if ("proxyRequestLogLimit" in safePatch)
+      safePatch.proxyRequestLogLimit = validateProxyRequestLogLimit(
+        safePatch.proxyRequestLogLimit,
+      );
     if ("sessionQuickActions" in safePatch)
       safePatch.sessionQuickActions = normalizeSessionQuickActions(
         safePatch.sessionQuickActions,
@@ -1451,12 +1463,17 @@ export class SettingsManager {
       // Library writes require their own reviewed commit path. A stale full
       // preferences snapshot must not overwrite newer imported vectors/notes.
       delete safeSettings.iconLibrary;
-      this.settings = { ...this.settings, ...safeSettings };
+      // A draft or failed zero limit must never reach the runtime through an
+      // unrelated settings broadcast: zero irreversibly clears this log.
+      const { proxyRequestLogLimit, ...optimisticSettings } = safeSettings;
+      this.settings = { ...this.settings, ...optimisticSettings };
       // Write only the patch: the backend shallow-merges it into
       // settings.json, so partial saves never drop sibling keys.
       const commitGeneration = await this.persistSettings(safeSettings);
       if (epoch !== this.loadEpoch || this.storageLocked)
         throw new Error("Global settings changed lock state while saving.");
+      if (proxyRequestLogLimit !== undefined)
+        this.settings = { ...this.settings, proxyRequestLogLimit };
       // Only log explicit user-initiated saves, not auto-saves or intermediate changes
       if (!options?.silent) {
         this.logAction(
@@ -1517,7 +1534,11 @@ export class SettingsManager {
    */
   applyInMemory(settings: Partial<GlobalSettings>): void {
     if (this.storageLocked) return;
-    const { iconLibrary: _library, ...ordinary } = settings;
+    const {
+      iconLibrary: _library,
+      proxyRequestLogLimit: _logLimit,
+      ...ordinary
+    } = settings;
     this.settings = { ...this.settings, ...ordinary };
   }
 

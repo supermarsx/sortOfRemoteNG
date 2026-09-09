@@ -26,6 +26,10 @@ import {
   ENCRYPTION_EVENT_UNLOCKED,
 } from "../types/encryption/encryption";
 import { getInvoke } from "../utils/tauri/invoke";
+import {
+  useProxyRequestLogSync,
+  type ProxyRequestLogSyncState,
+} from "../hooks/settings/useProxyRequestLogSync";
 
 interface SettingsContextType {
   settings: GlobalSettings;
@@ -33,6 +37,7 @@ interface SettingsContextType {
   reloadSettings: () => Promise<void>;
   settingsReady?: boolean;
   settingsLoadError?: string | null;
+  proxyRequestLogSync?: ProxyRequestLogSyncState;
 }
 
 export const defaultSettings: GlobalSettings = {
@@ -270,6 +275,7 @@ export const defaultSettings: GlobalSettings = {
   proxyKeepaliveIntervalSeconds: 30,
   proxyAutoRestart: false,
   proxyMaxAutoRestarts: 3,
+  proxyRequestLogLimit: 10000,
   confirmDeleteAllBookmarks: true,
   tabGrouping: "none",
   hostnameOverride: false,
@@ -601,6 +607,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [settings, setSettings] = useState<GlobalSettings>(defaultSettings);
   const [settingsReady, setSettingsReady] = useState(false);
+  const proxyRequestLogSync = useProxyRequestLogSync(
+    settings.proxyRequestLogLimit,
+    settingsReady,
+  );
   const [settingsLoadError, setSettingsLoadError] = useState<string | null>(
     null,
   );
@@ -823,6 +833,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
       reloadSettings,
       settingsReady,
       settingsLoadError,
+      proxyRequestLogSync,
     }),
     [
       settings,
@@ -830,6 +841,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
       reloadSettings,
       settingsReady,
       settingsLoadError,
+      proxyRequestLogSync,
     ],
   );
 

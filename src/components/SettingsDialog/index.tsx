@@ -240,6 +240,8 @@ const ContentPanel: React.FC<
             settings={s}
             updateProxy={mgr.updateProxy}
             updateSettings={u}
+            requestLogSync={mgr.proxyRequestLogSync}
+            settingsReady={mgr.settingsReady}
           />
         )}
         {mgr.activeTab === "vpn" && (

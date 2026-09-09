@@ -36,7 +36,11 @@ export function useSettingsDialog(
   initialTabNonce?: number,
 ) {
   const { t, i18n } = useTranslation();
-  const { settings: contextSettings } = useSettings();
+  const {
+    settings: contextSettings,
+    proxyRequestLogSync,
+    settingsReady,
+  } = useSettings();
   const { toast } = useToastContext();
 
   const [activeTab, setActiveTab] = useState<string>(initialTab ?? "general");
@@ -401,6 +405,8 @@ export function useSettingsDialog(
   return {
     t,
     contextSettings,
+    proxyRequestLogSync,
+    settingsReady,
     activeTab,
     setActiveTab,
     settings,

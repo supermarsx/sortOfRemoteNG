@@ -617,6 +617,8 @@ export interface GlobalSettings {
   settingsDialog: SettingsDialogConfig;
 
   // ── Web Browser / HTTP proxy settings ──
+  /** In-memory diagnostic requests retained; zero disables and clears this log only. */
+  proxyRequestLogLimit: number;
 
   /** Enable automatic proxy keepalive health checks */
   proxyKeepaliveEnabled: boolean;
