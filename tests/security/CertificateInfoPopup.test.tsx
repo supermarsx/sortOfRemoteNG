@@ -40,12 +40,14 @@ const renderPopup = ({
   port = 22,
   currentIdentity = sshIdentity,
   trustRecord,
+  requiresApproval,
 }: {
   type?: TrustRecordType;
   host?: string;
   port?: number;
   currentIdentity?: CertIdentity | SshHostKeyIdentity;
   trustRecord?: TrustRecord;
+  requiresApproval?: boolean;
 } = {}) => {
   const TestHarness: React.FC = () => {
     const [isOpen, setIsOpen] = React.useState(true);
@@ -63,6 +65,7 @@ const renderPopup = ({
             port={port}
             currentIdentity={currentIdentity}
             trustRecord={trustRecord}
+            requiresApproval={requiresApproval}
             triggerRef={triggerRef}
             onClose={() => setIsOpen(false)}
           />
@@ -86,6 +89,23 @@ describe("CertificateInfoPopup", () => {
     expect(screen.getByTestId("certificate-info-popover")).toBeInTheDocument();
     expect(screen.getByText("Host Key Information")).toBeInTheDocument();
     expect(screen.getByText("example.com:22")).toBeInTheDocument();
+  });
+  it("shows current revocation ahead of an older approval-required prompt", () => {
+    renderPopup({
+      type: "https",
+      port: 443,
+      currentIdentity: certIdentity,
+      requiresApproval: true,
+      trustRecord: {
+        host: "example.com:443",
+        type: "https",
+        identity: certIdentity,
+        userApproved: false,
+        revoked: true,
+      },
+    });
+    expect(screen.getByText("Revoked")).toBeInTheDocument();
+    expect(screen.queryByText("Approval required")).not.toBeInTheDocument();
   });
 
   it.each([

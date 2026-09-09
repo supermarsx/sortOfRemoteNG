@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useLayoutEffect } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
@@ -28,6 +28,8 @@ import type {
 import { formatFingerprint } from "../../utils/auth/trustStore";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
 import { useCertificateInfoPopup } from "../../hooks/security/useCertificateInfoPopup";
+import type { CertificateInspection } from "../../types/security/certificateInspection";
+import { CertificateCaptureDetails } from "./CertificateCaptureDetails";
 
 const TRUST_ICONS = { ShieldAlert, ShieldCheck, Shield } as const;
 
@@ -40,6 +42,9 @@ interface CertificateInfoPopupProps {
   connectionId?: string;
   triggerRef?: React.RefObject<HTMLElement | null>;
   onClose: () => void;
+  inspection?: CertificateInspection;
+  trustLookup?: { loading: boolean; error?: string };
+  requiresApproval?: boolean;
 }
 
 export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
@@ -51,8 +56,36 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   connectionId,
   triggerRef,
   onClose,
+  inspection,
+  trustLookup,
+  requiresApproval,
 }) => {
   const { t } = useTranslation();
+  // This inspector expands after mount; constrain its own scroll area without
+  // relying on the shared popover's initial-content positioning measurement.
+  const [popupTop, setPopupTop] = useState(60);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const anchor = triggerRef?.current;
+      if (anchor)
+        setPopupTop(
+          Math.max(
+            8,
+            Math.min(
+              anchor.getBoundingClientRect().bottom + 4,
+              window.innerHeight - 240,
+            ),
+          ),
+        );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [triggerRef]);
   const mgr = useCertificateInfoPopup(
     type,
     host,
@@ -62,7 +95,27 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
     connectionId,
   );
 
-  const trustStatus = mgr.getTrustStatus();
+  const trustStatus = trustLookup?.loading
+    ? {
+        label: "Checking stored trust…",
+        color: "text-[var(--color-textMuted)]",
+        icon: "Shield" as const,
+      }
+    : trustLookup?.error
+      ? {
+          label: "Stored trust unavailable",
+          color: "text-warning",
+          icon: "ShieldAlert" as const,
+        }
+      : trustRecord?.revoked
+        ? mgr.getTrustStatus()
+        : requiresApproval
+          ? {
+              label: "Approval required",
+              color: "text-warning",
+              icon: "ShieldAlert" as const,
+            }
+          : mgr.getTrustStatus();
   const TrustIcon = TRUST_ICONS[trustStatus.icon];
 
   if (!triggerRef) return null;
@@ -74,8 +127,8 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
       anchorRef={triggerRef}
       align="start"
       offset={4}
-      className="sor-popover-panel sor-popover-panel-strong z-[99999] w-96 overflow-y-auto"
-      style={{ maxHeight: "calc(100vh - 60px)" }}
+      className={`sor-popover-panel sor-popover-panel-strong z-[99999] ${inspection ? "w-[36rem]" : "w-96"} max-w-[calc(100vw-2rem)] overflow-y-auto`}
+      style={{ top: popupTop, maxHeight: `calc(100dvh - ${popupTop + 8}px)` }}
       dataTestId="certificate-info-popover"
     >
       <div
@@ -91,6 +144,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
             </span>
           </div>
           <button
+            aria-label="Close certificate information"
             onClick={onClose}
             className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           >
@@ -100,13 +154,14 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
 
         <div className="p-4 space-y-3">
           {/* Connection info */}
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <Globe
               size={14}
               className="text-[var(--color-textSecondary)] flex-shrink-0"
             />
-            <span className="text-[var(--color-textSecondary)]">
-              {host}:{port}
+            <span className="min-w-0 break-words text-[var(--color-textSecondary)] [overflow-wrap:anywhere]">
+              {host.includes(":") && !host.startsWith("[") ? `[${host}]` : host}
+              :{port}
             </span>
             <span
               className={`ml-auto text-xs font-medium ${trustStatus.color}`}
@@ -114,6 +169,18 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
               {trustStatus.label}
             </span>
           </div>
+          {trustLookup?.error && (
+            <p role="status" className="text-xs text-warning">
+              {trustLookup.error}
+            </p>
+          )}
+          {inspection && (
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Certificate fields below describe the current observed peer. The
+              badge describes its stored trust decision, not TLS chain
+              verification.
+            </p>
+          )}
 
           {/* Nickname */}
           {trustRecord && (
@@ -294,6 +361,12 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                 </details>
               )}
             </>
+          )}
+          {inspection && (
+            <CertificateCaptureDetails
+              key={`${inspection.host}:${inspection.port}:${inspection.generation}`}
+              inspection={inspection}
+            />
           )}
         </div>
       </div>

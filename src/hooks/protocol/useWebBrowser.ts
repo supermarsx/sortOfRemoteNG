@@ -27,6 +27,11 @@ import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionR
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
+import type {
+  CertificateInspection,
+  NativeTlsCertificateInfo,
+} from "../../types/security/certificateInspection";
+import { validateCertificateInspection } from "../../utils/security/certificateInspection";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -336,7 +341,25 @@ export function useWebBrowser(session: ConnectionSession) {
 
   // ── Certificate trust ──────────────────────────────────────
   const [showCertPopup, setShowCertPopup] = useState(false);
-  const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
+  const certificateScope = JSON.stringify([
+    session.id,
+    connection?.id,
+    normalizedHostname,
+    connection?.port || 443,
+  ]);
+  const [certificateCapture, setCertificateCapture] = useState<{
+    scope: string;
+    identity: CertIdentity;
+    inspection: CertificateInspection;
+  } | null>(null);
+  const certIdentity =
+    certificateCapture?.scope === certificateScope
+      ? certificateCapture.identity
+      : null;
+  const certificateInspection =
+    certificateCapture?.scope === certificateScope
+      ? certificateCapture.inspection
+      : null;
   const [trustPrompt, setTrustPrompt] = useState<TrustVerifyResult | null>(
     null,
   );
@@ -351,6 +374,17 @@ export function useWebBrowser(session: ConnectionSession) {
   const proxyRecoveryBusyRef = useRef(false);
   const mountedRef = useRef(true);
   const activeNavigationUrlRef = useRef(currentUrl);
+  const previousCertificateScope = useRef(certificateScope);
+  useEffect(() => {
+    if (previousCertificateScope.current === certificateScope) return;
+    previousCertificateScope.current = certificateScope;
+    navGenRef.current += 1;
+    setCertificateCapture(null);
+    setShowCertPopup(false);
+    setTrustPrompt(null);
+    trustResolveRef.current?.(false);
+    trustResolveRef.current = null;
+  }, [certificateScope]);
   const navigationFailureRef = useRef<ProxyNavigationFailure | null>(
     navigationFailure,
   );
@@ -473,46 +507,20 @@ export function useWebBrowser(session: ConnectionSession) {
         "inspection";
 
       try {
-        const info = await invoke<{
-          fingerprint: string;
-          subject: string | null;
-          issuer: string | null;
-          pem: string | null;
-          valid_from: string | null;
-          valid_to: string | null;
-          serial: string | null;
-          signature_algorithm: string | null;
-          san: string[];
-          subject_cn: string | null;
-          subject_org: string | null;
-          subject_ou: string | null;
-          subject_country: string | null;
-          subject_state: string | null;
-          subject_locality: string | null;
-          subject_email: string | null;
-          issuer_cn: string | null;
-          issuer_org: string | null;
-          issuer_country: string | null;
-          key_algorithm: string | null;
-          key_size: number | null;
-          version: number | null;
-          chain: Array<{
-            subject: string;
-            issuer: string;
-            fingerprint: string;
-            valid_from: string;
-            valid_to: string;
-          }> | null;
-        }>("get_tls_certificate_info", {
-          host: normalizedHostname,
-          port,
-          proxyUrl,
-        });
+        const info = await invoke<NativeTlsCertificateInfo>(
+          "get_tls_certificate_info",
+          {
+            host: normalizedHostname,
+            port,
+            proxyUrl,
+          },
+        );
 
         // If a newer navigation started while we were awaiting the cert,
         // this call is stale — bail out so we don't overwrite the ref
         // that the newer call will (or already did) set.
         if (genBefore !== navGenRef.current) return false;
+        validateCertificateInspection(info);
 
         const now = new Date().toISOString();
         stage = "identity";
@@ -527,7 +535,7 @@ export function useWebBrowser(session: ConnectionSession) {
           pem: info.pem ?? undefined,
           serial: info.serial ?? undefined,
           signatureAlgorithm: info.signature_algorithm ?? undefined,
-          san: info.san.length > 0 ? info.san : undefined,
+          san: info.san?.length ? info.san : undefined,
           subjectCn: info.subject_cn ?? undefined,
           subjectOrg: info.subject_org ?? undefined,
           subjectOu: info.subject_ou ?? undefined,
@@ -549,7 +557,16 @@ export function useWebBrowser(session: ConnectionSession) {
             validTo: c.valid_to,
           })),
         });
-        setCertIdentity(identity);
+        setCertificateCapture({
+          scope: certificateScope,
+          identity,
+          inspection: {
+            host: normalizedHostname,
+            port,
+            generation: genBefore,
+            certificate: info,
+          },
+        });
         if (policy === "always-trust") {
           acceptedCertFingerprintRef.current = identity.fingerprint;
           return true;
@@ -643,6 +660,7 @@ export function useWebBrowser(session: ConnectionSession) {
       settings.trustPolicy,
       settings.tlsTrustPolicy,
       applyNavigationFailure,
+      certificateScope,
     ],
   );
 
@@ -769,6 +787,11 @@ export function useWebBrowser(session: ConnectionSession) {
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
       const gen = ++navGenRef.current;
+      setCertificateCapture(null);
+      setShowCertPopup(false);
+      setTrustPrompt(null);
+      trustResolveRef.current?.(false);
+      trustResolveRef.current = null;
       setIsLoading(true);
       clearNavigationFailure();
       activeNavigationUrlRef.current = url;
@@ -1810,6 +1833,8 @@ export function useWebBrowser(session: ConnectionSession) {
     showCertPopup,
     setShowCertPopup,
     certIdentity,
+    certificateInspection,
+    certificateHost: normalizedHostname,
     certPopupRef,
     trustPrompt,
     handleTrustAccept,

@@ -1,10 +1,22 @@
 import { createRoot } from "react-dom/client";
+import { useRef } from "react";
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import english from "../../src/i18n/locales/en-US.json";
+import { CertificateInfoPopup } from "../../src/components/security/CertificateInfoPopup";
+import { certificateInfoFixture } from "../../tests/fixtures/certificateInspection";
 import {
   TrustIdentityImportDialog,
   type TrustIdentityImportReview,
 } from "../../src/components/security/TrustIdentityImportDialog";
 import { refused } from "./boundary";
 import "../../app/globals.css";
+await i18n.use(initReactI18next).init({
+  lng: "en-US",
+  fallbackLng: "en-US",
+  resources: { "en-US": { translation: english } },
+  interpolation: { escapeValue: false },
+});
 
 const review: TrustIdentityImportReview = {
   databaseId: "synthetic-database",
@@ -39,17 +51,60 @@ const review: TrustIdentityImportReview = {
   ],
 };
 Object.assign(window, { __TRUST_DEMO__: { refused } });
+export function CertificateDemo() {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const certificate = {
+    ...certificateInfoFixture,
+    chain: [
+      ...certificateInfoFixture.chain!,
+      {
+        ...certificateInfoFixture.chain![0],
+        subject: "CN=" + "LongPeerControlledName".repeat(70),
+      },
+    ],
+    capture: { ...certificateInfoFixture.capture!, certificate_count: 2 },
+  };
+  return (
+    <div className="p-4">
+      <button ref={triggerRef}>Certificate · synthetic capture</button>
+      <CertificateInfoPopup
+        type="https"
+        host="dashboard.example.test"
+        port={443}
+        triggerRef={triggerRef}
+        onClose={() => {}}
+        currentIdentity={{
+          fingerprint: certificate.fingerprint,
+          subject: certificate.subject!,
+          issuer: certificate.issuer!,
+          firstSeen: "2026-09-09",
+          lastSeen: "2026-09-09",
+        }}
+        inspection={{
+          host: "dashboard.example.test",
+          port: 443,
+          generation: 1,
+          certificate,
+        }}
+      />
+    </div>
+  );
+}
 createRoot(document.getElementById("root")!).render(
   <>
     <p className="p-3 text-xs">
       Actual application component · synthetic trust identities
     </p>
-    <TrustIdentityImportDialog
-      review={review}
-      busy={false}
-      connectionName={() => "Operations dashboard"}
-      onClose={() => {}}
-      onConfirm={() => {}}
-    />
+    {new URLSearchParams(location.search).get("view") === "certificate" ? (
+      <CertificateDemo />
+    ) : (
+      <TrustIdentityImportDialog
+        review={review}
+        busy={false}
+        connectionName={() => "Operations dashboard"}
+        onClose={() => {}}
+        onConfirm={() => {}}
+      />
+    )}
   </>,
 );

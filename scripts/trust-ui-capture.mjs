@@ -94,6 +94,61 @@ try {
     report.push(layout);
     console.log(`Verified actual import layout at ${width}px`);
   }
+  for (const width of [1440, 390]) {
+    await browser.setViewport({ width, height: 900, devicePixelRatio: 1 });
+    await browser.url("http://127.0.0.1:4320/?view=certificate");
+    await browser
+      .$('[data-testid="certificate-info-popover"]')
+      .waitForDisplayed({ timeout: 30000 });
+    const leaf = await browser.$(
+      "summary=Observed leaf certificate — full details",
+    );
+    await leaf.click();
+    await browser.$("dt=SHA-512 fingerprint").waitForExist();
+    const layout = await browser.execute(() => {
+      const popup = document.querySelector(
+        '[data-testid="certificate-info-popover"]',
+      );
+      const rect = popup.getBoundingClientRect();
+      popup.scrollTop = 0;
+      return {
+        kind: "certificate",
+        width: innerWidth,
+        left: rect.left,
+        right: rect.right,
+        bottom: rect.bottom,
+        viewportHeight: innerHeight,
+        refused: window.__TRUST_DEMO__.refused,
+      };
+    });
+    if (
+      layout.refused.length ||
+      layout.left < 0 ||
+      layout.right > width ||
+      layout.bottom > layout.viewportHeight
+    )
+      throw new Error(JSON.stringify(layout));
+    await browser.saveScreenshot(path.join(output, `certificate-${width}.png`));
+    await browser.$("summary=Peer-presented chain (2)").click();
+    await browser.execute(() => {
+      const popup = document.querySelector(
+        '[data-testid="certificate-info-popover"]',
+      );
+      popup.scrollTop = popup.scrollHeight;
+    });
+    const overflow = await browser.execute(() => {
+      const popup = document.querySelector(
+        '[data-testid="certificate-info-popover"]',
+      );
+      return popup.scrollWidth > popup.clientWidth;
+    });
+    if (overflow) throw new Error("Long peer DN widened the certificate popup");
+    await browser.saveScreenshot(
+      path.join(output, `certificate-${width}-chain.png`),
+    );
+    report.push(layout);
+    console.log(`Verified actual certificate inspector at ${width}px`);
+  }
   await writeFile(
     path.join(output, "report.json"),
     JSON.stringify(report, null, 2),

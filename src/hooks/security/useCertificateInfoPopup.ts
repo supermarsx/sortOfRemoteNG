@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   CertIdentity,
@@ -24,6 +24,30 @@ export function useCertificateInfoPopup(
   const [nickDraft, setNickDraft] = useState(trustRecord?.nickname ?? "");
   const [savedNick, setSavedNick] = useState(trustRecord?.nickname ?? "");
   const [nicknameError, setNicknameError] = useState<string | null>(null);
+  const nicknameScope = JSON.stringify([
+    type,
+    host,
+    port,
+    connectionId,
+    trustRecord?.identity.fingerprint,
+    trustRecord?.nickname,
+  ]);
+  const nicknameGeneration = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    nicknameGeneration.current += 1;
+    setEditingNick(false);
+    setNickDraft(trustRecord?.nickname ?? "");
+    setSavedNick(trustRecord?.nickname ?? "");
+    setNicknameError(null);
+  }, [nicknameScope, trustRecord?.nickname]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      nicknameGeneration.current += 1;
+    };
+  }, []);
 
   const isCertificateType = isCertificateTrustRecordType(type);
   const typeLabels: Record<
@@ -93,6 +117,12 @@ export function useCertificateInfoPopup(
   }, []);
 
   const getTrustStatus = useCallback(() => {
+    if (trustRecord?.revoked)
+      return {
+        label: t("certificateInfo.status.revoked", { defaultValue: "Revoked" }),
+        color: "text-red-400",
+        icon: "ShieldAlert" as const,
+      };
     if (!trustRecord)
       return {
         label: t("certificateInfo.status.unknown", {
@@ -113,6 +143,17 @@ export function useCertificateInfoPopup(
         icon: "ShieldAlert" as const,
       };
     }
+    if (
+      trustRecord.trustExpires &&
+      new Date(trustRecord.trustExpires).getTime() <= Date.now()
+    )
+      return {
+        label: t("certificateInfo.status.expired", {
+          defaultValue: "Trust expired",
+        }),
+        color: "text-red-400",
+        icon: "ShieldAlert" as const,
+      };
     if (trustRecord.userApproved) {
       return {
         label: t("certificateInfo.status.trusted", {
@@ -133,12 +174,17 @@ export function useCertificateInfoPopup(
 
   const saveNickname = useCallback(
     async (nick: string) => {
+      const generation = nicknameGeneration.current;
       setNicknameError(null);
       try {
         await updateTrustRecordNickname(host, port, type, nick, connectionId);
+        if (!mounted.current || generation !== nicknameGeneration.current)
+          return;
         setSavedNick(nick);
         setEditingNick(false);
       } catch (error) {
+        if (!mounted.current || generation !== nicknameGeneration.current)
+          return;
         setNicknameError(
           error instanceof Error
             ? error.message

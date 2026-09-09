@@ -28,6 +28,8 @@ export default defineConfig({
       "react-dom/client",
       "react/jsx-runtime",
       "react/jsx-dev-runtime",
+      "use-sync-external-store/shim",
+      "use-sync-external-store/shim/with-selector",
       "lucide-react",
     ],
   },

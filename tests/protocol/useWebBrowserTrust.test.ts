@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../src/types/connection/connection";
+import { certificateInfoFixture } from "../fixtures/certificateInspection";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -111,6 +112,90 @@ describe("HTTPS certificate and native trust stages", () => {
     });
   });
   afterEach(cleanup);
+  it("keeps full peer details ephemeral while preserving populated legacy trust fields", async () => {
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "get_tls_certificate_info"
+        ? certificateInfoFixture
+        : command === "start_basic_auth_proxy"
+          ? proxy
+          : undefined,
+    );
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(result.current.certificateInspection?.certificate).toEqual(
+        certificateInfoFixture,
+      ),
+    );
+    expect(result.current.certIdentity).toMatchObject({
+      subject: certificateInfoFixture.subject,
+      issuer: certificateInfoFixture.issuer,
+      serial: certificateInfoFixture.serial,
+      pem: certificateInfoFixture.pem,
+    });
+    const identity = mocks.verify.mock.calls[0][3];
+    expect(identity).not.toHaveProperty("details");
+    expect(identity).not.toHaveProperty("capture");
+    expect(identity.chain[0]).not.toHaveProperty("details");
+    expect(result.current.certificateInspection).toMatchObject({
+      host: "10.10.10.2",
+      port: 443,
+    });
+  });
+  it("clears the prior capture during reinspection and ignores a stale pending response", async () => {
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(result.current.certIdentity).not.toBeNull());
+    let finishOld!: (value: typeof certificateInfoFixture) => void;
+    let finishNew!: (value: typeof certificateInfoFixture) => void;
+    const pendingOld = new Promise<typeof certificateInfoFixture>((resolve) => {
+      finishOld = resolve;
+    });
+    const pendingNew = new Promise<typeof certificateInfoFixture>((resolve) => {
+      finishNew = resolve;
+    });
+    let calls = 0;
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "get_tls_certificate_info"
+        ? ++calls === 1
+          ? pendingOld
+          : pendingNew
+        : command === "start_basic_auth_proxy"
+          ? proxy
+          : undefined,
+    );
+    act(() => {
+      result.current.setShowCertPopup(true);
+      void result.current.navigateToUrl("https://10.10.10.2/old");
+    });
+    await waitFor(() => expect(calls).toBe(1));
+    expect(result.current.certIdentity).toBeNull();
+    expect(result.current.showCertPopup).toBe(false);
+    act(() => {
+      void result.current.navigateToUrl("https://10.10.10.2/new");
+    });
+    await waitFor(() => expect(calls).toBe(2));
+    await act(async () => {
+      finishNew(certificateInfoFixture);
+    });
+    await waitFor(() =>
+      expect(result.current.certIdentity?.fingerprint).toBe(
+        certificateInfoFixture.fingerprint,
+      ),
+    );
+    await act(async () => {
+      finishOld({ ...certificateInfoFixture, subject: "STALE" });
+    });
+    expect(result.current.certIdentity?.subject).not.toBe("STALE");
+  });
+  it("does not retain observed metadata when a different connection session replaces the hook props", async () => {
+    const { result, rerender } = renderHook(
+      ({ value }) => useWebBrowser(value),
+      { initialProps: { value: session } },
+    );
+    await waitFor(() => expect(result.current.certIdentity).not.toBeNull());
+    rerender({ value: { ...session, id: "other-session" } });
+    expect(result.current.certIdentity).toBeNull();
+    expect(result.current.certificateInspection).toBeNull();
+  });
 
   it("requires explicit approval after Forget even under TOFU, without opening or auto-storing", async () => {
     mocks.verify.mockResolvedValue({
