@@ -2,8 +2,7 @@
 //! No direct fallback is allowed when a proxy is configured.
 
 use super::{
-    build_tls_config, parse_chain_entry_from_der, parse_tls_certificate_details, tls_server_name,
-    Digest, Sha256, TlsCertificateChainEntry, TlsCertificateInfo,
+    build_tls_config, capture_peer_certificate_chain, tls_server_name, TlsCertificateInfo,
 };
 use base64::Engine;
 use std::time::Duration;
@@ -184,68 +183,7 @@ async fn inspect_certificate(
         .connect(tls_server_name(host)?, socket)
         .await
         .map_err(|_| "Target certificate TLS handshake failed".to_string())?;
-    let chain_ders: Vec<Vec<u8>> = tls
-        .get_ref()
-        .1
-        .peer_certificates()
-        .map(|certs| certs.iter().map(|cert| cert.as_ref().to_vec()).collect())
-        .unwrap_or_default();
-    let der = chain_ders
-        .first()
-        .ok_or("Server did not present a certificate")?;
-    // SHA-256 fingerprint
-    let mut hasher = Sha256::new();
-    hasher.update(der);
-    let fingerprint = hex::encode(hasher.finalize());
-    let parsed = parse_tls_certificate_details(der, &fingerprint);
-
-    // Build PEM
-    let pem = {
-        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, der);
-        let mut pem_str = String::from("-----BEGIN CERTIFICATE-----\n");
-        for chunk in b64.as_bytes().chunks(64) {
-            pem_str.push_str(std::str::from_utf8(chunk).unwrap_or_default());
-            pem_str.push('\n');
-        }
-        pem_str.push_str("-----END CERTIFICATE-----\n");
-        Some(pem_str)
-    };
-
-    // Build chain entries from all certs in the TLS chain.
-    let chain: Vec<TlsCertificateChainEntry> = chain_ders
-        .iter()
-        .filter_map(|cert_der| parse_chain_entry_from_der(cert_der))
-        .collect();
-
-    Ok(TlsCertificateInfo {
-        fingerprint,
-        subject: parsed.subject,
-        issuer: parsed.issuer,
-        pem,
-        valid_from: parsed.valid_from,
-        valid_to: parsed.valid_to,
-        serial: parsed.serial,
-        signature_algorithm: parsed.signature_algorithm,
-        san: parsed.san,
-
-        subject_cn: parsed.subject_cn,
-        subject_org: parsed.subject_org,
-        subject_ou: parsed.subject_ou,
-        subject_country: parsed.subject_country,
-        subject_state: parsed.subject_state,
-        subject_locality: parsed.subject_locality,
-        subject_email: parsed.subject_email,
-
-        issuer_cn: parsed.issuer_cn,
-        issuer_org: parsed.issuer_org,
-        issuer_country: parsed.issuer_country,
-
-        key_algorithm: parsed.key_algorithm,
-        key_size: parsed.key_size,
-        version: parsed.version,
-
-        chain,
-    })
+    capture_peer_certificate_chain(tls.get_ref().1.peer_certificates().unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -256,6 +194,7 @@ mod tls_test_fixture;
 mod tests {
     use super::tls_test_fixture::{test_acceptor, TEST_CERT};
     use super::*;
+    use sha2::{Digest, Sha256};
     use tokio::net::TcpListener;
 
     async fn read_request<S: AsyncRead + Unpin>(socket: &mut S) -> String {
@@ -323,25 +262,17 @@ mod tests {
         assert_eq!(info.chain[0].fingerprint, info.fingerprint);
         let wire = serde_json::to_value(&info).unwrap();
         assert_eq!(wire["chain"][0]["fingerprint"], wire["fingerprint"]);
-        // This is the exact native DTO consumed by the trust codec. Optional
-        // parsing must never replace the real identity with a placeholder or
-        // discard the chain just because display details are unavailable.
-        #[cfg(not(feature = "tls-cert-details"))]
-        {
-            assert!(wire["subject"].is_null());
-            assert!(wire["valid_from"].is_null());
-            for field in ["subject", "issuer", "valid_from", "valid_to"] {
-                assert_eq!(wire["chain"][0][field], "");
-            }
-        }
-        #[cfg(feature = "tls-cert-details")]
-        {
-            assert!(wire["chain"][0]["subject"]
-                .as_str()
-                .unwrap()
-                .contains("localhost"));
-            assert!(!wire["chain"][0]["valid_from"].as_str().unwrap().is_empty());
-        }
+        // Identical rich parsing in lean/default and the compatibility feature.
+        assert!(wire["chain"][0]["subject"]
+            .as_str()
+            .unwrap()
+            .contains("localhost"));
+        assert!(!wire["chain"][0]["valid_from"].as_str().unwrap().is_empty());
+        assert_eq!(wire["details"]["public_key"]["bits"], 2048);
+        assert_eq!(wire["details"]["signature_parameters_der_base64"], "BQA=");
+        assert_eq!(wire["capture"]["source"], "peer-presented");
+        assert_eq!(wire["chain"][0]["details"]["der_base64"], TEST_CERT);
+        assert!(info.warnings.is_empty(), "{:?}", info.warnings);
         proxy.await.unwrap();
     }
 
@@ -364,6 +295,9 @@ mod tests {
             .unwrap();
         assert_eq!(info.fingerprint, hex::encode(Sha256::digest(&der)));
         assert_eq!(info.chain[0].fingerprint, info.fingerprint);
+        assert_eq!(info.subject_cn.as_deref(), Some("localhost"));
+        assert_eq!(info.san, ["DNS:localhost", "IP:127.0.0.1"]);
+        assert_eq!(info.capture.certificate_count, 1);
         assert!(info.pem.unwrap().starts_with("-----BEGIN CERTIFICATE-----"));
         peer.await.unwrap();
     }
