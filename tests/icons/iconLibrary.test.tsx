@@ -4,6 +4,7 @@ import {
   render,
   renderHook,
   screen,
+  within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -112,6 +113,38 @@ describe("passive SVG boundary", () => {
   });
 });
 describe("reviewed icon library", () => {
+  it("updates recommended chips on a live rename and restores catalog labels on lock", async () => {
+    const change = vi.fn();
+    render(
+      <ConnectionIconPicker
+        connection={{ protocol: "ssh", isGroup: true }}
+        onChange={change}
+      />,
+    );
+    const recommendations = within(
+      screen.getByText("Recommended for folders").parentElement!,
+    );
+    const original = getRuntimeIconEntry("folder-lock")!;
+    const chip = recommendations.getByText(original.label).parentElement!;
+    const originalArtwork = chip.querySelector("svg")!.innerHTML;
+    const { result } = renderHook(useIconLibrary);
+    await act(() =>
+      result.current.updateMetadata("folder-lock", {
+        label: "My recommended work folder",
+        notes: "Private recommendation note",
+      }),
+    );
+    const renamed = recommendations.getByText(
+      "My recommended work folder",
+    ).parentElement!;
+    expect(renamed.querySelector("svg")!.innerHTML).toBe(originalArtwork);
+    expect(change).not.toHaveBeenCalled();
+    act(() => publishIconLibrary(undefined, { ready: false, locked: true }));
+    expect(
+      recommendations.queryByText("My recommended work folder"),
+    ).not.toBeInTheDocument();
+    expect(recommendations.getByText(original.label)).toBeInTheDocument();
+  });
   it("edits personal built-in metadata without altering catalog artwork and refuses built-in deletion", async () => {
     const original = CONNECTION_ICON_CATALOG.find(
       (icon) => icon.key === "server",

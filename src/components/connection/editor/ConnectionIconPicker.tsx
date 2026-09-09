@@ -11,12 +11,10 @@ import {
   integrationRegistry,
   type IntegrationDescriptor,
 } from "../../../types/integrations/registry";
-import {
-  CONNECTION_ICON_CATEGORIES,
-  getConnectionIconDefinition,
-} from "../../../utils/icons/connectionIconCatalog";
+import { CONNECTION_ICON_CATEGORIES } from "../../../utils/icons/connectionIconCatalog";
 import {
   getIconLibrarySnapshot,
+  getRuntimeIconEntry,
   useIconLibraryRevision,
   type SelectableConnectionIconKey as ConnectionIconKey,
 } from "../../../utils/icons/iconLibraryRuntime";
@@ -151,7 +149,7 @@ export const ConnectionIconPicker: React.FC<ConnectionIconPickerProps> = ({
   const sourceCopy = getSourceCopy(effective, connection, descriptor);
   const recommendedKeys = getRecommendedConnectionIconKeys(connection);
   const recommendedDefinitions = recommendedKeys
-    .map(getConnectionIconDefinition)
+    .map(getRuntimeIconEntry)
     .filter((definition) => !!definition);
   const hasManualOverride = !!connection.icon?.trim();
   const isFiltering = query.trim().length > 0;
