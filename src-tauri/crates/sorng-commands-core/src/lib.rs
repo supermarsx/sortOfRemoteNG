@@ -166,6 +166,11 @@ mod telnet_commands;
 mod totp_commands;
 #[path = "../../../src/trust_store_commands.rs"]
 mod trust_store_commands;
+/// The production force-cleanup handlers, separately composable for isolated IPC fixtures.
+pub fn build_force_delete_trust_handler<R: tauri::Runtime>(
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    trust_store_commands::build_force_delete()
+}
 mod updater_commands;
 #[path = "../../../src/vault_commands.rs"]
 mod vault_commands;

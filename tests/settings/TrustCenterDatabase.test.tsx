@@ -37,6 +37,9 @@ let savePath: string | null;
 let openPath: string | null;
 let fileContents: string;
 let writtenFiles: Array<[string, string]>;
+const forceToken = "11111111-1111-4111-8111-111111111111";
+let forcePreview: Record<string, unknown>;
+let forceResult: Record<string, unknown>;
 let databaseRows: Array<{
   id: string;
   name: string;
@@ -199,6 +202,22 @@ beforeEach(async () => {
   openPath = "/tmp/trust.json";
   fileContents = JSON.stringify(trustDocument);
   writtenFiles = [];
+  forcePreview = {
+    token: forceToken,
+    expiresAt: Date.now() + 300000,
+    confirmationPhrase: "FORCE DELETE LEGACY TRUST",
+    files: [
+      { name: "trust_store.json", bytes: 42, sha256: "a".repeat(64) },
+      { name: "trust_store.json.bak", bytes: 17, sha256: "b".repeat(64) },
+    ],
+  };
+  forceResult = {
+    completed: true,
+    removedFiles: ["trust_store.json", "trust_store.json.bak"],
+    preservedFiles: ["trust_store.json", "trust_store.json.bak"],
+    recoveryPath: "F:\\isolated-fixture\\legacy-trust-recovery\\review",
+    errors: [],
+  };
   saveDialog.mockClear();
   openDialog.mockClear();
   writeTextFile.mockClear();
@@ -216,9 +235,262 @@ beforeEach(async () => {
         return { imported: 7 };
       case "trust_delete_legacy_stores":
         return 2;
+      case "trust_preview_force_delete_legacy":
+        return forcePreview;
+      case "trust_force_delete_legacy":
+        return forceResult;
+      case "trust_cancel_force_delete_legacy":
+        return true;
       default:
         return null;
     }
+  });
+});
+
+describe("Legacy Trust — explicit force cleanup", () => {
+  async function review() {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Force delete legacy trust files…" }),
+    );
+    await screen.findByRole("group", { name: "Review force deletion" });
+  }
+  function confirm() {
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: "Type FORCE DELETE LEGACY TRUST to confirm",
+      }),
+      { target: { value: "FORCE DELETE LEGACY TRUST" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Preserve recovery copy and force delete",
+      }),
+    );
+  }
+  it("requires the exact phrase, bypasses incomplete migration only explicitly, and reports recovery", async () => {
+    legacyStatus = {
+      ...legacyStatus,
+      legacyPresent: true,
+      canDeleteLegacy: false,
+      pendingDatabaseIds: ["db-1"],
+      allDatabasesOpened: false,
+    };
+    renderSection();
+    await settle();
+    await review();
+    const button = screen.getByRole("button", {
+      name: "Preserve recovery copy and force delete",
+    });
+    expect(button).toBeDisabled();
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: "Type FORCE DELETE LEGACY TRUST to confirm",
+      }),
+      { target: { value: "force delete legacy trust" } },
+    );
+    expect(button).toBeDisabled();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_force_delete_legacy",
+      expect.anything(),
+    );
+    confirm();
+    await screen.findByText(
+      "Reviewed legacy files removed; verified recovery copies retained.",
+    );
+    expect(invokeMock).toHaveBeenCalledWith("trust_force_delete_legacy", {
+      token: forceToken,
+      confirmation: "FORCE DELETE LEGACY TRUST",
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("trust_delete_legacy_stores");
+    expect(selectDatabase).not.toHaveBeenCalled();
+    expect(screen.getByText(/Recovery location:/)).toHaveTextContent(
+      String(forceResult.recoveryPath),
+    );
+    expect(
+      screen.getByText(/Recovery copies retain the original format/),
+    ).toHaveTextContent(
+      "may contain unencrypted trust metadata; this is not secure erasure",
+    );
+  });
+  it("cancels a review without deleting anything", async () => {
+    renderSection();
+    await settle();
+    await review();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel force deletion" }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "trust_cancel_force_delete_legacy",
+        { token: forceToken },
+      ),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_force_delete_legacy",
+      expect.anything(),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Review force deletion" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Force delete legacy trust files…" }),
+    ).toBeEnabled();
+  });
+  it("reports partial removal and preserved copies without claiming completion", async () => {
+    forceResult = {
+      ...forceResult,
+      completed: false,
+      removedFiles: ["trust_store.json"],
+      errors: [
+        "Backup sibling removal failed. Remaining sources were not removed.",
+      ],
+    };
+    renderSection();
+    await settle();
+    await review();
+    confirm();
+    await screen.findByText(
+      "Force cleanup did not complete. Review the exact outcome before retrying.",
+    );
+    expect(
+      screen.getByText("Removed files: trust_store.json."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Verified copies: trust_store.json, trust_store.json.bak.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Reviewed legacy files removed; verified recovery copies retained.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  it("shows preservation failure with zero removals and no success", async () => {
+    forceResult = {
+      ...forceResult,
+      completed: false,
+      removedFiles: [],
+      preservedFiles: [],
+      errors: [
+        "Could not durably preserve recovery copy. No legacy files were removed.",
+      ],
+    };
+    renderSection();
+    await settle();
+    await review();
+    confirm();
+    await screen.findByText("Removed files: none.");
+    expect(
+      screen.getByText(/Could not durably preserve recovery copy/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Reviewed legacy files removed; verified recovery copies retained.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  it("rejects drift without false success and refreshes safe status", async () => {
+    const original = invokeMock.getMockImplementation() as (
+      command: string,
+      ...args: unknown[]
+    ) => Promise<unknown>;
+    invokeMock.mockImplementation((command: string, ...args: unknown[]) =>
+      command === "trust_force_delete_legacy"
+        ? Promise.reject(
+            new Error(
+              "Legacy inventory changed after review; no files were removed",
+            ),
+          )
+        : original(command, ...args),
+    );
+    renderSection();
+    await settle();
+    await review();
+    confirm();
+    await screen.findByText(
+      "Legacy inventory changed after review; no files were removed",
+    );
+    expect(
+      screen.queryByText(
+        "Reviewed legacy files removed; verified recovery copies retained.",
+      ),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([command]) => command === "trust_legacy_status",
+        ).length,
+      ).toBeGreaterThan(1),
+    );
+  });
+  it("cancels late previews after unmount and never applies", async () => {
+    let resolve!: (value: unknown) => void;
+    const deferred = new Promise((done) => {
+      resolve = done;
+    });
+    const original = invokeMock.getMockImplementation() as (
+      command: string,
+      ...args: unknown[]
+    ) => Promise<unknown>;
+    invokeMock.mockImplementation((command: string, ...args: unknown[]) =>
+      command === "trust_preview_force_delete_legacy"
+        ? deferred
+        : original(command, ...args),
+    );
+    const view = renderSection();
+    await settle();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Force delete legacy trust files…" }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "trust_preview_force_delete_legacy",
+      ),
+    );
+    view.unmount();
+    resolve(forcePreview);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "trust_cancel_force_delete_legacy",
+        { token: forceToken },
+      ),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "trust_force_delete_legacy",
+      expect.anything(),
+    );
+  });
+  it("disarms malformed review tokens without exposing a destructive button", async () => {
+    forcePreview = {
+      ...forcePreview,
+      files: [
+        {
+          name: "databases/current.trust.json",
+          bytes: 1,
+          sha256: "a".repeat(64),
+        },
+      ],
+    };
+    renderSection();
+    await settle();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Force delete legacy trust files…" }),
+    );
+    await screen.findByText(
+      "Native force-delete review was invalid. No files were removed.",
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "trust_cancel_force_delete_legacy",
+        { token: forceToken },
+      ),
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: "Preserve recovery copy and force delete",
+      }),
+    ).not.toBeInTheDocument();
   });
 });
 

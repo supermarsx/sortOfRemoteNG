@@ -359,3 +359,48 @@ pub async fn trust_legacy_status() -> Result<TrustLegacyStatus, String> {
 pub async fn trust_delete_legacy_stores() -> Result<u32, String> {
     runtime()?.delete_legacy_stores()
 }
+
+fn force_context<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    state: &sorng_encryption::EncryptionState,
+) -> ForceDeleteContext {
+    ForceDeleteContext {
+        owner: state.database_session_owner(),
+        generation: state.key_generation(),
+        window: window.label().into(),
+    }
+}
+#[tauri::command]
+pub async fn trust_preview_force_delete_legacy<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: tauri::State<'_, sorng_encryption::EncryptionState>,
+) -> Result<ForceDeletePreview, String> {
+    runtime()?.preview_force_delete_legacy(force_context(&window, &state))
+}
+#[tauri::command]
+pub async fn trust_force_delete_legacy<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: tauri::State<'_, sorng_encryption::EncryptionState>,
+    token: String,
+    confirmation: String,
+) -> Result<ForceDeleteResult, String> {
+    runtime()?.force_delete_legacy(&force_context(&window, &state), &token, &confirmation)
+}
+#[tauri::command]
+pub async fn trust_cancel_force_delete_legacy<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: tauri::State<'_, sorng_encryption::EncryptionState>,
+    token: String,
+) -> Result<bool, String> {
+    runtime()?.cancel_force_delete_legacy(&force_context(&window, &state), &token)
+}
+
+/// Same registered production handlers with a mockable runtime for temp-only IPC tests.
+pub fn build_force_delete<R: tauri::Runtime>(
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        trust_preview_force_delete_legacy,
+        trust_force_delete_legacy,
+        trust_cancel_force_delete_legacy
+    ]
+}

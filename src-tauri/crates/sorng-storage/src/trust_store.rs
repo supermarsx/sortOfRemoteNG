@@ -30,6 +30,9 @@ use sorng_encryption::{ArtifactKind, EncryptionState, SubKey};
 #[path = "trust_legacy.rs"]
 mod legacy_migration;
 pub use legacy_migration::{TrustLegacyMigrationOutcome, TrustLegacyMigrationReceipt};
+#[path = "trust_force_delete.rs"]
+mod force_delete;
+pub use force_delete::{ForceDeleteContext, ForceDeletePreview, ForceDeleteResult};
 
 const MAX_TRUST_STORE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUST_RECORDS: usize = 10_000;

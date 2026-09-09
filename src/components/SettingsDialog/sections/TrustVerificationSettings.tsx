@@ -34,6 +34,7 @@ import {
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import { ManagedDatabaseUnlockForm } from "../../encryption/ManagedDatabaseUnlockForm";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
+import { LegacyTrustForceDelete } from "./LegacyTrustForceDelete";
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 
@@ -675,6 +676,10 @@ const TrustDatabaseSection: React.FC<{
         title="Legacy trust recovery"
       />
       <TrustLegacyCard mgr={mgr} />
+      <LegacyTrustForceDelete
+        force={mgr.forceDelete}
+        busy={Boolean(mgr.actionBusy)}
+      />
       {mgr.actionMessage && (
         <p
           role="status"

@@ -49,8 +49,21 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         &serde_json::to_vec(&data).unwrap(),
     )
     .unwrap();
+    let managed_handler = sorng_commands_core::database_protection::build();
+    let force_handler = sorng_commands_core::build_force_delete_trust_handler();
     let app = mock_builder()
-        .invoke_handler(sorng_commands_core::database_protection::build())
+        .invoke_handler(move |invoke| {
+            if matches!(
+                invoke.message.command(),
+                "trust_preview_force_delete_legacy"
+                    | "trust_force_delete_legacy"
+                    | "trust_cancel_force_delete_legacy"
+            ) {
+                force_handler(invoke)
+            } else {
+                managed_handler(invoke)
+            }
+        })
         .build(mock_context(noop_assets()))
         .unwrap();
     // This runtime is bound only to this temporary profile. No default OS
@@ -182,4 +195,49 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         "legacy-password"
     );
     assert!(root.path().join("databases/db.json").is_file());
+    // Force cleanup is distinct from migration eligibility and copies opaque
+    // input without changing the active database or any current trust sidecar.
+    let force_names = [
+        "trust_preview_force_delete_legacy",
+        "trust_force_delete_legacy",
+        "trust_cancel_force_delete_legacy",
+    ];
+    for name in force_names {
+        assert!(sorng_commands_core::is_command(name));
+    }
+    let source = root.path().join("trust_store.json");
+    std::fs::write(&source, b"malformed legacy bytes").unwrap();
+    let destination = root.path().join("databases/db.trust.json");
+    let destination_bytes = std::fs::read(&destination).unwrap();
+    let preview = invoke(&main, force_names[0], json!({})).unwrap();
+    assert_eq!(
+        invoke(&other, force_names[2], json!({"token":preview["token"]})).unwrap(),
+        false
+    );
+    assert_eq!(
+        invoke(&main, force_names[2], json!({"token":preview["token"]})).unwrap(),
+        true
+    );
+    let request = json!({"token":preview["token"],"confirmation":"FORCE DELETE LEGACY TRUST"});
+    assert!(invoke(&main, force_names[1], request).is_err());
+    let preview = invoke(&main, force_names[0], json!({})).unwrap();
+    let request = json!({"token":preview["token"],"confirmation":"FORCE DELETE LEGACY TRUST"});
+    assert!(invoke(&other, force_names[1], request.clone()).is_err());
+    let result = invoke(&main, force_names[1], request.clone()).unwrap();
+    assert_eq!(result["completed"], true);
+    assert_eq!(result["removedFiles"], json!(["trust_store.json"]));
+    assert_eq!(
+        std::fs::read(
+            std::path::Path::new(result["recoveryPath"].as_str().unwrap()).join("trust_store.json")
+        )
+        .unwrap(),
+        b"malformed legacy bytes"
+    );
+    assert_eq!(std::fs::read(destination).unwrap(), destination_bytes);
+    assert!(!source.exists());
+    assert_eq!(
+        trust_runtime.active_database_id().as_deref(),
+        Some("unrelated-active")
+    );
+    assert!(invoke(&main, force_names[1], request).is_err());
 }

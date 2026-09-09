@@ -17,6 +17,7 @@ import {
   onCurrentDatabaseChange,
 } from "../../utils/connection/databaseManager";
 import { getInvoke } from "../../utils/tauri/invoke";
+import { useLegacyTrustForceDelete } from "./useLegacyTrustForceDelete";
 import type { ConnectionDatabase } from "../../types/connection/connection";
 import type { DatabaseProtectionStatus } from "../../types/encryption/databaseProtection";
 
@@ -94,7 +95,7 @@ function validateLegacyStatus(
 
 /** Which long-running Trust Center action is in flight, if any. */
 export type TrustDatabaseAction =
-  "delete-legacy" | "review-migration" | "migrate-legacy";
+  "delete-legacy" | "review-migration" | "migrate-legacy" | "force-delete";
 
 /**
  * A translatable outcome banner. The hook deliberately reports a key plus
@@ -436,6 +437,21 @@ export function useTrustVerificationSettings(
     void refreshLegacyStatus();
   }, [refreshLegacyStatus]);
 
+  const forceDelete = useLegacyTrustForceDelete({
+    acquire: () => {
+      if (migrationBusy.current) return false;
+      migrationBusy.current = true;
+      setActionBusy("force-delete");
+      setActionMessage(null);
+      return true;
+    },
+    release: () => {
+      migrationBusy.current = false;
+      setActionBusy(undefined);
+    },
+    refresh: refreshLegacyStatus,
+  });
+
   const handleDeleteLegacyStores = useCallback(async () => {
     if (migrationBusy.current || legacyStatus?.canDeleteLegacy !== true) return;
     migrationBusy.current = true;
@@ -507,6 +523,7 @@ export function useTrustVerificationSettings(
     clearActionMessage: () => setActionMessage(null),
     refreshLegacyStatus,
     handleDeleteLegacyStores,
+    forceDelete,
     migrationRows,
     migrationError,
     confirmMigration,

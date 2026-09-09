@@ -164,6 +164,9 @@ pub fn is_command(command: &str) -> bool {
             | "trust_delete_database_store"
             | "trust_legacy_status"
             | "trust_delete_legacy_stores"
+            | "trust_preview_force_delete_legacy"
+            | "trust_force_delete_legacy"
+            | "trust_cancel_force_delete_legacy"
             | "updater_get_settings"
             | "updater_save_settings"
             | "updater_get_status"
@@ -1519,6 +1522,9 @@ define_command_group!(
         trust_store_commands::trust_delete_database_store,
         trust_store_commands::trust_legacy_status,
         trust_store_commands::trust_delete_legacy_stores,
+        trust_store_commands::trust_preview_force_delete_legacy,
+        trust_store_commands::trust_force_delete_legacy,
+        trust_store_commands::trust_cancel_force_delete_legacy,
         updater_commands::updater_get_settings,
         updater_commands::updater_save_settings,
         updater_commands::updater_get_status,
