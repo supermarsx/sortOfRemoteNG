@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import {
+  extractNativeCommandNames,
+  reachableNativeHandlers,
+} from "./nativeCommandInventory";
 
 /**
  * Guards that every Tauri command the frontend invokes is registered by one of
@@ -38,26 +42,24 @@ import { describe, expect, it } from "vitest";
  *     checked), recursively.
  * `as const`, `satisfies`, parentheses and `!` wrappers are unwrapped first.
  *
- * ## Accepted blind spots (deliberate — document any you close)
+ * ## Explicit remaining boundaries
  *
- *   - Commands passed as function parameters, e.g. the `invoke<T>(cmd, args)`
- *     wrappers in `useProxmoxManager` / `useDocker` / `trustStore`. The literal
- *     lives at the wrapper's call site, not at the `invoke` call, and following
- *     it needs real type-checker-backed dataflow.
- *   - Names built at runtime: template substitution (`proxmox_${action}_qemu_vm`
- *     in `useProxmoxManager`), concatenation, `Record` lookups by variable key.
+ *   - Local/named imported forwarding wrappers are followed at finite callers.
+ *     Their open string-parameter declarations remain in the reviewed inventory;
+ *     this is not proof that an arbitrary future caller supplies a valid command.
+ *   - Finite literal unions, templates, concatenation, conditional local constants
+ *     and object lookups are evaluated without executing application code.
  *   - Constants re-exported through `export { default }` or namespace re-exports
  *     (`import * as m` then `m.CONST`).
- *   - Scope shadowing is ignored: constants are collected per file, module-level
- *     bindings first, then any nested `const`. A file that binds the same name to
- *     two different strings in different scopes may resolve to the module-level
- *     one. No such case exists today.
+ *   - Arbitrary object-method dispatch and injectable runtime callbacks retain
+ *     explicit review rows; the scanner does not guess an object's identity.
  *   - `invoke` reached through an object that is not a plain identifier, e.g.
  *     `(window as any).__TAURI_INTERNALS__?.invoke(...)` in `ErrorBoundary`,
  *     which calls Tauri built-in plugin commands that no handler list owns.
  *
- * Unresolvable call sites are collected separately and never fail the suite;
- * they are the honest record of what is still invisible.
+ * Unresolvable declarations are snapshot-guarded below, not silently ignored.
+ * Registration is a source-level union, not proof of argument shape, live UI
+ * reachability or state availability under every Cargo feature combination.
  */
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
@@ -144,7 +146,7 @@ function parseFile(file: string): ts.SourceFile | null {
           file,
           text,
           ts.ScriptTarget.Latest,
-          false,
+          true,
           file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
         );
   sourceFileCache.set(file, sourceFile);
@@ -410,7 +412,7 @@ function resolveConstant(
   allowLocal: boolean,
   seen: Set<string>,
 ): string | null {
-  const key = `${file} ${name}`;
+  const key = `${file}\u0000${name}`;
   if (seen.has(key)) return null;
   seen.add(key);
 
@@ -448,6 +450,239 @@ function resolveConstant(
 interface ArgumentResolution {
   resolved: Array<{ name: string; via: string }>;
   unresolved: string[];
+}
+
+type BoundExpression = { file: string; value: ts.Expression };
+type ArgumentBindings = Map<string, BoundExpression>;
+
+/** Lexical lookup: an identically named const in another callback is not evidence. */
+function lexicalValue(
+  node: ts.Node,
+  name: string,
+): ts.Expression | ts.TypeNode | undefined {
+  for (
+    let scope: ts.Node | undefined = node.parent;
+    scope;
+    scope = scope.parent
+  ) {
+    if (ts.isFunctionLike(scope)) {
+      const parameter = scope.parameters.find(
+        (entry) => ts.isIdentifier(entry.name) && entry.name.text === name,
+      );
+      if (parameter) return parameter.type ?? parameter.initializer;
+    }
+    if (ts.isBlock(scope) || ts.isSourceFile(scope)) {
+      for (const statement of scope.statements) {
+        if (!ts.isVariableStatement(statement)) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          if (
+            ts.isIdentifier(declaration.name) &&
+            declaration.name.text === name
+          )
+            return declaration.initializer;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Bounded finite expression evaluation; it never executes application code. */
+function finiteValues(
+  file: string,
+  expression: ts.Node,
+  bindings: ArgumentBindings = new Map(),
+  seen = new Set<ts.Node>(),
+): string[] | null {
+  if (seen.has(expression) || seen.size > 64) return null;
+  const nextSeen = new Set(seen).add(expression);
+  const value = ts.isExpression(expression) ? unwrap(expression) : expression;
+  const resolve = (child: ts.Node) =>
+    finiteValues(file, child, bindings, nextSeen);
+  const combine = (
+    left: string[] | null,
+    right: string[] | null,
+  ): string[] | null =>
+    left && right && left.length * right.length <= 256
+      ? left.flatMap((a) => right.map((b) => a + b))
+      : null;
+  if (ts.isStringLiteralLike(value)) return [value.text];
+  if (ts.isLiteralTypeNode(value)) return resolve(value.literal);
+  if (ts.isUnionTypeNode(value)) {
+    const parts = value.types.map(resolve);
+    return parts.every((part) => part !== null)
+      ? [...new Set(parts.flat() as string[])]
+      : null;
+  }
+  if (ts.isConditionalExpression(value)) {
+    const left = resolve(value.whenTrue),
+      right = resolve(value.whenFalse);
+    return left && right ? [...new Set([...left, ...right])] : null;
+  }
+  if (ts.isIdentifier(value)) {
+    const bound = bindings.get(value.text);
+    if (bound)
+      return finiteValues(bound.file, bound.value, new Map(), nextSeen);
+    const local = lexicalValue(value, value.text);
+    if (local) return resolve(local);
+    const constant = resolveConstant(file, value.text, false, new Set());
+    return constant === null ? null : [constant];
+  }
+  if (ts.isTemplateExpression(value)) {
+    let result: string[] | null = [value.head.text];
+    for (const span of value.templateSpans)
+      result = combine(combine(result, resolve(span.expression)), [
+        span.literal.text,
+      ]);
+    return result;
+  }
+  if (
+    ts.isBinaryExpression(value) &&
+    value.operatorToken.kind === ts.SyntaxKind.PlusToken
+  )
+    return combine(resolve(value.left), resolve(value.right));
+  if (
+    ts.isPropertyAccessExpression(value) ||
+    ts.isElementAccessExpression(value)
+  ) {
+    const base = value.expression;
+    const keys = ts.isPropertyAccessExpression(value)
+      ? [value.name.text]
+      : value.argumentExpression && resolve(value.argumentExpression);
+    if (ts.isIdentifier(base) && keys) {
+      const bound = bindings.get(base.text);
+      const objectValue = bound?.value ?? lexicalValue(base, base.text);
+      const object =
+        objectValue && ts.isExpression(objectValue)
+          ? unwrap(objectValue)
+          : undefined;
+      if (object && ts.isObjectLiteralExpression(object)) {
+        const parts = keys.map((key) => {
+          const property = object.properties.find(
+            (entry) =>
+              ts.isPropertyAssignment(entry) && propertyKey(entry.name) === key,
+          );
+          return property && ts.isPropertyAssignment(property)
+            ? finiteValues(
+                bound?.file ?? file,
+                property.initializer,
+                new Map(),
+                nextSeen,
+              )
+            : null;
+        });
+        return parts.every((part) => part !== null)
+          ? (parts.flat() as string[])
+          : null;
+      }
+    }
+  }
+  return null;
+}
+
+interface Wrapper {
+  fn: ts.FunctionLikeDeclaration;
+  expression: ts.Expression;
+}
+function referencesParameter(
+  expression: ts.Node,
+  parameters: ts.NodeArray<ts.ParameterDeclaration>,
+): boolean {
+  const names = new Set(
+    parameters.flatMap((parameter) =>
+      ts.isIdentifier(parameter.name) ? [parameter.name.text] : [],
+    ),
+  );
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && names.has(node.text)) found = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(expression);
+  return found;
+}
+const wrapperCache = new Map<string, Map<string, Wrapper[]>>();
+function localWrappers(file: string): Map<string, Wrapper[]> {
+  const cached = wrapperCache.get(file);
+  if (cached) return cached;
+  const wrappers = new Map<string, Wrapper[]>();
+  wrapperCache.set(file, wrappers);
+  const source = parseFile(file);
+  if (!source) return wrappers;
+  const facts = collectModuleFacts(file);
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      isInvokeCallee(node.expression, facts) &&
+      node.arguments[0]
+    ) {
+      // Walk through argumentless callbacks (Promise.all/settle/etc.) to the
+      // parameter owner, but never infer unrelated property-call identities.
+      for (
+        let ancestor: ts.Node | undefined = node.parent;
+        ancestor;
+        ancestor = ancestor.parent
+      ) {
+        if (!ts.isFunctionLike(ancestor) || !ancestor.parameters.length)
+          continue;
+        let named: ts.Node = ancestor;
+        while (
+          named.parent &&
+          (ts.isCallExpression(named.parent) ||
+            ts.isParenthesizedExpression(named.parent))
+        )
+          named = named.parent;
+        const owner = ts.isVariableDeclaration(named.parent)
+          ? named.parent
+          : ancestor;
+        const name =
+          "name" in owner &&
+          owner.name &&
+          ts.isIdentifier(owner.name as ts.Node)
+            ? (owner.name as ts.Identifier).text
+            : null;
+        if (
+          name &&
+          referencesParameter(node.arguments[0], ancestor.parameters)
+        ) {
+          const list = wrappers.get(name) ?? [];
+          list.push({
+            fn: ancestor as ts.FunctionLikeDeclaration,
+            expression: node.arguments[0],
+          });
+          wrappers.set(name, list);
+        }
+        break;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return wrappers;
+}
+
+function resolveWrapper(
+  file: string,
+  name: string,
+  seen = new Set<string>(),
+): { file: string; entries: Wrapper[] } | null {
+  const key = `${file}:${name}`;
+  if (seen.has(key)) return null;
+  seen.add(key);
+  const local = localWrappers(file).get(name);
+  if (local) return { file, entries: local };
+  const facts = collectModuleFacts(file);
+  const binding = facts.imports.get(name);
+  if (binding) {
+    const target = resolveModule(file, binding.specifier);
+    if (target) return resolveWrapper(target, binding.imported, seen);
+  }
+  for (const specifier of facts.starExports) {
+    const target = resolveModule(file, specifier);
+    const resolved = target && resolveWrapper(target, name, seen);
+    if (resolved) return resolved;
+  }
+  return null;
 }
 
 /**
@@ -495,7 +730,33 @@ function resolveCommandArgument(
       ? `${value.expression.text}.${value.name.text}`
       : null;
   if (reference) {
-    const name = resolveConstant(file, reference, true, new Set());
+    const head = ts.isIdentifier(value)
+      ? value
+      : ts.isPropertyAccessExpression(value)
+        ? value.expression
+        : null;
+    const hasLexicalBinding =
+      head &&
+      ts.isIdentifier(head) &&
+      lexicalValue(head, head.text) !== undefined;
+    // A parameter/local declaration shadows a module/import constant even
+    // when its value cannot be resolved. Never fall back to that other value.
+    const finite = hasLexicalBinding ? finiteValues(file, value) : null;
+    if (hasLexicalBinding) {
+      return finite
+        ? {
+            resolved: finite.map((name) => ({
+              name,
+              via:
+                finite.length === 1
+                  ? `constant ${reference}${suffix}`
+                  : `finite ${reference}${suffix}`,
+            })),
+            unresolved: [],
+          }
+        : { resolved: [], unresolved: [value.getText(sourceFile)] };
+    }
+    const name = resolveConstant(file, reference, false, new Set());
     if (name !== null) {
       return {
         resolved: [{ name, via: `constant ${reference}${suffix}` }],
@@ -503,6 +764,16 @@ function resolveCommandArgument(
       };
     }
   }
+
+  const finite = finiteValues(file, value);
+  if (finite)
+    return {
+      resolved: finite.map((name) => ({
+        name,
+        via: `finite ${value.getText(sourceFile)}`,
+      })),
+      unresolved: [],
+    };
 
   return {
     resolved: [],
@@ -535,7 +806,7 @@ function collectInvokes(roots: string[]): {
     // full TypeScript AST for the large majority of frontend files that cannot
     // contribute a command registration.
     const text = readSource(file);
-    if (text === null || !text.includes("invoke")) continue;
+    if (text === null) continue;
 
     const sourceFile = parseFile(file);
     if (!sourceFile) continue;
@@ -562,6 +833,39 @@ function collectInvokes(roots: string[]): {
             unresolved.push({ expression, file: relative, line });
           }
         }
+      } else if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression)
+      ) {
+        const wrapper = resolveWrapper(file, node.expression.text);
+        if (wrapper) {
+          for (const entry of wrapper.entries) {
+            const bindings: ArgumentBindings = new Map();
+            entry.fn.parameters.forEach((parameter, index) => {
+              if (ts.isIdentifier(parameter.name) && node.arguments[index])
+                bindings.set(parameter.name.text, {
+                  file,
+                  value: node.arguments[index],
+                });
+            });
+            const values = finiteValues(
+              wrapper.file,
+              entry.expression,
+              bindings,
+            );
+            if (values)
+              for (const name of values)
+                calls.push({
+                  name,
+                  file: relative,
+                  line:
+                    sourceFile.getLineAndCharacterOfPosition(
+                      node.getStart(sourceFile),
+                    ).line + 1,
+                  via: `wrapper ${node.expression.text}`,
+                });
+          }
+        }
       }
       ts.forEachChild(node, visit);
     };
@@ -576,13 +880,7 @@ function collectRegisteredCommands(): {
   registered: Map<string, string[]>;
   handlerFiles: string[];
 } {
-  const rustFiles = [
-    ...walkFiles("src-tauri/crates", (file) => /handler\.rs$/.test(file)),
-    ...walkFiles(
-      "src-tauri/src",
-      (file) => path.basename(file) === "invoke_handler.rs",
-    ),
-  ];
+  const rustFiles = reachableNativeHandlers(PROJECT_ROOT);
 
   const registered = new Map<string, string[]>();
   const handlerFiles: string[] = [];
@@ -593,10 +891,10 @@ function collectRegisteredCommands(): {
       .join("/");
     handlerFiles.push(relative);
     const text = fs.readFileSync(file, "utf8");
-    for (const match of text.matchAll(/"([a-zA-Z0-9_:\-|]+)"/g)) {
-      const owners = registered.get(match[1]);
+    for (const name of extractNativeCommandNames(text)) {
+      const owners = registered.get(name);
       if (owners) owners.push(relative);
-      else registered.set(match[1], [relative]);
+      else registered.set(name, [relative]);
     }
   }
   return { registered, handlerFiles };
@@ -608,7 +906,40 @@ describe("frontend invoke registrations", () => {
   // headroom over vitest's 5s default (slower CI runners were timing out).
   it("uses only Rust commands registered by the aggregate handlers", () => {
     const { registered, handlerFiles } = collectRegisteredCommands();
-    const { calls } = collectInvokes(FRONTEND_ROOTS);
+    const { calls, unresolved } = collectInvokes(FRONTEND_ROOTS);
+    if (process.env.IPC_INVENTORY) {
+      const referenced = new Set(calls.map((call) => call.name));
+      const groups = handlerFiles.map((handler) => {
+        const commands = [...registered]
+          .filter(([, owners]) => owners.includes(handler))
+          .map(([name]) => name)
+          .sort();
+        const withoutReference = commands.filter(
+          (name) => !referenced.has(name),
+        );
+        return {
+          handler,
+          registered: commands.length,
+          withoutReference: withoutReference.length,
+          ...(process.env.IPC_INVENTORY === "full"
+            ? { commands, nativeOnlyReview: withoutReference }
+            : {}),
+        };
+      });
+      console.info(
+        JSON.stringify(
+          {
+            calls: calls.length,
+            names: referenced.size,
+            nativeNames: registered.size,
+            groups,
+            unresolved,
+          },
+          null,
+          2,
+        ),
+      );
+    }
 
     const missing = calls
       .filter((call) => !registered.has(call.name))
@@ -650,4 +981,64 @@ describe("frontend invoke registrations", () => {
     expect(unresolved.map((entry) => entry.expression)).toEqual(["command"]);
     expect(calls.map((call) => call.name)).not.toContain("command");
   });
+
+  it("checks finite templates, unions, lexical constants, maps and imported wrappers", () => {
+    const { calls, unresolved } = collectInvokes([
+      "tests/ipc/fixtures/finiteInvokes",
+    ]);
+    expect(new Set(calls.map((call) => call.name))).toEqual(
+      new Set([
+        "fixture_first",
+        "fixture_second",
+        "fixture_start",
+        "fixture_stop",
+        "fixture_map_start",
+        "fixture_map_stop",
+        "fixture_imported_wrapper",
+        "fixture_other_scope",
+        "fixture_module_command",
+        "fixture_shadowed_missing",
+      ]),
+    );
+    expect(unresolved.map((call) => call.expression)).toEqual([
+      "CMD",
+      "command",
+      "command",
+    ]);
+  });
+
+  it("requires review when a new open-ended invoke boundary appears", () => {
+    const { unresolved } = collectInvokes(FRONTEND_ROOTS);
+    const actual = [
+      ...new Set(
+        unresolved.map((entry) => `${entry.file}: ${entry.expression}`),
+      ),
+    ].sort();
+    // These are forwarding declarations, not ignored command names. Finite
+    // local/imported callers are checked above; injectable object runtimes and
+    // open string APIs still require behavioral contract tests.
+    const expected = [
+      "src/hooks/idrac/useIdracManager.ts: cmd",
+      "src/hooks/protocol/useDocker.ts: cmd",
+      "src/hooks/proxmox/useProxmox.ts: cmd",
+      "src/hooks/session/useSessionDetach.ts: command",
+      "src/hooks/sync/useBackupStatus.ts: command",
+      "src/hooks/sync/useWindowsBackup.ts: cmd",
+      "src/hooks/updater/useUpdater.ts: command",
+      "src/hooks/windows/useWinmgmtSession.ts: command",
+      "src/utils/auth/trustStore.ts: command",
+      "src/utils/rdp/rdpBinaryIpcPreflight.ts: command",
+      "src/utils/rdp/rdpFrameDeliveryChannel.ts: command",
+      "src/utils/security/managementInvoke.ts: command",
+      "src/utils/services/whatsappService.ts: cmd",
+      "src/utils/session/bmcRuntimeAdapters.ts: commands.dashboard",
+      "src/utils/session/bmcRuntimeAdapters.ts: commands.storageControllers",
+      "src/utils/session/bmcRuntimeAdapters.ts: commands.virtualDisks",
+      "src/utils/session/bmcRuntimeAdapters.ts: commands.physicalDisks",
+      "src/utils/session/bmcRuntimeAdapters.ts: commands.firmwareInventory",
+      "src/utils/session/cloudRuntimeAdapters.ts: command",
+      "src/utils/session/cloudRuntimeInventoryAdapters.ts: command",
+    ].sort();
+    expect(actual).toEqual(expected);
+  }, 30000);
 });

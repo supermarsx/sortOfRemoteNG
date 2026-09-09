@@ -69,11 +69,7 @@ export type ProxmoxTab =
   | "console";
 
 export type ConnectionState =
-  | "disconnected"
-  | "connecting"
-  | "tfa"
-  | "connected"
-  | "error";
+  "disconnected" | "connecting" | "tfa" | "connected" | "error";
 
 /** Pending PVE 7+ second-factor challenge. */
 export interface ProxmoxTfaChallenge {
@@ -799,7 +795,18 @@ export function useProxmoxManager(
   // ── VM / Container Actions ────────────────────────────────────
 
   const vmAction = useCallback(
-    async (node: string, vmid: number, action: string) => {
+    async (
+      node: string,
+      vmid: number,
+      action:
+        | "start"
+        | "shutdown"
+        | "stop"
+        | "reboot"
+        | "suspend"
+        | "resume"
+        | "delete",
+    ) => {
       setLoading(true);
       setDataError(null);
       try {
@@ -820,7 +827,11 @@ export function useProxmoxManager(
   );
 
   const lxcAction = useCallback(
-    async (node: string, vmid: number, action: string) => {
+    async (
+      node: string,
+      vmid: number,
+      action: "start" | "shutdown" | "stop" | "reboot" | "delete",
+    ) => {
       setLoading(true);
       setDataError(null);
       try {
