@@ -3,7 +3,7 @@
 //! ## Migration flow
 //!
 //! 1. Read existing `storage.json` (may be plaintext or password-encrypted)
-//! 2. Generate a 256-bit DEK and store it in the OS vault
+//! 2. Load the existing 256-bit DEK from the OS vault (never create here)
 //! 3. Re-encrypt the storage data with the DEK
 //! 4. Write the new encrypted storage file
 //! 5. Rename the old file as `.bak`
@@ -154,8 +154,8 @@ pub async fn migrate(
         }
     };
 
-    // 3. Ensure a DEK exists in the OS vault
-    let dek = keychain::ensure_dek().await?;
+    // Key creation belongs to evidence-aware profile setup, never a legacy write.
+    let dek = load_existing_storage_dek().await?;
 
     // 4. Encrypt the plaintext JSON with the DEK
     let dek_array: [u8; 32] = dek
@@ -234,7 +234,7 @@ pub async fn save_vault_storage(storage_path: &Path, json_data: &str) -> VaultRe
     serde_json::from_str::<serde_json::Value>(json_data)
         .map_err(|e| VaultError::serde(format!("Vault storage JSON: {e}")))?;
 
-    let dek = keychain::ensure_dek().await?;
+    let dek = load_existing_storage_dek().await?;
     let dek_array: [u8; 32] = dek
         .try_into()
         .map_err(|_| VaultError::internal("DEK is not 32 bytes"))?;
@@ -248,6 +248,54 @@ pub async fn save_vault_storage(storage_path: &Path, json_data: &str) -> VaultRe
 }
 
 // ── helpers ─────────────────────────────────────────────────────────
+
+fn require_existing_storage_dek(result: VaultResult<Vec<u8>>) -> VaultResult<Vec<u8>> {
+    result.map_err(|_| VaultError::access_denied("The existing master-key receipt could not be loaded. Use safe profile setup or verified master-key recovery; legacy storage never creates a replacement key."))
+}
+
+async fn load_existing_storage_dek() -> VaultResult<Vec<u8>> {
+    require_existing_storage_dek(keychain::read_dek().await)
+}
+
+#[cfg(test)]
+mod existing_dek_tests {
+    use super::*;
+
+    #[test]
+    fn missing_or_failed_receipt_never_creates_replacement() {
+        let original = vec![7u8; 32];
+        assert_eq!(
+            require_existing_storage_dek(Ok(original.clone())).unwrap(),
+            original
+        );
+        for error in [
+            VaultError::access_denied("fixture denied"),
+            VaultError::internal("fixture unavailable"),
+        ] {
+            let error = require_existing_storage_dek(Err(error))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("verified master-key recovery"));
+            assert!(!error.contains("fixture"));
+        }
+    }
+
+    #[test]
+    fn legacy_ipc_writes_only_load_existing_dek() {
+        let source = include_str!("migration.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!source.contains("keychain::ensure_dek("));
+        assert!(!source.contains("keychain::generate_and_store_dek("));
+        assert_eq!(
+            source
+                .matches("let dek = load_existing_storage_dek().await?;")
+                .count(),
+            2
+        );
+    }
+}
 
 fn vault_meta_path(storage_path: &Path) -> PathBuf {
     storage_path.with_extension("vault-meta")

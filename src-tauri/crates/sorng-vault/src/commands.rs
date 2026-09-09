@@ -7,11 +7,13 @@ use tauri::{AppHandle, Manager};
 
 const RESERVED_INTERNAL_SERVICE_PREFIX: &str = "sortofremoteng.internal.";
 
-fn reject_reserved_internal_service(service: &str) -> Result<(), String> {
+fn reject_reserved_target(service: &str, account: &str) -> Result<(), String> {
     if service
         .trim()
         .to_ascii_lowercase()
         .starts_with(RESERVED_INTERNAL_SERVICE_PREFIX)
+        || (service.trim().eq_ignore_ascii_case(SERVICE_NAME)
+            && account.trim().eq_ignore_ascii_case(MASTER_DEK_ACCOUNT))
     {
         return Err(
             "reserved application secrets are not accessible through generic vault IPC".to_string(),
@@ -60,7 +62,7 @@ pub async fn vault_store_secret(
     account: String,
     secret: String,
 ) -> Result<(), String> {
-    reject_reserved_internal_service(&service)?;
+    reject_reserved_target(&service, &account)?;
     keychain::store(&service, &account, &secret)
         .await
         .map_err(|e| e.to_string())
@@ -69,7 +71,7 @@ pub async fn vault_store_secret(
 /// Read a secret from the OS vault.
 #[tauri::command]
 pub async fn vault_read_secret(service: String, account: String) -> Result<String, String> {
-    reject_reserved_internal_service(&service)?;
+    reject_reserved_target(&service, &account)?;
     keychain::read(&service, &account)
         .await
         .map_err(|e| e.to_string())
@@ -78,7 +80,7 @@ pub async fn vault_read_secret(service: String, account: String) -> Result<Strin
 /// Delete a secret from the OS vault.
 #[tauri::command]
 pub async fn vault_delete_secret(service: String, account: String) -> Result<(), String> {
-    reject_reserved_internal_service(&service)?;
+    reject_reserved_target(&service, &account)?;
     keychain::delete(&service, &account)
         .await
         .map_err(|e| e.to_string())
@@ -88,13 +90,11 @@ pub async fn vault_delete_secret(service: String, account: String) -> Result<(),
 //  DEK management
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Ensure a master DEK exists in the OS vault (generates one if missing).
+/// Compatibility-only entry point. Master-key creation requires the profile
+/// evidence checks owned by the encryption setup/recovery commands.
 #[tauri::command]
 pub async fn vault_ensure_dek() -> Result<(), String> {
-    keychain::ensure_dek()
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    Err("Direct master-key creation is disabled; use application encryption setup or verified master-key recovery.".to_string())
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -141,7 +141,7 @@ pub async fn vault_biometric_store(
     secret: String,
     reason: String,
 ) -> Result<(), String> {
-    reject_reserved_internal_service(&service)?;
+    reject_reserved_target(&service, &account)?;
     let verified = super::biometrics::verify(&reason)
         .await
         .map_err(|e| e.to_string())?;
@@ -161,7 +161,7 @@ pub async fn vault_biometric_read(
     account: String,
     reason: String,
 ) -> Result<String, String> {
-    reject_reserved_internal_service(&service)?;
+    reject_reserved_target(&service, &account)?;
     let verified = super::biometrics::verify(&reason)
         .await
         .map_err(|e| e.to_string())?;
@@ -209,4 +209,68 @@ pub async fn vault_save_storage(app: AppHandle, json_data: String) -> Result<(),
     migration::save_vault_storage(&managed_storage_path(&app)?, &json_data)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod reserved_target_tests {
+    use super::*;
+
+    #[test]
+    fn master_receipt_and_internal_slots_are_reserved_without_backend_access() {
+        for (service, account) in [
+            (SERVICE_NAME.to_string(), MASTER_DEK_ACCOUNT.to_string()),
+            (
+                format!(" {} ", SERVICE_NAME.to_uppercase()),
+                format!(" {} ", MASTER_DEK_ACCOUNT.to_uppercase()),
+            ),
+            (
+                "sortofremoteng.internal.database-key".to_string(),
+                "slot".to_string(),
+            ),
+        ] {
+            assert!(reject_reserved_target(&service, &account).is_err());
+        }
+        assert!(reject_reserved_target("com.integration.example", "api-token").is_ok());
+        assert!(reject_reserved_target(SERVICE_NAME, "integration-account").is_ok());
+        assert!(reject_reserved_target("other-service", MASTER_DEK_ACCOUNT).is_ok());
+    }
+
+    #[tokio::test]
+    async fn ensure_compatibility_command_never_creates_a_key() {
+        // This command is now pure refusal and must not consult an OS vault.
+        assert!(vault_ensure_dek()
+            .await
+            .unwrap_err()
+            .contains("verified master-key recovery"));
+    }
+
+    #[test]
+    fn all_generic_crud_and_biometric_entrypoints_guard_before_backend_or_prompt() {
+        // Source contract complements the pure guard fixture without invoking
+        // real credentials or OS biometric prompts, even if a guard regresses.
+        let source = include_str!("commands.rs");
+        for name in [
+            "vault_store_secret",
+            "vault_read_secret",
+            "vault_delete_secret",
+            "vault_biometric_store",
+            "vault_biometric_read",
+        ] {
+            let body = source
+                .split(&format!("pub async fn {name}("))
+                .nth(1)
+                .unwrap()
+                .split("\n}")
+                .next()
+                .unwrap();
+            let guard = body
+                .find("reject_reserved_target(&service, &account)?")
+                .unwrap();
+            let backend = body.find("keychain::").unwrap();
+            assert!(guard < backend, "{name}");
+            if let Some(prompt) = body.find("biometrics::verify") {
+                assert!(guard < prompt, "{name}");
+            }
+        }
+    }
 }
