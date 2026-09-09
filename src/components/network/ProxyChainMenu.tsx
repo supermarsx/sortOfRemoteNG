@@ -1,7 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
-  RefreshCw,
   Wifi,
   Route,
   PlugZap,
@@ -29,6 +28,7 @@ import LayerProfilesTab from "./proxyChainMenu/LayerProfilesTab";
 import TunnelsTab from "./proxyChainMenu/TunnelsTab";
 import VpnConnectionsTab from "./proxyChainMenu/VpnConnectionsTab";
 import AssociationsTab from "./proxyChainMenu/AssociationsTab";
+import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 
 const ID_PREFIX = "proxy-chain-menu";
 
@@ -37,8 +37,10 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
-  const mgr = useProxyChainManager(isOpen, onClose);
-  const tunnelMgr = useTunnelChainManager(isOpen);
+  const { isActive } = useSessionRenderActivity();
+  const observationActive = isOpen && isActive;
+  const mgr = useProxyChainManager(observationActive, onClose);
+  const tunnelMgr = useTunnelChainManager(observationActive);
 
   if (!isOpen) return null;
 
@@ -85,8 +87,6 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
     },
   ] satisfies readonly SidebarTabDescriptor<ProxyTab>[];
 
-  const refreshLabel = t("proxyChainMenu.common.refresh", "Refresh");
-
   const panelProps = (id: ProxyTab) => ({
     role: "tabpanel",
     id: `${ID_PREFIX}-panel-${id}`,
@@ -95,17 +95,6 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
-      <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center justify-end flex-shrink-0">
-        <button
-          onClick={mgr.reloadChains}
-          className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
-          data-tooltip={refreshLabel}
-          aria-label={refreshLabel}
-        >
-          <RefreshCw size={14} />
-        </button>
-      </div>
-
       <div className="flex flex-1 min-h-0">
         <SidebarTabs
           tabs={tabs}
@@ -129,7 +118,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
           {mgr.activeTab === "unifiedChains" && (
             <div {...panelProps("unifiedChains")}>
               <UnifiedChainsTab
-                isOpen={isOpen}
+                isOpen={observationActive}
                 tunnelMgr={tunnelMgr}
                 mgr={mgr}
               />
@@ -137,7 +126,10 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
           )}
           {mgr.activeTab === "tunnelChains" && (
             <div {...panelProps("tunnelChains")}>
-              <TunnelChainTab isOpen={isOpen} tunnelMgr={tunnelMgr} />
+              <TunnelChainTab
+                isOpen={observationActive}
+                tunnelMgr={tunnelMgr}
+              />
             </div>
           )}
           {mgr.activeTab === "layerProfiles" && (
@@ -152,7 +144,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
           )}
           {mgr.activeTab === "vpnConnections" && (
             <div {...panelProps("vpnConnections")}>
-              <VpnConnectionsTab isOpen={isOpen} mgr={mgr} />
+              <VpnConnectionsTab isOpen={observationActive} mgr={mgr} />
             </div>
           )}
           {mgr.activeTab === "associations" && (

@@ -148,6 +148,8 @@ vi.mock(
 );
 
 import { ProxyChainMenu } from "../../src/components/network/ProxyChainMenu";
+import { SessionRenderActivityContext } from "../../src/contexts/SessionRenderActivityContext";
+import { invoke } from "@tauri-apps/api/core";
 
 // ── i18next ───────────────────────────────────────────────────────
 //
@@ -264,6 +266,34 @@ describe("ProxyChainMenu — tab wiring", () => {
     const tabs = screen.getAllByRole("tab");
     expect(tabs).toHaveLength(8);
     expect(tabs.map((tab) => tab.textContent)).toEqual(TAB_LABELS);
+    expect(
+      screen.queryByRole("button", { name: "Refresh" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not observe an inactive application tab even when ToolPanel keeps isOpen true", async () => {
+    const requests = () =>
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(
+          ([command]) =>
+            command === "list_connection_chains" ||
+            command === "list_proxy_chains",
+        ).length;
+    vi.mocked(invoke).mockClear();
+    const { rerender } = render(
+      <SessionRenderActivityContext.Provider value={{ isActive: false }}>
+        <ProxyChainMenu isOpen onClose={() => {}} />
+      </SessionRenderActivityContext.Provider>,
+    );
+    await act(async () => {});
+    expect(requests()).toBe(0);
+    rerender(
+      <SessionRenderActivityContext.Provider value={{ isActive: true }}>
+        <ProxyChainMenu isOpen onClose={() => {}} />
+      </SessionRenderActivityContext.Provider>,
+    );
+    await waitFor(() => expect(requests()).toBeGreaterThan(0));
   });
 
   it("is a vertical tablist with exactly one selected tab", async () => {

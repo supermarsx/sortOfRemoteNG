@@ -1,4 +1,9 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useVisibleSessionRefresh,
+  sameSessionSnapshot,
+  type SessionRefreshLease,
+} from "../session/useVisibleSessionRefresh";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
@@ -85,51 +90,92 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
 
   // ─── Data loading ───────────────────────────────────────────────
 
-  const reloadChains = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [chains, proxies] = await Promise.all([
-        proxyManager.listConnectionChains(),
-        invoke<ProxyChainSummary[]>("list_proxy_chains"),
-      ]);
-      setConnectionChains(
-        chains.map((chain: any) => ({
+  const loaded = useRef(false);
+  const readLocal = useCallback(() => {
+    // Services can mutate existing records in place; retain owned snapshots,
+    // otherwise reference equality can hide a genuine status/default change.
+    const tunnels = structuredClone(sshTunnelService.getTunnels());
+    const profiles = structuredClone(proxyCollectionManager.getProfiles());
+    const chains = structuredClone(proxyCollectionManager.getChains());
+    const plainTunnels = (items: SSHTunnelConfig[]) =>
+      items.map((item) => ({
+        ...item,
+        createdAt: item.createdAt?.toISOString(),
+      }));
+    setSshTunnels((previous) =>
+      sameSessionSnapshot(plainTunnels(previous), plainTunnels(tunnels))
+        ? previous
+        : tunnels,
+    );
+    setSavedProfiles((previous) =>
+      sameSessionSnapshot(previous, profiles) ? previous : profiles,
+    );
+    setSavedChains((previous) =>
+      sameSessionSnapshot(previous, chains) ? previous : chains,
+    );
+  }, []);
+  const loadChains = useCallback(
+    async (lease: SessionRefreshLease) => {
+      if (!loaded.current) setIsLoading(true);
+      readLocal();
+      try {
+        const [chains, proxies] = await Promise.all([
+          proxyManager.listConnectionChains(),
+          invoke<ProxyChainSummary[]>("list_proxy_chains"),
+        ]);
+        if (!lease.isCurrent()) return;
+        const nextConnections = chains.map((chain) => ({
           id: chain.id,
           name: chain.name,
           status: chain.status,
           layers: chain.layers ?? [],
-        })),
-      );
-      setProxyChains(
-        (proxies ?? []).map((chain) => ({
+        }));
+        const nextProxies = (proxies ?? []).map((chain) => ({
           id: chain.id,
           name: chain.name,
           status: chain.status,
           layers: chain.layers ?? [],
-        })),
-      );
-      setSshTunnels(sshTunnelService.getTunnels());
-      setSavedProfiles(proxyCollectionManager.getProfiles());
-      setSavedChains(proxyCollectionManager.getChains());
-    } catch (error) {
-      console.error("Failed to load proxy/vpn chains:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [proxyManager]);
+        }));
+        setConnectionChains((previous) =>
+          sameSessionSnapshot(previous, nextConnections)
+            ? previous
+            : nextConnections,
+        );
+        setProxyChains((previous) =>
+          sameSessionSnapshot(previous, nextProxies) ? previous : nextProxies,
+        );
+      } catch (error) {
+        if (lease.isCurrent())
+          console.error("Failed to load proxy/vpn chains:", error);
+      } finally {
+        if (lease.isCurrent()) {
+          loaded.current = true;
+          setIsLoading(false);
+        }
+      }
+    },
+    [proxyManager, readLocal],
+  );
+  const { refresh: reloadChains } = useVisibleSessionRefresh({
+    enabled: isOpen,
+    load: loadChains,
+    intervalMs: 15_000,
+  });
 
   // ─── Effects ────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (isOpen) reloadChains();
-  }, [isOpen, reloadChains]);
-
-  useEffect(() => {
-    const unsubscribe = sshTunnelService.subscribe(() => {
-      setSshTunnels(sshTunnelService.getTunnels());
-    });
-    return unsubscribe;
-  }, []);
+    if (!isOpen) return;
+    const update = () => {
+      if (!document.hidden) readLocal();
+    };
+    const unsubscribeTunnel = sshTunnelService.subscribe(update);
+    const unsubscribeCollection = proxyCollectionManager.subscribe(update);
+    return () => {
+      unsubscribeTunnel();
+      unsubscribeCollection();
+    };
+  }, [isOpen, readLocal]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -282,7 +328,7 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
       }
       setShowProfileEditor(false);
       setEditingProfile(null);
-      setSavedProfiles(proxyCollectionManager.getProfiles());
+      setSavedProfiles(structuredClone(proxyCollectionManager.getProfiles()));
     } catch (error) {
       console.error("Failed to save proxy profile:", error);
     }
@@ -292,7 +338,7 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
     if (confirm("Are you sure you want to delete this proxy profile?")) {
       try {
         await proxyCollectionManager.deleteProfile(profileId);
-        setSavedProfiles(proxyCollectionManager.getProfiles());
+        setSavedProfiles(structuredClone(proxyCollectionManager.getProfiles()));
       } catch (error) {
         alert(
           error instanceof Error ? error.message : "Failed to delete profile",
@@ -304,7 +350,7 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
   const handleDuplicateProfile = async (profileId: string) => {
     try {
       await proxyCollectionManager.duplicateProfile(profileId);
-      setSavedProfiles(proxyCollectionManager.getProfiles());
+      setSavedProfiles(structuredClone(proxyCollectionManager.getProfiles()));
     } catch (error) {
       console.error("Failed to duplicate profile:", error);
     }
@@ -335,8 +381,10 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
         try {
           const text = await file.text();
           await proxyCollectionManager.importData(text, true);
-          setSavedProfiles(proxyCollectionManager.getProfiles());
-          setSavedChains(proxyCollectionManager.getChains());
+          setSavedProfiles(
+            structuredClone(proxyCollectionManager.getProfiles()),
+          );
+          setSavedChains(structuredClone(proxyCollectionManager.getChains()));
         } catch (error) {
           alert(
             "Failed to import profiles: " +
@@ -383,7 +431,7 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
       }
       setShowChainEditor(false);
       setEditingChain(null);
-      setSavedChains(proxyCollectionManager.getChains());
+      setSavedChains(structuredClone(proxyCollectionManager.getChains()));
     } catch (error) {
       console.error("Failed to save proxy chain:", error);
     }
@@ -393,7 +441,7 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
     if (confirm("Are you sure you want to delete this proxy chain?")) {
       try {
         await proxyCollectionManager.deleteChain(chainId);
-        setSavedChains(proxyCollectionManager.getChains());
+        setSavedChains(structuredClone(proxyCollectionManager.getChains()));
       } catch (error) {
         alert(
           error instanceof Error ? error.message : "Failed to delete chain",
@@ -405,7 +453,7 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
   const handleDuplicateChain = async (chainId: string) => {
     try {
       await proxyCollectionManager.duplicateChain(chainId);
-      setSavedChains(proxyCollectionManager.getChains());
+      setSavedChains(structuredClone(proxyCollectionManager.getChains()));
     } catch (error) {
       console.error("Failed to duplicate chain:", error);
     }

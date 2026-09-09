@@ -1,4 +1,9 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import {
+  useVisibleSessionRefresh,
+  sameSessionSnapshot,
+  type SessionRefreshLease,
+} from "../session/useVisibleSessionRefresh";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -15,11 +20,7 @@ import type {
 export interface ActiveChainStatus {
   backendChainId: string;
   status:
-    | "disconnected"
-    | "connecting"
-    | "connected"
-    | "disconnecting"
-    | "error";
+    "disconnected" | "connecting" | "connected" | "disconnecting" | "error";
   error?: string;
 }
 
@@ -116,67 +117,82 @@ export function useTunnelChainManager(isOpen: boolean) {
   // ── Load data ──────────────────────────────────────────────────
 
   const reload = useCallback(() => {
-    setTunnelChains(proxyCollectionManager.getTunnelChains());
-    setTunnelProfiles(proxyCollectionManager.getTunnelProfiles());
+    const chains = structuredClone(proxyCollectionManager.getTunnelChains());
+    const profiles = structuredClone(
+      proxyCollectionManager.getTunnelProfiles(),
+    );
+    setTunnelChains((previous) =>
+      sameSessionSnapshot(previous, chains) ? previous : chains,
+    );
+    setTunnelProfiles((previous) =>
+      sameSessionSnapshot(previous, profiles) ? previous : profiles,
+    );
   }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    reload();
-
-    const unsubscribe = proxyCollectionManager.subscribe(reload);
-    return () => {
-      unsubscribe();
-    };
-  }, [isOpen, reload]);
 
   // ── Poll backend chain statuses ────────────────────────────────
 
-  const refreshActiveStatuses = useCallback(async () => {
-    try {
-      const chains = await invoke<
-        Array<{
-          id: string;
-          name: string;
-          status: string | { Error: string };
-          error?: string;
-        }>
-      >("list_connection_chains");
+  const loadStatuses = useCallback(
+    async (lease: SessionRefreshLease) => {
+      reload();
+      const savedChains = proxyCollectionManager.getTunnelChains();
+      try {
+        const chains = await invoke<
+          Array<{
+            id: string;
+            name: string;
+            status: string | { Error: string };
+            error?: string;
+          }>
+        >("list_connection_chains");
+        if (!lease.isCurrent()) return;
 
-      const newStatuses = new Map<string, ActiveChainStatus>();
-      for (const chain of chains) {
-        // Match backend chain to frontend chain by name prefix
-        const frontendChain = tunnelChains.find(
-          (tc) => chain.name === `adhoc:${tc.id}` || chain.name === tc.name,
-        );
-        if (frontendChain) {
-          const statusStr =
-            typeof chain.status === "string"
-              ? chain.status.toLowerCase()
-              : "error";
-          const errorStr =
-            typeof chain.status === "object" && "Error" in chain.status
-              ? chain.status.Error
-              : chain.error;
-          newStatuses.set(frontendChain.id, {
-            backendChainId: chain.id,
-            status: statusStr as ActiveChainStatus["status"],
-            error: errorStr,
-          });
+        const newStatuses = new Map<string, ActiveChainStatus>();
+        for (const chain of chains ?? []) {
+          // Match backend chain to frontend chain by name prefix
+          const frontendChain = savedChains.find(
+            (tc) => chain.name === `adhoc:${tc.id}` || chain.name === tc.name,
+          );
+          if (frontendChain) {
+            const statusStr =
+              typeof chain.status === "string"
+                ? chain.status.toLowerCase()
+                : "error";
+            const errorStr =
+              typeof chain.status === "object" && "Error" in chain.status
+                ? chain.status.Error
+                : chain.error;
+            newStatuses.set(frontendChain.id, {
+              backendChainId: chain.id,
+              status: statusStr as ActiveChainStatus["status"],
+              error: errorStr,
+            });
+          }
         }
+        setActiveStatuses((previous) =>
+          sameSessionSnapshot(Array.from(previous), Array.from(newStatuses))
+            ? previous
+            : newStatuses,
+        );
+      } catch {
+        // Backend may not be available
       }
-      setActiveStatuses(newStatuses);
-    } catch {
-      // Backend may not be available
-    }
-  }, [tunnelChains]);
+    },
+    [reload],
+  );
+  const { refresh: refreshActiveStatuses } = useVisibleSessionRefresh({
+    enabled: isOpen,
+    load: loadStatuses,
+    intervalMs: 10_000,
+  });
 
   useEffect(() => {
     if (!isOpen) return;
-    refreshActiveStatuses();
-    const interval = setInterval(refreshActiveStatuses, 5000);
-    return () => clearInterval(interval);
-  }, [isOpen, refreshActiveStatuses]);
+    return proxyCollectionManager.subscribe(() => {
+      if (document.hidden) return;
+      reload();
+      void refreshActiveStatuses();
+    });
+  }, [isOpen, reload, refreshActiveStatuses]);
 
   // ── Filtered lists ─────────────────────────────────────────────
 

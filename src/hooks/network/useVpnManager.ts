@@ -1,4 +1,9 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useVisibleSessionRefresh,
+  sameSessionSnapshot,
+  type SessionRefreshLease,
+} from "../session/useVisibleSessionRefresh";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
 import {
@@ -32,61 +37,87 @@ export function useVpnManager(isOpen: boolean) {
 
   // ── Load all connections ─────────────────────────────────────────
 
-  const loadConnections = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const nextCatalog = await loadVpnProfileCatalog(mgr);
-      setProfileCatalog(nextCatalog);
-      const failedProviders = Object.entries(nextCatalog.providerStatus)
-        .filter(([, status]) => status === "error")
-        .map(([vpnType]) => getVpnProviderLabel(vpnType));
-      if (failedProviders.length > 0) {
-        setError(
-          `Could not load ${failedProviders.join(", ")} profiles. Their saved associations cannot be verified yet.`,
-        );
+  const loaded = useRef(false);
+  const loadCatalog = useCallback(
+    async (lease: SessionRefreshLease) => {
+      if (!loaded.current) setIsLoading(true);
+      try {
+        const nextCatalog = await loadVpnProfileCatalog(mgr);
+        if (!lease.isCurrent()) return;
+        setProfileCatalog((previous) => {
+          // A provider read failure must not erase its last known rows. Its new
+          // error status still prevents connecting with an unverified catalog.
+          const retained =
+            previous?.profiles.filter(
+              (profile) =>
+                nextCatalog.providerStatus[profile.vpnType] === "error",
+            ) ?? [];
+          const next = retained.length
+            ? {
+                ...nextCatalog,
+                profiles: [
+                  ...nextCatalog.profiles.filter(
+                    (profile) =>
+                      nextCatalog.providerStatus[profile.vpnType] !== "error",
+                  ),
+                  ...retained,
+                ],
+              }
+            : nextCatalog;
+          return sameSessionSnapshot(previous, next) ? previous : next;
+        });
+        const failedProviders = Object.entries(nextCatalog.providerStatus)
+          .filter(([, status]) => status === "error")
+          .map(([vpnType]) => getVpnProviderLabel(vpnType));
+        if (failedProviders.length > 0) {
+          setError(
+            `Could not load ${failedProviders.join(", ")} profiles. Their saved associations cannot be verified yet.`,
+          );
+        } else setError(null);
+      } catch (err) {
+        if (lease.isCurrent())
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load VPN connections",
+          );
+      } finally {
+        if (lease.isCurrent()) {
+          loaded.current = true;
+          setIsLoading(false);
+        }
       }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load VPN connections",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [mgr]);
-
-  useEffect(() => {
-    if (isOpen) {
-      loadConnections();
-    }
-  }, [isOpen, loadConnections]);
+    },
+    [mgr],
+  );
+  const { refresh: loadConnections } = useVisibleSessionRefresh({
+    enabled: isOpen,
+    load: loadCatalog,
+    intervalMs: 10_000,
+  });
 
   // ── Listen for backend status-changed events ────────────────────
 
   useEffect(() => {
     if (!isOpen) return;
     let unlisten: UnlistenFn | undefined;
+    let live = true;
 
     listen("vpn::status-changed", () => {
-      loadConnections();
-    }).then((fn) => {
-      unlisten = fn;
-    });
+      if (live) void loadConnections();
+    })
+      .then((fn) => {
+        if (live) unlisten = fn;
+        else fn();
+      })
+      .catch(() => {
+        /* Browser mode or unavailable event bridge: visible polling remains. */
+      });
 
     return () => {
+      live = false;
       unlisten?.();
     };
-  }, [isOpen, loadConnections]);
-
-  // ── Poll status at a regular interval ───────────────────────────
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const interval = setInterval(() => {
-      loadConnections();
-    }, 10000); // 10 second default polling
-
-    return () => clearInterval(interval);
   }, [isOpen, loadConnections]);
 
   // ── Normalize into a single list ─────────────────────────────────
