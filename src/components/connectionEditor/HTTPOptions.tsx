@@ -7,8 +7,7 @@ import AutoLoginSection from "./httpOptions/AutoLoginSection";
 import TlsVerifySection from "./httpOptions/TlsVerifySection";
 import TrustPolicySection from "./httpOptions/TrustPolicySection";
 import CustomHeadersSection from "./httpOptions/CustomHeadersSection";
-import BookmarksSection from "./httpOptions/BookmarksSection";
-import BookmarkModal from "./httpOptions/BookmarkModal";
+import { ConnectionFavoritesSection } from "./ConnectionFavoritesSection";
 import HeaderModal from "./httpOptions/HeaderModal";
 import ApplicationSection from "./httpOptions/ApplicationSection";
 import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
@@ -51,15 +50,20 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
         <>
           <SessionQuickActionsSection
             protocol="http"
+            view="permissions"
             formData={formData}
             setFormData={setFormData}
           />
           {formData.httpApplication === undefined && (
             <AutoLoginSection mgr={mgr} />
           )}
-          <BookmarksSection mgr={mgr} />
-          <BookmarkModal mgr={mgr} />
         </>
+      )}
+      {!sections && (
+        <ConnectionFavoritesSection
+          formData={formData}
+          setFormData={setFormData}
+        />
       )}
     </>
   );

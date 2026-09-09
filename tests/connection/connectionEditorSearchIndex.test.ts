@@ -24,6 +24,28 @@ const buildIndex = (
   });
 
 describe("connection editor search index", () => {
+  it("finds pinned favorites for SSH and both web protocols, not unrelated protocols or folders", () => {
+    for (const protocol of ["ssh", "http", "https"]) {
+      const index = buildIndex({ protocol, isGroup: false });
+      expect(searchConnectionEditorIndex(index, "favorite scripts")).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            fieldId: "session-favorites",
+            protocolSubtabId: "favorites",
+          }),
+        ]),
+      );
+    }
+    for (const form of [
+      { protocol: "rdp", isGroup: false },
+      { protocol: "ssh", isGroup: true },
+      { protocol: "https", isGroup: true },
+    ]) {
+      expect(
+        buildIndex(form).some((entry) => entry.fieldId === "session-favorites"),
+      ).toBe(false);
+    }
+  });
   it("discovers folder and connection tab-group inheritance in Organize", () => {
     for (const isGroup of [true, false]) {
       const index = buildIndex({ isGroup, defaultTabGroupId: "operations" });
@@ -244,7 +266,10 @@ describe("connection editor search index", () => {
     ).toMatchObject({ protocolSubtabId: "security" });
     expect(
       httpsIndex.find((entry) => entry.fieldId === "http-bookmarks"),
-    ).toMatchObject({ protocolSubtabId: "advanced" });
+    ).toMatchObject({ protocolSubtabId: "favorites" });
+    expect(
+      httpsIndex.find((entry) => entry.fieldId === "session-favorites"),
+    ).toMatchObject({ protocolSubtabId: "favorites" });
 
     const winrmIndex = buildIndex({ isGroup: false, protocol: "winrm" });
     expect(

@@ -103,20 +103,22 @@ describe("HTTPOptions", () => {
     expect(screen.queryByText("Custom HTTP Headers")).not.toBeInTheDocument();
   });
 
-  it("adds a bookmark via modal and closes with escape", async () => {
+  it("adds a bookmark draft and cancels another edit without changing it", async () => {
     render(<Wrapper />);
 
     fireEvent.click(screen.getByRole("button", { name: /Add bookmark/i }));
-    expect(await screen.findByText("Add Bookmark")).toBeInTheDocument();
+    expect(screen.getByLabelText("Bookmark name")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Status Page"), {
+    fireEvent.change(screen.getByLabelText("Bookmark name"), {
       target: { value: "Status" },
     });
-    fireEvent.change(screen.getByPlaceholderText("e.g. /status-log.asp"), {
+    fireEvent.change(screen.getByLabelText("Bookmark path"), {
       target: { value: "/status" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save bookmark draft" }),
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Bookmarks (1)")).toBeInTheDocument();
@@ -124,11 +126,12 @@ describe("HTTPOptions", () => {
     expect(screen.getByText("Status")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Add bookmark/i }));
-    await screen.findByText("Add Bookmark");
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(screen.getByLabelText("Bookmark name"), {
+      key: "Escape",
+    });
 
     await waitFor(() => {
-      expect(screen.queryByText("Add Bookmark")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Bookmark name")).not.toBeInTheDocument();
     });
   });
 

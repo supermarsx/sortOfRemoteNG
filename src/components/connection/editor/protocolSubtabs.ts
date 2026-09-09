@@ -9,6 +9,7 @@ import {
   Route,
   Settings2,
   ShieldCheck,
+  Star,
   TerminalSquare,
   type LucideIcon,
 } from "lucide-react";
@@ -25,6 +26,13 @@ export interface ProtocolSubtabDescriptor {
 }
 
 const SUBTABS: Record<ProtocolSubtabId, ProtocolSubtabDescriptor> = {
+  favorites: {
+    id: "favorites",
+    label: "Favorites",
+    description:
+      "Bookmarks and pinned script or macro references for this connection.",
+    icon: Star,
+  },
   application: {
     id: "application",
     label: "Application",
@@ -164,6 +172,7 @@ export function getProtocolSubtabs(
     return selectSubtabs([
       "authentication",
       "terminal",
+      "favorites",
       "network-path",
       "network",
       "recovery",
@@ -288,7 +297,14 @@ export function getProtocolSubtabs(
   if (protocol === "http" || protocol === "https") {
     return selectSubtabs(
       withWindowsManagement(
-        ["application", "authentication", "security", "advanced", "recovery"],
+        [
+          "application",
+          "authentication",
+          "security",
+          "favorites",
+          "advanced",
+          "recovery",
+        ],
         formData,
       ),
     );

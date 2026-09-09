@@ -23,6 +23,7 @@ export type ConnectionEditorExpandableSectionId = "advanced";
 export type ConnectionEditorProtocolSubtabId =
   | "connection"
   | "application"
+  | "favorites"
   | "authentication"
   | "security"
   | "display-input"
@@ -113,7 +114,8 @@ export const PROTOCOL_SEARCH_FIELD_SUBTABS: Readonly<
   "http-trust-policy": "security",
   "http-auto-login": "advanced",
   "http-auto-login-selectors": "advanced",
-  "http-bookmarks": "advanced",
+  "http-bookmarks": "favorites",
+  "session-favorites": "favorites",
   "rdp-target-os": "connection",
   "rdp-domain": "connection",
   "rdp-display": "display-input",
@@ -2583,6 +2585,13 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Bookmarks",
         protocols: ["http", "https"],
         valuePaths: ["httpBookmarks"],
+      },
+      {
+        id: "session-favorites",
+        focusId: "protocol-options",
+        label: "Favorite scripts and macros",
+        keywords: ["favorites", "pinned", "reorder", "remove", "quick actions"],
+        protocols: ["ssh", "http", "https"],
       },
       {
         id: "rdp-target-os",

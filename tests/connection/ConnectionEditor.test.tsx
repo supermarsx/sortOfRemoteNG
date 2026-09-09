@@ -1742,6 +1742,10 @@ describe("ConnectionEditor", () => {
         screen.getByRole("tab", { name: "Authentication" }),
       ).toHaveAttribute("aria-selected", "true");
       expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: "Favorites" }));
+      expect(screen.getByLabelText("Connection favorites")).toBeInTheDocument();
+      expect(screen.getByText("No favorites configured.")).toBeInTheDocument();
+      expect(screen.queryByLabelText("HTTP bookmarks")).not.toBeInTheDocument();
       expect(
         screen.queryByRole("tab", { name: "Security" }),
       ).not.toBeInTheDocument();
@@ -1759,10 +1763,20 @@ describe("ConnectionEditor", () => {
       );
       expect(screen.getByRole("tab", { name: "Security" })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "Advanced" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: "Favorites" }));
+      expect(screen.getByLabelText("HTTP bookmarks")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Website automation and appearance"),
+      ).not.toBeInTheDocument();
       expect(
         screen.queryByRole("tab", { name: "Terminal" }),
       ).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole("tab", { name: "Advanced" }));
+
+      expect(
+        screen.queryByLabelText("Connection favorites"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("http-options")).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
       fireEvent.click(screen.getByTestId("editor-protocol"));
