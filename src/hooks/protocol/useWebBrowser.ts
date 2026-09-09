@@ -570,7 +570,11 @@ export function useWebBrowser(session: ConnectionSession) {
           acceptedCertFingerprintRef.current = identity.fingerprint;
           return true;
         }
-        if (result.status === "first-use" && policy === "tofu") {
+        if (
+          result.status === "first-use" &&
+          policy === "tofu" &&
+          !result.requiresApproval
+        ) {
           stage = "persistence";
           await trustIdentity(
             normalizedHostname,
@@ -588,6 +592,7 @@ export function useWebBrowser(session: ConnectionSession) {
         if (
           result.status === "mismatch" ||
           result.status === "expired" ||
+          (result.status === "first-use" && result.requiresApproval) ||
           policy === "always-ask" ||
           policy === "strict"
         ) {

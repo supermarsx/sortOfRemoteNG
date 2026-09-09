@@ -6,8 +6,10 @@ pub async fn trust_verify_identity(
     host: String,
     record_type: String,
     identity: Identity,
+    expected_database_id: Option<String>,
 ) -> Result<TrustVerifyResult, String> {
-    let mut svc = state.lock().await;
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
     svc.reload_from_disk()?;
     svc.verify_identity(&host, &record_type, identity).await
 }

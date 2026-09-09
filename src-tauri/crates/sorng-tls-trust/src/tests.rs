@@ -12,6 +12,19 @@ use std::sync::Mutex;
 // ── Pure decision matrix ────────────────────────────────────────────────────
 
 #[test]
+fn forgotten_certificate_requires_approval_instead_of_tofu_persistence() {
+    let verdict = StoreVerdict::from_verify_result(&TrustVerifyResult::FirstUse {
+        identity: tls_identity("fixture"),
+        requires_approval: true,
+    });
+    assert_eq!(verdict, StoreVerdict::Pending);
+    assert!(matches!(
+        decide_tls_trust(verdict, &TrustPolicy::Tofu, true),
+        TlsTrustAction::Reject(_)
+    ));
+}
+
+#[test]
 fn match_always_accepts() {
     for policy in [
         TrustPolicy::Tofu,
@@ -148,7 +161,10 @@ impl BlockingTrustStore for StubStore {
         };
         let records = self.records.lock().unwrap();
         match records.get(&Self::key(record_type, host)) {
-            None => Ok(TrustVerifyResult::FirstUse { identity }),
+            None => Ok(TrustVerifyResult::FirstUse {
+                identity,
+                requires_approval: false,
+            }),
             Some(stored) if *stored == presented_fp => Ok(TrustVerifyResult::Trusted),
             Some(stored) => Ok(TrustVerifyResult::Mismatch {
                 stored: Identity::Tls(Box::new(CertIdentity {

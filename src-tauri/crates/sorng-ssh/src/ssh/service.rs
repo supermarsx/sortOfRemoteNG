@@ -484,6 +484,10 @@ pub(crate) mod host_key_trust {
     pub(crate) fn classify(result: &TrustVerifyResult) -> TrustState {
         match result {
             TrustVerifyResult::Trusted => TrustState::Trusted,
+            TrustVerifyResult::FirstUse {
+                requires_approval: true,
+                ..
+            } => TrustState::NeedsConfirmation,
             TrustVerifyResult::FirstUse { .. } => TrustState::Unknown,
             TrustVerifyResult::Revoked { .. } => TrustState::Revoked,
             TrustVerifyResult::Mismatch { .. }
@@ -11437,7 +11441,8 @@ mod tests {
         );
         assert_eq!(
             host_key_trust::classify(&TrustVerifyResult::FirstUse {
-                identity: identity.clone()
+                identity: identity.clone(),
+                requires_approval: false,
             }),
             host_key_trust::TrustState::Unknown
         );
@@ -11468,6 +11473,10 @@ mod tests {
             );
         }
         for confirm in [
+            TrustVerifyResult::FirstUse {
+                identity: identity.clone(),
+                requires_approval: true,
+            },
             TrustVerifyResult::Expired {
                 stored: identity.clone(),
                 presented: identity.clone(),

@@ -86,7 +86,7 @@ export interface TrustRecord {
 
 export type TrustVerifyResult =
   | { status: "trusted" }
-  | { status: "first-use"; identity: TrustIdentity }
+  | { status: "first-use"; identity: TrustIdentity; requiresApproval?: boolean }
   | {
       status: "mismatch";
       stored: TrustIdentity;
@@ -291,6 +291,7 @@ interface NativeTrustRecord {
 
 interface NativeTrustVerifyResult {
   status: string;
+  requiresApproval?: boolean;
   identity?: NativeIdentity;
   stored?: NativeIdentity;
   presented?: NativeIdentity;
@@ -1615,7 +1616,17 @@ export async function verifyIdentity<T extends TrustRecordType>(
   received: TrustIdentityFor<T>,
   connectionId?: string,
 ): Promise<TrustVerifyResult> {
+  const generation = scopeGeneration;
   await ensureTrustStoreReady();
+  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+  const databaseId = activeScope.databaseId;
+  const readSequence = cacheReadSequence;
+  const assertCurrentDecision = () => {
+    if (generation !== scopeGeneration || databaseId !== activeScope.databaseId)
+      throw new TrustScopeChangedError();
+    if (readSequence !== cacheReadSequence)
+      throw new TrustRefreshSupersededError();
+  };
   const existing = cachedRecord(host, port, type, connectionId);
   const nativeHost =
     existing?.nativeHost ?? encodeNativeHost(host, port, connectionId);
@@ -1627,8 +1638,10 @@ export async function verifyIdentity<T extends TrustRecordType>(
         host: nativeHost,
         recordType: type,
         identity: nativeIdentity,
+        ...(databaseId ? { expectedDatabaseId: databaseId } : {}),
       },
     );
+    assertCurrentDecision();
     if (!isObject(result) || typeof result.status !== "string") {
       throw new Error("Malformed native trust verification response");
     }
@@ -1648,11 +1661,17 @@ export async function verifyIdentity<T extends TrustRecordType>(
         return { status: "trusted" };
       }
       case "first-use":
+        if (
+          result.requiresApproval !== undefined &&
+          typeof result.requiresApproval !== "boolean"
+        )
+          throw new Error("Malformed native trust approval requirement");
         return {
           status: "first-use",
           identity: result.identity
             ? fromNativeIdentity(result.identity)
             : received,
+          ...(result.requiresApproval ? { requiresApproval: true } : {}),
         };
       case "mismatch":
       case "chain-mismatch":
@@ -1686,7 +1705,14 @@ export async function verifyIdentity<T extends TrustRecordType>(
       default:
         throw new Error("Unknown native trust verification status");
     }
-  } catch {
+  } catch (error) {
+    // An old response must neither authorize this scope nor erase its cache.
+    assertCurrentDecision();
+    if (
+      error instanceof TrustScopeChangedError ||
+      error instanceof TrustRefreshSupersededError
+    )
+      throw error;
     throw markTrustStoreUnavailable();
   }
 }

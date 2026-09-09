@@ -112,6 +112,65 @@ describe("HTTPS certificate and native trust stages", () => {
   });
   afterEach(cleanup);
 
+  it("requires explicit approval after Forget even under TOFU, without opening or auto-storing", async () => {
+    mocks.verify.mockResolvedValue({
+      status: "first-use",
+      identity: cert,
+      requiresApproval: true,
+    });
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(result.current.trustPrompt).toMatchObject({
+        status: "first-use",
+        requiresApproval: true,
+      }),
+    );
+    expect(mocks.trust).not.toHaveBeenCalled();
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([name]) => name === "start_basic_auth_proxy",
+      ),
+    ).toBe(false);
+    expect(result.current.navigationFailure).toBeNull();
+    await act(async () => result.current.handleTrustAccept());
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.some(
+          ([name]) => name === "start_basic_auth_proxy",
+        ),
+      ).toBe(true),
+    );
+    expect(mocks.trust).toHaveBeenCalledWith(
+      "10.10.10.2",
+      443,
+      "https",
+      expect.objectContaining({ fingerprint: cert.fingerprint }),
+      true,
+      "fixture",
+    );
+  });
+
+  it("retains TOFU for genuinely unseen hosts without a fresh-approval requirement", async () => {
+    mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.some(
+          ([name]) => name === "start_basic_auth_proxy",
+        ),
+      ).toBe(true),
+    );
+    expect(mocks.trust).toHaveBeenCalledWith(
+      "10.10.10.2",
+      443,
+      "https",
+      expect.objectContaining({ fingerprint: cert.fingerprint }),
+      false,
+      "fixture",
+    );
+    expect(result.current.trustPrompt).toBeNull();
+  });
+
   it("accepts lean blank display metadata and passes the exact accepted fingerprint to the verifying proxy", async () => {
     const { result } = renderHook(() => useWebBrowser(session));
     await waitFor(() =>

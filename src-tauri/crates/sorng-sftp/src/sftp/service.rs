@@ -262,6 +262,10 @@ pub(crate) mod host_key_trust {
     pub(crate) fn classify(result: &TrustVerifyResult) -> TrustState {
         match result {
             TrustVerifyResult::Trusted => TrustState::Trusted,
+            TrustVerifyResult::FirstUse {
+                requires_approval: true,
+                ..
+            } => TrustState::NeedsConfirmation,
             TrustVerifyResult::FirstUse { .. } => TrustState::Unknown,
             TrustVerifyResult::Revoked { .. } => TrustState::Revoked,
             TrustVerifyResult::Mismatch { .. }
@@ -1131,6 +1135,18 @@ mod trust_center_tests {
         KnownHostsPolicy::AcceptNew,
         KnownHostsPolicy::Ask,
     ];
+
+    #[test]
+    fn forgotten_key_cannot_be_auto_accepted_from_known_hosts() {
+        let verdict = host_key_trust::classify(&TrustVerifyResult::FirstUse {
+            identity: host_key_trust::identity(b"fixture", None),
+            requires_approval: true,
+        });
+        assert_eq!(verdict, host_key_trust::TrustState::NeedsConfirmation);
+        for policy in POLICIES {
+            assert!(decide_trusted_host_key_action(verdict, policy).is_err());
+        }
+    }
 
     #[test]
     fn a_trusted_record_is_accepted_under_every_policy() {

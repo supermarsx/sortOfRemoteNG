@@ -303,7 +303,12 @@ pub enum TrustVerifyResult {
     Trusted,
     /// First time seeing this host
     #[serde(rename = "first-use")]
-    FirstUse { identity: Identity },
+    FirstUse {
+        identity: Identity,
+        /// Forget is not revocation, but it must not be undone by TOFU.
+        #[serde(default, rename = "requiresApproval")]
+        requires_approval: bool,
+    },
     /// Identity changed from what was stored
     #[serde(rename = "mismatch")]
     Mismatch {
@@ -355,6 +360,10 @@ pub struct TrustStoreData {
     /// These are not revocations and retain no identity or fingerprint.
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub legacy_suppressed_keys: std::collections::BTreeSet<String>,
+    /// None means an older store: its suppression keys were all explicit
+    /// Forget decisions. Some(empty) distinguishes later scope-move markers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fresh_approval_required_keys: Option<std::collections::BTreeSet<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy_migration_receipt: Option<TrustLegacyMigrationReceipt>,
 }
@@ -396,8 +405,9 @@ impl StoreBackend {
                     .lock()
                     .map_err(|_| "trust store lock poisoned".to_string())?;
                 let mut data = load_trust_store_data(&path)?;
+                let normalized = normalize_automatically_restored_records(&mut data);
                 let (out, dirty) = f(&mut data);
-                if dirty {
+                if dirty || normalized {
                     persist_trust_store_data(&path, &data)?;
                 }
                 Ok(out)
@@ -677,6 +687,7 @@ impl TrustStoreService {
         approved_by: Option<String>,
         note: Option<String>,
     ) -> Result<(), String> {
+        require_explicit_approval(&self.data, &record_type, &host, user_approved)?;
         trust_identity_in_data(
             &mut self.data,
             host,
@@ -746,7 +757,7 @@ impl TrustStoreService {
         if !self.data.records.contains_key(&key) {
             return Err("Trust record not found".into());
         }
-        suppress_legacy_keys(&mut self.data, std::iter::once(key.clone()))?;
+        mark_forgotten_keys(&mut self.data, std::iter::once(key.clone()))?;
         self.data.records.remove(&key);
         self.persist()
     }
@@ -765,7 +776,7 @@ impl TrustStoreService {
     /// Clear all trust records.
     pub async fn clear_all_trust_records(&mut self) -> Result<(), String> {
         let keys: Vec<String> = self.data.records.keys().cloned().collect();
-        suppress_legacy_keys(&mut self.data, keys)?;
+        mark_forgotten_keys(&mut self.data, keys)?;
         self.data.records.clear();
         self.persist()
     }
@@ -1002,6 +1013,18 @@ fn verify_identity_in_data(
     let key = TrustStoreService::record_key(record_type, host);
     let now_str = Utc::now().to_rfc3339();
 
+    if fresh_approval_keys(data).contains(&key)
+        && data
+            .records
+            .get(&key)
+            .is_some_and(|record| !record.user_approved && !record.revoked)
+    {
+        return TrustVerifyResult::FirstUse {
+            identity,
+            requires_approval: true,
+        };
+    }
+
     if let Some(record) = data.records.get_mut(&key) {
         // --- revoked ---
         if record.revoked {
@@ -1090,7 +1113,10 @@ fn verify_identity_in_data(
             }
         }
     } else {
-        TrustVerifyResult::FirstUse { identity }
+        TrustVerifyResult::FirstUse {
+            identity,
+            requires_approval: fresh_approval_keys(data).contains(&key),
+        }
     }
 }
 
@@ -1108,9 +1134,10 @@ fn trust_identity_in_data(
 ) {
     let key = TrustStoreService::record_key(&record_type, &host);
     if user_approved {
-        // A new explicit approval can intentionally restore trust. Ordinary
-        // TOFU may still trust FirstUse under its existing policy, but does not
-        // authorize replaying an older legacy decision on the next startup.
+        // Only explicit approval restores an intentionally forgotten identity.
+        let mut required = fresh_approval_keys(data).clone();
+        required.remove(&key);
+        data.fresh_approval_required_keys = Some(required);
         data.legacy_suppressed_keys.remove(&key);
     }
     let now_str = Utc::now().to_rfc3339();
@@ -1243,11 +1270,60 @@ fn suppress_legacy_keys(
     Ok(())
 }
 
+fn fresh_approval_keys(data: &TrustStoreData) -> &std::collections::BTreeSet<String> {
+    data.fresh_approval_required_keys
+        .as_ref()
+        .unwrap_or(&data.legacy_suppressed_keys)
+}
+
+/// Older builds could TOFU-recreate a forgotten record without clearing its
+/// suppression marker. Restore the intended Forget decision, never an approval
+/// or revocation. The caller commits this repair under its existing I/O lease.
+fn normalize_automatically_restored_records(data: &mut TrustStoreData) -> bool {
+    let required = fresh_approval_keys(data).clone();
+    let before = data.records.len();
+    data.records
+        .retain(|key, record| !required.contains(key) || record.user_approved || record.revoked);
+    if before == data.records.len() {
+        return false;
+    }
+    data.fresh_approval_required_keys = Some(required);
+    true
+}
+
+fn require_explicit_approval(
+    data: &TrustStoreData,
+    kind: &str,
+    host: &str,
+    approved: bool,
+) -> Result<(), String> {
+    if !approved && fresh_approval_keys(data).contains(&TrustStoreService::record_key(kind, host)) {
+        return Err(
+            "This identity was forgotten; review it and explicitly approve it again".into(),
+        );
+    }
+    Ok(())
+}
+
+fn mark_forgotten_keys(
+    data: &mut TrustStoreData,
+    keys: impl IntoIterator<Item = String>,
+) -> Result<(), String> {
+    let keys: Vec<_> = keys.into_iter().collect();
+    let mut required = fresh_approval_keys(data).clone();
+    required.extend(keys.iter().cloned());
+    validate_suppressed_keys(&required)?;
+    suppress_legacy_keys(data, keys)?;
+    data.fresh_approval_required_keys = Some(required);
+    Ok(())
+}
+
 fn validate_trust_store_data(data: &TrustStoreData) -> Result<(), String> {
     if let Some(receipt) = &data.legacy_migration_receipt {
         receipt.validate()?;
     }
     validate_suppressed_keys(&data.legacy_suppressed_keys)?;
+    validate_suppressed_keys(fresh_approval_keys(data))?;
     if data.records.len() > MAX_TRUST_RECORDS {
         return Err("trust store contains too many records".to_string());
     }
@@ -1454,6 +1530,10 @@ impl SyncTrustStore {
         user_approved: bool,
     ) -> Result<(), String> {
         self.backend.with_data(|data| {
+            if let Err(error) = require_explicit_approval(data, &record_type, &host, user_approved)
+            {
+                return (Err(error), false);
+            }
             trust_identity_in_data(
                 data,
                 host,
@@ -1464,8 +1544,8 @@ impl SyncTrustStore {
                 None,
                 None,
             );
-            ((), true)
-        })
+            (Ok(()), true)
+        })?
     }
 }
 
@@ -1903,7 +1983,13 @@ impl TrustRuntime {
     /// file is an empty store; a corrupt/oversized/symlinked one or an
     /// envelope without a key is an error (fail closed).
     fn read_file(&self, canonical: &Path) -> Result<TrustStoreData, String> {
-        self.with_current_key(|key| self.read_file_with_key(canonical, key))
+        self.with_current_key(|key| {
+            let mut data = self.read_file_with_key(canonical, key)?;
+            if normalize_automatically_restored_records(&mut data) {
+                self.write_file_with_key(canonical, &data, key)?;
+            }
+            Ok(data)
+        })
     }
 
     fn read_file_with_key(
@@ -2101,7 +2187,7 @@ impl TrustRuntime {
             }
         }
         if matches!(action, ReviewedTrustAction::Forget) {
-            suppress_legacy_keys(
+            mark_forgotten_keys(
                 &mut data,
                 targets
                     .iter()
@@ -2219,6 +2305,7 @@ impl TrustRuntime {
                 policy_config: document.policy_config.clone(),
                 records: HashMap::new(),
                 legacy_suppressed_keys: current.legacy_suppressed_keys,
+                fresh_approval_required_keys: current.fresh_approval_required_keys,
                 legacy_migration_receipt: None,
             },
             TrustImportMode::Merge => current,
@@ -2737,13 +2824,38 @@ mod runtime_tests {
                 .get_stored_identity(&host, "https")
                 .await
                 .is_none());
-            assert!(matches!(
-                restarted
-                    .verify_identity(&host, "https", tls_identity("new-fingerprint"))
-                    .await
-                    .unwrap(),
-                TrustVerifyResult::FirstUse { .. }
-            ));
+            let first_use = restarted
+                .verify_identity(&host, "https", tls_identity("new-fingerprint"))
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(first_use).unwrap()["requiresApproval"],
+                true
+            );
+            assert!(restarted
+                .trust_identity(
+                    host.clone(),
+                    "https".into(),
+                    tls_identity("new-fingerprint"),
+                    false
+                )
+                .await
+                .is_err());
+            assert!(SyncTrustStore::shared()
+                .trust_identity_blocking(
+                    host.clone(),
+                    "https".into(),
+                    tls_identity("new-fingerprint"),
+                    false
+                )
+                .is_err());
+            assert!(!guard
+                .runtime
+                .export(None)
+                .unwrap()
+                .records
+                .iter()
+                .any(|record| record.host == host));
             let path = guard.runtime.trust_file_path("selected").unwrap();
             let persisted = guard.runtime.read_file(&path).unwrap();
             assert!(persisted
@@ -2768,6 +2880,123 @@ mod runtime_tests {
                 .legacy_suppressed_keys
                 .contains(&format!("https:{host}")));
         }
+    }
+
+    #[test]
+    fn preexisting_forget_markers_require_approval_but_unseen_hosts_remain_tofu() {
+        let mut old: TrustStoreData = serde_json::from_value(serde_json::json!({
+            "policy": "tofu", "records": {}, "legacy_suppressed_keys": ["https:old:443"]
+        }))
+        .unwrap();
+        assert!(matches!(
+            verify_identity_in_data(&mut old, "old:443", "https", tls_identity("new")),
+            TrustVerifyResult::FirstUse {
+                requires_approval: true,
+                ..
+            }
+        ));
+        assert!(require_explicit_approval(&old, "https", "old:443", false).is_err());
+        assert!(matches!(
+            verify_identity_in_data(&mut old, "unseen:443", "https", tls_identity("new")),
+            TrustVerifyResult::FirstUse {
+                requires_approval: false,
+                ..
+            }
+        ));
+        assert!(require_explicit_approval(&old, "https", "unseen:443", false).is_ok());
+        // Later scope moves carry legacy suppression, not a Forget decision.
+        old.fresh_approval_required_keys = Some(Default::default());
+        assert!(matches!(
+            verify_identity_in_data(&mut old, "old:443", "https", tls_identity("new")),
+            TrustVerifyResult::FirstUse {
+                requires_approval: false,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn restart_repairs_old_tofu_resurrection_before_verification_and_display() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "selected");
+        let mut old = TrustStoreData::default();
+        for (host, approved, revoked) in [
+            ("forgotten:443", false, false),
+            ("approved:443", true, false),
+            ("revoked:443", false, true),
+        ] {
+            trust_identity_in_data(
+                &mut old,
+                host.into(),
+                "https".into(),
+                tls_identity(host),
+                approved,
+                IdentityChangeReason::Initial,
+                None,
+                None,
+            );
+            old.records
+                .get_mut(&format!("https:{host}"))
+                .unwrap()
+                .revoked = revoked;
+            old.legacy_suppressed_keys.insert(format!("https:{host}"));
+        }
+        old.fresh_approval_required_keys = None; // Exact pre-fix serialized format.
+        let mut pure = old.clone();
+        assert!(matches!(
+            verify_identity_in_data(
+                &mut pure,
+                "forgotten:443",
+                "https",
+                tls_identity("forgotten:443")
+            ),
+            TrustVerifyResult::FirstUse {
+                requires_approval: true,
+                ..
+            }
+        ));
+        let path = guard.runtime.trust_file_path("selected").unwrap();
+        guard.runtime.write_file(&path, &old).unwrap();
+        let service = TrustStoreService::shared();
+        let mut service = service.lock().await;
+        service.reload_from_disk().unwrap();
+        let records = service.get_all_trust_records().await;
+        assert_eq!(records.len(), 2);
+        assert!(!records.iter().any(|r| r.host == "forgotten:443"));
+        assert!(matches!(
+            service
+                .verify_identity("forgotten:443", "https", tls_identity("forgotten:443"))
+                .await
+                .unwrap(),
+            TrustVerifyResult::FirstUse {
+                requires_approval: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            service
+                .verify_identity("approved:443", "https", tls_identity("approved:443"))
+                .await
+                .unwrap(),
+            TrustVerifyResult::Trusted
+        ));
+        assert!(matches!(
+            service
+                .verify_identity("revoked:443", "https", tls_identity("revoked:443"))
+                .await
+                .unwrap(),
+            TrustVerifyResult::Revoked { .. }
+        ));
+        let raw = sdbf::safe_read_raw(&path).unwrap().unwrap().0;
+        let persisted: TrustStoreData = serde_json::from_slice(&raw).unwrap();
+        assert!(!persisted.records.contains_key("https:forgotten:443"));
+        assert!(fresh_approval_keys(&persisted).contains("https:forgotten:443"));
+        assert!(service
+            .scoped_to_database(Some("different".into()))
+            .unwrap()
+            .reload_from_disk()
+            .is_err());
     }
 
     #[test]

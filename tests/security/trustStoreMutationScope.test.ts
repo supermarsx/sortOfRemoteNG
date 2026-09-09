@@ -20,6 +20,8 @@ import {
   resetTrustStoreCacheForTests,
   setTrustRecordRevoked,
   setTrustRecordTags,
+  verifyIdentity,
+  refreshTrustStoreRecords,
 } from "../../src/utils/auth/trustStore";
 const identity = {
   kind: "tls",
@@ -55,6 +57,84 @@ beforeEach(() => {
   });
 });
 describe("queued trust mutation scope", () => {
+  it("rejects a pre-Forget result superseded by a fresh records read without clearing that read", async () => {
+    await ensureTrustStoreReady();
+    let release!: (value: unknown) => void;
+    fixture.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = verifyIdentity("server", 443, "tls", {
+      fingerprint: "REVIEWED-FP",
+      firstSeen: "2026-01-01",
+      lastSeen: "2026-09-01",
+    });
+    const rejected = expect(pending).rejects.toThrow("superseded");
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await refreshTrustStoreRecords();
+    release({ status: "trusted" });
+    await rejected;
+    expect(getAllTrustRecords()).toHaveLength(1);
+  });
+  it("preserves the native fresh-approval requirement and rejects malformed flags", async () => {
+    await ensureTrustStoreReady();
+    fixture.invoke.mockResolvedValueOnce({
+      status: "first-use",
+      requiresApproval: true,
+    });
+    const presented = {
+      fingerprint: "NEW",
+      firstSeen: "2026-01-01",
+      lastSeen: "2026-09-01",
+    };
+    await expect(
+      verifyIdentity("server", 443, "tls", presented),
+    ).resolves.toEqual({
+      status: "first-use",
+      requiresApproval: true,
+      identity: presented,
+    });
+    fixture.invoke.mockResolvedValueOnce({
+      status: "first-use",
+      requiresApproval: "false",
+    });
+    await expect(
+      verifyIdentity("server", 443, "tls", presented),
+    ).rejects.toThrow("unavailable");
+  });
+  it("rejects an in-flight trusted result after the database closes", async () => {
+    await ensureTrustStoreReady();
+    let release!: (value: unknown) => void;
+    fixture.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = verifyIdentity("server", 443, "tls", {
+      fingerprint: "REVIEWED-FP",
+      firstSeen: "2026-01-01",
+      lastSeen: "2026-09-01",
+    });
+    const rejected = expect(pending).rejects.toThrow("Trust database changed");
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    fixture.changed?.({
+      database: null,
+      databaseId: null,
+      previousDatabaseId: "db-a",
+      reason: "close",
+      connectionIds: [],
+      trustActivation: Promise.resolve(),
+    });
+    release({ status: "trusted" });
+    await rejected;
+    expect(fixture.invoke).toHaveBeenCalledWith(
+      "trust_verify_identity",
+      expect.objectContaining({ expectedDatabaseId: "db-a" }),
+    );
+  });
   it("passes native DB and reviewed fingerprint guards for reinstatement and tags", async () => {
     await ensureTrustStoreReady();
     const record = getAllTrustRecords()[0];

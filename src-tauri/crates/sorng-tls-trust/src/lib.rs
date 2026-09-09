@@ -143,6 +143,10 @@ impl StoreVerdict {
     pub fn from_verify_result(result: &TrustVerifyResult) -> Self {
         match result {
             TrustVerifyResult::Trusted => StoreVerdict::Match,
+            TrustVerifyResult::FirstUse {
+                requires_approval: true,
+                ..
+            } => StoreVerdict::Pending,
             TrustVerifyResult::FirstUse { .. } => StoreVerdict::Unknown,
             TrustVerifyResult::PendingThreshold { .. }
             | TrustVerifyResult::PendingVerification { .. } => StoreVerdict::Pending,
