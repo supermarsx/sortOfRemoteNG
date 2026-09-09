@@ -31,6 +31,59 @@ fn put(path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 
+#[tokio::test]
+async fn opaque_macro_libraries_are_inventoried_and_convert_without_json_canonicalization() {
+    let (_dir, roots, state) = fixture().await;
+    let raw = " { \"z\": [\"script body\\nkept verbatim\"], \"a\": 1 }\n";
+    for key in [
+        sorng_recording::macro_library::TERMINAL_KEY,
+        sorng_recording::macro_library::WEB_KEY,
+    ] {
+        assert!(sorng_recording::macro_library::compare_and_swap(
+            &roots.recordings,
+            key,
+            None,
+            raw,
+            Some(&state),
+            false
+        )
+        .await
+        .unwrap());
+    }
+    let inventory = scan(&roots, &state).await.unwrap();
+    assert_eq!(status(&inventory, ArtifactKind::Macros).plaintext_files, 2);
+    assert_eq!(status(&inventory, ArtifactKind::Macros).encrypted_files, 0);
+    for target in [ProtectionMode::Encrypted, ProtectionMode::Plaintext] {
+        convert(&roots, &state, ArtifactKind::Macros, target).await;
+        let inventory = scan(&roots, &state).await.unwrap();
+        let row = status(&inventory, ArtifactKind::Macros);
+        assert_eq!(row.unverified_files, 0);
+        if target == ProtectionMode::Encrypted {
+            assert_eq!((row.encrypted_files, row.plaintext_files), (2, 0));
+        } else {
+            assert_eq!((row.encrypted_files, row.plaintext_files), (0, 2));
+        }
+        for key in [
+            sorng_recording::macro_library::TERMINAL_KEY,
+            sorng_recording::macro_library::WEB_KEY,
+        ] {
+            assert_eq!(
+                sorng_recording::macro_library::read(&roots.recordings, key, Some(&state))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some(raw)
+            );
+        }
+        assert!(
+            sorng_recording::storage::load_all_macros_dispatched(&roots.recordings, &state)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
 fn sdbf_bytes(payload: &[u8]) -> Vec<u8> {
     let mut bytes = sdbf::encode_preamble(payload).to_vec();
     bytes.extend_from_slice(payload);

@@ -997,10 +997,50 @@ impl RecordingService {
     }
 
     pub async fn get_macro(&self, macro_id: &str) -> Option<MacroRecording> {
+        if crate::macro_library::validate_macro_id(macro_id).is_err() {
+            return None;
+        }
         self.engine.lock().await.get_macro(macro_id)
     }
 
+    pub async fn read_macro_library(&self, key: &str) -> RecordingResult<Option<String>> {
+        let _guard = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
+            .await?;
+        self.resolve_persist_mode(sorng_encryption::ArtifactKind::Macros)
+            .await?;
+        let state = self.enc_handle().await;
+        let root = self.storage_root_snapshot().await;
+        crate::macro_library::read(&root, key, state.as_deref()).await
+    }
+
+    pub async fn compare_and_swap_macro_library(
+        &self,
+        key: &str,
+        expected: Option<&str>,
+        replacement: &str,
+    ) -> RecordingResult<bool> {
+        let _guard = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
+            .await?;
+        let mode = self
+            .resolve_persist_mode(sorng_encryption::ArtifactKind::Macros)
+            .await?;
+        let state = self.enc_handle().await;
+        let root = self.storage_root_snapshot().await;
+        crate::macro_library::compare_and_swap(
+            &root,
+            key,
+            expected,
+            replacement,
+            state.as_deref(),
+            matches!(mode, PersistMode::Encrypted(_)),
+        )
+        .await
+    }
+
     pub async fn update_macro(&self, updated: MacroRecording) -> RecordingResult<()> {
+        crate::macro_library::validate_macro_id(&updated.id)?;
         let coordinator = self
             .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
             .await?;
@@ -1015,6 +1055,7 @@ impl RecordingService {
     }
 
     pub async fn delete_macro(&self, macro_id: &str) -> RecordingResult<()> {
+        crate::macro_library::validate_macro_id(macro_id)?;
         let _coordinator = self
             .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
             .await?;
@@ -1032,6 +1073,7 @@ impl RecordingService {
     }
 
     pub async fn import_macro(&self, macro_rec: MacroRecording) -> RecordingResult<()> {
+        crate::macro_library::validate_macro_id(&macro_rec.id)?;
         let coordinator = self
             .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
             .await?;
@@ -1542,7 +1584,7 @@ pub fn new_service_state(app_data_dir: &str) -> RecordingServiceState {
 // writer coordinator. Serialize fixture lifetimes, not operations within one
 // fixture, so dedicated same-profile concurrency tests still exercise races.
 #[cfg(test)]
-async fn recording_fixture_guard() -> tokio::sync::MutexGuard<'static, ()> {
+pub(crate) async fn recording_fixture_guard() -> tokio::sync::MutexGuard<'static, ()> {
     static FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     FIXTURE.lock().await
 }

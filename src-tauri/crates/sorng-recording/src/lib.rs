@@ -10,6 +10,7 @@ pub mod compression;
 pub mod encoders;
 pub mod engine;
 pub mod error;
+pub mod macro_library;
 pub mod redact;
 pub mod service;
 pub mod storage;

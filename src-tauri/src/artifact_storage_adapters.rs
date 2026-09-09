@@ -337,7 +337,7 @@ pub async fn scan_selected(
         .collect();
     add_reason(
         rows.get_mut(&ArtifactKind::Macros).unwrap(),
-        "Native recording macro files only; macros embedded in settings follow Settings policy",
+        "Native recording macros and terminal/web automation libraries; macro preferences embedded in settings follow Settings policy",
     );
     add_reason(rows.get_mut(&ArtifactKind::Logs).unwrap(), "Native runtime files only; encryption-audit logs intentionally remain plaintext and frontend histories follow their containing storage");
     for kind in [ArtifactKind::KeyRing, ArtifactKind::ArtifactPolicy] {

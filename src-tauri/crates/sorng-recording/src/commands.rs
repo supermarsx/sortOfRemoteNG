@@ -7,6 +7,34 @@
 use super::service::RecordingServiceState;
 use super::types::*;
 
+#[tauri::command]
+pub async fn read_macro_library(
+    state: tauri::State<'_, RecordingServiceState>,
+    key: String,
+) -> Result<Option<String>, String> {
+    state
+        .lock()
+        .await
+        .read_macro_library(&key)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn compare_and_swap_macro_library(
+    state: tauri::State<'_, RecordingServiceState>,
+    key: String,
+    expected: Option<String>,
+    replacement: String,
+) -> Result<bool, String> {
+    state
+        .lock()
+        .await
+        .compare_and_swap_macro_library(&key, expected.as_deref(), &replacement)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Config
 // ═══════════════════════════════════════════════════════════════════════

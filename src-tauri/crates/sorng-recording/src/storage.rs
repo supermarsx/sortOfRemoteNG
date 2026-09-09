@@ -293,6 +293,7 @@ pub fn storage_size(root: &Path) -> RecordingResult<u64> {
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn save_macro(root: &Path, macro_rec: &MacroRecording) -> RecordingResult<()> {
+    crate::macro_library::validate_macro_id(&macro_rec.id)?;
     let dir = macros_dir(root);
     std::fs::create_dir_all(&dir)
         .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
@@ -314,10 +315,20 @@ pub fn load_all_macros(root: &Path) -> RecordingResult<Vec<MacroRecording>> {
         let entry =
             entry.map_err(|e| RecordingError::StorageError(format!("readdir entry: {}", e)))?;
         let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(crate::macro_library::reserved_filename)
+        {
+            continue;
+        }
         if path.extension().and_then(|e| e.to_str()) == Some("json") {
             match std::fs::read_to_string(&path) {
                 Ok(json) => match serde_json::from_str::<MacroRecording>(&json) {
-                    Ok(m) => macros.push(m),
+                    Ok(m) if crate::macro_library::validate_macro_id(&m.id).is_ok() => {
+                        macros.push(m)
+                    }
+                    Ok(_) => continue,
                     Err(e) => {
                         log::warn!("Skip malformed macro {}: {}", path.display(), e);
                     }
@@ -333,6 +344,7 @@ pub fn load_all_macros(root: &Path) -> RecordingResult<Vec<MacroRecording>> {
 }
 
 pub fn delete_macro_file(root: &Path, macro_id: &str) -> RecordingResult<()> {
+    crate::macro_library::validate_macro_id(macro_id)?;
     let path = macros_dir(root).join(format!("{}.json", macro_id));
     if path.exists() {
         std::fs::remove_file(&path)
@@ -723,6 +735,7 @@ pub async fn save_macro_dispatched(
     macro_rec: &MacroRecording,
     enc: &EncryptionState,
 ) -> RecordingResult<()> {
+    crate::macro_library::validate_macro_id(&macro_rec.id)?;
     let encrypt = enc
         .resolve_write_policy(
             sorng_encryption::ArtifactKind::Macros,
@@ -784,6 +797,9 @@ pub async fn load_all_macros_dispatched(
             Some(n) => n.to_string(),
             None => continue,
         };
+        if crate::macro_library::reserved_filename(&name) {
+            continue;
+        }
         if let Some(stem) = name.strip_suffix(ENC_SUFFIX) {
             if !unlocked {
                 log::debug!("skip locked .enc macro: {}", name);
@@ -807,7 +823,9 @@ pub async fn load_all_macros_dispatched(
             let raw = value.get("macro").cloned().unwrap_or(value);
             match serde_json::from_value::<MacroRecording>(raw) {
                 Ok(m) => {
-                    by_id.insert(stem.to_string(), (true, m));
+                    if crate::macro_library::validate_macro_id(&m.id).is_ok() {
+                        by_id.insert(stem.to_string(), (true, m));
+                    }
                 }
                 Err(e) => log::warn!("parse macro {}: {}", path.display(), e),
             }
@@ -819,7 +837,9 @@ pub async fn load_all_macros_dispatched(
             match std::fs::read_to_string(&path) {
                 Ok(json) => match serde_json::from_str::<MacroRecording>(&json) {
                     Ok(m) => {
-                        by_id.entry(id).or_insert((false, m));
+                        if crate::macro_library::validate_macro_id(&m.id).is_ok() {
+                            by_id.entry(id).or_insert((false, m));
+                        }
                     }
                     Err(e) => log::warn!("parse {}: {}", path.display(), e),
                 },
@@ -833,6 +853,7 @@ pub async fn load_all_macros_dispatched(
 }
 
 pub fn delete_macro_all_variants(root: &Path, macro_id: &str) -> RecordingResult<()> {
+    crate::macro_library::validate_macro_id(macro_id)?;
     let plain = macro_plain_path(root, macro_id);
     let enc = macro_enc_path(root, macro_id);
     delete_encrypted_json_variants_with(&plain, &enc, |candidate: &Path| {
@@ -1573,6 +1594,15 @@ pub async fn migrate_all_macros_to_encrypted_with_progress(
             .and_then(|n| n.to_str())
             .map(|s| s.to_string())
             .unwrap_or_default();
+        if crate::macro_library::reserved_filename(&name) {
+            let key = crate::macro_library::key_for_filename(&name).ok_or_else(|| {
+                RecordingError::StorageError("Unknown macro library file requires review".into())
+            })?;
+            crate::macro_library::migrate_to_encrypted(root, key, enc).await?;
+            migrated += 1;
+            progress.step(MigrationStage::Macros, i + 1, total, &name, false);
+            continue;
+        }
         let json = match std::fs::read_to_string(&path) {
             Ok(j) => j,
             Err(_) => {

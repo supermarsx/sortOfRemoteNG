@@ -4,6 +4,8 @@ pub fn is_command(command: &str) -> bool {
     matches!(
         command,
         "rec_get_config"
+            | "read_macro_library"
+            | "compare_and_swap_macro_library"
             | "rec_update_config"
             | "rec_start_terminal"
             | "rec_stop_terminal"
@@ -639,6 +641,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         recording_commands::rec_stop_macro,
         recording_commands::rec_is_macro_recording,
         recording_commands::rec_list_macros,
+        recording_commands::read_macro_library,
+        recording_commands::compare_and_swap_macro_library,
         recording_commands::rec_get_macro,
         recording_commands::rec_update_macro,
         recording_commands::rec_delete_macro,
@@ -1202,4 +1206,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         terraform_commands::terraform_history_get,
         terraform_commands::terraform_history_clear,
     ]
+}
+
+#[cfg(test)]
+mod macro_library_route_tests {
+    #[test]
+    fn opaque_library_routes_are_registered_in_the_platform_dispatcher() {
+        assert!(super::is_command("read_macro_library"));
+        assert!(super::is_command("compare_and_swap_macro_library"));
+        assert!(!super::is_command("write_macro_library_path"));
+    }
 }
