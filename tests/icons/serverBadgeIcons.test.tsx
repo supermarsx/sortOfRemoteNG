@@ -28,6 +28,10 @@ const plainServerChoices = new Set([
   "server-rack",
   "server-tower",
   "server-blade",
+  // Additional chassis silhouettes, not vendor/server-role compositions.
+  "server-tower-vented",
+  "server-blade-horizontal",
+  "server-rack-open",
   "mini-server",
   "mini-server-tower",
   "mini-server-rack",
@@ -122,6 +126,7 @@ describe("consistent server corner badges", () => {
         expect(svg.querySelector("[data-role-frame]")).toBeNull();
         return svg.innerHTML;
       });
-    expect(new Set(geometries).size).toBe(8);
+    expect(geometries).toHaveLength(11);
+    expect(new Set(geometries).size).toBe(geometries.length);
   });
 });

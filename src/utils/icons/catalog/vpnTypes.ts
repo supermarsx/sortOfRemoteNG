@@ -5,6 +5,7 @@ import {
   Link2,
   LockKeyhole,
   ShieldEllipsis,
+  createLucideIcon,
 } from "lucide-react";
 
 import {
@@ -18,8 +19,45 @@ import {
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
 
+const LayerTwoTunnel = createLucideIcon("LayerTwoTunnel", [
+  [
+    "path",
+    {
+      d: "M6 3h12a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4ZM6 7h12v10H6ZM1 10h8M6 8l3 2-3 2M23 14h-8M18 12l-3 2 3 2",
+      key: "nested-tunnel-flows",
+    },
+  ],
+]);
+const KeyExchange = createLucideIcon("IKEv2KeyExchange", [
+  ["circle", { cx: "5", cy: "6", r: "3", key: "first-peer" }],
+  ["circle", { cx: "19", cy: "18", r: "3", key: "second-peer" }],
+  [
+    "path",
+    {
+      d: "M8 6h13M17 3l4 3-4 3M16 18H3M7 15l-4 3 4 3M9 13a3 3 0 1 0 6 0 3 3 0 1 0-6 0M12 10V2M12 4h3M12 7h2",
+      key: "exchange-key",
+    },
+  ],
+]);
+
 /** Identifiers for saved VPN assets; listing a type does not enable or endorse it. */
 export const VPN_TYPE_ICONS = [
+  defineIcon(
+    "l2tp-tunnel",
+    "L2TP layered tunnel",
+    "network",
+    LayerTwoTunnel,
+    ["l2tp", "layer two tunneling protocol", "layer 2", "tunnel", "vpn"],
+    "Generic L2TP asset marker; not a protocol implementation or security recommendation.",
+  ),
+  defineIcon(
+    "ikev2-exchange",
+    "IKEv2 key exchange",
+    "network",
+    KeyExchange,
+    ["ikev2", "ike v2", "internet key exchange", "ipsec", "vpn", "keys"],
+    "Generic IKEv2 key-exchange asset marker; not a live VPN provider.",
+  ),
   defineIcon(
     "pptp",
     "PPTP",

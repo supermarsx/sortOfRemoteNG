@@ -30,6 +30,7 @@ import {
 import { defineIcon } from "./types";
 import { createRoleIcon } from "../createRoleIcon";
 import { INDUSTRIAL_ASSET_ICONS } from "./industrialAssets";
+import { DEVICE_VARIANT_ICONS } from "./deviceVariants";
 
 const StorageServer = createRoleIcon("StorageServer", "server", HardDrive);
 const ServerCog = createRoleIcon("ManagedServer", "server", Settings);
@@ -693,4 +694,5 @@ export const SERVERS_DEVICES_ICONS = [
     ],
   ),
   ...INDUSTRIAL_ASSET_ICONS,
+  ...DEVICE_VARIANT_ICONS,
 ] as const;

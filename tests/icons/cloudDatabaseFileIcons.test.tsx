@@ -100,7 +100,7 @@ function geometry(svg: Element) {
 }
 
 describe("cloud, databases, files, banking and language model symbols", () => {
-  it("covers the exact isolated leaves and 52 requested new choices", () => {
+  it("preserves the original 52 choices and the expanded isolated catalog leaves", () => {
     expect(FILES).toHaveLength(16);
     expect(BANKING).toHaveLength(7);
     expect(LLM).toHaveLength(3);
@@ -108,7 +108,10 @@ describe("cloud, databases, files, banking and language model symbols", () => {
     expect(REQUESTED).toHaveLength(52);
     expect(new Set(REQUESTED).size).toBe(52);
     expect(FILE_TYPE_ICONS.map((entry) => entry.key)).toEqual(FILES);
-    expect(BANKING_ICONS.map((entry) => entry.key)).toEqual(BANKING);
+    expect(BANKING_ICONS.map((entry) => entry.key)).toEqual([
+      "credit-card-contactless",
+      ...BANKING,
+    ]);
     expect(LLM_VARIANT_ICONS.map((entry) => entry.key)).toEqual(LLM);
     for (const entry of [
       ...FILE_TYPE_ICONS,

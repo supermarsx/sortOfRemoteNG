@@ -6,6 +6,7 @@ import {
   Vault,
 } from "lucide-react";
 import { defineIcon } from "./types";
+import { CREDIT_CARD_ICON } from "./identityCards";
 
 const BankAccount = createLucideIcon("BankAccount", [
   [
@@ -38,8 +39,9 @@ const BankAtm = createLucideIcon("BankATM", [
   ],
 ]);
 
-/** Banking choices are generic; the existing payment-card supplies card use. */
+/** Generic banking identifiers; card symbols carry no bank or issuer branding. */
 export const BANKING_ICONS = [
+  CREDIT_CARD_ICON,
   defineIcon("banking", "Banking", "web-applications", Landmark, [
     "banking",
     "bank",
