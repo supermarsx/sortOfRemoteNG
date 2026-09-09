@@ -17,7 +17,7 @@ import {
   X,
   ChevronDown,
 } from "lucide-react";
-import RDPTotpPanel from "../../rdp/RDPTotpPanel";
+import WebTotpPanel from "./WebTotpPanel";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
 import { useCertificateTrustRecord } from "../../../hooks/security/useCertificateTrustRecord";
 import { MenuSurface } from "../../ui/overlays/MenuSurface";
@@ -251,7 +251,8 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           type="button"
           onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
           className={`p-2 rounded transition-colors relative ${mgr.showTotpPanel ? "text-primary bg-primary/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
-          title="2FA Codes"
+          title="2FA Codes — manually copy a configured authenticator code"
+          aria-label="2FA Codes"
         >
           <Shield size={16} />
           {mgr.totpConfigs.length > 0 && (
@@ -261,15 +262,12 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           )}
         </button>
         {mgr.showTotpPanel && (
-          <RDPTotpPanel
+          <WebTotpPanel
             configs={mgr.totpConfigs}
-            onUpdate={mgr.handleUpdateTotpConfigs}
-            onClose={() => mgr.setShowTotpPanel(false)}
-            defaultIssuer={mgr.settings.totpIssuer}
-            defaultDigits={mgr.settings.totpDigits}
-            defaultPeriod={mgr.settings.totpPeriod}
-            defaultAlgorithm={mgr.settings.totpAlgorithm}
+            ownerDatabaseId={mgr.session.ownerDatabaseId}
+            connectionId={mgr.connection?.id}
             anchorRef={mgr.totpBtnRef}
+            onClose={() => mgr.setShowTotpPanel(false)}
           />
         )}
       </div>

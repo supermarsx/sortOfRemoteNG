@@ -73,6 +73,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
       getCurrentDatabase: () => ({ id: "owned-demo" }),
+      onCurrentDatabaseChange: () => () => undefined,
       captureCurrentDatabaseDataTarget: () => ({
         databaseId: "owned-demo",
         assertAccessible: () => {
@@ -192,6 +193,26 @@ async function mount() {
   return { ...view, iframe, post, identity, emit };
 }
 describe("real WebBrowser iframe and website automation integration", () => {
+  it("opens the web-only 2FA panel in an anchored portal without moving the browser header or exposing seed-management actions", async () => {
+    const { container } = await mount();
+    const button = screen.getByRole("button", { name: "2FA Codes" });
+    expect(screen.queryByTestId("web-totp-popover")).not.toBeInTheDocument();
+    fireEvent.click(button);
+    const popover = await screen.findByTestId("web-totp-popover");
+    expect(document.body).toContainElement(popover);
+    expect(container).not.toContainElement(popover);
+    expect(button.parentElement).not.toContainElement(popover);
+    expect(screen.getByText(/Protocol → Recovery/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /generate.*backup|export.*secret|auto.?type/i,
+      }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByTestId("web-totp-popover")).not.toBeInTheDocument(),
+    );
+  });
   it("pins the labelled recorder outside the long bookmark scroll lane and preserves bookmark menus", async () => {
     native.connections[0].httpBookmarks = Array.from(
       { length: 40 },

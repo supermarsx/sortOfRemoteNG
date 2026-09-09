@@ -35,6 +35,7 @@ export const HTTP_APPLICATION_CATEGORIES = {
   native: "Native integration only",
 } as const;
 export type HttpApplicationCategory = keyof typeof HTTP_APPLICATION_CATEGORIES;
+export const CLOUDFLARE_DASHBOARD_URL = "https://dash.cloudflare.com/";
 
 const generic = (
   id: string,
@@ -106,6 +107,14 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     selectors: PFSENSE_AUTO_LOGIN_SELECTORS,
     description:
       "Reviewed WebGUI selectors. Use the WebGUI account, not the separate REST API client credentials.",
+  },
+  {
+    id: "cloudflare",
+    label: "Cloudflare Dashboard",
+    category: "networking",
+    capability: "manual",
+    description:
+      "Hosted HTTPS dashboard with interactive sign-in and two-factor authentication. No saved password, API token, or automatic form login is supplied. Use the system browser for SSO, security keys, or unsupported embedded-browser challenges.",
   },
   generic(
     "ilo",

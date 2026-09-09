@@ -4,7 +4,10 @@ import {
   HTTP_APPLICATION_CATEGORIES,
   normalizeHttpApplicationSettings,
 } from "../../src/utils/connection/httpApplicationProfiles";
-import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
+import {
+  resolveHttpApplicationLogin,
+  validateHttpApplicationTarget,
+} from "../../src/utils/auth/httpApplicationLogin";
 import type {
   Connection,
   HttpApplicationSettings,
@@ -26,11 +29,11 @@ const connection = (
 });
 
 describe("HTTP application profile policy", () => {
-  it("categorizes the existing applications plus Custom and Webmin, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(34);
+  it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(35);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(34);
+    ).toBe(35);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -40,6 +43,62 @@ describe("HTTP application profile policy", () => {
         (profile) => profile.capability === "known-form",
       ).map((profile) => profile.id),
     ).toEqual(["portainer", "nginxProxyMgr", "proxmox", "pfsense", "webmin"]);
+  });
+  it("makes Cloudflare manual-only and ignores retained website credentials, API headers, and automatic selectors", () => {
+    const selected = {
+      ...connection(),
+      httpAutoLogin: true,
+      httpAutoLoginSelectors: { usernameSelector: "#old" },
+      httpApplication: {
+        version: 1 as const,
+        id: "cloudflare",
+        loginMode: "manual" as const,
+      },
+    };
+    expect(resolveHttpApplicationLogin(selected)).toEqual({
+      credentials: null,
+      upstreamAuthMode: "none",
+      autoLogin: false,
+    });
+    for (const loginMode of ["form", "basic"] as const) {
+      expect(
+        normalizeHttpApplicationSettings({
+          ...selected.httpApplication,
+          loginMode,
+        })?.invalid,
+      ).toBe(true);
+      expect(() =>
+        resolveHttpApplicationLogin({
+          ...selected,
+          httpApplication: { ...selected.httpApplication, loginMode },
+        }),
+      ).toThrow(/invalid/);
+    }
+    expect(() =>
+      validateHttpApplicationTarget(
+        selected,
+        "https://dash.cloudflare.com/account/path?tab=dns#settings",
+      ),
+    ).not.toThrow();
+    for (const target of [
+      "http://dash.cloudflare.com/",
+      "https://dash.cloudflare.com:8443/",
+      "https://dash.cloudflare.com.example.test/",
+      "https://example.test/",
+      "https://user:secret@dash.cloudflare.com/",
+      "https://dash.cloudflare.com./",
+      "not a URL",
+    ]) {
+      expect(() => validateHttpApplicationTarget(selected, target)).toThrow(
+        /requires HTTPS/,
+      );
+    }
+    expect(() =>
+      validateHttpApplicationTarget(
+        connection("manual"),
+        "https://fixture.example.test/",
+      ),
+    ).not.toThrow();
   });
   it("requires three explicit selectors for Custom and never falls back to generic detection", () => {
     const custom = {

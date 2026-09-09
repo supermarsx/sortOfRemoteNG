@@ -1,4 +1,13 @@
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import React from "react";
+import {
+  act,
+  cleanup,
+  renderHook,
+  waitFor,
+  render,
+  screen,
+  fireEvent,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../src/types/connection/connection";
 import { certificateInfoFixture } from "../fixtures/certificateInspection";
@@ -66,6 +75,7 @@ vi.mock("../../src/utils/auth/trustStore", async (original) => ({
   trustIdentity: mocks.trust,
 }));
 import { useWebBrowser } from "../../src/hooks/protocol/useWebBrowser";
+import ApplicationSignInNotice from "../../src/components/protocol/webBrowser/ApplicationSignInNotice";
 
 const session: ConnectionSession = {
   id: "web-fixture",
@@ -125,6 +135,135 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(iframe.src).toContain(proxy.proxy_url);
     return { ...hook, iframe };
   }
+  it.each([
+    { protocol: "http" as const, hostname: "dash.cloudflare.com", port: 443 },
+    {
+      protocol: "https" as const,
+      hostname: "elsewhere.example.test",
+      port: 443,
+    },
+    { protocol: "https" as const, hostname: "dash.cloudflare.com", port: 8443 },
+  ])(
+    "blocks Cloudflare's actual stale/wrong session authority before native preflight: $protocol $hostname $port",
+    async (target) => {
+      mocks.credentialOverrides = {
+        protocol: "https",
+        hostname: "dash.cloudflare.com",
+        port: target.port,
+        httpApplication: { version: 1, id: "cloudflare", loginMode: "manual" },
+      };
+      const { result } = renderHook(() =>
+        useWebBrowser({
+          ...session,
+          protocol: target.protocol,
+          hostname: target.hostname,
+        }),
+      );
+      await waitFor(() =>
+        expect(result.current.navigationFailure?.kind).toBe(
+          "invalid_navigation",
+        ),
+      );
+      expect(result.current.navigationFailure?.detail).toContain(
+        "Cloudflare Dashboard requires HTTPS",
+      );
+      expect(
+        mocks.invoke.mock.calls.some(([name]) =>
+          [
+            "get_tls_certificate_info",
+            "start_basic_auth_proxy",
+            "open_url_external",
+          ].includes(name),
+        ),
+      ).toBe(false);
+    },
+  );
+  it("mounts interactive Cloudflare guidance without inherited credential forwarding and opens only the fixed real origin after an explicit click", async () => {
+    mocks.credentialOverrides = {
+      hostname: "dash.cloudflare.com",
+      port: 443,
+      basicAuthUsername: "old-account",
+      basicAuthPassword: "old-password",
+      httpAutoLogin: true,
+      httpAutoLoginSelectors: { usernameSelector: "#old" },
+      httpHeaders: { Authorization: "Bearer old-token" },
+      httpApplication: { version: 1, id: "cloudflare", loginMode: "manual" },
+    };
+    let browser!: ReturnType<typeof useWebBrowser>;
+    function Fixture() {
+      const mgr = useWebBrowser({
+        ...session,
+        hostname: "dash.cloudflare.com",
+      });
+      browser = mgr;
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(ApplicationSignInNotice, { mgr }),
+        React.createElement("iframe", {
+          ref: mgr.attachIframe,
+          title: "Cloudflare fixture",
+        }),
+      );
+    }
+    render(React.createElement(Fixture));
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.some(
+          ([name]) => name === "start_basic_auth_proxy",
+        ),
+      ).toBe(true),
+    );
+    const config = mocks.invoke.mock.calls.find(
+      ([name]) => name === "start_basic_auth_proxy",
+    )![1].config;
+    expect(config).toMatchObject({
+      target_url: "https://dash.cloudflare.com/",
+      username: "",
+      password: "",
+      upstream_auth_mode: "none",
+      http_auto_login: false,
+      upstream_proxy_url: mocks.proxy,
+      verify_ssl: true,
+    });
+    expect(config.http_auto_login_selectors).toBeUndefined();
+    expect(JSON.stringify(config)).not.toMatch(
+      /old-account|old-password|old-token|saved-password|Authorization/,
+    );
+    expect(
+      mocks.invoke.mock.calls.some(([name]) => name === "open_url_external"),
+    ).toBe(false);
+    expect(
+      screen.getByRole("region", {
+        name: "Cloudflare sign-in and two-factor authentication",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Signing in there does not sign in this tab/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    await act(async () =>
+      browser.navigateToUrl(
+        "https://dash.cloudflare.com/account/security?challenge=ephemeral#code",
+      ),
+    );
+    expect(browser.currentUrl).toContain("challenge=ephemeral");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Cloudflare in system browser" }),
+    );
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("open_url_external", {
+        url: "https://dash.cloudflare.com/",
+      }),
+    );
+    const externalCalls = mocks.invoke.mock.calls.filter(
+      ([name]) => name === "open_url_external",
+    );
+    expect(externalCalls).toHaveLength(1);
+    expect(externalCalls[0][1]).toEqual({
+      url: "https://dash.cloudflare.com/",
+    });
+  });
   it("never shows the loading screen for a page that finishes inside 200ms", async () => {
     const { result } = await loadingFixture();
     expect(result.current.isLoading).toBe(true);

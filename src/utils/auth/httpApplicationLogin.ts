@@ -4,9 +4,36 @@ import type {
 } from "../../types/connection/connection";
 import {
   getHttpApplicationProfile,
+  CLOUDFLARE_DASHBOARD_URL,
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "./httpCredentials";
+
+/** Hosted presets cannot label an arbitrary origin as their provider's login. */
+export function validateHttpApplicationTarget(
+  connection: Partial<Connection> | null | undefined,
+  targetUrl: string,
+): void {
+  if (
+    normalizeHttpApplicationSettings(connection?.httpApplication)?.id !==
+    "cloudflare"
+  )
+    return;
+  let valid = false;
+  try {
+    const target = new URL(targetUrl);
+    valid =
+      target.origin === new URL(CLOUDFLARE_DASHBOARD_URL).origin &&
+      !target.username &&
+      !target.password;
+  } catch {
+    /* Refuse malformed addresses before native preflight. */
+  }
+  if (!valid)
+    throw new Error(
+      "Cloudflare Dashboard requires HTTPS at dash.cloudflare.com on port 443. Use the dashboard address in Application settings, or choose Generic website for another host.",
+    );
+}
 
 export interface HttpApplicationLogin {
   credentials: { username: string; password: string } | null;

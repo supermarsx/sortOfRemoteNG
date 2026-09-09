@@ -6,7 +6,6 @@ import {
   ConnectionSession,
   HttpBookmarkItem,
 } from "../../types/connection/connection";
-import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
@@ -30,7 +29,12 @@ import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import {
   resolveHttpApplicationLogin,
   sameHttpApplicationLogin,
+  validateHttpApplicationTarget,
 } from "../../utils/auth/httpApplicationLogin";
+import {
+  CLOUDFLARE_DASHBOARD_URL,
+  normalizeHttpApplicationSettings,
+} from "../../utils/connection/httpApplicationProfiles";
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
@@ -322,6 +326,14 @@ export function useWebBrowser(session: ConnectionSession) {
   });
 
   const hasAuth = resolvedCreds !== null;
+  const selectedApplication = normalizeHttpApplicationSettings(
+    connection?.httpApplication,
+  );
+  const isCloudflareDashboard =
+    selectedApplication?.id === "cloudflare" && !selectedApplication.invalid;
+  const [openingApplicationExternal, setOpeningApplicationExternal] =
+    useState(false);
+  const openingApplicationExternalRef = useRef(false);
 
   const buildTargetUrl = useCallback(() => {
     return targetResolution.url;
@@ -624,17 +636,6 @@ export function useWebBrowser(session: ConnectionSession) {
   const pendingRecordingRef = useRef<unknown>(null);
 
   const totpConfigs = connection?.totpConfigs ?? [];
-  const handleUpdateTotpConfigs = useCallback(
-    (configs: TOTPConfig[]) => {
-      if (connection) {
-        dispatch({
-          type: "UPDATE_CONNECTION",
-          payload: { ...connection, totpConfigs: configs },
-        });
-      }
-    },
-    [connection, dispatch],
-  );
 
   const closeFolderDropdown = useCallback((idx: number) => {
     setOpenFolders((prev) => {
@@ -1005,6 +1006,7 @@ export function useWebBrowser(session: ConnectionSession) {
             "Navigation must stay on the saved connection's canonical web authority.",
           );
         }
+        validateHttpApplicationTarget(connection, urlObj.toString());
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Invalid web navigation.";
@@ -1779,6 +1781,23 @@ export function useWebBrowser(session: ConnectionSession) {
       window.open(currentUrl, "_blank", "noopener,noreferrer");
     });
   }, [currentUrl]);
+  const handleOpenApplicationExternal = useCallback(async () => {
+    if (!isCloudflareDashboard || openingApplicationExternalRef.current) return;
+    openingApplicationExternalRef.current = true;
+    setOpeningApplicationExternal(true);
+    try {
+      // Fixed public origin only: no proxy URL, saved credentials, current URL
+      // query, or SSO callback is copied into the external browser.
+      await invoke("open_url_external", { url: CLOUDFLARE_DASHBOARD_URL });
+    } catch {
+      toast.error(
+        "Could not open the system browser. Open https://dash.cloudflare.com/ manually.",
+      );
+    } finally {
+      openingApplicationExternalRef.current = false;
+      setOpeningApplicationExternal(false);
+    }
+  }, [isCloudflareDashboard, toast]);
 
   const runDeepDiagnostics = useCallback(async () => {
     const diagnosticUrl = navigationFailure?.url || currentUrl;
@@ -2277,6 +2296,9 @@ export function useWebBrowser(session: ConnectionSession) {
     handleForward,
     handleOpenInNewTab,
     handleOpenExternal,
+    isCloudflareDashboard,
+    openingApplicationExternal,
+    handleOpenApplicationExternal,
     runDeepDiagnostics,
     navigateToUrl,
     handleCancelLoading,
@@ -2343,7 +2365,6 @@ export function useWebBrowser(session: ConnectionSession) {
     handleCopyAll,
     // TOTP
     totpConfigs,
-    handleUpdateTotpConfigs,
     showTotpPanel,
     setShowTotpPanel,
     totpBtnRef,

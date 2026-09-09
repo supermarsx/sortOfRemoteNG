@@ -33,6 +33,41 @@ const value = () =>
   JSON.parse(screen.getByTestId("value").textContent!) as Partial<Connection>;
 
 describe("HTTP Application subtab", () => {
+  it("offers Cloudflare in networking with manual 2FA guidance and an explicit address action only", () => {
+    render(<Fixture />);
+    choose("Application category", "Networking / proxies");
+    choose("Website application", "Cloudflare Dashboard");
+    expect(value()).toMatchObject({
+      ...initial,
+      httpApplication: { version: 1, id: "cloudflare", loginMode: "manual" },
+    });
+    expect(screen.queryByLabelText("Website password")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Embedded sign-in and challenge compatibility/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Application login mode"));
+    expect(
+      screen.getByRole("option", { name: /Manual browsing/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /Automatic form/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "HTTP Basic authentication" }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use Cloudflare Dashboard address" }),
+    );
+    expect(value()).toMatchObject({
+      ...initial,
+      protocol: "https",
+      hostname: "dash.cloudflare.com",
+      port: 443,
+    });
+    expect(value().password).toBe(initial.password);
+    expect(value().httpVerifySsl).toBe(initial.httpVerifySsl);
+  });
   it("selects manually without changing authority, TLS, or saved credentials", () => {
     render(
       <Fixture

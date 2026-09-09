@@ -8,6 +8,7 @@ import type {
 import {
   HTTP_APPLICATION_CATEGORIES,
   HTTP_APPLICATION_PROFILES,
+  CLOUDFLARE_DASHBOARD_URL,
   getHttpApplicationProfile,
   getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
@@ -174,6 +175,48 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
             formData={mgr.formData}
             setFormData={mgr.setFormData}
           />
+          {profile.id === "cloudflare" && (
+            <div className="max-w-2xl rounded border border-[var(--color-border)] p-3 space-y-3">
+              <p className="text-sm text-[var(--color-textSecondary)]">
+                Dashboard address:{" "}
+                <span className="font-mono break-all">
+                  {CLOUDFLARE_DASHBOARD_URL}
+                </span>
+                . This hosted preset requires HTTPS and port 443. Selecting it
+                has not changed your address or TLS policy.
+              </p>
+              <button
+                type="button"
+                className="sor-btn-secondary"
+                onClick={() =>
+                  mgr.setFormData((previous) => {
+                    const selected = normalizeHttpApplicationSettings(
+                      previous.httpApplication,
+                    );
+                    if (selected?.id !== "cloudflare" || selected.invalid)
+                      return previous;
+                    return {
+                      ...previous,
+                      protocol: "https",
+                      hostname: "dash.cloudflare.com",
+                      port: 443,
+                    };
+                  })
+                }
+                disabled={settings?.invalid}
+              >
+                Use Cloudflare Dashboard address
+              </button>
+              <p className="text-xs text-[var(--color-textMuted)]">
+                Complete the website's email/password and authenticator or
+                email-code prompts yourself. For security keys, Windows Hello,
+                social login, or SSO, use the session's explicit system-browser
+                action. Embedded sign-in and challenge compatibility is not
+                guaranteed; no 2FA seed or recovery code is stored by this
+                preset.
+              </p>
+            </div>
+          )}
           {profile.capability !== "none" && (
             <div className="max-w-md">
               <label

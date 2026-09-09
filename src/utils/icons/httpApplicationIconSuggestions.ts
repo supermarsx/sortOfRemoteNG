@@ -19,6 +19,7 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   nginxProxyMgr: "nginx-proxy-manager",
   proxmox: "proxmox",
   pfsense: "pfsense",
+  cloudflare: "cloudflare",
   ilo: "hpe",
   idrac: "dell",
   lenovo: "lenovo",

@@ -17,6 +17,7 @@ import BookmarkBar from "./webBrowser/BookmarkBar";
 import ERROR_BASE from "./webBrowser/ERROR_BASE";
 import ContentArea from "./webBrowser/ContentArea";
 import BrowserDialogs from "./webBrowser/BrowserDialogs";
+import ApplicationSignInNotice from "./webBrowser/ApplicationSignInNotice";
 
 export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const mgr = useWebBrowser(session);
@@ -30,6 +31,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       </div>
 
       <BookmarkBar mgr={mgr} />
+      <ApplicationSignInNotice mgr={mgr} />
       <ContentArea mgr={mgr} />
       <BrowserDialogs mgr={mgr} />
     </div>
