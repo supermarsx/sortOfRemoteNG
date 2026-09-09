@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { debugLog } from "../../utils/core/debugLogger";
+import {
+  clearWebBrowserFrame,
+  navigateWebBrowserFrame,
+} from "../../utils/protocol/webBrowserFrame";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -463,7 +467,7 @@ export function useWebBrowser(session: ConnectionSession) {
       pending.sessionId === proxySessionIdRef.current
     ) {
       awaitingFrameGenerationRef.current = pending.generation;
-      if (iframe.getAttribute("src") !== pending.url) iframe.src = pending.url;
+      navigateWebBrowserFrame(iframe, pending.url, proxyUrlRef.current);
     }
   }, []);
   const navigateFrame = useCallback(
@@ -1237,7 +1241,7 @@ export function useWebBrowser(session: ConnectionSession) {
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
-    if (iframeRef.current) iframeRef.current.src = "about:blank";
+    clearWebBrowserFrame(iframeRef.current);
     void stopProxy();
     applyNavigationFailure(
       localNavigationFailure(
@@ -2219,7 +2223,7 @@ export function useWebBrowser(session: ConnectionSession) {
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
-    if (iframeRef.current) iframeRef.current.src = "about:blank";
+    clearWebBrowserFrame(iframeRef.current);
     applyNavigationFailure(
       localNavigationFailure(
         "navigation_cancelled",

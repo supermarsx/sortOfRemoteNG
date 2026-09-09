@@ -187,6 +187,10 @@ describe("mounted website page readiness", () => {
     async (profile) => {
       const { iframe } = await mounted(profile);
       expect(iframe.src).toContain(proxy.proxy_url);
+      expect(iframe).toHaveAttribute(
+        "sandbox",
+        "allow-same-origin allow-scripts allow-forms",
+      );
       act(() => vi.advanceTimersByTime(2_000));
       expect(iframe).not.toHaveClass("invisible");
       expect(iframe).not.toHaveAttribute("inert");
@@ -207,6 +211,7 @@ describe("mounted website page readiness", () => {
     const { iframe } = await mounted(profiles[1]);
     expect(screen.getByText("Unknown HTTPS Certificate")).toBeVisible();
     expect(iframe).toHaveAttribute("src", "about:blank");
+    expect(iframe).toHaveAttribute("sandbox", "");
     act(() => vi.advanceTimersByTime(35_000));
     expect(screen.getByText("Unknown HTTPS Certificate")).toBeVisible();
     expect(screen.queryByTestId("web-navigation-error-screen")).toBeNull();
@@ -218,6 +223,10 @@ describe("mounted website page readiness", () => {
     fireEvent.click(screen.getByRole("button", { name: "Accept & Continue" }));
     await act(async () => {});
     expect(iframe.src).toContain(proxy.proxy_url);
+    expect(iframe).toHaveAttribute(
+      "sandbox",
+      "allow-same-origin allow-scripts allow-forms",
+    );
     // Accepting this session alone does not silently create a remembered decision.
     expect(mocks.trust).not.toHaveBeenCalled();
   });
@@ -403,6 +412,7 @@ describe("mounted website page readiness", () => {
       },
     });
     expect(iframe).toHaveAttribute("src", "about:blank");
+    expect(iframe).toHaveAttribute("sandbox", "");
     expect(iframe).toHaveAttribute("inert");
     expect(screen.getByText("Loading cancelled")).toBeVisible();
     act(() => vi.advanceTimersByTime(35_000));
@@ -435,6 +445,7 @@ describe("mounted website page readiness", () => {
     );
     expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
     expect(iframe).toHaveAttribute("src", "about:blank");
+    expect(iframe).toHaveAttribute("sandbox", "");
     reportReady({ ...pending, source: iframe.contentWindow! });
     expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
     expect(iframe).toHaveAttribute("inert");

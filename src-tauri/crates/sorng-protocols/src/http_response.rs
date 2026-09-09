@@ -8,6 +8,177 @@ pub(super) const MAX_EDITABLE_BODY_BYTES: usize = 32 * 1024 * 1024;
 pub(super) const ACCEPT_ENCODING: &str = "gzip, deflate";
 const NAVIGATION_MARKER: &str = "__sorng_navigation_v1";
 
+/// Content-Type alone does not distinguish a page from jQuery HTML fragments or
+/// pipe-delimited dashboard stats. Explicit non-navigation metadata always wins.
+pub(super) fn is_document_request(headers: &HeaderMap, navigation_token: Option<&str>) -> bool {
+    if headers.contains_key("x-requested-with") {
+        return false;
+    }
+    let value = |name| headers.get(name).and_then(|value| value.to_str().ok());
+    if let Some(destination) = value("sec-fetch-dest") {
+        if !matches!(destination, "document" | "iframe" | "frame") {
+            return false;
+        }
+        return value("sec-fetch-mode").is_none_or(|mode| mode == "navigate");
+    }
+    if headers.contains_key("sec-fetch-dest") {
+        return false;
+    }
+    if let Some(mode) = value("sec-fetch-mode") {
+        return mode == "navigate";
+    }
+    if headers.contains_key("sec-fetch-mode") {
+        return false;
+    }
+    if navigation_token.is_some() {
+        return true;
+    }
+    // Older WebViews can lack Fetch Metadata. Their normal navigation request
+    // still explicitly upgrades and negotiates HTML. Accept alone is not enough.
+    value("upgrade-insecure-requests") == Some("1")
+        && value("accept").is_some_and(|accept| {
+            accept.split(',').any(|part| {
+                part.split(';')
+                    .next()
+                    .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/html"))
+            })
+        })
+}
+
+pub(super) fn is_html(content_type: Option<&str>) -> bool {
+    content_type
+        .and_then(|ct| ct.split(';').next())
+        .is_some_and(|ct| ct.trim().eq_ignore_ascii_case("text/html"))
+}
+
+/// Remove only csrf-magic's independently published, standalone frame-breaker.
+/// CSRF token generation, hidden inputs, and every other script remain intact.
+/// Source: pfsense/pfsense src/usr/local/www/csrf/csrf-magic.php (csrf_ob_handler).
+/// Raw-text elements, comments, and inert templates are never rewritten.
+pub(super) fn remove_known_framebreaker(html: &str) -> String {
+    const BODY: &str = "if (top != self) {top.location.href = self.location.href;}";
+    let lower = html.to_ascii_lowercase();
+    let mut cursor = 0;
+    let mut copied = 0;
+    let mut templates = 0usize;
+    let mut result = String::with_capacity(html.len());
+    while let Some(offset) = lower[cursor..].find('<') {
+        let start = cursor + offset;
+        if lower[start..].starts_with("<!--") {
+            let Some(end) = lower[start + 4..].find("-->") else {
+                break;
+            };
+            cursor = start + 4 + end + 3;
+            continue;
+        }
+        if lower[start..].starts_with("<![cdata[") {
+            let Some(end) = lower[start + 9..].find("]]>") else {
+                break;
+            };
+            cursor = start + 9 + end + 3;
+            continue;
+        }
+        let Some((name, closing, end)) = html_tag(&lower, start) else {
+            break;
+        };
+        cursor = end;
+        if name == "template" {
+            templates = if closing {
+                templates.saturating_sub(1)
+            } else {
+                templates.saturating_add(1)
+            };
+            continue;
+        }
+        if closing {
+            continue;
+        }
+        if name == "plaintext" {
+            break;
+        }
+        if matches!(
+            name,
+            "script"
+                | "style"
+                | "textarea"
+                | "title"
+                | "xmp"
+                | "iframe"
+                | "noembed"
+                | "noframes"
+                | "noscript"
+        ) {
+            let closing_prefix = format!("</{name}");
+            let mut search = end;
+            let closing_tag = loop {
+                let Some(offset) = lower[search..].find(&closing_prefix) else {
+                    break None;
+                };
+                let close = search + offset;
+                if let Some((closed_name, true, close_end)) = html_tag(&lower, close) {
+                    if closed_name == name {
+                        break Some((close, close_end));
+                    }
+                }
+                search = close + closing_prefix.len();
+            };
+            let Some((close, close_end)) = closing_tag else {
+                break;
+            };
+            // Match exact publisher opening/body forms; no JS substring surgery.
+            let opening = &lower[start..end];
+            let known_opening = matches!(
+                opening,
+                "<script>"
+                    | "<script type=\"text/javascript\">"
+                    | "<script type='text/javascript'>"
+            );
+            if templates == 0
+                && name == "script"
+                && known_opening
+                && html[end..close].trim() == BODY
+            {
+                result.push_str(&html[copied..start]);
+                copied = close_end;
+            }
+            cursor = close_end;
+        }
+    }
+    result.push_str(&html[copied..]);
+    result
+}
+
+fn html_tag(html: &str, start: usize) -> Option<(&str, bool, usize)> {
+    let bytes = html.as_bytes();
+    let mut cursor = start + 1;
+    let closing = bytes.get(cursor) == Some(&b'/');
+    if closing {
+        cursor += 1;
+    }
+    let name_start = cursor;
+    while bytes
+        .get(cursor)
+        .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'-')
+    {
+        cursor += 1;
+    }
+    let name = &html[name_start..cursor];
+    let mut quote = None;
+    while let Some(&byte) = bytes.get(cursor) {
+        if let Some(delimiter) = quote {
+            if byte == delimiter {
+                quote = None;
+            }
+        } else if byte == b'\'' || byte == b'"' {
+            quote = Some(byte);
+        } else if byte == b'>' {
+            return Some((name, closing, cursor + 1));
+        }
+        cursor += 1;
+    }
+    None
+}
+
 /// Strip the loopback-only marker before routing, forwarding, or logging. A
 /// duplicate/malformed marker cannot authenticate a readiness notification.
 pub(super) fn navigation_request(path_and_query: &str) -> (String, Option<String>) {
@@ -247,6 +418,67 @@ pub(super) fn invalidated_header(name: &str) -> bool {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn only_navigation_requests_bootstrap_and_explicit_ajax_always_wins() {
+        let mut headers = HeaderMap::new();
+        assert!(!is_document_request(&headers, None));
+        headers.insert("accept", "text/html,application/xhtml+xml".parse().unwrap());
+        assert!(!is_document_request(&headers, None));
+        assert!(is_document_request(&headers, Some("fixture")));
+        headers.insert("upgrade-insecure-requests", "1".parse().unwrap());
+        assert!(is_document_request(&headers, None));
+        for destination in ["empty", "script", "style", "image", "", "unknown"] {
+            headers.insert("sec-fetch-dest", destination.parse().unwrap());
+            assert!(
+                !is_document_request(&headers, Some("fixture")),
+                "{destination}"
+            );
+        }
+        for destination in ["document", "iframe", "frame"] {
+            headers.insert("sec-fetch-dest", destination.parse().unwrap());
+            assert!(is_document_request(&headers, None));
+            headers.insert("sec-fetch-mode", "cors".parse().unwrap());
+            assert!(!is_document_request(&headers, Some("fixture")));
+            headers.insert("sec-fetch-mode", "navigate".parse().unwrap());
+            assert!(is_document_request(&headers, None));
+            headers.remove("sec-fetch-mode");
+        }
+        headers.insert("x-requested-with", "XMLHttpRequest".parse().unwrap());
+        assert!(!is_document_request(&headers, Some("fixture")));
+    }
+
+    #[test]
+    fn known_standalone_framebreaker_is_removed_without_changing_csrf_logic() {
+        let blocker = "<script type=\"text/javascript\">if (top != self) {top.location.href = self.location.href;}</script>";
+        let retained = "<script>var csrfMagicToken='fixture';CsrfMagic.end();</script><form method='post'><input type='hidden' name='__csrf_magic' value='fixture'></form>";
+        let html = format!(
+            "<!doctype html><html><head>{blocker}{blocker}</head><body>{retained}</body></html>"
+        );
+        let cleaned = remove_known_framebreaker(&html);
+        assert_eq!(
+            cleaned,
+            format!("<!doctype html><html><head></head><body>{retained}</body></html>")
+        );
+    }
+
+    #[test]
+    fn quoted_commented_inert_and_unknown_framebreakers_are_preserved_verbatim() {
+        let blocker = "<script type=\"text/javascript\">if (top != self) {top.location.href = self.location.href;}</script>";
+        for html in [
+            format!("<!-- {blocker} -->"),
+            format!("<template><template>{blocker}</template>{blocker}</template>"),
+            format!("<textarea>{blocker}</textarea><style>/*{blocker}*/</style>"),
+            format!("<div title='{blocker}'>safe</div>"),
+            format!("<script>const html = `{blocker}`;</script>"),
+            format!("<script>const html = '{blocker}';</script>"),
+            format!("<script>/*{blocker}*/</script>"),
+            "<script>if (top !== self) { top.location = self.location; }</script>".to_string(),
+            "<script>if (top != self) {top.location.href = self.location.href;}doMore();</script>".to_string(),
+            "<script type='application/json'>if (top != self) {top.location.href = self.location.href;}</script>".to_string(),
+            format!("<plaintext>{blocker}"),
+        ] { assert_eq!(remove_known_framebreaker(&html), html); }
+    }
 
     pub(crate) fn gzip(bytes: &[u8]) -> Vec<u8> {
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());

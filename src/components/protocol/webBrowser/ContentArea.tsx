@@ -3,6 +3,7 @@ import { ErrorPage } from "./ERROR_BASE";
 import React from "react";
 import { WifiOff, RefreshCw } from "lucide-react";
 import progressStyles from "./NavigationProgress.module.css";
+import { EMPTY_WEB_FRAME_SANDBOX } from "../../../utils/protocol/webBrowserFrame";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
   <div className="flex-1 relative" aria-busy={mgr.isLoading}>
@@ -63,10 +64,11 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
       }
       title={mgr.session.name}
       onLoad={mgr.handleIframeLoad}
-      // Cookie-backed managed UIs require same-origin behavior. The proxy
-      // origin is deliberately excluded from Tauri capabilities, while
-      // popups and downloads stay blocked until mediated handlers exist.
-      sandbox="allow-same-origin allow-scripts allow-forms"
+      // Start with an opaque, fully sandboxed blank. attachIframe owns the
+      // subsequent sandbox/src transition and only enables the existing
+      // website flags for a validated, isolated proxy origin. React leaves
+      // this unchanged initial prop alone on ordinary component rerenders.
+      sandbox={EMPTY_WEB_FRAME_SANDBOX}
     />
     {mgr.loadError && (
       <div className="absolute inset-0 z-20">

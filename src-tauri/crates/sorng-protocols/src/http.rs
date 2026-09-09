@@ -18,8 +18,6 @@ pub use proxy_transport::fetch_tls_certificate_info;
 
 #[path = "http_response.rs"]
 mod proxy_response;
-#[path = "http_web_automation.rs"]
-mod web_automation;
 #[cfg(test)]
 #[path = "http_response_tests.rs"]
 mod proxy_response_tests;
@@ -29,6 +27,8 @@ mod request_log_tests;
 #[cfg(test)]
 #[path = "http_tls_test_fixture.rs"]
 mod tls_test_fixture;
+#[path = "http_web_automation.rs"]
+mod web_automation;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -1311,13 +1311,21 @@ pub async fn axum_proxy_handler(
         // forward this bundled asset path or count it as an upstream request.
         return web_automation::asset(&method);
     }
-    let document_sequence = state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1;
     let path_and_query = req
         .uri()
         .path_and_query()
         .map(|pq| pq.as_str().to_string())
         .unwrap_or_else(|| "/".to_string());
     let (path_and_query, navigation_token) = proxy_response::navigation_request(&path_and_query);
+    let document_request =
+        proxy_response::is_document_request(req.headers(), navigation_token.as_deref());
+    // Reserve navigation START order, so a slow prior page never acquires a
+    // newer identity merely by finishing last. XHR does not consume a sequence.
+    let document_sequence = if document_request {
+        state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1
+    } else {
+        0
+    };
 
     let full_url = format!(
         "{}{}",
@@ -1489,7 +1497,8 @@ pub async fn axum_proxy_handler(
                 .iter()
                 .filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
                 .collect();
-            if state.upstream_auth_mode.accepts_basic_challenge()
+            if document_request
+                && state.upstream_auth_mode.accepts_basic_challenge()
                 && matches!(
                     crate::themed_auth::intercept_basic_auth_challenge(
                         status_u16,
@@ -1544,8 +1553,10 @@ pub async fn axum_proxy_handler(
                 && status_code != StatusCode::NO_CONTENT
                 && status_code != StatusCode::RESET_CONTENT;
             let is_rewritable = has_body
-                && (proxy_response::is_editable(content_type.as_deref())
-                    || (status_u16 >= 400
+                && ((proxy_response::is_editable(content_type.as_deref())
+                    && (document_request || !proxy_response::is_html(content_type.as_deref())))
+                    || (document_request
+                        && status_u16 >= 400
                         && content_type
                             .as_deref()
                             .is_none_or(|ct| ct.trim().is_empty())));
@@ -1576,7 +1587,7 @@ pub async fn axum_proxy_handler(
             // expects to see the JSON, not a themed page. The raw
             // upstream body lives in a `<details>` block on the
             // themed page so power users can still read it.
-            if status_u16 >= 400 {
+            if document_request && status_u16 >= 400 {
                 let is_html_or_empty = content_type
                     .as_deref()
                     .map(|ct| {
@@ -1685,18 +1696,15 @@ pub async fn axum_proxy_handler(
             };
 
             // Inject navigation reporter into HTML.
-            let is_html = has_body
-                && content_type
-                    .as_deref()
-                    .map(|ct| {
-                        ct.split(';')
-                            .next()
-                            .unwrap_or("")
-                            .trim()
-                            .eq_ignore_ascii_case("text/html")
-                    })
-                    .unwrap_or(false);
+            let is_html =
+                document_request && has_body && proxy_response::is_html(content_type.as_deref());
             if is_html {
+                // Subresource requests must never replace the page identity or
+                // consume/mint the page's automatic-login nonce.
+                final_body = proxy_response::remove_known_framebreaker(&String::from_utf8_lossy(
+                    &final_body,
+                ))
+                .into_bytes();
                 let nav_script = "<script>try{window.parent.postMessage(\
                     {type:'proxy_navigate',url:location.href},'*')\
                     }catch(e){}</script>";

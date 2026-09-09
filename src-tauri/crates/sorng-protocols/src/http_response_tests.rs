@@ -22,6 +22,14 @@ impl Drop for FixtureProxy {
 }
 
 async fn proxy(target: String, client: reqwest::Client) -> FixtureProxy {
+    proxy_with_mode(target, client, UpstreamAuthMode::None).await
+}
+
+async fn proxy_with_mode(
+    target: String,
+    client: reqwest::Client,
+    auth_mode: UpstreamAuthMode,
+) -> FixtureProxy {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let authority = format!("p{TOKEN}.localhost:{port}");
@@ -35,7 +43,7 @@ async fn proxy(target: String, client: reqwest::Client) -> FixtureProxy {
         target_url: target,
         username: Arc::new(std::sync::RwLock::new(String::new())),
         password: Arc::new(std::sync::RwLock::new(String::new())),
-        upstream_auth_mode: UpstreamAuthMode::None,
+        upstream_auth_mode: auth_mode,
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(
             crate::theme_tokens::ThemeTokens::dark_default(),
@@ -110,6 +118,145 @@ async fn fetch(proxy: &FixtureProxy, path: &str) -> reqwest::Response {
         .send()
         .await
         .unwrap()
+}
+
+#[tokio::test]
+async fn dashboard_ajax_html_stats_remain_exact_and_do_not_rotate_document_or_login_state() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let stats =
+        format!("0|1|2|3|4|5|6|7|8|9|<span data-url='http://{address}/dashboard'>42%</span>|11");
+    let served = stats.clone();
+    let router = axum::Router::new().fallback(move |request: axum::extract::Request| {
+        let body = served.clone();
+        async move {
+            let compressed = request.uri().path() == "/compressed";
+            let mut response = Response::builder()
+                .status(if request.uri().path() == "/unauthorized" {
+                    401
+                } else {
+                    200
+                })
+                .header("Content-Type", "text/html; charset=UTF-8")
+                .header("WWW-Authenticate", "Basic realm=fixture")
+                .header("ETag", "stats-validator");
+            if compressed {
+                response = response.header("Content-Encoding", "gzip");
+            }
+            response
+                .body(Body::from(if compressed {
+                    gzip(body.as_bytes())
+                } else {
+                    body.into_bytes()
+                }))
+                .unwrap()
+        }
+    });
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let proxy = proxy_with_mode(
+        format!("http://{address}/"),
+        client(),
+        UpstreamAuthMode::Basic,
+    )
+    .await;
+    proxy.state.auto_login_armed.store(true, Ordering::Relaxed);
+    *proxy.state.auto_login_nonce.write().unwrap() = Some("already-issued-page-nonce".into());
+    for path in [
+        "/getstats.php".to_string(),
+        format!("/getstats.php?__sorng_navigation_v1={TOKEN}"),
+        "/unauthorized".into(),
+        "/compressed".into(),
+    ] {
+        let response = client()
+            .get(format!("{}{path}", proxy.base))
+            .header("Host", &proxy.state.proxy_authority)
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "same-origin")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "text/html, */*; q=0.01")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status().as_u16(),
+            if path == "/unauthorized" { 401 } else { 200 }
+        );
+        assert_eq!(response.headers()["ETag"], "stats-validator");
+        if path == "/compressed" {
+            assert_eq!(response.headers()["Content-Encoding"], "gzip");
+        }
+        let bytes = response.bytes().await.unwrap();
+        if path == "/compressed" {
+            assert_eq!(bytes.as_ref(), gzip(stats.as_bytes()));
+        } else {
+            assert_eq!(bytes.as_ref(), stats.as_bytes());
+            assert_eq!(bytes.split(|byte| *byte == b'|').count(), 12);
+        }
+        assert_eq!(proxy.state.document_sequence.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            proxy.state.auto_login_nonce.read().unwrap().as_deref(),
+            Some("already-issued-page-nonce")
+        );
+        assert!(proxy.state.pending_nonce.read().unwrap().is_none());
+    }
+    upstream.abort();
+}
+
+#[tokio::test]
+async fn document_only_injection_supports_safe_legacy_navigation_and_retains_csrf() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let html = "<!doctype html><html><head><script type=\"text/javascript\">if (top != self) {top.location.href = self.location.href;}</script><script>window.application=true;</script></head><body><form><input name='__csrf_magic' value='fixture-token'></form></body></html>";
+    let router = axum::Router::new().fallback(move || async move {
+        Response::builder()
+            .header("Content-Type", "text/html")
+            .body(Body::from(html))
+            .unwrap()
+    });
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let proxy = proxy(format!("http://{address}/"), client()).await;
+    // Missing navigation evidence is not guessed from an HTML Content-Type.
+    let unknown = client()
+        .get(format!("{}/fragment", proxy.base))
+        .header("Host", &proxy.state.proxy_authority)
+        .header("Accept", "text/html")
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(unknown, html);
+    assert_eq!(proxy.state.document_sequence.load(Ordering::Relaxed), 0);
+    for marker in [false, true] {
+        let path = if marker {
+            format!("/?__sorng_navigation_v1={TOKEN}")
+        } else {
+            "/".into()
+        };
+        let mut request = client()
+            .get(format!("{}{path}", proxy.base))
+            .header("Host", &proxy.state.proxy_authority);
+        if !marker {
+            request = request
+                .header("Accept", "text/html,application/xhtml+xml")
+                .header("Upgrade-Insecure-Requests", "1");
+        }
+        let document = request.send().await.unwrap().text().await.unwrap();
+        assert!(document.contains("proxy_dom_ready"));
+        assert!(
+            document.find("proxy_document_start").unwrap()
+                < document.find("window.application=true").unwrap()
+        );
+        assert!(!document.contains("top.location.href = self.location.href"));
+        assert!(document.contains("name='__csrf_magic' value='fixture-token'"));
+    }
+    assert_eq!(proxy.state.document_sequence.load(Ordering::Relaxed), 2);
+    upstream.abort();
 }
 
 #[tokio::test]
