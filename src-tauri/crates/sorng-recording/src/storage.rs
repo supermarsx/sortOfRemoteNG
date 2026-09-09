@@ -1437,6 +1437,10 @@ pub async fn migrate_all_envelopes_to_encrypted_with_progress(
     enc: &EncryptionState,
     progress: &dyn MigrationProgress,
 ) -> RecordingResult<(usize, usize)> {
+    // Also fence direct callers before any rename, write, or cleanup. The
+    // managed artifact transaction is the only supported policy migration.
+    sorng_encryption::artifact_policy::require_legacy_mutation_allowed(enc)
+        .map_err(RecordingError::StorageError)?;
     if !enc.is_unlocked().await {
         return Err(RecordingError::StorageError(
             "cannot migrate while encryption is locked".into(),
@@ -1527,6 +1531,8 @@ pub async fn migrate_all_macros_to_encrypted_with_progress(
     enc: &EncryptionState,
     progress: &dyn MigrationProgress,
 ) -> RecordingResult<(usize, usize)> {
+    sorng_encryption::artifact_policy::require_legacy_mutation_allowed(enc)
+        .map_err(RecordingError::StorageError)?;
     if !enc.is_unlocked().await {
         return Err(RecordingError::StorageError(
             "cannot migrate while encryption is locked".into(),

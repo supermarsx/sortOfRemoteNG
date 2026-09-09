@@ -418,10 +418,14 @@ impl RecordingService {
         let _coordinator = self
             .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
             .await?;
-        self.reset_migration_cancel();
         let enc = self.enc_handle().await.ok_or_else(|| {
             RecordingError::StorageError("encryption state not installed; cannot migrate".into())
         })?;
+        // The legacy migration assumes its dispatched writes produce ciphertext.
+        // Managed per-family plaintext overrides invalidate that assumption.
+        sorng_encryption::artifact_policy::require_legacy_mutation_allowed(&enc)
+            .map_err(RecordingError::StorageError)?;
+        self.reset_migration_cancel();
         let root = self.storage_root.lock().await.clone();
         let (em, es) =
             storage::migrate_all_envelopes_to_encrypted_with_progress(&root, &enc, progress)

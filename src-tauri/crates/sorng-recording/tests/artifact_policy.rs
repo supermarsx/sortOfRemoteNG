@@ -11,6 +11,80 @@ use sorng_recording::{storage, types::*, RecordingService};
 
 static SERVICE_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+#[tokio::test]
+async fn legacy_migrations_refuse_managed_policy_before_touching_plaintext_or_keys() {
+    let _serial = SERVICE_TESTS.lock().await;
+    for entry in ["service", "envelopes", "macros"] {
+        for encrypted in [false, true] {
+            let (dir, state) = fixture().await;
+            policy(
+                dir.path(),
+                &state,
+                &[
+                    (ArtifactKind::RecordingsMeta, encrypted),
+                    (ArtifactKind::Macros, encrypted),
+                ],
+            )
+            .await;
+            let service = RecordingService::new(dir.path().to_str().unwrap());
+            service.set_encryption_state(state.clone()).await;
+            let root = service.storage_root_snapshot().await;
+            storage::save_envelope(&root, &envelope("legacy-capture")).unwrap();
+            storage::save_macro(&root, &macro_recording()).unwrap();
+            let protected_paths = [
+                root.join("recordings/legacy-capture.json"),
+                root.join("recordings/legacy-capture.json.v0.bak"),
+                root.join("macros/macro-fixture.json"),
+                root.join("macros/macro-fixture.json.v0.bak"),
+                dir.path().join(artifact_policy::POLICY_FILENAME),
+            ];
+            std::fs::write(&protected_paths[1], b"older metadata generation").unwrap();
+            std::fs::write(&protected_paths[3], b"older macro generation").unwrap();
+            let before: Vec<_> = protected_paths
+                .iter()
+                .map(|path| std::fs::read(path).unwrap())
+                .collect();
+            let key = state.sub_key(ArtifactKind::RecordingsMeta).await.unwrap();
+            let generation = state.key_generation();
+            let policy_before = state.artifact_policy_document().unwrap();
+
+            let result = match entry {
+                "service" => service.migrate_to_encrypted().await.map(|_| ()),
+                "envelopes" => storage::migrate_all_envelopes_to_encrypted(&root, &state)
+                    .await
+                    .map(|_| ()),
+                "macros" => storage::migrate_all_macros_to_encrypted(&root, &state)
+                    .await
+                    .map(|_| ()),
+                _ => unreachable!(),
+            };
+
+            for (path, expected) in protected_paths.iter().zip(before) {
+                assert_eq!(
+                    std::fs::read(path).ok(),
+                    Some(expected),
+                    "{entry}: {path:?}"
+                );
+            }
+            assert!(!root.join("recordings/legacy-capture.json.enc").exists());
+            assert!(!root.join("macros/macro-fixture.json.enc").exists());
+            let error = result.expect_err("managed migrations must refuse before mutation");
+            assert!(error.to_string().contains("Managed artifact protection"));
+            assert_eq!(state.artifact_policy_document().unwrap(), policy_before);
+            assert_eq!(state.key_generation(), generation);
+            assert!(state.is_unlocked().await);
+            assert!(
+                state
+                    .sub_key(ArtifactKind::RecordingsMeta)
+                    .await
+                    .unwrap()
+                    .bytes()
+                    == key.bytes()
+            );
+        }
+    }
+}
+
 async fn fixture() -> (tempfile::TempDir, Arc<EncryptionState>) {
     let dir = tempfile::tempdir().unwrap();
     let state = Arc::new(EncryptionState::new());
