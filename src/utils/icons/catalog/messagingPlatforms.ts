@@ -1,0 +1,236 @@
+import { createLucideIcon } from "lucide-react";
+import {
+  discord,
+  telegram,
+  whatsapp,
+  signal,
+  messenger,
+  microsoftteams,
+  googlechat,
+  googlemessages,
+  line,
+  viber,
+  wechat,
+  qq,
+  kakaotalk,
+  snapchat,
+  imessage,
+  xmpp,
+  simplex,
+  session,
+  threema,
+  mumble,
+  teamspeak,
+  zoom,
+  webex,
+  wire,
+  deltachat,
+  briar,
+  jami,
+  nextcloudtalk,
+  gitter,
+} from "../brand";
+import { defineIcon } from "./types";
+
+// IRC is a protocol, not one vendor: a generic channel hash in a speech bubble.
+const irc = createLucideIcon("IRCChannelSymbol", [
+  [
+    "path",
+    {
+      d: "M21 4.5v11a2 2 0 0 1-2 2H8l-5 4v-17a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z",
+      key: "channel-bubble",
+    },
+  ],
+  [
+    "path",
+    {
+      d: "m10 6-2 8m7-8-2 8M7 8.5h10M6.5 11.5h10",
+      strokeWidth: "1.5",
+      key: "channel-hash",
+    },
+  ],
+]);
+
+export const MESSAGING_PLATFORM_ICONS = [
+  defineIcon("discord", "Discord", "communication", discord, [
+    "discord",
+    "community chat",
+    "voice chat",
+  ]),
+  defineIcon("telegram", "Telegram", "communication", telegram, [
+    "telegram",
+    "telegram messenger",
+    "chat",
+  ]),
+  defineIcon("whatsapp", "WhatsApp", "communication", whatsapp, [
+    "whatsapp",
+    "whats app",
+    "meta messenger",
+  ]),
+  defineIcon("signal", "Signal", "communication", signal, [
+    "signal",
+    "signal messenger",
+    "messaging",
+  ]),
+  defineIcon("messenger", "Messenger", "communication", messenger, [
+    "messenger",
+    "facebook messenger",
+    "meta messenger",
+  ]),
+  defineIcon(
+    "microsoft-teams",
+    "Microsoft Teams",
+    "communication",
+    microsoftteams,
+    ["microsoft teams", "ms teams", "teams", "work chat"],
+    "Microsoft Teams using current publisher geometry adapted to a monochrome icon; not a generic Microsoft logo.",
+  ),
+  defineIcon("google-chat", "Google Chat", "communication", googlechat, [
+    "google chat",
+    "google workspace chat",
+    "work chat",
+  ]),
+  defineIcon(
+    "google-messages",
+    "Google Messages",
+    "communication",
+    googlemessages,
+    ["google messages", "android messages", "rcs", "sms"],
+  ),
+  defineIcon("line", "LINE", "communication", line, [
+    "line",
+    "line messenger",
+    "line chat",
+  ]),
+  defineIcon("viber", "Viber", "communication", viber, [
+    "viber",
+    "rakuten viber",
+    "voice chat",
+  ]),
+  defineIcon("wechat", "WeChat", "communication", wechat, [
+    "wechat",
+    "we chat",
+    "weixin",
+    "tencent",
+  ]),
+  defineIcon("qq", "QQ", "communication", qq, [
+    "qq",
+    "tencent qq",
+    "qq messenger",
+  ]),
+  defineIcon("kakaotalk", "KakaoTalk", "communication", kakaotalk, [
+    "kakaotalk",
+    "kakao talk",
+    "kakao",
+  ]),
+  defineIcon("snapchat", "Snapchat", "communication", snapchat, [
+    "snapchat",
+    "snap chat",
+    "snap",
+  ]),
+  defineIcon(
+    "imessage",
+    "Apple Messages / iMessage",
+    "communication",
+    imessage,
+    ["imessage", "i message", "apple messages", "ios messages"],
+  ),
+  defineIcon(
+    "irc",
+    "IRC",
+    "communication",
+    irc,
+    [
+      "irc",
+      "internet relay chat",
+      "irc channel",
+      "irc network",
+      "channel chat",
+    ],
+    "Generic app-authored IRC channel symbol, not an official project or client logo. Identifies Internet Relay Chat only; does not imply a functional integration.",
+  ),
+  defineIcon("xmpp", "XMPP", "communication", xmpp, [
+    "xmpp",
+    "jabber",
+    "federated messaging",
+  ]),
+  defineIcon("simplex", "SimpleX Chat", "communication", simplex, [
+    "simplex",
+    "simplex chat",
+    "simple x",
+  ]),
+  defineIcon("session", "Session messenger", "communication", session, [
+    "session",
+    "session messenger",
+    "session chat",
+  ]),
+  defineIcon("threema", "Threema", "communication", threema, [
+    "threema",
+    "threema messenger",
+    "threema work",
+  ]),
+  defineIcon("mumble", "Mumble", "communication", mumble, [
+    "mumble",
+    "murmur",
+    "voice chat",
+  ]),
+  defineIcon("teamspeak", "TeamSpeak", "communication", teamspeak, [
+    "teamspeak",
+    "team speak",
+    "ts3",
+    "voice chat",
+  ]),
+  defineIcon("zoom", "Zoom", "communication", zoom, [
+    "zoom",
+    "zoom meetings",
+    "zoom team chat",
+  ]),
+  defineIcon("webex", "Webex", "communication", webex, [
+    "webex",
+    "cisco webex",
+    "web ex",
+    "meetings",
+  ]),
+  defineIcon("wire", "Wire", "communication", wire, [
+    "wire",
+    "wire messenger",
+    "wire chat",
+  ]),
+  defineIcon(
+    "delta-chat",
+    "Delta Chat",
+    "communication",
+    deltachat,
+    ["delta chat", "deltachat", "email messenger"],
+    "Delta Chat using the publisher bubble and delta letter, adapted to theme-safe linework.",
+  ),
+  defineIcon(
+    "briar",
+    "Briar",
+    "communication",
+    briar,
+    ["briar", "briar messenger", "peer to peer chat"],
+    "Briar using both exact publisher strand paths with theme-color fill.",
+  ),
+  defineIcon(
+    "jami",
+    "Jami",
+    "communication",
+    jami,
+    ["jami", "jami messenger", "gnu jami", "savoir faire linux"],
+    "Jami using the publisher ribbon emblem with monochrome layer contrast; the wordmark is omitted.",
+  ),
+  defineIcon(
+    "nextcloud-talk",
+    "Nextcloud Talk",
+    "communication",
+    nextcloudtalk,
+    ["nextcloud talk", "nextcloudtalk", "spreed", "self hosted chat"],
+    "Nextcloud Talk using the publisher product bubble/ring, not the generic Nextcloud logo.",
+  ),
+  defineIcon("gitter", "Gitter", "communication", gitter, [
+    "gitter",
+    "gitter chat",
+    "developer chat",
+  ]),
+] as const;

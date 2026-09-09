@@ -5,6 +5,10 @@ import { putty } from "./puttyBrandIcon";
 import { noip } from "./noipBrandIcon";
 import { vscode } from "./developerPublisherBrandIcons";
 import {
+  MESSAGING_PUBLISHER_BRAND_ICONS,
+  type MessagingPublisherBrandIconName,
+} from "./messagingPublisherBrandIcons";
+import {
   HOSTING_HISTORICAL_BRAND_ICONS,
   type HostingHistoricalBrandIconName,
 } from "./hostingHistoricalBrandIcons";
@@ -60,6 +64,7 @@ export * from "./hostingPublisherBrandIcons";
 export { putty } from "./puttyBrandIcon";
 export { noip } from "./noipBrandIcon";
 export { vscode } from "./developerPublisherBrandIcons";
+export * from "./messagingPublisherBrandIcons";
 export * from "./hostingHistoricalBrandIcons";
 export * from "./telecomPublisherBrandIcons";
 export * from "./hostingIdentifierIcons";
@@ -75,7 +80,8 @@ export type BrandIconName =
   | PublisherBrandIconName
   | HostingPublisherBrandIconName
   | HostingHistoricalBrandIconName
-  | TelecomPublisherBrandIconName;
+  | TelecomPublisherBrandIconName
+  | MessagingPublisherBrandIconName;
 
 /**
  * Lookup of every brand mark by name, for tests and dynamic resolution.
@@ -94,4 +100,5 @@ export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
   ...HOSTING_PUBLISHER_BRAND_ICONS,
   ...HOSTING_HISTORICAL_BRAND_ICONS,
   ...TELECOM_PUBLISHER_BRAND_ICONS,
+  ...MESSAGING_PUBLISHER_BRAND_ICONS,
 };

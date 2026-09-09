@@ -663,3 +663,68 @@ aliases expose these existing choices. Inspector, magnifier, linter, test-checkl
 and control-panel sliders use local Lucide glyphs; the bug collection is an
 app-authored two-insect tray symbol. None of these choices implies an installed
 service or functional integration.
+
+## Messaging platforms
+
+The Communication category adds 30 pure, unframed choices. Existing Slack,
+Mattermost, Rocket.Chat, Matrix, Zulip and Element keys and artwork are unchanged.
+These icons identify a saved connection; they do not install clients, enable
+protocol support, or claim that a messaging integration exists.
+
+Twenty-four marks use exact paths from the pinned Simple Icons 16.28.0 release:
+Discord, Telegram, WhatsApp, Signal, Messenger, Google Chat, Google Messages,
+LINE, Viber, WeChat, QQ, KakaoTalk, Snapchat, iMessage, XMPP, SimpleX, Session,
+Threema, Mumble, TeamSpeak, Zoom, Webex, Wire and Gitter. Their upstream source and
+usage links remain in `simple-icons/data/simple-icons.json`; the generated
+module records the pinned collection version. Publisher identity references
+include [Discord](https://discord.com/branding),
+[Signal](https://signal.org/brand), [LINE](https://line.me/en/logo),
+[Viber](https://www.viber.com/brand-center), [Threema](https://threema.ch/en/press)
+and [Wire](https://brand.wire.com). The Zoom choice deliberately retains the
+verified wordmark: its correct wide proportions make the letters small at 16px.
+It is not replaced with an unrelated camera glyph.
+
+Three collection entries record Wikimedia rather than a publisher SVG as their
+artwork source. That provenance is retained, not relabelled as direct publisher
+artwork: [iMessage](https://commons.wikimedia.org/wiki/File:IMessage_logo.svg),
+[QQ](https://en.wikipedia.org/wiki/File:Tencent_QQ.svg), and
+[KakaoTalk](https://commons.wikimedia.org/wiki/File:KakaoTalk_logo.svg).
+Apple's [Messages listing](https://apps.apple.com/us/app/messages/id1146560473),
+Tencent's [QQ identity portal](https://qq.design/brand/BrandDesign/Logo), and
+[Kakao's product page](https://www.kakaocorp.com/page/service/service/KakaoTalk?lang=en)
+are separate identity references. Collection availability is not a new license
+for the underlying trademarks.
+
+Five choices use locally normalized publisher SVG geometry, verified on
+2026-09-09. These are monochrome identification adaptations, not original
+publisher monochrome releases or endorsements. Only passive paths/rectangles,
+uniform transforms and theme color/opacity ship; no source CSS, gradients,
+filters, raster images, masks, fonts or remote requests are retained.
+
+| Choice            | Publisher source and adaptation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `microsoft-teams` | [Current FY26 SVG](https://www.microsoft.com/content/dam/microsoft/bade/images/icons/en-us/m365-app-icons-fy26/Teams-Icon-FY26.svg), linked by [Microsoft 365](https://www.microsoft.com/microsoft-365). Original people, rounded tile and T geometry; redundant gradient overlays omitted. Theme opacity separates the bodies; the tile is outlined so the T remains legible without a fixed background. [Microsoft trademark guidance](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks) still applies. |
+| `delta-chat`      | [Publisher SVG](https://delta.chat/assets/logos/delta-chat.svg), linked by the [project homepage](https://delta.chat/en/). Original bubble boundary and delta letter, including the letter's source transform. The bubble uses theme linework; the gradient backdrop is omitted.                                                                                                                                                                                                                                               |
+| `briar`           | [Publisher black icon](https://briarproject.org/styleguide/images/briar_icon_black.svg) from the [brand guide](https://briarproject.org/styleguide/brand/). Both exact interlocking strand paths, uniformly scaled; editor metadata omitted.                                                                                                                                                                                                                                                                                   |
+| `jami`            | [Publisher SVG](https://jami.net/content/images/2018/12/logo-jami.svg), referenced by the [current project homepage](https://jami.net/). Compact ribbon emblem only; the wordmark, tagline, gradient definitions and duplicate shading overlays are omitted. Original ribbon paths retain their order; theme opacity separates the interwoven layers.                                                                                                                                                                          |
+| `nextcloud-talk`  | [Publisher product SVG](https://nextcloud.com/c/uploads/2022/10/nc-talk-icon-blue.svg), linked by [Nextcloud Talk](https://nextcloud.com/talk/). Exact speech-bubble/ring path with its transparent counter. This is the Talk product mark, not a relabelled generic Nextcloud logo.                                                                                                                                                                                                                                           |
+
+Reference SVG SHA-256 values:
+
+| Source               | SHA-256                                                            |
+| -------------------- | ------------------------------------------------------------------ |
+| Microsoft Teams FY26 | `6a33d49f19d1be2bcdf86921935a2171e5c18c3b11abe297ca03d5f4f302ba3a` |
+| Delta Chat           | `58dfdd96cea4b5c62e6cac4bd5210e8dd4b039995a2d0ae4cb3a30c882e702fa` |
+| Briar                | `7d130e3472ec4eb9a342152468daea2993cc91930151847a99d2b45bd4cc76a7` |
+| Jami                 | `47dacb6b58fb39bf0e9fc0d5d4e48381c63e5a550811f35c5ab759a5be54c40f` |
+| Nextcloud Talk       | `a1a7cd4a5bdf69f97ca7b8f76dd62f8a8582a3cee22d1796f5c49460042a21cd` |
+
+`irc` is explicitly a **generic app-authored protocol symbol**: a channel hash
+inside a speech bubble, not a claimed official IRC, network or client logo.
+
+`tests/icons/messagingPlatformIcons.test.tsx` covers all 30 new and six retained
+choices: unique categories/keys, common-name searches, saved selection resolution,
+pure passive rendering, exact collection/publisher geometry and strict icon
+library export/import. The `messaging` contact-sheet family renders the actual
+catalog components at 16/24/32/96px in both themes, including the large Explorer
+preview size.

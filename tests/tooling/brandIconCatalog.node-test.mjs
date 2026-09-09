@@ -198,6 +198,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     HOSTING_PUBLISHER_BRAND_ICONS,
     HOSTING_HISTORICAL_BRAND_ICONS,
     TELECOM_PUBLISHER_BRAND_ICONS,
+    MESSAGING_PUBLISHER_BRAND_ICONS,
     putty,
     noip,
     vscode,
@@ -212,6 +213,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     ...Object.keys(HOSTING_PUBLISHER_BRAND_ICONS),
     ...Object.keys(HOSTING_HISTORICAL_BRAND_ICONS),
     ...Object.keys(TELECOM_PUBLISHER_BRAND_ICONS),
+    ...Object.keys(MESSAGING_PUBLISHER_BRAND_ICONS),
     "putty",
     "noip",
     "vscode",
@@ -230,6 +232,26 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
   assert.equal(BRAND_ICONS.noip, noip);
   assert.equal(BRAND_ICONS.vscode, vscode);
   const providerGeometry = {
+    microsoftteams: [
+      6,
+      "b8ac2967bb7f3086ddb5f0bd9e5d7ec1100efc93dc3c0b8b9faaf58343a2b7a9",
+    ],
+    deltachat: [
+      2,
+      "3b9d6d49e759475918e2ddf59a02a9df7fac674aa4454530819ec8a62871b8b8",
+    ],
+    briar: [
+      2,
+      "1600ab4f8e15836c883dbca0b9c89ca2a7a0ded026d478a2ab40a09879897d55",
+    ],
+    jami: [
+      13,
+      "bdc43946ef8af0f50e63083c79c92f4477bb42132c78594e7dfc724b2f9fac5f",
+    ],
+    nextcloudtalk: [
+      1,
+      "36b75989b3db0399481b619dd0670f6b0310623abaebf0db632a70fbc9e4eea7",
+    ],
     vscode: [
       1,
       "fbad10ea3e61242c459ab2a02919da5b794e00665d613c0ccbb8c4187952664c",

@@ -221,6 +221,31 @@ export const BRAND_ICON_SLUGS = [
   "exoscale",
   // Developer integration protocol
   "modelcontextprotocol",
+  // Messaging and voice communities (pure platform marks)
+  "discord",
+  "telegram",
+  "whatsapp",
+  "signal",
+  "messenger",
+  "googlechat",
+  "googlemessages",
+  "line",
+  "viber",
+  "wechat",
+  "qq",
+  "kakaotalk",
+  "snapchat",
+  "imessage",
+  "xmpp",
+  "simplex",
+  "session",
+  "threema",
+  "mumble",
+  "teamspeak",
+  "zoom",
+  "webex",
+  "wire",
+  "gitter",
 ] as const;
 
 /** A slug known to be vendored into `generatedBrandIcons.ts`. */

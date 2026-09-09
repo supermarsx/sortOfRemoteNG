@@ -9,6 +9,44 @@ import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
 const requestedKeys = {
+  messaging: [
+    "discord",
+    "telegram",
+    "whatsapp",
+    "signal",
+    "messenger",
+    "microsoft-teams",
+    "google-chat",
+    "google-messages",
+    "line",
+    "viber",
+    "wechat",
+    "qq",
+    "kakaotalk",
+    "snapchat",
+    "imessage",
+    "irc",
+    "xmpp",
+    "simplex",
+    "session",
+    "threema",
+    "mumble",
+    "teamspeak",
+    "zoom",
+    "webex",
+    "wire",
+    "delta-chat",
+    "briar",
+    "jami",
+    "nextcloud-talk",
+    "gitter",
+    "slack",
+    "mattermost",
+    "rocket-chat",
+    "matrix",
+    "zulip",
+    "element",
+  ],
   "developer-symbols": [
     "mcp",
     "mcp-server",
@@ -43,7 +81,7 @@ if (
   ].includes(family)
 )
   throw new Error(
-    "Choose servers, fruits, retraced, appliance-refined, developer-symbols, pirates or emojis",
+    "Choose servers, fruits, retraced, appliance-refined, developer-symbols, messaging, pirates or emojis",
   );
 const refined = family === "appliance-refined";
 const expanded =

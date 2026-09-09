@@ -26,8 +26,10 @@ import {
 } from "../brand";
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
+import { MESSAGING_PLATFORM_ICONS } from "./messagingPlatforms";
 
 export const COMMUNICATION_ICONS = [
+  ...MESSAGING_PLATFORM_ICONS,
   defineIcon("mail", "Mail", "communication", Mail, ["exchange", "email"]),
   defineIcon("mailbox", "Mailbox", "communication", Mailbox, [
     "mailcow",
