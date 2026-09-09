@@ -21,6 +21,48 @@ const classical = <const Key extends string>(
     `${label}: symbolic connection marker`,
   );
 
+// Thanatos's winged depiction is documented by the British Museum:
+// https://www.britishmuseum.org/collection/object/G_1865-0103-23
+// The lowered torch is an original symbolic design choice, not an artifact copy.
+const Thanatos = symbol(
+  "ThanatosWingAndTorch",
+  "M12 16C4 16 2 9 3 3c5 .5 9 5 9 13ZM4 6l6 7M5 10l4 2",
+  "M16 3h3l-1 11h-1ZM15 14h5l-1 3h-3Z",
+  "M16 17c-1 2 0 4 2 5 2-2 3-4 1-5",
+);
+const SeatedBuddha = createLucideIcon("SeatedBuddha", [
+  ["path", { d: "M11 3a1 1 0 0 1 2 0", key: "topknot" }],
+  ["circle", { cx: "12", cy: "6", r: "2", key: "head" }],
+  [
+    "path",
+    {
+      d: "M9.5 10C7.5 11 8 14 6 16M14.5 10c2 1 1.5 4 3.5 6",
+      key: "shoulders-arms",
+    },
+  ],
+  ["path", { d: "M9 12l1 3h4l1-3M10 15q2 2 4 0", key: "resting-hands" }],
+  [
+    "path",
+    {
+      d: "M8 16c-2-1-5 .3-5 2 0 2.5 6 3.5 9 1 3 2.5 9 1.5 9-1 0-1.7-3-3-5-2",
+      key: "crossed-legs",
+    },
+  ],
+]);
+const Angel = createLucideIcon("AngelWingsAndHalo", [
+  ["ellipse", { cx: "12", cy: "2.8", rx: "3", ry: "1", key: "halo" }],
+  ["circle", { cx: "12", cy: "7.5", r: "2", key: "head" }],
+  [
+    "path",
+    {
+      d: "M8 10C6 9 3 6 2 7c-1 6 1 10 7 10M16 10c2-1 5-4 6-3 1 6-1 10-7 10",
+      key: "wings",
+    },
+  ],
+  ["path", { d: "M3 11l4 3M21 11l-4 3", key: "feathers" }],
+  ["path", { d: "m10 11-3 10h10l-3-10", key: "robe" }],
+]);
+
 // Original symbolic drawings, not portraits or reproductions of sacred art.
 // Classical attribute references: Getty's People and Stories in Greek and Roman
 // Art; https://www.metmuseum.org/essays/greek-gods-and-religious-practices
@@ -151,6 +193,13 @@ export const DEITY_RELIGION_ICONS = [
     ),
     ["hades", "pluto", "underworld", "throne"],
   ),
+  classical("deity-thanatos", "Thanatos — wing and lowered torch", Thanatos, [
+    "thanatos",
+    "death",
+    "peaceful",
+    "wing",
+    "lowered torch",
+  ]),
   classical(
     "deity-persephone",
     "Persephone / Proserpina — pomegranate",
@@ -221,6 +270,31 @@ export const DEITY_RELIGION_ICONS = [
       "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20ZM12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6ZM12 2v7M12 15v7M2 12h7M15 12h7M5 5l5 5M14 14l5 5M19 5l-5 5M10 14l-5 5",
     ),
     ["religion", "buddhism", "buddhist", "dharma", "wheel"],
+  ),
+  defineIcon(
+    "religion-buddha",
+    "Buddha — seated meditation",
+    "deities-religion",
+    SeatedBuddha,
+    [
+      "religion",
+      "buddha",
+      "budda",
+      "buddhism",
+      "buddhist",
+      "meditation",
+      "seated",
+      "peace",
+    ],
+    "Original symbolic drawing of a respectfully seated, meditating Buddha",
+  ),
+  defineIcon(
+    "religion-angel",
+    "Angel — wings and halo",
+    "deities-religion",
+    Angel,
+    ["religion", "angel", "guardian angel", "wings", "halo", "heaven", "faith"],
+    "Original angel drawing with open wings, a robe, and a halo",
   ),
   defineIcon(
     "religion-lotus",

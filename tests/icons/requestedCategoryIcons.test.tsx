@@ -44,11 +44,11 @@ function geometry(key: string) {
 }
 
 describe("requested folder, network, pirate and religious symbol catalog", () => {
-  it("adds exactly 69 stable keys with 23 matching open-state folder variants", () => {
-    expect(NEW_ICONS).toHaveLength(69);
+  it("keeps 84 stable choices with 23 matching open-state folder variants", () => {
+    expect(NEW_ICONS).toHaveLength(84);
     expect(ADDITIONAL_FOLDER_ICONS).toHaveLength(23);
-    expect(PIRATE_ICONS).toHaveLength(10);
-    expect(DEITY_RELIGION_ICONS).toHaveLength(24);
+    expect(PIRATE_ICONS).toHaveLength(22);
+    expect(DEITY_RELIGION_ICONS).toHaveLength(27);
     expect(new Set(CONNECTION_ICON_CATALOG.map(({ key }) => key)).size).toBe(
       CONNECTION_ICON_CATALOG.length,
     );
@@ -120,8 +120,8 @@ describe("requested folder, network, pirate and religious symbol catalog", () =>
       }
     },
   );
-  it("moves exactly the twelve emoji keys without moving shapes or fruits", () => {
-    expect(EMOJI_ICONS).toHaveLength(12);
+  it("keeps all 25 emoji choices separate from shapes and fruits", () => {
+    expect(EMOJI_ICONS).toHaveLength(25);
     expect(
       getConnectionIconsByCategory("emojis").map(({ key }) => key),
     ).toEqual(EMOJI_ICONS.map(({ key }) => key));

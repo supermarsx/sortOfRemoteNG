@@ -45,6 +45,25 @@ import {
 import { defineIcon } from "./types";
 import { FRUIT_ICONS } from "./fruits";
 
+const RisingSun = createLucideIcon("RisingSun", [
+  ["path", { d: "M6 15a6 6 0 0 1 12 0M2 15h20M5 19h14", key: "sun-horizon" }],
+  [
+    "path",
+    { d: "M12 3v2M5 6l1.5 1.5M2 11h2M19 6l-1.5 1.5M22 11h-2", key: "rays" },
+  ],
+]);
+const SunnyDay = createLucideIcon("SunnyDay", [
+  ["circle", { cx: "8", cy: "8", r: "3", key: "sun" }],
+  [
+    "path",
+    { d: "M8 2v1M2 8h1M4 4l.7.7M13 4l-.7.7M14 8h-1M8 13v1", key: "rays" },
+  ],
+  [
+    "path",
+    { d: "M2 19c4-5 8-5 12 0M12 19c3-3 6-4 10-3M2 22h20", key: "landscape" },
+  ],
+]);
+
 const FilledHeart = createLucideIcon("FilledHeart", [
   [
     "path",
@@ -333,6 +352,24 @@ export const GENERIC_SHAPE_ICONS = [
     "sun",
     "day",
     "sunlight",
+    "weather",
+    "☀️",
+  ]),
+  defineIcon("rising-sun", "Rising sun", "generic-shapes", RisingSun, [
+    "rising sun",
+    "sunrise",
+    "dawn",
+    "morning",
+    "horizon",
+    "weather",
+    "🌅",
+  ]),
+  defineIcon("sunny-day", "Sunny day", "generic-shapes", SunnyDay, [
+    "sunny day",
+    "sunshine",
+    "daylight",
+    "landscape",
+    "hills",
     "weather",
     "☀️",
   ]),
