@@ -70,6 +70,20 @@ function InitConnections({
 }
 
 describe("ConnectionTree", () => {
+  it("prevents text selection on the tree surface without blocking folder expansion", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={mockConnections} />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    const tree = screen.getByRole("tree");
+    expect(tree).toHaveClass("select-none");
+    const folder = await screen.findByTestId("connection-group");
+    fireEvent.click(within(folder).getAllByRole("button")[0]);
+    expect(await screen.findByText("Item 1")).toBeInTheDocument();
+  });
   it("redraws a memoized row on custom icon replacement and global lock without changing the connection", async () => {
     const key = "custom:12345678-1234-4123-8123-123456789abc" as const;
     const icon = {

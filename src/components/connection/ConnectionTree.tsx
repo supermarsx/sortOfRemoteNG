@@ -402,7 +402,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       <div
         ref={treeRef}
         data-testid="connection-tree"
-        className={`flex-1 overflow-y-auto ${mgr.draggedId ? "min-h-[100px]" : ""}`}
+        className={`flex-1 overflow-y-auto select-none ${mgr.draggedId ? "min-h-[100px]" : ""}`}
         data-tauri-disable-drag="true"
         role="tree"
         tabIndex={mgr.state.selectedConnectionIds.size === 0 ? 0 : -1}
