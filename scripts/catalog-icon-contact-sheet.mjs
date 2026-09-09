@@ -9,6 +9,13 @@ import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
 const requestedKeys = {
+  proxies: [
+    "socks-proxy",
+    "http-proxy",
+    "proxy-chain",
+    "proxy-tunnel",
+    "waypoints",
+  ],
   messaging: [
     "discord",
     "telegram",
@@ -81,7 +88,7 @@ if (
   ].includes(family)
 )
   throw new Error(
-    "Choose servers, fruits, retraced, appliance-refined, developer-symbols, messaging, pirates or emojis",
+    "Choose servers, fruits, retraced, appliance-refined, developer-symbols, messaging, proxies, pirates or emojis",
   );
 const refined = family === "appliance-refined";
 const expanded =
