@@ -11,11 +11,27 @@ import {
   type DatabaseDataTarget,
 } from "../utils/connection/databaseManager";
 import { StorageData } from "../utils/storage/storage";
+import { activateConnectionNotes } from "../utils/storage/connectionNotesVault";
+import { generateId } from "../utils/core/id";
 import {
-  activateConnectionNotes,
-  deleteConnectionNotesSecret,
-  deleteConnectionNotesSecrets,
-} from "../utils/storage/connectionNotesVault";
+  archiveConnections,
+  emptyRecycleBin,
+  expiredRecycleBinIds,
+  normalizeRecycleBin,
+  normalizeRecycleBinPolicy,
+  recycleBinRows,
+  restoreRecycledConnections,
+  selectedRecycleBinIds,
+  RECYCLE_BIN_PURGE_WARNING,
+} from "../utils/connection/recycleBin";
+import type {
+  ConnectionRecycleBinApi,
+  DatabaseRecycleBin,
+  RecycleBinOutcome,
+  RecycleBinPolicy,
+  RecycleBinReview,
+  RecycleBinScope,
+} from "../types/connection/recycleBin";
 import { SettingsManager } from "../utils/settings/settingsManager";
 import {
   ConnectionState,
@@ -53,6 +69,21 @@ const initialState: ConnectionState = {
   sidebarCollapsed: false,
   tabGroups: [],
 };
+
+/** Both active loads and restored archives use the same runtime boundary. */
+function normalizeLoadedConnection(connection: Connection): Connection {
+  const date = (value: unknown): Date => {
+    const parsed = value ? new Date(value as string | number) : new Date();
+    return Number.isFinite(parsed.getTime()) ? parsed : new Date();
+  };
+  // Persisted Connection dates remain strings; the existing provider runtime
+  // contract rehydrates them without changing the serialized schema.
+  return normalizeAdvancedProtocolConnection({
+    ...connection,
+    createdAt: date(connection.createdAt),
+    updatedAt: date(connection.updatedAt),
+  } as unknown as Connection);
+}
 
 /** Flatten the connection tree into an ordered list of IDs for range-select. */
 function flattenConnectionIds(connections: Connection[]): string[] {
@@ -151,13 +182,60 @@ export const connectionReducer = (
       };
     }
     case "DELETE_CONNECTION":
-      // Remove a connection by id
+    case "RECYCLE_CONNECTIONS": {
+      const operation =
+        action.type === "RECYCLE_CONNECTIONS"
+          ? action.payload
+          : {
+              ids: [action.payload],
+              now: Date.now(),
+              operationId: `legacy-${Date.now()}`,
+            };
+      const next = archiveConnections(
+        state.connections,
+        state.recycleBinData ?? emptyRecycleBin(),
+        operation.ids,
+        operation.now,
+        operation.operationId,
+      );
+      if (!next.archived) return state;
+      const liveIds = new Set(
+        next.connections.map((connection) => connection.id),
+      );
       return {
         ...state,
-        connections: state.connections.filter(
-          (conn) => conn.id !== action.payload,
+        connections: next.connections,
+        recycleBinData: next.bin,
+        selectedConnection:
+          state.selectedConnection && liveIds.has(state.selectedConnection.id)
+            ? state.selectedConnection
+            : null,
+        selectedConnectionIds: new Set(
+          [...state.selectedConnectionIds].filter((id) => liveIds.has(id)),
         ),
       };
+    }
+    case "SET_RECYCLE_BIN":
+      return { ...state, recycleBinData: action.payload };
+    case "APPLY_RECYCLE_BIN": {
+      const live = new Map(
+        action.payload.connections.map((connection) => [
+          connection.id,
+          connection,
+        ]),
+      );
+      return {
+        ...state,
+        connections: action.payload.connections,
+        recycleBinData: action.payload.bin,
+        selectedConnection: state.selectedConnection
+          ? (live.get(state.selectedConnection.id) ?? null)
+          : null,
+        selectedConnectionIds: new Set(
+          [...state.selectedConnectionIds].filter((id) => live.has(id)),
+        ),
+      };
+    }
     case "SELECT_CONNECTION":
       // Track the currently selected connection (clears multi-select)
       return {
@@ -320,6 +398,19 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // Stable live snapshot used by logging and persistence callbacks.
   const stateRef = useRef(state);
   const connectionsRef = useRef(state.connections);
+  const recycleBinRef = useRef(state.recycleBinData ?? emptyRecycleBin());
+  const loadedStorageRef = useRef<StorageData | null>(null);
+  const recycleReviewsRef = useRef(
+    new Map<
+      string,
+      { review: RecycleBinReview; ids: string[]; deadline: number }
+    >(),
+  );
+  const recycleBusyRef = useRef(false);
+  const [recycleBusy, setRecycleBusy] = useState(false);
+  const [recycleAccessGeneration, setRecycleAccessGeneration] = useState(0);
+  const recycleLoadingRef = useRef(false);
+  const [recycleLoading, setRecycleLoading] = useState(false);
   const [persistence, setPersistence] = useState({
     dirty: false,
     saving: false,
@@ -335,13 +426,33 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   stateRef.current = state;
   connectionsRef.current = state.connections;
+  recycleBinRef.current = state.recycleBinData ?? emptyRecycleBin();
+
+  useEffect(
+    () =>
+      databaseManager.onDatabaseAccessChange?.((access) => {
+        if (access.databaseId !== activeDatabaseTargetRef.current?.databaseId)
+          return;
+        recycleReviewsRef.current.clear();
+        loadGenerationRef.current += 1;
+        // Suspension masks the bin and invalidates reviews without discarding the
+        // provider's recoverable dirty data. Global close/switch clears it below.
+        setRecycleAccessGeneration((generation) => generation + 1);
+      }),
+    [databaseManager],
+  );
 
   useEffect(
     () =>
       databaseManager.onCurrentDatabaseChange((change) => {
+        const changedOwner =
+          !!change.database &&
+          !!activeDatabaseTargetRef.current &&
+          change.database.id !== activeDatabaseTargetRef.current.databaseId;
         if (
-          !change.database &&
-          ["close", "lock", "delete"].includes(change.reason)
+          changedOwner ||
+          (!change.database &&
+            ["close", "lock", "delete"].includes(change.reason))
         ) {
           const lostUnsaved =
             dirtyRevisionRef.current > persistedRevisionRef.current;
@@ -358,13 +469,21 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           tabGroupSavePendingRef.current = false;
           connectionsRef.current = [];
           tabGroupsRef.current = [];
+          recycleBinRef.current = emptyRecycleBin();
+          loadedStorageRef.current = null;
+          recycleReviewsRef.current.clear();
           stateRef.current = {
             ...stateRef.current,
             connections: [],
             tabGroups: [],
+            recycleBinData: recycleBinRef.current,
           };
           baseDispatch({ type: "SET_CONNECTIONS", payload: [] });
           baseDispatch({ type: "SET_TAB_GROUPS", payload: [] });
+          baseDispatch({
+            type: "SET_RECYCLE_BIN",
+            payload: recycleBinRef.current,
+          });
           setPersistence({
             dirty: false,
             saving: false,
@@ -409,6 +528,28 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // Logging is wrapped in try-catch so a logging failure never blocks state updates.
   const dispatch = useCallback(
     (action: ConnectionAction) => {
+      if (action.type === "DELETE_CONNECTION") {
+        action = {
+          type: "RECYCLE_CONNECTIONS",
+          payload: {
+            ids: [action.payload],
+            now: Date.now(),
+            operationId: generateId(),
+          },
+        };
+      }
+      if (
+        action.type === "RECYCLE_CONNECTIONS" &&
+        (!hasLoadedRef.current ||
+          !activeDatabaseTargetRef.current ||
+          databaseManager.getCurrentDatabase()?.id !==
+            activeDatabaseTargetRef.current.databaseId)
+      )
+        throw new Error(
+          "Open and unlock the owning database before deleting connections.",
+        );
+      if (action.type === "RECYCLE_CONNECTIONS")
+        activeDatabaseTargetRef.current?.assertAccessible?.();
       try {
         switch (action.type) {
           case "SET_CONNECTIONS": {
@@ -417,9 +558,6 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             );
             const nextIds = new Set(
               action.payload.map((connection) => connection.id),
-            );
-            const removedIds = [...previousIds].filter(
-              (connectionId) => !nextIds.has(connectionId),
             );
             for (const connectionId of nextIds) {
               if (!previousIds.has(connectionId)) {
@@ -431,28 +569,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
                 }
               }
             }
-            if (removedIds.length > 0) {
-              void deleteConnectionNotesSecrets(removedIds).then(
-                (failures) => {
-                  if (failures > 0) {
-                    settingsManager.logAction(
-                      "warn",
-                      "Bulk secure note cleanup incomplete",
-                      undefined,
-                      `${failures} OS vault note entries could not be deleted.`,
-                    );
-                  }
-                },
-                () => {
-                  settingsManager.logAction(
-                    "warn",
-                    "Bulk secure note cleanup failed",
-                    undefined,
-                    "The bounded OS vault cleanup queue rejected the request.",
-                  );
-                },
-              );
-            }
+            // SET_CONNECTIONS also hydrates filtered detached-window snapshots.
+            // Absence here is never deletion and must never remove shared notes.
             break;
           }
           case "ADD_TAB_GROUP":
@@ -501,20 +619,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             );
             break;
           }
-          case "DELETE_CONNECTION": {
-            void deleteConnectionNotesSecret(action.payload).catch(() => {
-              settingsManager.logAction(
-                "warn",
-                "Secure note cleanup failed",
-                action.payload,
-                "The OS vault note entry could not be deleted and may require retry.",
-              );
-            });
+          case "RECYCLE_CONNECTIONS": {
             settingsManager.logAction(
               "info",
-              "Connection deleted",
-              action.payload,
-              `Connection ID: ${action.payload}`,
+              "Connections moved to Recycle Bin",
+              undefined,
+              `${action.payload.ids.length} selected connection IDs; pending database save.`,
             );
             break;
           }
@@ -556,13 +666,15 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       stateRef.current = nextState;
       connectionsRef.current = nextState.connections;
       tabGroupsRef.current = nextState.tabGroups;
+      recycleBinRef.current = nextState.recycleBinData ?? emptyRecycleBin();
 
       if (
         hasLoadedRef.current &&
         activeDatabaseTargetRef.current &&
         databaseManager.getCurrentDatabase() &&
         (nextState.connections !== currentState.connections ||
-          nextState.tabGroups !== currentState.tabGroups)
+          nextState.tabGroups !== currentState.tabGroups ||
+          nextState.recycleBinData !== currentState.recycleBinData)
       ) {
         markPersistenceDirty();
       }
@@ -586,10 +698,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const buildStorageSnapshot = useCallback(
     (): StorageData => ({
+      ...loadedStorageRef.current,
       connections: connectionsRef.current,
-      settings: {},
+      settings: loadedStorageRef.current?.settings ?? {},
       timestamp: Date.now(),
       tabGroups: tabGroupsRef.current,
+      recycleBin: recycleBinRef.current,
     }),
     [],
   );
@@ -716,6 +830,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const loadData = useCallback(
     async (expectedDatabaseId?: string) => {
       const generation = ++loadGenerationRef.current;
+      recycleLoadingRef.current = true;
+      setRecycleLoading(true);
+      recycleReviewsRef.current.clear();
       try {
         // Never replace the rendered rows while their owning database still has
         // a dirty generation. This also covers callers that changed the manager
@@ -748,45 +865,34 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           return false;
         }
 
-        if (data && data.connections) {
-          // Convert date strings back to Date objects (with validation)
-          const toValidDate = (
-            value: unknown,
-            field: string,
-            connId?: string,
-          ): Date => {
-            if (!value) return new Date();
-            const d = new Date(value as string | number);
-            if (isNaN(d.getTime())) {
-              console.warn(
-                `Invalid ${field} date for connection ${connId}:`,
-                value,
-              );
-              return new Date();
-            }
-            return d;
-          };
-          const connections = data.connections.map((conn: any) =>
-            normalizeAdvancedProtocolConnection({
-              ...conn,
-              createdAt: toValidDate(conn.createdAt, "createdAt", conn.id),
-              updatedAt: toValidDate(conn.updatedAt, "updatedAt", conn.id),
-            } as Connection),
+        if (!data || !Array.isArray(data.connections))
+          throw new Error(
+            "Invalid database data; Recycle Bin remains unavailable until a successful reload.",
           );
+        {
+          const recycleBin = normalizeRecycleBin(data.recycleBin);
+          const connections = data.connections.map(normalizeLoadedConnection);
           const tabGroups = Array.isArray(data.tabGroups) ? data.tabGroups : [];
           stateRef.current = {
             ...stateRef.current,
             connections,
             tabGroups,
+            recycleBinData: recycleBin,
           };
           connectionsRef.current = connections;
           tabGroupsRef.current = tabGroups;
+          recycleBinRef.current = recycleBin;
+          loadedStorageRef.current = data;
+          recycleReviewsRef.current.clear();
           baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
           baseDispatch({ type: "SET_TAB_GROUPS", payload: tabGroups });
+          baseDispatch({ type: "SET_RECYCLE_BIN", payload: recycleBin });
         }
         // Mark as loaded after successfully loading data
         activeDatabaseTargetRef.current = target;
         hasLoadedRef.current = true;
+        recycleLoadingRef.current = false;
+        setRecycleLoading(false);
         dirtyRevisionRef.current = 0;
         persistedRevisionRef.current = 0;
         pendingSnapshotRef.current = null;
@@ -810,6 +916,342 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     },
     [databaseManager, flushPendingSave],
   );
+
+  const captureRecycleScope = useCallback((): RecycleBinScope => {
+    const target = activeDatabaseTargetRef.current;
+    if (
+      recycleLoadingRef.current ||
+      !hasLoadedRef.current ||
+      !target ||
+      databaseManager.getCurrentDatabase()?.id !== target.databaseId
+    )
+      throw new Error(
+        "Open and unlock the owning database to use its Recycle Bin.",
+      );
+    target.assertAccessible?.();
+    const access = databaseManager.getDatabaseAccessState?.(target.databaseId);
+    if (access && access.status !== "ready")
+      throw new Error(
+        "Database access is suspended. Unlock before using its Recycle Bin.",
+      );
+    return {
+      databaseId: target.databaseId,
+      generation: loadGenerationRef.current,
+      revision: recycleBinRef.current.revision,
+    };
+  }, [databaseManager]);
+  const assertRecycleScope = useCallback(
+    (expected: RecycleBinScope, checkRevision = true) => {
+      const current = captureRecycleScope();
+      if (
+        current.databaseId !== expected.databaseId ||
+        current.generation !== expected.generation ||
+        (checkRevision && current.revision !== expected.revision)
+      )
+        throw new Error(
+          "Recycle Bin or database changed. Refresh and review the action again.",
+        );
+    },
+    [captureRecycleScope],
+  );
+
+  const runRecycleMutation = useCallback(
+    async (
+      scope: RecycleBinScope,
+      operation: (
+        connections: Connection[],
+        bin: DatabaseRecycleBin,
+        now: number,
+        operationId: string,
+      ) => {
+        connections: Connection[];
+        bin: DatabaseRecycleBin;
+        archived?: number;
+        restored?: number;
+        purged?: number;
+        skipped?: number;
+      },
+    ): Promise<RecycleBinOutcome> => {
+      scope = { ...scope };
+      if (recycleBusyRef.current)
+        throw new Error("A Recycle Bin operation is already in progress.");
+      assertRecycleScope(scope);
+      recycleBusyRef.current = true;
+      setRecycleBusy(true);
+      try {
+        await flushPendingSave();
+        assertRecycleScope(scope);
+        const result = operation(
+          stateRef.current.connections,
+          recycleBinRef.current,
+          Date.now(),
+          generateId(),
+        );
+        if (
+          result.connections !== stateRef.current.connections ||
+          result.bin !== recycleBinRef.current
+        ) {
+          dispatch({ type: "APPLY_RECYCLE_BIN", payload: result });
+          await flushPendingSave();
+        }
+        assertRecycleScope(scope, false);
+        recycleReviewsRef.current.clear();
+        return {
+          committed: true,
+          archived: result.archived ?? 0,
+          restored: result.restored ?? 0,
+          purged: result.purged ?? 0,
+          skipped: result.skipped ?? 0,
+          warnings: [
+            ...(result.purged ? [RECYCLE_BIN_PURGE_WARNING] : []),
+            ...(result.skipped
+              ? [
+                  "Some entries were not restored because they expired or their connection IDs already exist. Conflicting archive entries were retained.",
+                ]
+              : []),
+          ],
+        };
+      } finally {
+        recycleBusyRef.current = false;
+        if (mountedRef.current) setRecycleBusy(false);
+      }
+    },
+    [assertRecycleScope, dispatch, flushPendingSave],
+  );
+
+  const archive = useCallback<ConnectionRecycleBinApi["archive"]>(
+    (ids, options) => {
+      const scope = options?.expectedScope
+        ? { ...options.expectedScope }
+        : captureRecycleScope();
+      assertRecycleScope(scope);
+      const selected = [...ids];
+      const keepChildren = options?.keepChildren === true;
+      return runRecycleMutation(scope, (connections, bin, now, operationId) =>
+        archiveConnections(
+          connections,
+          bin,
+          selected,
+          now,
+          operationId,
+          keepChildren,
+        ),
+      );
+    },
+    [assertRecycleScope, captureRecycleScope, runRecycleMutation],
+  );
+  const restore = useCallback<ConnectionRecycleBinApi["restore"]>(
+    (ids, scope) => {
+      const selected = [...ids];
+      return runRecycleMutation(scope, (connections, bin, now, operationId) => {
+        const restored = restoreRecycledConnections(
+          connections,
+          bin,
+          selected,
+          now,
+          operationId,
+        );
+        if (!restored.restored) return restored;
+        const liveIds = new Set(connections.map((connection) => connection.id));
+        return {
+          ...restored,
+          connections: restored.connections.map((connection) =>
+            liveIds.has(connection.id)
+              ? connection
+              : normalizeLoadedConnection(connection),
+          ),
+        };
+      });
+    },
+    [runRecycleMutation],
+  );
+
+  const makeRecycleReview = useCallback(
+    async (
+      kind: "purge" | "retention",
+      scope: RecycleBinScope,
+      ids: readonly string[] | null,
+      proposedPolicy?: RecycleBinPolicy,
+    ): Promise<RecycleBinReview> => {
+      scope = { ...scope };
+      const policy = proposedPolicy
+        ? normalizeRecycleBinPolicy(proposedPolicy)
+        : undefined;
+      if (recycleBusyRef.current)
+        throw new Error("A Recycle Bin operation is already in progress.");
+      assertRecycleScope(scope);
+      await flushPendingSave();
+      assertRecycleScope(scope);
+      const selected =
+        kind === "retention"
+          ? expiredRecycleBinIds(recycleBinRef.current, Date.now(), policy)
+          : [...selectedRecycleBinIds(recycleBinRef.current, ids)];
+      const review: RecycleBinReview = {
+        token: generateId(),
+        kind,
+        scope: { ...scope },
+        entryCount: selected.length,
+        expiresAt: Date.now() + 120_000,
+        ...(policy ? { policy } : {}),
+      };
+      // Bounded, one-use, monotonic expiry. UI cannot supply arbitrary purge paths.
+      while (recycleReviewsRef.current.size >= 8)
+        recycleReviewsRef.current.delete(
+          recycleReviewsRef.current.keys().next().value!,
+        );
+      recycleReviewsRef.current.set(review.token, {
+        review: structuredClone(review),
+        ids: selected,
+        deadline: performance.now() + 120_000,
+      });
+      return review;
+    },
+    [assertRecycleScope, flushPendingSave],
+  );
+  const reviewPurge = useCallback<ConnectionRecycleBinApi["reviewPurge"]>(
+    (ids, scope) =>
+      makeRecycleReview("purge", scope, ids === null ? null : [...ids]),
+    [makeRecycleReview],
+  );
+  const reviewRetention = useCallback<
+    ConnectionRecycleBinApi["reviewRetention"]
+  >(
+    (policy, scope) => makeRecycleReview("retention", scope, null, policy),
+    [makeRecycleReview],
+  );
+  const cancelReview = useCallback((token: string) => {
+    recycleReviewsRef.current.delete(token);
+  }, []);
+  const commitReview = useCallback<ConnectionRecycleBinApi["commitReview"]>(
+    async (token) => {
+      const pending = recycleReviewsRef.current.get(token);
+      recycleReviewsRef.current.delete(token);
+      if (!pending || performance.now() >= pending.deadline)
+        throw new Error(
+          "Recycle Bin review expired or was cancelled. Review the action again.",
+        );
+      return runRecycleMutation(
+        pending.review.scope,
+        (connections, bin, now, operationId) => {
+          if (performance.now() >= pending.deadline)
+            throw new Error(
+              "Recycle Bin review expired. Review the action again.",
+            );
+          if (pending.review.kind === "retention") {
+            const currentIds = expiredRecycleBinIds(
+              bin,
+              now,
+              pending.review.policy,
+            ).sort();
+            const reviewedIds = [...pending.ids].sort();
+            if (
+              currentIds.length !== reviewedIds.length ||
+              currentIds.some((id, index) => id !== reviewedIds[index])
+            )
+              throw new Error(
+                "More entries expired since the retention preview. Review the updated count again.",
+              );
+          }
+          const selected = new Set(pending.ids);
+          return {
+            connections,
+            bin: {
+              ...bin,
+              revision: operationId,
+              policy: pending.review.policy ?? bin.policy,
+              entries: bin.entries.filter((entry) => !selected.has(entry.id)),
+            },
+            purged: selected.size,
+          };
+        },
+      );
+    },
+    [runRecycleMutation],
+  );
+
+  // Only the loaded, unlocked owner is eligible. No inactive databases or vaults
+  // are scanned. Failed writes retain the recoverable dirty database snapshot.
+  useEffect(() => {
+    if (
+      !state.recycleBinData?.entries.length ||
+      state.recycleBinData.policy.mode === "forever"
+    )
+      return;
+    const expire = () => {
+      if (recycleBusyRef.current) return;
+      let scope: RecycleBinScope;
+      try {
+        scope = captureRecycleScope();
+      } catch {
+        return;
+      }
+      if (!expiredRecycleBinIds(recycleBinRef.current, Date.now()).length)
+        return;
+      void runRecycleMutation(scope, (connections, bin, now, operationId) => {
+        const expiredIds = new Set(expiredRecycleBinIds(bin, now));
+        return {
+          connections,
+          bin: expiredIds.size
+            ? {
+                ...bin,
+                revision: operationId,
+                entries: bin.entries.filter(
+                  (entry) => !expiredIds.has(entry.id),
+                ),
+              }
+            : bin,
+          purged: expiredIds.size,
+        };
+      }).catch(() => {
+        /* The durable writer retains failed state for retry. */
+      });
+    };
+    expire();
+    const timer = setInterval(expire, 3_600_000);
+    return () => clearInterval(timer);
+  }, [captureRecycleScope, runRecycleMutation, state.recycleBinData]);
+
+  const recycleBin = useMemo<ConnectionRecycleBinApi>(() => {
+    // The external access event advances this invalidation epoch even when the
+    // private payload stays unchanged. It must invalidate this redacted view.
+    void recycleAccessGeneration;
+    let scope: RecycleBinScope | null = null;
+    try {
+      if (!recycleLoading) scope = captureRecycleScope();
+    } catch {
+      /* Closed/locked/loading. */
+    }
+    const bin = state.recycleBinData ?? emptyRecycleBin();
+    return {
+      snapshot: scope
+        ? {
+            scope,
+            policy: { ...bin.policy },
+            entries: recycleBinRows(bin, state.connections),
+          }
+        : null,
+      busy: recycleBusy,
+      archive,
+      restore,
+      reviewPurge,
+      reviewRetention,
+      commitReview,
+      cancelReview,
+    };
+  }, [
+    state.recycleBinData,
+    state.connections,
+    recycleBusy,
+    recycleAccessGeneration,
+    recycleLoading,
+    captureRecycleScope,
+    archive,
+    restore,
+    reviewPurge,
+    reviewRetention,
+    commitReview,
+    cancelReview,
+  ]);
 
   // Debounced auto-save: coalesces rapid connection changes into a single write.
   const debouncedSave = useCallback(() => {
@@ -859,7 +1301,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     tabGroupSavePendingRef.current = false;
     // debouncedSave is stable (depends only on the database manager) — safe to omit from lint
     // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
-  }, [state.connections, state.tabGroups, databaseManager]);
+  }, [
+    state.connections,
+    state.tabGroups,
+    state.recycleBinData,
+    databaseManager,
+  ]);
 
   const contextValue = useMemo(
     () => ({
@@ -870,6 +1317,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       saveData,
       flushPendingSave,
       loadData,
+      recycleBin,
     }),
     [
       state,
@@ -879,6 +1327,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       saveData,
       flushPendingSave,
       loadData,
+      recycleBin,
     ],
   );
 

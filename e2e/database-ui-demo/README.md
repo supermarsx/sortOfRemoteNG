@@ -16,3 +16,11 @@ is written to `.artifacts/database-ui/`: six screenshots and a JSON report for
 1440px and 390px viewports. Checks cover all 18 bulk password fields, body
 padding and scrolling, a fixed reachable footer, no page overflow, and exactly
 one incomplete progress toast. Every screenshot visibly identifies demo data.
+
+Run `node scripts/database-ui-capture.mjs --recycle` for six additional desktop/narrow
+views of the real recycle-bin explorer, purge review and retention review. Only
+redacted synthetic rows and in-memory review tokens are provided; all archive,
+restore and commit methods refuse execution. The run checks the 50-row page cap,
+search-icon gutter, friendly database names and fixed, reachable review footers.
+The report is `.artifacts/database-ui/report-recycle.json`; no live database
+or persistence behavior is claimed by these screenshots.

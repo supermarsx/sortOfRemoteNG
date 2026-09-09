@@ -1687,6 +1687,8 @@ export interface ConnectionSession {
   group?: string;
   /** Tab group ID (sessions with same tabGroupId are visually grouped) */
   tabGroupId?: string;
+  /** A Recycle Bin tool tab is pinned to one database and never switches it. */
+  connectionRecycleBin?: { databaseId: string };
 
   // Reconnection
   reconnectAttempts?: number;

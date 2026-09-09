@@ -14,9 +14,20 @@ import { useDatabaseBulkActions } from "../../src/hooks/connection/useDatabaseBu
 import type { DatabaseActionManager } from "../../src/utils/connection/databaseActions";
 import type { Mgr } from "../../src/components/database/list/types";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
+import { RecycleDemo } from "./recycle";
 
 const view = new URL(location.href).searchParams.get("view") ?? "unlock";
-if (!["unlock", "bulk", "progress"].includes(view)) refuse("unknown view");
+if (
+  ![
+    "unlock",
+    "bulk",
+    "progress",
+    "recycle",
+    "recycle-review",
+    "retention-review",
+  ].includes(view)
+)
+  refuse("unknown view");
 const collections: ConnectionDatabase[] = Array.from(
   { length: 18 },
   (_, index) => ({
@@ -30,7 +41,8 @@ const collections: ConnectionDatabase[] = Array.from(
 );
 let release: (() => void) | undefined;
 const manager = {
-  getCurrentDatabase: () => null,
+  getCurrentDatabase: () =>
+    view === "recycle" || view.endsWith("-review") ? collections[0] : null,
   getDatabase: async (id: string) =>
     collections.find((entry) => entry.id === id) ?? null,
   isDatabaseUnlocked: () => false,
@@ -70,6 +82,8 @@ export function View() {
     bulk.select("all");
     demo.ready = true;
   }, [bulk]);
+  if (view === "recycle" || view.endsWith("-review"))
+    return <RecycleDemo retention={view === "retention-review"} />;
   return (
     <>
       <div

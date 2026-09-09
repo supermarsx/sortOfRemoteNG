@@ -48,6 +48,7 @@ import { useSessionManager } from "./hooks/session/useSessionManager";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
+import { collectConnectionSubtreeIds } from "./utils/connection/recycleBin";
 import { ToastProvider } from "./contexts/ToastContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { SessionFullscreenProvider } from "./contexts/SessionFullscreenProvider";
@@ -114,7 +115,7 @@ const TRAY_QUIT_REQUESTED_EVENT = "tray-quit-requested";
  */
 const AppContent: React.FC = () => {
   const { t } = useTranslation();
-  const { state, dispatch, loadData, saveData, flushPendingSave } =
+  const { state, dispatch, loadData, saveData, flushPendingSave, recycleBin } =
     useConnections();
   const sessionFullscreen = useSessionFullscreenController();
   const isSessionFullscreen = sessionFullscreen?.activeSessionId != null;
@@ -869,46 +870,32 @@ const AppContent: React.FC = () => {
     );
     const isFolder = connection.isGroup === true;
     const noun = isFolder ? "Folder" : "Connection";
+    const archiveScope = recycleBin?.snapshot?.scope;
 
-    // P9: count descendants recursively for folder delete. Subfolders
-    // count toward the total too — the cascade flattens the whole
-    // subtree.
-    const collectDescendantIds = (rootId: string): string[] => {
-      const out: string[] = [];
-      const stack: string[] = [rootId];
-      while (stack.length > 0) {
-        const id = stack.pop()!;
-        for (const c of state.connections) {
-          if (c.parentId === id) {
-            out.push(c.id);
-            stack.push(c.id);
-          }
-        }
-      }
-      return out;
-    };
+    const collectDescendantIds = (rootId: string): string[] =>
+      [...collectConnectionSubtreeIds(state.connections, [rootId])].filter(
+        (id) => id !== rootId,
+      );
 
     const performDelete = async (
       ids: string[],
       summaryNoun: string,
+      keepChildren = false,
     ): Promise<boolean> => {
-      for (const id of ids) {
-        dispatch({ type: "DELETE_CONNECTION", payload: id });
-        statusChecker.stopChecking(id);
-      }
+      let archived = 0;
+      let warnings: string[] = [];
       try {
-        await flushPendingSave();
-        settingsManager.logAction(
-          "info",
-          `${summaryNoun} deleted`,
-          connection.id,
-          ids.length === 1
-            ? `${summaryNoun} "${connection.name}" deleted`
-            : `${summaryNoun} "${connection.name}" + ${ids.length - 1} item(s) deleted`,
-          undefined,
-          connection.name,
-        );
-        return true;
+        if (!recycleBin || !archiveScope)
+          throw new Error(
+            "Open and unlock the database before deleting connections.",
+          );
+        // One owning-database operation, including the keep-children alternative.
+        const result = await recycleBin.archive([connection.id], {
+          keepChildren,
+          expectedScope: archiveScope,
+        });
+        archived = result.archived;
+        warnings = result.warnings;
       } catch (error) {
         console.error(
           `Failed to persist ${summaryNoun.toLowerCase()} deletion:`,
@@ -924,13 +911,32 @@ const AppContent: React.FC = () => {
         );
         showAlert(
           t(
-            "dialogs.deletePersistenceFailed",
-            '"{{name}}" was removed from this view, but the deletion could not be saved. Retry after storage is available.',
+            "dialogs.recyclePersistenceFailed",
+            '"{{name}}" could not be moved to the recycle bin. Check storage availability and retry.',
             { name: connection.name },
           ) as string,
         );
         return false;
       }
+      // A notification failure cannot change the completed durable result.
+      try {
+        for (const id of ids) statusChecker.stopChecking(id);
+        settingsManager.logAction(
+          "info",
+          `${summaryNoun} moved to recycle bin`,
+          connection.id,
+          `${summaryNoun} "${connection.name}" — ${archived} item(s) moved to this database’s recycle bin`,
+          undefined,
+          connection.name,
+        );
+        if (warnings.length) showAlert(warnings.join("\n"));
+      } catch (error) {
+        console.warn(
+          "Recycle-bin changes were saved, but post-save notification failed:",
+          error,
+        );
+      }
+      return true;
     };
 
     // ── Folder with descendants — the 3-button cascade dialog. ──
@@ -948,8 +954,8 @@ const AppContent: React.FC = () => {
           parentName ?? (t("dialogs.rootFolder", "the root") as string);
 
         const cascadeMessage = t(
-          "dialogs.confirmDeleteFolderCascade",
-          'The folder "{{name}}" contains {{count}} item(s). What should happen to them?',
+          "dialogs.confirmRecycleFolderCascade",
+          'The folder "{{name}}" contains {{count}} item(s). Move them to this database’s recycle bin, where they can be restored until retention expires, or keep the child items?',
           { name: connection.name, count: descendants.length },
         ) as string;
 
@@ -962,10 +968,13 @@ const AppContent: React.FC = () => {
           // Cancel — no-op.
           undefined,
           {
-            title: t("dialogs.deleteFolderTitle", "Delete folder") as string,
+            title: t(
+              "dialogs.recycleFolderTitle",
+              "Move folder to recycle bin",
+            ) as string,
             confirmText: t(
-              "dialogs.deleteFolderAndChildren",
-              "Delete folder + {{count}} item(s)",
+              "dialogs.recycleFolderAndChildren",
+              "Recycle folder + {{count}} item(s)",
               { count: descendants.length },
             ) as string,
             cancelText: t("dialogs.cancel", "Cancel") as string,
@@ -988,23 +997,19 @@ const AppContent: React.FC = () => {
                 const directChildren = state.connections.filter(
                   (c) => c.parentId === connection.id,
                 );
-                for (const child of directChildren) {
-                  dispatch({
-                    type: "UPDATE_CONNECTION",
-                    payload: { ...child, parentId: connection.parentId },
-                  });
-                }
-                void performDelete([connection.id], noun).then((persisted) => {
-                  if (!persisted) return;
-                  settingsManager.logAction(
-                    "info",
-                    "Folder reparented",
-                    connection.id,
-                    `Moved ${directChildren.length} child item(s) from "${connection.name}" to ${reparentTarget}, then deleted the folder`,
-                    undefined,
-                    connection.name,
-                  );
-                });
+                void performDelete([connection.id], noun, true).then(
+                  (persisted) => {
+                    if (!persisted) return;
+                    settingsManager.logAction(
+                      "info",
+                      "Folder reparented",
+                      connection.id,
+                      `Moved ${directChildren.length} child item(s) from "${connection.name}" to ${reparentTarget}, then deleted the folder`,
+                      undefined,
+                      connection.name,
+                    );
+                  },
+                );
               },
             },
           },
@@ -1014,7 +1019,11 @@ const AppContent: React.FC = () => {
     }
 
     const confirmMessage = shouldConfirmDelete
-      ? t(isFolder ? "dialogs.confirmDeleteFolder" : "dialogs.confirmDelete")
+      ? t(
+          "dialogs.confirmRecycleConnection",
+          'Move "{{name}}" to this database’s recycle bin? It can be restored until the configured retention expires.',
+          { name: connection.name },
+        )
       : null;
 
     if (!confirmMessage) {

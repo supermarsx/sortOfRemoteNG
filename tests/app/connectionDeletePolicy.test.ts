@@ -40,4 +40,46 @@ describe("normal tree connection deletion policy wiring", () => {
       "performDelete([connection.id, ...descendants], noun)",
     );
   });
+  it("routes real deletion through one provider archive and keeps children atomically", () => {
+    expect(deleteHandlerSource).toContain(
+      "recycleBin.archive([connection.id],",
+    );
+    expect(deleteHandlerSource).toMatch(
+      /\{\s*keepChildren,\s*expectedScope: archiveScope,/,
+    );
+    expect(deleteHandlerSource).toContain(
+      "const archiveScope = recycleBin?.snapshot?.scope",
+    );
+    expect(deleteHandlerSource).toContain("if (!recycleBin || !archiveScope)");
+    expect(deleteHandlerSource).toContain(
+      "performDelete([connection.id], noun, true)",
+    );
+    expect(deleteHandlerSource).toContain(
+      "collectConnectionSubtreeIds(state.connections, [rootId])",
+    );
+    expect(deleteHandlerSource).not.toContain("const stack:");
+    expect(deleteHandlerSource).not.toContain('type: "DELETE_CONNECTION"');
+    expect(deleteHandlerSource).not.toContain('type: "UPDATE_CONNECTION"');
+    expect(deleteHandlerSource).toContain("configured retention expires");
+    expect(deleteHandlerSource).not.toContain("This action cannot be undone");
+  });
+  it("does not relabel committed archiving as a persistence failure when notification throws", () => {
+    const committedStart = deleteHandlerSource.indexOf(
+      "A notification failure cannot change the completed durable result",
+    );
+    const committedEnd = deleteHandlerSource.indexOf(
+      "// ── Folder with descendants",
+      committedStart,
+    );
+    const notification = deleteHandlerSource.slice(
+      committedStart,
+      committedEnd,
+    );
+    expect(committedStart).toBeGreaterThan(
+      deleteHandlerSource.indexOf("return false;"),
+    );
+    expect(notification).toContain("post-save notification failed");
+    expect(notification).toContain("return true;");
+    expect(notification).not.toContain("recyclePersistenceFailed");
+  });
 });

@@ -41,6 +41,7 @@ import {
   MoreHorizontal,
   LoaderCircle,
   TriangleAlert,
+  Trash2,
 } from "lucide-react";
 import { LayoutGrid } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
@@ -52,6 +53,7 @@ import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
   ICON_EXPLORER_PROTOCOL,
+  CONNECTION_RECYCLE_BIN_PROTOCOL,
 } from "../app/toolSession";
 import { getToolIcon } from "../app/toolDescriptors";
 import {
@@ -110,6 +112,9 @@ const getSessionIcon = (
   connections: readonly Connection[],
 ) => {
   if (isToolProtocol(session.protocol)) {
+    if (session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL) {
+      return { icon: Trash2, key: CONNECTION_RECYCLE_BIN_PROTOCOL };
+    }
     if (session.protocol === ICON_EXPLORER_PROTOCOL) {
       return { icon: LayoutGrid, key: ICON_EXPLORER_PROTOCOL };
     }

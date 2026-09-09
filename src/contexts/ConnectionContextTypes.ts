@@ -1,4 +1,8 @@
 import React, { createContext } from "react";
+import type {
+  DatabaseRecycleBin,
+  ConnectionRecycleBinApi,
+} from "../types/connection/recycleBin";
 import {
   Connection,
   ConnectionSession,
@@ -26,6 +30,8 @@ export interface ConnectionState {
   sidebarCollapsed: boolean;
   /** Tab group definitions */
   tabGroups: TabGroup[];
+  /** Private collection data; bin UI consumes the redacted facade instead. */
+  recycleBinData?: DatabaseRecycleBin;
 }
 
 /**
@@ -36,6 +42,15 @@ export type ConnectionAction =
   | { type: "ADD_CONNECTION"; payload: Connection }
   | { type: "UPDATE_CONNECTION"; payload: Connection }
   | { type: "DELETE_CONNECTION"; payload: string }
+  | {
+      type: "RECYCLE_CONNECTIONS";
+      payload: { ids: readonly string[]; now: number; operationId: string };
+    }
+  | { type: "SET_RECYCLE_BIN"; payload: DatabaseRecycleBin }
+  | {
+      type: "APPLY_RECYCLE_BIN";
+      payload: { connections: Connection[]; bin: DatabaseRecycleBin };
+    }
   | { type: "SELECT_CONNECTION"; payload: Connection | null }
   | {
       type: "TOGGLE_SELECT_CONNECTION";
@@ -76,6 +91,8 @@ export interface ConnectionContextType {
   saveData: () => Promise<void>;
   flushPendingSave: () => Promise<void>;
   loadData: (expectedDatabaseId?: string) => Promise<boolean>;
+  /** Absent only in older embedded/test contexts; never fall back to side storage. */
+  recycleBin?: ConnectionRecycleBinApi;
 }
 
 export const ConnectionContext = createContext<

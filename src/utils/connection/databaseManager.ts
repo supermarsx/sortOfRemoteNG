@@ -21,6 +21,8 @@ import {
 
 import { getInvoke } from "../tauri/invoke";
 import { databaseProtection } from "./databaseProtection";
+import { normalizeRecycleBin } from "./recycleBin";
+import { stripExportSecrets } from "../../components/ImportExport/exportSecurity";
 import type {
   DatabaseAccessState,
   DatabaseProtectionUnlockResult,
@@ -336,6 +338,8 @@ function emitCurrentDatabaseChange(change: CurrentDatabaseChange): void {
  */
 export interface DatabaseDataTarget {
   readonly databaseId: string;
+  /** Synchronous epoch/lease guard without reading data or exposing credentials. */
+  assertAccessible?: () => void;
   load: () => Promise<StorageData | null>;
   save: (data: StorageData) => Promise<void>;
 }
@@ -352,6 +356,7 @@ export interface DatabaseExportSnapshot {
   settings: StorageData["settings"];
   tabGroups: StorageData["tabGroups"];
   colorTags: StorageData["colorTags"];
+  recycleBin?: StorageData["recycleBin"];
   /**
    * Trust Center records belonging to the exported database (t62 / D6).
    *
@@ -938,6 +943,11 @@ export class DatabaseManager {
   onCurrentDatabaseChange(listener: CurrentDatabaseChangeListener): () => void {
     return onCurrentDatabaseChange(listener);
   }
+  onDatabaseAccessChange(
+    listener: (state: DatabaseAccessState) => void,
+  ): () => void {
+    return onDatabaseAccessChange(listener);
+  }
 
   /**
    * Announce a transition and, when the *active* database changed, tell the
@@ -1334,6 +1344,14 @@ export class DatabaseManager {
     };
     return {
       databaseId,
+      assertAccessible: () => {
+        resolvePassword();
+        const access = this.getDatabaseAccessState(databaseId);
+        if (access && access.status !== "ready")
+          throw new Error(
+            "Database access is suspended. Unlock before changing its Recycle Bin.",
+          );
+      },
       load: () =>
         this.loadDatabaseData(databaseId, resolvePassword(), revisionAtCapture),
       save: (data) =>
@@ -1648,7 +1666,31 @@ export class DatabaseManager {
       settings: data.settings ?? {},
       tabGroups: data.tabGroups ?? [],
       colorTags: data.colorTags ?? {},
+      ...(data.recycleBin
+        ? {
+            recycleBin: {
+              ...normalizeRecycleBin(data.recycleBin),
+              entries: data.recycleBin.entries.map((entry) => ({
+                ...entry,
+                connection: includePasswords
+                  ? entry.connection
+                  : this.redactArchivedConnection(entry.connection),
+              })),
+            },
+          }
+        : {}),
     };
+  }
+
+  private redactArchivedConnection(connection: Connection): Connection {
+    const safe = stripExportSecrets(redactConnectionSecrets(connection));
+    if (!safe?.id || !safe.protocol)
+      throw new Error(
+        "An archived connection has sensitive identity fields and cannot be exported without credentials.",
+      );
+    // Secret-like display names are scrubbed too, but a portable archive must
+    // still have a valid connection shape. Never restore the sensitive name.
+    return { ...safe, name: safe.name ?? "[Redacted connection]" };
   }
 
   async updateDatabase(collection: ConnectionDatabase): Promise<void> {
@@ -2672,6 +2714,9 @@ export class DatabaseManager {
       connections,
       settings: parsed?.settings ?? {},
       timestamp: Date.now(),
+      ...(parsed?.recycleBin !== undefined
+        ? { recycleBin: normalizeRecycleBin(parsed.recycleBin) }
+        : {}),
       tabGroups: Array.isArray(parsed?.tabGroups) ? parsed.tabGroups : [],
       colorTags:
         parsed?.colorTags && typeof parsed.colorTags === "object"
@@ -2709,14 +2754,7 @@ export class DatabaseManager {
     await this.saveDatabaseData(
       collection.id,
       {
-        connections,
-        settings: parsed?.settings ?? {},
-        timestamp: Date.now(),
-        tabGroups: Array.isArray(parsed?.tabGroups) ? parsed.tabGroups : [],
-        colorTags:
-          parsed?.colorTags && typeof parsed.colorTags === "object"
-            ? parsed.colorTags
-            : {},
+        ...importedData,
       },
       options?.encryptPassword,
     );

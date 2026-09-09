@@ -17,11 +17,13 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Trash2,
 } from "lucide-react";
 import { ConnectionTree } from "./ConnectionTree";
 import { Connection } from "../../types/connection/connection";
 import { useSidebar } from "../../hooks/connection/useSidebar";
 import { Checkbox, Select } from "../ui/forms";
+import { useConnectionRecycleBinSession } from "../../hooks/connection/useConnectionRecycleBinSession";
 
 type Mgr = ReturnType<typeof useSidebar>;
 
@@ -355,12 +357,14 @@ const SidebarToolbar: React.FC<{
   noCollection: boolean;
   onOpenBulkEditor?: () => void;
   enableReorder: boolean;
+  onOpenRecycleBin?: () => void;
 }> = ({
   mgr,
   onNewConnection,
   noCollection,
   onOpenBulkEditor,
   enableReorder,
+  onOpenRecycleBin,
 }) => (
   <div className="px-3 py-2 border-b border-[var(--color-border)]">
     <div className="flex items-center space-x-1">
@@ -382,6 +386,20 @@ const SidebarToolbar: React.FC<{
         <FolderPlus size={14} />
       </button>
       <div className="flex-1" />
+      <button
+        type="button"
+        onClick={onOpenRecycleBin}
+        disabled={!onOpenRecycleBin}
+        aria-label="Open connection recycle bin"
+        data-tooltip={
+          onOpenRecycleBin
+            ? "Recycle bin for this database"
+            : "Open and unlock a database to view its recycle bin"
+        }
+        className="p-1.5 rounded text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] disabled:opacity-35 disabled:cursor-not-allowed"
+      >
+        <Trash2 size={14} />
+      </button>
       <button
         type="button"
         onClick={() => void mgr.updateConnectionReorder(!enableReorder)}
@@ -461,6 +479,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   noCollection,
 }) => {
   const mgr = useSidebar();
+  const recycleBin = useConnectionRecycleBinSession(onActivateSession);
   // Stop a drag immediately while the preference is committing; on failure the
   // persisted setting remains authoritative and the visible toggle reverts.
   const canReorder =
@@ -488,6 +507,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               noCollection={noCollection}
               onOpenBulkEditor={onOpenBulkEditor}
               enableReorder={canReorder}
+              onOpenRecycleBin={
+                recycleBin.available ? recycleBin.open : undefined
+              }
             />
 
             <ConnectionTree

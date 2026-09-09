@@ -9,6 +9,10 @@ const profile = await mkdtemp(path.join(os.tmpdir(), "sorng-database-ui-"));
 const output = path.resolve(".artifacts/database-ui");
 let server, browser;
 const report = [];
+const recycle = process.argv.includes("--recycle");
+const views = recycle
+  ? ["recycle", "recycle-review", "retention-review"]
+  : ["unlock", "bulk", "progress"];
 try {
   server = await createServer({
     configFile: path.resolve("e2e/database-ui-demo/vite.config.mjs"),
@@ -35,7 +39,7 @@ try {
   });
   await browser.setTimeout({ pageLoad: 60000, script: 10000 });
   for (const width of [1440, 390])
-    for (const view of ["unlock", "bulk", "progress"]) {
+    for (const view of views) {
       await browser.setViewport({ width, height: 700, devicePixelRatio: 1 });
       await browser.url(`http://127.0.0.1:4321/?view=${view}`);
       await browser.waitUntil(
@@ -48,6 +52,12 @@ try {
         { timeout: 60000 },
       );
       if (view === "bulk") await browser.$("button=Unlock selected").click();
+      if (view === "recycle-review")
+        await browser.$("button=Empty recycle bin").click();
+      if (view === "retention-review") {
+        await browser.$('input[type="number"]').setValue("3");
+        await browser.$("button=Review retention change").click();
+      }
       if (view === "progress") {
         await browser.$("button=Clone selected").click();
         await browser.$("button=Run 18 database operations").click();
@@ -80,8 +90,27 @@ try {
           };
         };
         const dialog = document.querySelector('[role="dialog"]');
+        if (view === "recycle") {
+          const table = document.querySelector("table");
+          if (!table || table.querySelectorAll("tbody tr").length !== 50)
+            throw Error("Missing bounded 50-row explorer");
+          const search = document.querySelector(
+            'input[placeholder="Name, protocol or original folder"]',
+          );
+          if (!search || parseFloat(getComputedStyle(search).paddingLeft) < 28)
+            throw Error("Search text overlaps icon");
+          const footer = document.querySelector("section > footer");
+          if (!footer || rect(footer).bottom > innerHeight + 1)
+            throw Error("Unreachable table footer");
+          return {
+            tableRows: 50,
+            footer: rect(footer),
+            search: rect(search),
+            refused: state.refused,
+          };
+        }
         if (view !== "progress") {
-          if (!dialog) throw Error("Missing auth dialog");
+          if (!dialog) throw Error("Missing dialog");
           const body = dialog.querySelector(".sor-modal-body");
           const footer = dialog.querySelector(".sor-modal-footer");
           if (!body || !footer)
@@ -93,6 +122,11 @@ try {
             throw Error("Missing body padding");
           if (view === "bulk" && dialog.querySelectorAll("input").length !== 18)
             throw Error("Missing bulk credential fields");
+          if (
+            view.endsWith("-review") &&
+            !dialog.textContent.includes("Operations 1")
+          )
+            throw Error("Missing friendly database name");
           const before = rect(footer).top;
           body.scrollTop = body.scrollHeight;
           if (rect(footer).top !== before)
@@ -123,7 +157,7 @@ try {
       console.log(`Verified ${view} at ${width}px`);
     }
   await writeFile(
-    path.join(output, "report.json"),
+    path.join(output, recycle ? "report-recycle.json" : "report.json"),
     JSON.stringify(report, null, 2),
   );
 } finally {

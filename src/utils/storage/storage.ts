@@ -38,6 +38,8 @@ export interface StorageData {
   timestamp: number;
   /** Tab group definitions persisted alongside the collection's connections. */
   tabGroups?: import("../../types/connection/connection").TabGroup[];
+  /** Deleted connections and retention are protected by this database's envelope. */
+  recycleBin?: import("../../types/connection/recycleBin").DatabaseRecycleBin;
   /** Color tag palette definitions, keyed by id. */
   colorTags?: Record<string, { name: string; color: string; global?: boolean }>;
 }

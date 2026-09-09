@@ -13,6 +13,22 @@ export const RDP_INTERNALS_WINDOW_MESSAGE =
 export const RECORDING_PLAYER_PROTOCOL = "tool:recordingPlayer";
 export const TRUST_CENTER_PROTOCOL = "tool:trustCenter";
 export const ICON_EXPLORER_PROTOCOL = "tool:iconExplorer";
+export const CONNECTION_RECYCLE_BIN_PROTOCOL = "tool:connectionRecycleBin";
+
+/** One database-owned explorer; opening it never selects or unlocks a database. */
+export const createConnectionRecycleBinSession = (
+  databaseId: string,
+  databaseName: string,
+): ConnectionSession => ({
+  id: `connection-recycle-bin-${encodeURIComponent(databaseId)}`,
+  connectionId: "tool-connection-recycle-bin",
+  name: `Recycle Bin — ${databaseName}`,
+  status: "connected",
+  startTime: new Date(),
+  protocol: CONNECTION_RECYCLE_BIN_PROTOCOL,
+  hostname: "",
+  connectionRecycleBin: { databaseId },
+});
 
 export const createIconExplorerSession = (
   source?: ConnectionSession,

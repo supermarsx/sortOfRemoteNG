@@ -15,6 +15,7 @@ import {
   RECORDING_PLAYER_PROTOCOL,
   TRUST_CENTER_PROTOCOL,
   ICON_EXPLORER_PROTOCOL,
+  CONNECTION_RECYCLE_BIN_PROTOCOL,
 } from "./toolSession";
 import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
@@ -32,6 +33,10 @@ const TrustCenterTab = dynamic(() => import("../security/TrustCenterTab"), {
 const IconExplorerTab = dynamic(() => import("../icons/IconExplorerTab"), {
   ssr: false,
 });
+const ConnectionRecycleBinTab = dynamic(
+  () => import("../connection/ConnectionRecycleBinTab"),
+  { ssr: false },
+);
 const ActionLogViewer = dynamic(
   () =>
     import("../monitoring/ActionLogViewer").then(
@@ -246,6 +251,15 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     return (
       <FeatureErrorBoundary title="Icon Explorer could not be displayed">
         <IconExplorerTab />
+      </FeatureErrorBoundary>
+    );
+  }
+  if (session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL) {
+    return (
+      <FeatureErrorBoundary title="The recycle bin could not be displayed">
+        <ConnectionRecycleBinTab
+          databaseId={session.connectionRecycleBin?.databaseId ?? ""}
+        />
       </FeatureErrorBoundary>
     );
   }

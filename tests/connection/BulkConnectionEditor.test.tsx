@@ -216,15 +216,16 @@ describe("BulkConnectionEditor", () => {
 
     fireEvent.click(screen.getByTestId("row-delete-conn-1"));
 
-    expect(screen.getByText(/delete this connection/i)).toBeInTheDocument();
+    expect(screen.getByText(/Move this connection to/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("Alpha")).toBeInTheDocument();
     expect(
-      screen.queryByText(/delete this connection/i),
+      screen.queryByText(/Move this connection to/i),
     ).not.toBeInTheDocument();
   });
 
-  it("deletes a row directly when confirmation is disabled", async () => {
+  it("does not delete hydrated rows without an owning database even when confirmation is disabled", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     SettingsManager.getInstance().applyInMemory({
       confirmDeleteConnection: false,
     });
@@ -239,11 +240,13 @@ describe("BulkConnectionEditor", () => {
 
     fireEvent.click(screen.getByTestId("row-delete-conn-1"));
 
-    await waitFor(() => {
-      expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
-    });
+    await screen.findByText(
+      "The deletion could not be saved. Retry after storage is available.",
+    );
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
     expect(
-      screen.queryByText(/delete this connection/i),
+      screen.queryByText(/Move this connection to/i),
     ).not.toBeInTheDocument();
+    consoleSpy.mockRestore();
   });
 });

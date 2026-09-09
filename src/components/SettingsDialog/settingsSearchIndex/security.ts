@@ -37,6 +37,24 @@ const CREDSSP_TAGS = [
 
 export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "currentDatabaseRecycleBin",
+    label: "Current database recycle bin",
+    description:
+      "Keep deleted connections for 15 days, choose custom retention, or keep indefinitely in the current database only. Review permanent deletion before shortening retention.",
+    tags: [
+      "database",
+      "recycle bin",
+      "trash",
+      "deleted",
+      "retention",
+      "restore",
+      "days",
+      "forever",
+    ],
+    section: "security",
+    sectionLabel: "Security",
+  },
+  {
     key: "allowSshExternalLinks",
     label: "Allow opening links from SSH sessions",
     description:

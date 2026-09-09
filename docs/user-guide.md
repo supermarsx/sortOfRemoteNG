@@ -18,6 +18,14 @@ To group newly opened tabs automatically, edit a folder and choose **Organize �
 
 Read [Connections & Editor]({{ '/connections-editor/' | relative_url }}) for the full editor map, and [Protocols]({{ '/protocols/' | relative_url }}) before choosing an unfamiliar client. Available choices depend on your native build and the destination's requirements.
 
+### Restore deleted connections
+
+The connection tree’s **Recycle Bin** button opens a searchable tab for the current database. Deleting a connection or folder moves its saved records into that database’s bin; it does not create a global trash collection. Search by name, protocol, or original folder, select individual items, a page, or all matching results, then **Restore selected**. Restoring a folder includes retained children from the same deletion; existing connection IDs are not overwritten. Permanent deletion and **Empty recycle bin** require a separate review. Emptying includes entries hidden by filters.
+
+Choose **Settings → Security → Current database recycle bin** to change retention for the named database only. The default is **15 days** from deletion; use a custom whole number of days or **Keep indefinitely**. A shorter period can immediately expire older items, so review the affected count before applying it. Automatic expiry runs only when the owning database is open and accessible; locking it does not authorize background decryption. A bin tab stays tied to its database and hides its contents if that database is closed, locked, or no longer active.
+
+Recycled records retain the saved configuration needed for restoration under the database’s existing storage protection. The explorer displays metadata, not credentials. Retention and permanent deletion remove current recycle-bin records; they do **not** erase backups, exports, or shared OS-vault artifacts and are not secure erasure.
+
 ## Work in sessions
 
 A saved connection is reusable configuration. Opening it starts a session or an integration tool; closing the session is different from deleting the saved record. Use tabs for the active work you need, and a detached window when a session belongs on another display.

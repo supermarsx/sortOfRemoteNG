@@ -15,6 +15,7 @@ import SSHKeyGenSection from "./security/SSHKeyGenSection";
 import TOTPDefaultsSection from "./security/TOTPDefaultsSection";
 import type { SecuritySettingsProps } from "./security/types";
 import CurrentDatabaseSecuritySection from "./security/CurrentDatabaseSecuritySection";
+import ConnectionRecycleBinSection from "./security/ConnectionRecycleBinSection";
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
@@ -39,6 +40,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         onDatabaseClose={onDatabaseClose}
         onBeforeCurrentLock={onBeforeCurrentLock}
       />
+      <ConnectionRecycleBinSection />
       <h3 className="text-sm font-medium">
         Global policies, export defaults, and key tools
       </h3>

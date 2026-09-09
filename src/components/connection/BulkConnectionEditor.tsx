@@ -568,18 +568,18 @@ function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
             <Trash2 size={20} className="text-error" />
           </div>
           <h3 className="text-lg font-semibold text-[var(--color-text)]">
-            {t("connections.bulkEditor.deleteTitle", "Delete Connections")}
+            {t("connections.bulkEditor.recycleTitle", "Move to Recycle Bin")}
           </h3>
         </div>
         <p className="text-[var(--color-textSecondary)] mb-6">
           {mgr.pendingDeleteId
             ? t(
-                "dialogs.confirmDelete",
-                "Are you sure you want to delete this connection? This action cannot be undone.",
+                "dialogs.confirmRecycleOne",
+                "Move this connection to the current database’s recycle bin? It can be restored until the configured retention expires.",
               )
             : t(
-                "connections.bulkEditor.deleteConfirm",
-                "Are you sure you want to delete {{count}} selected connection(s)? This action cannot be undone.",
+                "connections.bulkEditor.recycleConfirm",
+                "Move {{count}} selected connection(s) to the current database’s recycle bin? They can be restored until the configured retention expires.",
                 { count: mgr.pendingDeleteCount },
               )}
         </p>
@@ -595,7 +595,9 @@ function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
             className="px-4 py-2 bg-error hover:bg-error/80 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2"
           >
             <Trash2 size={14} />
-            <span>{t("connections.delete", "Delete")}</span>
+            <span>
+              {t("connections.moveToRecycleBin", "Move to Recycle Bin")}
+            </span>
           </button>
         </div>
       </div>

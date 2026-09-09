@@ -1,15 +1,23 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useToastContext } from "../../contexts/ToastContext";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { resolveConnectionDeleteConfirmation } from "../../utils/behavior/legacyBehavior";
+import type { RecycleBinScope } from "../../types/connection/recycleBin";
 
 type EditableField = "name" | "hostname" | "port" | "username";
 type PendingConnectionDelete = {
   kind: "single" | "selected";
   ids: readonly string[];
+  scope: RecycleBinScope | null;
 };
 
 export function useBulkConnectionEditor(
@@ -17,8 +25,10 @@ export function useBulkConnectionEditor(
   onClose: () => void,
   onEditConnection?: (connection: Connection) => void,
 ) {
-  const { state, dispatch, dispatchAndFlush, flushPendingSave } =
-    useConnections();
+  const { state, dispatch, dispatchAndFlush, recycleBin } = useConnections();
+  const recycleBinRef = useRef(recycleBin);
+  recycleBinRef.current = recycleBin;
+  const archivingRef = useRef(false);
   const { t } = useTranslation();
   const { toast } = useToastContext();
   const [searchTerm, setSearchTerm] = useState("");
@@ -227,10 +237,45 @@ export function useBulkConnectionEditor(
   );
 
   // Delete
-  const deleteConnection = useCallback(
-    async (id: string): Promise<boolean> => {
+  const archiveReviewed = useCallback(
+    async (ids: readonly string[], expectedScope?: RecycleBinScope) => {
+      const api = recycleBinRef.current;
+      if (!api?.snapshot || api.busy || archivingRef.current)
+        throw new Error(
+          "Recycle Bin is not ready. Unlock the database and retry.",
+        );
+      archivingRef.current = true;
       try {
-        await dispatchAndFlush({ type: "DELETE_CONNECTION", payload: id });
+        const outcome = await api.archive(ids, {
+          expectedScope: { ...(expectedScope ?? api.snapshot.scope) },
+        });
+        if (!outcome.committed)
+          throw new Error("The archive was not committed.");
+        if (outcome.warnings.length || outcome.skipped) {
+          try {
+            toast.warning(
+              [
+                ...outcome.warnings,
+                ...(outcome.skipped
+                  ? [`${outcome.skipped} connections were skipped.`]
+                  : []),
+              ].join(" "),
+            );
+          } catch {
+            // Notification failure cannot undo a committed archive.
+          }
+        }
+      } finally {
+        archivingRef.current = false;
+      }
+    },
+    [toast],
+  );
+
+  const deleteConnection = useCallback(
+    async (id: string, expectedScope?: RecycleBinScope): Promise<boolean> => {
+      try {
+        await archiveReviewed([id], expectedScope);
         return true;
       } catch (error) {
         console.error("Failed to persist connection deletion:", error);
@@ -243,16 +288,16 @@ export function useBulkConnectionEditor(
         return false;
       }
     },
-    [dispatchAndFlush, t, toast],
+    [archiveReviewed, t, toast],
   );
 
   const deleteSelected = useCallback(
-    async (ids: readonly string[]): Promise<boolean> => {
-      ids.forEach((id) => {
-        dispatch({ type: "DELETE_CONNECTION", payload: id });
-      });
+    async (
+      ids: readonly string[],
+      expectedScope?: RecycleBinScope,
+    ): Promise<boolean> => {
       try {
-        await flushPendingSave();
+        await archiveReviewed(ids, expectedScope);
         setSelectedIds((current) => {
           const remaining = new Set(current);
           ids.forEach((id) => remaining.delete(id));
@@ -270,7 +315,7 @@ export function useBulkConnectionEditor(
         return false;
       }
     },
-    [dispatch, flushPendingSave, t, toast],
+    [archiveReviewed, t, toast],
   );
 
   const shouldConfirmDelete = useCallback(
@@ -284,7 +329,13 @@ export function useBulkConnectionEditor(
   const requestDeleteConnection = useCallback(
     async (id: string): Promise<boolean | undefined> => {
       if (shouldConfirmDelete()) {
-        setPendingDelete({ kind: "single", ids: [id] });
+        setPendingDelete({
+          kind: "single",
+          ids: [id],
+          scope: recycleBinRef.current?.snapshot
+            ? { ...recycleBinRef.current.snapshot.scope }
+            : null,
+        });
         return undefined;
       }
       return deleteConnection(id);
@@ -298,7 +349,13 @@ export function useBulkConnectionEditor(
     if (selectedIds.size === 0) return undefined;
     const requestedIds = [...selectedIds];
     if (shouldConfirmDelete()) {
-      setPendingDelete({ kind: "selected", ids: requestedIds });
+      setPendingDelete({
+        kind: "selected",
+        ids: requestedIds,
+        scope: recycleBinRef.current?.snapshot
+          ? { ...recycleBinRef.current.snapshot.scope }
+          : null,
+      });
       return undefined;
     }
     return deleteSelected(requestedIds);
@@ -310,15 +367,29 @@ export function useBulkConnectionEditor(
 
   const confirmDelete = useCallback(async (): Promise<boolean> => {
     if (!pendingDelete) return false;
+    const scope = recycleBinRef.current?.snapshot?.scope;
+    if (
+      !pendingDelete.scope ||
+      !scope ||
+      scope.databaseId !== pendingDelete.scope.databaseId ||
+      scope.generation !== pendingDelete.scope.generation ||
+      scope.revision !== pendingDelete.scope.revision
+    ) {
+      toast.error(
+        "The database changed. Review the connections again before deleting.",
+      );
+      setPendingDelete(null);
+      return false;
+    }
     const persisted =
       pendingDelete.kind === "single"
-        ? await deleteConnection(pendingDelete.ids[0])
-        : await deleteSelected(pendingDelete.ids);
+        ? await deleteConnection(pendingDelete.ids[0], pendingDelete.scope)
+        : await deleteSelected(pendingDelete.ids, pendingDelete.scope);
     if (persisted) {
       setPendingDelete(null);
     }
     return persisted;
-  }, [deleteConnection, deleteSelected, pendingDelete]);
+  }, [deleteConnection, deleteSelected, pendingDelete, toast]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
