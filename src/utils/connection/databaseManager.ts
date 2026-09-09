@@ -745,14 +745,34 @@ export class DatabaseManager {
     id: string,
     slotId: string,
     password?: string,
+    options: { isCurrent?: () => boolean } = {},
   ): Promise<void> {
     const epoch = this.captureDatabaseEpoch(id);
     await this.ensureManagedListener();
     this.assertDatabaseEpoch(id, epoch);
+    if (options.isCurrent?.() === false)
+      throw new Error("The database unlock request is no longer active.");
     const result = await databaseProtection.unlock(id, slotId, password);
-    this.assertDatabaseEpoch(id, epoch);
-    if (this.disposed) throw new Error("Database manager was disposed.");
-    this.installManagedSession(id, result);
+    try {
+      this.assertDatabaseEpoch(id, epoch);
+      if (this.disposed) throw new Error("Database manager was disposed.");
+      if (options.isCurrent?.() === false)
+        throw new Error("The database unlock request is no longer active.");
+      this.installManagedSession(id, result);
+    } catch (error) {
+      // Do not publish the plaintext payload or a ready event for a stale form.
+      // Token-scoped cleanup must not lock a newer grant or another window.
+      if (typeof result.sessionId === "string" && result.sessionId) {
+        try {
+          await databaseProtection.releaseSession(id, result.sessionId);
+        } catch {
+          throw new Error(
+            "The abandoned database unlock was not installed, but native session cleanup could not be confirmed. Lock the database before retrying.",
+          );
+        }
+      }
+      throw error;
+    }
   }
 
   private async lockManagedDatabase(id: string): Promise<void> {

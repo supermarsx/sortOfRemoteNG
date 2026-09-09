@@ -30,6 +30,7 @@ pub fn build<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sy
         database_protection_status,
         database_protection_unlock,
         database_protection_lock,
+        database_protection_release_session,
         database_protection_save,
         database_protection_load,
         database_protection_change,
@@ -125,6 +126,10 @@ pub struct LockResult {
     locked: bool,
     notification_pending: bool,
     warnings: Vec<String>,
+}
+#[derive(Serialize)]
+pub struct ReleaseSessionResult {
+    released: bool,
 }
 
 fn revoke_database_sessions(
@@ -471,6 +476,37 @@ pub async fn database_protection_lock<R: Runtime>(
                 .map_err(|_| "database locked, but other-window notification failed".into())
         },
     )
+}
+
+/// Cleanup for an abandoned unlock attempt, not a database-wide lock.
+#[tauri::command]
+pub async fn database_protection_release_session<R: Runtime>(
+    window: WebviewWindow<R>,
+    state: State<'_, EncryptionState>,
+    database_id: String,
+    session_id: String,
+) -> Result<ReleaseSessionResult, String> {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    sorng_storage::database_transaction::validate_database_id(&database_id)?;
+    if session_id.is_empty()
+        || session_id.len() > 128
+        || !session_id.is_ascii()
+        || session_id.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err("invalid database unlock session token".into());
+    }
+    let profile = profile_binding(&native_root(&window, &state)?)?;
+    let released = database_sessions::global()
+        .lock()
+        .map_err(|_| "database session registry unavailable")?
+        .release(
+            &session_id,
+            state.database_session_owner(),
+            &profile,
+            &database_id,
+            window.label(),
+        )?;
+    Ok(ReleaseSessionResult { released })
 }
 
 #[tauri::command]

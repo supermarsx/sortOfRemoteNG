@@ -14,11 +14,13 @@ export function ManagedDatabaseUnlockForm({
   status,
   disabled = false,
   onUnlockComplete,
+  onBusyChange,
 }: {
   databaseId: string;
   status: DatabaseProtectionStatus;
   disabled?: boolean;
   onUnlockComplete?: () => void | Promise<void>;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const manager = DatabaseManager.getInstance();
   const [slotId, setSlotId] = useState(
@@ -70,6 +72,7 @@ export function ManagedDatabaseUnlockForm({
     const suppliedPassword =
       selected.type === "password" ? password : undefined;
     inFlight.current = true;
+    onBusyChange?.(true);
     setBusy(true);
     setError(null);
     setPassword("");
@@ -78,6 +81,12 @@ export function ManagedDatabaseUnlockForm({
         databaseId,
         selected.id,
         suppliedPassword,
+        {
+          isCurrent: () =>
+            mounted.current &&
+            current.current.scope === expected &&
+            !current.current.disabled,
+        },
       );
       if (
         mounted.current &&
@@ -90,6 +99,7 @@ export function ManagedDatabaseUnlockForm({
         setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       inFlight.current = false;
+      onBusyChange?.(false);
       if (mounted.current) setBusy(false);
     }
   };

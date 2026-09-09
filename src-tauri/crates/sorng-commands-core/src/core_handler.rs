@@ -99,6 +99,7 @@ pub fn is_command(command: &str) -> bool {
             | "database_protection_status"
             | "database_protection_unlock"
             | "database_protection_lock"
+            | "database_protection_release_session"
             | "database_protection_save"
             | "database_protection_load"
             | "database_protection_change"
@@ -1455,6 +1456,7 @@ define_command_group!(
         database_protection::database_protection_status,
         database_protection::database_protection_unlock,
         database_protection::database_protection_lock,
+        database_protection::database_protection_release_session,
         database_protection::database_protection_save,
         database_protection::database_protection_load,
         database_protection::database_protection_change,

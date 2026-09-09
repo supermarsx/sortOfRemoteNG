@@ -153,6 +153,29 @@ impl DatabaseSessions {
             s.owner != owner || s.profile != profile || s.database != database || s.window != window
         });
     }
+    /// Drop only one abandoned unlock result, never another window's lease.
+    /// Revision/generation need not match: cleanup must also accept stale own
+    /// results, while the immutable owner/profile/database/window binding holds.
+    pub fn release(
+        &mut self,
+        id: &str,
+        owner: u64,
+        profile: &str,
+        database: &str,
+        window: &str,
+    ) -> Result<bool, String> {
+        let Some(session) = self.entries.get(id) else {
+            return Ok(false);
+        };
+        if session.owner != owner
+            || session.profile != profile
+            || session.database != database
+            || session.window != window
+        {
+            return Err("database unlock session belongs to another scope".into());
+        }
+        Ok(self.entries.remove(id).is_some())
+    }
     pub fn revoke_database(&mut self, owner: u64, profile: &str, database: &str) {
         self.entries
             .retain(|_, s| s.owner != owner || s.profile != profile || s.database != database);
@@ -162,6 +185,49 @@ impl DatabaseSessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn release_one_abandoned_unlock_preserves_other_sessions_and_rejects_scope_mismatch() {
+        let mut sessions = DatabaseSessions::default();
+        let scope = SessionScope {
+            owner: 1,
+            profile: "p",
+            database: "db",
+            revision: "r",
+            window: "main",
+            generation: 0,
+        };
+        let other = SessionScope {
+            window: "detached",
+            ..scope
+        };
+        let another_database = SessionScope {
+            database: "other",
+            ..scope
+        };
+        let token = sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+        let other_token = sessions.insert(&other, DatabaseKey::generate()).unwrap();
+        let other_database_token = sessions
+            .insert(&another_database, DatabaseKey::generate())
+            .unwrap();
+        for (owner, profile, database, window) in [
+            (2, "p", "db", "main"),
+            (1, "q", "db", "main"),
+            (1, "p", "other", "main"),
+            (1, "p", "db", "detached"),
+        ] {
+            assert!(sessions
+                .release(&token, owner, profile, database, window)
+                .is_err());
+            assert!(sessions.key(&token, &scope).is_ok());
+        }
+        assert!(sessions.release(&token, 1, "p", "db", "main").unwrap());
+        assert!(!sessions.release(&token, 1, "p", "db", "main").unwrap());
+        assert!(sessions.key(&token, &scope).is_err());
+        assert!(sessions.key(&other_token, &other).is_ok());
+        assert!(sessions
+            .key(&other_database_token, &another_database)
+            .is_ok());
+    }
     #[tokio::test]
     async fn readonly_snapshots_do_not_revoke_live_sessions_but_real_lock_and_install_do() {
         let state = crate::EncryptionState::new();

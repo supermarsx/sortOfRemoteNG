@@ -182,6 +182,7 @@ describe("managed database access suspension boundary", () => {
       "work",
       "portable",
       "database-secret",
+      { isCurrent: expect.any(Function) },
     );
     expect(editor).toHaveValue("unsaved local edits");
     expect(screen.getByTestId("editors")).not.toHaveAttribute("hidden");
@@ -219,7 +220,9 @@ describe("managed database access suspension boundary", () => {
     expect(screen.getByText(/not a master-key unlock/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
     await waitFor(() =>
-      expect(mocks.unlock).toHaveBeenCalledWith("work", "device", undefined),
+      expect(mocks.unlock).toHaveBeenCalledWith("work", "device", undefined, {
+        isCurrent: expect.any(Function),
+      }),
     );
     expect(mocks.globalUnlock).not.toHaveBeenCalled();
   });
@@ -320,7 +323,43 @@ describe("managed database access suspension boundary", () => {
       target: { value: "fixture" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    const validity = mocks.unlock.mock.calls[0][3].isCurrent as () => boolean;
+    expect(validity()).toBe(true);
     rendered.unmount();
+    expect(validity()).toBe(false);
+    await act(async () => resolve());
+    expect(completed).not.toHaveBeenCalled();
+  });
+  it("invalidates the old authentication on scope change and clears the displayed password", async () => {
+    let resolve!: () => void;
+    mocks.unlock.mockImplementation(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    );
+    const completed = vi.fn();
+    const { rerender } = render(
+      <ManagedDatabaseUnlockForm
+        databaseId="work"
+        status={protection}
+        onUnlockComplete={completed}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Database password"), {
+      target: { value: "old-scope-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    const validity = mocks.unlock.mock.calls[0][3].isCurrent as () => boolean;
+    rerender(
+      <ManagedDatabaseUnlockForm
+        databaseId="other"
+        status={{ ...protection, securityRevision: "r2" }}
+        onUnlockComplete={completed}
+      />,
+    );
+    expect(validity()).toBe(false);
+    expect(screen.getByLabelText("Database password")).toHaveValue("");
     await act(async () => resolve());
     expect(completed).not.toHaveBeenCalled();
   });

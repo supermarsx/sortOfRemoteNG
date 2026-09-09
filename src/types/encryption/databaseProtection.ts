@@ -71,6 +71,9 @@ export interface DatabaseProtectionLockResult {
   notificationPending: boolean;
   warnings: string[];
 }
+export interface DatabaseProtectionReleaseSessionResult {
+  released: boolean;
+}
 export interface DatabaseProtectionChangeResult extends DatabaseProtectionSaveResult {
   sessionId?: string;
   sessionExpiresAt?: number;

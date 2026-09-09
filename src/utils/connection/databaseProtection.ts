@@ -9,6 +9,7 @@ import type {
   DatabaseProtectionChangeResult,
   DatabaseProtectionChangeRequest,
   DatabaseProtectionLockResult,
+  DatabaseProtectionReleaseSessionResult,
 } from "../../types/encryption/databaseProtection";
 
 async function nativeInvoke() {
@@ -108,6 +109,19 @@ export const databaseProtection = {
         databaseId,
       },
     );
+  },
+  async releaseSession(databaseId: string, sessionId: string) {
+    const result = await (
+      await nativeInvoke()
+    )<DatabaseProtectionReleaseSessionResult>(
+      "database_protection_release_session",
+      { databaseId, sessionId },
+    );
+    if (!record(result) || typeof result.released !== "boolean")
+      throw new Error(
+        "Native database session cleanup returned no verified result.",
+      );
+    return result;
   },
   async load(
     databaseId: string,

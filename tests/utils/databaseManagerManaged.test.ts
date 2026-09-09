@@ -95,6 +95,8 @@ beforeEach(() => {
         bridge.locked?.({ payload: { databaseId: String(args.databaseId) } });
         return { locked: true, notificationPending: false, warnings: [] };
       }
+      if (command === "database_protection_release_session")
+        return { released: true };
       if (command === "database_protection_status")
         return {
           kind: "managed",
@@ -329,6 +331,83 @@ describe("native managed database sessions", () => {
     manager.invalidatePendingDatabaseOperations();
     resolve(lease);
     await rejection;
+    expect(manager.isDatabaseUnlocked(rows[0].id)).toBe(false);
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "database_protection_release_session",
+      { databaseId: rows[0].id, sessionId: lease.sessionId },
+    );
+  });
+  it("releases only an abandoned prompt's returned token without ready, close or database-wide lock", async () => {
+    let resolve!: (value: DatabaseProtectionUnlockResult) => void;
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((cmd, args) =>
+      cmd === "database_protection_unlock"
+        ? new Promise((done) => {
+            resolve = done;
+          })
+        : original(cmd, args),
+    );
+    const manager = DatabaseManager.getInstance();
+    let current = true;
+    const ready = vi.fn();
+    const stop = onDatabaseAccessChange(ready);
+    const pending = manager.unlockManagedDatabase(
+      rows[0].id,
+      "password-slot",
+      "secret",
+      { isCurrent: () => current },
+    );
+    const rejected = expect(pending).rejects.toThrow("no longer active");
+    await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
+    current = false;
+    resolve(lease);
+    await rejected;
+    expect(manager.isDatabaseUnlocked(rows[0].id)).toBe(false);
+    expect(ready).not.toHaveBeenCalled();
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "database_protection_release_session",
+      { databaseId: rows[0].id, sessionId: lease.sessionId },
+    );
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([cmd]) => cmd === "database_protection_lock",
+      ),
+    ).toBe(false);
+    stop();
+  });
+  it("refuses an already abandoned prompt before native authentication", async () => {
+    await expect(
+      DatabaseManager.getInstance().unlockManagedDatabase(
+        rows[0].id,
+        "password-slot",
+        "secret",
+        { isCurrent: () => false },
+      ),
+    ).rejects.toThrow("no longer active");
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([cmd]) => cmd === "database_protection_unlock",
+      ),
+    ).toBe(false);
+  });
+  it("does not install a late grant when token cleanup fails, and reports the uncertainty", async () => {
+    const original = bridge.invoke.getMockImplementation()!;
+    let current = true;
+    bridge.invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "database_protection_unlock") {
+        current = false;
+        return lease;
+      }
+      if (cmd === "database_protection_release_session")
+        throw new Error("transport failed");
+      return original(cmd, args);
+    });
+    const manager = DatabaseManager.getInstance();
+    await expect(
+      manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret", {
+        isCurrent: () => current,
+      }),
+    ).rejects.toThrow("cleanup could not be confirmed");
     expect(manager.isDatabaseUnlocked(rows[0].id)).toBe(false);
   });
   it("does not close or claim locked when the native lock fails", async () => {
