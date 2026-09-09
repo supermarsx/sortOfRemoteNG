@@ -8,16 +8,12 @@ import {
   Ban,
   BatteryCharging,
   Bookmark,
-  BriefcaseBusiness,
-  Building2,
   Circle,
   CircleDot,
   CircleDashed,
   CircleCheck,
   Clover,
   Clock3,
-  CreditCard,
-  ChartPie,
   createLucideIcon,
   Cross,
   Diamond,
@@ -26,7 +22,6 @@ import {
   Heart,
   HeartCrack,
   Hexagon,
-  Landmark,
   Moon,
   MailPlus,
   Octagon,
@@ -44,15 +39,11 @@ import {
   Triangle,
   TriangleRight,
   Target,
-  UsersRound,
   Zap,
 } from "lucide-react";
 
 import { defineIcon } from "./types";
-import { ORGANIZATION_MARKER_ICONS } from "./organizationMarkers";
 import { FRUIT_ICONS } from "./fruits";
-import { BUILDING_TYPE_ICONS } from "./buildingTypes";
-import { EMPLOYEE_CARD_ICON } from "./identityCards";
 
 const FilledHeart = createLucideIcon("FilledHeart", [
   [
@@ -220,39 +211,6 @@ export const GENERIC_SHAPE_ICONS = [
     "shape",
     "ellipse",
     "orbital",
-  ]),
-  defineIcon("building", "Building", "generic-shapes", Building2, [
-    "building",
-    "buildings",
-    "premises",
-    "site",
-    "facility",
-    "headquarters",
-  ]),
-  defineIcon("office", "Office", "generic-shapes", BriefcaseBusiness, [
-    "office",
-    "workplace",
-    "business",
-    "branch",
-    "department",
-  ]),
-  defineIcon("people", "People", "generic-shapes", UsersRound, [
-    "people",
-    "persons",
-    "users",
-    "user group",
-    "team",
-    "staff",
-    "employees",
-  ]),
-  defineIcon("corporate", "Corporate", "generic-shapes", Landmark, [
-    "corporate",
-    "generic corporate",
-    "company",
-    "enterprise",
-    "organization",
-    "headquarters",
-    "business",
   ]),
   defineIcon("heart-filled", "Filled heart", "generic-shapes", FilledHeart, [
     "heart filled",
@@ -431,24 +389,5 @@ export const GENERIC_SHAPE_ICONS = [
     "email",
     "plain",
   ]),
-  defineIcon("payment-card", "Payment card", "generic-shapes", CreditCard, [
-    "payment card",
-    "credit card",
-    "pos",
-    "point of sale",
-    "payment",
-    "plain",
-  ]),
-  defineIcon("pie-chart", "Pie chart", "generic-shapes", ChartPie, [
-    "pie chart",
-    "business analytics",
-    "business intelligence",
-    "analytics",
-    "reporting",
-    "plain",
-  ]),
-  ...ORGANIZATION_MARKER_ICONS,
-  ...BUILDING_TYPE_ICONS,
   ...FRUIT_ICONS,
-  EMPLOYEE_CARD_ICON,
 ] as const;

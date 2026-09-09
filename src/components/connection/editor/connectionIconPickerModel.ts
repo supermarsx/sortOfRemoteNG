@@ -37,6 +37,7 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
   files: "Files & storage",
   communication: "Communication",
   "generic-shapes": "Markers & shapes",
+  "business-shapes": "Business shapes",
   emojis: "Emojis",
   pirates: "Pirates",
   "deities-religion": "Deities & religion",

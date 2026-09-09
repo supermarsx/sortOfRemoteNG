@@ -14,6 +14,7 @@ import { DEVOPS_MONITORING_ICONS } from "../../src/utils/icons/catalog/devopsMon
 import { FILES_ICONS } from "../../src/utils/icons/catalog/files";
 import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";
 import { GENERIC_SHAPE_ICONS } from "../../src/utils/icons/catalog/genericShapes";
+import { BUSINESS_SHAPE_ICONS } from "../../src/utils/icons/catalog/businessShapes";
 import { EMOJI_ICONS } from "../../src/utils/icons/catalog/emojis";
 import { PIRATE_ICONS } from "../../src/utils/icons/catalog/pirates";
 import { DEITY_RELIGION_ICONS } from "../../src/utils/icons/catalog/deitiesReligion";
@@ -85,6 +86,11 @@ const CATALOG_MODULES: readonly CatalogModule[] = [
     category: "generic-shapes",
     entries: GENERIC_SHAPE_ICONS,
   },
+  {
+    name: "businessShapes",
+    category: "business-shapes",
+    entries: BUSINESS_SHAPE_ICONS,
+  },
   { name: "emojis", category: "emojis", entries: EMOJI_ICONS },
   { name: "pirates", category: "pirates", entries: PIRATE_ICONS },
   {
@@ -129,7 +135,7 @@ describe("connection icon catalog modules", () => {
     expect(CATALOG_MODULES.map((module) => module.category)).toEqual([
       ...CONNECTION_ICON_CATEGORIES,
     ]);
-    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(23);
+    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(24);
   });
 
   it("composes the catalog from every module without dropping entries", () => {

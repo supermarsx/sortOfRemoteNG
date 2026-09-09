@@ -19,12 +19,12 @@ import {
 
 import { defineIcon } from "./types";
 
-/** Sector markers use the existing generic-shapes category, not brand logos. */
+/** Organization/industry markers belong to Business shapes, not brand logos. */
 export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-healthcare",
     "Healthcare company",
-    "generic-shapes",
+    "business-shapes",
     Hospital,
     [
       "company healthcare",
@@ -39,7 +39,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-education",
     "Education company",
-    "generic-shapes",
+    "business-shapes",
     GraduationCap,
     [
       "company education",
@@ -54,7 +54,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-finance",
     "Finance and banking company",
-    "generic-shapes",
+    "business-shapes",
     Banknote,
     [
       "company finance",
@@ -69,7 +69,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-insurance",
     "Insurance company",
-    "generic-shapes",
+    "business-shapes",
     ShieldCheck,
     [
       "company insurance",
@@ -80,7 +80,7 @@ export const ORGANIZATION_MARKER_ICONS = [
       "industry",
     ],
   ),
-  defineIcon("company-retail", "Retail company", "generic-shapes", Store, [
+  defineIcon("company-retail", "Retail company", "business-shapes", Store, [
     "company retail",
     "retail",
     "shop",
@@ -92,7 +92,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-manufacturing",
     "Manufacturing company",
-    "generic-shapes",
+    "business-shapes",
     Factory,
     [
       "company manufacturing",
@@ -106,7 +106,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-construction",
     "Construction company",
-    "generic-shapes",
+    "business-shapes",
     HardHat,
     [
       "company construction",
@@ -120,7 +120,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-logistics",
     "Logistics and warehouse company",
-    "generic-shapes",
+    "business-shapes",
     Warehouse,
     [
       "company logistics",
@@ -136,7 +136,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-hospitality",
     "Hospitality and hotel company",
-    "generic-shapes",
+    "business-shapes",
     Hotel,
     [
       "company hospitality",
@@ -151,7 +151,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-restaurant",
     "Restaurant company",
-    "generic-shapes",
+    "business-shapes",
     UtensilsCrossed,
     [
       "company restaurant",
@@ -165,7 +165,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-agriculture",
     "Agriculture company",
-    "generic-shapes",
+    "business-shapes",
     Tractor,
     [
       "company agriculture",
@@ -179,7 +179,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-government",
     "Government organization",
-    "generic-shapes",
+    "business-shapes",
     Landmark,
     [
       "company government",
@@ -191,7 +191,7 @@ export const ORGANIZATION_MARKER_ICONS = [
       "industry",
     ],
   ),
-  defineIcon("company-legal", "Legal company", "generic-shapes", Scale, [
+  defineIcon("company-legal", "Legal company", "business-shapes", Scale, [
     "company legal",
     "legal",
     "law",
@@ -203,7 +203,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-technology",
     "Technology and IT company",
-    "generic-shapes",
+    "business-shapes",
     CircuitBoard,
     [
       "company technology",
@@ -218,7 +218,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-telecom",
     "Telecom company",
-    "generic-shapes",
+    "business-shapes",
     SatelliteDish,
     [
       "company telecom",
@@ -232,7 +232,7 @@ export const ORGANIZATION_MARKER_ICONS = [
   defineIcon(
     "company-energy",
     "Energy and utilities company",
-    "generic-shapes",
+    "business-shapes",
     UtilityPole,
     [
       "company energy",

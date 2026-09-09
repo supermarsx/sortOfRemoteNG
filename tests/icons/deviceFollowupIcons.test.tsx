@@ -66,7 +66,7 @@ describe("additional device, identity card and VPN variants", () => {
       }
       expect(definition.category).toBe(
         key === "employee-card"
-          ? "generic-shapes"
+          ? "business-shapes"
           : key === "credit-card-contactless"
             ? "web-applications"
             : key.startsWith("l2tp-") || key.startsWith("ikev2-")

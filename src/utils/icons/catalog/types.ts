@@ -15,6 +15,7 @@ export const CONNECTION_ICON_CATEGORIES = [
   "files",
   "communication",
   "generic-shapes",
+  "business-shapes",
   "emojis",
   "pirates",
   "deities-religion",

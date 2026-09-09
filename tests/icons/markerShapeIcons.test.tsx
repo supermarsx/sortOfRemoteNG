@@ -95,7 +95,11 @@ describe("emoji-style markers and additional shapes", () => {
     "renders %s as local SVG in its dedicated category",
     (key) => {
       expect(getConnectionIconDefinition(key)?.category).toBe(
-        key.startsWith("emoji-") ? "emojis" : "generic-shapes",
+        key.startsWith("emoji-")
+          ? "emojis"
+          : key.startsWith("company-")
+            ? "business-shapes"
+            : "generic-shapes",
       );
       expect(geometry(key)).not.toBe("");
       expect(

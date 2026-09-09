@@ -77,13 +77,13 @@ const GarageBuilding = createLucideIcon("GarageBuilding", [
 
 /** Physical premises, distinct from the company-industry marker collection. */
 export const BUILDING_TYPE_ICONS = [
-  defineIcon("warehouse", "Warehouse", "generic-shapes", Warehouse, [
+  defineIcon("warehouse", "Warehouse", "business-shapes", Warehouse, [
     "warehouse",
     "warehouse building",
     "distribution center",
     "storage facility",
   ]),
-  defineIcon("building-store", "Store building", "generic-shapes", Store, [
+  defineIcon("building-store", "Store building", "business-shapes", Store, [
     "building store",
     "stores",
     "shop",
@@ -92,30 +92,30 @@ export const BUILDING_TYPE_ICONS = [
   defineIcon(
     "building-supermarket",
     "Supermarket building",
-    "generic-shapes",
+    "business-shapes",
     Supermarket,
     ["building supermarket", "grocery store", "supermarket", "retail"],
   ),
   defineIcon(
     "building-office",
     "Office building",
-    "generic-shapes",
+    "business-shapes",
     OfficeBuilding,
     ["building office", "office building", "business premises", "headquarters"],
   ),
   defineIcon(
     "building-hospital",
     "Hospital building",
-    "generic-shapes",
+    "business-shapes",
     Hospital,
     ["building hospital", "hospital", "medical center", "clinic"],
   ),
-  defineIcon("building-school", "School building", "generic-shapes", School, [
+  defineIcon("building-school", "School building", "business-shapes", School, [
     "building school",
     "school",
     "education campus",
   ]),
-  defineIcon("building-hotel", "Hotel building", "generic-shapes", Hotel, [
+  defineIcon("building-hotel", "Hotel building", "business-shapes", Hotel, [
     "building hotel",
     "hotel",
     "accommodation",
@@ -123,18 +123,18 @@ export const BUILDING_TYPE_ICONS = [
   defineIcon(
     "building-restaurant",
     "Restaurant building",
-    "generic-shapes",
+    "business-shapes",
     RestaurantBuilding,
     ["building restaurant", "restaurant premises", "dining venue"],
   ),
   defineIcon(
     "building-factory",
     "Factory building",
-    "generic-shapes",
+    "business-shapes",
     Factory,
     ["building factory", "factory", "manufacturing plant"],
   ),
-  defineIcon("building-house", "House", "generic-shapes", House, [
+  defineIcon("building-house", "House", "business-shapes", House, [
     "building house",
     "house",
     "residential home",
@@ -142,19 +142,21 @@ export const BUILDING_TYPE_ICONS = [
   defineIcon(
     "building-apartment",
     "Apartment building",
-    "generic-shapes",
+    "business-shapes",
     Building2,
     ["building apartment", "apartment", "residential block", "flats"],
   ),
-  defineIcon("building-bank", "Bank building", "generic-shapes", BankBuilding, [
-    "building bank",
-    "bank branch",
-    "financial institution",
-  ]),
+  defineIcon(
+    "building-bank",
+    "Bank building",
+    "business-shapes",
+    BankBuilding,
+    ["building bank", "bank branch", "financial institution"],
+  ),
   defineIcon(
     "building-government",
     "Government building",
-    "generic-shapes",
+    "business-shapes",
     Landmark,
     [
       "building government",
@@ -166,14 +168,14 @@ export const BUILDING_TYPE_ICONS = [
   defineIcon(
     "building-datacenter",
     "Datacenter building",
-    "generic-shapes",
+    "business-shapes",
     DatacenterBuilding,
     ["building datacenter", "data center", "server facility", "colocation"],
   ),
   defineIcon(
     "building-garage",
     "Garage building",
-    "generic-shapes",
+    "business-shapes",
     GarageBuilding,
     ["building garage", "garage", "workshop", "vehicle depot"],
   ),

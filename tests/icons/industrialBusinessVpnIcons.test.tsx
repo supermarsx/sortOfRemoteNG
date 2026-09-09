@@ -307,7 +307,7 @@ describe("industrial, business, VPN and ISP icon additions", () => {
     );
   });
   it("routes providers to their own section while leaving cloud and network devices separate", () => {
-    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(23);
+    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(24);
     const providers = CONNECTION_ICON_CATALOG.filter((entry) =>
       ["isp-providers", "hosting-providers", "domain-registrars"].includes(
         entry.category,
@@ -333,7 +333,7 @@ describe("industrial, business, VPN and ISP icon additions", () => {
       );
     for (const key of BUILDINGS)
       expect(getConnectionIconDefinition(key)?.category, key).toBe(
-        "generic-shapes",
+        "business-shapes",
       );
   });
   it("renders the real provider section and selects a provider without changing protocol", () => {

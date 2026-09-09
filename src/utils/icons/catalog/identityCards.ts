@@ -25,7 +25,7 @@ const ContactlessCreditCard = createLucideIcon("ContactlessCreditCard", [
 export const EMPLOYEE_CARD_ICON = defineIcon(
   "employee-card",
   "Employee identity card",
-  "generic-shapes",
+  "business-shapes",
   EmployeeCard,
   [
     "employee card",
