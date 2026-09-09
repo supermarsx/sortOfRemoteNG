@@ -386,6 +386,7 @@ export interface GlobalSettings {
   rdpRecording: RDPRecordingConfig;
   webRecording: WebRecordingConfig;
   macros: MacroConfig;
+  sessionQuickActions: import("../connection/sessionQuickActions").SessionQuickActionsSettings;
   /** Show Recording Manager icon in secondary bar */
   showRecordingManagerIcon: boolean;
 

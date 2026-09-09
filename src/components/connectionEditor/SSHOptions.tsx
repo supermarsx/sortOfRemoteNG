@@ -18,6 +18,7 @@ import {
 } from "../../utils/auth/trustStore";
 import { useSSHOptions } from "../../hooks/ssh/useSSHOptions";
 import { Checkbox, NumberInput, Select } from "../ui/forms";
+import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
 
 interface SSHOptionsProps {
   formData: Partial<Connection>;
@@ -422,7 +423,14 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
 
       {/* SSH Terminal Settings Override */}
       {shows("terminal") && formData.protocol === "ssh" && (
-        <SSHTerminalOverrides formData={formData} setFormData={setFormData} />
+        <>
+          <SessionQuickActionsSection
+            protocol="ssh"
+            formData={formData}
+            setFormData={setFormData}
+          />
+          <SSHTerminalOverrides formData={formData} setFormData={setFormData} />
+        </>
       )}
 
       {/* SSH Connection Settings Override */}

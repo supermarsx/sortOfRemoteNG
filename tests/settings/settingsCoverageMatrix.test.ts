@@ -101,6 +101,14 @@ function sampleValueFor(
   defaults: GlobalSettings,
 ): unknown {
   const special: Partial<Record<keyof GlobalSettings, unknown>> = {
+    sessionQuickActions: {
+      sshEnabled: false,
+      httpEnabled: false,
+      allowWebMacros: false,
+      allowWebScriptInjection: false,
+      allowWebForceDark: false,
+      confirmBeforeScriptRun: false,
+    },
     iconLibrary: {
       version: 1,
       customIcons: [],

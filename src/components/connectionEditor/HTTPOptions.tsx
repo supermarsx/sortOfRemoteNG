@@ -11,6 +11,7 @@ import BookmarksSection from "./httpOptions/BookmarksSection";
 import BookmarkModal from "./httpOptions/BookmarkModal";
 import HeaderModal from "./httpOptions/HeaderModal";
 import ApplicationSection from "./httpOptions/ApplicationSection";
+import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
 
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   formData,
@@ -48,6 +49,11 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
       )}
       {shows("advanced") && (
         <>
+          <SessionQuickActionsSection
+            protocol="http"
+            formData={formData}
+            setFormData={setFormData}
+          />
           {formData.httpApplication === undefined && (
             <AutoLoginSection mgr={mgr} />
           )}

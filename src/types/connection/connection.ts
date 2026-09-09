@@ -280,6 +280,8 @@ export interface Connection
    */
   httpAutoLoginSelectors?: HttpAutoLoginSelectors;
   httpApplication?: HttpApplicationSettings;
+  httpAutomation?: import("./sessionQuickActions").HttpAutomationConfig;
+  sshQuickActions?: import("./sessionQuickActions").SshQuickActionsConfig;
 
   // Database specific
   database?: string;

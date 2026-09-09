@@ -388,7 +388,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "webRecording",
     "showRecordingManagerIcon",
   ],
-  macros: ["macros"],
+  macros: ["macros", "sessionQuickActions"],
   // Bot registry/configuration is managed explicitly, not reset as app settings.
   bots: [],
   mcpServer: ["mcpServer"],

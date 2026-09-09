@@ -208,6 +208,14 @@ export const defaultSettings: GlobalSettings = {
     defaultExportFormat: "har" as const,
   },
   showRecordingManagerIcon: true,
+  sessionQuickActions: {
+    sshEnabled: true,
+    httpEnabled: true,
+    allowWebMacros: true,
+    allowWebScriptInjection: true,
+    allowWebForceDark: true,
+    confirmBeforeScriptRun: true,
+  },
   macros: {
     defaultStepDelayMs: 200,
     confirmBeforeReplay: true,

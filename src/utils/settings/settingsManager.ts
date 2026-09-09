@@ -24,6 +24,8 @@ import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
 import { getInvoke as tauriInvoke } from "../tauri/invoke";
 import { normalizeSshReconnectSettings } from "../ssh/sshReconnectPolicy";
+import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQuickActions";
+import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
 import {
   validateIconLibrary,
   type IconLibraryData,
@@ -490,6 +492,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     defaultExportFormat: "har" as const,
   },
   showRecordingManagerIcon: true,
+  sessionQuickActions: { ...DEFAULT_SESSION_QUICK_ACTIONS },
   macros: {
     defaultStepDelayMs: 200,
     confirmBeforeReplay: true,
@@ -1134,6 +1137,9 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      sessionQuickActions: normalizeSessionQuickActions(
+        normalizedStored.sessionQuickActions,
+      ),
       allowSshExternalLinks: normalizedStored.allowSshExternalLinks === true,
       ...sshReconnectSettings,
       sshTerminal: mergeSSHTerminalConfig(
@@ -1242,6 +1248,10 @@ export class SettingsManager {
     const safePatch = { ...patch } as Partial<GlobalSettings> & {
       restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
     };
+    if ("sessionQuickActions" in safePatch)
+      safePatch.sessionQuickActions = normalizeSessionQuickActions(
+        safePatch.sessionQuickActions,
+      );
     if (safePatch.restApi) {
       const restApi = { ...safePatch.restApi } as Record<string, unknown>;
       delete restApi.apiKey;

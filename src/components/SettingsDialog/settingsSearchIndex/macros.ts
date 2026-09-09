@@ -8,6 +8,43 @@ import type { SettingSearchEntry } from "./types";
  * enforces the join in both directions.
  */
 export const MACROS_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  ...[
+    [
+      "sshEnabled",
+      "SSH quick-action bar",
+      "favorite scripts terminal macros toolbar",
+    ],
+    ["httpEnabled", "Website quick-action bar", "HTTP HTTPS favorites toolbar"],
+    [
+      "allowWebMacros",
+      "Allow website interaction macros",
+      "browser automation consent kill switch",
+    ],
+    [
+      "allowWebScriptInjection",
+      "Allow website script injection",
+      "manual JavaScript consent kill switch",
+    ],
+    [
+      "allowWebForceDark",
+      "Allow forced-dark websites",
+      "website dark mode appearance colors",
+    ],
+    [
+      "confirmBeforeScriptRun",
+      "Confirm before running scripts",
+      "SSH website JavaScript safety review prompt",
+    ],
+  ].map(([key, label, terms]) => ({
+    key: `sessionQuickActions.${key}`,
+    label,
+    description:
+      "Global availability and safety preferences; website capabilities still require explicit connection-level consent.",
+    tags: terms.split(" "),
+    synonyms: [],
+    section: "macros",
+    sectionLabel: "Macros",
+  })),
   // ─── Replay Behavior ────────────────────────────────────────────
   {
     key: "macros.defaultStepDelayMs",
