@@ -7,6 +7,7 @@ import {
   openTerminalLink,
 } from "../../utils/ssh/terminalLinks";
 import { SettingsManager } from "../../utils/settings/settingsManager";
+import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useTerminalRecorder } from "../recording/useTerminalRecorder";
 import { useMacroRecorder } from "../recording/useMacroRecorder";
@@ -1218,6 +1219,7 @@ export function useWebTerminal(
       if (
         !policy.enabled ||
         !autoReconnectEligibleRef.current ||
+        sessionRef.current.reattachOnly ||
         !failure.recoverable ||
         disconnectIntentRef.current === "user" ||
         isDisposed.current ||
@@ -1321,6 +1323,7 @@ export function useWebTerminal(
         writerId: getSessionLifecycleWriterId(currentSession),
       };
       let attemptVpnLeaseOwnerId: string | null = null;
+      let assertReattachAccess: (() => void) | undefined;
       let attemptSshSessionId: string | null = null;
       let lifecycleAttempt: SessionLifecycleActorAttempt | null = null;
       let attemptWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1476,6 +1479,7 @@ export function useWebTerminal(
       };
 
       const stopIfStale = async () => {
+        assertReattachAccess?.();
         if (!stale()) return false;
         if (await cleanupAttemptSsh()) {
           await releaseAttemptVpnLease();
@@ -1676,6 +1680,8 @@ export function useWebTerminal(
           expectedLifecycleAuthority,
         );
         lifecycleAttempt = reservation.attempt;
+        if (currentSession.reattachOnly && !force)
+          assertReattachAccess = captureSessionDatabaseAccess(currentSession);
         sessionRef.current = reservation.session;
         dispatch({ type: "UPDATE_SESSION", payload: reservation.session });
 
@@ -1756,6 +1762,10 @@ export function useWebTerminal(
           }
         }
 
+        if (currentSession.reattachOnly && !force)
+          throw new Error(
+            "The SSH session ended. Reconnect explicitly to create a new session.",
+          );
         if (!(await disconnectCurrentSsh(true, true))) return;
         if (await stopIfStale()) return;
         runtimePath = await resolveAndAcquireVpnPath();
@@ -2158,9 +2168,13 @@ export function useWebTerminal(
           stack: details.stack,
         });
         const reconnectPolicy = getReconnectPolicy();
+        const friendly =
+          currentSession.reattachOnly && !force
+            ? "Reattachment failed. Open and unlock the owning database. If the session ended, Reconnect explicitly to create a new session."
+            : classification.friendly;
         const failure: SshConnectionFailure = {
           kind: classification.kind,
-          summary: classification.friendly,
+          summary: friendly,
           technicalDetails: details.message,
           recoverable: classification.recoverable,
           occurredAt: new Date().toISOString(),
@@ -2178,19 +2192,19 @@ export function useWebTerminal(
           return;
         }
         setStatusState("error");
-        setError(classification.friendly);
+        setError(friendly);
         setSshFailure(failure);
         const updatedSession = {
           ...sessionRef.current,
           status: "error" as const,
-          errorMessage: classification.friendly,
+          errorMessage: friendly,
         };
         sessionRef.current = updatedSession;
         dispatch({
           type: "UPDATE_SESSION",
           payload: updatedSession,
         });
-        writeLine(`\x1b[31m${classification.friendly}\x1b[0m`);
+        writeLine(`\x1b[31m${friendly}\x1b[0m`);
         writeLine(`\x1b[90mFailure reason: ${classification.kind}\x1b[0m`);
         writeLine(`\x1b[90mRaw error: ${details.message}\x1b[0m`);
       } finally {
@@ -3348,6 +3362,7 @@ export function useWebTerminal(
     setError("Reconnecting SSH session");
     const currentSession = {
       ...sessionRef.current,
+      reattachOnly: false,
       status: "reconnecting" as const,
       errorMessage: undefined,
     };

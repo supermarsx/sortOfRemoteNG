@@ -135,7 +135,10 @@ export const reconcileSessionSnapshot = (
     const current = currentById.get(incoming.id);
     if (!current) return incoming;
     matchedSessions++;
-    return reconcileSessionLifecycleSnapshot(current, incoming);
+    const reconciled = reconcileSessionLifecycleSnapshot(current, incoming);
+    return reconciled.ownerDatabaseId === current.ownerDatabaseId
+      ? reconciled
+      : { ...reconciled, ownerDatabaseId: current.ownerDatabaseId };
   });
   onDiagnostics?.({
     indexedSessions,
@@ -316,7 +319,10 @@ export const connectionReducer = (
         ...state,
         sessions: state.sessions.map((session) =>
           session.id === action.payload.id
-            ? mergeLocalSessionUpdate(session, action.payload)
+            ? {
+                ...mergeLocalSessionUpdate(session, action.payload),
+                ownerDatabaseId: session.ownerDatabaseId,
+              }
             : session,
         ),
       };
@@ -528,6 +534,17 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // Logging is wrapped in try-catch so a logging failure never blocks state updates.
   const dispatch = useCallback(
     (action: ConnectionAction) => {
+      if (action.type === "ADD_SESSION" && !action.payload.ownerDatabaseId) {
+        // Capture ownership at creation, not when a lazy viewer later mounts.
+        // Window hydration uses SET_SESSIONS and retains the source owner.
+        action = {
+          ...action,
+          payload: {
+            ...action.payload,
+            ownerDatabaseId: activeDatabaseTargetRef.current?.databaseId,
+          },
+        };
+      }
       if (action.type === "DELETE_CONNECTION") {
         action = {
           type: "RECYCLE_CONNECTIONS",

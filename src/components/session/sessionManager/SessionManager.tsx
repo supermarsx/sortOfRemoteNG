@@ -361,8 +361,11 @@ const SessionRowActions: React.FC<{
           <button
             type="button"
             onClick={() => onReattachSession(session.id, session.connection_id)}
+            disabled={
+              Boolean(row.reattachUnavailable) || row.status === "disconnected"
+            }
             className="sor-icon-btn-xs"
-            title="Reattach RDP session"
+            title={row.reattachUnavailable ?? "Reattach RDP session"}
             aria-label={`Reattach ${row.title}`}
           >
             <PlugZap size={14} aria-hidden="true" />
@@ -433,15 +436,31 @@ const SessionRowActions: React.FC<{
 
   if (row.source === "ssh" && row.sshSession) {
     return (
-      <button
-        type="button"
-        onClick={() => onDisconnectSsh(row)}
-        className="sor-icon-btn-xs text-error hover:text-error"
-        title="Disconnect SSH session"
-        aria-label={`Disconnect SSH session ${row.title}`}
-      >
-        <PowerOff size={14} aria-hidden="true" />
-      </button>
+      <div className="flex items-center justify-end gap-0.5">
+        {row.detached && onReattachSession && (
+          <button
+            type="button"
+            className="sor-icon-btn-xs"
+            disabled={
+              Boolean(row.reattachUnavailable) || row.status === "disconnected"
+            }
+            title={row.reattachUnavailable ?? "Reattach SSH session"}
+            aria-label={`Reattach ${row.title}`}
+            onClick={() => onReattachSession(row.nativeId, row.connectionId)}
+          >
+            <PlugZap size={14} aria-hidden="true" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onDisconnectSsh(row)}
+          className="sor-icon-btn-xs text-error hover:text-error"
+          title="Disconnect SSH session"
+          aria-label={`Disconnect SSH session ${row.title}`}
+        >
+          <PowerOff size={14} aria-hidden="true" />
+        </button>
+      </div>
     );
   }
 

@@ -25,6 +25,23 @@ vi.mock("react-i18next", () => ({
 }));
 
 const terminalBufferListeners = new Set<(event: any) => void>();
+const database = vi.hoisted(() => ({
+  id: "database-session-fixture",
+  locked: false,
+}));
+vi.mock("../../src/utils/connection/databaseManager", () => ({
+  DatabaseManager: {
+    getInstance: () => ({
+      getCurrentDatabase: () => ({ id: database.id }),
+      captureCurrentDatabaseDataTarget: () => ({
+        databaseId: database.id,
+        assertAccessible: () => {
+          if (database.locked) throw new Error("Locked");
+        },
+      }),
+    }),
+  },
+}));
 let autoReplyTerminalBuffer = true;
 const mockListen = vi.fn((eventName: string, handler: (event: any) => void) => {
   if (eventName === "terminal-buffer-response") {
@@ -86,6 +103,7 @@ function makeSession(
 ): ConnectionSession {
   return {
     id,
+    ownerDatabaseId: "database-session-fixture",
     connectionId: `conn-${id}`,
     protocol: protocol as any,
     name: `Session ${id}`,
@@ -127,6 +145,7 @@ function renderDetach(overrides: Record<string, any> = {}) {
     dispatch: vi.fn(),
     setActiveSessionId: vi.fn(),
     registerWindow: vi.fn(),
+    reattachWindowSession: vi.fn(),
   };
   const opts = { ...defaults, ...overrides };
   const rendered = renderHook(() =>
@@ -138,6 +157,7 @@ function renderDetach(overrides: Record<string, any> = {}) {
       opts.dispatch,
       opts.setActiveSessionId,
       opts.registerWindow,
+      opts.reattachWindowSession,
     ),
   );
   return {
@@ -145,6 +165,7 @@ function renderDetach(overrides: Record<string, any> = {}) {
     dispatch: opts.dispatch,
     setActiveSessionId: opts.setActiveSessionId,
     registerWindow: opts.registerWindow,
+    reattachWindowSession: opts.reattachWindowSession,
     updateProps: (next: Record<string, any>) => {
       Object.assign(opts, next);
       rendered.rerender();
@@ -156,6 +177,8 @@ function renderDetach(overrides: Record<string, any> = {}) {
 
 describe("useSessionDetach", () => {
   beforeEach(() => {
+    database.id = "database-session-fixture";
+    database.locked = false;
     resetSessionLifecycleAllocatorForTests();
     vi.clearAllMocks();
     terminalBufferListeners.clear();
@@ -529,6 +552,8 @@ describe("useSessionDetach", () => {
       type: "UPDATE_SESSION",
       payload: expect.objectContaining({
         id: "rdp1",
+        ownerDatabaseId: "database-session-fixture",
+        reattachOnly: true,
         vpnLeaseOwnerId: "owner-current",
         vpnLeaseOwnerIds: ["owner-old", "owner-current"],
         vpnLeaseBindings: [
@@ -551,26 +576,64 @@ describe("useSessionDetach", () => {
     expect(setActiveSessionId).toHaveBeenCalledWith("rdp1");
   });
 
-  it("reattachRdpSession creates new session when none exists", () => {
+  it("refuses an orphan actor instead of guessing a new session from a connection ID", () => {
     const { result, dispatch, setActiveSessionId } = renderDetach({
       sessions: [],
     });
     act(() => {
       result.current.handleReattachRdpSession("be-new", "conn-s2");
     });
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "ADD_SESSION",
-        payload: expect.objectContaining({
-          id: "new-id",
-          backendSessionId: "be-new",
-          protocol: "rdp",
-          status: "connecting",
-        }),
-      }),
-    );
-    expect(setActiveSessionId).toHaveBeenCalledWith("new-id");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(setActiveSessionId).not.toHaveBeenCalled();
   });
+
+  it.each(["ssh", "rdp"])(
+    "reattaches a %s window through one exact authoritative handoff",
+    (protocol) => {
+      const original = makeSession("window", protocol, {
+        layout: {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          zIndex: 1,
+          isDetached: true,
+          windowId: "detached-window",
+        },
+      });
+      const view = renderDetach({ sessions: [original] });
+      act(() =>
+        view.result.current.handleReattachRdpSession(
+          original.backendSessionId!,
+          original.connectionId,
+        ),
+      );
+      expect(view.reattachWindowSession).toHaveBeenCalledExactlyOnceWith(
+        "window",
+      );
+      expect(view.dispatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["wrong database", "locked", "unknown owner", "wrong actor"])(
+    "refuses reattachment with %s without creating or changing a session",
+    (reason) => {
+      const original = makeSession("retained", "ssh");
+      if (reason === "unknown owner") delete original.ownerDatabaseId;
+      const view = renderDetach({ sessions: [original] });
+      if (reason === "wrong database") database.id = "other-database";
+      if (reason === "locked") database.locked = true;
+      act(() =>
+        view.result.current.handleReattachRdpSession(
+          reason === "wrong actor" ? "other-actor" : original.backendSessionId!,
+          original.connectionId,
+        ),
+      );
+      expect(view.dispatch).not.toHaveBeenCalled();
+      expect(view.reattachWindowSession).not.toHaveBeenCalled();
+      expect(view.setActiveSessionId).not.toHaveBeenCalled();
+    },
+  );
 
   it("preserves an explicit zero retry-attempt override when reattaching RDP", () => {
     const zeroRetryConnection = {
@@ -578,7 +641,13 @@ describe("useSessionDetach", () => {
       retryAttempts: 0,
     };
     const { result, dispatch } = renderDetach({
-      sessions: [],
+      sessions: [
+        makeSession("zero", "rdp", {
+          backendSessionId: "be-zero",
+          connectionId: "conn-zero",
+          maxReconnectAttempts: 0,
+        }),
+      ],
       connections: [zeroRetryConnection],
     });
 
@@ -587,8 +656,12 @@ describe("useSessionDetach", () => {
     });
 
     expect(dispatch).toHaveBeenCalledWith({
-      type: "ADD_SESSION",
-      payload: expect.objectContaining({ maxReconnectAttempts: 0 }),
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        maxReconnectAttempts: 0,
+        reattachOnly: true,
+        ownerDatabaseId: "database-session-fixture",
+      }),
     });
   });
 

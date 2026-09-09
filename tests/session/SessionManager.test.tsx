@@ -295,6 +295,97 @@ function renderManagerWithConnectionState({
 }
 
 describe("SessionManager (unified RDP + internal proxy)", () => {
+  it.each(["ssh", "rdp"] as const)(
+    "offers exact retained %s actor reattachment from Sessions",
+    async (protocol) => {
+      const actor = protocol === "ssh" ? "ssh-detached" : "rdp-1";
+      mockInvoke({
+        list_sessions:
+          protocol === "ssh"
+            ? [
+                {
+                  id: actor,
+                  config: {
+                    host: "fixture.example.test",
+                    port: 22,
+                    username: "fixture",
+                  },
+                  connected_at: "2026-09-01",
+                  last_activity: "2026-09-01",
+                  is_alive: true,
+                },
+              ]
+            : [],
+      });
+      const onReattachSession = vi.fn();
+      const retained: ConnectionSession = {
+        id: "retained",
+        backendSessionId: actor,
+        connectionId: "conn-1",
+        ownerDatabaseId: "db-a",
+        protocol,
+        hostname: "fixture.example.test",
+        name: "Retained fixture",
+        status: "connected",
+        startTime: new Date(0),
+        layout: {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          zIndex: 1,
+          isDetached: true,
+        },
+      };
+      renderManagerWithConnectionState({
+        sessions: [retained],
+        managerProps: { onReattachSession, activeBackendSessionIds: [] },
+      });
+      const button = await screen.findByTitle(
+        `Reattach ${protocol.toUpperCase()} session`,
+      );
+      expect(button).toBeEnabled();
+      fireEvent.click(button);
+      expect(onReattachSession).toHaveBeenCalledExactlyOnceWith(
+        actor,
+        "conn-1",
+      );
+      expect(invoke).not.toHaveBeenCalledWith(
+        protocol === "ssh" ? "connect_ssh" : "connect_rdp",
+        expect.anything(),
+      );
+    },
+  );
+
+  it("explains unavailable reattachment for an unknown live SSH actor instead of guessing its host", async () => {
+    mockInvoke({
+      list_sessions: [
+        {
+          id: "orphan",
+          config: {
+            host: "fixture.example.test",
+            port: 22,
+            username: "fixture",
+          },
+          connected_at: "2026-09-01",
+          last_activity: "2026-09-01",
+          is_alive: true,
+        },
+      ],
+    });
+    const onReattachSession = vi.fn();
+    renderManagerWithConnectionState({
+      sessions: [],
+      managerProps: { onReattachSession },
+    });
+    const buttons = await screen.findAllByTitle(
+      "The owning database association is unavailable; reconnect explicitly instead.",
+    );
+    expect(buttons.every((button) => button.hasAttribute("disabled"))).toBe(
+      true,
+    );
+    expect(onReattachSession).not.toHaveBeenCalled();
+  });
   it("wires SSH history reconnect to the host action and current saved connection", async () => {
     const onReconnect = vi.fn();
     appendSSHSessionActivity({

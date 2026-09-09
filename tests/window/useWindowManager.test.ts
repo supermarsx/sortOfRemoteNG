@@ -109,6 +109,58 @@ function createMemoryRevisionStore(initialHighWater: string | null = null) {
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe("useWindowManager", () => {
+  it("reattaches an exact detached tab once with actor, owner and reattach-only intent intact", () => {
+    const dispatch = vi.fn();
+    const setActiveSessionId = vi.fn();
+    const original = makeSession("return", {
+      ownerDatabaseId: "db-a",
+      lifecycleActorGeneration: 3,
+      lifecycleRevision: 4,
+      lifecycleWriterId: "detached-return",
+      layout: {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        zIndex: 1,
+        isDetached: true,
+        windowId: "detached-return",
+      },
+    });
+    const view = renderWindowManager({
+      sessions: [original],
+      dispatch,
+      setActiveSessionId,
+    });
+    act(() =>
+      view.result.current.reattachSession("return", undefined, undefined, true),
+    );
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        id: "return",
+        backendSessionId: "be-return",
+        ownerDatabaseId: "db-a",
+        reattachOnly: true,
+        lifecycleActorGeneration: 4,
+        lifecycleRevision: 5,
+        layout: expect.objectContaining({
+          isDetached: false,
+          windowId: undefined,
+        }),
+      }),
+    });
+    expect(setActiveSessionId).toHaveBeenCalledWith("return");
+    act(() =>
+      view.result.current.reattachSession(
+        "not-a-session",
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mockWindowListeners.clear();

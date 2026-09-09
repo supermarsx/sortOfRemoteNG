@@ -425,14 +425,16 @@ export function useWindowManager({
       sessionId: string,
       terminalBuffer?: string,
       lifecycle?: SessionLifecyclePatch,
+      reattachOnly = false,
     ) => {
       // Move to main + update terminal buffer
       const session =
         mergeLifecyclePatch(sessionId, lifecycle) ??
         sessionsRef.current.find((s) => s.id === sessionId);
+      if (!session) return;
       if (session) {
         const mainOwnedSession = advanceSessionLifecycleAuthority(
-          session,
+          reattachOnly ? { ...session, reattachOnly: true } : session,
           "main",
         );
         sessionsRef.current = sessionsRef.current.map((item) =>
@@ -872,5 +874,11 @@ export function useWindowManager({
     return () => clearInterval(interval);
   }, [handleReattachSession]);
 
-  return { registry, registerWindow, syncWindow, detachRef };
+  return {
+    registry,
+    registerWindow,
+    syncWindow,
+    detachRef,
+    reattachSession: handleReattachSession,
+  };
 }

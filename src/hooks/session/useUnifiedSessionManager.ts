@@ -106,6 +106,8 @@ export interface UnifiedSessionRow {
   rdpStats?: RDPStats;
   /** RDP-only: whether the viewer is detached. */
   detached?: boolean;
+  /** Reattachment needs an exact retained actor-to-database association. */
+  reattachUnavailable?: string;
   /** RDP-only: raw session info (for detach / reattach call paths). */
   rdpSession?: RDPSessionInfo;
   /** Proxy-only: raw proxy session detail. */
@@ -356,8 +358,18 @@ export function useUnifiedSessionManager({
   );
 
   // ── Project RDP sessions into unified rows ──
+  const frontendRdpByBackendId = useMemo(
+    () =>
+      new Map(
+        sessionPartition.connections
+          .filter((item) => item.protocol === "rdp" && item.backendSessionId)
+          .map((item) => [item.backendSessionId!, item]),
+      ),
+    [sessionPartition.connections],
+  );
   const rdpRows = useMemo<UnifiedSessionRow[]>(() => {
     return rdpSessions.map((s) => {
+      const frontendSession = frontendRdpByBackendId.get(s.id);
       const display = getSessionDisplayName(s);
       const isDetached = isSessionDetached(s);
       const stats = rdpStatsMap[s.id];
@@ -389,10 +401,20 @@ export function useUnifiedSessionManager({
         errorMessage: stats?.last_error,
         rdpStats: stats,
         detached: isDetached,
+        frontendSession,
+        reattachUnavailable: !frontendSession?.ownerDatabaseId
+          ? "The owning database association is unavailable; reconnect explicitly instead."
+          : undefined,
         rdpSession: s,
       };
     });
-  }, [rdpSessions, rdpStatsMap, getSessionDisplayName, isSessionDetached]);
+  }, [
+    rdpSessions,
+    rdpStatsMap,
+    getSessionDisplayName,
+    isSessionDetached,
+    frontendRdpByBackendId,
+  ]);
 
   // ── Project proxy sessions into unified rows ──
   const proxyRows = useMemo<UnifiedSessionRow[]>(() => {
@@ -441,7 +463,16 @@ export function useUnifiedSessionManager({
           connection?.name ||
           (username && target ? `${username}@${target}` : target || "SSH"),
         subtitle: username && target ? `${username}@${target}` : target,
-        status: backendSession.is_alive ? "connected" : "disconnected",
+        status: !backendSession.is_alive
+          ? "disconnected"
+          : !frontendSession || frontendSession.layout?.isDetached
+            ? "detached"
+            : "connected",
+        detached:
+          !frontendSession || frontendSession.layout?.isDetached === true,
+        reattachUnavailable: !frontendSession?.ownerDatabaseId
+          ? "The owning database association is unavailable; reconnect explicitly instead."
+          : undefined,
         connectionId: frontendSession?.connectionId,
         protocol: "ssh",
         hostname: host,

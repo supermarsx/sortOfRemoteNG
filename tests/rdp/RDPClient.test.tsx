@@ -24,6 +24,7 @@ import {
   type TrustVerifyResult,
 } from "../../src/utils/auth/trustStore";
 import { useRDPClient } from "../../src/hooks/rdp/useRDPClient";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import { useConnections } from "../../src/contexts/useConnections";
 import { RDPInternalsTab } from "../../src/components/rdp/RDPInternalsTab";
 import { RDP_INTERNALS_PROTOCOL } from "../../src/components/app/toolSession";
@@ -586,6 +587,57 @@ describe("RDPClient", () => {
   });
 
   describe("RDP Connection", () => {
+    it("never substitutes another same-connection actor or dials anew for explicit reattachment", async () => {
+      const manager = DatabaseManager.getInstance();
+      const current = vi
+        .spyOn(manager, "getCurrentDatabase")
+        .mockReturnValue({ id: "reattach-db" } as ReturnType<
+          typeof manager.getCurrentDatabase
+        >);
+      const target = vi
+        .spyOn(manager, "captureCurrentDatabaseDataTarget")
+        .mockReturnValue({
+          databaseId: "reattach-db",
+          assertAccessible: () => {},
+        } as ReturnType<typeof manager.captureCurrentDatabaseDataTarget>);
+      const implementation = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation(
+        async (command: string, args?: InvokeArgs) =>
+          command === "list_rdp_sessions"
+            ? [
+                {
+                  id: "other-actor",
+                  connectionId: mockSession.connectionId,
+                  connected: true,
+                },
+              ]
+            : implementation(command, args),
+      );
+      const retained = {
+        ...mockSession,
+        ownerDatabaseId: "reattach-db",
+        backendSessionId: "ended-actor",
+        reattachOnly: true,
+      };
+      const view = renderHook(() => useRDPClient(retained), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(view.result.current.connectionStatus).toBe("error"),
+      );
+      expect(view.result.current.statusMessage).toContain(
+        "Reconnect explicitly",
+      );
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) =>
+            command === "connect_rdp" || command === "reattach_rdp_session",
+        ),
+      ).toEqual([]);
+      view.unmount();
+      current.mockRestore();
+      target.mockRestore();
+    });
     it("shows an input-stall error without disconnecting video and releases keys once the stalled call settles", async () => {
       const fallbackInvoke = mockInvoke.getMockImplementation();
       let completeInput!: () => void;

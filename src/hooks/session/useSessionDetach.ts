@@ -1,13 +1,11 @@
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { resolveConnectionRetryAttempts } from "../../utils/behavior/legacyBehavior";
 import { availableMonitors, currentMonitor } from "@tauri-apps/api/window";
 import {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
-import { generateId } from "../../utils/core/id";
 import type { WindowId } from "../../types/windowManager";
 import {
   advanceSessionLifecycleAuthority,
@@ -15,6 +13,7 @@ import {
 } from "../../utils/session/sessionLifecycle";
 import { hasNoLiveTransport } from "../../utils/session/sessionClassification";
 import { ToastContext } from "../../contexts/ToastContext";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
@@ -115,6 +114,7 @@ export function useSessionDetach(
   dispatch: React.Dispatch<any>,
   setActiveSessionId: (id: string | undefined) => void,
   registerWindow?: (windowId: WindowId, sessionIds: string[]) => void,
+  reattachWindowSession?: (sessionId: string) => void,
 ) {
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -495,17 +495,56 @@ export function useSessionDetach(
 
   const handleReattachRdpSession = useCallback(
     (backendSessionId: string, connectionId?: string) => {
-      const connection = connectionId
-        ? connections.find((c) => c.id === connectionId)
-        : undefined;
-
-      const existing = sessions.find(
+      const matches = sessionsRef.current.filter(
         (s) =>
-          s.backendSessionId === backendSessionId ||
-          (connectionId &&
-            s.connectionId === connectionId &&
-            s.protocol === "rdp"),
+          s.backendSessionId === backendSessionId &&
+          (s.protocol === "rdp" || s.protocol === "ssh") &&
+          (!connectionId || s.connectionId === connectionId),
       );
+      const existing = matches.length === 1 ? matches[0] : undefined;
+      const refuse = (reason: string) => {
+        toastRef.current?.toast.warning(reason);
+        window.dispatchEvent(
+          new CustomEvent("sorng:reattach-refused", {
+            detail: { backendSessionId, reason },
+          }),
+        );
+      };
+      const manager = DatabaseManager.getInstance();
+      const target = manager.captureCurrentDatabaseDataTarget();
+      if (
+        !existing?.ownerDatabaseId ||
+        manager.getCurrentDatabase()?.id !== existing.ownerDatabaseId ||
+        target?.databaseId !== existing.ownerDatabaseId ||
+        typeof target.assertAccessible !== "function"
+      ) {
+        refuse(
+          "Reattach requires the known owning database. Open and unlock it; an unknown session cannot be matched by hostname.",
+        );
+        return;
+      }
+      try {
+        target.assertAccessible();
+      } catch {
+        refuse("Unlock the owning database before reattaching this session.");
+        return;
+      }
+      if (hasSessionLifecycleActorAttempt(existing.id)) {
+        refuse(
+          "Wait for the current connection attempt to finish before reattaching.",
+        );
+        return;
+      }
+      if (existing.layout?.windowId) {
+        if (!reattachWindowSession) {
+          refuse(
+            "The detached window handoff is unavailable. Return the tab from its window.",
+          );
+          return;
+        }
+        reattachWindowSession(existing.id);
+        return;
+      }
       if (existing) {
         // A close-policy detach keeps a hidden ownership row. Move it back to
         // the main layout before activation so the existing backend and every
@@ -513,6 +552,7 @@ export function useSessionDetach(
         const reopened = advanceSessionLifecycleAuthority(
           {
             ...existing,
+            reattachOnly: true,
             status:
               existing.status === "disconnected"
                 ? "connecting"
@@ -536,27 +576,8 @@ export function useSessionDetach(
         setActiveSessionId(existing.id);
         return;
       }
-
-      const newSession: ConnectionSession = {
-        id: generateId(),
-        connectionId: connection?.id || connectionId || backendSessionId,
-        backendSessionId,
-        name: connection?.name || connectionId || backendSessionId.slice(0, 8),
-        status: "connecting",
-        startTime: new Date(),
-        protocol: "rdp",
-        hostname: connection?.hostname || "",
-        reconnectAttempts: 0,
-        maxReconnectAttempts: resolveConnectionRetryAttempts(
-          connection?.retryAttempts,
-          3,
-        ),
-      };
-
-      dispatch({ type: "ADD_SESSION", payload: newSession });
-      setActiveSessionId(newSession.id);
     },
-    [connections, sessions, dispatch, setActiveSessionId],
+    [dispatch, setActiveSessionId, reattachWindowSession],
   );
 
   return { handleSessionDetach, handleReattachRdpSession };

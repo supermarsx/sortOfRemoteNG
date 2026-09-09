@@ -201,10 +201,28 @@ const mocks = vi.hoisted(() => {
     terminalConfig: {},
     connectionConfig: {},
     runtimePath,
+    databaseId: "database-ssh-fixture",
+    databaseAccessible: true,
   };
 });
 
 vi.mock("@xterm/xterm", () => ({ Terminal: mocks.MockTerminal }));
+vi.mock("../../utils/connection/databaseManager", () => ({
+  DatabaseManager: {
+    getInstance: () => ({
+      getCurrentDatabase: () => ({ id: mocks.databaseId }),
+      captureCurrentDatabaseDataTarget: () => ({
+        databaseId: mocks.databaseId,
+        assertAccessible: () => {
+          if (!mocks.databaseAccessible)
+            throw new Error("Locked fixture database");
+        },
+      }),
+      onCurrentDatabaseChange: () => () => {},
+      onDatabaseAccessChange: () => () => {},
+    }),
+  },
+}));
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
     fit(): void {}
@@ -295,6 +313,7 @@ import { useWebTerminal, type WebTerminalMgr } from "./useWebTerminal";
 const mockedResolveRuntimeNetworkPath = vi.mocked(resolveRuntimeNetworkPath);
 
 const session: ConnectionSession = {
+  ownerDatabaseId: "database-ssh-fixture",
   id: "frontend-ssh-1",
   connectionId: mocks.connection.id,
   name: mocks.connection.name,
@@ -311,6 +330,8 @@ const emitTauriEvent = (event: string, payload: unknown) => {
 };
 
 beforeEach(() => {
+  mocks.databaseId = "database-ssh-fixture";
+  mocks.databaseAccessible = true;
   resetSessionLifecycleAllocatorForTests();
   mocks.MockTerminal.instances.length = 0;
   mocks.webLinksHandlers.length = 0;
@@ -2049,6 +2070,83 @@ describe("useWebTerminal input lifecycle", () => {
       error.mockRestore();
     },
   );
+
+  it("refuses a dead reattach actor without automatic dialing, while an explicit reconnect remains available", async () => {
+    const implementation = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command: string, args: unknown) =>
+      command === "is_session_alive"
+        ? Promise.resolve(false)
+        : implementation(command, args),
+    );
+    const retained = {
+      ...session,
+      backendSessionId: "ended-actor",
+      reattachOnly: true,
+    };
+    let model: WebTerminalMgr | null = null;
+    function Harness() {
+      model = useWebTerminal(retained);
+      return <div ref={model.containerRef} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("error"));
+    expect(model!.error).toContain("Reconnect explicitly");
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "connect_ssh"),
+    ).toEqual([]);
+    await act(async () => {
+      await model!.handleReconnect();
+    });
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "connect_ssh"),
+    ).toHaveLength(1);
+    expect(mocks.context.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({ reattachOnly: false }),
+      }),
+    );
+  });
+
+  it("reattaches an existing live SSH actor without dialing a replacement", async () => {
+    const implementation = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command: string, args: unknown) =>
+      command === "is_session_alive"
+        ? Promise.resolve(true)
+        : command === "get_shell_info"
+          ? Promise.resolve("existing-shell")
+          : implementation(command, args),
+    );
+    const retained = {
+      ...session,
+      backendSessionId: "existing-actor",
+      reattachOnly: true,
+    };
+    let model: WebTerminalMgr | null = null;
+    function Harness() {
+      model = useWebTerminal(retained);
+      return <div ref={model.containerRef} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(mocks.invoke).toHaveBeenCalledWith("is_session_alive", {
+      sessionId: "existing-actor",
+    });
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "connect_ssh"),
+    ).toEqual([]);
+    expect(mocks.context.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          backendSessionId: "existing-actor",
+          shellId: "existing-shell",
+          ownerDatabaseId: session.ownerDatabaseId,
+        }),
+      }),
+    );
+  });
 
   it("acquires the VPN path before SSH and releases it after target disconnect", async () => {
     mocks.runtimePath.transport.vpnPreSteps = [

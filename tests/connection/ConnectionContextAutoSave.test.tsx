@@ -50,6 +50,59 @@ describe("ConnectionProvider auto-save", () => {
     vi.useRealTimers();
   });
 
+  it("captures a session's database at creation and preserves that owner through later updates and window snapshots", async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(async () => {
+      await result.current.loadData(collectionId);
+    });
+    act(() =>
+      result.current.dispatch({
+        type: "ADD_SESSION",
+        payload: {
+          id: "owned-session",
+          connectionId: "saved-connection",
+          protocol: "ssh",
+          hostname: "fixture.example.test",
+          name: "Owner fixture",
+          status: "connected",
+          startTime: new Date(0),
+        },
+      }),
+    );
+    const created = result.current.state.sessions[0];
+    expect(created.ownerDatabaseId).toBe(collectionId);
+    act(() =>
+      result.current.dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...created,
+          ownerDatabaseId: "other-database",
+          name: "updated",
+        },
+      }),
+    );
+    expect(result.current.state.sessions[0]).toMatchObject({
+      name: "updated",
+      ownerDatabaseId: collectionId,
+    });
+    act(() =>
+      result.current.dispatch({
+        type: "SET_SESSIONS",
+        payload: [
+          {
+            ...created,
+            ownerDatabaseId: "other-database",
+            lifecycleRevision: 100,
+          },
+        ],
+      }),
+    );
+    expect(result.current.state.sessions[0].ownerDatabaseId).toBe(collectionId);
+    expect(
+      (await manager.loadDatabaseData(collectionId))?.connections ?? [],
+    ).toEqual([]);
+  });
+
   it.each(["close", "lock"] as const)(
     "clears revoked persistence ownership on %s and ignores an old save after reopen",
     async (reason) => {

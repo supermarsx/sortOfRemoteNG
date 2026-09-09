@@ -1691,6 +1691,10 @@ export interface ConnectionSession {
   tabGroupId?: string;
   /** A Recycle Bin tool tab is pinned to one database and never switches it. */
   connectionRecycleBin?: { databaseId: string };
+  /** Runtime owning database, captured at creation; never inferred on viewer remount. */
+  ownerDatabaseId?: string;
+  /** Explicit reattachment cannot silently create a new native connection. */
+  reattachOnly?: boolean;
 
   // Reconnection
   reconnectAttempts?: number;

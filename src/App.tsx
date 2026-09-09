@@ -288,15 +288,18 @@ const AppContent: React.FC = () => {
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();
-  const { registerWindow: wmRegisterWindow, detachRef: wmDetachRef } =
-    useWindowManager({
-      sessions: state.sessions,
-      connections: state.connections,
-      tabGroups: state.tabGroups,
-      dispatch,
-      setActiveSessionId,
-      handleSessionClose,
-    });
+  const {
+    registerWindow: wmRegisterWindow,
+    detachRef: wmDetachRef,
+    reattachSession: wmReattachSession,
+  } = useWindowManager({
+    sessions: state.sessions,
+    connections: state.connections,
+    tabGroups: state.tabGroups,
+    dispatch,
+    setActiveSessionId,
+    handleSessionClose,
+  });
   const { handleMouseDown, handleRdpPanelMouseDown } = useResizeHandlers(
     sidebarPosition,
     setSidebarWidth,
@@ -563,6 +566,7 @@ const AppContent: React.FC = () => {
     dispatch,
     setActiveSessionId,
     wmRegisterWindow,
+    (sessionId) => wmReattachSession(sessionId, undefined, undefined, true),
   );
   // Wire handleSessionDetach into WindowManager (ref avoids circular dependency)
   wmDetachRef.current = handleSessionDetach;

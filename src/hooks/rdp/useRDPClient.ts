@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { debugLog } from "../../utils/core/debugLogger";
+import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import {
   ConnectionSession,
   Connection,
@@ -1209,6 +1210,7 @@ export function useRDPClient(session: ConnectionSession) {
     const rdpCfg = rdpSettingsRef.current;
     let attemptVpnLeaseOwnerId: string | null = null;
     let attemptRdpBackendSessionId: string | null = null;
+    let assertReattachAccess: (() => void) | undefined;
     let lifecycleAttempt: SessionLifecycleActorAttempt | null = null;
 
     const releaseAttemptVpnLease = async () => {
@@ -1292,6 +1294,7 @@ export function useRDPClient(session: ConnectionSession) {
     const stopIfStale = async (
       cleanupTarget?: () => Promise<boolean | void>,
     ) => {
+      assertReattachAccess?.();
       if (!stale()) return false;
       const targetClean = cleanupTarget ? await cleanupTarget() : true;
       if (targetClean !== false) await releaseAttemptVpnLease();
@@ -1358,6 +1361,8 @@ export function useRDPClient(session: ConnectionSession) {
 
     let runtimePath: RuntimeNetworkPath | null = null;
     try {
+      if (sess.reattachOnly)
+        assertReattachAccess = captureSessionDatabaseAccess(sess);
       const reservation = reserveSessionLifecycleActorAttempt(
         sessionRef.current,
         expectedLifecycleAuthority,
@@ -1425,11 +1430,12 @@ export function useRDPClient(session: ConnectionSession) {
           : undefined;
         // Fall back to connectionId match
         const connId = conn?.id ?? sess.connectionId;
-        const byConnection = connId
-          ? existingSessions.find(
-              (s) => s.connectionId === connId && s.connected,
-            )
-          : undefined;
+        const byConnection =
+          connId && !sess.reattachOnly
+            ? existingSessions.find(
+                (s) => s.connectionId === connId && s.connected,
+              )
+            : undefined;
 
         reattachId = byBackend?.id ?? byConnection?.id;
 
@@ -1446,6 +1452,15 @@ export function useRDPClient(session: ConnectionSession) {
       }
 
       if (await stopIfStale()) return;
+
+      // Explicit Sessions reattach is actor-only; no discovery fallback or dial.
+      if (sess.reattachOnly && !reattachId) {
+        setConnectionStatus("error");
+        setStatusMessage(
+          "The RDP session ended. Reconnect explicitly to create a new session.",
+        );
+        return;
+      }
 
       // Resolve and acquire the complete VPN path before either attaching to
       // an existing backend session or dialing a new one. The backend command
@@ -1600,7 +1615,7 @@ export function useRDPClient(session: ConnectionSession) {
 
       // If we have no connection definition, we can't create a new session
       // (reattach-only scenario where the original connection isn't in the tree).
-      if (!conn) {
+      if (!conn || sess.reattachOnly) {
         setConnectionStatus("error");
         setStatusMessage("Reattach failed — backend session not found");
         return;
@@ -1825,6 +1840,7 @@ export function useRDPClient(session: ConnectionSession) {
       // caused a double-attach race: the status handler would create a
       // *new* blank renderer, discarding any frames already painted.
     } catch (error) {
+      assertReattachAccess = undefined;
       if (
         await stopIfStale(async () => {
           const actorClean = await closeAttemptRdpBackend();
@@ -1872,6 +1888,10 @@ export function useRDPClient(session: ConnectionSession) {
   }, []);
 
   const handleReconnect = useCallback(async () => {
+    if (sessionRef.current.reattachOnly) {
+      sessionRef.current = { ...sessionRef.current, reattachOnly: false };
+      dispatch({ type: "UPDATE_SESSION", payload: sessionRef.current });
+    }
     const sid = sessionIdRef.current;
     if (sid && connectionStatus === "reconnecting") {
       try {
@@ -1885,7 +1905,7 @@ export function useRDPClient(session: ConnectionSession) {
     setConnectionStatus("connecting");
     setStatusMessage("Reconnecting...");
     initializeRDPConnection();
-  }, [initializeRDPConnection, connectionStatus, handleDisconnect]);
+  }, [initializeRDPConnection, connectionStatus, handleDisconnect, dispatch]);
 
   const setNativeSessionActivity = useCallback(
     async (
