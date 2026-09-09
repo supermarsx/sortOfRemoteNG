@@ -1,29 +1,47 @@
-import React, { useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
-import { cx } from '../lib/cx';
+import React, { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import { X } from "lucide-react";
+import { cx } from "../lib/cx";
+import { scrollElementWithinContainer } from "../../connection/editor/scrollWithinContainer";
+
+/** Reveal keyboard focus only inside dialog-owned scroll regions, never its ancestors. */
+const focusInsidePanel = (target: HTMLElement, panel: HTMLElement) => {
+  target.focus({ preventScroll: true });
+  for (
+    let parent = target.parentElement;
+    parent && panel.contains(parent);
+    parent = parent.parentElement
+  ) {
+    const style = window.getComputedStyle(parent);
+    if (/(auto|scroll)/.test(`${style.overflowY} ${style.overflowX}`))
+      scrollElementWithinContainer(parent, target);
+    if (parent === panel) break;
+  }
+};
 
 const hasClassFragment = (value: string | undefined, fragment: string) =>
   Boolean(value && value.includes(fragment));
 
 const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'textarea:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
+  "a[href]",
+  "button:not([disabled])",
+  "textarea:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
   '[tabindex]:not([tabindex="-1"])',
-].join(', ');
+].join(", ");
 
 const getFocusableElements = (container: HTMLElement | null): HTMLElement[] => {
   if (!container) return [];
 
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
-    if (element.getAttribute('aria-hidden') === 'true') return false;
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+  ).filter((element) => {
+    if (element.getAttribute("aria-hidden") === "true") return false;
     if (element.tabIndex < 0) return false;
 
     const style = window.getComputedStyle(element);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+    return style.display !== "none" && style.visibility !== "hidden";
   });
 };
 
@@ -62,9 +80,10 @@ export const Modal: React.FC<ModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    previousFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
 
     const focusPanel = () => {
       const panel = panelRef.current;
@@ -72,14 +91,14 @@ export const Modal: React.FC<ModalProps> = ({
 
       const focusable = getFocusableElements(panel);
       const nextFocus = focusable[0] ?? panel;
-      nextFocus.focus();
+      focusInsidePanel(nextFocus, panel);
     };
 
     const frame = requestAnimationFrame(focusPanel);
 
     return () => {
       cancelAnimationFrame(frame);
-      previousFocusRef.current?.focus();
+      previousFocusRef.current?.focus({ preventScroll: true });
     };
   }, [isOpen]);
 
@@ -87,13 +106,13 @@ export const Modal: React.FC<ModalProps> = ({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && onClose && closeOnEscape) {
+      if (e.key === "Escape" && onClose && closeOnEscape) {
         e.preventDefault();
         onClose();
         return;
       }
 
-      if (e.key !== 'Tab') return;
+      if (e.key !== "Tab") return;
 
       const panel = panelRef.current;
       if (!panel) return;
@@ -101,7 +120,7 @@ export const Modal: React.FC<ModalProps> = ({
       const focusable = getFocusableElements(panel);
       if (focusable.length === 0) {
         e.preventDefault();
-        panel.focus();
+        panel.focus({ preventScroll: true });
         return;
       }
 
@@ -111,32 +130,29 @@ export const Modal: React.FC<ModalProps> = ({
 
       if (!e.shiftKey && active === last) {
         e.preventDefault();
-        first.focus();
+        focusInsidePanel(first, panel);
       } else if (e.shiftKey && (active === first || active === panel)) {
         e.preventDefault();
-        last.focus();
+        focusInsidePanel(last, panel);
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose, closeOnEscape]);
 
   if (!isOpen) return null;
-  if (typeof document === 'undefined') return null;
+  if (typeof document === "undefined") return null;
 
-  const hasMaxWidthClass = hasClassFragment(panelClassName, 'max-w-');
+  const hasMaxWidthClass = hasClassFragment(panelClassName, "max-w-");
   const hasHorizontalMarginClass =
-    hasClassFragment(panelClassName, 'mx-') ||
-    hasClassFragment(panelClassName, 'ml-') ||
-    hasClassFragment(panelClassName, 'mr-');
+    hasClassFragment(panelClassName, "mx-") ||
+    hasClassFragment(panelClassName, "ml-") ||
+    hasClassFragment(panelClassName, "mr-");
 
   return createPortal(
     <div
-      className={cx(
-        'sor-modal-backdrop',
-        backdropClassName,
-      )}
+      className={cx("sor-modal-backdrop", backdropClassName)}
       data-testid={dataTestId}
       onClick={(e) => {
         if (!closeOnBackdrop || !onClose) return;
@@ -146,9 +162,9 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={panelRef}
         className={cx(
-          'sor-modal-panel w-full',
-          !hasMaxWidthClass && 'max-w-md',
-          !hasHorizontalMarginClass && 'mx-4',
+          "sor-modal-panel w-full",
+          !hasMaxWidthClass && "max-w-md",
+          !hasHorizontalMarginClass && "mx-4",
           panelClassName,
         )}
         role="dialog"
@@ -156,7 +172,9 @@ export const Modal: React.FC<ModalProps> = ({
         aria-modal="true"
         tabIndex={-1}
       >
-        <div className={cx('sor-modal-content', contentClassName)}>{children}</div>
+        <div className={cx("sor-modal-content", contentClassName)}>
+          {children}
+        </div>
       </div>
     </div>,
     document.body,
@@ -181,8 +199,8 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({
   actions,
   showCloseButton = true,
 }) => (
-  <div className={cx('sor-modal-header', className)}>
-    <div className={cx('sor-modal-title', titleClassName)}>{title}</div>
+  <div className={cx("sor-modal-header", className)}>
+    <div className={cx("sor-modal-title", titleClassName)}>{title}</div>
     <div className="sor-modal-header-actions">
       {actions}
       {showCloseButton && onClose && (
@@ -204,17 +222,19 @@ interface ModalBodyProps {
   children: React.ReactNode;
 }
 
-export const ModalBody: React.FC<ModalBodyProps> = ({ className, children }) => (
-  <div className={cx('sor-modal-body', className)}>{children}</div>
-);
+export const ModalBody: React.FC<ModalBodyProps> = ({
+  className,
+  children,
+}) => <div className={cx("sor-modal-body", className)}>{children}</div>;
 
 interface ModalFooterProps {
   className?: string;
   children: React.ReactNode;
 }
 
-export const ModalFooter: React.FC<ModalFooterProps> = ({ className, children }) => (
-  <div className={cx('sor-modal-footer', className)}>{children}</div>
-);
+export const ModalFooter: React.FC<ModalFooterProps> = ({
+  className,
+  children,
+}) => <div className={cx("sor-modal-footer", className)}>{children}</div>;
 
 export default Modal;

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { scrollElementWithinContainer } from "../connection/editor/scrollWithinContainer";
 
 /** `data-testid` applied to the element while it is highlighted. */
 export const SETTINGS_SEARCH_HIGHLIGHT_TESTID = "settings-search-highlight";
@@ -67,7 +68,14 @@ export function useSettingHighlight(
         else el.setAttribute("data-testid", previousTestId);
       };
 
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const scrollContainer = el.closest<HTMLElement>(
+        "[data-settings-scroll-container]",
+      );
+      if (scrollContainer)
+        scrollElementWithinContainer(scrollContainer, el, {
+          axis: "vertical",
+          padding: 16,
+        });
 
       // Apply highlight animation
       el.style.transition = "background-color 0.3s ease";

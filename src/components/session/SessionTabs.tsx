@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { scrollElementWithinContainer } from "../connection/editor/scrollWithinContainer";
 import {
   X,
   XCircle,
@@ -104,7 +105,7 @@ const SUBMENU_ITEM_SELECTOR = [
 
 const focusFirstSubmenuItem = (panel: HTMLElement | null) => {
   const first = panel?.querySelector<HTMLElement>(SUBMENU_ITEM_SELECTOR);
-  first?.focus();
+  first?.focus({ preventScroll: true });
 };
 
 const getSessionIcon = (
@@ -363,11 +364,10 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     const activeEl = scrollRef.current.querySelector<HTMLElement>(
       '[aria-selected="true"]',
     );
-    activeEl?.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "nearest",
-    });
+    if (activeEl)
+      scrollElementWithinContainer(scrollRef.current, activeEl, {
+        axis: "horizontal",
+      });
   }, [activeSessionId]);
 
   const scrollBy = useCallback((delta: number) => {
@@ -454,20 +454,20 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
   useEffect(() => {
     if (renamingSessionId && renameInputRef.current) {
-      renameInputRef.current.focus();
+      renameInputRef.current.focus({ preventScroll: true });
       renameInputRef.current.select();
     }
   }, [renamingSessionId]);
 
   useEffect(() => {
     if (newGroupDialog && newGroupInputRef.current) {
-      newGroupInputRef.current.focus();
+      newGroupInputRef.current.focus({ preventScroll: true });
     }
   }, [newGroupDialog]);
 
   useEffect(() => {
     if (renamingGroupId && groupRenameInputRef.current) {
-      groupRenameInputRef.current.focus();
+      groupRenameInputRef.current.focus({ preventScroll: true });
       groupRenameInputRef.current.select();
     }
   }, [renamingGroupId]);
@@ -509,7 +509,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const focusTabById = (sessionId: string) => {
     requestAnimationFrame(() => {
       const tab = document.getElementById(`session-tab-${sessionId}`);
-      if (tab instanceof HTMLElement) tab.focus();
+      if (tab instanceof HTMLElement) tab.focus({ preventScroll: true });
     });
   };
 
@@ -588,7 +588,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     event.preventDefault();
     event.stopPropagation();
     setOpen(false);
-    triggerRef.current?.focus();
+    triggerRef.current?.focus({ preventScroll: true });
   };
 
   const handleContextMenu = (e: React.MouseEvent, sessionId: string) => {

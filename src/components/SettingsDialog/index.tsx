@@ -183,7 +183,11 @@ const ContentPanel: React.FC<
   const u = mgr.updateSettings;
 
   return (
-    <div ref={mgr.contentScrollRef} className="flex-1 overflow-y-auto min-h-0">
+    <div
+      ref={mgr.contentScrollRef}
+      data-settings-scroll-container
+      className="flex-1 overflow-y-auto min-h-0"
+    >
       <div className="p-6 max-w-3xl mx-auto">
         {mgr.activeTab === "general" && (
           <GeneralSettings settings={s} updateSettings={u} />

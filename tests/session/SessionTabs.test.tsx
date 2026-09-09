@@ -193,6 +193,51 @@ describe("SessionTabs accessibility", () => {
     ).toBeNull();
   });
 
+  it("reveals the active tab only in its horizontal lane", () => {
+    forceTabOverflow();
+    const { rerender } = renderTabs({ activeSessionId: undefined });
+    const lane = screen.getByTestId("session-tabs-scroll");
+    const tab = screen.getByRole("tab", { name: /session two/i });
+    const laneRect = vi.spyOn(lane, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      right: 100,
+      top: 30,
+      bottom: 70,
+      width: 100,
+      height: 40,
+      x: 0,
+      y: 30,
+      toJSON: () => ({}),
+    });
+    const tabRect = vi.spyOn(tab, "getBoundingClientRect").mockReturnValue({
+      left: 300,
+      right: 400,
+      top: 30,
+      bottom: 70,
+      width: 100,
+      height: 40,
+      x: 300,
+      y: 30,
+      toJSON: () => ({}),
+    });
+    const scroll = vi.spyOn(tab, "scrollIntoView");
+    lane.scrollTop = 13;
+    rerender(
+      <SessionTabs
+        activeSessionId="s2"
+        onSessionSelect={onSessionSelect}
+        onSessionClose={onSessionClose}
+        onSessionDetach={onSessionDetach}
+      />,
+    );
+    expect(lane.scrollLeft).toBe(300);
+    expect(lane.scrollTop).toBe(13);
+    expect(scroll).not.toHaveBeenCalled();
+    laneRect.mockRestore();
+    tabRect.mockRestore();
+    scroll.mockRestore();
+  });
+
   it("reacts to committed custom-icon deletion without polling or a settings-context rerender", () => {
     const key = "custom:12345678-1234-4123-8123-123456789abc";
     publishIconLibrary(
