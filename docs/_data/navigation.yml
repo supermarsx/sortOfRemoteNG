@@ -25,6 +25,8 @@
       url: /import-export-clone/
     - title: GIF recording
       url: /gif-recording/
+    - title: Script libraries
+      url: /scripts/libraries/
     - title: Integrations
       url: /integrations/
     - title: Synology File Station

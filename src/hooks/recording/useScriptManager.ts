@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { detectLanguage } from "../../utils/recording/scriptSyntax";
 import { defaultScripts } from "../../data/defaultScripts";
+import { SCRIPT_CATEGORY_SUGGESTIONS } from "../../data/defaultScriptCatalog";
 import type {
   ManagedScript,
   ScriptLanguage,
@@ -12,6 +13,7 @@ import {
   buildManagedScriptsSnapshot,
   managedScriptsStore,
   resolveManagedScripts,
+  type PersistedManagedScripts,
 } from "../../utils/recording/managedScriptPersistence";
 
 export function useScriptManager(onClose: () => void) {
@@ -84,7 +86,10 @@ export function useScriptManager(onClose: () => void) {
 
   // Derived data
   const categories = useMemo(() => {
-    const cats = new Set(scripts.map((s) => s.category));
+    const cats = new Set([
+      ...SCRIPT_CATEGORY_SUGGESTIONS,
+      ...scripts.map((s) => s.category),
+    ]);
     return Array.from(cats).sort();
   }, [scripts]);
 
@@ -272,6 +277,12 @@ export function useScriptManager(onClose: () => void) {
     toggleOsTag,
     // Props pass-through
     onClose,
+    handleCatalogApplied: (value: PersistedManagedScripts) => {
+      setScripts(resolveManagedScripts(defaultScripts, value));
+      setSelectedScript(null);
+      setIsEditing(false);
+      setStorageError(null);
+    },
   };
 }
 
