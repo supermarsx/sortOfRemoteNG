@@ -71,7 +71,10 @@ describe("consistent server corner badges", () => {
         svg.querySelector("image, mask, text, foreignObject, use"),
       ).toBeNull();
     }
-    expect(count).toBe(105);
+    expect(count).toBe(106);
+    expect(
+      svgFor("mcp-server").querySelector('[data-role-frame="server"]'),
+    ).not.toBeNull();
   });
 
   it.each([
@@ -97,6 +100,7 @@ describe("consistent server corner badges", () => {
     ["web-server", "web-application"],
     ["build-server", "build-tool"],
     ["code-server", "code-editor"],
+    ["mcp-server", "mcp"],
     ["pbx-server", "voicemail"],
     ["active-directory-server", "active-directory"],
   ])("keeps %s and its bare %s separately selectable", (server, plain) => {

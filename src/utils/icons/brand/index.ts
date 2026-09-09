@@ -3,6 +3,7 @@ import type { BrandIconSlug } from "./brandIconSlugs";
 import { GENERATED_BRAND_ICONS } from "./generatedBrandIcons";
 import { putty } from "./puttyBrandIcon";
 import { noip } from "./noipBrandIcon";
+import { vscode } from "./developerPublisherBrandIcons";
 import {
   HOSTING_HISTORICAL_BRAND_ICONS,
   type HostingHistoricalBrandIconName,
@@ -58,6 +59,7 @@ export * from "./publisherBrandIcons";
 export * from "./hostingPublisherBrandIcons";
 export { putty } from "./puttyBrandIcon";
 export { noip } from "./noipBrandIcon";
+export { vscode } from "./developerPublisherBrandIcons";
 export * from "./hostingHistoricalBrandIcons";
 export * from "./telecomPublisherBrandIcons";
 export * from "./hostingIdentifierIcons";
@@ -66,6 +68,7 @@ export * from "./hostingIdentifierIcons";
 export type BrandIconName =
   | "putty"
   | "noip"
+  | "vscode"
   | BrandIconSlug
   | HandAuthoredBrandIconName
   | HistoricalBrandIconName
@@ -83,6 +86,7 @@ export type BrandIconName =
 export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
   putty,
   noip,
+  vscode,
   ...GENERATED_BRAND_ICONS,
   ...HAND_AUTHORED_BRAND_ICONS,
   ...HISTORICAL_BRAND_ICONS,

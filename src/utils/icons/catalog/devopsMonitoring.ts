@@ -50,6 +50,7 @@ import {
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
 import { LLM_VARIANT_ICONS } from "./llmVariants";
+import { DEVELOPER_TOOL_ICONS } from "./developerToolIcons";
 
 export const DEVOPS_MONITORING_ICONS = [
   defineIcon("activity", "Activity", "devops-monitoring", Activity, [
@@ -106,6 +107,11 @@ export const DEVOPS_MONITORING_ICONS = [
   defineIcon("test-tube", "Test", "devops-monitoring", TestTube2, [
     "qa",
     "lab",
+    "test",
+    "testing",
+    "test icon",
+    "test tube",
+    "experiment",
   ]),
   defineIcon("kanban", "Kanban", "devops-monitoring", SquareKanban, [
     "jira",
@@ -114,6 +120,9 @@ export const DEVOPS_MONITORING_ICONS = [
   defineIcon("panel", "Control panel", "devops-monitoring", PanelTop, [
     "cpanel",
     "dashboard",
+    "control panel",
+    "admin panel",
+    "control console",
   ]),
   defineIcon("bot", "Automation bot", "devops-monitoring", Bot, [
     "agent",
@@ -410,4 +419,5 @@ export const DEVOPS_MONITORING_ICONS = [
     "observability",
   ]),
   ...LLM_VARIANT_ICONS,
+  ...DEVELOPER_TOOL_ICONS,
 ] as const;

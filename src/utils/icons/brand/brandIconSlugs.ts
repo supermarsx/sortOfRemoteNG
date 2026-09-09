@@ -219,6 +219,8 @@ export const BRAND_ICON_SLUGS = [
   "contabo",
   "vultr",
   "exoscale",
+  // Developer integration protocol
+  "modelcontextprotocol",
 ] as const;
 
 /** A slug known to be vendored into `generatedBrandIcons.ts`. */

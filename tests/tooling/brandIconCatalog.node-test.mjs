@@ -200,6 +200,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     TELECOM_PUBLISHER_BRAND_ICONS,
     putty,
     noip,
+    vscode,
   } = await importBrandModule();
 
   const names = Object.keys(BRAND_ICONS);
@@ -213,6 +214,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     ...Object.keys(TELECOM_PUBLISHER_BRAND_ICONS),
     "putty",
     "noip",
+    "vscode",
   ];
   assert.equal(
     new Set(expectedNames).size,
@@ -226,7 +228,12 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
   );
   assert.equal(BRAND_ICONS.putty, putty);
   assert.equal(BRAND_ICONS.noip, noip);
+  assert.equal(BRAND_ICONS.vscode, vscode);
   const providerGeometry = {
+    vscode: [
+      1,
+      "fbad10ea3e61242c459ab2a02919da5b794e00665d613c0ccbb8c4187952664c",
+    ],
     dominios: [
       1,
       "448c6c68dd959b35ea487c317d243c3d42279d44423a403bff26aa826f14368f",

@@ -633,3 +633,33 @@ identical badge reuse. `node scripts/catalog-icon-contact-sheet.mjs appliance-re
 renders these choices and the refined No-IP mark at 16/24/32/96 pixels in both
 themes, including the large Icon Explorer preview size. No publisher URLs,
 raster images, fonts or external dependencies are loaded when icons render.
+
+## Developer-tool marks
+
+The `mcp` and `mcp-server` choices use `modelcontextprotocol` from pinned
+Simple Icons 16.28.0. The collection's metadata points to the protocol project's
+[version-pinned publisher SVG](https://github.com/modelcontextprotocol/docs/blob/573dc60c2e7aab2605b29d0bf27194aa7b02e4fb/logo/light.svg).
+Its complete reference SVG hashes to
+`3163a85f9db4b98c3b5af846ea284b3296295dbd51a138b2e77ebd438342e902`.
+Only the collection's normalized protocol emblem ships; the long wordmark is not
+included. The server choice reuses that exact pure glyph in a bottom-right badge.
+
+`vscode` identifies Microsoft Visual Studio Code, using the exact even-odd
+silhouette from the mask path in `visual-studio-code-icons/vscode-alt.svg` in the
+[publisher's icon package](https://code.visualstudio.com/assets/branding/visual-studio-code-icons.zip),
+linked from [Microsoft's usage guidelines](https://code.visualstudio.com/brand).
+Archive SHA-256: `04c5292a117bbc619f1ce574cc59b6c5e2e26374d6e64b92619e848612f2d9cb`;
+source SVG SHA-256: `4ef4077d35718ae78184902b3b763281c97b0ff46f2b5a36c10c5c5189ed027f`.
+Uniform scale and a margin preserve the outline and triangular counter. Source
+shadows, gradients, overlays, masks and clipping are not shipped; the silhouette
+inherits the selected icon color. This is a local monochrome identification
+adaptation, not a claim of endorsement or permission beyond the publisher's terms.
+
+The existing `code-server` key keeps its generic server/code glyph and its
+`code-editor` pure counterpart. It is not relabelled as Microsoft's product mark
+or as the [Coder code-server project's](https://github.com/coder/code-server) logo.
+The existing `test-tube` and `panel` artwork likewise stays intact; added search
+aliases expose these existing choices. Inspector, magnifier, linter, test-checklist
+and control-panel sliders use local Lucide glyphs; the bug collection is an
+app-authored two-insect tray symbol. None of these choices implies an installed
+service or functional integration.
