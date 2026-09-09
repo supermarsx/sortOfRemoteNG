@@ -3,7 +3,9 @@ import HostKeyTrustBadges from "./HostKeyTrustBadges";
 
 function TerminalStatusBar({ mgr }: { mgr: WebTerminalMgr }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 px-4 pb-3 text-[10px] uppercase tracking-[0.2em]">
+    <div
+      className={`${mgr.isSsh ? "ssh-terminal-status " : ""}flex flex-wrap items-center gap-2 px-4 pb-3 text-[10px] uppercase tracking-[0.2em]`}
+    >
       <span className={`app-badge ${mgr.statusToneClass}`}>
         {mgr.status === "connected"
           ? "Connected"
@@ -19,9 +21,6 @@ function TerminalStatusBar({ mgr }: { mgr: WebTerminalMgr }) {
         <span className="app-badge app-badge--error normal-case tracking-normal">
           {mgr.error}
         </span>
-      )}
-      {mgr.isSsh && (
-        <span className="app-badge app-badge--info">SSH lib: Rust</span>
       )}
       {mgr.terminalRecorder.isRecording && (
         <span className="app-badge app-badge--error animate-pulse">

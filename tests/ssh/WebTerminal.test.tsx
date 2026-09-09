@@ -516,7 +516,7 @@ describe("WebTerminal", () => {
 
       await waitFor(() => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
-        expect(screen.getByText("SSH lib: Rust")).toBeInTheDocument();
+        expect(screen.queryByText(/SSH lib:/)).not.toBeInTheDocument();
         expect(
           JSON.parse(window.localStorage.getItem("sshSessionActivity") ?? "[]"),
         ).toContainEqual(

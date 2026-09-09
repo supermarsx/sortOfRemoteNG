@@ -334,6 +334,11 @@
   max-width: 100%;
 }
 
+/* SSH session status uses compact rectangular badges; other views keep pills. */
+.ssh-terminal-status .app-badge {
+  border-radius: 0.25rem;
+}
+
 .app-badge--success {
   background-color: color-mix(in srgb, var(--color-success) 18%, transparent);
   color: var(--color-success);
