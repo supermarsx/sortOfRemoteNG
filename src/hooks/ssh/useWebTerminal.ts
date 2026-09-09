@@ -646,6 +646,9 @@ export function useWebTerminal(
       isConnecting.current = next === "connecting" || next === "reconnecting";
       isSshReady.current = next === "connected";
       if (next === "connected") {
+        // Only an accepted current actor reaches this transition. Retire its
+        // previous failure/progress message together with the retry state.
+        setError("");
         wasSshEstablishedRef.current = true;
         autoReconnectEligibleRef.current = false;
         autoReconnectAttemptRef.current = 0;

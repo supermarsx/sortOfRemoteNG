@@ -965,6 +965,45 @@ describe("useWebTerminal input lifecycle", () => {
     await waitFor(() => expect(model?.status).toBe("connected"));
   });
 
+  it("clears the transient reconnect error after every successful current-actor reconnect", async () => {
+    let actor = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "connect_ssh") return `repeat-actor-${++actor}`;
+      if (command === "start_shell") return `repeat-shell-${actor}`;
+      return undefined;
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const oldActor = `repeat-actor-${actor}`;
+      await act(async () => {
+        await model!.handleReconnect();
+      });
+      expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+      expect((model as WebTerminalMgr | null)?.error).toBe("");
+      act(() => {
+        emitTauriEvent("ssh-error", {
+          session_id: oldActor,
+          message: "late old actor error",
+        });
+        emitTauriEvent("ssh-shell-closed", {
+          session_id: oldActor,
+          reason: "transport_error",
+          recoverable: true,
+          message: "late old actor close",
+        });
+      });
+      expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+      expect((model as WebTerminalMgr | null)?.error).toBe("");
+    }
+    expect(actor).toBe(4);
+  });
+
   it("keeps manual reconnect in reconnecting state and ignores the old actor's close", async () => {
     let connectCalls = 0;
     let resolveDisconnect!: () => void;
@@ -2270,6 +2309,8 @@ describe("useWebTerminal input lifecycle", () => {
     expect(acquiredOwners).toHaveLength(2);
     expect(acquiredOwners[0]).not.toBe(acquiredOwners[1]);
     expect(liveOwners).toEqual(new Set([acquiredOwners[1]]));
+    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+    expect((model as WebTerminalMgr | null)?.error).toBe("");
     expect(mocks.invoke).toHaveBeenCalledWith("disconnect_ssh", {
       sessionId: "backend-ssh-stale",
     });
