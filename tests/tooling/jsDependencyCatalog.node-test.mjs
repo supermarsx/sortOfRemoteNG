@@ -19,6 +19,18 @@ test("groups the brand icon source with the rest of the UI icon tooling", () => 
   assert.equal(categorizeJsDependency("lucide-react"), "React & UI");
 });
 
+test("groups the local code editor and parser packages together", () => {
+  for (const name of [
+    "codemirror",
+    "@codemirror/state",
+    "@codemirror/lang-javascript",
+    "@lezer/highlight",
+  ]) {
+    assert.equal(categorizeJsDependency(name), "Code Editing");
+  }
+  assert.equal(categorizeJsDependency("prettier"), "Formatting");
+});
+
 async function readJson(relativePath) {
   return JSON.parse(
     await readFile(new URL(`../../${relativePath}`, import.meta.url), "utf8"),
@@ -65,7 +77,16 @@ test("generated About catalog exactly covers every direct package", async () => 
     Object.keys(packageJson.dependencies).length +
       Object.keys(packageJson.devDependencies).length,
   );
-  assert.equal(new Set(generatedEntries.map(({ name }) => name)).size, 57);
+  const generatedNames = generatedEntries.map(({ name }) => name);
+  assert.equal(new Set(generatedNames).size, generatedNames.length);
+  assert.deepEqual(
+    [...generatedNames].sort(),
+    [
+      ...Object.keys(packageJson.dependencies),
+      ...Object.keys(packageJson.devDependencies),
+    ].sort(),
+    "every manifest dependency must appear exactly once, with no stale entries",
+  );
 });
 
 test("catalog generation fails closed on lock drift or missing metadata", async () => {

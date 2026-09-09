@@ -42,6 +42,13 @@ function assertSameKeys(left, right, context) {
 export function categorizeJsDependency(name) {
   if (name.startsWith("@tauri-apps/")) return "Tauri Integration";
   if (
+    name === "codemirror" ||
+    name.startsWith("@codemirror/") ||
+    name.startsWith("@lezer/")
+  ) {
+    return "Code Editing";
+  }
+  if (
     name.startsWith("react") ||
     // `simple-icons` sits beside `lucide-react`: it is the build-time source for
     // the brand marks in the connection icon catalog, vendored by

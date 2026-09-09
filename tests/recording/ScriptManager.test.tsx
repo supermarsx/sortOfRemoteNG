@@ -24,6 +24,21 @@ const toastContextMocks = vi.hoisted(() => ({
 }));
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
+vi.mock("../../src/components/ui/editor/ScriptCodeEditor", () => ({
+  default: ({
+    code,
+    onChange,
+  }: {
+    code: string;
+    onChange: (value: string) => void;
+  }) => (
+    <textarea
+      aria-label="Script code"
+      value={code}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+}));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -453,9 +468,7 @@ describe("ScriptManager", () => {
       fireEvent.change(descInput, { target: { value: "Test description" } });
 
       // Enter script content
-      const scriptTextarea = screen.getByPlaceholderText(
-        /Enter your script here/i,
-      );
+      const scriptTextarea = screen.getByLabelText("Script code");
       fireEvent.change(scriptTextarea, { target: { value: 'echo "hello"' } });
 
       // Save
@@ -473,9 +486,7 @@ describe("ScriptManager", () => {
       fireEvent.click(newButton);
 
       // Don't fill name, just script
-      const scriptTextarea = screen.getByPlaceholderText(
-        /Enter your script here/i,
-      );
+      const scriptTextarea = screen.getByLabelText("Script code");
       fireEvent.change(scriptTextarea, { target: { value: 'echo "test"' } });
 
       // Save button should be disabled
@@ -609,9 +620,7 @@ describe("ScriptManager", () => {
       const nameInput = screen.getByPlaceholderText(/Enter script name/i);
       fireEvent.change(nameInput, { target: { value: "Persisted Script" } });
 
-      const scriptTextarea = screen.getByPlaceholderText(
-        /Enter your script here/i,
-      );
+      const scriptTextarea = screen.getByLabelText("Script code");
       fireEvent.change(scriptTextarea, { target: { value: 'echo "persist"' } });
 
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
@@ -923,9 +932,7 @@ describe("ScriptManager", () => {
         target: { value: "Multi-Platform Script" },
       });
 
-      const scriptTextarea = screen.getByPlaceholderText(
-        /Enter your script here/i,
-      );
+      const scriptTextarea = screen.getByLabelText("Script code");
       fireEvent.change(scriptTextarea, { target: { value: 'echo "hello"' } });
 
       // Select Linux tag
