@@ -27,10 +27,11 @@ export const getRuntimeProtocolOptions = <
   builtInOptions: readonly T[],
   integrationOptions: readonly T[],
   capabilities: RuntimeCapabilities,
-): T[] => [
-  ...filterProtocolOptionsByRuntimeCapabilities(builtInOptions, capabilities),
-  ...integrationOptions,
-];
+): T[] =>
+  filterProtocolOptionsByRuntimeCapabilities(
+    [...builtInOptions, ...integrationOptions],
+    capabilities,
+  );
 
 export const getUnavailableCurrentProtocolOption = <
   T extends { value: string },

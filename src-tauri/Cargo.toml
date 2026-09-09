@@ -424,14 +424,14 @@ full-linux-system = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db
 full-dev = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka-static", "logs-json", "opkssh", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 cert-auth = ["sorng-app-domains/cert-auth", "sorng-app-startup-state/cert-auth"]
 cloud = ["sorng-app-domains/cloud", "sorng-app-startup-state/cloud", "sorng-commands-core/cloud", "dep:sorng-commands-cloud"]
-collab = ["sorng-app-domains/collab", "sorng-app-startup-state/collab", "dep:sorng-commands-collab"]
-db-mongo = ["sorng-app-domains/db-mongo", "sorng-app-startup-state/db-mongo", "sorng-commands-sessions/db-mongo"]
-db-mssql = ["sorng-app-domains/db-mssql", "sorng-app-startup-state/db-mssql", "sorng-commands-sessions/db-mssql"]
+collab = ["sorng-app-domains/collab", "sorng-app-startup-state/collab", "sorng-commands-core/collab", "dep:sorng-commands-collab"]
+db-mongo = ["sorng-app-domains/db-mongo", "sorng-app-startup-state/db-mongo", "sorng-commands-core/db-mongo", "sorng-commands-sessions/db-mongo"]
+db-mssql = ["sorng-app-domains/db-mssql", "sorng-app-startup-state/db-mssql", "sorng-commands-core/db-mssql", "sorng-commands-sessions/db-mssql"]
 db-mysql = ["sorng-app-domains/db-mysql", "sorng-app-startup-state/db-mysql", "sorng-commands-core/db-mysql", "sorng-commands-sessions/db-mysql"]
 db-postgres = ["sorng-app-domains/db-postgres", "sorng-app-startup-state/db-postgres", "sorng-commands-core/db-postgres", "sorng-commands-sessions/db-postgres"]
-db-redis = ["sorng-app-domains/db-redis", "sorng-app-startup-state/db-redis", "sorng-commands-sessions/db-redis"]
-db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-app-startup-state/db-sqlite", "sorng-commands-sessions/db-sqlite"]
-db-sqlite-dynamic = ["sorng-app-domains/db-sqlite-dynamic", "sorng-app-startup-state/db-sqlite-dynamic", "sorng-commands-sessions/db-sqlite-dynamic"]
+db-redis = ["sorng-app-domains/db-redis", "sorng-app-startup-state/db-redis", "sorng-commands-core/db-redis", "sorng-commands-sessions/db-redis"]
+db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-app-startup-state/db-sqlite", "sorng-commands-core/db-sqlite", "sorng-commands-sessions/db-sqlite"]
+db-sqlite-dynamic = ["sorng-app-domains/db-sqlite-dynamic", "sorng-app-startup-state/db-sqlite-dynamic", "sorng-commands-core/db-sqlite-dynamic", "sorng-commands-sessions/db-sqlite-dynamic"]
 # `kafka` dynamic-links against a system-installed librdkafka (t3-e38) —
 # this is the v1.0 default. Users must install librdkafka ≥ 2.x via their
 # OS package manager (apt/dnf/pacman/brew/vcpkg/winget). At runtime the
@@ -456,13 +456,13 @@ kafka-static = ["dep:sorng-kafka", "sorng-kafka/cmake-build", "sorng-commands-op
 opkssh = ["dep:sorng-opkssh", "sorng-app-startup-state/opkssh", "sorng-commands-core/opkssh"]
 opkssh-vendored-wrapper = ["opkssh", "sorng-opkssh/vendored-wrapper"]
 ops = ["sorng-app-domains/ops", "sorng-app-startup-state/ops", "sorng-commands-core/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
-platform = ["sorng-app-domains/platform", "sorng-app-startup-state/platform", "dep:sorng-commands-platform"]
+platform = ["sorng-app-domains/platform", "sorng-app-startup-state/platform", "sorng-commands-core/platform", "dep:sorng-commands-platform"]
 rdp = ["sorng-app-domains/rdp", "sorng-app-startup-connectivity/rdp", "sorng-commands-core/rdp"]
 rdp-software-decode = ["sorng-app-domains/rdp-software-decode"]
 rdp-software-decode-dynamic = ["sorng-app-domains/rdp-software-decode-dynamic"]
 rdp-mf-decode = ["sorng-app-domains/rdp-mf-decode"]
 rdp-snapshot = ["sorng-app-domains/rdp-snapshot"]
-script-engine = ["sorng-app-domains/script-engine"]
+script-engine = ["sorng-app-domains/script-engine", "sorng-commands-core/script-engine"]
 tls-cert-details = ["sorng-app-domains/tls-cert-details"]
 # SoftEther VPN. Gates the softether module in sorng-vpn and the 7 Tauri
 # commands (create/connect/disconnect/get/list/delete/update

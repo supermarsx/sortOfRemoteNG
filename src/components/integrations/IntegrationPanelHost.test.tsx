@@ -1,6 +1,10 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  UNAVAILABLE_RUNTIME_CAPABILITIES,
+  type RuntimeCapabilities,
+} from "../../utils/runtime/runtimeCapabilities";
 
 const hostMocks = vi.hoisted(() => ({
   findDescriptor: vi.fn(),
@@ -8,6 +12,8 @@ const hostMocks = vi.hoisted(() => ({
   panelProps: vi.fn(),
   createInstance: vi.fn(),
   updateInstance: vi.fn(),
+  capabilities: {} as RuntimeCapabilities,
+  storeReads: vi.fn(),
   store: {
     instances: [] as any[],
     isLoading: false,
@@ -15,16 +21,23 @@ const hostMocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("../../hooks/runtime/useRuntimeCapabilities", () => ({
+  useRuntimeCapabilities: () => hostMocks.capabilities,
+}));
+
 vi.mock("../../types/integrations/registry", () => ({
   findDescriptor: (key: string) => hostMocks.findDescriptor(key),
 }));
 
 vi.mock("../../hooks/integrations/useIntegrationConfigStore", () => ({
-  useIntegrationConfigStore: () => ({
-    ...hostMocks.store,
-    createInstance: hostMocks.createInstance,
-    updateInstance: hostMocks.updateInstance,
-  }),
+  useIntegrationConfigStore: () => {
+    hostMocks.storeReads();
+    return {
+      ...hostMocks.store,
+      createInstance: hostMocks.createInstance,
+      updateInstance: hostMocks.updateInstance,
+    };
+  },
 }));
 
 vi.mock("react-i18next", () => ({
@@ -38,6 +51,12 @@ import { IntegrationPanelHost } from "./IntegrationPanelHost";
 describe("IntegrationPanelHost secure launch bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    hostMocks.capabilities = {
+      ...UNAVAILABLE_RUNTIME_CAPABILITIES,
+      ops: true,
+      mssql: true,
+      source: "native",
+    };
     hostMocks.store.instances = [];
     hostMocks.store.isLoading = false;
     hostMocks.store.error = null;
@@ -57,6 +76,67 @@ describe("IntegrationPanelHost secure launch bridge", () => {
       category: "management",
       importPanel: hostMocks.importPanel,
     }));
+  });
+
+  it.each(["proxmox", "mssql"])(
+    "blocks a saved %s session before config or lazy panel access when unavailable",
+    async (key) => {
+      hostMocks.capabilities = {
+        ...UNAVAILABLE_RUNTIME_CAPABILITIES,
+        source: "native",
+      };
+      const onClose = vi.fn();
+      render(
+        <IntegrationPanelHost
+          sessionId="saved-session"
+          protocol={`integration:${key}`}
+          instanceId="saved-instance"
+          integrationSettings={{
+            descriptorKey: key,
+            instanceId: "saved-instance",
+            password: "fixture-secret",
+          }}
+          onClose={onClose}
+        />,
+      );
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /unavailable in this build/,
+      );
+      expect(hostMocks.storeReads).not.toHaveBeenCalled();
+      expect(hostMocks.createInstance).not.toHaveBeenCalled();
+      expect(hostMocks.updateInstance).not.toHaveBeenCalled();
+      expect(hostMocks.importPanel).not.toHaveBeenCalled();
+      expect(screen.getByText(/have not been changed/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("fails closed during unknown capability loading then opens the same saved instance when supported", async () => {
+    hostMocks.capabilities = UNAVAILABLE_RUNTIME_CAPABILITIES;
+    const props = {
+      sessionId: "saved-session",
+      descriptorKey: "proxmox",
+      instanceId: "saved-instance",
+      onClose: vi.fn(),
+    };
+    const view = render(<IntegrationPanelHost {...props} />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /could not read its native runtime capabilities/,
+    );
+    expect(hostMocks.storeReads).not.toHaveBeenCalled();
+    expect(hostMocks.importPanel).not.toHaveBeenCalled();
+    hostMocks.capabilities = {
+      ...UNAVAILABLE_RUNTIME_CAPABILITIES,
+      ops: true,
+      source: "native",
+    };
+    view.rerender(<IntegrationPanelHost {...props} />);
+    expect(
+      await screen.findByTestId("resolved-integration-panel"),
+    ).toHaveTextContent("saved-instance");
+    expect(hostMocks.createInstance).not.toHaveBeenCalled();
+    expect(hostMocks.updateInstance).not.toHaveBeenCalled();
   });
 
   it("resolves the exact existing instance through the vault-backed store before mounting", async () => {

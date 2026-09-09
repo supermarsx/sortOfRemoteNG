@@ -17,6 +17,8 @@ import {
   type IntegrationInstanceInput,
 } from "../../hooks/integrations/useIntegrationConfigStore";
 import { sanitizeIntegrationProviderFields } from "../../utils/integrations/providerFieldSanitizer";
+import { useRuntimeCapabilities } from "../../hooks/runtime/useRuntimeCapabilities";
+import { getRuntimeProtocolUnavailableMessage } from "../../utils/runtime/runtimeCapabilities";
 
 interface IntegrationPanelHostProps {
   /** Canonical session id used to own reconnect and cleanup registrations. */
@@ -42,7 +44,46 @@ interface IntegrationPanelHostProps {
  * integration plugs in purely by registering a descriptor; this host never
  * changes.
  */
-export const IntegrationPanelHost: React.FC<IntegrationPanelHostProps> = ({
+export const IntegrationPanelHost: React.FC<IntegrationPanelHostProps> = (
+  props,
+) => {
+  const { t } = useTranslation();
+  const capabilities = useRuntimeCapabilities();
+  const key =
+    props.descriptorKey ??
+    (props.protocol?.startsWith(INTEGRATION_PROTOCOL_PREFIX)
+      ? props.protocol.slice(INTEGRATION_PROTOCOL_PREFIX.length)
+      : undefined);
+  const unavailable = getRuntimeProtocolUnavailableMessage(
+    key ? `${INTEGRATION_PROTOCOL_PREFIX}${key}` : undefined,
+    capabilities,
+  );
+  if (unavailable) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="max-w-lg space-y-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm text-[var(--color-text)]">
+          <p role="alert">{unavailable}</p>
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            {t(
+              "integrations.unavailablePreserved",
+              "Your saved connection and integration settings have not been changed.",
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="sor-btn-secondary"
+          >
+            {t("common.close", "Close")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return <AvailableIntegrationPanelHost {...props} />;
+};
+
+const AvailableIntegrationPanelHost: React.FC<IntegrationPanelHostProps> = ({
   sessionId,
   descriptorKey,
   protocol,

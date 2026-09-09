@@ -70,7 +70,7 @@ describe("runtime capabilities", () => {
       filterProtocolOptionsByRuntimeCapabilities(options, leanCapabilities).map(
         ({ value }) => value,
       ),
-    ).toEqual(["ssh", "serial", "idrac"]);
+    ).toEqual(["ssh", "serial"]);
     expect(
       getRuntimeProtocolUnavailableMessage("rdp", leanCapabilities),
     ).toContain('"rdp" feature');
@@ -96,5 +96,31 @@ describe("runtime capabilities", () => {
         capabilities,
       ),
     ).toEqual([{ value: "ssh" }]);
+  });
+
+  it("normalizes absent or malformed new native fields to false without losing legacy flags", async () => {
+    tauriMocks.invoke.mockResolvedValue({
+      ...leanCapabilities,
+      ops: true,
+      mssql: "true",
+      platform: 1,
+      collab: true,
+    });
+    const capabilities = await loadRuntimeCapabilities();
+    expect(capabilities).toMatchObject({
+      ops: true,
+      serial: true,
+      mssql: false,
+      platform: false,
+      collab: true,
+      sqlite: false,
+      redis: false,
+    });
+    expect(
+      getRuntimeProtocolUnavailableMessage("integration:mssql", capabilities),
+    ).toContain("db-mssql");
+    expect(
+      getRuntimeProtocolUnavailableMessage("integration:proxmox", capabilities),
+    ).toBeNull();
   });
 });

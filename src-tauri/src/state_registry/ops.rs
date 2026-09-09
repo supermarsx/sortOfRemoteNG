@@ -22,7 +22,6 @@ use credentials::service::CredentialService;
 use cron::service::CronServiceState;
 use cups::service::CupsServiceState;
 use cyrus_sasl::service::CyrusSaslServiceState;
-use docker::service::DockerServiceState;
 use docker_compose::service::ComposeServiceState;
 use dovecot::service::DovecotServiceState;
 use draytek::service::DraytekServiceState;
@@ -80,7 +79,7 @@ use kafka::service::KafkaServiceState;
 /// Number of concrete Tauri state registrations owned by this codegen unit.
 /// Kept as an explicit parity contract so state additions cannot accidentally
 /// migrate back into the root `app_lib` composition unit unnoticed.
-pub const MANAGED_STATE_REGISTRATIONS: usize = 75;
+pub const MANAGED_STATE_REGISTRATIONS: usize = 74;
 
 const LOCALES_DIRECTORY_NAME: &str = "locales";
 const PORTABLE_RESOURCES_DIRECTORY_NAME: &str = "resources";
@@ -122,9 +121,8 @@ pub fn register(
     let k8s_state: K8sServiceState = Arc::new(Mutex::new(k8s::service::K8sService::new()));
     app.manage(k8s_state);
 
-    let docker_state: DockerServiceState =
-        Arc::new(Mutex::new(docker::service::DockerService::new()));
-    app.manage(docker_state);
+    // Docker is registered by the shared platform registrar for both ops and
+    // platform-only builds, before this operations registrar runs.
 
     // Docker Compose aggregate service (t3-e50): wraps the CLI detector,
     // parser, dependency graph, profile manager, and template library.

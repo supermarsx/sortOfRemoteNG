@@ -210,6 +210,7 @@ pub const ACCESS_REGISTRATION_ORDER: &[&str] = &[
 ];
 
 pub const PLATFORM_REGISTRATION_ORDER: &[&str] = &[
+    "DockerServiceState",
     "HyperVServiceState",
     "VmwareServiceState",
     "VmwDesktopServiceState",
@@ -243,8 +244,8 @@ pub const API_REGISTRATION_ORDER: &[&str] =
     &["ApiService", "DisabledCapsSetter", "ApiServerController"];
 
 /// Maximum moved inventory: 13 infrastructure/API + 43 security/data + 5
-/// access + 13 platform + 11 collaboration registrations.
-pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 85;
+/// access + 14 platform (including Docker for ops/platform) + 11 collaboration registrations.
+pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 86;
 
 pub struct InfrastructureHandles {
     pub app_dir: std::path::PathBuf,
@@ -457,11 +458,11 @@ mod tests {
     #[test]
     fn fixed_registrar_inventories_match_the_moved_contract() {
         assert_eq!(ACCESS_REGISTRATION_ORDER.len(), 5);
-        assert_eq!(PLATFORM_REGISTRATION_ORDER.len(), 13);
+        assert_eq!(PLATFORM_REGISTRATION_ORDER.len(), 14);
         assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 11);
         assert_eq!(API_REGISTRATION_ORDER.len(), 3);
         assert_eq!(37 + 6, 43);
-        assert_eq!(10 + 3 + 43 + 5 + 13 + 11, MAX_MANAGED_STATE_REGISTRATIONS);
+        assert_eq!(10 + 3 + 43 + 5 + 14 + 11, MAX_MANAGED_STATE_REGISTRATIONS);
     }
 
     #[test]

@@ -4,8 +4,14 @@ import {
   getUnavailableCurrentProtocolOption,
   PROTOCOL_CATEGORY_ORDER,
 } from "../../src/utils/connection/protocolOptionRegistry";
-import type { RuntimeCapabilities } from "../../src/utils/runtime/runtimeCapabilities";
-import type { ConnectionTypeCategory } from "../../src/types/integrations/registry";
+import {
+  UNAVAILABLE_RUNTIME_CAPABILITIES,
+  type RuntimeCapabilities,
+} from "../../src/utils/runtime/runtimeCapabilities";
+import {
+  integrationRegistry,
+  type ConnectionTypeCategory,
+} from "../../src/types/integrations/registry";
 
 interface TestOption {
   value: string;
@@ -35,10 +41,13 @@ const integrationOptions: TestOption[] = [
     value: "integration:netbox",
     category: "networking",
   },
+  { value: "integration:proxmox", category: "virtualization" },
+  { value: "integration:mssql", category: "database" },
+  { value: "integration:keepass", category: "vault" },
 ];
 
 describe("runtime protocol option registry", () => {
-  it("filters gated built-ins while retaining integration values and categories", () => {
+  it("filters gated built-ins and integrations while preserving available values and categories", () => {
     const options = getRuntimeProtocolOptions(
       builtInOptions,
       integrationOptions,
@@ -49,8 +58,8 @@ describe("runtime protocol option registry", () => {
       { value: "ssh", category: "console" },
       { value: "serial", category: "console" },
       {
-        value: "integration:netbox",
-        category: "networking",
+        value: "integration:keepass",
+        category: "vault",
       },
     ]);
     expect(PROTOCOL_CATEGORY_ORDER.indexOf("console")).toBeLessThan(
@@ -75,7 +84,7 @@ describe("runtime protocol option registry", () => {
         allOptions,
         "integration:netbox",
       ),
-    ).toBeNull();
+    ).toEqual({ value: "integration:netbox", category: "networking" });
     expect(
       getUnavailableCurrentProtocolOption(
         runtimeOptions,
@@ -83,5 +92,38 @@ describe("runtime protocol option registry", () => {
         "legacy-unknown",
       ),
     ).toBeNull();
+  });
+
+  it("covers all registered integrations in unavailable, lean, and full builds", () => {
+    const registered = integrationRegistry.map(({ key, category }) => ({
+      value: `integration:${key}`,
+      category,
+    }));
+    expect(registered).toHaveLength(27);
+    for (const capabilities of [
+      UNAVAILABLE_RUNTIME_CAPABILITIES,
+      leanCapabilities,
+    ]) {
+      expect(
+        getRuntimeProtocolOptions([], registered, capabilities).map(
+          ({ value }) => value,
+        ),
+      ).toEqual(["integration:keepass"]);
+    }
+    const full: RuntimeCapabilities = {
+      ...leanCapabilities,
+      ops: true,
+      cloud: true,
+      platform: true,
+      collab: true,
+      mssql: true,
+    };
+    expect(getRuntimeProtocolOptions([], registered, full)).toEqual(registered);
+    expect(
+      getRuntimeProtocolOptions([], registered, {
+        ...leanCapabilities,
+        mssql: true,
+      }).map(({ value }) => value),
+    ).toEqual(["integration:mssql", "integration:keepass"]);
   });
 });

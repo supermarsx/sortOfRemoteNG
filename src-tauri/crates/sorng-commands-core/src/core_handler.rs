@@ -16,6 +16,14 @@ mod runtime_capability_commands {
         pub mysql: bool,
         pub postgresql: bool,
         pub mongodb: bool,
+        pub mssql: bool,
+        pub sqlite: bool,
+        pub redis: bool,
+        pub platform: bool,
+        pub collab: bool,
+        pub softether: bool,
+        pub script_engine: bool,
+        pub opkssh: bool,
     }
 
     #[tauri::command]
@@ -31,6 +39,14 @@ mod runtime_capability_commands {
             mysql: cfg!(feature = "db-mysql"),
             postgresql: cfg!(feature = "db-postgres"),
             mongodb: cfg!(feature = "db-mongo"),
+            mssql: cfg!(feature = "db-mssql"),
+            sqlite: cfg!(any(feature = "db-sqlite", feature = "db-sqlite-dynamic")),
+            redis: cfg!(feature = "db-redis"),
+            platform: cfg!(feature = "platform"),
+            collab: cfg!(any(feature = "collab", feature = "platform")),
+            softether: cfg!(feature = "vpn-softether"),
+            script_engine: cfg!(feature = "script-engine"),
+            opkssh: cfg!(feature = "opkssh"),
         }
     }
 }

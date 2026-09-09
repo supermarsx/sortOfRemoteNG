@@ -2,20 +2,24 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import GeneralSection from "../../src/components/connectionEditor/GeneralSection";
+import type { RuntimeCapabilities } from "../../src/utils/runtime/runtimeCapabilities";
 
 // ── Mocks ──
 
-const runtimeCapabilityState = vi.hoisted(() => ({
-  value: {
-    cloud: true,
-    ops: true,
-    rdp: true,
-    serial: true,
-    mysql: true,
-    postgresql: true,
-    source: "native" as const,
-  },
-}));
+const runtimeCapabilityState = vi.hoisted(
+  (): { value: RuntimeCapabilities } => ({
+    value: {
+      cloud: true,
+      ops: true,
+      rdp: true,
+      serial: true,
+      mysql: true,
+      postgresql: true,
+      mongodb: true,
+      source: "native" as const,
+    },
+  }),
+);
 
 vi.mock("../../src/hooks/runtime/useRuntimeCapabilities", () => ({
   useRuntimeCapabilities: () => runtimeCapabilityState.value,
@@ -69,6 +73,7 @@ describe("GeneralSection validation", () => {
       serial: true,
       mysql: true,
       postgresql: true,
+      mongodb: true,
       source: "native",
     };
   });
@@ -92,6 +97,7 @@ describe("GeneralSection validation", () => {
       serial: true,
       mysql: false,
       postgresql: false,
+      mongodb: false,
       source: "native",
     };
 
@@ -121,6 +127,70 @@ describe("GeneralSection validation", () => {
   });
 
   // ── Name validation ──
+
+  it.each(["integration:proxmox", "integration:mssql"] as const)(
+    "preserves unavailable saved %s without allowing selection or rewriting it",
+    (protocol) => {
+      runtimeCapabilityState.value = {
+        ...runtimeCapabilityState.value,
+        ops: false,
+        mssql: false,
+      };
+      render(
+        <GeneralSection
+          {...defaultProps}
+          formData={{ ...defaultProps.formData, protocol }}
+        />,
+      );
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+        "Unavailable in this build",
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "unavailable in this build",
+      );
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      const saved = screen.getByRole("option", {
+        name: /Unavailable in this build/,
+      });
+      expect(saved).toHaveAttribute("aria-disabled", "true");
+      fireEvent.mouseDown(saved);
+      expect(mockSetFormData).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("option", { name: /^NetBox$/ }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("omits unsupported integrations for new choices and permits them only when native capabilities enable them", () => {
+    runtimeCapabilityState.value = {
+      ...runtimeCapabilityState.value,
+      ops: false,
+      mssql: false,
+    };
+    const view = render(<GeneralSection {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("editor-protocol"));
+    expect(
+      screen.queryByRole("option", { name: /Proxmox/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /SQL Server/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByTestId("editor-protocol"), { key: "Escape" });
+    runtimeCapabilityState.value = {
+      ...runtimeCapabilityState.value,
+      ops: true,
+      mssql: true,
+    };
+    view.rerender(<GeneralSection {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("editor-protocol"));
+    const proxmox = screen.getByRole("option", { name: /Proxmox/ });
+    expect(proxmox).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.mouseDown(proxmox);
+    expect(mockSetFormData).toHaveBeenCalled();
+    const updater =
+      mockSetFormData.mock.calls[mockSetFormData.mock.calls.length - 1]?.[0];
+    expect(updater(defaultProps.formData).protocol).toBe("integration:proxmox");
+  });
 
   it("shows error on blur when name is empty", () => {
     render(<GeneralSection {...defaultProps} />);

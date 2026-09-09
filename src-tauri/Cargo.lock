@@ -9703,6 +9703,7 @@ dependencies = [
  "sorng-app-startup-connectivity",
  "sorng-commands-core",
  "sorng-core",
+ "sorng-docker",
  "sorng-encryption",
  "sorng-llm",
  "sorng-opkssh",
