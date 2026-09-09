@@ -277,7 +277,7 @@ export default function SshQuickActionsBar({
           {manager ? (
             <button
               type="button"
-              className="sor-btn-secondary"
+              className="sor-btn sor-btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
               onClick={() => {
                 setManager(null);
                 void actions.refresh();
@@ -289,7 +289,7 @@ export default function SshQuickActionsBar({
             <>
               <button
                 type="button"
-                className="sor-btn-secondary flex items-center gap-1"
+                className="sor-btn sor-btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
                 disabled={!!actions.unavailable}
                 onClick={() => setManager("script")}
               >
@@ -298,7 +298,7 @@ export default function SshQuickActionsBar({
               </button>
               <button
                 type="button"
-                className="sor-btn-secondary flex items-center gap-1"
+                className="sor-btn sor-btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
                 disabled={!!actions.unavailable}
                 onClick={() => setManager("macro")}
               >
@@ -307,13 +307,6 @@ export default function SshQuickActionsBar({
               </button>
             </>
           )}
-          <button
-            type="button"
-            className="sor-btn-secondary ml-auto"
-            onClick={close}
-          >
-            Close
-          </button>
         </ModalFooter>
       </Modal>
     </>

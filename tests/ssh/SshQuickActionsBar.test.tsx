@@ -34,6 +34,41 @@ const actions = (): ReturnType<typeof useSshQuickActions> => ({
   refresh: vi.fn(),
 });
 describe("SSH favorites bar", () => {
+  it("styles manager navigation consistently and keeps only the header close with Escape support", async () => {
+    const model = actions();
+    render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    const open = () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Add or manage SSH favorites" }),
+      );
+    open();
+    for (const label of ["Manage scripts", "Manage macros"]) {
+      expect(screen.getByRole("button", { name: label })).toHaveClass(
+        "sor-btn",
+        "sor-btn-secondary",
+        "text-xs",
+      );
+    }
+    expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Manage scripts" }));
+    await screen.findByText("Script library manager");
+    expect(
+      screen.getByRole("button", { name: "Back to favorites" }),
+    ).toHaveClass("sor-btn", "sor-btn-secondary");
+    expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    open();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(model.run).not.toHaveBeenCalled();
+  });
   it("shows compact explicit run/search/add controls without executing on mount", () => {
     const model = actions();
     render(
