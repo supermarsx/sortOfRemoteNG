@@ -94,6 +94,146 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("actual injected page-only automation client", () => {
+  it("blocks a public-looking form when an external password control belongs to it", () => {
+    setupPage(
+      '<form id="linked"><input type="submit"></form><input form="linked" type="password" value="external-secret">',
+    );
+    const submit = document.querySelector('input[type="submit"]')!;
+    command("recordStart");
+    gesture("click", submit);
+    expect(reports().filter((report) => report.status === "step")).toEqual([]);
+    const clicked = vi.fn();
+    submit.addEventListener("click", clicked);
+    command("step", {
+      step: {
+        kind: "click",
+        selector: "html > body > form:nth-of-type(1) > input:nth-of-type(1)",
+      },
+    });
+    expect(clicked).not.toHaveBeenCalled();
+    expect(reports().slice(-1)[0].status).toBe("failed");
+    expect(JSON.stringify(reports())).not.toContain("external-secret");
+  });
+  it("excludes reset buttons from capture and replay", () => {
+    setupPage('<button type="reset">Reset</button>');
+    const button = document.querySelector("button")!;
+    command("recordStart");
+    gesture("click", button);
+    expect(reports().filter((report) => report.status === "step")).toEqual([]);
+    command("step", {
+      step: { kind: "click", selector: "html > body > button:nth-of-type(1)" },
+    });
+    expect(reports().slice(-1)[0].status).toBe("failed");
+  });
+  it.each(["submit", "button"])(
+    "records and replays public input[type=%s] clicks without copying its value",
+    (type) => {
+      setupPage(
+        `<form><input type="${type}" value="private-button-label"></form>`,
+      );
+      const control = document.querySelector("input")!;
+      document
+        .querySelector("form")!
+        .addEventListener("submit", (event) => event.preventDefault());
+      command("recordStart");
+      gesture("click", control);
+      const step = reports().find((report) => report.status === "step").step;
+      expect(step).toEqual({
+        kind: "click",
+        selector: "html > body > form:nth-of-type(1) > input:nth-of-type(1)",
+      });
+      command("recordStop");
+      const clicked = vi.fn();
+      control.addEventListener("click", clicked);
+      command("step", { step });
+      expect(clicked).toHaveBeenCalledOnce();
+      expect(reports().slice(-1)[0].status).toBe("ok");
+      expect(JSON.stringify(reports())).not.toContain("private-button-label");
+    },
+  );
+  it.each([
+    ["text", "demo-value"],
+    ["search", "demo-value"],
+    ["email", "demo@example.test"],
+    ["url", "https://example.test/demo"],
+    ["tel", "123456"],
+    ["number", "42"],
+    ["date", "2026-09-09"],
+    ["datetime-local", "2026-09-09T12:30"],
+    ["month", "2026-09"],
+    ["week", "2026-W37"],
+    ["time", "12:30"],
+    ["range", "42"],
+    ["color", "#12ab34"],
+  ])("records and replays value-free %s input steps", (type, value) => {
+    setupPage(`<input type="${type}">`);
+    const control = document.querySelector("input")!;
+    command("recordStart");
+    gesture("change", control);
+    const step = reports().find((report) => report.status === "step").step;
+    expect(step).toEqual({
+      kind: "fill",
+      selector: "html > body > input:nth-of-type(1)",
+    });
+    command("recordStop");
+    const changed = vi.fn();
+    control.addEventListener("change", changed);
+    command("step", { step, value });
+    expect(control.value).toBe(value);
+    expect(changed).toHaveBeenCalledOnce();
+    expect(reports().slice(-1)[0].status).toBe("ok");
+    expect(JSON.stringify(reports())).not.toContain(value);
+  });
+  it.each(["reset", "image", "hidden", "password", "file"])(
+    "does not record or replay unsupported/secret input[type=%s]",
+    (type) => {
+      setupPage(`<input type="${type}">`);
+      const control = document.querySelector("input")!;
+      command("recordStart");
+      gesture("click", control);
+      gesture("change", control);
+      expect(reports().filter((report) => report.status === "step")).toEqual(
+        [],
+      );
+      command("step", {
+        step: { kind: "fill", selector: "html > body > input:nth-of-type(1)" },
+        value: "never-fill",
+      });
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      command("step", {
+        step: { kind: "click", selector: "html > body > input:nth-of-type(1)" },
+      });
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(JSON.stringify(reports())).not.toContain("never-fill");
+    },
+  );
+  it.each([false, true])(
+    "blocks login submit inputs, including external form association=%s",
+    (external) => {
+      setupPage(
+        `<form id="login"><input type="password" value="fixture-secret">${external ? "" : '<input type="submit">'}</form>${external ? '<input type="submit" form="login">' : ""}`,
+      );
+      const submit = document.querySelector('input[type="submit"]')!;
+      command("recordStart");
+      gesture("click", submit);
+      expect(reports().filter((report) => report.status === "step")).toEqual(
+        [],
+      );
+      const clicked = vi.fn();
+      submit.addEventListener("click", clicked);
+      command("step", {
+        step: {
+          kind: "click",
+          selector: external
+            ? "html > body > input:nth-of-type(1)"
+            : "html > body > form:nth-of-type(1) > input:nth-of-type(2)",
+        },
+      });
+      expect(clicked).not.toHaveBeenCalled();
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(JSON.stringify(reports())).not.toContain("fixture-secret");
+    },
+  );
   it("records public controls with hidden CSRF without capturing any value, label, ID or URL", () => {
     setupPage(
       '<form><input type="hidden" name="csrf_token" value="secret-csrf"><input id="public-name" value="private-person-name"><button type="button">Private label</button></form>',

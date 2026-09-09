@@ -55,13 +55,9 @@
     )
       return true;
     var controls = [element];
-    var form = element.closest("form");
+    var form = element.form || element.closest("form");
     if (form)
-      controls = controls.concat(
-        Array.prototype.slice.call(
-          form.querySelectorAll("input,textarea,select"),
-        ),
-      );
+      controls = controls.concat(Array.prototype.slice.call(form.elements));
     return controls.some(function (control) {
       var type = (control.getAttribute("type") || "").toLowerCase();
       // A form's CSRF/route bookkeeping is never read into a step. It must not
@@ -98,6 +94,37 @@
       style.visibility !== "hidden" &&
       element.getClientRects().length > 0
     );
+  }
+  // Recording and replay share one supported-control contract. No value is
+  // captured, including native date/time/color/range controls.
+  function fillControl(element) {
+    return (
+      (element instanceof HTMLInputElement &&
+        [
+          "text",
+          "search",
+          "email",
+          "url",
+          "tel",
+          "number",
+          "date",
+          "datetime-local",
+          "month",
+          "week",
+          "time",
+          "range",
+          "color",
+        ].indexOf(element.type) >= 0) ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    );
+  }
+  function clickControl(element) {
+    if (element instanceof HTMLInputElement)
+      return element.type === "button" || element.type === "submit";
+    if (element instanceof HTMLButtonElement && element.type === "reset")
+      return false;
+    return element.matches("a,button,[role=button],[role=link]");
   }
   function selectorFor(element) {
     var parts = [],
@@ -139,17 +166,9 @@
         ["checkbox", "radio"].indexOf(element.type) >= 0
       )
         step = { kind: "check", selector: selector, checked: element.checked };
-      else if (
-        element instanceof HTMLInputElement ||
-        element instanceof HTMLTextAreaElement ||
-        element instanceof HTMLSelectElement
-      )
+      else if (fillControl(element))
         step = { kind: "fill", selector: selector }; // Never copies values, page attributes, text or URLs into a step.
-    } else if (!(
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement ||
-      element instanceof HTMLSelectElement
-    )) {
+    } else if (clickControl(element)) {
       step = { kind: "click", selector: selector };
     }
     if (!step) return;
@@ -180,8 +199,7 @@
     if (sensitive(element) || !visible(element) || element.disabled)
       throw new Error("target");
     if (step.kind === "click") {
-      if (!element.matches("a,button,[role=button],[role=link]"))
-        throw new Error("target");
+      if (!clickControl(element)) throw new Error("target");
       if (
         element instanceof HTMLAnchorElement &&
         new URL(element.href, location.href).origin !== location.origin
@@ -205,12 +223,7 @@
       step.kind === "fill" &&
       typeof value === "string" &&
       value.length <= 4096 &&
-      ((element instanceof HTMLInputElement &&
-        ["text", "search", "email", "url", "tel", "number"].indexOf(
-          element.type,
-        ) >= 0) ||
-        element instanceof HTMLTextAreaElement ||
-        element instanceof HTMLSelectElement)
+      fillControl(element)
     ) {
       var proto =
         element instanceof HTMLTextAreaElement
