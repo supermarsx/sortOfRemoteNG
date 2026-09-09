@@ -2,6 +2,9 @@
 //!
 //! All types use `#[serde(rename_all = "camelCase")]` for TypeScript interop.
 
+pub use crate::scoped_files::{
+    FileOperation, FileStationLogin, FileTaskReceipt, FileTaskStatus, FileTransferOutcome,
+};
 use serde::{Deserialize, Serialize};
 
 // ── Generic DSM response wrappers ───────────────────────────────────
@@ -55,7 +58,7 @@ pub struct SynologyConfig {
     pub otp_code: Option<String>,
     /// Remembered device token (skip 2FA on subsequent logins)
     pub device_token: Option<String>,
-    /// Personal access token (DSM 7.2+) — use instead of user/pass
+    /// Legacy explicit SID reuse; not a verified personal-access-token flow.
     pub access_token: Option<String>,
 }
 
@@ -316,8 +319,11 @@ pub struct IscsiTarget {
 #[serde(rename_all = "camelCase")]
 pub struct FileStationInfo {
     pub hostname: String,
+    #[serde(alias = "is_manager")]
     pub is_manager: bool,
+    #[serde(alias = "support_sharing")]
     pub support_sharing: bool,
+    #[serde(alias = "support_virtual_protocol")]
     pub support_virtual_protocol: Option<String>,
 }
 
@@ -337,8 +343,10 @@ pub struct FileAdditional {
     pub time: Option<FileTime>,
     pub owner: Option<FileOwner>,
     pub perm: Option<FilePerm>,
+    #[serde(alias = "real_path")]
     pub real_path: Option<String>,
     pub r#type: Option<String>,
+    #[serde(alias = "mount_point_type")]
     pub mount_point_type: Option<String>,
 }
 

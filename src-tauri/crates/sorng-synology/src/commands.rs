@@ -5,6 +5,260 @@
 use super::service::SynologyServiceState;
 use super::types::*;
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
+
+// ─── Scoped File Station explorer ─────────────────────────────────
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn syn_fs_connect(
+    state: State<'_, SynologyServiceState>,
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+    use_https: bool,
+    otp_code: Option<String>,
+) -> Result<FileStationLogin, String> {
+    let config = SynologyConfig {
+        host,
+        port,
+        username,
+        password,
+        use_https,
+        insecure: false,
+        timeout_secs: 30,
+        otp_code,
+        device_token: None,
+        access_token: None,
+    };
+    state
+        .lock()
+        .await
+        .fs_connect(config)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_disconnect(
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+) -> Result<bool, String> {
+    state
+        .lock()
+        .await
+        .fs_disconnect(&expected_session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_list(
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    folder_path: Option<String>,
+    offset: u64,
+    limit: u64,
+    sort_by: String,
+    sort_direction: String,
+) -> Result<FileListResult, String> {
+    state
+        .lock()
+        .await
+        .fs_list(
+            &expected_session_id,
+            folder_path.as_deref(),
+            offset,
+            limit,
+            &sort_by,
+            &sort_direction,
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_create_folder(
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    folder_path: String,
+    name: String,
+) -> Result<(), String> {
+    state
+        .lock()
+        .await
+        .fs_create_folder(&expected_session_id, &folder_path, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_rename(
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    path: String,
+    name: String,
+) -> Result<(), String> {
+    state
+        .lock()
+        .await
+        .fs_rename(&expected_session_id, &path, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn syn_fs_start_task(
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    operation: FileOperation,
+    paths: Vec<String>,
+    destination: Option<String>,
+    pattern: Option<String>,
+    overwrite: Option<bool>,
+) -> Result<FileTaskReceipt, String> {
+    state
+        .lock()
+        .await
+        .fs_start_task(
+            &expected_session_id,
+            operation,
+            paths,
+            destination,
+            pattern,
+            overwrite,
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_task_status(
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    task_id: String,
+    offset: Option<u64>,
+    limit: Option<u64>,
+) -> Result<FileTaskStatus, String> {
+    state
+        .lock()
+        .await
+        .fs_task_status(
+            &expected_session_id,
+            &task_id,
+            offset.unwrap_or(0),
+            limit.unwrap_or(100),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_stop_task(
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    state
+        .lock()
+        .await
+        .fs_stop_task(&expected_session_id, &task_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_upload(
+    window: tauri::WebviewWindow,
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    folder_path: String,
+    overwrite: Option<bool>,
+) -> Result<FileTransferOutcome, String> {
+    state
+        .lock()
+        .await
+        .fs_assert_session(&expected_session_id)
+        .map_err(|e| e.to_string())?;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    window
+        .dialog()
+        .file()
+        .set_title("Upload to Synology File Station")
+        .set_parent(&window)
+        .pick_file(move |file| {
+            let _ = send.send(file);
+        });
+    let selected = receive
+        .await
+        .map_err(|_| "File selection was cancelled".to_string())?;
+    let context = state
+        .lock()
+        .await
+        .fs_transfer_context(&expected_session_id)
+        .map_err(|e| e.to_string())?;
+    let Some(selected) = selected else {
+        return Ok(FileTransferOutcome::cancelled());
+    };
+    let path = selected
+        .into_path()
+        .map_err(|_| "Choose a local file, not a URL".to_string())?;
+    context
+        .upload_selected(&path, &folder_path, overwrite)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn syn_fs_download(
+    window: tauri::WebviewWindow,
+    state: State<'_, SynologyServiceState>,
+    expected_session_id: String,
+    path: String,
+) -> Result<FileTransferOutcome, String> {
+    state
+        .lock()
+        .await
+        .fs_assert_session(&expected_session_id)
+        .map_err(|e| e.to_string())?;
+    let name = path
+        .rsplit('/')
+        .next()
+        .filter(|n| {
+            !n.is_empty() && n.len() <= 255 && !n.chars().any(|c| c.is_control() || c == '\\')
+        })
+        .ok_or_else(|| "Select a file to download".to_string())?;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    window
+        .dialog()
+        .file()
+        .set_title("Save File Station download (choose a new filename)")
+        .set_file_name(name)
+        .set_parent(&window)
+        .save_file(move |file| {
+            let _ = send.send(file);
+        });
+    let selected = receive
+        .await
+        .map_err(|_| "File selection was cancelled".to_string())?;
+    let context = state
+        .lock()
+        .await
+        .fs_transfer_context(&expected_session_id)
+        .map_err(|e| e.to_string())?;
+    let Some(selected) = selected else {
+        return Ok(FileTransferOutcome::cancelled());
+    };
+    let local_path = selected
+        .into_path()
+        .map_err(|_| "Choose a local destination, not a URL".to_string())?;
+    context
+        .download_selected(&path, &local_path)
+        .await
+        .map_err(|e| e.to_string())
+}
 
 // ─── Connection ──────────────────────────────────────────────────
 

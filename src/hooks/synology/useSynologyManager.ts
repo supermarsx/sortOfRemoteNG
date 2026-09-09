@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useSynologyFileConnection } from "./useSynologyFileConnection";
+import { useSynologyFileStation } from "./useSynologyFileStation";
 import type {
   DsmInfo,
   SystemUtilization,
@@ -39,7 +41,6 @@ import type {
   ConnectionEntry,
   NotificationConfig,
   SynologyDashboard,
-  FileListResult,
 } from "../../types/hardware/synology";
 
 export type SynologyTab =
@@ -62,32 +63,15 @@ export type SynologyTab =
   | "logs"
   | "notifications";
 
-type ConnectionStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "error";
-
 export function useSynologyManager(isOpen: boolean) {
   const mountedRef = useRef(true);
 
   // ─── Connection state ────────────────────────────────────────
-  const [connectionStatus, setConnectionStatus] =
-    useState<ConnectionStatus>("disconnected");
-  const [connectionError, setConnectionError] = useState<string | null>(
-    null,
-  );
-  const [host, setHost] = useState("192.168.1.1");
-  const [port, setPort] = useState(5001);
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("");
-  const [useHttps, setUseHttps] = useState(true);
-  const [insecure, setInsecure] = useState(true);
-  const [otpCode, setOtpCode] = useState("");
-  const [accessToken, setAccessToken] = useState("");
+  const connection = useSynologyFileConnection(isOpen);
+  const { connectionStatus } = connection;
 
   // ─── Tab state ───────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<SynologyTab>("dashboard");
+  const [activeTab, setActiveTab] = useState<SynologyTab>("fileStation");
   const [dataError, setDataError] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
 
@@ -98,27 +82,28 @@ export function useSynologyManager(isOpen: boolean) {
   const confirmActionRef = useRef<(() => Promise<void>) | null>(null);
 
   // ─── Dashboard data ──────────────────────────────────────────
-  const [dashboard, setDashboard] = useState<SynologyDashboard | null>(
-    null,
-  );
+  const [dashboard, setDashboard] = useState<SynologyDashboard | null>(null);
 
   // ─── System data ─────────────────────────────────────────────
   const [systemInfo, setSystemInfo] = useState<DsmInfo | null>(null);
-  const [utilization, setUtilization] =
-    useState<SystemUtilization | null>(null);
+  const [utilization, setUtilization] = useState<SystemUtilization | null>(
+    null,
+  );
 
   // ─── Storage data ────────────────────────────────────────────
   const [storageOverview, setStorageOverview] =
     useState<StorageOverview | null>(null);
   const [disks, setDisks] = useState<DiskInfo[]>([]);
   const [volumes, setVolumes] = useState<VolumeInfo[]>([]);
-  const [selectedDiskSmart, setSelectedDiskSmart] =
-    useState<SmartInfo | null>(null);
+  const [selectedDiskSmart, setSelectedDiskSmart] = useState<SmartInfo | null>(
+    null,
+  );
 
   // ─── File Station data ───────────────────────────────────────
-  const [fileList, setFileList] = useState<FileListResult | null>(null);
-  const [currentPath, setCurrentPath] = useState("/");
-  const [fileSearch, setFileSearch] = useState("");
+  const fileStation = useSynologyFileStation(
+    connection.sessionId,
+    isOpen && connectionStatus === "connected" && activeTab === "fileStation",
+  );
 
   // ─── Shares data ─────────────────────────────────────────────
   const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
@@ -145,16 +130,12 @@ export function useSynologyManager(isOpen: boolean) {
   const [sshConfig, setSshConfig] = useState<SshConfig | null>(null);
 
   // ─── Docker data ─────────────────────────────────────────────
-  const [dockerContainers, setDockerContainers] = useState<
-    DockerContainer[]
-  >([]);
+  const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>(
+    [],
+  );
   const [dockerImages, setDockerImages] = useState<DockerImage[]>([]);
-  const [dockerNetworks, setDockerNetworks] = useState<DockerNetwork[]>(
-    [],
-  );
-  const [dockerProjects, setDockerProjects] = useState<DockerProject[]>(
-    [],
-  );
+  const [dockerNetworks, setDockerNetworks] = useState<DockerNetwork[]>([]);
+  const [dockerProjects, setDockerProjects] = useState<DockerProject[]>([]);
 
   // ─── VM data ─────────────────────────────────────────────────
   const [vms, setVms] = useState<VmGuest[]>([]);
@@ -182,18 +163,15 @@ export function useSynologyManager(isOpen: boolean) {
     useState<AutoBlockConfig | null>(null);
 
   // ─── Hardware data ───────────────────────────────────────────
-  const [hardwareInfo, setHardwareInfo] = useState<HardwareInfo | null>(
+  const [hardwareInfo, setHardwareInfo] = useState<HardwareInfo | null>(null);
+  const [upsInfo, setUpsInfo] = useState<UpsInfo | null>(null);
+  const [powerSchedule, setPowerSchedule] = useState<PowerSchedule | null>(
     null,
   );
-  const [upsInfo, setUpsInfo] = useState<UpsInfo | null>(null);
-  const [powerSchedule, setPowerSchedule] =
-    useState<PowerSchedule | null>(null);
 
   // ─── Logs data ───────────────────────────────────────────────
   const [systemLogs, setSystemLogs] = useState<LogEntry[]>([]);
-  const [connectionLogs, setConnectionLogs] = useState<ConnectionEntry[]>(
-    [],
-  );
+  const [connectionLogs, setConnectionLogs] = useState<ConnectionEntry[]>([]);
 
   // ─── Notification data ───────────────────────────────────────
   const [notificationConfig, setNotificationConfig] =
@@ -216,52 +194,13 @@ export function useSynologyManager(isOpen: boolean) {
 
   // ─── Connection ──────────────────────────────────────────────
 
-  const connect = useCallback(async () => {
-    setConnectionStatus("connecting");
-    setConnectionError(null);
-    try {
-      await invoke<string>("syn_connect", {
-        host,
-        port,
-        username,
-        password,
-        useHttps,
-        insecure,
-        otpCode: otpCode || null,
-        accessToken: accessToken || null,
-      });
-      if (!mountedRef.current) return;
-      setConnectionStatus("connected");
-      setActiveTab("dashboard");
-    } catch (e) {
-      if (!mountedRef.current) return;
-      const msg = e instanceof Error ? e.message : String(e);
-      setConnectionError(msg);
-      setConnectionStatus("error");
-    }
-  }, [
-    host,
-    port,
-    username,
-    password,
-    useHttps,
-    insecure,
-    otpCode,
-    accessToken,
-  ]);
-
-  const disconnect = useCallback(async () => {
-    try {
-      await invoke("syn_disconnect");
-    } catch {
-      // ignore
-    }
-    if (!mountedRef.current) return;
-    setConnectionStatus("disconnected");
+  useEffect(() => {
+    if (connection.sessionId) setActiveTab("fileStation");
     setDashboard(null);
     setSystemInfo(null);
     setUtilization(null);
-  }, []);
+    setDataError(null);
+  }, [connection.sessionId]);
 
   // ─── Tab data loaders ────────────────────────────────────────
 
@@ -305,21 +244,7 @@ export function useSynologyManager(isOpen: boolean) {
     setDataLoading(false);
   }, []);
 
-  const loadFileStation = useCallback(async () => {
-    setDataLoading(true);
-    setDataError(null);
-    const data = await safe(() =>
-      invoke<FileListResult>("syn_list_files", {
-        folderPath: currentPath,
-        offset: 0,
-        limit: 200,
-        sortBy: "name",
-        sortDirection: "asc",
-      }),
-    );
-    if (data && mountedRef.current) setFileList(data);
-    setDataLoading(false);
-  }, [currentPath]);
+  const loadFileStation = fileStation.refresh;
 
   const loadShares = useCallback(async () => {
     setDataLoading(true);
@@ -336,9 +261,7 @@ export function useSynologyManager(isOpen: boolean) {
     setDataError(null);
     const [overview, ifaces, fw] = await Promise.all([
       safe(() => invoke<NetworkOverview>("syn_get_network_overview")),
-      safe(() =>
-        invoke<NetworkInterface[]>("syn_list_network_interfaces"),
-      ),
+      safe(() => invoke<NetworkInterface[]>("syn_list_network_interfaces")),
       safe(() => invoke<FirewallRule[]>("syn_list_firewall_rules")),
     ]);
     if (mountedRef.current) {
@@ -366,9 +289,7 @@ export function useSynologyManager(isOpen: boolean) {
   const loadPackages = useCallback(async () => {
     setDataLoading(true);
     setDataError(null);
-    const data = await safe(() =>
-      invoke<PackageInfo[]>("syn_list_packages"),
-    );
+    const data = await safe(() => invoke<PackageInfo[]>("syn_list_packages"));
     if (data && mountedRef.current) setPackages(data);
     setDataLoading(false);
   }, []);
@@ -395,9 +316,7 @@ export function useSynologyManager(isOpen: boolean) {
     setDataLoading(true);
     setDataError(null);
     const [containers, images, networks, projects] = await Promise.all([
-      safe(() =>
-        invoke<DockerContainer[]>("syn_list_docker_containers"),
-      ),
+      safe(() => invoke<DockerContainer[]>("syn_list_docker_containers")),
       safe(() => invoke<DockerImage[]>("syn_list_docker_images")),
       safe(() => invoke<DockerNetwork[]>("syn_list_docker_networks")),
       safe(() => invoke<DockerProject[]>("syn_list_docker_projects")),
@@ -424,9 +343,7 @@ export function useSynologyManager(isOpen: boolean) {
     setDataError(null);
     const [tasks, stats] = await Promise.all([
       safe(() => invoke<DownloadTask[]>("syn_list_download_tasks")),
-      safe(() =>
-        invoke<DownloadStationStats>("syn_get_download_stats"),
-      ),
+      safe(() => invoke<DownloadStationStats>("syn_get_download_stats")),
     ]);
     if (mountedRef.current) {
       if (tasks) setDownloadTasks(tasks);
@@ -463,14 +380,10 @@ export function useSynologyManager(isOpen: boolean) {
     setDataLoading(true);
     setDataError(null);
     const [overview, blocked, certs, autoBlock] = await Promise.all([
-      safe(() =>
-        invoke<SecurityOverview>("syn_get_security_overview"),
-      ),
+      safe(() => invoke<SecurityOverview>("syn_get_security_overview")),
       safe(() => invoke<BlockedIp[]>("syn_list_blocked_ips")),
       safe(() => invoke<CertificateInfo[]>("syn_list_certificates")),
-      safe(() =>
-        invoke<AutoBlockConfig>("syn_get_auto_block_config"),
-      ),
+      safe(() => invoke<AutoBlockConfig>("syn_get_auto_block_config")),
     ]);
     if (mountedRef.current) {
       if (overview) setSecurityOverview(overview);
@@ -616,22 +529,28 @@ export function useSynologyManager(isOpen: boolean) {
   // ─── Quick actions ───────────────────────────────────────────
 
   const rebootNas = useCallback(() => {
-    requestConfirm("Reboot NAS", "Are you sure you want to reboot the NAS?", async () => {
-      await invoke("syn_reboot");
-    });
+    requestConfirm(
+      "Reboot NAS",
+      "Are you sure you want to reboot the NAS?",
+      async () => {
+        await invoke("syn_reboot");
+      },
+    );
   }, [requestConfirm]);
 
   const shutdownNas = useCallback(() => {
-    requestConfirm("Shutdown NAS", "Are you sure you want to shut down the NAS?", async () => {
-      await invoke("syn_shutdown");
-    });
+    requestConfirm(
+      "Shutdown NAS",
+      "Are you sure you want to shut down the NAS?",
+      async () => {
+        await invoke("syn_shutdown");
+      },
+    );
   }, [requestConfirm]);
 
   const startContainer = useCallback(
     async (name: string) => {
-      await safe(() =>
-        invoke<void>("syn_start_docker_container", { name }),
-      );
+      await safe(() => invoke<void>("syn_start_docker_container", { name }));
       loadTabData("docker");
     },
     [loadTabData],
@@ -639,9 +558,7 @@ export function useSynologyManager(isOpen: boolean) {
 
   const stopContainer = useCallback(
     async (name: string) => {
-      await safe(() =>
-        invoke<void>("syn_stop_docker_container", { name }),
-      );
+      await safe(() => invoke<void>("syn_stop_docker_container", { name }));
       loadTabData("docker");
     },
     [loadTabData],
@@ -649,9 +566,7 @@ export function useSynologyManager(isOpen: boolean) {
 
   const restartContainer = useCallback(
     async (name: string) => {
-      await safe(() =>
-        invoke<void>("syn_restart_docker_container", { name }),
-      );
+      await safe(() => invoke<void>("syn_restart_docker_container", { name }));
       loadTabData("docker");
     },
     [loadTabData],
@@ -681,22 +596,12 @@ export function useSynologyManager(isOpen: boolean) {
     [loadTabData],
   );
 
-  const loadSmartInfo = useCallback(
-    async (diskId: string) => {
-      const data = await safe(() =>
-        invoke<SmartInfo>("syn_get_smart_info", { diskId }),
-      );
-      if (data && mountedRef.current) setSelectedDiskSmart(data);
-    },
-    [],
-  );
-
-  const navigateToFolder = useCallback(
-    (path: string) => {
-      setCurrentPath(path);
-    },
-    [],
-  );
+  const loadSmartInfo = useCallback(async (diskId: string) => {
+    const data = await safe(() =>
+      invoke<SmartInfo>("syn_get_smart_info", { diskId }),
+    );
+    if (data && mountedRef.current) setSelectedDiskSmart(data);
+  }, []);
 
   // ─── Auto-refresh on open ────────────────────────────────────
 
@@ -708,7 +613,11 @@ export function useSynologyManager(isOpen: boolean) {
   }, []);
 
   useEffect(() => {
-    if (isOpen && connectionStatus === "connected") {
+    if (
+      isOpen &&
+      connectionStatus === "connected" &&
+      activeTab !== "fileStation"
+    ) {
       loadTabData(activeTab);
       const interval = setInterval(() => {
         if (mountedRef.current) loadTabData(activeTab);
@@ -717,43 +626,15 @@ export function useSynologyManager(isOpen: boolean) {
     }
   }, [isOpen, connectionStatus, activeTab, loadTabData]);
 
-  // Reload file station on path change
-  useEffect(() => {
-    if (
-      connectionStatus === "connected" &&
-      activeTab === "fileStation"
-    ) {
-      loadFileStation();
-    }
-  }, [currentPath, connectionStatus, activeTab, loadFileStation]);
-
   return {
     // Connection
-    connectionStatus,
-    connectionError,
-    host,
-    setHost,
-    port,
-    setPort,
-    username,
-    setUsername,
-    password,
-    setPassword,
-    useHttps,
-    setUseHttps,
-    insecure,
-    setInsecure,
-    otpCode,
-    setOtpCode,
-    accessToken,
-    setAccessToken,
-    connect,
-    disconnect,
+    ...connection,
 
     // Tab navigation
     activeTab,
     changeTab,
     dataError,
+    clearDataError: () => setDataError(null),
     dataLoading,
 
     // Confirm dialog
@@ -778,11 +659,7 @@ export function useSynologyManager(isOpen: boolean) {
     loadSmartInfo,
 
     // File Station
-    fileList,
-    currentPath,
-    navigateToFolder,
-    fileSearch,
-    setFileSearch,
+    fileStation,
 
     // Shares
     sharedFolders,

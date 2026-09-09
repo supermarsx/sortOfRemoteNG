@@ -1,188 +1,222 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
-import {
-  LogIn,
-  Key,
-  ShieldOff,
-  Loader2,
-  AlertCircle,
-  Lock,
-} from "lucide-react";
+import React, { useId } from "react";
+import { LogIn, Loader2, ShieldCheck } from "lucide-react";
+import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
+import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import type { SubProps } from "./types";
 
+const inputClass =
+  "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-3 py-2 text-sm text-[var(--color-text)]";
 const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
-  const { t } = useTranslation();
+  const id = useId();
   const connecting = mgr.connectionStatus === "connecting";
-
+  const disabled = connecting || !!mgr.challenge;
   return (
-    <div className="flex flex-col items-center justify-center flex-1 p-8">
-      <div className="w-full max-w-md space-y-5">
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-teal-500/20 mb-4">
-            <LogIn className="w-8 h-8 text-teal-500" />
+    <>
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-8">
+        <form
+          className="mx-auto w-full max-w-md space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void mgr.connect();
+          }}
+        >
+          <div className="mb-6 text-center">
+            <LogIn className="mx-auto mb-3 h-8 w-8 text-teal-500" />
+            <h2 className="text-xl font-semibold">Connect to Synology NAS</h2>
+            <p className="mt-1 text-sm text-[var(--color-textSecondary)]">
+              Browse File Station with your DSM account. A one-time code will be
+              requested if the NAS requires it.
+            </p>
           </div>
-          <h2 className="text-xl font-semibold text-[var(--color-text)]">
-            {t("synology.connectTitle", "Connect to Synology NAS")}
-          </h2>
-          <p className="text-sm text-[var(--color-textSecondary)] mt-1">
-            {t(
-              "synology.connectSubtitle",
-              "Enter your DSM credentials to get started",
-            )}
-          </p>
-        </div>
-
-        {/* Error banner */}
-        {mgr.connectionError && (
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-error/10 border border-error/30 text-error text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-            <span>{mgr.connectionError}</span>
-          </div>
-        )}
-
-        {/* Host + Port */}
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-              {t("synology.host", "Host")}
+          {mgr.connectionError && !mgr.challenge && (
+            <p
+              role="alert"
+              className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error break-words"
+            >
+              {mgr.connectionError}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <label
+              className="min-w-0 flex-1 space-y-1 text-xs"
+              htmlFor={`${id}-host`}
+            >
+              Host
+              <input
+                id={`${id}-host`}
+                className={inputClass}
+                placeholder="nas.example.com"
+                autoComplete="off"
+                value={mgr.host}
+                onChange={(e) => mgr.setHost(e.target.value)}
+                disabled={disabled}
+              />
             </label>
-            <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder="192.168.1.1"
-              value={mgr.host}
-              onChange={(e) => mgr.setHost(e.target.value)}
-              disabled={connecting}
-            />
-          </div>
-          <div className="w-24">
-            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-              {t("synology.port", "Port")}
+            <label
+              className="w-24 shrink-0 space-y-1 text-xs"
+              htmlFor={`${id}-port`}
+            >
+              Port
+              <input
+                id={`${id}-port`}
+                type="number"
+                min={1}
+                max={65535}
+                className={inputClass}
+                value={mgr.port || ""}
+                onChange={(e) => mgr.setPort(Number(e.target.value))}
+                disabled={disabled}
+              />
             </label>
-            <input
-              type="number"
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-              value={mgr.port}
-              onChange={(e) =>
-                mgr.setPort(parseInt(e.target.value, 10) || 5001)
-              }
-              disabled={connecting}
-            />
           </div>
-        </div>
-
-        {/* Username */}
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t("synology.username", "Username")}
-          </label>
-          <input
-            className="w-full px-3 py-2 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            placeholder="admin"
-            value={mgr.username}
-            onChange={(e) => mgr.setUsername(e.target.value)}
-            disabled={connecting}
-          />
-        </div>
-
-        {/* Password */}
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t("synology.password", "Password")}
-          </label>
-          <div className="relative">
+          <label className="block space-y-1 text-xs" htmlFor={`${id}-user`}>
+            Username
             <input
+              id={`${id}-user`}
+              autoComplete="username"
+              className={inputClass}
+              value={mgr.username}
+              onChange={(e) => mgr.setUsername(e.target.value)}
+              disabled={disabled}
+            />
+          </label>
+          <label className="block space-y-1 text-xs" htmlFor={`${id}-password`}>
+            Password
+            <input
+              id={`${id}-password`}
               type="password"
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 pr-10"
-              placeholder="••••••••"
+              autoComplete="current-password"
+              className={inputClass}
               value={mgr.password}
               onChange={(e) => mgr.setPassword(e.target.value)}
-              disabled={connecting}
+              disabled={disabled}
             />
-            <Key className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
-          </div>
-        </div>
-
-        {/* OTP Code (optional) */}
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t("synology.otpCode", "2FA Code (optional)")}
           </label>
-          <div className="relative">
-            <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 pr-10"
-              placeholder="123456"
-              value={mgr.otpCode}
-              onChange={(e) => mgr.setOtpCode(e.target.value)}
-              disabled={connecting}
-            />
-            <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
-          </div>
-        </div>
-
-        {/* Access Token (optional) */}
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t(
-              "synology.accessToken",
-              "Personal Access Token (DSM 7.2+, optional)",
-            )}
-          </label>
-          <input
-            className="w-full px-3 py-2 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            placeholder="token..."
-            value={mgr.accessToken}
-            onChange={(e) => mgr.setAccessToken(e.target.value)}
-            disabled={connecting}
-          />
-        </div>
-
-        {/* HTTPS + Insecure */}
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)] cursor-pointer">
+          <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={mgr.useHttps}
               onChange={(e) => mgr.setUseHttps(e.target.checked)}
-              disabled={connecting}
-              className="accent-teal-500"
+              disabled={disabled}
             />
             HTTPS
           </label>
-          <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={mgr.insecure}
-              onChange={(e) => mgr.setInsecure(e.target.checked)}
-              disabled={connecting}
-              className="accent-teal-500"
-            />
-            <ShieldOff className="w-3.5 h-3.5" />
-            {t("synology.allowSelfSigned", "Allow self-signed")}
-          </label>
-        </div>
-
-        {/* Connect button */}
-        <button
-          onClick={mgr.connect}
-          disabled={connecting || !mgr.host || !mgr.username}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-[var(--color-text)] font-medium text-sm transition-colors"
-        >
-          {connecting ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {t("synology.connecting", "Connecting...")}
-            </>
+          <p
+            className={`text-xs ${mgr.useHttps ? "text-[var(--color-textSecondary)]" : "text-warning"}`}
+          >
+            {mgr.useHttps
+              ? "HTTPS verifies the NAS certificate. Use its certificate hostname and a trusted certificate chain; certificate errors are never bypassed. The usual HTTPS port is 5001."
+              : "HTTP sends your password and one-time code without TLS encryption. Use HTTPS whenever possible. Changing this option does not change the port."}
+          </p>
+          <button
+            type="submit"
+            className="sor-btn sor-btn-primary w-full justify-center"
+            disabled={
+              disabled ||
+              !mgr.host.trim() ||
+              !mgr.username.trim() ||
+              !mgr.password
+            }
+          >
+            {connecting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <LogIn className="h-4 w-4" />
+            )}
+            {connecting ? "Connecting…" : "Connect"}
+          </button>
+          {connecting && !mgr.challenge && (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary w-full justify-center"
+              onClick={mgr.cancelChallenge}
+            >
+              Cancel connection
+            </button>
+          )}
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            Credentials are used for this session, not saved by this form. API
+            login supports DSM one-time codes; Approve sign-in and security-key
+            prompts require the DSM website.
+          </p>
+        </form>
+      </div>
+      <Modal
+        isOpen={!!mgr.challenge}
+        ariaLabel="Synology two-factor authentication"
+        onClose={mgr.cancelChallenge}
+        panelClassName="max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden"
+        contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
+      >
+        <DialogHeader
+          title="Two-factor authentication"
+          icon={ShieldCheck}
+          variant="compact"
+          onClose={mgr.cancelChallenge}
+        />
+        <ModalBody className="min-h-0 overflow-y-auto space-y-4 p-5">
+          <p className="text-sm break-words">{mgr.challenge?.message}</p>
+          {mgr.challenge?.status === "unsupported_mfa" ? (
+            <p className="text-sm text-[var(--color-textSecondary)]">
+              This NAS login requires a method the File Station API cannot
+              complete here. Sign in to DSM in your browser to review available
+              one-time-code methods. Browser approval does not authenticate this
+              API session.
+            </p>
           ) : (
             <>
-              <LogIn className="w-4 h-4" />
-              {t("synology.connect", "Connect")}
+              <label htmlFor={`${id}-otp`} className="block space-y-1 text-sm">
+                One-time code
+                <input
+                  id={`${id}-otp`}
+                  className={inputClass}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={8}
+                  placeholder="123456"
+                  value={mgr.otpCode}
+                  onChange={(e) => mgr.setOtpCode(e.target.value)}
+                  disabled={connecting}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void mgr.submitOtp();
+                    }
+                  }}
+                />
+              </label>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Enter the current code from the authenticator enrolled with DSM.
+                The code is cleared after every attempt. This does not remember
+                a device or bypass future 2FA.
+              </p>
             </>
           )}
-        </button>
-      </div>
-    </div>
+          {mgr.connectionError && (
+            <p role="alert" className="text-sm text-error break-words">
+              {mgr.connectionError}
+            </p>
+          )}
+        </ModalBody>
+        <ModalFooter className="shrink-0 gap-2 px-5 py-3">
+          <button
+            className="sor-btn sor-btn-secondary"
+            onClick={mgr.cancelChallenge}
+          >
+            Cancel sign-in
+          </button>
+          {mgr.challenge?.status !== "unsupported_mfa" && (
+            <button
+              className="sor-btn sor-btn-primary"
+              disabled={connecting || !/^[0-9]{6,8}$/.test(mgr.otpCode.trim())}
+              onClick={() => void mgr.submitOtp()}
+            >
+              {connecting ? "Verifying…" : "Verify code"}
+            </button>
+          )}
+        </ModalFooter>
+      </Modal>
+    </>
   );
 };
-
 export default ConnectionForm;

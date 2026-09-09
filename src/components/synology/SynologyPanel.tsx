@@ -85,12 +85,16 @@ export const SynologyPanel: React.FC<SynologyPanelProps> = ({
     <>
       <Modal
         isOpen={isOpen}
+        ariaLabel="Synology NAS Manager"
         onClose={onClose}
         backdropClassName="bg-black/50"
         panelClassName="max-w-7xl h-[92vh] rounded-xl overflow-hidden border border-[var(--color-border)]"
         contentClassName="bg-[var(--color-surface)]"
       >
-        <div className="flex flex-1 min-h-0 flex-col h-full" data-testid="synology-panel">
+        <div
+          className="flex flex-1 min-h-0 flex-col h-full"
+          data-testid="synology-panel"
+        >
           <SynologyHeader mgr={mgr} onClose={onClose} />
 
           {mgr.connectionStatus !== "connected" ? (
@@ -98,16 +102,14 @@ export const SynologyPanel: React.FC<SynologyPanelProps> = ({
           ) : (
             <div className="flex flex-1 min-h-0">
               <Sidebar mgr={mgr} />
-              <div className="flex flex-1 flex-col min-w-0">
+              <div className="flex flex-1 flex-col min-w-0 min-h-0">
                 {/* Error bar */}
                 {mgr.dataError && (
                   <div className="flex items-center gap-2 px-4 py-2 bg-error/10 border-b border-error/30 text-error text-xs">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">{mgr.dataError}</span>
                     <button
-                      onClick={() => {
-                        /* error is auto-cleared on next action */
-                      }}
+                      onClick={mgr.clearDataError}
                       className="ml-auto text-error/60 hover:text-error text-[10px]"
                     >
                       {t("common.dismiss", "Dismiss")}

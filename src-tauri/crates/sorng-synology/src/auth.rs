@@ -1,4 +1,4 @@
-//! Authentication module — login, logout, 2FA, device tokens, PAT.
+//! Authentication module — password login with one-shot OTP, and legacy SID reuse.
 
 use crate::client::SynoClient;
 use crate::error::{SynologyError, SynologyResult};
@@ -9,15 +9,17 @@ pub struct AuthManager;
 
 impl AuthManager {
     /// Full login flow:
-    /// 1. If a Personal Access Token is configured (DSM 7.2+), use it as SID.
+    /// 1. Preserve legacy explicitly supplied SID reuse (not a PAT flow).
     /// 2. Otherwise, password-based login via `SYNO.API.Auth`.
     /// 3. If 2FA is required (error 403), retry with `otp_code`.
-    /// 4. Optionally request a device token to skip 2FA next time.
+    /// 4. Never enroll a remembered device or retain a one-time code.
     pub async fn login(client: &mut SynoClient) -> SynologyResult<String> {
-        // Personal Access Token path (DSM 7.2+)
-        if let Some(ref token) = client.config.access_token {
-            client.sid = Some(token.clone());
-            log::info!("Using Personal Access Token for authentication");
+        // Backward-compatible explicit SID path; the new explorer does not use it.
+        if let Some(token) = client.config.access_token.take() {
+            client.sid = Some(token);
+            client.config.password.clear();
+            client.config.otp_code = None;
+            log::info!("Validating an explicitly supplied legacy session token");
             // Verify token works by fetching DSM info
             match Self::fetch_dsm_info(client).await {
                 Ok(info) => {
@@ -30,7 +32,7 @@ impl AuthManager {
                 }
                 Err(_) => {
                     client.sid = None;
-                    return Err(SynologyError::auth("Personal Access Token is invalid"));
+                    return Err(SynologyError::auth("The supplied session token is invalid"));
                 }
             }
         }
@@ -40,11 +42,11 @@ impl AuthManager {
     }
 
     async fn login_password(client: &mut SynoClient) -> SynologyResult<String> {
-        let version = client.best_version("SYNO.API.Auth", 7).unwrap_or(3);
+        let version = client.best_version("SYNO.API.Auth", 6).unwrap_or(3);
 
         let mut params: Vec<(&str, String)> = vec![
             ("account", client.config.username.clone()),
-            ("passwd", client.config.password.clone()),
+            ("passwd", std::mem::take(&mut client.config.password)),
             ("session", "SortOfRemoteNG".to_string()),
             ("format", "sid".to_string()),
         ];
@@ -55,43 +57,25 @@ impl AuthManager {
         }
 
         // Supply 2FA code if available
-        if let Some(ref otp) = client.config.otp_code {
-            params.push(("otp_code", otp.clone()));
+        if let Some(otp) = client.config.otp_code.take() {
+            params.push(("otp_code", otp));
         }
 
-        // Supply device token to skip 2FA
-        if let Some(ref did) = client.device_token {
-            params.push(("device_id", did.clone()));
-            params.push(("device_name", "SortOfRemoteNG".to_string()));
-        }
-
-        // Request device token for future logins
-        params.push(("enable_device_token", "yes".to_string()));
-        params.push(("device_name", "SortOfRemoteNG".to_string()));
-
-        let url = client.resolve_url("SYNO.API.Auth", version, "login")?;
+        // Remembered-device enrollment and OTP bypass require a separate explicit
+        // consent contract. This login does neither, even if DSM returns a did.
+        client.device_token = None;
+        client.config.device_token = None;
 
         // Build form params as &str pairs
         let form_pairs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-        let resp: SynoResponse<LoginResult> = client
-            .http_client()
-            .get(&url)
-            .query(&form_pairs)
-            .send()
-            .await?
-            .json()
-            .await?;
-
-        if resp.success {
-            let login = resp.data.ok_or_else(|| {
-                SynologyError::parse("Login succeeded but no session data returned")
-            })?;
+        let result = client
+            .api_post::<LoginResult>("SYNO.API.Auth", version, "login", &form_pairs)
+            .await;
+        drop(params);
+        if let Ok(login) = result {
             client.sid = Some(login.sid);
             client.syno_token = login.synotoken;
-            if let Some(did) = login.did {
-                client.device_token = Some(did);
-            }
 
             // Fetch NAS info
             match Self::fetch_dsm_info(client).await {
@@ -109,9 +93,40 @@ impl AuthManager {
                 )),
             }
         } else {
-            let code = resp.error.map(|e| e.code).unwrap_or(100);
-            Err(SynologyError::from_dsm_code(code, "Login"))
+            result.map(|_| String::new())
         }
+    }
+
+    /// The scoped explorer supports password + OTP, not PAT, device enrollment,
+    /// Secure SignIn approval, or WebAuthn. Secrets leave config before awaiting.
+    pub(crate) async fn login_file_station(client: &mut SynoClient) -> SynologyResult<()> {
+        use serde_json::json;
+        client.auth_session = "FileStation";
+        let mut params = vec![
+            ("account", json!(client.config.username)),
+            ("passwd", json!(std::mem::take(&mut client.config.password))),
+            ("session", json!(client.auth_session)),
+            ("format", json!("sid")),
+        ];
+        if client.best_version("SYNO.API.Auth", 6).unwrap_or(0) >= 6 {
+            params.push(("enable_syno_token", json!("yes")));
+        }
+        if let Some(otp) = client.config.otp_code.take() {
+            params.push(("otp_code", json!(otp)));
+        }
+        client.device_token = None;
+        client.config.device_token = None;
+        client.config.access_token = None;
+        let response = client.file_call("SYNO.API.Auth", 6, "login", &params).await;
+        drop(params);
+        let login: LoginResult = serde_json::from_value(response?)?;
+        if login.sid.is_empty() || login.sid.len() > 4096 || login.sid.chars().any(char::is_control)
+        {
+            return Err(SynologyError::parse("NAS returned an invalid session"));
+        }
+        client.sid = Some(login.sid);
+        client.syno_token = login.synotoken;
+        Ok(())
     }
 
     /// Logout: invalidate the current session.
@@ -125,7 +140,7 @@ impl AuthManager {
                 "SYNO.API.Auth",
                 version,
                 "logout",
-                &[("session", "SortOfRemoteNG")],
+                &[("session", client.auth_session)],
             )
             .await;
         client.sid = None;
@@ -151,13 +166,13 @@ impl AuthManager {
         if client.sid.is_none() {
             return Ok(false);
         }
-        // Attempt a lightweight call
+        // API.Info is public and cannot validate an authenticated session.
         match client
             .api_call::<serde_json::Value>(
-                "SYNO.API.Info",
-                1,
-                "query",
-                &[("query", "SYNO.API.Auth")],
+                "SYNO.FileStation.Info",
+                client.best_version("SYNO.FileStation.Info", 2).unwrap_or(1),
+                "get",
+                &[],
             )
             .await
         {
@@ -166,8 +181,7 @@ impl AuthManager {
                 if matches!(e.kind, crate::error::SynologyErrorKind::SessionExpired) {
                     Ok(false)
                 } else {
-                    // Other errors — session might still be valid, but API failed
-                    Ok(true)
+                    Err(e)
                 }
             }
         }

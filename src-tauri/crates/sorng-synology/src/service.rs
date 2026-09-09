@@ -31,8 +31,9 @@ use tokio::sync::Mutex;
 pub type SynologyServiceState = Arc<Mutex<SynologyService>>;
 
 pub struct SynologyService {
-    client: Option<SynoClient>,
-    config: Option<SynologyConfig>,
+    pub(crate) client: Option<SynoClient>,
+    pub(crate) config: Option<SynologyConfig>,
+    pub(crate) file_session: Option<crate::scoped_files::FileSession>,
 }
 
 impl Default for SynologyService {
@@ -46,6 +47,7 @@ impl SynologyService {
         Self {
             client: None,
             config: None,
+            file_session: None,
         }
     }
 
@@ -77,16 +79,23 @@ impl SynologyService {
         let mut client = SynoClient::new(&config)?;
         client.discover_apis().await?;
         let msg = AuthManager::login(&mut client).await?;
-        self.config = Some(config);
+        self.fs_cleanup().await;
+        self.config = Some(client.config.clone());
         self.client = Some(client);
         Ok(msg)
     }
 
     pub async fn disconnect(&mut self) -> SynologyResult<()> {
+        self.fs_cleanup().await;
         if let Some(ref mut client) = self.client {
-            AuthManager::logout(client).await?;
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                AuthManager::logout(client),
+            )
+            .await;
         }
         self.client = None;
+        self.config = None;
         Ok(())
     }
 

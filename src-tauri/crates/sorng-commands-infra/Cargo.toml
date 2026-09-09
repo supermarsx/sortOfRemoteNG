@@ -17,6 +17,8 @@ sorng-synology = { path = "../sorng-synology" }
 sorng-vmware = { path = "../sorng-vmware" }
 sorng-voip-phone = { path = "../sorng-voip-phone" }
 tauri = { workspace = true }
+tauri-plugin-dialog = "=2.7.2"
+tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

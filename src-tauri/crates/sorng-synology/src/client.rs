@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 /// Synology DSM HTTP client.
+#[derive(Clone)]
 pub struct SynoClient {
     http: Client,
     pub base_url: String,
@@ -25,6 +26,7 @@ pub struct SynoClient {
     pub dsm_version: Option<String>,
     pub model: Option<String>,
     pub config: SynologyConfig,
+    pub(crate) auth_session: &'static str,
 }
 
 impl SynoClient {
@@ -36,10 +38,29 @@ impl SynoClient {
             ));
         }
         let scheme = if config.use_https { "https" } else { "http" };
-        let base_url = format!("{scheme}://{}:{}", config.host, config.port);
+        let host = config.host.trim();
+        if host.is_empty()
+            || host.chars().any(|c| c.is_control() || "/\\?#@".contains(c))
+            || config.port == 0
+        {
+            return Err(SynologyError::connection(
+                "Enter a NAS hostname or IP address without a URL, path, or credentials",
+            ));
+        }
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        let host = if host.contains(':') {
+            let address: std::net::Ipv6Addr = host
+                .parse()
+                .map_err(|_| SynologyError::connection("Invalid NAS IPv6 address"))?;
+            format!("[{address}]")
+        } else {
+            host.to_string()
+        };
+        let parsed = url::Url::parse(&format!("{scheme}://{host}:{}", config.port))?;
+        let base_url = parsed.as_str().trim_end_matches('/').to_string();
 
         let http = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs))
+            .timeout(Duration::from_secs(config.timeout_secs.clamp(1, 300)))
             .redirect(reqwest::redirect::Policy::none())
             .cookie_store(true)
             .build()?;
@@ -54,6 +75,7 @@ impl SynoClient {
             dsm_version: None,
             model: None,
             config: config.clone(),
+            auth_session: "SortOfRemoteNG",
         })
     }
 
@@ -77,12 +99,20 @@ impl SynoClient {
 
     /// Query `SYNO.API.Info` to discover all available APIs.
     pub async fn discover_apis(&mut self) -> SynologyResult<()> {
-        let url = format!(
-            "{}/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query&query=all",
-            self.base_url
-        );
-        let resp: SynoResponse<HashMap<String, ApiInfoEntry>> =
-            self.http.get(&url).send().await?.json().await?;
+        let url = format!("{}/webapi/entry.cgi", self.base_url);
+        let resp: SynoResponse<HashMap<String, ApiInfoEntry>> = Self::read_json(
+            self.http
+                .post(&url)
+                .form(&[
+                    ("api", "SYNO.API.Info"),
+                    ("version", "1"),
+                    ("method", "query"),
+                    ("query", "all"),
+                ])
+                .send()
+                .await?,
+        )
+        .await?;
 
         if !resp.success {
             let code = resp.error.map(|e| e.code).unwrap_or(100);
@@ -108,14 +138,21 @@ impl SynoClient {
             )));
         }
 
-        let mut url = format!(
+        if info.path.is_empty()
+            || info.path.len() > 256
+            || info.path.contains("..")
+            || !info
+                .path
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"_-./".contains(&c))
+            || info.path.starts_with('/')
+        {
+            return Err(SynologyError::parse("NAS supplied an invalid API endpoint"));
+        }
+        let url = format!(
             "{}/webapi/{}?api={}&version={}&method={}",
             self.base_url, info.path, api, version, method
         );
-
-        if let Some(ref sid) = self.sid {
-            url.push_str(&format!("&_sid={sid}"));
-        }
 
         Ok(url)
     }
@@ -134,7 +171,7 @@ impl SynoClient {
 
     // ── Generic API calls ───────────────────────────────────────────
 
-    /// Execute a GET-based API call and deserialize the `data` field.
+    /// Execute an API call using a POST body, never a secret-bearing URL.
     pub async fn api_call<T: DeserializeOwned>(
         &self,
         api: &str,
@@ -142,25 +179,7 @@ impl SynoClient {
         method: &str,
         params: &[(&str, &str)],
     ) -> SynologyResult<T> {
-        let url = self.resolve_url(api, version, method)?;
-
-        let mut req = self.http.get(&url);
-        if !params.is_empty() {
-            req = req.query(params);
-        }
-        if let Some(ref token) = self.syno_token {
-            req = req.header("X-SYNO-TOKEN", token);
-        }
-
-        let resp: SynoResponse<T> = req.send().await?.json().await?;
-
-        if resp.success {
-            resp.data
-                .ok_or_else(|| SynologyError::parse("API returned success but no data"))
-        } else {
-            let code = resp.error.map(|e| e.code).unwrap_or(100);
-            Err(SynologyError::from_dsm_code(code, api))
-        }
+        self.api_post(api, version, method, params).await
     }
 
     /// Execute a POST-based API call.
@@ -171,35 +190,8 @@ impl SynoClient {
         method: &str,
         form: &[(&str, &str)],
     ) -> SynologyResult<T> {
-        let info = self
-            .api_info
-            .get(api)
-            .ok_or_else(|| SynologyError::api_not_found(format!("API not found: {api}")))?;
-
-        let url = format!("{}/webapi/{}", self.base_url, info.path);
-
-        let mut params: Vec<(&str, &str)> = vec![("api", api), ("method", method)];
-        let ver_str = version.to_string();
-        params.push(("version", &ver_str));
-        if let Some(ref sid) = self.sid {
-            params.push(("_sid", sid));
-        }
-        params.extend_from_slice(form);
-
-        let mut req = self.http.post(&url).form(&params);
-        if let Some(ref token) = self.syno_token {
-            req = req.header("X-SYNO-TOKEN", token);
-        }
-
-        let resp: SynoResponse<T> = req.send().await?.json().await?;
-
-        if resp.success {
-            resp.data
-                .ok_or_else(|| SynologyError::parse("API returned success but no data"))
-        } else {
-            let code = resp.error.map(|e| e.code).unwrap_or(100);
-            Err(SynologyError::from_dsm_code(code, api))
-        }
+        let value = self.post_value(api, version, method, form).await?;
+        serde_json::from_value(value).map_err(Into::into)
     }
 
     /// A void POST call (returns `SynoResponse<serde_json::Value>` and ignores data).
@@ -210,7 +202,7 @@ impl SynoClient {
         method: &str,
         form: &[(&str, &str)],
     ) -> SynologyResult<()> {
-        let _: serde_json::Value = self.api_post(api, version, method, form).await?;
+        self.post_value(api, version, method, form).await?;
         Ok(())
     }
 
@@ -222,8 +214,121 @@ impl SynoClient {
         method: &str,
         params: &[(&str, &str)],
     ) -> SynologyResult<()> {
-        let _: serde_json::Value = self.api_call(api, version, method, params).await?;
-        Ok(())
+        self.api_post_void(api, version, method, params).await
+    }
+
+    pub(crate) fn form_request(
+        &self,
+        api: &str,
+        version: u32,
+        method: &str,
+        form: &[(&str, &str)],
+    ) -> SynologyResult<reqwest::RequestBuilder> {
+        let url = self.resolve_url(api, version, method)?;
+        let mut params = form.to_vec();
+        if let Some(sid) = &self.sid {
+            params.push(("_sid", sid));
+        }
+        if let Some(token) = &self.syno_token {
+            params.push(("SynoToken", token));
+        }
+        Ok(self.http.post(url).form(&params))
+    }
+
+    pub(crate) async fn read_json<T: DeserializeOwned>(
+        mut response: reqwest::Response,
+    ) -> SynologyResult<T> {
+        if !response.status().is_success() {
+            return Err(SynologyError::connection(format!(
+                "NAS HTTP request failed (status {})",
+                response.status().as_u16()
+            )));
+        }
+        const LIMIT: usize = 8 * 1024 * 1024;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if bytes.len().saturating_add(chunk.len()) > LIMIT {
+                return Err(SynologyError::parse(
+                    "NAS API response exceeds the 8 MiB limit",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice(&bytes).map_err(Into::into)
+    }
+
+    pub(crate) async fn post_value(
+        &self,
+        api: &str,
+        version: u32,
+        method: &str,
+        form: &[(&str, &str)],
+    ) -> SynologyResult<serde_json::Value> {
+        let resp: SynoResponse<serde_json::Value> = Self::read_json(
+            self.form_request(api, version, method, form)?
+                .send()
+                .await?,
+        )
+        .await?;
+        if resp.success {
+            Ok(resp.data.unwrap_or(serde_json::Value::Null))
+        } else {
+            Err(SynologyError::from_dsm_code(
+                resp.error.map(|e| e.code).unwrap_or(100),
+                api,
+            ))
+        }
+    }
+
+    /// File Station declares JSON-encoded parameter VALUES (not a JSON HTTP body).
+    pub(crate) async fn file_call(
+        &self,
+        api: &str,
+        maximum: u32,
+        method: &str,
+        params: &[(&str, serde_json::Value)],
+    ) -> SynologyResult<serde_json::Value> {
+        let version = self
+            .best_version(api, maximum)
+            .ok_or_else(|| SynologyError::api_not_found(format!("NAS does not provide {api}")))?;
+        let json_format = self
+            .api_info
+            .get(api)
+            .and_then(|i| i.request_format.as_deref())
+            == Some("JSON");
+        let values: Vec<_> = params
+            .iter()
+            .map(|(key, value)| {
+                (
+                    *key,
+                    if !json_format && value.is_string() {
+                        value.as_str().unwrap_or_default().to_string()
+                    } else {
+                        value.to_string()
+                    },
+                )
+            })
+            .collect();
+        let form: Vec<_> = values
+            .iter()
+            .map(|(key, value)| (*key, value.as_str()))
+            .collect();
+        let response: SynoResponse<serde_json::Value> = Self::read_json(
+            self.form_request(api, version, method, &form)?
+                .send()
+                .await?,
+        )
+        .await?;
+        if response.success {
+            Ok(response.data.unwrap_or(serde_json::Value::Null))
+        } else {
+            let code = response.error.map(|e| e.code).unwrap_or(100);
+            // Do not forward NAS-provided nested errors, paths, URLs, or credentials.
+            Err(SynologyError::api(
+                code,
+                format!("File Station request failed (DSM code {code})"),
+            ))
+        }
     }
 
     /// Download raw bytes (for FileStation.Download, thumbnails, etc.)
@@ -234,12 +339,13 @@ impl SynoClient {
         method: &str,
         params: &[(&str, &str)],
     ) -> SynologyResult<Vec<u8>> {
-        let url = self.resolve_url(api, version, method)?;
-        let mut req = self.http.get(&url);
-        if !params.is_empty() {
-            req = req.query(params);
+        let mut resp = self
+            .form_request(api, version, method, params)?
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(SynologyError::connection("NAS download request failed"));
         }
-        let resp = req.send().await?;
         let ct = resp
             .headers()
             .get("content-type")
@@ -247,14 +353,28 @@ impl SynoClient {
             .unwrap_or("")
             .to_string();
 
-        if ct.contains("application/json") {
+        let attachment = resp
+            .headers()
+            .get("content-disposition")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.to_ascii_lowercase().starts_with("attachment"));
+        if ct.contains("application/json") && !attachment {
             // DSM returned an error as JSON instead of file bytes
-            let err_resp: SynoResponse<()> = resp.json().await?;
+            let err_resp: SynoResponse<()> = Self::read_json(resp).await?;
             let code = err_resp.error.map(|e| e.code).unwrap_or(100);
             return Err(SynologyError::from_dsm_code(code, api));
         }
 
-        Ok(resp.bytes().await?.to_vec())
+        let mut bytes = Vec::new();
+        while let Some(chunk) = resp.chunk().await? {
+            if bytes.len().saturating_add(chunk.len()) > 32 * 1024 * 1024 {
+                return Err(SynologyError::parse(
+                    "Legacy download exceeds 32 MiB; use File Station's streaming Download action",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
     }
 
     /// Get the reqwest client reference (for multipart uploads).

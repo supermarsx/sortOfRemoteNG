@@ -10179,6 +10179,8 @@ dependencies = [
  "sorng-vmware",
  "sorng-voip-phone",
  "tauri",
+ "tauri-plugin-dialog",
+ "tokio",
  "uuid",
 ]
 
@@ -12653,6 +12655,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "url",
  "uuid",

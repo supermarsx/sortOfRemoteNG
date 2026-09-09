@@ -186,13 +186,19 @@ impl std::error::Error for SynologyError {}
 
 impl From<reqwest::Error> for SynologyError {
     fn from(e: reqwest::Error) -> Self {
-        Self::connection(format!("HTTP error: {e}"))
+        Self::connection(if e.is_timeout() {
+            "NAS request timed out; its outcome may be unknown. Refresh before retrying a change."
+        } else if e.is_connect() {
+            "Unable to reach the NAS. Check its address and verified TLS certificate."
+        } else {
+            "NAS HTTP request failed. Refresh before retrying a change."
+        })
     }
 }
 
 impl From<serde_json::Error> for SynologyError {
-    fn from(e: serde_json::Error) -> Self {
-        Self::parse(format!("JSON parse error: {e}"))
+    fn from(_: serde_json::Error) -> Self {
+        Self::parse("NAS returned an invalid or unsupported JSON response")
     }
 }
 

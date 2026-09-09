@@ -20,7 +20,7 @@
 //! - **types**            — Synology-specific data structures
 //! - **error**            — Error types with DSM error code mapping
 //! - **client**           — HTTP client, session management, API discovery
-//! - **auth**             — Login (password / 2FA / device token / PAT)
+//! - **auth**             — Login (password / one-time code / legacy SID reuse)
 //! - **system**           — System info, DSM info, utilization, processes
 //! - **storage**          — Volumes, pools, disks, SMART, iSCSI, SSD cache
 //! - **file_station**     — File management, upload, download, sharing
@@ -48,12 +48,14 @@ pub mod docker;
 pub mod download_station;
 pub mod error;
 pub mod file_station;
+pub mod file_transfer;
 pub mod hardware;
 pub mod logs;
 pub mod network;
 pub mod notifications;
 pub mod packages;
 pub mod security;
+pub mod scoped_files;
 pub mod service;
 pub mod services;
 pub mod shares;
@@ -63,3 +65,9 @@ pub mod system;
 pub mod types;
 pub mod users;
 pub mod virtualization;
+
+#[cfg(test)]
+mod scoped_files_tests;
+
+#[cfg(test)]
+mod file_transfer_tests;

@@ -559,6 +559,16 @@ pub fn is_command(command: &str) -> bool {
             | "smc_get_node_manager_policies"
             | "smc_get_node_manager_stats"
             | "smc_reset_bmc"
+            | "syn_fs_connect"
+            | "syn_fs_disconnect"
+            | "syn_fs_list"
+            | "syn_fs_create_folder"
+            | "syn_fs_rename"
+            | "syn_fs_start_task"
+            | "syn_fs_task_status"
+            | "syn_fs_stop_task"
+            | "syn_fs_upload"
+            | "syn_fs_download"
             | "syn_connect"
             | "syn_disconnect"
             | "syn_is_connected"
@@ -1352,6 +1362,16 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         // Supermicro BMC commands — Reset
         supermicro_commands::smc_reset_bmc,
         // Synology NAS commands — Connection
+        synology_commands::syn_fs_connect,
+        synology_commands::syn_fs_disconnect,
+        synology_commands::syn_fs_list,
+        synology_commands::syn_fs_create_folder,
+        synology_commands::syn_fs_rename,
+        synology_commands::syn_fs_start_task,
+        synology_commands::syn_fs_task_status,
+        synology_commands::syn_fs_stop_task,
+        synology_commands::syn_fs_upload,
+        synology_commands::syn_fs_download,
         synology_commands::syn_connect,
         synology_commands::syn_disconnect,
         synology_commands::syn_is_connected,
@@ -1494,6 +1514,36 @@ mod tests {
         "voip_phone_reboot",
         "voip_phone_web_login_hint",
     ];
+
+    #[test]
+    fn scoped_file_station_recognition_matches_handler_registration() {
+        let source = include_str!("infra_handler.rs");
+        for command in [
+            "syn_fs_connect",
+            "syn_fs_disconnect",
+            "syn_fs_list",
+            "syn_fs_create_folder",
+            "syn_fs_rename",
+            "syn_fs_start_task",
+            "syn_fs_task_status",
+            "syn_fs_stop_task",
+            "syn_fs_upload",
+            "syn_fs_download",
+        ] {
+            assert!(
+                is_command(command),
+                "{command} missing from dispatch recognition"
+            );
+            assert_eq!(
+                source
+                    .matches(&format!("synology_commands::{command},"))
+                    .count(),
+                1,
+                "{command} must have exactly one handler"
+            );
+        }
+        assert!(!is_command("syn_fs_unknown"));
+    }
 
     #[test]
     fn voip_phone_command_recognition_matches_handler_registration() {

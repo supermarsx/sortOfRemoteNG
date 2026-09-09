@@ -27,6 +27,8 @@
       url: /gif-recording/
     - title: Integrations
       url: /integrations/
+    - title: Synology File Station
+      url: /synology-file-station/
     - title: Web viewer troubleshooting
       url: /http-viewer-trust/
     - title: Website application profiles

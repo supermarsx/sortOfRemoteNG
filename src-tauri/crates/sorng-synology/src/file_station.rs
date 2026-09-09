@@ -50,7 +50,7 @@ impl FileStationManager {
     /// List shared root folders.
     pub async fn list_shared_folders(client: &SynoClient) -> SynologyResult<FileListResult> {
         let v = client.best_version("SYNO.FileStation.List", 2).unwrap_or(1);
-        client
+        let mut data: serde_json::Value = client
             .api_call(
                 "SYNO.FileStation.List",
                 v,
@@ -60,7 +60,13 @@ impl FileStationManager {
                     "[\"volume_status\",\"time\",\"perm\",\"owner\",\"real_path\"]",
                 )],
             )
-            .await
+            .await?;
+        let shares = data
+            .as_object_mut()
+            .and_then(|object| object.remove("shares"))
+            .ok_or_else(|| SynologyError::parse("NAS shared-folder response is missing shares"))?;
+        data["files"] = shares;
+        serde_json::from_value(data).map_err(Into::into)
     }
 
     /// Search for files.
@@ -136,6 +142,11 @@ impl FileStationManager {
         content: Vec<u8>,
         overwrite: bool,
     ) -> SynologyResult<()> {
+        if content.len() > 32 * 1024 * 1024 {
+            return Err(SynologyError::parse(
+                "Legacy upload exceeds 32 MiB; use File Station's streaming Upload action",
+            ));
+        }
         let v = client
             .best_version("SYNO.FileStation.Upload", 3)
             .unwrap_or(2);
@@ -148,14 +159,20 @@ impl FileStationManager {
             .mime_str("application/octet-stream")
             .map_err(|e| SynologyError::api(0, format!("Multipart error: {}", e)))?;
 
-        let form = reqwest::multipart::Form::new()
+        let mut form = reqwest::multipart::Form::new()
             .text("api", "SYNO.FileStation.Upload")
             .text("version", v.to_string())
             .text("method", "upload")
             .text("path", dest_folder_path.to_string())
             .text("create_parents", "true")
-            .text("overwrite", overwrite_str.to_string())
-            .part("file", part);
+            .text("overwrite", overwrite_str.to_string());
+        if let Some(sid) = &client.sid {
+            form = form.text("_sid", sid.clone());
+        }
+        if let Some(token) = &client.syno_token {
+            form = form.text("SynoToken", token.clone());
+        }
+        form = form.part("file", part);
 
         let mut req = client.http_client().post(&url).multipart(form);
         if let Some(ref token) = client.syno_token {
@@ -163,7 +180,7 @@ impl FileStationManager {
         }
 
         let resp = req.send().await?;
-        let body: SynoResponse<serde_json::Value> = resp.json().await?;
+        let body: SynoResponse<serde_json::Value> = SynoClient::read_json(resp).await?;
 
         if body.success {
             Ok(())
@@ -222,20 +239,15 @@ impl FileStationManager {
         let v = client
             .best_version("SYNO.FileStation.Delete", 2)
             .unwrap_or(1);
-        let path_str = format!(
-            "[{}]",
-            paths
-                .iter()
-                .map(|p| format!("\"{}\"", p))
-                .collect::<Vec<_>>()
-                .join(",")
-        );
+        let path_str = serde_json::to_string(paths)?;
         let rec = if recursive { "true" } else { "false" };
         client
             .api_call_void(
                 "SYNO.FileStation.Delete",
                 v,
-                "start",
+                // Preserve the legacy void contract using DSM's documented
+                // blocking method. The new UI uses monitored start/status tasks.
+                "delete",
                 &[("path", &path_str), ("recursive", rec)],
             )
             .await
