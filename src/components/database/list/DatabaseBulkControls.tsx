@@ -8,6 +8,7 @@ import { defaultExportSecuritySettings } from "../../../types/settings/settings"
 import { SettingsManager } from "../../../utils/settings/settingsManager";
 import { Checkbox, PasswordInput, Textarea } from "../../ui/forms";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
+import { DatabaseUnlockDialog } from "../../encryption/DatabaseUnlockDialog";
 import type { Mgr } from "./types";
 
 const ACTION_LABELS: Record<DatabaseBulkAction, string> = {
@@ -85,6 +86,125 @@ export function DatabaseBulkControls({
   const needsCredentials =
     action === "clone" || action === "export" || action === "unlock";
   const busy = disabled || bulk.running;
+  const showAuthModal =
+    action === "unlock" || (needsCredentials && lockedTargets.length > 0);
+  const reviewContent = action && action !== "delete" && (
+    <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+      <h4 className="text-sm font-medium">
+        {ACTION_LABELS[action]} ({targets.length})
+      </h4>
+      <p className="text-xs text-[var(--color-textSecondary)]">
+        {targets.map(({ name }) => name).join(", ")}
+      </p>
+      {action === "lock" && (
+        <p className="text-xs">
+          The active database will be saved and closed. Other unlocked encrypted
+          databases will be locked.
+        </p>
+      )}
+      {action === "unlock" && (
+        <p className="text-xs">
+          Unlock caches each password for this app session; it does not open or
+          switch databases.
+        </p>
+      )}
+      {needsCredentials &&
+        lockedTargets.map((target) => (
+          <label className="block space-y-1 text-xs" key={target.id}>
+            <span>Password for {target.name}</span>
+            <PasswordInput
+              value={passwords[target.id] ?? ""}
+              onChange={(event) =>
+                setPasswords((previous) => ({
+                  ...previous,
+                  [target.id]: event.target.value,
+                }))
+              }
+              className="sor-form-input-xs w-full"
+              autoComplete="off"
+            />
+          </label>
+        ))}
+      {needsCredentials && lockedTargets.length > 0 && (
+        <p className="text-xs">
+          An omitted or incorrect password fails only that database; other
+          selected items can continue.
+        </p>
+      )}
+      {action === "metadata" && (
+        <>
+          <label className="block space-y-1 text-xs">
+            <span>Name pattern (optional)</span>
+            <input
+              value={pattern}
+              onChange={(event) => setPattern(event.target.value)}
+              className="sor-form-input-xs w-full"
+              placeholder="Prefix {name} - {index}"
+            />
+          </label>
+          <p className="text-xs">
+            Use {"{name}"} to retain each name or {"{index}"} for its batch
+            number. Blank leaves names unchanged.
+          </p>
+          <label className="flex items-center gap-2 text-xs">
+            <Checkbox checked={editDescription} onChange={setEditDescription} />
+            Replace description
+          </label>
+          {editDescription && (
+            <Textarea
+              aria-label="Bulk database description"
+              value={description}
+              onChange={setDescription}
+              className="sor-form-textarea w-full"
+              rows={2}
+            />
+          )}
+          <p className="text-xs">
+            Encryption and passwords are not changed by metadata editing.
+          </p>
+        </>
+      )}
+      {action === "export" && (
+        <>
+          <p className="text-xs">
+            Save one importable JSON database package using the native Save
+            dialog. Credentials and secrets are excluded from all selected
+            databases, including settings.
+          </p>
+          <label className="flex items-center gap-2 text-xs">
+            <Checkbox checked={exportEncrypted} onChange={setExportEncrypted} />
+            Encrypt export package
+          </label>
+          {exportEncrypted && (
+            <label className="block space-y-1 text-xs">
+              <span>Export package password</span>
+              <PasswordInput
+                value={exportPassword}
+                onChange={(event) => setExportPassword(event.target.value)}
+                className="sor-form-input-xs w-full"
+                autoComplete="new-password"
+              />
+            </label>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  const reviewActions = (
+    <div className="flex gap-2">
+      <button type="button" className="sor-btn-secondary-sm" onClick={clear}>
+        Cancel batch
+      </button>
+      <button
+        type="button"
+        className="sor-btn-primary-sm"
+        onClick={() => void execute()}
+      >
+        Run {targets.length} database operations
+      </button>
+    </div>
+  );
 
   return (
     <section
@@ -144,130 +264,22 @@ export function DatabaseBulkControls({
           ),
         )}
       </div>
-      {action && action !== "delete" && (
-        <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
-          <h4 className="text-sm font-medium">
-            {ACTION_LABELS[action]} ({targets.length})
-          </h4>
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            {targets.map(({ name }) => name).join(", ")}
-          </p>
-          {action === "lock" && (
-            <p className="text-xs">
-              The active database will be saved and closed. Other unlocked
-              encrypted databases will be locked.
-            </p>
-          )}
-          {action === "unlock" && (
-            <p className="text-xs">
-              Unlock caches each password for this app session; it does not open
-              or switch databases.
-            </p>
-          )}
-          {needsCredentials &&
-            lockedTargets.map((target) => (
-              <label className="block space-y-1 text-xs" key={target.id}>
-                <span>Password for {target.name}</span>
-                <PasswordInput
-                  value={passwords[target.id] ?? ""}
-                  onChange={(event) =>
-                    setPasswords((previous) => ({
-                      ...previous,
-                      [target.id]: event.target.value,
-                    }))
-                  }
-                  className="sor-form-input-xs w-full"
-                  autoComplete="off"
-                />
-              </label>
-            ))}
-          {needsCredentials && lockedTargets.length > 0 && (
-            <p className="text-xs">
-              An omitted or incorrect password fails only that database; other
-              selected items can continue.
-            </p>
-          )}
-          {action === "metadata" && (
-            <>
-              <label className="block space-y-1 text-xs">
-                <span>Name pattern (optional)</span>
-                <input
-                  value={pattern}
-                  onChange={(event) => setPattern(event.target.value)}
-                  className="sor-form-input-xs w-full"
-                  placeholder="Prefix {name} - {index}"
-                />
-              </label>
-              <p className="text-xs">
-                Use {"{name}"} to retain each name or {"{index}"} for its batch
-                number. Blank leaves names unchanged.
-              </p>
-              <label className="flex items-center gap-2 text-xs">
-                <Checkbox
-                  checked={editDescription}
-                  onChange={setEditDescription}
-                />
-                Replace description
-              </label>
-              {editDescription && (
-                <Textarea
-                  aria-label="Bulk database description"
-                  value={description}
-                  onChange={setDescription}
-                  className="sor-form-textarea w-full"
-                  rows={2}
-                />
-              )}
-              <p className="text-xs">
-                Encryption and passwords are not changed by metadata editing.
-              </p>
-            </>
-          )}
-          {action === "export" && (
-            <>
-              <p className="text-xs">
-                Save one importable JSON database package using the native Save
-                dialog. Credentials and secrets are excluded from all selected
-                databases, including settings.
-              </p>
-              <label className="flex items-center gap-2 text-xs">
-                <Checkbox
-                  checked={exportEncrypted}
-                  onChange={setExportEncrypted}
-                />
-                Encrypt export package
-              </label>
-              {exportEncrypted && (
-                <label className="block space-y-1 text-xs">
-                  <span>Export package password</span>
-                  <PasswordInput
-                    value={exportPassword}
-                    onChange={(event) => setExportPassword(event.target.value)}
-                    className="sor-form-input-xs w-full"
-                    autoComplete="new-password"
-                  />
-                </label>
-              )}
-            </>
-          )}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="sor-btn-secondary-sm"
-              onClick={clear}
-            >
-              Cancel batch
-            </button>
-            <button
-              type="button"
-              className="sor-btn-primary-sm"
-              onClick={() => void execute()}
-            >
-              Run {targets.length} database operations
-            </button>
-          </div>
-        </div>
-      )}
+      {reviewContent &&
+        (showAuthModal && action ? (
+          <DatabaseUnlockDialog
+            title={`${ACTION_LABELS[action]} (${targets.length})`}
+            busy={bulk.running}
+            onClose={clear}
+            footer={reviewActions}
+          >
+            {reviewContent}
+          </DatabaseUnlockDialog>
+        ) : (
+          <>
+            {reviewContent}
+            {reviewActions}
+          </>
+        ))}
       <ConfirmDialog
         isOpen={action === "delete"}
         title={`Delete ${targets.length} databases?`}

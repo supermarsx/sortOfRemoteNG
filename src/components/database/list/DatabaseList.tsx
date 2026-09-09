@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -24,6 +24,7 @@ import { EmptyState, LoadingElement } from "../../ui/display";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { DatabaseBulkControls } from "./DatabaseBulkControls";
+import { DatabaseUnlockDialog } from "../../encryption/DatabaseUnlockDialog";
 
 interface DatabaseListProps {
   mgr: Mgr;
@@ -38,7 +39,7 @@ interface DatabaseListProps {
  *  - Heading row with title and a primary "+ New Database" action.
  *  - Two-paragraph description.
  *  - Search filter input.
- *  - Inline create / import / edit / export / unlock cards that slide in
+ *  - Inline create / import / edit / export cards and explicit auth popups
  *    just below the search row when the corresponding manager state is
  *    active. No more modal-stacking.
  *  - A list of database rows; each row shows the icon, encryption badge,
@@ -1012,12 +1013,30 @@ const ExportDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
 
 const UnlockDatabaseCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
+  const inFlight = useRef(false);
+  const [authenticating, setAuthenticating] = useState(false);
   if (!mgr.selectedCollection) return null;
   const target = mgr.selectedCollection;
   const isClone = mgr.passwordDialogMode === "clone";
+  const close = () => {
+    if (inFlight.current || mgr.isWorking) return;
+    mgr.closePasswordDialog();
+    mgr.setError("");
+  };
+  const submit = async () => {
+    if (inFlight.current || mgr.isWorking) return;
+    inFlight.current = true;
+    setAuthenticating(true);
+    try {
+      await mgr.handlePasswordSubmit();
+    } finally {
+      inFlight.current = false;
+      setAuthenticating(false);
+    }
+  };
 
   return (
-    <CardShell
+    <DatabaseUnlockDialog
       title={
         isClone
           ? (t("databaseCenter.collections.cloneTitle", {
@@ -1029,25 +1048,20 @@ const UnlockDatabaseCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       }
       icon={isClone ? Copy : Unlock}
       error={mgr.error}
-      onClose={() => {
-        mgr.closePasswordDialog();
-        mgr.setError("");
-      }}
+      busy={authenticating || mgr.isWorking}
+      onClose={close}
       footer={
         <>
           <button
-            onClick={() => {
-              mgr.closePasswordDialog();
-              mgr.setError("");
-            }}
-            disabled={mgr.isWorking}
+            onClick={close}
+            disabled={authenticating || mgr.isWorking}
             className="sor-btn sor-btn-secondary"
           >
             {t("settings.cancel", "Cancel")}
           </button>
           <button
-            onClick={mgr.handlePasswordSubmit}
-            disabled={mgr.isWorking}
+            onClick={() => void submit()}
+            disabled={authenticating || mgr.isWorking}
             className="sor-btn-primary-sm"
           >
             {isClone ? <Copy size={14} /> : <Unlock size={14} />}
@@ -1078,7 +1092,7 @@ const UnlockDatabaseCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                void mgr.handlePasswordSubmit();
+                void submit();
               }
             }}
             disabled={mgr.isWorking}
@@ -1109,7 +1123,7 @@ const UnlockDatabaseCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </button>
         </div>
       </div>
-    </CardShell>
+    </DatabaseUnlockDialog>
   );
 };
 

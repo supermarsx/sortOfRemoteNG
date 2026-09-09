@@ -181,14 +181,21 @@ describe("Current database security", () => {
     expect(prepare.mock.invocationCallOrder[0]).toBeLessThan(
       fixture.manager.lockDatabase.mock.invocationCallOrder[0],
     );
+    expect(screen.queryByLabelText("Database password")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlock and open this database" }),
+    );
     expect(
-      (screen.getByLabelText("Database password") as HTMLInputElement).value,
-    ).toBe("");
+      screen.getByRole("dialog", { name: "Unlock Work database" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Database password")).toHaveValue("");
     fireEvent.change(screen.getByLabelText("Database password"), {
       target: { value: "unlock-password" },
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "Unlock and open this database" }),
+      screen
+        .getByRole("dialog", { name: "Unlock Work database" })
+        .querySelector('button[type="submit"]')!,
     );
     await waitFor(() =>
       expect(open).toHaveBeenCalledWith("a", "unlock-password"),

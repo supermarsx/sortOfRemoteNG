@@ -7,6 +7,7 @@ import { performDatabaseSecurityAction } from "../../../../utils/connection/data
 import { Card } from "../../../ui/settings/SettingsPrimitives";
 import { ConfirmDialog } from "../../../ui/dialogs/ConfirmDialog";
 import { ManagedDatabaseProtectionSection } from "./ManagedDatabaseProtectionSection";
+import { DatabaseUnlockDialog } from "../../../encryption/DatabaseUnlockDialog";
 
 export interface DatabaseSecurityCallbacks {
   onDatabaseSelect?: (id: string, password?: string) => Promise<void> | void;
@@ -35,6 +36,7 @@ export default function CurrentDatabaseSecuritySection(
   const [message, setMessage] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showManagedOptions, setShowManagedOptions] = useState(false);
+  const [showUnlock, setShowUnlock] = useState(false);
   const clearSecrets = () => {
     setPassword("");
     setNewPassword("");
@@ -52,6 +54,7 @@ export default function CurrentDatabaseSecuritySection(
           setMessage(null);
           setError(null);
           setConfirmRemove(false);
+          setShowUnlock(false);
         } else if (next && change.reason === "security-change") {
           setTarget(next);
           clearSecrets();
@@ -96,6 +99,7 @@ export default function CurrentDatabaseSecuritySection(
           throw new Error(
             "The database was not opened. Check its password and retry.",
           );
+        setShowUnlock(false);
       } else {
         if (action === "set-password" && newPassword !== confirmPassword)
           throw new Error("The new database passwords do not match.");
@@ -201,20 +205,22 @@ export default function CurrentDatabaseSecuritySection(
                 ? "Open in this window."
                 : "Not open in this window."}
             </p>
-            {target.isEncrypted && target.protectionFormat !== "sorng-db" && (
-              <label className="block text-xs">
-                Database password
-                <input
-                  aria-label="Database password"
-                  type="password"
-                  autoComplete="off"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={busy}
-                  className="sor-form-input block w-full"
-                />
-              </label>
-            )}
+            {target.isEncrypted &&
+              target.protectionFormat !== "sorng-db" &&
+              current === target.id && (
+                <label className="block text-xs">
+                  Database password
+                  <input
+                    aria-label="Database password"
+                    type="password"
+                    autoComplete="off"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={busy}
+                    className="sor-form-input block w-full"
+                  />
+                </label>
+              )}
             {target.protectionFormat === "sorng-db" ? (
               <>
                 <ManagedDatabaseProtectionSection
@@ -317,12 +323,10 @@ export default function CurrentDatabaseSecuritySection(
             ) : (
               <button
                 type="button"
-                disabled={
-                  busy ||
-                  !callbacks.onDatabaseSelect ||
-                  (target.isEncrypted && !password)
+                disabled={busy || !callbacks.onDatabaseSelect}
+                onClick={() =>
+                  target.isEncrypted ? setShowUnlock(true) : void run("open")
                 }
-                onClick={() => void run("open")}
               >
                 {target.isEncrypted
                   ? "Unlock and open this database"
@@ -347,6 +351,54 @@ export default function CurrentDatabaseSecuritySection(
           </p>
         )}
       </Card>
+      {showUnlock &&
+        target &&
+        current !== target.id &&
+        target.protectionFormat !== "sorng-db" && (
+          <DatabaseUnlockDialog
+            title={`Unlock ${target.name}`}
+            busy={busy}
+            onClose={() => {
+              if (!busyRef.current) {
+                setShowUnlock(false);
+                setPassword("");
+                setError(null);
+              }
+            }}
+            error={error}
+          >
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (password) void run("open");
+              }}
+            >
+              <label className="block text-sm">
+                Database password
+                <input
+                  aria-label="Database password"
+                  type="password"
+                  autoComplete="current-password"
+                  maxLength={1024}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={busy}
+                  className="sor-form-input mt-1 w-full"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={busy || !password}
+                className="sor-btn-primary-sm"
+              >
+                {busy
+                  ? "Authenticating database…"
+                  : "Unlock and open this database"}
+              </button>
+            </form>
+          </DatabaseUnlockDialog>
+        )}
       <ConfirmDialog
         isOpen={confirmRemove}
         title="Remove this database's password?"

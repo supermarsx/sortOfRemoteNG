@@ -76,6 +76,29 @@ beforeEach(() => {
 });
 
 describe("actual database bulk controls", () => {
+  it("collects bulk unlock passwords in a popup and cancellation clears them without executing", async () => {
+    mock.getAllDatabases.mockResolvedValue([
+      { ...alpha, isEncrypted: true },
+      { ...beta, isEncrypted: true },
+    ]);
+    render(<Harness />);
+    await screen.findByRole("checkbox", { name: "Select database Alpha" });
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock selected" }));
+    const dialog = screen.getByRole("dialog", { name: "Unlock selected (2)" });
+    fireEvent.change(within(dialog).getByLabelText("Password for Alpha"), {
+      target: { value: "cancelled-secret" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel batch" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock selected" }));
+    expect(
+      within(screen.getByRole("dialog")).getByLabelText("Password for Alpha"),
+    ).toHaveValue("");
+    expect(mock.select).not.toHaveBeenCalled();
+  });
   it("selects via checkboxes without opening a database and retains hidden selections", async () => {
     render(<Harness />);
     expect(

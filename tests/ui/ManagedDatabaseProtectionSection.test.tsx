@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagedDatabaseProtectionSection } from "../../src/components/SettingsDialog/sections/security/ManagedDatabaseProtectionSection";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
@@ -76,6 +83,46 @@ beforeEach(() => {
   };
 });
 describe("managed protection controls", () => {
+  it("opens a popup explicitly and completes onOpen once even if ready state rerenders its parent before unlock returns", async () => {
+    fixture.manager.isDatabaseUnlocked.mockReturnValue(false);
+    let resolve!: () => void;
+    fixture.manager.unlockManagedDatabase.mockImplementation(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    );
+    const onOpen = vi.fn(async () => undefined);
+    const { rerender } = render(
+      <ManagedDatabaseProtectionSection database={database} onOpen={onOpen} />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Unlock database" }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Unlock Fixture database",
+    });
+    fireEvent.change(within(dialog).getByLabelText("Database password"), {
+      target: { value: "fixture-password" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Unlock database" }),
+    );
+    expect(fixture.manager.unlockManagedDatabase).toHaveBeenCalledOnce();
+    fixture.manager.isDatabaseUnlocked.mockReturnValue(true);
+    rerender(
+      <ManagedDatabaseProtectionSection
+        database={{ ...database }}
+        onOpen={onOpen}
+      />,
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Unlock Fixture database" }),
+    ).toBeTruthy();
+    await act(async () => resolve());
+    await waitFor(() => expect(onOpen).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it.each([
     [
       "vault-only",

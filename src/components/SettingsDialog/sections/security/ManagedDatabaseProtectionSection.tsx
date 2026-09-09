@@ -16,7 +16,7 @@ import {
   flushDatabaseIfCurrent,
 } from "../../../../utils/connection/databaseActions";
 import { useConnections } from "../../../../contexts/useConnections";
-import { ManagedDatabaseUnlockForm } from "../../../encryption/ManagedDatabaseUnlockForm";
+import { ManagedDatabaseUnlockDialog } from "../../../encryption/DatabaseUnlockDialog";
 import { ConfirmDialog } from "../../../ui/dialogs/ConfirmDialog";
 
 export function ManagedDatabaseProtectionSection({
@@ -41,6 +41,7 @@ export function ManagedDatabaseProtectionSection({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showUnlock, setShowUnlock] = useState(false);
   const guard = useRef(false);
   const generation = useRef(0);
   const [review, setReview] = useState<"apply" | "remove" | null>(null);
@@ -63,6 +64,7 @@ export function ManagedDatabaseProtectionSection({
     setConfirmation("");
     setCurrentPassword("");
     setReview(null);
+    setShowUnlock(false);
     void refresh().catch((error) =>
       setError(String(error instanceof Error ? error.message : error)),
     );
@@ -185,6 +187,20 @@ export function ManagedDatabaseProtectionSection({
       aria-label="Managed database protection"
     >
       <h4 className="text-sm font-medium">Cipher and unlock methods</h4>
+      {showUnlock && status?.kind === "managed" && (
+        <ManagedDatabaseUnlockDialog
+          key={`${database.id}:${status.securityRevision}`}
+          databaseId={database.id}
+          databaseName={database.name}
+          status={status}
+          onClose={() => setShowUnlock(false)}
+          onUnlockComplete={async () => {
+            await refresh();
+            await onOpen?.();
+            setShowUnlock(false);
+          }}
+        />
+      )}
       <p className="text-xs text-[var(--color-textMuted)]">
         Native database protection is separate from the global master key and
         exported-file passwords. Browser storage cannot use this format. Unlock
@@ -223,14 +239,15 @@ export function ManagedDatabaseProtectionSection({
             )}
           </p>
           {managed && !manager.isDatabaseUnlocked(database.id) ? (
-            <ManagedDatabaseUnlockForm
-              databaseId={database.id}
-              status={status}
-              onUnlockComplete={async () => {
-                await refresh();
-                await onOpen?.();
-              }}
-            />
+            <>
+              <button
+                type="button"
+                className="sor-btn-primary-sm"
+                onClick={() => setShowUnlock(true)}
+              >
+                Unlock database
+              </button>
+            </>
           ) : (
             <>
               {managed && (
