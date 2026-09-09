@@ -1,8 +1,9 @@
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import {
   Circle,
   Code2,
   Library,
+  Eye,
   Play,
   Square,
   Star,
@@ -89,7 +90,13 @@ function FieldPrompt({ automation }: { automation: Automation }) {
   );
 }
 
-function AutomationLibrary({ automation }: { automation: Automation }) {
+function AutomationLibrary({
+  automation,
+  onRecord,
+}: {
+  automation: Automation;
+  onRecord: () => void;
+}) {
   const [draft, setDraft] = useState<WebAutomationItem | null>(() =>
       automation.steps.length
         ? automation.recordedMacro("New website macro")
@@ -98,10 +105,23 @@ function AutomationLibrary({ automation }: { automation: Automation }) {
     [base, setBase] = useState<WebAutomationItem | undefined>();
   const [query, setQuery] = useState(""),
     [deleting, setDeleting] = useState<WebAutomationItem | null>(null);
+  const [capturedDraft, setCapturedDraft] = useState(
+    automation.steps.length > 0,
+  );
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(base);
+  const guardDraft = (action: () => void) => {
+    if (dirty) setPendingLeave(() => action);
+    else action();
+  };
+  const close = () => guardDraft(() => automation.setOpen(false));
   const ids = useId();
   const select = (item: WebAutomationItem) => {
-    setBase(item);
-    setDraft({ ...item });
+    guardDraft(() => {
+      setBase(item);
+      setDraft({ ...item });
+      setCapturedDraft(false);
+    });
   };
   const list = automation.allItems.filter((item) =>
     `${item.name} ${item.description} ${item.kind}`
@@ -114,7 +134,8 @@ function AutomationLibrary({ automation }: { automation: Automation }) {
     if (await automation.save(item, base)) {
       setBase(item);
       setDraft(item);
-      automation.clearSteps();
+      if (capturedDraft) automation.clearSteps();
+      setCapturedDraft(false);
     }
   };
   const isFavorite = (item: WebAutomationItem) =>
@@ -125,7 +146,7 @@ function AutomationLibrary({ automation }: { automation: Automation }) {
     <>
       <Modal
         isOpen
-        onClose={automation.busy ? undefined : () => automation.setOpen(false)}
+        onClose={automation.busy ? undefined : close}
         closeOnEscape={!automation.busy}
         closeOnBackdrop={!automation.busy}
         ariaLabel="Website automation library"
@@ -134,9 +155,9 @@ function AutomationLibrary({ automation }: { automation: Automation }) {
         <ModalHeader title="Website macros & scripts" />
         <ModalBody className="p-5 min-h-0 overflow-y-auto space-y-4">
           <p className="text-xs text-[var(--color-textSecondary)]">
-            Separate from HAR/video recordings and terminal macros. Enable
-            capabilities for this connection in Protocol → Advanced. Saved items
-            use the desktop Macros artifact policy; favorites store IDs only.
+            Separate from HAR/video recordings and terminal macros. Record
+            clicks and field locations without typed values. Saved items use the
+            desktop Macros artifact policy; favorites store IDs only.
           </p>
           {automation.error && (
             <p role="alert" className="text-error text-sm break-words">
@@ -171,11 +192,52 @@ function AutomationLibrary({ automation }: { automation: Automation }) {
                 />
                 <button
                   className="sor-btn sor-btn-secondary w-full"
+                  disabled={
+                    automation.busy ||
+                    automation.recordingPending ||
+                    automation.recording ||
+                    (!automation.canEnableMacroRecording &&
+                      !!automation.recordingUnavailableReason)
+                  }
+                  title={
+                    automation.recordingUnavailableReason ??
+                    "Record interactions on the current website"
+                  }
+                  onClick={() => guardDraft(onRecord)}
+                >
+                  <Circle size={14} />
+                  Record new macro
+                </button>
+                {automation.recordingUnavailableReason && (
+                  <p role="status" className="text-xs text-warning">
+                    {automation.recordingUnavailableReason}
+                  </p>
+                )}
+                {automation.steps.length > 0 && !capturedDraft && (
+                  <button
+                    className="sor-btn sor-btn-secondary w-full"
+                    disabled={automation.busy}
+                    onClick={() =>
+                      guardDraft(() => {
+                        setBase(undefined);
+                        setDraft(automation.recordedMacro("New website macro"));
+                        setCapturedDraft(true);
+                      })
+                    }
+                  >
+                    Review captured {automation.steps.length} steps
+                  </button>
+                )}
+                <button
+                  className="sor-btn sor-btn-secondary w-full"
                   disabled={automation.busy}
-                  onClick={() => {
-                    setBase(undefined);
-                    setDraft(newScript());
-                  }}
+                  onClick={() =>
+                    guardDraft(() => {
+                      setBase(undefined);
+                      setDraft(newScript());
+                      setCapturedDraft(false);
+                    })
+                  }
                 >
                   <Code2 size={14} />
                   New JavaScript
@@ -349,12 +411,26 @@ function AutomationLibrary({ automation }: { automation: Automation }) {
           <button
             className="sor-modal-cancel"
             disabled={automation.busy}
-            onClick={() => automation.setOpen(false)}
+            onClick={close}
           >
             Close library
           </button>
         </ModalFooter>
       </Modal>
+      <ConfirmDialog
+        isOpen={!!pendingLeave}
+        title="Leave unsaved changes?"
+        message="This draft has not been saved. Leaving it discards its name, notes and other edits. Captured recording steps remain available to review until you save or explicitly discard the recording."
+        variant="warning"
+        confirmText="Leave draft"
+        confirmOnEnter={false}
+        onCancel={() => setPendingLeave(null)}
+        onConfirm={() => {
+          const action = pendingLeave;
+          setPendingLeave(null);
+          action?.();
+        }}
+      />
       <ConfirmDialog
         isOpen={!!deleting}
         title="Delete saved website item?"
@@ -378,11 +454,83 @@ function AutomationLibrary({ automation }: { automation: Automation }) {
   );
 }
 
-export function WebAutomationControls({
+export function WebAutomationFavoriteChips({
   automation,
 }: {
   automation: Automation;
 }) {
+  if (!automation.permissions?.showActionBar) return null;
+  return (
+    <>
+      {automation.favorites.map((item) => (
+        <button
+          key={`${item.kind}:${item.id}`}
+          className="sor-option-chip shrink-0 text-xs max-w-40"
+          title={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name}`}
+          disabled={
+            !automation.pageReady ||
+            automation.busy ||
+            automation.recording ||
+            automation.recordingPending ||
+            !(item.kind === "script"
+              ? automation.permissions?.scriptInjectionEnabled
+              : automation.permissions?.interactionMacrosEnabled)
+          }
+          onClick={() => automation.requestRun(item)}
+        >
+          {item.kind === "script" ? (
+            <Code2 size={12} className="shrink-0" />
+          ) : (
+            <Play size={12} className="shrink-0" />
+          )}
+          <span className="truncate">{item.name}</span>
+        </button>
+      ))}
+    </>
+  );
+}
+
+export function WebAutomationControls({
+  automation,
+  showFavorites = true,
+}: {
+  automation: Automation;
+  showFavorites?: boolean;
+}) {
+  const [review, setReview] = useState<"enable" | "discard" | "replace" | null>(
+    null,
+  );
+  const reviewScope = useRef<string | null>(null);
+  const openReview = (action: "enable" | "discard" | "replace") => {
+    reviewScope.current = automation.recordingScopeKey;
+    setReview(action);
+  };
+  useEffect(() => {
+    if (
+      reviewScope.current !== automation.recordingScopeKey ||
+      (!automation.libraryReady && !automation.canEnableMacroRecording)
+    )
+      setReview(null);
+  }, [
+    automation.recordingScopeKey,
+    automation.libraryReady,
+    automation.canEnableMacroRecording,
+  ]);
+  const requestRecord = () => {
+    if (automation.recordingPending || automation.busy) return;
+    if (!automation.permissions?.interactionMacrosEnabled) {
+      if (automation.canEnableMacroRecording) openReview("enable");
+      return;
+    }
+    if (automation.recordingUnavailableReason) return;
+    if (automation.steps.length) {
+      openReview("replace");
+      return;
+    }
+    void automation.startRecording().then((started) => {
+      if (started) automation.setOpen(false);
+    });
+  };
   const runAllowed = (item: WebAutomationItem) =>
     automation.pageReady &&
     !automation.busy &&
@@ -392,84 +540,159 @@ export function WebAutomationControls({
       : automation.permissions?.interactionMacrosEnabled);
   return (
     <>
-      {(automation.permissions?.showActionBar || automation.error) && (
-        <div className="flex items-center gap-1 shrink-0 border-l border-[var(--color-border)] pl-2 ml-2">
-          <button
-            className="sor-icon-btn-sm shrink-0 min-w-7 h-7"
-            title="Website macros & JavaScript library"
-            aria-label="Website macros & JavaScript library"
-            onClick={() => automation.setOpen(true)}
-          >
-            <Library size={14} className="shrink-0" />
-          </button>
-          {automation.recording ? (
-            <button
-              className="sor-icon-btn-sm shrink-0 min-w-7 h-7 text-error"
-              title="Stop recording and review macro"
-              aria-label="Stop recording and review macro"
-              onClick={() => void automation.stopRecording()}
-            >
-              <Square size={13} />
-              <span className="text-xs">{automation.steps.length}</span>
-            </button>
-          ) : (
+      {(automation.permissions?.showActionBar ||
+        automation.recording ||
+        automation.recordingPending ||
+        automation.steps.length > 0) && (
+        <div
+          className="flex min-w-0 max-w-full shrink-0 flex-col gap-0.5"
+          data-testid="web-macro-recording-controls"
+        >
+          <div className="flex min-w-0 items-center gap-1">
             <button
               className="sor-icon-btn-sm shrink-0 min-w-7 h-7"
-              title={
-                automation.permissions?.interactionMacrosEnabled
-                  ? "Record website interactions (no typed values)"
-                  : "Enable website macros in Protocol → Advanced"
-              }
-              aria-label="Record website interactions"
-              disabled={
-                !automation.libraryReady ||
-                !automation.pageReady ||
-                automation.busy ||
-                !automation.permissions?.interactionMacrosEnabled
-              }
-              onClick={() => void automation.startRecording()}
+              title="Website macros & JavaScript library"
+              aria-label="Website macros & JavaScript library"
+              onClick={() => automation.setOpen(true)}
             >
-              <Circle size={13} className="shrink-0" />
+              <Library size={14} className="shrink-0" />
             </button>
-          )}
-          {automation.favorites.map((item) => (
-            <button
-              key={item.id}
-              className="sor-option-chip text-xs max-w-40"
-              title={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name}`}
-              disabled={!runAllowed(item)}
-              onClick={() => automation.requestRun(item)}
-            >
-              {item.kind === "script" ? (
-                <Code2 size={12} className="shrink-0" />
-              ) : (
-                <Play size={12} className="shrink-0" />
-              )}
-              <span className="truncate">{item.name}</span>
-            </button>
-          ))}
-          {automation.busy && !automation.saving && (
-            <button
-              className="sor-icon-btn-sm"
-              title="Stop website action; already-run JavaScript cannot be undone"
-              aria-label="Stop website action"
-              onClick={automation.cancel}
-            >
-              <Square size={14} />
-            </button>
-          )}
-          {automation.error && (
+            {automation.recording ? (
+              <button
+                className="sor-option-chip shrink-0 h-7 text-error text-xs"
+                title="Stop recording and review macro"
+                aria-label="Stop recording and review macro"
+                disabled={automation.recordingPending}
+                onClick={() => void automation.stopRecording()}
+              >
+                <Square size={13} />
+                <span>Stop &amp; review · {automation.steps.length}</span>
+              </button>
+            ) : automation.steps.length ? (
+              <button
+                className="sor-option-chip shrink-0 h-7 text-xs"
+                onClick={() => automation.setOpen(true)}
+                disabled={
+                  automation.recordingPending || !automation.libraryReady
+                }
+              >
+                <Eye size={13} /> Review {automation.steps.length} steps
+              </button>
+            ) : (
+              <button
+                className="sor-option-chip shrink-0 h-7 text-xs"
+                title={
+                  automation.recordingUnavailableReason ??
+                  "Record clicks and field locations, not typed values. Separate from HAR/video."
+                }
+                disabled={
+                  automation.busy ||
+                  automation.recordingPending ||
+                  (automation.permissions?.interactionMacrosEnabled
+                    ? !!automation.recordingUnavailableReason
+                    : !automation.canEnableMacroRecording)
+                }
+                onClick={requestRecord}
+              >
+                <Circle size={13} className="shrink-0" />
+                {automation.recordingPending ? "Starting…" : "Record macro"}
+              </button>
+            )}
+            {(automation.recording || automation.steps.length > 0) && (
+              <button
+                className="sor-icon-btn-sm shrink-0 h-7"
+                aria-label="Discard unsaved recording"
+                title="Discard unsaved recording"
+                disabled={automation.recordingPending}
+                onClick={() => openReview("discard")}
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+            {automation.busy && !automation.saving && (
+              <button
+                className="sor-icon-btn-sm"
+                title="Stop website action; already-run JavaScript cannot be undone"
+                aria-label="Stop website action"
+                onClick={automation.cancel}
+              >
+                <Square size={14} />
+              </button>
+            )}
+            {showFavorites && (
+              <div className="flex min-w-0 max-w-96 items-center gap-1 overflow-x-auto">
+                <WebAutomationFavoriteChips automation={automation} />
+              </div>
+            )}
+          </div>
+          {(automation.recordingUnavailableReason || automation.error) && (
             <span
               role="status"
-              className="text-warning text-xs"
-              title={automation.error}
+              className="max-w-56 truncate text-warning text-xs"
+              title={
+                automation.recordingUnavailableReason ??
+                automation.error ??
+                undefined
+              }
             >
-              Automation unavailable
+              {automation.recordingUnavailableReason ?? automation.error}
             </span>
           )}
         </div>
       )}
-      {automation.open && <AutomationLibrary automation={automation} />}
+      <ConfirmDialog
+        isOpen={
+          review !== null &&
+          reviewScope.current === automation.recordingScopeKey
+        }
+        title={
+          review === "enable"
+            ? "Enable website macros?"
+            : "Discard unsaved recording?"
+        }
+        message={
+          review === "enable"
+            ? "Allow interaction macros for this connection only. Recording captures clicks and field locations, never typed values. Login and secret fields are excluded. This does not enable JavaScript injection or force dark mode, start recording, or replay anything. Click Record macro again when ready."
+            : `Discard ${automation.steps.length} unsaved steps${automation.recording ? " and stop recording" : ""}? Saved library macros are not deleted.${review === "replace" ? " A new recording will start only after this confirmation." : ""}`
+        }
+        variant={review === "enable" ? "warning" : "danger"}
+        confirmText={
+          review === "enable"
+            ? "Enable website macros"
+            : review === "replace"
+              ? "Discard and record new"
+              : "Discard recording"
+        }
+        confirmOnEnter={false}
+        onCancel={() => setReview(null)}
+        onConfirm={() => {
+          const action = review;
+          setReview(null);
+          if (reviewScope.current !== automation.recordingScopeKey) return;
+          if (action === "enable") {
+            if (
+              automation.canEnableMacroRecording &&
+              !automation.recordingPending
+            )
+              void automation.enableMacroRecording();
+          } else {
+            if (
+              !action ||
+              !automation.libraryReady ||
+              automation.recordingPending
+            )
+              return;
+            automation.discardRecording();
+            if (action === "replace")
+              void automation.startRecording().then((started) => {
+                if (started) automation.setOpen(false);
+              });
+          }
+        }}
+      />
+      {automation.open && (
+        <AutomationLibrary automation={automation} onRecord={requestRecord} />
+      )}
       {automation.pendingRun && (
         <Modal
           isOpen

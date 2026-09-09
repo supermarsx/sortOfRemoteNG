@@ -150,6 +150,111 @@ describe("website automation parent-owned bridge", () => {
       expect(onStep).not.toHaveBeenCalled();
     },
   );
+  it("drains matching steps queued before Stop acknowledgement and rejects steps after its end marker", async () => {
+    const onStep = vi.fn(),
+      onStop = vi.fn();
+    const start = bridge.request("recordStart", undefined, { onStep, onStop });
+    const recordingRequest = post.mock.calls[0][0];
+    response();
+    await start;
+    const stop = bridge.request("recordStop");
+    response({
+      ...recordingRequest,
+      type: "proxy_web_automation",
+      status: "step",
+      stepNumber: 1,
+      step: { kind: "fill", selector },
+    });
+    expect(onStep).toHaveBeenCalledExactlyOnceWith({ kind: "fill", selector });
+    expect(onStop).not.toHaveBeenCalled();
+    response();
+    await stop;
+    expect(onStop).toHaveBeenCalledOnce();
+    response({
+      ...recordingRequest,
+      type: "proxy_web_automation",
+      status: "step",
+      stepNumber: 2,
+      step: { kind: "click", selector },
+    });
+    expect(onStep).toHaveBeenCalledOnce();
+  });
+  it.each(["failed", "send exception", "timeout", "cancel", "limit"])(
+    "closes the draining recorder on Stop %s without accepting later steps",
+    async (failure) => {
+      const onStep = vi.fn(),
+        onStop = vi.fn();
+      const start = bridge.request("recordStart", undefined, {
+        onStep,
+        onStop,
+      });
+      const recordingRequest = post.mock.calls[0][0];
+      response();
+      await start;
+      if (failure === "send exception")
+        post.mockImplementationOnce(() => {
+          throw new Error("closed");
+        });
+      const stop = bridge.request("recordStop");
+      const outcome =
+        failure === "limit" ? stop : expect(stop).rejects.toThrow();
+      if (failure === "failed") response({ status: "failed" });
+      if (failure === "timeout") await vi.advanceTimersByTimeAsync(15000);
+      if (failure === "cancel") bridge.cancel();
+      if (failure === "limit") {
+        response({
+          ...recordingRequest,
+          type: "proxy_web_automation",
+          status: "limit",
+        });
+        response();
+      }
+      await outcome;
+      response({
+        ...recordingRequest,
+        type: "proxy_web_automation",
+        status: "step",
+        stepNumber: 1,
+        step: { kind: "click", selector },
+      });
+      expect(onStop).toHaveBeenCalledOnce();
+      expect(onStep).not.toHaveBeenCalled();
+    },
+  );
+  it("does not let an old Stop acknowledgement disarm a replacement recorder", async () => {
+    const oldStop = vi.fn(),
+      nextStep = vi.fn(),
+      nextStop = vi.fn();
+    const start = bridge.request("recordStart", undefined, {
+      onStep: vi.fn(),
+      onStop: oldStop,
+    });
+    const oldRequest = post.mock.calls[0][0];
+    response();
+    await start;
+    const stop = bridge.request("recordStop");
+    const stopRequest = post.mock.calls[1][0];
+    response({ ...oldRequest, type: "proxy_web_automation", status: "limit" });
+    const next = bridge.request("recordStart", undefined, {
+      onStep: nextStep,
+      onStop: nextStop,
+    });
+    const nextRequest = post.mock.calls[2][0];
+    response();
+    await next;
+    response({ ...stopRequest, type: "proxy_web_automation", status: "ok" });
+    await stop;
+    response({
+      ...nextRequest,
+      type: "proxy_web_automation",
+      status: "step",
+      stepNumber: 1,
+      step: { kind: "click", selector },
+    });
+    expect(oldStop).toHaveBeenCalledOnce();
+    expect(nextStop).not.toHaveBeenCalled();
+    expect(nextStep).toHaveBeenCalledOnce();
+  });
   it("can revoke recording and dark mode on its last addressed document after access is masked", async () => {
     const start = bridge.request("dark", { enabled: true });
     response();

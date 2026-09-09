@@ -225,11 +225,10 @@ describe("mounted website automation controls and ownership", () => {
   });
   it("records only an armed typed step, reviews it, and saves a macro without values", async () => {
     await mount();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Record website interactions" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Record macro" }));
     const start = sent("recordStart")[0];
     acknowledge(start);
+    await waitFor(() => expect(current.recording).toBe(true));
     acknowledge(start, {
       status: "step",
       stepNumber: 1,
@@ -325,9 +324,13 @@ describe("mounted website automation controls and ownership", () => {
   it("keeps all website capabilities off when connection consent is absent", async () => {
     delete connection.httpAutomation;
     await mount();
+    expect(screen.getByRole("button", { name: "Record macro" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Record macro" }));
     expect(
-      screen.getByRole("button", { name: "Record website interactions" }),
-    ).toBeDisabled();
+      screen.getByRole("button", { name: "Enable website macros" }),
+    ).toBeInTheDocument();
+    expect(sent("recordStart")).toHaveLength(0);
+    expect(boundary.update).not.toHaveBeenCalled();
     await act(async () => current.execute(script));
     expect(sent("script")).toHaveLength(0);
     expect(

@@ -15,6 +15,7 @@ type Pending = {
   resolve: () => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  stopRecordingId?: string;
 };
 const sameDocument = (a: WebAutomationDocument, b: WebAutomationDocument) =>
   a.generation === b.generation &&
@@ -41,6 +42,13 @@ export class WebAutomationBridge {
     onStop: () => void;
   } | null = null;
   constructor(private current: () => WebAutomationContext | null) {}
+
+  private disarmRecording(id: string | undefined) {
+    if (id === undefined || this.recording?.id !== id) return;
+    const recording = this.recording;
+    this.recording = null;
+    recording.onStop();
+  }
 
   private send(
     context: WebAutomationContext,
@@ -84,30 +92,35 @@ export class WebAutomationBridge {
     const id = token();
     if (action === "recordStart" && recording)
       this.recording = { id, context, count: 0, ...recording };
-    if (action === "recordStop") this.recording = null;
+    // The stop acknowledgement is the same-frame FIFO end marker. Keep the
+    // reviewed recorder armed for steps already queued before that marker.
+    const stopRecordingId =
+      action === "recordStop" ? this.recording?.id : undefined;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        if (this.recording?.id === id) {
-          this.recording.onStop();
-          this.recording = null;
-        }
+        this.disarmRecording(id);
+        this.disarmRecording(stopRecordingId);
         reject(
           new Error(
             "The page action did not acknowledge completion. It may already have run.",
           ),
         );
       }, 15000);
-      this.pending.set(id, { context, resolve, reject, timer });
+      this.pending.set(id, {
+        context,
+        resolve,
+        reject,
+        timer,
+        stopRecordingId,
+      });
       try {
         this.send(context, id, action, payload);
       } catch {
         clearTimeout(timer);
         this.pending.delete(id);
-        if (this.recording?.id === id) {
-          this.recording.onStop();
-          this.recording = null;
-        }
+        this.disarmRecording(id);
+        this.disarmRecording(stopRecordingId);
         reject(new Error("The website action could not be delivered."));
       }
     });
@@ -143,8 +156,7 @@ export class WebAutomationBridge {
       sameDocument(recorder.context.document, doc)
     ) {
       if (data.status === "limit") {
-        recorder.onStop();
-        this.recording = null;
+        this.disarmRecording(recorder.id);
         return;
       }
       if (data.status === "step") {
@@ -173,12 +185,10 @@ export class WebAutomationBridge {
       return;
     clearTimeout(pending.timer);
     this.pending.delete(data.requestId);
+    this.disarmRecording(pending.stopRecordingId);
     if (data.status === "ok") pending.resolve();
     else {
-      if (this.recording !== null && this.recording.id === data.requestId) {
-        this.recording.onStop();
-        this.recording = null;
-      }
+      this.disarmRecording(data.requestId);
       pending.reject(
         new Error(
           "The page refused or could not complete this action. Check the current target and script.",

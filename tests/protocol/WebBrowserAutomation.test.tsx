@@ -192,6 +192,47 @@ async function mount() {
   return { ...view, iframe, post, identity, emit };
 }
 describe("real WebBrowser iframe and website automation integration", () => {
+  it("pins the labelled recorder outside the long bookmark scroll lane and preserves bookmark menus", async () => {
+    native.connections[0].httpBookmarks = Array.from(
+      { length: 40 },
+      (_, index) => ({
+        name: `Bookmark ${index + 1}`,
+        path: `/page-${index + 1}`,
+      }),
+    );
+    const { post, emit } = await mount();
+    const controls = screen.getByTestId("web-macro-recording-controls");
+    const lane = screen.getByTestId("web-bookmark-scroll");
+    expect(lane).not.toContainElement(controls);
+    expect(lane).toHaveClass("overflow-x-auto", "min-w-0");
+    expect(screen.getByTestId("web-bookmark-bar")).not.toHaveClass(
+      "overflow-x-auto",
+    );
+    expect(screen.getByRole("button", { name: "Record macro" })).toBeDisabled();
+    emit("proxy_document_start");
+    emit("proxy_dom_ready");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Record macro" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      post.mock.calls.some(([data]) => data.action === "recordStart"),
+    ).toBe(false);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Bookmark 40" }), {
+      clientX: 20,
+      clientY: 40,
+    });
+    expect(screen.getByTestId("web-browser-bookmark-menu")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.contextMenu(lane, { clientX: 30, clientY: 40 });
+    expect(
+      screen.getByTestId("web-browser-bookmark-bar-menu"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId("web-macro-recording-controls")).toHaveLength(
+      1,
+    );
+  });
   it("exposes chips but arms no script or forced dark before authenticated document readiness", async () => {
     const { iframe, post, emit } = await mount();
     await screen.findByRole("button", { name: "Demo page action" });
