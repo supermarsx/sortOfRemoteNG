@@ -58,7 +58,7 @@ describe("collection folder variants", () => {
     expect(COLLECTION_FOLDER_ICONS.map(({ key }) => key)).toEqual(
       REQUESTED_KEYS,
     );
-    expect(FOLDER_ICONS).toHaveLength(80);
+    expect(FOLDER_ICONS).toHaveLength(82);
     expect(Object.keys(FOLDER_OPEN_ICONS).sort()).toEqual(
       FOLDER_ICONS.map(({ key }) => key).sort(),
     );

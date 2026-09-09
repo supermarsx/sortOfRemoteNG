@@ -49,6 +49,10 @@ import {
   COLLECTION_FOLDER_ICONS,
   COLLECTION_FOLDER_OPEN_ICONS,
 } from "./folderCollectionVariants";
+import {
+  PHYSICAL_SERVICE_FOLDER_ICONS,
+  PHYSICAL_SERVICE_FOLDER_OPEN_ICONS,
+} from "./physicalServerFolders";
 
 const SwitchPorts = createLucideIcon("FolderSwitchPorts", [
   [
@@ -414,6 +418,7 @@ export const FOLDER_ICONS = [
   ),
   ...ADDITIONAL_FOLDER_ICONS,
   ...COLLECTION_FOLDER_ICONS,
+  ...PHYSICAL_SERVICE_FOLDER_ICONS,
 ] as const;
 
 /** Presentation-only counterparts. Keep saved keys and picker entries unchanged. */
@@ -422,6 +427,7 @@ export const FOLDER_OPEN_ICONS: Readonly<
 > = Object.freeze({
   ...ADDITIONAL_FOLDER_OPEN_ICONS,
   ...COLLECTION_FOLDER_OPEN_ICONS,
+  ...PHYSICAL_SERVICE_FOLDER_OPEN_ICONS,
   "folder-building": createRoleIcon(
     "OpenBuildingFolder",
     "folder-open",

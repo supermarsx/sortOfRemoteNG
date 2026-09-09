@@ -9,6 +9,11 @@ import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
 const requestedKeys = {
+  "physical-mail": [
+    "folder-mta-relay",
+    "folder-bare-metal",
+    "bare-metal-server",
+  ],
   proxies: [
     "socks-proxy",
     "http-proxy",
@@ -88,7 +93,7 @@ if (
   ].includes(family)
 )
   throw new Error(
-    "Choose servers, fruits, retraced, appliance-refined, developer-symbols, messaging, proxies, pirates or emojis",
+    "Choose servers, fruits, retraced, appliance-refined, developer-symbols, messaging, proxies, physical-mail, pirates or emojis",
   );
 const refined = family === "appliance-refined";
 const expanded =
@@ -113,7 +118,7 @@ try {
     if (missing.length)
       throw new Error(`Missing ${family} icons: ${missing.join(", ")}`);
   }
-  const entries = CONNECTION_ICON_CATALOG.filter((entry) => {
+  let entries = CONNECTION_ICON_CATALOG.filter((entry) => {
     if (required) return required.includes(entry.key);
     if (["pirates", "emojis"].includes(family))
       return entry.category === family;
@@ -154,6 +159,23 @@ try {
         /server/i.test(entry.key + entry.label))
     );
   });
+  if (family === "physical-mail") {
+    const { FOLDER_OPEN_ICONS } = await server.ssrLoadModule(
+      "/src/utils/icons/catalog/folders.ts",
+    );
+    entries = entries.flatMap((entry) =>
+      FOLDER_OPEN_ICONS[entry.key]
+        ? [
+            entry,
+            {
+              ...entry,
+              key: `${entry.key} [open]`,
+              icon: FOLDER_OPEN_ICONS[entry.key],
+            },
+          ]
+        : [entry],
+    );
+  }
   if (!entries.length) throw new Error(`No ${family} icons found`);
   const output = path.resolve(".artifacts", `${family}-icons`);
   await mkdir(output, { recursive: true });
