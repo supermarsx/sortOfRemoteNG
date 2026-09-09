@@ -8,12 +8,49 @@ import path from "node:path";
 import sharp from "sharp";
 
 const family = process.argv[2] ?? "servers";
-if (!["servers", "fruits", "retraced", "appliance-refined"].includes(family))
-  throw new Error("Choose servers, fruits, retraced or appliance-refined");
+const requestedKeys = {
+  "developer-symbols": [
+    "mcp",
+    "mcp-server",
+    "vscode",
+    "code-editor",
+    "code-server",
+    "inspector",
+    "magnifier",
+    "linter",
+    "bug-collection",
+    "test-checklist",
+    "test-tube",
+    "control-panel-sliders",
+    "panel",
+    "rising-sun",
+    "sunny-day",
+    "emoji-dorky",
+    "deity-thanatos",
+    "religion-buddha",
+    "religion-angel",
+  ],
+};
+if (
+  ![
+    "servers",
+    "fruits",
+    "retraced",
+    "appliance-refined",
+    "pirates",
+    "emojis",
+    ...Object.keys(requestedKeys),
+  ].includes(family)
+)
+  throw new Error(
+    "Choose servers, fruits, retraced, appliance-refined, developer-symbols, pirates or emojis",
+  );
 const refined = family === "appliance-refined";
-const sizes = refined ? [16, 24, 32, 96] : [16, 20, 24];
-const columnWidth = refined ? 620 : 460;
-const rowHeight = refined ? 112 : 44;
+const expanded =
+  refined || family in requestedKeys || ["pirates", "emojis"].includes(family);
+const sizes = expanded ? [16, 24, 32, 96] : [16, 20, 24];
+const columnWidth = expanded ? 620 : 460;
+const rowHeight = expanded ? 112 : 44;
 const server = await createServer({
   configFile: false,
   appType: "custom",
@@ -24,7 +61,17 @@ try {
   const { CONNECTION_ICON_CATALOG } = await server.ssrLoadModule(
     "/src/utils/icons/connectionIconCatalog.ts",
   );
+  const required = requestedKeys[family];
+  if (required) {
+    const available = new Set(CONNECTION_ICON_CATALOG.map(({ key }) => key));
+    const missing = required.filter((key) => !available.has(key));
+    if (missing.length)
+      throw new Error(`Missing ${family} icons: ${missing.join(", ")}`);
+  }
   const entries = CONNECTION_ICON_CATALOG.filter((entry) => {
+    if (required) return required.includes(entry.key);
+    if (["pirates", "emojis"].includes(family))
+      return entry.category === family;
     if (refined)
       return [
         "amcrest",
