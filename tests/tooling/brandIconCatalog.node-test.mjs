@@ -188,23 +188,82 @@ async function importBrandModule() {
   return import(pathToFileURL(outfile).href);
 }
 
-test("every brand icon is structurally a Lucide icon and renders solid", async () => {
+test("every brand icon is a themed passive Lucide icon with its declared artwork structure", async () => {
   const {
     BRAND_ICONS,
     BRAND_ICON_SLUGS,
     HAND_AUTHORED_BRAND_ICON_NAMES,
     HISTORICAL_BRAND_ICON_NAMES,
     PUBLISHER_BRAND_ICON_NAMES,
+    HOSTING_PUBLISHER_BRAND_ICONS,
+    HOSTING_HISTORICAL_BRAND_ICONS,
+    TELECOM_PUBLISHER_BRAND_ICONS,
+    putty,
+    noip,
   } = await importBrandModule();
 
   const names = Object.keys(BRAND_ICONS);
+  const expectedNames = [
+    ...BRAND_ICON_SLUGS,
+    ...HAND_AUTHORED_BRAND_ICON_NAMES,
+    ...HISTORICAL_BRAND_ICON_NAMES,
+    ...PUBLISHER_BRAND_ICON_NAMES,
+    ...Object.keys(HOSTING_PUBLISHER_BRAND_ICONS),
+    ...Object.keys(HOSTING_HISTORICAL_BRAND_ICONS),
+    ...Object.keys(TELECOM_PUBLISHER_BRAND_ICONS),
+    "putty",
+    "noip",
+  ];
   assert.equal(
-    names.length,
-    BRAND_ICON_SLUGS.length +
-      HAND_AUTHORED_BRAND_ICON_NAMES.length +
-      HISTORICAL_BRAND_ICON_NAMES.length +
-      PUBLISHER_BRAND_ICON_NAMES.length,
+    new Set(expectedNames).size,
+    expectedNames.length,
+    "source groups must not silently overwrite each other",
   );
+  assert.deepEqual(
+    names.sort(),
+    expectedNames.sort(),
+    "every source group and individual mark must reach the registry",
+  );
+  assert.equal(BRAND_ICONS.putty, putty);
+  assert.equal(BRAND_ICONS.noip, noip);
+  const providerGeometry = {
+    dominios: [
+      1,
+      "448c6c68dd959b35ea487c317d243c3d42279d44423a403bff26aa826f14368f",
+    ],
+    rackspace: [
+      1,
+      "709f55320fbc0f98343118dfca4fc4ee2356dfe8c79acae24a29bc03eea6c107",
+    ],
+    amen: [
+      1,
+      "f6a5e33f60d802652f905ded2214fab6885fcefabb0bec7d78e5019e62257b44",
+    ],
+    bluehost: [
+      1,
+      "2e2803fe112674422a8df9c8889534f53b745d095c49f535959763d8130a67c7",
+    ],
+    freenom: [
+      1,
+      "d39daeb2a65a8c1cfea609d20a90e26d4643f84f25dd32edac6aac7eeaaf6be0",
+    ],
+    claranet: [
+      3,
+      "b1c04cd11f1fe6862048560634d4f6cd26ecdd17dea7b2b7846a8279caf4f649",
+    ],
+    sapo: [
+      1,
+      "2ac420fa317b51765a203c7dffd3f8e1ae673c345ea2efd580fecaacb266bd28",
+    ],
+    putty: [
+      28,
+      "bb87dcac0f555ecabc0b2d4d3a92601de95d9fcde7f94dacbdcb7378b33d6506",
+    ],
+    noip: [
+      1,
+      "6d5e44025a36dcb0f8944de7e3a622f0742af643d3cca010cdf1c433d0cc1fd9",
+    ],
+  };
 
   // Custom IconNode attributes must carry React keys just like Lucide's stock
   // nodes. Capture only this regression; unrelated console errors stay visible.
@@ -232,10 +291,43 @@ test("every brand icon is structurally a Lucide icon and renders solid", async (
       );
 
       const markup = renderToStaticMarkup(
-        createElement(Icon, { size: 22, "aria-hidden": "true" }),
+        createElement(Icon, {
+          size: 22,
+          color: "rebeccapurple",
+          "aria-hidden": "true",
+        }),
       );
-      assert.match(markup, /fill="currentColor"/u, `${name} must fill solid`);
-      assert.match(markup, /stroke="none"/u, `${name} must drop the outline`);
+      assert.match(
+        markup,
+        /stroke="rebeccapurple"/u,
+        `${name} must inherit the requested theme color`,
+      );
+      assert.doesNotMatch(
+        markup,
+        /<(?:image|text|script|foreignObject|use|mask|clipPath)\b|\bon\w+=|\b(?:href|style)=/u,
+        `${name} must remain passive local geometry`,
+      );
+      if (name === "amen") {
+        assert.equal((markup.match(/<path\b/gu) ?? []).length, 1);
+        assert.match(markup, /stroke-width="2\.3"/u);
+        assert.match(markup, /stroke-linecap="butt"/u);
+        assert.doesNotMatch(
+          markup,
+          /fill="currentColor"/u,
+          "Amen is the publisher's traced open-line emblem, not a filled monogram",
+        );
+      } else {
+        assert.match(
+          markup,
+          /fill="currentColor"/u,
+          `${name} must retain its solid foreground`,
+        );
+        assert.match(
+          markup,
+          /stroke="none"/u,
+          `${name} filled foreground must not acquire an outline`,
+        );
+      }
       assert.match(
         markup,
         /viewBox="0 0 24 24"/u,
@@ -243,7 +335,46 @@ test("every brand icon is structurally a Lucide icon and renders solid", async (
       );
       assert.match(markup, /width="22"/u, `${name} must honour size`);
       assert.match(markup, /height="22"/u, `${name} must honour size`);
-      assert.match(markup, /<path d="[^"]+"/u, `${name} must draw a path`);
+      if (name === "putty") {
+        assert.equal(
+          (markup.match(/<polygon\b/gu) ?? []).length,
+          24,
+          "PuTTY keeps the author's computer/bolt polygons",
+        );
+        assert.equal(
+          (markup.match(/<rect\b/gu) ?? []).length,
+          4,
+          "PuTTY keeps the author's screen/device rectangles",
+        );
+        assert.doesNotMatch(
+          markup,
+          /<path\b|#[0-9a-f]{3,8}/iu,
+          "PuTTY must not fall back to initials or a fixed background",
+        );
+        assert.match(
+          markup,
+          /stroke="currentColor"/u,
+          "PuTTY needs its linework as well as solid screens",
+        );
+      } else {
+        assert.match(markup, /<path d="[^"]+"/u, `${name} must draw a path`);
+      }
+      if (name in providerGeometry) {
+        const nodes = [
+          ...markup.matchAll(/<(?:path|polygon|rect)\b[^>]*>/gu),
+        ].map((m) => m[0]);
+        const [count, hash] = providerGeometry[name];
+        assert.equal(
+          nodes.length,
+          count,
+          `${name} must preserve all source shapes`,
+        );
+        assert.equal(
+          createHash("sha256").update(nodes.join("")).digest("hex"),
+          hash,
+          `${name} verified geometry/fill/normalization drifted`,
+        );
+      }
     }
   } finally {
     console.error = consoleError;
@@ -361,7 +492,7 @@ test("publisher marks normalize their source coordinates without distorting geom
   }
 });
 
-test("app-authored identifiers are distinct SVG geometry and not advertised as official brand marks", async () => {
+test("the legacy identifier compatibility group retains distinct passive SVG geometry", async () => {
   const { BRAND_ICONS, APP_AUTHORED_IDENTIFIER_ICONS } =
     await importBrandModule();
   const identifiers = Object.entries(APP_AUTHORED_IDENTIFIER_ICONS);
@@ -369,7 +500,7 @@ test("app-authored identifiers are distinct SVG geometry and not advertised as o
   const paths = identifiers.map(([name, Icon]) => {
     assert.ok(
       !(name in BRAND_ICONS),
-      `${name} must not masquerade as a sourced brand logo`,
+      `${name} must remain in its compatibility registry without duplicate registration`,
     );
     const markup = renderToStaticMarkup(
       createElement(Icon, { color: "tomato", size: 16 }),
