@@ -92,20 +92,24 @@ describe("folder default tab-group inheritance", () => {
     );
 
   it("prioritizes explicit session, connection, nearest folder, then outer folder defaults", () => {
-    expect(add(tree, "explicit-group").sessions.at(-1)?.tabGroupId).toBe(
+    expect(add(tree, "explicit-group").sessions.slice(-1)[0]?.tabGroupId).toBe(
       "explicit-group",
     );
-    expect(add().sessions.at(-1)?.tabGroupId).toBe("own-group");
+    expect(add().sessions.slice(-1)[0]?.tabGroupId).toBe("own-group");
     const childInherits = tree.map((item) =>
       item.id === "connection-1"
         ? { ...item, defaultTabGroupId: undefined }
         : item,
     );
-    expect(add(childInherits).sessions.at(-1)?.tabGroupId).toBe("near-group");
+    expect(add(childInherits).sessions.slice(-1)[0]?.tabGroupId).toBe(
+      "near-group",
+    );
     const outerInherits = childInherits.map((item) =>
       item.id === "near" ? { ...item, defaultTabGroupId: undefined } : item,
     );
-    expect(add(outerInherits).sessions.at(-1)?.tabGroupId).toBe("root-group");
+    expect(add(outerInherits).sessions.slice(-1)[0]?.tabGroupId).toBe(
+      "root-group",
+    );
   });
 
   it("skips deleted group IDs and safely stops cycles, missing parents and non-folder parents", () => {
@@ -115,7 +119,7 @@ describe("folder default tab-group inheritance", () => {
         : item,
     );
     expect(
-      add(deleted, "deleted-session-group").sessions.at(-1)?.tabGroupId,
+      add(deleted, "deleted-session-group").sessions.slice(-1)[0]?.tabGroupId,
     ).toBe("root-group");
     for (const connections of [
       [connection("connection-1", { parentId: "missing" })],
@@ -131,7 +135,8 @@ describe("folder default tab-group inheritance", () => {
       [],
     ])
       expect(
-        add(connections, "deleted-session-group").sessions.at(-1)?.tabGroupId,
+        add(connections, "deleted-session-group").sessions.slice(-1)[0]
+          ?.tabGroupId,
       ).toBeUndefined();
   });
 
@@ -152,7 +157,7 @@ describe("folder default tab-group inheritance", () => {
       type: "ADD_SESSION",
       payload: { ...session, id: "future-session", connectionId: "future" },
     });
-    expect(after.sessions.at(-1)?.tabGroupId).toBe("near-group");
+    expect(after.sessions.slice(-1)[0]?.tabGroupId).toBe("near-group");
     expect(after.connections).toBe(edited.connections);
     expect(after.connections.find((item) => item.id === "future")).toBe(child);
     expect(after.sessions[0]).toBe(before.sessions[0]);
@@ -181,7 +186,7 @@ describe("folder default tab-group inheritance", () => {
       },
       { type: "ADD_SESSION", payload: session },
     );
-    expect(withoutGroups.sessions.at(-1)?.tabGroupId).toBeUndefined();
+    expect(withoutGroups.sessions.slice(-1)[0]?.tabGroupId).toBeUndefined();
   });
 });
 
