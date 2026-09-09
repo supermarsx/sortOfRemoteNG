@@ -672,7 +672,7 @@ function encodeNativeHost(
   )}/${encodeURIComponent(normalizedHost)}/${normalizedPort}`;
 }
 
-function decodeNativeHost(nativeHost: string): {
+export function decodeNativeHost(nativeHost: string): {
   host: string;
   port: number;
   connectionId?: string;

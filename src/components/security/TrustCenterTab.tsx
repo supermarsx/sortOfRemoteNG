@@ -18,7 +18,7 @@ import {
   type TrustCenterAction,
 } from "../../hooks/security/useTrustCenter";
 import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
-import { Modal, ModalBody, ModalHeader } from "../ui/overlays/Modal";
+import { TrustIdentityImportDialog } from "./TrustIdentityImportDialog";
 import TrustIdentityInspector from "./TrustIdentityInspector";
 import { useConnections } from "../../contexts/useConnections";
 import type { TrustPolicy } from "../../utils/auth/trustStore";
@@ -76,9 +76,7 @@ export default function TrustCenterTab({
   const [policy, setPolicy] = useState<TrustPolicy | "inherit">("inherit");
   const [tags, setTags] = useState("");
   const [bulkTags, setBulkTags] = useState("");
-  const [importReviewed, setImportReviewed] = useState(false);
   const [page, setPage] = useState(0);
-  const [importPage, setImportPage] = useState(0);
   useEffect(() => {
     // A click may already belong to the newly hydrated scope when this passive
     // effect runs. Only discard an inspector captured for a different scope.
@@ -86,10 +84,6 @@ export default function TrustCenterTab({
       previous?.databaseId === mgr.databaseId ? previous : null,
     );
   }, [mgr.databaseId]);
-  useEffect(() => {
-    setImportReviewed(false);
-    setImportPage(0);
-  }, [mgr.review]);
   useEffect(
     () => setPage(0),
     [
@@ -113,22 +107,6 @@ export default function TrustCenterTab({
   const connectionName = (row: TrustCenterRow) =>
     row.connectionId ? lookupConnection(row.connectionId) : "Database-wide";
   const review = mgr.review;
-  const importPageCount =
-    review?.action === "import"
-      ? Math.max(1, Math.ceil(review.document.records.length / 100))
-      : 1;
-  const existingImportRecords = useMemo(
-    () =>
-      new Map(
-        mgr.review?.action === "import"
-          ? mgr.review.expectedRecords.map((record) => [
-              `${record.record_type}:${record.host}`,
-              record,
-            ])
-          : [],
-      ),
-    [mgr.review],
-  );
   const request = (action: TrustCenterAction, rows: TrustCenterRow[]) =>
     mgr.requestAction(action, rows);
   const confirmation =
@@ -728,184 +706,13 @@ export default function TrustCenterTab({
         onConfirm={() => void mgr.apply()}
         message={confirmation}
       />
-      <Modal
-        isOpen={review?.action === "import"}
+      <TrustIdentityImportDialog
+        connectionName={lookupConnection}
+        review={review?.action === "import" ? review : null}
+        busy={mgr.busy}
         onClose={mgr.dismissReview}
-        panelClassName="max-w-5xl"
-        dataTestId="trust-import-review"
-      >
-        <ModalHeader
-          title="Review trust identity import"
-          onClose={mgr.dismissReview}
-        />
-        <ModalBody>
-          {review?.action === "import" && (
-            <>
-              <p className="text-sm font-medium">
-                {review.document.records.length} incoming identities →{" "}
-                {review.databaseName}
-              </p>
-              {!!review.skipped && (
-                <p className="mt-2 text-xs text-warning">
-                  {review.skipped} unsupported or unnamed entries were skipped
-                  during preview.
-                </p>
-              )}
-              {review.warnings?.map((warning, index) => (
-                <p
-                  key={`${index}:${warning}`}
-                  role="status"
-                  className="mt-1 text-xs text-warning"
-                >
-                  {warning}
-                </p>
-              ))}
-              <p className="my-2 text-xs text-[var(--color-textMuted)]">
-                This imports trust decisions, not credentials or global
-                policies. New hosts may become trusted; a more recently seen
-                identity may replace an existing fingerprint and its per-host
-                policy. Existing revoked records cannot be reinstated by merge.
-                Incoming expiry and revocation settings are retained when a
-                record is imported. Check the file origin and every identity
-                before continuing.
-              </p>
-              <div className="max-h-80 overflow-auto rounded-md border border-[var(--color-border)]">
-                <table className="w-full text-left text-xs">
-                  <caption className="sr-only">
-                    Incoming identity fingerprints and existing conflicts
-                  </caption>
-                  <thead>
-                    <tr>
-                      {[
-                        "Host / type",
-                        "Existing fingerprint",
-                        "Incoming fingerprint",
-                        "Trust intent",
-                      ].map((label) => (
-                        <th key={label} className="p-2">
-                          {label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {review.document.records
-                      .slice(importPage * 100, importPage * 100 + 100)
-                      .map((row) => {
-                        const existing = existingImportRecords.get(
-                          `${row.record_type}:${row.host}`,
-                        );
-                        const changed =
-                          existing &&
-                          existing.identity.fingerprint !==
-                            row.identity.fingerprint;
-                        return (
-                          <tr
-                            key={`${row.record_type}:${row.host}`}
-                            className="border-t border-[var(--color-border)]"
-                          >
-                            <td className="max-w-48 break-all p-2">
-                              {row.host}
-                              <span className="block">{row.record_type}</span>
-                              {changed && (
-                                <strong className="block text-warning">
-                                  Different fingerprint — possible replacement
-                                </strong>
-                              )}
-                            </td>
-                            <td className="max-w-56 break-all p-2 font-mono">
-                              {String(
-                                existing?.identity.fingerprint ??
-                                  "New identity",
-                              )}
-                              {existing?.revoked && (
-                                <span className="block font-sans text-error">
-                                  Existing revocation preserved
-                                </span>
-                              )}
-                            </td>
-                            <td className="max-w-56 break-all p-2 font-mono">
-                              {String(row.identity.fingerprint)}
-                            </td>
-                            <td className="p-2">
-                              {row.revoked
-                                ? "Revoked / blocked"
-                                : row.user_approved
-                                  ? "User-approved trust"
-                                  : "Stored identity; not user-approved"}
-                              <span className="block">
-                                Policy: {row.host_policy ?? "inherit global"}
-                              </span>
-                              <span className="block">
-                                Expiry:{" "}
-                                {row.trust_expires ??
-                                  "No explicit trust expiry"}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-              <nav
-                aria-label="Import review pages"
-                className="mt-2 flex items-center justify-between gap-2 text-xs"
-              >
-                <span>
-                  Review page {importPage + 1} of {importPageCount} ·
-                  confirmation covers all {review.document.records.length}{" "}
-                  identities
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className={button}
-                    disabled={importPage === 0}
-                    onClick={() => setImportPage(importPage - 1)}
-                  >
-                    Previous review page
-                  </button>
-                  <button
-                    type="button"
-                    className={button}
-                    disabled={importPage + 1 >= importPageCount}
-                    onClick={() => setImportPage(importPage + 1)}
-                  >
-                    Next review page
-                  </button>
-                </div>
-              </nav>
-              <label className="my-3 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={importReviewed}
-                  onChange={(event) => setImportReviewed(event.target.checked)}
-                />
-                I reviewed these fingerprints, replacement conflicts and trust
-                decisions for {review.databaseName}.
-              </label>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className={button}
-                  onClick={mgr.dismissReview}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className={button}
-                  disabled={!importReviewed || mgr.busy}
-                  onClick={() => void mgr.apply()}
-                >
-                  Merge reviewed identities
-                </button>
-              </div>
-            </>
-          )}
-        </ModalBody>
-      </Modal>
+        onConfirm={() => void mgr.apply()}
+      />
     </section>
   );
 }

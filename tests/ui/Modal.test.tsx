@@ -3,6 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Modal } from '../../src/components/ui/overlays/Modal';
 
 describe('Modal', () => {
+  it('supports an optional accessible name without changing dialog behavior', () => {
+    render(<Modal isOpen ariaLabel="Review trust identity import"><button>Cancel</button></Modal>);
+    expect(screen.getByRole('dialog', { name: 'Review trust identity import' })).toHaveAttribute('aria-modal', 'true');
+  });
   it('renders dialog semantics and traps focus within the panel', async () => {
     render(
       <div>

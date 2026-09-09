@@ -35,7 +35,10 @@ const fixture = vi.hoisted(() => ({
   write: vi.fn(),
   stat: vi.fn(),
 }));
-vi.mock("../../src/utils/auth/trustStore", () => ({
+vi.mock("../../src/utils/auth/trustStore", async (importOriginal) => ({
+  decodeNativeHost: (
+    await importOriginal<typeof import("../../src/utils/auth/trustStore")>()
+  ).decodeNativeHost,
   getAllTrustRecords: () => fixture.records,
   getAllPerConnectionTrustRecords: () => fixture.connectionRecords,
   getTrustStoreScope: () => ({

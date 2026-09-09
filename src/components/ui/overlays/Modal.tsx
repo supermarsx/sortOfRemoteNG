@@ -37,6 +37,8 @@ export interface ModalProps {
   panelClassName?: string;
   contentClassName?: string;
   dataTestId?: string;
+  /** Accessible name for the dialog without changing its visible header. */
+  ariaLabel?: string;
   /** Size hint (mapped to max-width). */
   size?: string;
 }
@@ -51,6 +53,7 @@ export const Modal: React.FC<ModalProps> = ({
   panelClassName,
   contentClassName,
   dataTestId,
+  ariaLabel,
   size: _size,
 }) => {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -149,6 +152,7 @@ export const Modal: React.FC<ModalProps> = ({
           panelClassName,
         )}
         role="dialog"
+        aria-label={ariaLabel}
         aria-modal="true"
         tabIndex={-1}
       >
