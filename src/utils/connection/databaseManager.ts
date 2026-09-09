@@ -34,6 +34,7 @@ import type {
   TrustExportDocument,
   TrustImportMode,
   TrustImportOutcome,
+  ReviewedTrustScopeTarget,
 } from "../auth/trustStore";
 
 /**
@@ -501,6 +502,73 @@ export class DatabaseManager {
     return databaseProtection.capabilities();
   }
 
+  /** Existing unlock authority only; never opens/switches or prompts for a DB. */
+  private async capturedTrustSource(database: ConnectionDatabase): Promise<{
+    sourceSessionId?: string;
+    expectedData?: unknown;
+    connectionIds?: string[];
+  }> {
+    const id = database.id;
+    if (database.protectionFormat === "sorng-db")
+      return { sourceSessionId: this.requireManagedSession(id).sessionId };
+    if (!database.isEncrypted) return {};
+    const password = this.getUnlockedPasswordForDatabase(id);
+    if (!password)
+      throw new Error(
+        "Unlock this database explicitly before changing its trust decisions.",
+      );
+    const data = await this.loadDatabaseData(
+      id,
+      password,
+      database.securityRevision ?? "",
+    );
+    if (!data) throw new DatabaseNotFoundError();
+    const expectedData = this.loadedRepresentations.get(data);
+    if (expectedData === undefined)
+      throw new Error(
+        "Trust changes require the exact verified database snapshot.",
+      );
+    return { expectedData, connectionIds: this.connectionIdsOf(data) };
+  }
+
+  /** Move selected decisions only inside a currently unlocked database. */
+  async reassignTrustScope(
+    id: string,
+    targets: ReviewedTrustScopeTarget[],
+    targetConnectionId: string | null,
+  ): Promise<{ updated: number }> {
+    if (targets.length === 0 || targets.length > 10000)
+      throw new Error("Select a bounded set of trust identities.");
+    const reviewed = structuredClone(targets);
+    const epoch = this.captureDatabaseEpoch(id);
+    const database = await this.getDatabase(id);
+    if (!database) throw new DatabaseNotFoundError();
+    const invoke = await getInvoke();
+    if (!invoke)
+      throw new Error("Trust scope changes require the desktop app.");
+    const source = await this.capturedTrustSource(database);
+    this.assertDatabaseEpoch(id, epoch);
+    const result = await invoke<{ updated: number }>(
+      "trust_reassign_reviewed_scope",
+      {
+        databaseId: id,
+        targets: reviewed,
+        targetConnectionId,
+        expectedSecurityRevision: database.securityRevision ?? "",
+        ...source,
+      },
+    );
+    if (
+      !Number.isSafeInteger(result?.updated) ||
+      result.updated < 0 ||
+      result.updated > reviewed.length
+    )
+      throw new Error(
+        "Native scope change returned an invalid outcome; refresh before retrying.",
+      );
+    return result;
+  }
+
   /** Migrate a named database without changing the active database or trust scope. */
   async migrateLegacyTrustDatabase(
     id: string,
@@ -511,32 +579,7 @@ export class DatabaseManager {
     const invoke = await getInvoke();
     if (!invoke)
       throw new Error("Legacy trust migration requires the desktop app.");
-    let source: {
-      sourceSessionId?: string;
-      expectedData?: unknown;
-      connectionIds?: string[];
-    } = {};
-    if (database.protectionFormat === "sorng-db") {
-      source = { sourceSessionId: this.requireManagedSession(id).sessionId };
-    } else if (database.isEncrypted) {
-      const password = this.getUnlockedPasswordForDatabase(id);
-      if (!password)
-        throw new Error(
-          "Unlock this database explicitly before migrating its legacy trust records.",
-        );
-      const data = await this.loadDatabaseData(
-        id,
-        password,
-        database.securityRevision ?? "",
-      );
-      if (!data) throw new DatabaseNotFoundError();
-      const expectedData = this.loadedRepresentations.get(data);
-      if (expectedData === undefined)
-        throw new Error(
-          "Migration requires the exact verified database snapshot.",
-        );
-      source = { expectedData, connectionIds: this.connectionIdsOf(data) };
-    }
+    const source = await this.capturedTrustSource(database);
     this.assertDatabaseEpoch(id, epoch);
     const result = await invoke<LegacyTrustMigrationOutcome>(
       "trust_migrate_legacy_database",

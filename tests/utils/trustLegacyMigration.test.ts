@@ -46,12 +46,80 @@ beforeEach(() => {
           preservedRecords: 4,
           warnings: [],
         };
+      if (command === "trust_reassign_reviewed_scope") return { updated: 1 };
       throw new Error(`Unexpected fixture command ${command}`);
     },
   );
 });
 afterEach(() => DatabaseManager.resetInstance());
 describe("non-activating legacy trust migration", () => {
+  it.each(["plain", "legacy", "managed"])(
+    "reassigns trust scope using existing %s authority only",
+    async (kind) => {
+      const manager = DatabaseManager.getInstance();
+      const targets = [
+        {
+          host: "server:443",
+          recordType: "https",
+          fingerprint: "reviewed",
+          expectedDecision: {
+            userApproved: true,
+            revoked: false,
+            trustExpires: null,
+            hostPolicy: null,
+            hostPolicyConfig: null,
+          },
+        },
+      ];
+      if (kind === "legacy") {
+        database.isEncrypted = true;
+        stored = await encryptWithPassword(
+          JSON.stringify(payload),
+          "fixture-password",
+          { iterations: 10000 },
+        );
+        await expect(
+          manager.reassignTrustScope(database.id, targets, null),
+        ).rejects.toThrow("Unlock this database explicitly");
+        await manager.unlockDatabase(database.id, "fixture-password");
+      }
+      if (kind === "managed") {
+        database.isEncrypted = true;
+        database.protectionFormat = "sorng-db";
+        await expect(
+          manager.reassignTrustScope(database.id, targets, null),
+        ).rejects.toThrow("locked or expired");
+        await manager.unlockManagedDatabase(database.id, "vault-slot");
+      }
+      bridge.invoke.mockClear();
+      const expectedTargets = structuredClone(targets);
+      const move = manager.reassignTrustScope(database.id, targets, null);
+      targets[0].expectedDecision.revoked = true;
+      await expect(move).resolves.toEqual({ updated: 1 });
+      expect(bridge.invoke).toHaveBeenCalledWith(
+        "trust_reassign_reviewed_scope",
+        {
+          databaseId: database.id,
+          targets: expectedTargets,
+          targetConnectionId: null,
+          expectedSecurityRevision: "revision-one",
+          ...(kind === "legacy"
+            ? { expectedData: stored, connectionIds: [] }
+            : kind === "managed"
+              ? { sourceSessionId: "private-native-token" }
+              : {}),
+        },
+      );
+      expect(
+        bridge.invoke.mock.calls.some(([name]) =>
+          ["database_protection_unlock", "trust_set_active_database"].includes(
+            name,
+          ),
+        ),
+      ).toBe(false);
+      expect(manager.getCurrentDatabase()).toBeNull();
+    },
+  );
   it("lets native derive plain source IDs without opening or loading the database in the renderer", async () => {
     const manager = DatabaseManager.getInstance();
     await manager.migrateLegacyTrustDatabase(database.id);

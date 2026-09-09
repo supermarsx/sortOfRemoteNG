@@ -104,6 +104,7 @@ pub fn is_command(command: &str) -> bool {
             | "database_protection_load"
             | "database_protection_change"
             | "trust_migrate_legacy_database"
+            | "trust_reassign_reviewed_scope"
             | "delete_database_data"
             | "databases_encryption_status"
             | "get_cpu_aes_capabilities"
@@ -144,6 +145,7 @@ pub fn is_command(command: &str) -> bool {
             | "trust_store_identity_with_reason"
             | "trust_remove_identity"
             | "trust_get_identity"
+            | "trust_get_effective_identity"
             | "trust_get_all_records"
             | "trust_clear_all"
             | "trust_update_nickname"
@@ -1461,6 +1463,7 @@ define_command_group!(
         database_protection::database_protection_load,
         database_protection::database_protection_change,
         database_protection::trust_migrate_legacy_database,
+        database_protection::trust_reassign_reviewed_scope,
         database_files::delete_database_data,
         database_files::databases_encryption_status,
         cpu_commands::get_cpu_aes_capabilities,
@@ -1503,6 +1506,7 @@ define_command_group!(
         trust_store_commands::trust_store_identity_with_reason,
         trust_store_commands::trust_remove_identity,
         trust_store_commands::trust_get_identity,
+        trust_store_commands::trust_get_effective_identity,
         trust_store_commands::trust_get_all_records,
         trust_store_commands::trust_clear_all,
         trust_store_commands::trust_update_nickname,

@@ -33,6 +33,9 @@ pub use legacy_migration::{TrustLegacyMigrationOutcome, TrustLegacyMigrationRece
 #[path = "trust_force_delete.rs"]
 mod force_delete;
 pub use force_delete::{ForceDeleteContext, ForceDeletePreview, ForceDeleteResult};
+#[path = "trust_scope.rs"]
+mod scope;
+pub use scope::{ReviewedTrustScopeTarget, TrustScopeDecision};
 
 const MAX_TRUST_STORE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUST_RECORDS: usize = 10_000;
@@ -78,7 +81,7 @@ pub enum TrustPolicy {
 }
 
 /// Configuration knobs that accompany certain trust policies.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct TrustPolicyConfig {
     /// For `TofuWithExpiry`: days before a trusted identity must be re-verified
     #[serde(default)]
@@ -687,6 +690,7 @@ impl TrustStoreService {
         approved_by: Option<String>,
         note: Option<String>,
     ) -> Result<(), String> {
+        let host = scope::mutation_host(&self.data, &host, &record_type)?;
         require_explicit_approval(&self.data, &record_type, &host, user_approved)?;
         trust_identity_in_data(
             &mut self.data,
@@ -766,6 +770,19 @@ impl TrustStoreService {
     pub async fn get_stored_identity(&self, host: &str, record_type: &str) -> Option<TrustRecord> {
         let key = Self::record_key(record_type, host);
         self.data.records.get(&key).cloned()
+    }
+
+    /// Effective lookup is deliberately separate from exact mutation lookup.
+    pub fn get_effective_stored_identity(
+        &self,
+        host: &str,
+        record_type: &str,
+    ) -> Result<Option<TrustRecord>, String> {
+        Ok(self
+            .data
+            .records
+            .get(&scope::effective_key(&self.data, host, record_type)?)
+            .cloned())
     }
 
     /// Get all trust records.
@@ -1010,7 +1027,10 @@ fn verify_identity_in_data(
     record_type: &str,
     identity: Identity,
 ) -> TrustVerifyResult {
-    let key = TrustStoreService::record_key(record_type, host);
+    let key = match scope::effective_key(data, host, record_type) {
+        Ok(key) => key,
+        Err(_) => return TrustVerifyResult::PendingVerification { identity },
+    };
     let now_str = Utc::now().to_rfc3339();
 
     if fresh_approval_keys(data).contains(&key)
@@ -1297,7 +1317,7 @@ fn require_explicit_approval(
     host: &str,
     approved: bool,
 ) -> Result<(), String> {
-    if !approved && fresh_approval_keys(data).contains(&TrustStoreService::record_key(kind, host)) {
+    if !approved && fresh_approval_keys(data).contains(&scope::effective_key(data, host, kind)?) {
         return Err(
             "This identity was forgotten; review it and explicitly approve it again".into(),
         );
@@ -1530,6 +1550,10 @@ impl SyncTrustStore {
         user_approved: bool,
     ) -> Result<(), String> {
         self.backend.with_data(|data| {
+            let host = match scope::mutation_host(data, &host, &record_type) {
+                Ok(host) => host,
+                Err(error) => return (Err(error), false),
+            };
             if let Err(error) = require_explicit_approval(data, &record_type, &host, user_approved)
             {
                 return (Err(error), false);

@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 // Managed container text can be 96 MiB and is itself stored as a JSON string.
 // Allow its JSON escaping overhead, without retaining every database in memory.
-const MAX_DATABASE_BYTES: u64 =
+pub(super) const MAX_DATABASE_BYTES: u64 =
     (sorng_encryption::database_protection::MAX_CONTAINER_BYTES as u64) * 2 + 2;
 const GENERATIONS: [&str; 3] = ["", ".bak", ".v0.bak"];
 
@@ -164,7 +164,7 @@ fn check_known_peers(root: &Path, canonical: &Path) -> Result<(), String> {
 }
 
 impl TrustRuntime {
-    fn strict_value(
+    pub(super) fn strict_value(
         &self,
         path: &Path,
         kind: ArtifactKind,

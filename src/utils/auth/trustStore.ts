@@ -82,6 +82,8 @@ export interface TrustRecord {
   hostPolicy?: TrustPolicy;
   trustExpires?: string;
   tags?: string[];
+  /** Exact native security decision captured for reviewed scope changes. */
+  scopeDecision?: TrustScopeDecision;
 }
 
 export type TrustVerifyResult =
@@ -131,6 +133,21 @@ export interface NativeTrustPolicyConfig {
   threshold_count?: number | null;
   allowed_networks?: string[];
   trusted_ca_fingerprints?: string[];
+}
+
+export interface TrustScopeDecision {
+  userApproved: boolean;
+  revoked: boolean;
+  trustExpires: string | null;
+  hostPolicy: NativeTrustPolicy | null;
+  hostPolicyConfig: NativeTrustPolicyConfig | null;
+}
+
+export interface ReviewedTrustScopeTarget {
+  host: string;
+  recordType: string;
+  fingerprint: string;
+  expectedDecision: TrustScopeDecision;
 }
 
 /**
@@ -285,6 +302,7 @@ interface NativeTrustRecord {
   nickname?: string | null;
   history: NativeHistoryEntry[];
   host_policy?: string | null;
+  host_policy_config?: NativeTrustPolicyConfig | null;
   trust_expires?: string | null;
   revoked?: boolean;
 }
@@ -721,6 +739,9 @@ function cloneRecord(record: TrustRecord): TrustRecord {
     identity: cloneIdentity(record.identity),
     history: record.history?.map((identity) => cloneIdentity(identity)),
     tags: record.tags ? [...record.tags] : undefined,
+    scopeDecision: record.scopeDecision
+      ? structuredClone(record.scopeDecision)
+      : undefined,
   };
 }
 
@@ -907,6 +928,66 @@ export function validateCertificateIdentity(
   ) as CertIdentity;
 }
 
+function nativeScopeDecision(record: NativeTrustRecord): TrustScopeDecision {
+  const policies: NativeTrustPolicy[] = [
+    "tofu",
+    "tofu-with-expiry",
+    "always-ask",
+    "always-trust",
+    "strict",
+    "certificate-pinning",
+    "key-rotation-grace",
+    "trust-on-verify",
+    "conditional-trust",
+    "ca-trust-only",
+    "threshold-trust",
+  ];
+  if (
+    (record.revoked != null && typeof record.revoked !== "boolean") ||
+    (record.host_policy != null &&
+      !policies.includes(record.host_policy as NativeTrustPolicy))
+  )
+    throw new Error("Malformed native trust decision");
+  const config = record.host_policy_config;
+  let normalized: NativeTrustPolicyConfig | null = null;
+  if (config != null) {
+    if (
+      !isObject(config) ||
+      Object.keys(config).some(
+        (key) =>
+          ![
+            "expiry_days",
+            "rotation_grace_hours",
+            "threshold_count",
+            "allowed_networks",
+            "trusted_ca_fingerprints",
+          ].includes(key),
+      )
+    )
+      throw new Error("Malformed native trust policy configuration");
+    normalized = {
+      expiry_days:
+        boundedNativeInteger(config.expiry_days, 0, 0xffffffff) ?? null,
+      rotation_grace_hours:
+        boundedNativeInteger(config.rotation_grace_hours, 0, 0xffffffff) ??
+        null,
+      threshold_count:
+        boundedNativeInteger(config.threshold_count, 0, 0xffffffff) ?? null,
+      allowed_networks:
+        boundedNativeStrings(config.allowed_networks, 1024, 4096) ?? [],
+      trusted_ca_fingerprints:
+        boundedNativeStrings(config.trusted_ca_fingerprints, 1024, 8192) ?? [],
+    };
+  }
+  return {
+    userApproved: record.user_approved,
+    revoked: record.revoked === true,
+    trustExpires: boundedNativeString(record.trust_expires, 128) ?? null,
+    hostPolicy: (record.host_policy as NativeTrustPolicy | null) ?? null,
+    hostPolicyConfig: normalized,
+  };
+}
+
 function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
   if (
     !isObject(nativeRecord) ||
@@ -949,6 +1030,7 @@ function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
       type,
       identity: fromNativeIdentity(nativeRecord.identity),
       userApproved: nativeRecord.user_approved,
+      scopeDecision: nativeScopeDecision(nativeRecord),
       nickname: boundedNativeString(nativeRecord.nickname, MAX_NICKNAME_LENGTH),
       history: history.length > 0 ? history : undefined,
       revoked: nativeRecord.revoked === true,
@@ -1778,6 +1860,64 @@ export function getStoredIdentity(
   if (!hydrated) return undefined;
   const cached = cachedRecord(host, port, type, connectionId);
   return cached ? cloneRecord(cached.record) : undefined;
+}
+
+/** Native effective lookup; exact mutation helpers never use this fallback. */
+export async function getEffectiveStoredIdentity(
+  host: string,
+  port: number,
+  type: TrustRecordType,
+  connectionId?: string,
+): Promise<{ record: TrustRecord; connectionId?: string } | undefined> {
+  const generation = scopeGeneration;
+  await ensureTrustStoreReady();
+  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+  const databaseId = activeScope.databaseId;
+  const sequence = cacheReadSequence;
+  const assertCurrent = () => {
+    if (generation !== scopeGeneration || databaseId !== activeScope.databaseId)
+      throw new TrustScopeChangedError();
+    if (sequence !== cacheReadSequence) throw new TrustRefreshSupersededError();
+  };
+  try {
+    const native = await invokeTrustNative<NativeTrustRecord | null>(
+      "trust_get_effective_identity",
+      {
+        host: encodeNativeHost(host, port, connectionId),
+        recordType: type,
+        ...(databaseId ? { expectedDatabaseId: databaseId } : {}),
+      },
+    );
+    assertCurrent();
+    if (native === null) return undefined;
+    const mapped = mapNativeRecord(native);
+    const canonicalHost = (value: string) =>
+      new URL(`https://${formatHostPort(value, 443)}`).hostname
+        .toLowerCase()
+        .replace(/\.$/, "");
+    if (
+      (mapped.connectionId &&
+        mapped.connectionId !== normalizeConnectionId(connectionId)) ||
+      mapped.record.type !== type ||
+      mapped.record.port !== port ||
+      canonicalHost(mapped.record.hostname!) !== canonicalHost(host)
+    )
+      throw new Error(
+        "Native effective trust identity belongs to another scope",
+      );
+    return {
+      record: cloneRecord(mapped.record),
+      ...(mapped.connectionId ? { connectionId: mapped.connectionId } : {}),
+    };
+  } catch (error) {
+    assertCurrent();
+    if (
+      error instanceof TrustScopeChangedError ||
+      error instanceof TrustRefreshSupersededError
+    )
+      throw error;
+    throw markTrustStoreUnavailable();
+  }
 }
 
 export function getAllTrustRecords(connectionId?: string): TrustRecord[] {

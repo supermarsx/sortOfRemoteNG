@@ -1,6 +1,7 @@
 //! Native managed inner-database control plane. The renderer receives plaintext
 //! only for an unlocked database, never DEKs, KEKs, or vault secret material.
 use crate::database_files::{managed_commit, managed_snapshot, ManagedSnapshot};
+use crate::trust_store_commands as trust_reads;
 use codec::Zeroizing;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -35,6 +36,9 @@ pub fn build<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sy
         database_protection_load,
         database_protection_change,
         trust_migrate_legacy_database,
+        trust_reassign_reviewed_scope,
+        trust_reads::trust_get_effective_identity,
+        trust_reads::trust_verify_identity,
     ]
 }
 type VaultFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
@@ -233,42 +237,17 @@ pub async fn trust_migrate_legacy_database<R: Runtime>(
     if revision(&snapshot) != expected_security_revision {
         return Err("Database security changed; unlock and review migration again".into());
     }
-    let ids = if is_managed(&snapshot) {
-        if expected_data.is_some() || connection_ids.is_some() {
-            return Err(
-                "Managed trust migration derives scope from its native unlock session".into(),
-            );
-        }
-        let session = source_session_id
-            .as_deref()
-            .ok_or("Unlock this managed database before migration")?;
-        let profile = profile_binding(&root)?;
-        let scope = scope(
-            &profile,
-            &database_id,
-            &expected_security_revision,
-            window.label(),
-            &state,
-        );
-        let key = session_key(session, &scope)?;
-        let data = DatabaseEnvelope::parse(&snapshot.data, &database_id)?.open(&key)?;
-        let ids = migration_connection_ids(&data)?;
-        session_key(session, &scope)?;
-        ids
-    } else if snapshot.data.is_string() {
-        if source_session_id.is_some() || expected_data.as_ref() != Some(&snapshot.data) {
-            return Err(
-                "Legacy password migration requires its exact verified encrypted source snapshot"
-                    .into(),
-            );
-        }
-        connection_ids.ok_or("Unlock and verify the legacy database before migration")?
-    } else {
-        if source_session_id.is_some() || expected_data.is_some() || connection_ids.is_some() {
-            return Err("Plain database migration derives its scope natively".into());
-        }
-        migration_connection_ids(&snapshot.data)?
-    };
+    let ids = verified_trust_scope_ids(
+        &root,
+        &state,
+        window.label(),
+        &database_id,
+        &expected_security_revision,
+        &snapshot,
+        source_session_id.as_deref(),
+        expected_data.as_ref(),
+        connection_ids.as_deref(),
+    )?;
     let profile = profile_binding(&root)?;
     let access_scope = scope(
         &profile,
@@ -287,6 +266,112 @@ pub async fn trust_migrate_legacy_database<R: Runtime>(
         || {
             if let Some(session) = source_session_id.as_deref() {
                 session_key(session, &access_scope)?;
+            }
+            Ok(())
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verified_trust_scope_ids(
+    root: &Path,
+    state: &EncryptionState,
+    window: &str,
+    database_id: &str,
+    expected_security_revision: &str,
+    snapshot: &ManagedSnapshot,
+    source_session_id: Option<&str>,
+    expected_data: Option<&Value>,
+    connection_ids: Option<&[String]>,
+) -> Result<Vec<String>, String> {
+    if is_managed(snapshot) {
+        if expected_data.is_some() || connection_ids.is_some() {
+            return Err(
+                "Managed trust migration derives scope from its native unlock session".into(),
+            );
+        }
+        let session = source_session_id.ok_or("Unlock this managed database before migration")?;
+        let profile = profile_binding(root)?;
+        let scope = scope(
+            &profile,
+            database_id,
+            expected_security_revision,
+            window,
+            state,
+        );
+        let key = session_key(session, &scope)?;
+        let data = DatabaseEnvelope::parse(&snapshot.data, database_id)?.open(&key)?;
+        let ids = migration_connection_ids(&data)?;
+        session_key(session, &scope)?;
+        Ok(ids)
+    } else if snapshot.data.is_string() {
+        if source_session_id.is_some() || expected_data != Some(&snapshot.data) {
+            return Err(
+                "Legacy password migration requires its exact verified encrypted source snapshot"
+                    .into(),
+            );
+        }
+        Ok(connection_ids
+            .ok_or("Unlock and verify the legacy database before migration")?
+            .to_vec())
+    } else {
+        if source_session_id.is_some() || expected_data.is_some() || connection_ids.is_some() {
+            return Err("Plain database migration derives its scope natively".into());
+        }
+        migration_connection_ids(&snapshot.data)
+    }
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn trust_reassign_reviewed_scope<R: Runtime>(
+    window: WebviewWindow<R>,
+    state: State<'_, EncryptionState>,
+    database_id: String,
+    targets: Vec<sorng_storage::trust_store::ReviewedTrustScopeTarget>,
+    target_connection_id: Option<String>,
+    expected_security_revision: String,
+    source_session_id: Option<String>,
+    expected_data: Option<Value>,
+    connection_ids: Option<Vec<String>>,
+) -> Result<sorng_storage::trust_store::ReviewedTrustOutcome, String> {
+    let coordinator = sorng_encryption::settings_coordinator::lock().await;
+    let root = native_root(&window, &state)?;
+    let snapshot = managed_snapshot(&root, &state, &database_id).await?;
+    if revision(&snapshot) != expected_security_revision {
+        return Err("Database security changed; review trust scope again".into());
+    }
+    let ids = verified_trust_scope_ids(
+        &root,
+        &state,
+        window.label(),
+        &database_id,
+        &expected_security_revision,
+        &snapshot,
+        source_session_id.as_deref(),
+        expected_data.as_ref(),
+        connection_ids.as_deref(),
+    )?;
+    let profile = profile_binding(&root)?;
+    let access = scope(
+        &profile,
+        &database_id,
+        &expected_security_revision,
+        window.label(),
+        &state,
+    );
+    sorng_storage::trust_store::runtime()?.reassign_scope_with_coordinator_guard(
+        &root,
+        &database_id,
+        &expected_security_revision,
+        &snapshot.data,
+        &ids,
+        targets,
+        target_connection_id.as_deref(),
+        &coordinator,
+        || {
+            if let Some(session) = source_session_id.as_deref() {
+                session_key(session, &access)?;
             }
             Ok(())
         },

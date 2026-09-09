@@ -100,6 +100,19 @@ pub async fn trust_get_identity(
 }
 
 #[tauri::command]
+pub async fn trust_get_effective_identity(
+    state: tauri::State<'_, TrustStoreServiceState>,
+    host: String,
+    record_type: String,
+    expected_database_id: Option<String>,
+) -> Result<Option<TrustRecord>, String> {
+    let service = state.lock().await;
+    let mut svc = service.scoped_to_database(expected_database_id)?;
+    svc.reload_from_disk()?;
+    svc.get_effective_stored_identity(&host, &record_type)
+}
+
+#[tauri::command]
 pub async fn trust_get_all_records(
     state: tauri::State<'_, TrustStoreServiceState>,
     expected_database_id: Option<String>,

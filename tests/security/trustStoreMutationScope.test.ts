@@ -22,6 +22,7 @@ import {
   setTrustRecordTags,
   verifyIdentity,
   refreshTrustStoreRecords,
+  getEffectiveStoredIdentity,
 } from "../../src/utils/auth/trustStore";
 const identity = {
   kind: "tls",
@@ -57,6 +58,128 @@ beforeEach(() => {
   });
 });
 describe("queued trust mutation scope", () => {
+  it("preserves the full native decision snapshot and clones policy arrays for review", async () => {
+    await ensureTrustStoreReady();
+    const config = { threshold_count: 7, allowed_networks: ["10.0.0.0/8"] };
+    fixture.invoke.mockResolvedValueOnce({
+      host: "server:443",
+      record_type: "tls",
+      identity,
+      user_approved: false,
+      revoked: true,
+      history: [],
+      host_policy: "conditional-trust",
+      trust_expires: "2030-01-01T00:00:00Z",
+      host_policy_config: config,
+    });
+    const result = await getEffectiveStoredIdentity("server", 443, "tls");
+    config.allowed_networks.push("192.0.2.0/24");
+    expect(result?.record.scopeDecision).toEqual({
+      userApproved: false,
+      revoked: true,
+      trustExpires: "2030-01-01T00:00:00Z",
+      hostPolicy: "conditional-trust",
+      hostPolicyConfig: {
+        expiry_days: null,
+        rotation_grace_hours: null,
+        threshold_count: 7,
+        allowed_networks: ["10.0.0.0/8"],
+        trusted_ca_fingerprints: [],
+      },
+    });
+  });
+  it.each([
+    { host_policy: "unknown-policy" },
+    { host_policy_config: { threshold_count: -1 } },
+    { host_policy_config: { allowed_networks: [123] } },
+    { host_policy_config: { unrecognized_security_setting: true } },
+    { revoked: "false" },
+  ])(
+    "rejects malformed native decision metadata %# instead of weakening its review snapshot",
+    async (invalid) => {
+      await ensureTrustStoreReady();
+      fixture.invoke.mockResolvedValueOnce({
+        host: "server:443",
+        record_type: "tls",
+        identity,
+        user_approved: true,
+        history: [],
+        ...invalid,
+      });
+      await expect(
+        getEffectiveStoredIdentity("server", 443, "tls"),
+      ).rejects.toThrow("unavailable");
+    },
+  );
+  it.each([
+    ["Server.", "server:443"],
+    ["2001:0DB8:0:0:0:0:0:1", "[2001:db8::1]:443"],
+    ["[2001:db8::1]", "[2001:0db8:0:0:0:0:0:1]:443"],
+  ])(
+    "accepts native equivalent endpoint %s and exposes its actual database-wide scope without cache events",
+    async (host, stored) => {
+      await ensureTrustStoreReady();
+      const listener = vi.fn();
+      window.addEventListener("trustStoreChanged", listener);
+      fixture.invoke.mockResolvedValueOnce({
+        host: stored,
+        record_type: "tls",
+        identity,
+        user_approved: true,
+        history: [],
+      });
+      const effective = await getEffectiveStoredIdentity(
+        host,
+        443,
+        "tls",
+        "saved",
+      );
+      expect(effective?.record.identity.fingerprint).toBe("REVIEWED-FP");
+      expect(effective).not.toHaveProperty("connectionId");
+      expect(listener).not.toHaveBeenCalled();
+      window.removeEventListener("trustStoreChanged", listener);
+    },
+  );
+  it("does not substitute cached identities when native reports unknown or returns another connection", async () => {
+    await ensureTrustStoreReady();
+    fixture.invoke.mockResolvedValueOnce(null);
+    await expect(
+      getEffectiveStoredIdentity("server", 443, "tls", "saved"),
+    ).resolves.toBeUndefined();
+    fixture.invoke.mockResolvedValueOnce({
+      host: "@sorng/connection/v1/other/server/443",
+      record_type: "tls",
+      identity,
+      user_approved: true,
+      history: [],
+    });
+    await expect(
+      getEffectiveStoredIdentity("server", 443, "tls", "saved"),
+    ).rejects.toThrow("unavailable");
+  });
+  it("rejects an effective display read after a database switch", async () => {
+    await ensureTrustStoreReady();
+    let release!: (value: unknown) => void;
+    fixture.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = getEffectiveStoredIdentity("server", 443, "tls", "saved");
+    const rejected = expect(pending).rejects.toThrow("Trust database changed");
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    fixture.changed?.({
+      database: null,
+      databaseId: null,
+      previousDatabaseId: "db-a",
+      reason: "close",
+      connectionIds: [],
+      trustActivation: Promise.resolve(),
+    });
+    release(null);
+    await rejected;
+  });
   it("rejects a pre-Forget result superseded by a fresh records read without clearing that read", async () => {
     await ensureTrustStoreReady();
     let release!: (value: unknown) => void;

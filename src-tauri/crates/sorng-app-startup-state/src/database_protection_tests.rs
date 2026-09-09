@@ -35,7 +35,7 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         root.path(),
     ));
     std::fs::create_dir(root.path().join("databases")).unwrap();
-    let data = json!({"connections":[],"settings":{"fixture":true}});
+    let data = json!({"connections":[{"id":"saved-connection"}],"settings":{"fixture":true}});
     sorng_storage::sdbf::safe_write(
         &root.path().join("databases/index.json"),
         &serde_json::to_vec(
@@ -81,6 +81,7 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
     )
     .unwrap();
     app.manage(state);
+    app.manage(sorng_storage::trust_store::TrustStoreService::shared());
     let main = tauri::WebviewWindowBuilder::new(&app, "db-main", Default::default())
         .build()
         .unwrap();
@@ -125,6 +126,56 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         trust_runtime.active_database_id().as_deref(),
         Some("unrelated-active")
     );
+    let scope_command = "trust_reassign_reviewed_scope";
+    let effective_command = "trust_get_effective_identity";
+    let release_command = "database_protection_release_session";
+    for command in [scope_command, effective_command, release_command] {
+        assert!(sorng_commands_core::is_command(command));
+    }
+    trust_runtime.set_active(Some("db".into()), None).unwrap();
+    let trust_identity = json!({"kind":"tls","fingerprint":"fixture-fp","first_seen":"2026-01-01","last_seen":"2026-01-01"});
+    sorng_storage::trust_store::SyncTrustStore::shared()
+        .trust_identity_blocking(
+            "server:443".into(),
+            "https".into(),
+            serde_json::from_value(trust_identity.clone()).unwrap(),
+            true,
+        )
+        .unwrap();
+    let decision = json!({"userApproved":true,"revoked":false,"trustExpires":null,"hostPolicy":null,"hostPolicyConfig":null});
+    let global_targets = json!([{"host":"server:443","recordType":"https","fingerprint":"fixture-fp","expectedDecision":decision}]);
+    let scoped_host = "@sorng/connection/v1/saved-connection/server/443";
+    let mut stale_decision = global_targets.clone();
+    stale_decision[0]["expectedDecision"]["revoked"] = json!(true);
+    assert!(invoke(&main, scope_command, json!({"databaseId":"db","expectedSecurityRevision":"r0","targets":stale_decision,"targetConnectionId":"saved-connection"})).unwrap_err().as_str().unwrap().contains("policy changed"));
+    let mut no_decision = global_targets.clone();
+    no_decision[0]
+        .as_object_mut()
+        .unwrap()
+        .remove("expectedDecision");
+    assert!(invoke(&main, scope_command, json!({"databaseId":"db","expectedSecurityRevision":"r0","targets":no_decision,"targetConnectionId":"saved-connection"})).is_err());
+    assert!(invoke(&main,scope_command,json!({"databaseId":"db","expectedSecurityRevision":"r0","targets":global_targets,"targetConnectionId":"missing"})).is_err());
+    assert_eq!(invoke(&main,scope_command,json!({"databaseId":"db","expectedSecurityRevision":"r0","targets":global_targets,"targetConnectionId":"saved-connection"})).unwrap()["updated"],1);
+    let effective = json!({"host":scoped_host,"recordType":"https","expectedDatabaseId":"db"});
+    assert_eq!(
+        invoke(&main, effective_command, effective.clone()).unwrap()["host"],
+        scoped_host
+    );
+    assert!(invoke(
+        &main,
+        effective_command,
+        json!({"host":scoped_host,"recordType":"https","expectedDatabaseId":"different"})
+    )
+    .is_err());
+    assert_eq!(invoke(&main,scope_command,json!({"databaseId":"db","expectedSecurityRevision":"r0","targets":[{"host":scoped_host,"recordType":"https","fingerprint":"fixture-fp","expectedDecision":decision}],"targetConnectionId":null})).unwrap()["updated"],1);
+    assert_eq!(
+        invoke(&main, effective_command, effective.clone()).unwrap()["host"],
+        "server:443"
+    );
+    assert_eq!(invoke(&main,"trust_verify_identity",json!({"host":scoped_host,"recordType":"https","identity":trust_identity,"expectedDatabaseId":"db"})).unwrap()["status"],"trusted");
+    trust_runtime
+        .set_active(Some("unrelated-active".into()), None)
+        .unwrap();
     let changed = invoke(&main,names[5],json!({"databaseId":"db","expectedSecurityRevision":"r0",
         "expectedData":data,"legacyVerifiedData":data,"target":{"dataCipher":"chacha20-poly1305",
         "keepSlotIds":[],"newSlots":[{"type":"password","label":"Portable","password":"fixture-only",
@@ -152,6 +203,16 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         trust_runtime.active_database_id().as_deref(),
         Some("unrelated-active")
     );
+    trust_runtime.set_active(Some("db".into()), None).unwrap();
+    let managed_scope = json!({"databaseId":"db","expectedSecurityRevision":opened["securityRevision"],"sourceSessionId":opened["sessionId"],"targets":global_targets,"targetConnectionId":"saved-connection"});
+    assert!(invoke(&main, scope_command, managed_scope.clone()).is_err());
+    assert_eq!(
+        invoke(&other, scope_command, managed_scope.clone()).unwrap()["updated"],
+        1
+    );
+    trust_runtime
+        .set_active(Some("unrelated-active".into()), None)
+        .unwrap();
     let request = json!({"databaseId":"db","sessionId":opened["sessionId"],
         "expectedSecurityRevision":opened["securityRevision"],"data":{"connections":[{"id":"saved"}]}});
     assert!(invoke(&main, names[4], request.clone()).is_err());
@@ -164,6 +225,24 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
     assert_eq!(reloaded["data"], request["data"]);
     assert_eq!(reloaded["sessionId"], opened["sessionId"]);
     assert_eq!(reloaded["sessionExpiresAt"], opened["sessionExpiresAt"]);
+    let main_unlocked = invoke(
+        &main,
+        names[2],
+        json!({"databaseId":"db","slotId":protected["slots"][0]["id"],"password":"fixture-only"}),
+    )
+    .unwrap();
+    let release_request = json!({"databaseId":"db","sessionId":main_unlocked["sessionId"]});
+    assert!(invoke(&other, release_command, release_request.clone()).is_err());
+    assert_eq!(
+        invoke(&main, release_command, release_request.clone()).unwrap()["released"],
+        true
+    );
+    assert_eq!(
+        invoke(&main, release_command, release_request).unwrap()["released"],
+        false
+    );
+    assert!(invoke(&main,names[6],json!({"databaseId":"db","sessionId":main_unlocked["sessionId"],"expectedSecurityRevision":main_unlocked["securityRevision"]})).is_err());
+    assert!(invoke(&other, names[6], load_request.clone()).is_ok());
     let locked = invoke(&main, names[3], json!({"databaseId":"db"})).unwrap();
     assert_eq!(locked["locked"], true);
     assert_eq!(locked["notificationPending"], false);
@@ -171,6 +250,7 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
     assert!(invoke(&other, names[4], request).is_err());
     assert!(invoke(&other, names[6], load_request).is_err());
     assert!(invoke(&other, migrate_command, managed_migration).is_err());
+    assert!(invoke(&other, scope_command, managed_scope).is_err());
     // Legacy password path carries the exact previously verified encrypted
     // representation, never a renderer-supplied plaintext copy to persist.
     sorng_storage::sdbf::safe_write(
