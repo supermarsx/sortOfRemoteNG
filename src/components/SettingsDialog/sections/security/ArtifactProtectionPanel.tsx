@@ -13,6 +13,7 @@ import {
 import ConfirmDialog from "../../../ui/dialogs/ConfirmDialog";
 import { useArtifactProtection } from "../../../../hooks/settings/useArtifactProtection";
 import { ARTIFACT_LABELS } from "../../../../types/encryption/encryption";
+import { formatBytes } from "../../../../utils/core/formatters";
 import {
   isMutableArtifactId,
   type ArtifactId,
@@ -23,6 +24,7 @@ import {
 
 const button =
   "inline-flex w-fit max-w-full items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
+const iconButton = `${button} h-8 min-w-8 !p-0`;
 const name = (id: ArtifactId) => ARTIFACT_LABELS[`sorng-v1::${id}`] ?? id;
 const stateLabels = {
   encrypted: "Encrypted",
@@ -293,8 +295,13 @@ export default function ArtifactProtectionPanel({
                                   {row.plaintextFiles} plaintext ·{" "}
                                   {row.unverifiedFiles} unverified
                                 </span>
-                                <span className="block text-[var(--color-textMuted)]">
-                                  {row.bytes.toLocaleString()} bytes inspected
+                                <span
+                                  tabIndex={0}
+                                  data-tooltip={`${row.bytes.toLocaleString()} bytes inspected`}
+                                  aria-label={`${name(row.id)}: ${row.bytes.toLocaleString()} bytes inspected`}
+                                  className="block w-fit rounded-sm text-[var(--color-textMuted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                >
+                                  {formatBytes(row.bytes)} inspected
                                 </span>
                               </td>
                               <td className="p-2 align-top">
@@ -309,9 +316,10 @@ export default function ArtifactProtectionPanel({
                                   <div className="flex flex-wrap gap-1.5">
                                     <button
                                       type="button"
-                                      className={button}
+                                      className={iconButton}
                                       disabled={disabled}
                                       aria-label={`Encrypt and enable ${name(row.id)}`}
+                                      data-tooltip={`Encrypt and enable ${name(row.id)}`}
                                       onClick={() =>
                                         isMutableArtifactId(row.id) &&
                                         inspect([row.id], "encrypted")
@@ -321,13 +329,13 @@ export default function ArtifactProtectionPanel({
                                         aria-hidden="true"
                                         className="h-3.5 w-3.5"
                                       />
-                                      Encrypt & enable
                                     </button>
                                     <button
                                       type="button"
-                                      className={`${button} text-warning`}
+                                      className={`${iconButton} text-warning`}
                                       disabled={disabled}
                                       aria-label={`Decrypt and disable ${name(row.id)}`}
+                                      data-tooltip={`Decrypt and disable ${name(row.id)}`}
                                       onClick={() =>
                                         isMutableArtifactId(row.id) &&
                                         inspect([row.id], "plaintext")
@@ -337,7 +345,6 @@ export default function ArtifactProtectionPanel({
                                         aria-hidden="true"
                                         className="h-3.5 w-3.5"
                                       />
-                                      Decrypt & disable
                                     </button>
                                   </div>
                                 ) : (
@@ -355,38 +362,70 @@ export default function ArtifactProtectionPanel({
                     </table>
                   </div>
                   <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      className={button}
-                      disabled={disabled || !chosen.length}
-                      onClick={() => inspect(chosen, "encrypted")}
+                    <div
+                      role="group"
+                      aria-label="Selected artifact actions"
+                      className="flex items-center gap-1.5"
                     >
-                      Encrypt selected
-                    </button>
-                    <button
-                      type="button"
-                      className={button}
-                      disabled={disabled || !chosen.length}
-                      onClick={() => inspect(chosen, "plaintext")}
+                      <span className="mr-1 text-xs text-[var(--color-textMuted)]">
+                        Selected
+                      </span>
+                      <button
+                        type="button"
+                        className={iconButton}
+                        aria-label="Encrypt selected"
+                        data-tooltip="Encrypt and enable selected artifact families"
+                        disabled={disabled || !chosen.length}
+                        onClick={() => inspect(chosen, "encrypted")}
+                      >
+                        <ShieldCheck
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        className={`${iconButton} text-warning`}
+                        aria-label="Decrypt selected"
+                        data-tooltip="Decrypt and disable selected artifact families"
+                        disabled={disabled || !chosen.length}
+                        onClick={() => inspect(chosen, "plaintext")}
+                      >
+                        <ShieldOff aria-hidden="true" className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div
+                      role="group"
+                      aria-label="All supported artifact actions"
+                      className="flex items-center gap-1.5"
                     >
-                      Decrypt selected
-                    </button>
-                    <button
-                      type="button"
-                      className={button}
-                      disabled={disabled || !allIds.length}
-                      onClick={() => inspect(allIds, "encrypted")}
-                    >
-                      Encrypt all supported
-                    </button>
-                    <button
-                      type="button"
-                      className={button}
-                      disabled={disabled || !allIds.length}
-                      onClick={() => inspect(allIds, "plaintext")}
-                    >
-                      Decrypt all supported
-                    </button>
+                      <span className="mr-1 text-xs text-[var(--color-textMuted)]">
+                        All supported
+                      </span>
+                      <button
+                        type="button"
+                        className={iconButton}
+                        aria-label="Encrypt all supported"
+                        data-tooltip="Encrypt and enable all supported artifact families"
+                        disabled={disabled || !allIds.length}
+                        onClick={() => inspect(allIds, "encrypted")}
+                      >
+                        <ShieldCheck
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        className={`${iconButton} text-warning`}
+                        aria-label="Decrypt all supported"
+                        data-tooltip="Decrypt and disable all supported artifact families"
+                        disabled={disabled || !allIds.length}
+                        onClick={() => inspect(allIds, "plaintext")}
+                      >
+                        <ShieldOff aria-hidden="true" className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-[var(--color-textMuted)]">
                     The recovery key ring and artifact policy are protected
@@ -490,7 +529,7 @@ export default function ArtifactProtectionPanel({
             onConfirm={() => void apply()}
             message={
               preview
-                ? `${preview.artifacts.map((row) => name(row.id)).join(", ")}: ${preview.totalFiles} managed files, ${preview.totalBytes.toLocaleString()} bytes. ${plaintext ? "Existing files and future writes become plaintext at the global artifact layer. Separate database passwords remain unchanged. Master and retained recovery keys are not deleted; external copies remain as they were." : "Existing managed files will be encrypted and future writes will use encryption under the global master key. Separate database passwords are unchanged."} The preview expires after five minutes and is revalidated before applying. Unsupported, remote, offline and unmanaged copies are excluded. Earlier families may stay committed if a later family fails.`
+                ? `${preview.artifacts.map((row) => name(row.id)).join(", ")}: ${preview.totalFiles} managed files, ${formatBytes(preview.totalBytes)}. ${plaintext ? "Existing files and future writes become plaintext at the global artifact layer. Separate database passwords remain unchanged. Master and retained recovery keys are not deleted; external copies remain as they were." : "Existing managed files will be encrypted and future writes will use encryption under the global master key. Separate database passwords are unchanged."} The preview expires after five minutes and is revalidated before applying. Unsupported, remote, offline and unmanaged copies are excluded. Earlier families may stay committed if a later family fails.`
                 : ""
             }
           />

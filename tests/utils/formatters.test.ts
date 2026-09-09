@@ -25,6 +25,20 @@ describe("formatDuration", () => {
 });
 
 describe("formatBytes", () => {
+  it.each([
+    [0, "0 B"],
+    [512, "512 B"],
+    [1536, "1.5 KB"],
+    [1024 ** 2, "1 MB"],
+    [1024 ** 3, "1 GB"],
+    [1024 ** 4, "1 TB"],
+    [1.5 * 1024 ** 4, "1.5 TB"],
+    [1024 ** 5, "1 PB"],
+    [1024 ** 6, "1024 PB"],
+  ])("formats %s bytes as %s with a bounded unit", (bytes, expected) => {
+    expect(formatBytes(bytes)).toBe(expected);
+  });
+
   it("formats zero bytes", () => {
     expect(formatBytes(0)).toContain("0");
   });

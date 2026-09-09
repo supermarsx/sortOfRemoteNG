@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ArtifactProtectionPanel from "../../src/components/SettingsDialog/sections/security/ArtifactProtectionPanel";
 import { ARTIFACT_LABELS } from "../../src/types/encryption/encryption";
+import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import {
   MUTABLE_ARTIFACT_IDS,
   type ArtifactPolicyPreview,
@@ -141,6 +142,56 @@ beforeEach(() => {
 });
 
 describe("ArtifactProtectionPanel", () => {
+  it("uses icon-only scoped actions with real hover/focus tooltips and readable inspected sizes", async () => {
+    state.artifacts[0] = row("connections", { bytes: 1536 });
+    function WithTooltips() {
+      useTooltipSystem();
+      return <ArtifactProtectionPanel />;
+    }
+    render(<WithTooltips />);
+    await ready();
+    const actions = screen.getAllByRole("button", {
+      name: /^(Encrypt|Decrypt) (and|selected|all)/,
+    });
+    expect(actions).toHaveLength(MUTABLE_ARTIFACT_IDS.length * 2 + 4);
+    for (const action of actions) {
+      expect(action.textContent).toBe("");
+      expect(action.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+      expect(action).toHaveAttribute("data-tooltip");
+    }
+    expect(
+      screen.getByRole("group", { name: "Selected artifact actions" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "All supported artifact actions" }),
+    ).toBeInTheDocument();
+    const action = screen.getByRole("button", {
+      name: "Encrypt all supported",
+    });
+    fireEvent.mouseOver(action);
+    const tooltip = document.querySelector(".app-tooltip")!;
+    expect(tooltip).toBeVisible();
+    expect(tooltip).toHaveTextContent(
+      "Encrypt and enable all supported artifact families",
+    );
+    fireEvent.mouseOut(action);
+    const amount = screen.getByText("1.5 KB inspected");
+    const exact = `${(1536).toLocaleString()} bytes inspected`;
+    expect(amount).toHaveAttribute("tabindex", "0");
+    expect(amount).toHaveAttribute("data-tooltip", exact);
+    expect(amount).toHaveAccessibleName(expect.stringContaining(exact));
+    fireEvent.focusIn(amount);
+    expect(tooltip).toBeVisible();
+    expect(tooltip).toHaveTextContent(exact);
+    fireEvent.focusOut(amount);
+    expect(tooltip).not.toBeVisible();
+    const dialog = await preview("Encrypt all supported");
+    expect(dialog).toHaveTextContent("1.1 KB");
+    expect(
+      within(dialog).getByRole("button", { name: "Encrypt & enable" }),
+    ).toHaveTextContent("Encrypt & enable");
+  });
+
   it("shows inspected states, physical scope, future-write policy and friendly protected names without polling", async () => {
     state.artifacts[0] = row("connections", {
       diskState: "mixed",
