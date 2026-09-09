@@ -450,6 +450,10 @@ pub enum UpstreamAuthMode {
     #[default]
     #[serde(rename = "basic")]
     Basic,
+    /// Form-only or manual application login: never inject proxy credentials
+    /// into Authorization. Opted-in form fill may still consume them once.
+    #[serde(rename = "none")]
+    None,
     /// pfSense REST API v1 expects the non-standard exact header value
     /// `Authorization: <client-id> <client-secret>`.
     #[serde(rename = "pfSenseV1")]
@@ -459,7 +463,7 @@ pub enum UpstreamAuthMode {
 impl UpstreamAuthMode {
     fn authorization_value(self, username: &str, password: &str) -> Option<String> {
         match self {
-            Self::Basic => None,
+            Self::Basic | Self::None => None,
             Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
                 Some(format!("{username} {password}"))
             }
@@ -473,8 +477,30 @@ impl UpstreamAuthMode {
     pub fn manager_visible_username(self, username: &str) -> String {
         match self {
             Self::Basic => username.to_string(),
-            Self::PfSenseV1 => String::new(),
+            Self::PfSenseV1 | Self::None => String::new(),
         }
+    }
+
+    fn apply_credentials(
+        self,
+        request: reqwest::RequestBuilder,
+        username: &str,
+        password: &str,
+    ) -> reqwest::RequestBuilder {
+        match self {
+            Self::Basic if !username.is_empty() || !password.is_empty() => {
+                request.basic_auth(username, Some(password))
+            }
+            Self::PfSenseV1 => match self.authorization_value(username, password) {
+                Some(value) => request.header(reqwest::header::AUTHORIZATION, value),
+                None => request,
+            },
+            Self::Basic | Self::None => request,
+        }
+    }
+
+    fn accepts_basic_challenge(self) -> bool {
+        self != Self::None
     }
 }
 
@@ -488,8 +514,8 @@ pub struct BasicAuthProxyConfig {
     /// Password for basic authentication
     pub password: String,
     /// Credential format injected into upstream requests. Defaults to HTTP
-    /// Basic when omitted; the only alternate mode is the pfSense REST API v1
-    /// `Authorization: <client-id> <client-secret>` contract.
+    /// Basic when omitted. `none` disables automatic Authorization; pfSense
+    /// REST API v1 uses `Authorization: <client-id> <client-secret>`.
     #[serde(default)]
     pub upstream_auth_mode: UpstreamAuthMode,
     /// Optional app-level HTTP(S) proxy used by the mediator for outbound
@@ -560,7 +586,127 @@ pub struct HttpAutoLoginSelectors {
 
 #[cfg(test)]
 mod upstream_auth_mode_tests {
-    use super::{BasicAuthProxyConfig, UpstreamAuthMode};
+    use super::{
+        collect_upstream_headers, permits_upstream_retry, proxy_request_headers_are_authorized,
+        BasicAuthProxyConfig, UpstreamAuthMode,
+    };
+
+    #[test]
+    fn incoming_application_authorization_survives_only_none_mode_pipeline() {
+        let origin = "http://p0123456789abcdef0123456789abcdef.localhost:9000";
+        let mut incoming = axum::http::HeaderMap::new();
+        for (name, value) in [
+            ("host", "p0123456789abcdef0123456789abcdef.localhost:9000"),
+            ("origin", origin),
+            ("authorization", "Bearer fixture-session"),
+            ("proxy-authorization", "Basic never-forward"),
+            ("cookie", "sid=fixture"),
+        ] {
+            incoming.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        assert!(proxy_request_headers_are_authorized(
+            &incoming,
+            "p0123456789abcdef0123456789abcdef.localhost:9000",
+            origin
+        ));
+        for (mode, expected) in [
+            (UpstreamAuthMode::None, "Bearer fixture-session"),
+            (UpstreamAuthMode::Basic, "Basic YWRtaW46c2VjcmV0"),
+            (UpstreamAuthMode::PfSenseV1, "admin secret"),
+        ] {
+            let headers = collect_upstream_headers(&incoming, mode, origin, "https://device.test");
+            let mut request = mode.apply_credentials(
+                reqwest::Client::new().get("https://device.test/api"),
+                "admin",
+                "secret",
+            );
+            for (name, value) in headers {
+                request = request.header(&name, &value);
+            }
+            let request = request.build().unwrap();
+            assert_eq!(request.headers()[reqwest::header::AUTHORIZATION], expected);
+            assert_eq!(
+                request.headers()[reqwest::header::ORIGIN],
+                "https://device.test"
+            );
+            assert_eq!(request.headers()[reqwest::header::COOKIE], "sid=fixture");
+            assert!(!request
+                .headers()
+                .contains_key(reqwest::header::PROXY_AUTHORIZATION));
+            assert!(!request.headers().contains_key(reqwest::header::HOST));
+        }
+        incoming.insert(
+            axum::http::header::ORIGIN,
+            "https://untrusted.test".parse().unwrap(),
+        );
+        assert!(!proxy_request_headers_are_authorized(
+            &incoming,
+            "p0123456789abcdef0123456789abcdef.localhost:9000",
+            origin
+        ));
+    }
+
+    #[test]
+    fn origin_is_serialized_without_a_path_while_referer_remains_a_url() {
+        let proxy_origin = "http://p0123456789abcdef0123456789abcdef.localhost:9000";
+        let authority = "p0123456789abcdef0123456789abcdef.localhost:9000";
+        let mut incoming = axum::http::HeaderMap::new();
+        incoming.insert(axum::http::header::HOST, authority.parse().unwrap());
+        incoming.insert(axum::http::header::ORIGIN, proxy_origin.parse().unwrap());
+        incoming.insert(
+            axum::http::header::REFERER,
+            format!("{proxy_origin}/login").parse().unwrap(),
+        );
+        for target_origin in [
+            "http://device.test",
+            "https://device.test",
+            "https://device.test:8443",
+            "http://[2001:db8::1]:8080",
+        ] {
+            assert!(proxy_request_headers_are_authorized(
+                &incoming,
+                authority,
+                proxy_origin
+            ));
+            let forwarded: std::collections::HashMap<_, _> = collect_upstream_headers(
+                &incoming,
+                UpstreamAuthMode::None,
+                proxy_origin,
+                target_origin,
+            )
+            .into_iter()
+            .collect();
+            assert_eq!(forwarded["origin"], target_origin);
+            assert_eq!(forwarded["referer"], format!("{target_origin}/"));
+        }
+        for invalid in [
+            format!("{proxy_origin}/"),
+            format!("{proxy_origin}.attacker.test"),
+            "https://foreign.test".to_string(),
+        ] {
+            incoming.insert(axum::http::header::ORIGIN, invalid.parse().unwrap());
+            assert!(!proxy_request_headers_are_authorized(
+                &incoming,
+                authority,
+                proxy_origin
+            ));
+        }
+    }
+
+    #[test]
+    fn upstream_retry_never_replays_login_posts_or_other_mutations() {
+        for method in ["GET", "HEAD", "OPTIONS"] {
+            assert!(permits_upstream_retry(&method.parse().unwrap()));
+        }
+        for method in [
+            "POST", "PUT", "PATCH", "DELETE", "CONNECT", "TRACE", "CUSTOM",
+        ] {
+            assert!(!permits_upstream_retry(&method.parse().unwrap()));
+        }
+    }
 
     #[test]
     fn omitted_mode_remains_basic_and_unknown_modes_fail_closed() {
@@ -592,6 +738,77 @@ mod upstream_auth_mode_tests {
         );
         assert_eq!(serde_json::to_string(&mode).unwrap(), r#""pfSenseV1""#);
         assert_eq!(mode.manager_visible_username("api-key-secret"), "");
+    }
+
+    #[test]
+    fn explicit_none_keeps_form_credentials_out_of_authorization_and_status() {
+        let config: BasicAuthProxyConfig = serde_json::from_value(serde_json::json!({
+            "target_url": "https://device.test/", "username": "form-user",
+            "password": "form-secret", "upstream_auth_mode": "none", "http_auto_login": true
+        }))
+        .unwrap();
+        assert_eq!(config.upstream_auth_mode, UpstreamAuthMode::None);
+        assert_eq!(
+            serde_json::to_string(&config.upstream_auth_mode).unwrap(),
+            r#""none""#
+        );
+        assert!(config.http_auto_login);
+        assert_eq!(config.password, "form-secret");
+        let request = config
+            .upstream_auth_mode
+            .apply_credentials(
+                reqwest::Client::new().get("https://device.test/login"),
+                &config.username,
+                &config.password,
+            )
+            .build()
+            .unwrap();
+        assert!(!request
+            .headers()
+            .contains_key(reqwest::header::AUTHORIZATION));
+        assert_eq!(
+            config
+                .upstream_auth_mode
+                .manager_visible_username(&config.username),
+            ""
+        );
+        assert!(!config.upstream_auth_mode.accepts_basic_challenge());
+    }
+
+    #[test]
+    fn credential_application_preserves_basic_and_pfsense_contracts() {
+        let client = reqwest::Client::new();
+        let basic = UpstreamAuthMode::Basic
+            .apply_credentials(client.get("https://device.test/"), "admin", "secret")
+            .build()
+            .unwrap();
+        assert_eq!(
+            basic.headers()[reqwest::header::AUTHORIZATION],
+            "Basic YWRtaW46c2VjcmV0"
+        );
+        let api = UpstreamAuthMode::PfSenseV1
+            .apply_credentials(client.get("https://device.test/"), "id", "secret")
+            .build()
+            .unwrap();
+        assert_eq!(api.headers()[reqwest::header::AUTHORIZATION], "id secret");
+        assert!(UpstreamAuthMode::Basic.accepts_basic_challenge());
+        assert!(UpstreamAuthMode::PfSenseV1.accepts_basic_challenge());
+        // None suppresses proxy injection, not an application's own explicit
+        // same-origin Authorization request (e.g. a web app's bearer token).
+        let own = UpstreamAuthMode::None
+            .apply_credentials(
+                client
+                    .get("https://device.test/")
+                    .header(reqwest::header::AUTHORIZATION, "Bearer fixture"),
+                "admin",
+                "secret",
+            )
+            .build()
+            .unwrap();
+        assert_eq!(
+            own.headers()[reqwest::header::AUTHORIZATION],
+            "Bearer fixture"
+        );
     }
 }
 
@@ -883,6 +1100,49 @@ fn proxy_request_headers_are_authorized(
         .unwrap_or(true)
 }
 
+/// Retain a web application's own bearer/session Authorization only when the
+/// proxy is explicitly not supplying credentials. Proxy credentials and the
+/// private loopback authority must never be forwarded as request headers.
+fn collect_upstream_headers(
+    incoming: &axum::http::HeaderMap,
+    mode: UpstreamAuthMode,
+    proxy_origin: &str,
+    target_origin: &str,
+) -> Vec<(String, String)> {
+    let mut forwarded = Vec::new();
+    for (key, value) in incoming {
+        let name = key.as_str();
+        if (name == "authorization" && mode != UpstreamAuthMode::None)
+            || matches!(
+                name,
+                "host" | "connection" | "proxy-authorization" | "transfer-encoding"
+            )
+        {
+            continue;
+        }
+        if let Ok(value) = value.to_str() {
+            // RFC 6454 Origin is a serialized origin, not a URL with a path.
+            if name == "origin" && value == proxy_origin {
+                forwarded.push((name.to_string(), target_origin.to_string()));
+            } else if name == "referer"
+                && (value == proxy_origin || value.starts_with(&format!("{proxy_origin}/")))
+            {
+                forwarded.push((name.to_string(), format!("{target_origin}/")));
+            } else {
+                forwarded.push((name.to_string(), value.to_string()));
+            }
+        }
+    }
+    forwarded
+}
+
+fn permits_upstream_retry(method: &axum::http::Method) -> bool {
+    matches!(
+        *method,
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    )
+}
+
 /// Reject requests that do not know this session's random loopback host before
 /// auth routes, auto-login routes, or the upstream fallback can run.
 pub async fn enforce_proxy_access(
@@ -961,9 +1221,9 @@ mod proxy_access_guard_tests {
 
 /// Axum fallback handler — proxies every request to the target server.
 ///
-/// Includes one automatic retry for transient connection errors (connection
-/// reset, pool errors, timeouts on idle connections) that commonly occur when
-/// the upstream server silently closes keep-alive connections.
+/// Safe read methods allow one automatic retry for transient connection errors
+/// (connection reset, pool errors, timeouts on idle connections). Login POSTs
+/// and other mutations are never automatically replayed.
 pub async fn axum_proxy_handler(
     axum::extract::State(state): axum::extract::State<Arc<AxumProxyState>>,
     req: axum::extract::Request,
@@ -996,35 +1256,12 @@ pub async fn axum_proxy_handler(
         _ => reqwest::Method::GET,
     };
 
-    // Collect request headers for potential retry.
-    let mut fwd_headers: Vec<(String, String)> = Vec::new();
-    for (key, value) in req.headers() {
-        let k = key.as_str().to_lowercase();
-        if k == "authorization"
-            || k == "host"
-            || k == "connection"
-            || k == "proxy-authorization"
-            || k == "transfer-encoding"
-        {
-            continue;
-        }
-        // Rewrite Referer/Origin that point to this authenticated local proxy
-        // back to the target. The random proxy authority is never forwarded.
-        if k == "referer" || k == "origin" {
-            if let Ok(v) = value.to_str() {
-                if v == state.proxy_origin || v.starts_with(&format!("{}/", state.proxy_origin)) {
-                    fwd_headers.push((
-                        key.as_str().to_string(),
-                        format!("{}/", state.target_origin),
-                    ));
-                    continue;
-                }
-            }
-        }
-        if let Ok(v) = value.to_str() {
-            fwd_headers.push((key.as_str().to_string(), v.to_string()));
-        }
-    }
+    let fwd_headers = collect_upstream_headers(
+        req.headers(),
+        state.upstream_auth_mode,
+        &state.proxy_origin,
+        &state.target_origin,
+    );
 
     // Forward request body.
     let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
@@ -1070,17 +1307,9 @@ pub async fn axum_proxy_handler(
             let p = state.password.read().map(|g| g.clone()).unwrap_or_default();
             (u, p)
         };
-        match state.upstream_auth_mode {
-            UpstreamAuthMode::Basic if !user.is_empty() || !pass.is_empty() => {
-                upstream = upstream.basic_auth(&user, Some(&pass));
-            }
-            UpstreamAuthMode::PfSenseV1 => {
-                if let Some(value) = state.upstream_auth_mode.authorization_value(&user, &pass) {
-                    upstream = upstream.header(reqwest::header::AUTHORIZATION, value);
-                }
-            }
-            UpstreamAuthMode::Basic => {}
-        }
+        upstream = state
+            .upstream_auth_mode
+            .apply_credentials(upstream, &user, &pass);
         for (k, v) in headers {
             upstream = upstream.header(k.as_str(), v.as_str());
         }
@@ -1090,7 +1319,8 @@ pub async fn axum_proxy_handler(
         upstream.send().await
     }
 
-    // Try once, and retry on transient failures.
+    // Only safe reads may retry. A timed-out login POST may already have been
+    // processed upstream; repeating it could submit credentials twice.
     let req_start = std::time::Instant::now();
     let result = match send_upstream(
         &state,
@@ -1102,7 +1332,7 @@ pub async fn axum_proxy_handler(
     .await
     {
         Ok(resp) => Ok(resp),
-        Err(e) if is_retryable(&e) => {
+        Err(e) if permits_upstream_retry(&method) && is_retryable(&e) => {
             // Brief pause before retry
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             send_upstream(
@@ -1165,10 +1395,15 @@ pub async fn axum_proxy_handler(
                 .iter()
                 .filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
                 .collect();
-            if matches!(
-                crate::themed_auth::intercept_basic_auth_challenge(status_u16, &www_auth_values,),
-                crate::themed_auth::ChallengeDecision::Challenge,
-            ) {
+            if state.upstream_auth_mode.accepts_basic_challenge()
+                && matches!(
+                    crate::themed_auth::intercept_basic_auth_challenge(
+                        status_u16,
+                        &www_auth_values,
+                    ),
+                    crate::themed_auth::ChallengeDecision::Challenge,
+                )
+            {
                 let nonce = crate::themed_auth::fresh_nonce();
                 // Stash the nonce so the POST handler can verify
                 // that the submission came from a challenge we
@@ -1531,6 +1766,17 @@ pub async fn themed_auth_post_handler(
 ) -> axum::response::Response {
     use axum::body::Body;
     use axum::http::{Response, StatusCode};
+
+    // Manual/form-only sessions cannot honor a Basic login.
+    // Refuse before consuming a nonce or changing any session credentials.
+    if !state.upstream_auth_mode.accepts_basic_challenge() {
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(Body::from(
+                "HTTP Basic authentication is disabled for this session",
+            ))
+            .expect("valid HTTP response");
+    }
 
     // Nonce check. Consume on success so the same nonce can't fire
     // twice — a fresh challenge is needed each time.

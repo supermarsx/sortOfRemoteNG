@@ -50,6 +50,18 @@
   // credential hand-out (structural single-shot), but we guard here too so a
   // double bootstrap invocation never fills/submits twice.
   var hasRun = false;
+  var stopped = false;
+  var cancelActive = null;
+  var fetchController = null;
+  function cancelRun() {
+    stopped = true;
+    if (fetchController) fetchController.abort();
+    fetchController = null;
+    if (cancelActive) cancelActive();
+    cancelActive = null;
+  }
+  window.addEventListener('pagehide', cancelRun);
+  window.addEventListener('unload', cancelRun);
 
   // ------------------------------------------------------------------------
   // 1. NATIVE-SETTER VALUE WRITE  (the key R2 insight)
@@ -190,7 +202,7 @@
       // this root" — never fall back to the heuristic (would risk filling a
       // wrong/different field — R4 / spike refinement #2).
       pw = root.querySelector(ov.password);
-      if (!pw) return null;
+      if (!pw || !isVisible(pw) || pw.tagName !== 'INPUT' || pw.type !== 'password') return null;
     } else {
       var ps = root.querySelectorAll('input[type=password]');
       for (var i = 0; i < ps.length; i++) {
@@ -204,9 +216,11 @@
 
     var user = null;
     if (ov && ov.username) {
-      // Same authority for the username override: if it's set we use exactly
-      // it (may be null if it doesn't match; we still proceed to fill pw).
+      // An explicit missing/hidden field fails closed; never fill only the
+      // password into a different or partially rendered application form.
       user = root.querySelector(ov.username);
+      if (!user || !isVisible(user) || user.tagName !== 'INPUT' ||
+          !/^(text|email|tel)$/.test(user.type) || user.form !== pw.form) return null;
     }
     if (!user && !(ov && ov.username)) {
       var form = pw.form || root;
@@ -239,7 +253,15 @@
         user = before.length ? before[before.length - 1] : candidates[0];
       }
     }
-    return { user: user, pw: pw, form: pw.form || null };
+    var submit = null;
+    if (ov && ov.submit) {
+      var scope = pw.form || nearestScope(pw, user);
+      submit = scope.querySelector(ov.submit);
+      if (!submit || !isVisible(submit) ||
+          (submit.form && submit.form !== pw.form) ||
+          !(/^(BUTTON|INPUT|A)$/.test(submit.tagName) || submit.getAttribute('role') === 'button')) return null;
+    }
+    return { user: user, pw: pw, form: pw.form || null, submit: submit };
   }
 
   // Walk the main document plus SAME-ORIGIN iframes (cross-origin frames are
@@ -286,25 +308,16 @@
     var pw = target.pw;
     var user = target.user;
 
-    // An explicit submit override is authoritative when it matches.
+    // Explicit selectors were validated together before any field was filled.
     if (ov && ov.submit) {
-      var so = (form || document).querySelector(ov.submit) ||
-        document.querySelector(ov.submit);
-      if (so) {
-        so.click();
-        return 'override-submit';
-      }
+      if (!target.submit) return 'no-submit';
+      target.submit.click();
+      return 'override-submit';
     }
 
     // Scope the search to the login form (or nearest container) — never
     // document-wide (spike takeaway).
-    var scope = form || nearestScope(pw, user);
-    var btn =
-      scope.querySelector('button[type=submit], input[type=submit]') ||
-      scope.querySelector('button:not([type])') ||
-      scope.querySelector(
-        '[role=button][type=submit], button[id*=login i], button[class*=login i], button[id*=signin i]'
-      );
+    var btn = target.submit || findSubmitButton(target);
     if (btn) {
       btn.click();
       return 'button-click';
@@ -331,6 +344,17 @@
     return 'enter-key';
   }
 
+  function findSubmitButton(target) {
+    var scope = target.form || nearestScope(target.pw, target.user);
+    return (
+      scope.querySelector('button[type=submit], input[type=submit]') ||
+      scope.querySelector('button:not([type])') ||
+      scope.querySelector(
+        '[role=button][type=submit], button[id*=login i], button[class*=login i], button[id*=signin i]'
+      )
+    );
+  }
+
   // ------------------------------------------------------------------------
   // 4. ORCHESTRATION — single attempt, observable result, no cred retention
   // ------------------------------------------------------------------------
@@ -338,6 +362,18 @@
     var target = findLoginForm(ov);
     if (!target || !target.pw) {
       return { ok: false, reason: 'no-form' };
+    }
+    if (!(ov && ov.submit)) target.submit = findSubmitButton(target);
+    // Do not automatically send credentials to an external form action, even
+    // when a login-looking form was served by the intended upstream page.
+    var destination = target.submit && target.submit.getAttribute('formaction');
+    if (!destination && target.submit && target.submit.tagName === 'A') destination = target.submit.getAttribute('href');
+    if (!destination && target.form) destination = target.form.getAttribute('action');
+    if (destination) {
+      var action = new URL(destination, target.pw.ownerDocument.baseURI);
+      if (action.origin !== window.location.origin || action.username || action.password) {
+        return { ok: false, reason: 'unsafe-form-action' };
+      }
     }
     var userOk = target.user ? fillField(target.user, creds.username) : true;
     var pwOk = fillField(target.pw, creds.password);
@@ -361,29 +397,60 @@
   // detection a few times with backoff, then give up. We only ever SUBMIT
   // once — the retries are purely to *find* the form, not to resubmit.
   function bootstrapFill(creds, ov) {
-    var tries = 0;
-    var MAX = 20; // ~5s with the schedule below
-    var submitted = false;
-    function tick() {
-      if (submitted) return;
-      var target = findLoginForm(ov);
-      if (target && target.pw) {
-        submitted = true;
-        var r = attempt(creds, ov);
-        report(r);
-        return;
+    // This promise OWNS the secret until detection finishes. Clearing it in
+    // the fetch caller before a delayed SPA render used to submit null values.
+    return new Promise(function (resolve) {
+      var tries = 0;
+      var finished = false;
+      var retryTimer = null;
+      var lifetimeTimer = null;
+      var origin = window.location.origin;
+      function finish(result) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(retryTimer);
+        clearTimeout(lifetimeTimer);
+        document.removeEventListener('DOMContentLoaded', tick);
+        if (cancelActive === cancel) cancelActive = null;
+        creds.username = null;
+        creds.password = null;
+        creds = null;
+        report(result);
+        resolve(result);
       }
-      if (++tries >= MAX) {
-        report({ ok: false, reason: 'form-not-found-timeout' });
-        return;
+      function cancel() { finish({ ok: false, reason: 'cancelled' }); }
+      function tick() {
+        if (finished) return;
+        if (stopped || window.location.origin !== origin) { cancel(); return; }
+        try {
+          var target = findLoginForm(ov);
+          if (target && target.pw) {
+            // No retries after an attempted submit, including thrown handlers.
+            var result = attempt(creds, ov);
+            finish(result);
+            return;
+          }
+          if (++tries >= 20) {
+            finish({ ok: false, reason: 'form-not-found-timeout' });
+            return;
+          }
+          retryTimer = setTimeout(tick, Math.min(100 + tries * 50, 400));
+        } catch (_) {
+          finish({ ok: false, reason: 'form-fill-failed' });
+        }
       }
-      setTimeout(tick, Math.min(100 + tries * 50, 400));
-    }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', tick);
-    } else {
-      tick();
-    }
+      cancelActive = cancel;
+      // Bounds even a document which never reaches DOMContentLoaded.
+      lifetimeTimer = setTimeout(function () {
+        finish({ ok: false, reason: 'form-not-found-timeout' });
+      }, 8000);
+      if (stopped) { cancel(); return; }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', tick, { once: true });
+      } else {
+        tick();
+      }
+    });
   }
 
   function report(result) {
@@ -411,15 +478,17 @@
 
   function fetchCredsAndRun(nonce, selectors) {
     // Client single-shot: never fetch/fill/submit more than once per page.
-    if (hasRun) return;
+    if (hasRun || stopped) return;
     hasRun = true;
 
     var injectedOv = normSel(selectors);
 
-    fetch(AUTOLOGIN_PATH + '?nonce=' + encodeURIComponent(nonce), {
+    fetchController = typeof AbortController === 'function' ? new AbortController() : null;
+    return fetch(AUTOLOGIN_PATH + '?nonce=' + encodeURIComponent(nonce), {
       method: 'GET',
       credentials: 'same-origin',
       cache: 'no-store',
+      signal: fetchController ? fetchController.signal : undefined,
     })
       .then(function (r) {
         // Non-200 => do nothing, do NOT retry.
@@ -428,22 +497,28 @@
       .then(function (data) {
         // Endpoint selectors (from the connection config) are AUTHORITATIVE
         // and override anything templated into the bootstrap.
-        var ov = normSel(data && data.selectors) || injectedOv;
-        var creds = { username: data.username, password: data.password };
-        // Hand the creds to the single fill+submit, then drop our reference so
-        // the secret is not retained in module scope.
+        fetchController = null;
+        var creds = null;
         try {
-          bootstrapFill(creds, ov);
+          if (stopped) return;
+          if (!data || typeof data.username !== 'string' || typeof data.password !== 'string') {
+            report({ ok: false, reason: 'invalid-credential-response' });
+            return;
+          }
+          var ov = normSel(data.selectors) || injectedOv;
+          creds = { username: data.username, password: data.password };
+          return bootstrapFill(creds, ov);
         } finally {
-          creds.username = null;
-          creds.password = null;
-          creds = null;
-          data.username = null;
-          data.password = null;
+          // Drop the transport object now; bootstrap owns its private copy.
+          if (data && typeof data === 'object') {
+            data.username = null;
+            data.password = null;
+          }
         }
       })
-      .catch(function (status) {
-        report({ ok: false, reason: 'cred-fetch-' + status });
+      .catch(function () {
+        fetchController = null;
+        report({ ok: false, reason: stopped ? 'cancelled' : 'cred-fetch-failed' });
       });
   }
 
@@ -459,5 +534,6 @@
     attempt: attempt,
     bootstrap: bootstrapFill,
     fetchCredsAndRun: fetchCredsAndRun,
+    cancel: cancelRun,
   };
 })();
