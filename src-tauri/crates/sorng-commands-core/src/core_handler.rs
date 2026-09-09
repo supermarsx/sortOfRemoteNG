@@ -103,6 +103,12 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_import_portable_dek"
             | "encryption_audit_read"
             | "encryption_audit_clear"
+            | "encryption_get_artifact_status"
+            | "encryption_preview_artifact_policy"
+            | "encryption_apply_artifact_policy"
+            | "encryption_cancel_artifact_policy"
+            | "encryption_release_artifact_preview"
+            | "encryption_recover_artifact_transition"
             | "trust_verify_identity"
             | "trust_store_identity"
             | "trust_store_identity_with_reason"
@@ -1436,6 +1442,12 @@ define_command_group!(
         encryption_commands::encryption_import_portable_dek,
         encryption_commands::encryption_audit_read,
         encryption_commands::encryption_audit_clear,
+        artifact_encryption_commands::encryption_get_artifact_status,
+        artifact_encryption_commands::encryption_preview_artifact_policy,
+        artifact_encryption_commands::encryption_apply_artifact_policy,
+        artifact_encryption_commands::encryption_cancel_artifact_policy,
+        artifact_encryption_commands::encryption_release_artifact_preview,
+        artifact_encryption_commands::encryption_recover_artifact_transition,
         // Trust store commands
         trust_store_commands::trust_verify_identity,
         trust_store_commands::trust_store_identity,

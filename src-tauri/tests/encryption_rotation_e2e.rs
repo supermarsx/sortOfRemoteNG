@@ -155,7 +155,7 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
             max_backups_to_keep: 0,
             ..BackupConfig::default()
         };
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         svc.set_encryption_state(enc_state.clone());
     }
 

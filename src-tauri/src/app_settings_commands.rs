@@ -277,6 +277,8 @@ pub async fn read_app_settings_inner(
     dir: &std::path::Path,
     enc_state: &EncryptionState,
 ) -> Result<Option<Value>, String> {
+    let require_encrypted =
+        enc_state.resolve_write_policy(sorng_encryption::ArtifactKind::Settings, false)?;
     let enc_path = dir.join(SETTINGS_ENC_FILENAME);
     let plain_path = dir.join(SETTINGS_FILENAME);
 
@@ -297,6 +299,11 @@ pub async fn read_app_settings_inner(
 
     match std::fs::read_to_string(&plain_path) {
         Ok(s) => {
+            if require_encrypted {
+                return Err(
+                    "plaintext settings conflict with the authenticated encryption policy".into(),
+                );
+            }
             let value: Value =
                 serde_json::from_str(&s).map_err(|e| format!("parse settings.json: {e}"))?;
             Ok(Some(value))
@@ -522,6 +529,7 @@ async fn write_app_settings_locked(
     enc_state: &EncryptionState,
     patch: Value,
 ) -> Result<u64, String> {
+    enc_state.resolve_write_policy(sorng_encryption::ArtifactKind::Settings, false)?;
     reject_rest_api_secret_patch(&patch)?;
     // Reserve before any fallible filesystem work. Failed writes may leave a
     // harmless gap, but a durable commit can never be followed by a generation
@@ -556,7 +564,10 @@ async fn write_app_settings_locked(
         }
     };
     let merged = merge_root(existing, &patch)?;
-    let write_encrypted = encrypted_on_disk || (state_unlocked && !plaintext_on_disk);
+    let write_encrypted = enc_state.resolve_write_policy(
+        sorng_encryption::ArtifactKind::Settings,
+        encrypted_on_disk || (state_unlocked && !plaintext_on_disk),
+    )?;
 
     if write_encrypted {
         let mode = current_master_key_storage(dir).await?;
@@ -617,10 +628,21 @@ async fn write_app_settings_locked(
     } else {
         let body = serde_json::to_string_pretty(&merged)
             .map_err(|e| format!("serialize settings.json: {e}"))?;
-        let plain_path = plain_path.clone();
-        tokio::task::spawn_blocking(move || atomic_write(&plain_path, body.as_bytes()))
+        let output_path = plain_path.clone();
+        tokio::task::spawn_blocking(move || atomic_write(&output_path, body.as_bytes()))
             .await
             .map_err(|e| format!("settings.json write task join: {e}"))??;
+        if encrypted_on_disk {
+            let verified: Value =
+                serde_json::from_slice(&std::fs::read(&plain_path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            if verified != merged {
+                return Err("plaintext settings verification failed".into());
+            }
+            std::fs::remove_file(&enc_path).map_err(|e| {
+                format!("settings written but obsolete encrypted peer could not be removed: {e}")
+            })?;
+        }
     }
 
     Ok(commit_generation)

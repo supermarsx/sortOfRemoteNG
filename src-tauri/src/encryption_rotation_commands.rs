@@ -342,6 +342,12 @@ async fn rotate_master_key_full_inner_impl(
     // receipt persistence, and live-key installation, rotation is one FIFO
     // transaction with ordinary settings writes and representation changes.
     let settings_guard = sorng_encryption::settings_coordinator::lock().await;
+    if sorng_encryption::artifact_transaction::has_pending(app_data_dir)? {
+        return Err("recover the artifact transition before rotating the master key".into());
+    }
+    if let Some(error) = enc_state.artifact_policy_error() {
+        return Err(error);
+    }
     if let Some(recovery) =
         sorng_storage::database_transaction::recover(&app_data_dir.join("databases"))?
     {
@@ -371,6 +377,54 @@ async fn rotate_master_key_full_inner_impl(
         .await
         .ok_or_else(|| "internal: state vanished mid-rotation".to_string())?;
 
+    // One shared, verified inventory closes gaps between artifact management
+    // and full rotation (in-place config, inflight snapshots and generations).
+    // Capture BEFORE staging so our own rotation files cannot enter the scan.
+    let rotation_roots = {
+        let legacy_storage = PathBuf::from(storage_state.lock().await.store_path());
+        let recordings = recording_state.lock().await.storage_root_snapshot().await;
+        let (backups, backup_restrictions) = backup_state.lock().await.artifact_backup_roots();
+        crate::artifact_storage_adapters::ArtifactRoots {
+            app_data: app_data_dir.to_path_buf(),
+            logs: app_data_dir.join("logs"),
+            legacy_storage,
+            recordings,
+            backups,
+            backup_restrictions,
+        }
+    };
+    let rotation_inventory =
+        crate::artifact_storage_adapters::scan(&rotation_roots, &old_state).await?;
+    let mut report = FullRotateReport::default();
+    if let Some(row) = rotation_inventory.rows.iter().find(|row| {
+        row.unverified_files > 0
+            && sorng_encryption::artifact_policy::DATA_ARTIFACTS.contains(&row.id)
+    }) {
+        let artifact = match row.id {
+            ArtifactKind::Backups => "backup",
+            ArtifactKind::Settings => "settings",
+            ArtifactKind::Connections => "connections",
+            ArtifactKind::RecordingsMeta => "recording-meta",
+            ArtifactKind::RecordingsMedia => "recording-media",
+            ArtifactKind::Macros => "macro",
+            ArtifactKind::Logs => "logs",
+            ArtifactKind::DatabasesIndex | ArtifactKind::TrustStore => "databases",
+            _ => "artifact",
+        };
+        push_failure(
+            &mut report,
+            artifact,
+            app_data_dir,
+            format!(
+                "cannot rotate unverified {:?} artifacts: {}",
+                row.id,
+                row.reason.as_deref().unwrap_or("inspection failed")
+            ),
+        );
+        return Ok(report);
+    }
+    let verified_backup_pairs = rotation_inventory.encrypted_backup_pairs()?;
+
     let old_bytes_raw = old_state
         .master_bytes_raw()
         .await
@@ -384,9 +438,42 @@ async fn rotate_master_key_full_inner_impl(
         None
     };
 
-    let mut report = FullRotateReport::default();
     let transaction_id = format!("{:032x}", rand::random::<u128>());
     let mut staged = Vec::new();
+
+    // Future-write opt-outs are authenticated key infrastructure. Rewrap the
+    // unchanged policy in the same staged transaction as the master receipts.
+    let policy_path = app_data_dir.join(sorng_encryption::artifact_policy::POLICY_FILENAME);
+    if policy_path.try_exists().map_err(|e| e.to_string())? {
+        match prepare_stage(
+            &transaction_id,
+            "artifact-policy",
+            &policy_path,
+            failure_injector,
+        ) {
+            Ok(item) => {
+                let result = async {
+                    let metadata = std::fs::metadata(&item.staged).map_err(|e| e.to_string())?;
+                    if metadata.len() > sorng_encryption::artifact_policy::MAX_POLICY_BYTES {
+                        return Err("artifact policy exceeds size limit".into());
+                    }
+                    let bytes = std::fs::read(&item.staged).map_err(|e| e.to_string())?;
+                    let policy =
+                        sorng_encryption::artifact_policy::decode(&old_state, &bytes).await?;
+                    let next =
+                        sorng_encryption::artifact_policy::encode(&new_state, &policy).await?;
+                    std::fs::write(&item.staged, &next).map_err(|e| e.to_string())?;
+                    sync_regular_file(&item.staged)?;
+                    Ok(next.len() as u64)
+                }
+                .await;
+                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
+                    report.bytes_rewritten += n
+                });
+            }
+            Err(reason) => push_failure(&mut report, "artifact-policy", &policy_path, reason),
+        }
+    }
 
     // ── Step 3a: settings.enc ──────────────────────────────────────
     if settings_enc_present {
@@ -452,10 +539,18 @@ async fn rotate_master_key_full_inner_impl(
     }
 
     // ── Step 3c: backups across every enabled destination ─────────
-    let backup_pairs = {
+    let mut backup_pairs = {
         let svc = backup_state.lock().await;
         svc.list_v2_backup_pairs().await
     };
+    for pair in verified_backup_pairs {
+        if !backup_pairs
+            .iter()
+            .any(|existing| existing.archive_path == pair.archive_path)
+        {
+            backup_pairs.push(pair);
+        }
+    }
     for pair in backup_pairs {
         let archive_item = match prepare_stage(
             &transaction_id,
@@ -573,6 +668,21 @@ async fn rotate_master_key_full_inner_impl(
         Ok(walk) => {
             database_tmp_files = walk.transient;
             for file in walk.files {
+                // Explicit plaintext policy is a durable opt-out. Key rotation
+                // must not silently re-enable encryption for that family.
+                if old_state
+                    .artifact_policy_document()?
+                    .overrides
+                    .get(&file.kind.artifact_kind())
+                    == Some(&sorng_encryption::artifact_policy::ProtectionMode::Plaintext)
+                {
+                    let bytes = std::fs::read(&file.path).map_err(|e| e.to_string())?;
+                    let payload =
+                        sorng_storage::sdbf::parse_and_verify(&bytes).map_err(|e| e.to_string())?;
+                    if !payload.starts_with(SORNG_ENVELOPE_MAGIC) {
+                        continue;
+                    }
+                }
                 match prepare_stage(
                     &transaction_id,
                     file.kind.artifact_tag(),
@@ -616,6 +726,48 @@ async fn rotate_master_key_full_inner_impl(
             }
         }
         Err(reason) => push_failure(&mut report, "databases", &databases_dir, reason),
+    }
+
+    // Reconcile every verified encrypted representation with the actual staged
+    // set. Unknown new formats fail before key receipts can be changed.
+    for (kind, path) in rotation_inventory.encrypted_inventory() {
+        if matches!(kind, ArtifactKind::KeyRing | ArtifactKind::ArtifactPolicy)
+            || staged.iter().any(|item| item.canonical == path)
+        {
+            continue;
+        }
+        match prepare_stage(
+            &transaction_id,
+            "artifact-generation",
+            &path,
+            failure_injector,
+        ) {
+            Ok(item) => {
+                let result = if kind == ArtifactKind::RecordingsMedia {
+                    rec_storage::rewrite_media_with(&item.staged, &old_state, &new_state)
+                        .await
+                        .map_err(|e| e.to_string())
+                } else {
+                    crate::artifact_storage_adapters::rewrite_rotation_generation(
+                        &item.staged,
+                        kind,
+                        &old_state,
+                        &new_state,
+                    )
+                    .await
+                };
+                keep_or_record_stage(&mut report, &mut staged, item, result, |report, n| {
+                    report.bytes_rewritten += n;
+                    match kind {
+                        ArtifactKind::RecordingsMeta => report.recording_envelopes_rewritten += 1,
+                        ArtifactKind::RecordingsMedia => report.media_sidecars_rewritten += 1,
+                        ArtifactKind::Macros => report.macros_rewritten += 1,
+                        _ => (),
+                    }
+                });
+            }
+            Err(reason) => push_failure(&mut report, "artifact-generation", &path, reason),
+        }
     }
 
     // ── Step 3f: the retained key ring ────────────────────────────
@@ -1322,6 +1474,7 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    static ROTATION_FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     use serde_json::json;
     use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
@@ -1406,7 +1559,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         config.compress_backups = false;
-        service.update_config(config);
+        service.update_config(config).unwrap();
         service.set_encryption_state(fixture.enc_state.clone());
         let metadata = service
             .run_backup("manual", payload)
@@ -1464,8 +1617,146 @@ mod tests {
             .expect("settings document after restart")
     }
 
+    #[tokio::test]
+    async fn artifact_policy_rotation_covers_config_generations_and_preserves_plaintext_opt_out() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
+        use sorng_encryption::artifact_policy::{self, PolicyDocument, ProtectionMode};
+        let fixture = receipt_fixture(81).await;
+        let doc = PolicyDocument::default()
+            .with_mode(ArtifactKind::Connections, ProtectionMode::Plaintext)
+            .unwrap()
+            .with_mode(ArtifactKind::RecordingsMeta, ProtectionMode::Encrypted)
+            .unwrap();
+        std::fs::write(
+            fixture.app_data.join(artifact_policy::POLICY_FILENAME),
+            artifact_policy::encode(&fixture.enc_state, &doc)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(fixture.app_data.join(artifact_policy::POLICY_MARKER), b"1").unwrap();
+        artifact_policy::initialize(&fixture.enc_state, &fixture.app_data).await;
+        let rec_root = fixture
+            .recording_state
+            .lock()
+            .await
+            .storage_root_snapshot()
+            .await;
+        let config = sorng_recording::types::RecordingGlobalConfig::default();
+        rec_storage::save_config_dispatched(&rec_root, &config, &fixture.enc_state)
+            .await
+            .unwrap();
+        let config_before = std::fs::read(rec_root.join("config.json")).unwrap();
+        assert!(config_before.starts_with(SORNG_ENVELOPE_MAGIC));
+        let mut meta_generations = Vec::new();
+        for suffix in [".bak", ".previous", ".v0.bak"] {
+            let path = rec_root.join(format!("config.json{suffix}"));
+            std::fs::write(&path, &config_before).unwrap();
+            meta_generations.push(path);
+            std::fs::copy(
+                &fixture.settings_path,
+                fixture.app_data.join(format!("settings.enc{suffix}")),
+            )
+            .unwrap();
+        }
+        std::fs::create_dir_all(rec_root.join("inflight")).unwrap();
+        let snapshot = rec_root.join("inflight/fixture.snapshot.bak");
+        std::fs::write(&snapshot, &config_before).unwrap();
+        meta_generations.push(snapshot);
+        let media = vec![7u8; 140_000];
+        rec_storage::save_media_blob_dispatched(
+            &rec_root,
+            "rotation.webm",
+            &media,
+            &fixture.enc_state,
+        )
+        .await
+        .unwrap();
+        let media_path = rec_root.join("recordings/rotation.webm.enc");
+        let media_generation = rec_root.join("recordings/rotation.webm.enc.bak");
+        std::fs::copy(&media_path, &media_generation).unwrap();
+        let databases = fixture.app_data.join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        // Inner database ciphertext is opaque to the outer master-key policy.
+        let inner = br#"{"encrypted":true,"data":"opaque-inner-password-ciphertext"}"#;
+        let database = databases.join("fixture.json");
+        let mut stored = sorng_storage::sdbf::encode_preamble(inner).to_vec();
+        stored.extend_from_slice(inner);
+        std::fs::write(&database, &stored).unwrap();
+        let captured = std::sync::Mutex::new(None::<[u8; 32]>);
+        let vault_writer = |bytes: &[u8; 32]| {
+            *captured.lock().unwrap() = Some(*bytes);
+            Ok(())
+        };
+        let report = rotate_master_key_full_inner_impl(
+            &fixture.app_data,
+            &fixture.enc_state,
+            &fixture.storage_state,
+            &fixture.backup_state,
+            &fixture.recording_state,
+            None,
+            true,
+            None,
+            Some(&vault_writer),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert_eq!(std::fs::read(&database).unwrap(), stored);
+        assert_eq!(fixture.enc_state.artifact_policy_document().unwrap(), doc);
+        let restarted = EncryptionState::new();
+        artifact_policy::initialize(&restarted, &fixture.app_data).await;
+        let rotated_key = captured.lock().unwrap().unwrap();
+        restarted
+            .install(MasterDek::from_bytes(&rotated_key).unwrap())
+            .await;
+        assert_eq!(restarted.artifact_policy_document().unwrap(), doc);
+        assert!(!restarted
+            .resolve_write_policy(ArtifactKind::Connections, true)
+            .unwrap());
+        assert_eq!(
+            serde_json::to_value(
+                rec_storage::load_config_dispatched(&rec_root, &restarted)
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
+            serde_json::to_value(config).unwrap()
+        );
+        for path in meta_generations {
+            let bytes = std::fs::read(path).unwrap();
+            let key = restarted
+                .sub_key(ArtifactKind::RecordingsMeta)
+                .await
+                .unwrap();
+            enc_envelope::read_envelope(&key, &bytes).unwrap();
+        }
+        for suffix in [".bak", ".previous", ".v0.bak"] {
+            let bytes =
+                std::fs::read(fixture.app_data.join(format!("settings.enc{suffix}"))).unwrap();
+            assert_eq!(
+                artifact_settings::read(&restarted, &bytes)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                fixture.settings_payload
+            );
+        }
+        assert_eq!(
+            sorng_encryption::artifacts::recording_media::read_all(
+                &restarted,
+                &std::fs::read(media_generation).unwrap()
+            )
+            .await
+            .unwrap(),
+            media
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn rotation_then_queued_write_preserves_the_newest_patch_under_the_new_key() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
         let password = "rotation-then-write";
         let fixture = password_receipt_fixture(71, password).await;
         let guard = sorng_encryption::settings_coordinator::lock().await;
@@ -1537,6 +1828,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn queued_write_then_rotation_includes_the_patch_in_its_snapshot() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
         let password = "write-then-rotation";
         let fixture = password_receipt_fixture(72, password).await;
         let guard = sorng_encryption::settings_coordinator::lock().await;
@@ -1608,6 +1900,7 @@ mod tests {
 
     #[tokio::test]
     async fn durable_receipt_matrix_sets_truthful_metadata_and_restarts_readably() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
         let cases = [
             ("vault", true, None, MasterKeyStorage::Vault),
             (
@@ -1698,13 +1991,19 @@ mod tests {
 
     #[tokio::test]
     async fn rotation_rekeys_backup_archive_and_integrity_sidecar_together() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
         let fixture = receipt_fixture(73).await;
         let backup_payload = json!({
             "connections": [{ "id": "backup-c1", "host": "backup.example.test" }]
         });
         let (backup_id, backup_pair) = create_encrypted_backup(&fixture, &backup_payload).await;
         let metadata_before: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(&backup_pair.metadata_path).expect("backup sidecar before rotation"),
+            &sorng_encryption::artifacts::backups::read(
+                &fixture.enc_state,
+                &std::fs::read(&backup_pair.metadata_path).expect("backup sidecar before rotation"),
+            )
+            .await
+            .unwrap(),
         )
         .expect("parse backup sidecar before rotation");
 
@@ -1732,7 +2031,12 @@ mod tests {
         assert_eq!(report.backups_rewritten, 1);
         let archive_after = std::fs::read(&backup_pair.archive_path).expect("rotated backup");
         let metadata_after: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(&backup_pair.metadata_path).expect("rotated backup sidecar"),
+            &sorng_encryption::artifacts::backups::read(
+                &fixture.enc_state,
+                &std::fs::read(&backup_pair.metadata_path).expect("rotated backup sidecar"),
+            )
+            .await
+            .unwrap(),
         )
         .expect("parse rotated backup sidecar");
         assert_ne!(metadata_after["checksum"], metadata_before["checksum"]);
@@ -1802,7 +2106,23 @@ mod tests {
 
     #[tokio::test]
     async fn missing_backup_sidecar_aborts_rotation_and_removes_paired_stage() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
         let fixture = receipt_fixture(74).await;
+        let policy_path = fixture
+            .app_data
+            .join(sorng_encryption::artifact_policy::POLICY_FILENAME);
+        let policy = sorng_encryption::artifact_policy::PolicyDocument::default()
+            .with_mode(
+                ArtifactKind::Backups,
+                sorng_encryption::artifact_policy::ProtectionMode::Encrypted,
+            )
+            .unwrap();
+        let policy_before = sorng_encryption::artifact_policy::encode(&fixture.enc_state, &policy)
+            .await
+            .unwrap();
+        std::fs::write(&policy_path, &policy_before).unwrap();
+        sorng_encryption::artifact_policy::initialize(&fixture.enc_state, &fixture.app_data).await;
+        let settings_before = std::fs::read(&fixture.settings_path).unwrap();
         let (_, backup_pair) = create_encrypted_backup(
             &fixture,
             &json!({ "connections": [{ "id": "missing-sidecar" }] }),
@@ -1832,6 +2152,15 @@ mod tests {
         assert_eq!(report.failures.len(), 1, "{:?}", report.failures);
         assert_eq!(report.failures[0].artifact, "backup");
         assert_eq!(
+            fixture.enc_state.master_bytes_raw().await.unwrap(),
+            fixture.old_dek_bytes
+        );
+        assert_eq!(std::fs::read(&policy_path).unwrap(), policy_before);
+        assert_eq!(
+            std::fs::read(&fixture.settings_path).unwrap(),
+            settings_before
+        );
+        assert_eq!(
             std::fs::read(&backup_pair.archive_path).unwrap(),
             archive_before
         );
@@ -1848,6 +2177,7 @@ mod tests {
 
     #[tokio::test]
     async fn rotation_without_any_durable_receipt_fails_before_rewriting() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
         let fixture = receipt_fixture(61).await;
         let settings_before = std::fs::read(&fixture.settings_path).expect("settings before");
 
@@ -1891,6 +2221,7 @@ mod tests {
 
     #[tokio::test]
     async fn partial_rewrite_failure_keeps_old_key_receipt_and_artifacts_restart_readable() {
+        let _test_profile = ROTATION_FIXTURE.lock().await;
         let tmp = tempdir().expect("temp app data");
         let app_data = tmp.path();
         let backup_dir = app_data.join("backups");

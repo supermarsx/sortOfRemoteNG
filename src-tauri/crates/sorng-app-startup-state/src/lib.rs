@@ -10,6 +10,8 @@ use tauri::Manager;
 use tokio::sync::Mutex;
 
 mod access;
+#[cfg(test)]
+mod artifact_tests;
 #[cfg(any(feature = "collab", feature = "platform"))]
 mod collab;
 #[cfg(test)]
@@ -314,12 +316,17 @@ pub fn register_infrastructure_prefix(
             Err(_) => eprintln!("Encryption-at-rest: existing key could not be recovered safely; startup remains locked."),
         }
     }
+    // This only verifies policy and detects interrupted work. Startup never
+    // converts user artifacts; unfinished transactions gate writers for recovery.
+    tauri::async_runtime::block_on(sorng_encryption::artifact_policy::initialize(
+        &enc_state, &app_dir,
+    ));
     let enc_state_for_logger = enc_state.clone();
     app.manage(enc_state);
 
-    if cfg!(debug_assertions) {
+    {
         let logs_dir = app_dir.join("logs");
-        if let Err(e) = sorng_encryption::log_adapter::EncryptedLogAdapter::install(
+        if let Err(e) = sorng_encryption::log_adapter::EncryptedLogAdapter::install_tracing_bridge(
             Arc::new(enc_state_for_logger),
             logs_dir,
             log::LevelFilter::Info,

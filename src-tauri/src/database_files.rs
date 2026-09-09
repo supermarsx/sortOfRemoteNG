@@ -513,16 +513,19 @@ async fn encode_payload(
     master_encryption_configured: bool,
 ) -> Result<Vec<u8>, String> {
     let plain = serde_json::to_vec(value).map_err(|e| format!("serialise payload: {e}"))?;
-    if state.is_unlocked().await {
+    let unlocked = state.is_unlocked().await;
+    if state.resolve_write_policy(artifact, unlocked)? {
         return encrypt_payload(state, artifact, &plain).await;
     }
 
-    if master_encryption_configured {
+    if master_encryption_configured && !unlocked {
         return Err(
             "database storage is encrypted; unlock first via Settings → Security".to_string(),
         );
     }
-    ensure_locked_plaintext_write_is_safe(canonical)?;
+    if !unlocked {
+        ensure_locked_plaintext_write_is_safe(canonical)?;
+    }
     Ok(plain)
 }
 
@@ -539,6 +542,7 @@ fn recover_database_transactions(dir: &Path) -> Result<(), String> {
 }
 
 async fn require_database_access(app: &AppHandle, state: &EncryptionState) -> Result<bool, String> {
+    state.resolve_write_policy(ArtifactKind::Connections, false)?;
     let configured = master_encryption_configured(app, state).await?;
     if configured && !state.is_unlocked().await {
         return Err("database storage is locked; unlock via Settings → Security".into());
@@ -620,6 +624,7 @@ async fn encrypted_load(
     artifact: ArtifactKind,
     canonical: &Path,
 ) -> Result<Option<LoadResult>, String> {
+    let require_encrypted = state.resolve_write_policy(artifact, false)?;
     let (payload_bytes, source) = match safe_read_raw(canonical).map_err(|e| e.to_string())? {
         Some(p) => p,
         None => {
@@ -656,6 +661,9 @@ async fn encrypted_load(
         return Ok(Some(LoadResult { value, source }));
     }
 
+    if require_encrypted {
+        return Err("database plaintext conflicts with the authenticated encryption policy".into());
+    }
     // Legacy plaintext-P1 path. The file pre-dates P4 — parse the
     // bytes as raw JSON and return as-is. The next save will wrap it
     // in an envelope (per the approved "tolerant read + re-encrypt

@@ -12,3 +12,9 @@ pub mod payload_hash;
 pub mod sdbf;
 pub mod storage;
 pub mod trust_store;
+
+// Independent temporary profiles share the native process-wide coordinator.
+// Hold this only around unit-test fixture lifetimes; operations/races inside
+// each fixture still use the real production coordinator.
+#[cfg(test)]
+pub(crate) static STORAGE_FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

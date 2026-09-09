@@ -121,7 +121,10 @@ pub(super) fn register_telegram<R: tauri::Runtime>(
 /// Full master-key rotation includes recordings in every build, even when the
 /// optional recording UI/commands are absent. Manage its real service once and
 /// bind it to the same live encryption state used by the other storage services.
-fn register_recording<R: tauri::Runtime>(app: &impl tauri::Manager<R>, app_dir: &std::path::Path) {
+pub(super) fn register_recording<R: tauri::Runtime>(
+    app: &impl tauri::Manager<R>,
+    app_dir: &std::path::Path,
+) {
     let encryption = Arc::new(
         app.state::<sorng_encryption::EncryptionState>()
             .inner()

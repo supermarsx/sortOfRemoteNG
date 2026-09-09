@@ -25,10 +25,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct RecordingService {
     pub engine: RecordingEngineState,
     pub storage_root: Arc<Mutex<PathBuf>>,
-    /// Optional encryption-at-rest handle. When `Some` and unlocked,
-    /// all envelope + macro persistence goes through the dispatched
-    /// codecs (`<id>.json.enc`). When `None` or locked, the legacy
-    /// plaintext path is used. Installed via `with_encryption_state`
+    /// Optional encryption-at-rest handle. Native authenticated per-family
+    /// policy selects plaintext or encrypted dispatched codecs; configured
+    /// locked/pending states fail closed. With no override, recording config
+    /// retains its legacy default. Installed via `set_encryption_state`
     /// after `app.manage(EncryptionState)` has populated the global
     /// state, so the service can be constructed independently of the
     /// Tauri app boot order.
@@ -78,6 +78,19 @@ pub struct RecordingMigrationProgressEvent {
 }
 
 impl RecordingService {
+    async fn capture_storage_guard(
+        &self,
+        kind: sorng_encryption::ArtifactKind,
+    ) -> RecordingResult<tokio::sync::MutexGuard<'static, ()>> {
+        let guard = sorng_encryption::settings_coordinator::try_lock()
+            .map_err(|e| RecordingError::StorageError(e.into()))?;
+        if let Some(state) = self.enc_handle().await {
+            state
+                .resolve_write_policy(kind, false)
+                .map_err(RecordingError::EncryptionRequired)?;
+        }
+        Ok(guard)
+    }
     pub fn new(app_data_dir: &str) -> Self {
         let root = storage::storage_root(None, app_data_dir);
         // best-effort dir creation
@@ -142,12 +155,14 @@ impl RecordingService {
     ///   - otherwise → REFUSE with an actionable [`EncryptionRequired`]
     ///     error. We never silently write plaintext under the default.
     ///
-    /// Explicit opt-out (`encrypt_at_rest = false`): plaintext is
-    /// allowed when the key is unavailable, and encryption is still used
-    /// opportunistically when it happens to be unlocked. This is the
-    /// only path that may land plaintext on disk, and it is never the
-    /// default.
-    async fn resolve_persist_mode(&self) -> RecordingResult<PersistMode> {
+    /// The authenticated native per-family policy takes precedence. A native
+    /// plaintext override remains plaintext even while unlocked; a configured
+    /// locked profile still cannot write. With no native override, preserve
+    /// the legacy recording configuration's default/fallback behavior.
+    async fn resolve_persist_mode(
+        &self,
+        kind: sorng_encryption::ArtifactKind,
+    ) -> RecordingResult<PersistMode> {
         let encrypt_at_rest = self.engine.lock().await.get_config().encrypt_at_rest;
         let handle = self.enc_handle().await;
         let unlocked = match &handle {
@@ -155,13 +170,18 @@ impl RecordingService {
             None => false,
         };
 
-        if unlocked {
-            // A key is present and usable — always encrypt, regardless
-            // of the opt-out flag (the flag only relaxes the *fallback*).
+        let encrypt = match &handle {
+            Some(state) => state
+                .resolve_write_policy(kind, unlocked || encrypt_at_rest)
+                .map_err(RecordingError::EncryptionRequired)?,
+            None => encrypt_at_rest,
+        };
+        if unlocked && encrypt {
+            // The effective native/legacy policy requires encryption.
             return Ok(PersistMode::Encrypted(handle.unwrap()));
         }
 
-        if encrypt_at_rest {
+        if encrypt {
             // Default policy: do NOT silently write plaintext. Surface
             // an actionable error so the caller can unlock / configure
             // the recording encryption key (or deliberately opt out).
@@ -200,13 +220,27 @@ impl RecordingService {
         root: PathBuf,
         envelope: SavedRecordingEnvelope,
     ) -> RecordingResult<SavedRecordingEnvelope> {
+        let coordinator = sorng_encryption::settings_coordinator::try_lock()
+            .map_err(|e| RecordingError::StorageError(e.into()))?;
+        self.persist_envelope_guarded(root, envelope, &coordinator)
+            .await
+    }
+
+    async fn persist_envelope_guarded(
+        &self,
+        root: PathBuf,
+        envelope: SavedRecordingEnvelope,
+        _coordinator: &tokio::sync::MutexGuard<'_, ()>,
+    ) -> RecordingResult<SavedRecordingEnvelope> {
         let mut env = envelope;
 
         // Resolve the encrypt-vs-plaintext policy ONCE up front. Under
         // the default (encrypt_at_rest = true) this refuses to proceed
         // when no key is available, so neither the sidecar nor the
         // metadata file can be silently written in plaintext.
-        let mode = self.resolve_persist_mode().await?;
+        let mode = self
+            .resolve_persist_mode(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
 
         // Decide whether to peel the payload into a sidecar. Skip the
         // check entirely when the envelope already has one — that path
@@ -219,7 +253,10 @@ impl RecordingService {
         {
             let basename = format!("{}.media", env.id);
             let bytes = std::mem::take(&mut env.data).into_bytes();
-            match &mode {
+            let media_mode = self
+                .resolve_persist_mode(sorng_encryption::ArtifactKind::RecordingsMedia)
+                .await?;
+            match &media_mode {
                 PersistMode::Encrypted(enc) => {
                     storage::save_media_blob_dispatched(&root, &basename, &bytes, enc).await?;
                 }
@@ -228,12 +265,9 @@ impl RecordingService {
                     // the layout stays consistent (the loader will not
                     // expect inline `data`).
                     let dir = root.join("recordings");
-                    std::fs::create_dir_all(&dir).map_err(|e| {
-                        RecordingError::StorageError(format!("mkdir media: {}", e))
-                    })?;
-                    std::fs::write(dir.join(&basename), &bytes).map_err(|e| {
-                        RecordingError::StorageError(format!("write media: {}", e))
-                    })?;
+                    std::fs::create_dir_all(&dir)
+                        .map_err(|e| RecordingError::StorageError(format!("mkdir media: {}", e)))?;
+                    storage::save_media_blob_plaintext(&root, &basename, &bytes)?;
                 }
             }
             env.media_blob_basename = Some(basename);
@@ -244,6 +278,10 @@ impl RecordingService {
                 storage::save_envelope_dispatched(&root, &env, &enc).await?;
             }
             PersistMode::Plaintext => {
+                if let Some(enc) = self.enc_handle().await {
+                    storage::save_envelope_dispatched(&root, &env, &enc).await?;
+                    return Ok(env);
+                }
                 let to_save = env.clone();
                 tokio::task::spawn_blocking(move || storage::save_envelope(&root, &to_save))
                     .await
@@ -312,24 +350,25 @@ impl RecordingService {
                 "encryption state not installed; cannot read media chunk".into(),
             )
         })?;
-        storage::read_media_chunk_dispatched(
-            &root,
-            basename,
-            chunk_index,
-            chunk_size_hint,
-            &enc,
-        )
-        .await
+        storage::read_media_chunk_dispatched(&root, basename, chunk_index, chunk_size_hint, &enc)
+            .await
     }
 
-    async fn persist_macro(
+    async fn persist_macro_guarded(
         &self,
         root: PathBuf,
         m: MacroRecording,
+        _coordinator: &tokio::sync::MutexGuard<'static, ()>,
     ) -> RecordingResult<()> {
-        match self.resolve_persist_mode().await? {
+        match self
+            .resolve_persist_mode(sorng_encryption::ArtifactKind::Macros)
+            .await?
+        {
             PersistMode::Encrypted(enc) => storage::save_macro_dispatched(&root, &m, &enc).await,
             PersistMode::Plaintext => {
+                if let Some(enc) = self.enc_handle().await {
+                    return storage::save_macro_dispatched(&root, &m, &enc).await;
+                }
                 tokio::task::spawn_blocking(move || storage::save_macro(&root, &m))
                     .await
                     .map_err(|e| RecordingError::Internal(e.to_string()))?
@@ -337,7 +376,10 @@ impl RecordingService {
         }
     }
 
-    async fn list_envelopes_dispatched(&self, root: PathBuf) -> RecordingResult<Vec<SavedRecordingEnvelope>> {
+    async fn list_envelopes_dispatched(
+        &self,
+        root: PathBuf,
+    ) -> RecordingResult<Vec<SavedRecordingEnvelope>> {
         if let Some(enc) = self.enc_handle().await {
             storage::load_all_envelopes_dispatched(&root, &enc).await
         } else {
@@ -361,10 +403,9 @@ impl RecordingService {
     /// into their encrypted variants. Requires an installed and
     /// unlocked encryption state. Returns `(envelopes_migrated,
     /// envelopes_skipped, macros_migrated, macros_skipped)`.
-    pub async fn migrate_to_encrypted(
-        &self,
-    ) -> RecordingResult<(usize, usize, usize, usize)> {
-        self.migrate_to_encrypted_with_progress(&storage::NoopProgress).await
+    pub async fn migrate_to_encrypted(&self) -> RecordingResult<(usize, usize, usize, usize)> {
+        self.migrate_to_encrypted_with_progress(&storage::NoopProgress)
+            .await
     }
 
     /// Progress-aware variant of [`migrate_to_encrypted`]. Resets the
@@ -374,13 +415,13 @@ impl RecordingService {
         &self,
         progress: &dyn storage::MigrationProgress,
     ) -> RecordingResult<(usize, usize, usize, usize)> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         self.reset_migration_cancel();
-        let enc = self
-            .enc_handle()
-            .await
-            .ok_or_else(|| RecordingError::StorageError(
-                "encryption state not installed; cannot migrate".into(),
-            ))?;
+        let enc = self.enc_handle().await.ok_or_else(|| {
+            RecordingError::StorageError("encryption state not installed; cannot migrate".into())
+        })?;
         let root = self.storage_root.lock().await.clone();
         let (em, es) =
             storage::migrate_all_envelopes_to_encrypted_with_progress(&root, &enc, progress)
@@ -402,12 +443,18 @@ impl RecordingService {
     /// Initialise from disk: load config, library, macros.
     pub async fn init(&self) -> RecordingResult<()> {
         let root = self.storage_root.lock().await.clone();
-        let config = tokio::task::spawn_blocking({
-            let r = root.clone();
-            move || storage::load_config(&r)
-        })
-        .await
-        .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        let config = if let Some(enc) = self.enc_handle().await {
+            let _coordinator = sorng_encryption::settings_coordinator::try_lock()
+                .map_err(|e| RecordingError::StorageError(e.into()))?;
+            storage::load_config_dispatched(&root, &enc).await?
+        } else {
+            tokio::task::spawn_blocking({
+                let r = root.clone();
+                move || storage::load_config(&r)
+            })
+            .await
+            .map_err(|e| RecordingError::Internal(e.to_string()))??
+        };
 
         // Dispatch through the encryption-aware listers so that, once
         // the user has migrated, the library + macros loaded at startup
@@ -444,7 +491,14 @@ impl RecordingService {
     }
 
     pub async fn update_config(&self, config: RecordingGlobalConfig) -> RecordingResult<()> {
+        let _coordinator = sorng_encryption::settings_coordinator::try_lock()
+            .map_err(|e| RecordingError::StorageError(e.into()))?;
         let root = self.storage_root.lock().await.clone();
+        if let Some(enc) = self.enc_handle().await {
+            storage::save_config_dispatched(&root, &config, &enc).await?;
+            self.engine.lock().await.update_config(config);
+            return Ok(());
+        }
         {
             let mut eng = self.engine.lock().await;
             eng.update_config(config.clone());
@@ -470,6 +524,9 @@ impl RecordingService {
         record_input: bool,
         tags: Vec<String>,
     ) -> RecordingResult<String> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.start_terminal_recording(
             session_id,
@@ -520,6 +577,9 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> RecordingResult<TerminalRecording> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let recording = {
             let mut eng = self.engine.lock().await;
             eng.stop_terminal_recording(session_id)
@@ -541,16 +601,20 @@ impl RecordingService {
     /// path. A write failure is logged, never propagated — losing a
     /// snapshot must not disrupt live capture.
     async fn flush_terminal_snapshot(&self, recording: TerminalRecording) {
+        let Ok(_coordinator) = sorng_encryption::settings_coordinator::try_lock() else {
+            return;
+        };
         let id = recording.metadata.recording_id.clone();
-        let enc = match self.resolve_persist_mode().await {
+        let enc = match self
+            .resolve_persist_mode(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await
+        {
             Ok(PersistMode::Encrypted(e)) => Some(e),
             Ok(PersistMode::Plaintext) => None,
             Err(_) => return, // locked + default policy: nothing to protect yet
         };
         let root = self.storage_root.lock().await.clone();
-        if let Err(e) =
-            storage::write_terminal_snapshot(&root, &recording, enc.as_deref()).await
-        {
+        if let Err(e) = storage::write_terminal_snapshot(&root, &recording, enc.as_deref()).await {
             log::warn!("terminal recording snapshot flush failed for {id}: {e}");
         }
     }
@@ -637,6 +701,9 @@ impl RecordingService {
         fps: u32,
         tags: Vec<String>,
     ) -> RecordingResult<String> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMedia)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.start_screen_recording(
             session_id,
@@ -662,6 +729,9 @@ impl RecordingService {
     }
 
     pub async fn stop_screen_recording(&self, session_id: &str) -> RecordingResult<RdpRecording> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMedia)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.stop_screen_recording(session_id)
     }
@@ -692,6 +762,9 @@ impl RecordingService {
         record_headers: bool,
         tags: Vec<String>,
     ) -> RecordingResult<String> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.start_http_recording(session_id, host, target_url, record_headers, tags)
     }
@@ -702,6 +775,9 @@ impl RecordingService {
     }
 
     pub async fn stop_http_recording(&self, session_id: &str) -> RecordingResult<HttpRecording> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.stop_http_recording(session_id)
     }
@@ -731,6 +807,9 @@ impl RecordingService {
         port: u16,
         tags: Vec<String>,
     ) -> RecordingResult<String> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.start_telnet_recording(session_id, host, port, tags)
     }
@@ -744,6 +823,9 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> RecordingResult<TelnetRecording> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.stop_telnet_recording(session_id)
     }
@@ -773,6 +855,9 @@ impl RecordingService {
         baud_rate: u32,
         tags: Vec<String>,
     ) -> RecordingResult<String> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.start_serial_recording(session_id, port_name, baud_rate, tags)
     }
@@ -786,6 +871,9 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> RecordingResult<SerialRecording> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.stop_serial_recording(session_id)
     }
@@ -816,6 +904,9 @@ impl RecordingService {
         database_name: String,
         tags: Vec<String>,
     ) -> RecordingResult<String> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.start_db_recording(session_id, host, database_type, database_name, tags)
     }
@@ -826,6 +917,9 @@ impl RecordingService {
     }
 
     pub async fn stop_db_recording(&self, session_id: &str) -> RecordingResult<DbQueryRecording> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.stop_db_recording(session_id)
     }
@@ -850,6 +944,9 @@ impl RecordingService {
         session_id: String,
         target_protocol: RecordingProtocol,
     ) -> RecordingResult<String> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
+            .await?;
         let mut eng = self.engine.lock().await;
         eng.start_macro_recording(session_id, target_protocol)
     }
@@ -867,6 +964,9 @@ impl RecordingService {
         category: Option<String>,
         tags: Vec<String>,
     ) -> RecordingResult<MacroRecording> {
+        let coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
+            .await?;
         let macro_rec;
         {
             let mut eng = self.engine.lock().await;
@@ -875,7 +975,8 @@ impl RecordingService {
         // Persist to disk — dispatched so a freshly stopped macro lands
         // in the encrypted file when the user is unlocked.
         let root = self.storage_root.lock().await.clone();
-        self.persist_macro(root, macro_rec.clone()).await?;
+        self.persist_macro_guarded(root, macro_rec.clone(), &coordinator)
+            .await?;
         Ok(macro_rec)
     }
 
@@ -896,15 +997,23 @@ impl RecordingService {
     }
 
     pub async fn update_macro(&self, updated: MacroRecording) -> RecordingResult<()> {
+        let coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
+            .await?;
         let root = self.storage_root.lock().await.clone();
+        self.persist_macro_guarded(root, updated.clone(), &coordinator)
+            .await?;
         {
             let mut eng = self.engine.lock().await;
             eng.update_macro(updated.clone())?;
         }
-        self.persist_macro(root, updated).await
+        Ok(())
     }
 
     pub async fn delete_macro(&self, macro_id: &str) -> RecordingResult<()> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
+            .await?;
         let root = self.storage_root.lock().await.clone();
         {
             let mut eng = self.engine.lock().await;
@@ -919,12 +1028,17 @@ impl RecordingService {
     }
 
     pub async fn import_macro(&self, macro_rec: MacroRecording) -> RecordingResult<()> {
+        let coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
+            .await?;
         let root = self.storage_root.lock().await.clone();
+        self.persist_macro_guarded(root, macro_rec.clone(), &coordinator)
+            .await?;
         {
             let mut eng = self.engine.lock().await;
             eng.import_macro(macro_rec.clone());
         }
-        self.persist_macro(root, macro_rec).await
+        Ok(())
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -1050,6 +1164,9 @@ impl RecordingService {
     }
 
     pub async fn rename_in_library(&self, id: &str, name: String) -> RecordingResult<()> {
+        let coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let root = self.storage_root.lock().await.clone();
         {
             let mut eng = self.engine.lock().await;
@@ -1062,12 +1179,17 @@ impl RecordingService {
         // peel and only rewrites the metadata file.
         let envelope = self.engine.lock().await.get_from_library(id);
         if let Some(env) = envelope {
-            let _ = self.persist_envelope(root, env).await?;
+            let _ = self
+                .persist_envelope_guarded(root, env, &coordinator)
+                .await?;
         }
         Ok(())
     }
 
     pub async fn update_library_tags(&self, id: &str, tags: Vec<String>) -> RecordingResult<()> {
+        let coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let root = self.storage_root.lock().await.clone();
         {
             let mut eng = self.engine.lock().await;
@@ -1075,12 +1197,17 @@ impl RecordingService {
         }
         let envelope = self.engine.lock().await.get_from_library(id);
         if let Some(env) = envelope {
-            let _ = self.persist_envelope(root, env).await?;
+            let _ = self
+                .persist_envelope_guarded(root, env, &coordinator)
+                .await?;
         }
         Ok(())
     }
 
     pub async fn delete_from_library(&self, id: &str) -> RecordingResult<()> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let root = self.storage_root.lock().await.clone();
         // Capture the media sidecar name (if any) before the engine
         // drops the in-memory entry — we need it to delete the
@@ -1117,6 +1244,9 @@ impl RecordingService {
     }
 
     pub async fn clear_library(&self) -> RecordingResult<usize> {
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let root = self.storage_root.lock().await.clone();
         let count;
         {
@@ -1177,6 +1307,9 @@ impl RecordingService {
         if !config.auto_cleanup_enabled {
             return Ok(0);
         }
+        let _coordinator = self
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await?;
         let days = config.auto_cleanup_older_than_days;
         let max_bytes = config.max_storage_bytes;
 
@@ -1401,6 +1534,15 @@ pub fn new_service_state(app_data_dir: &str) -> RecordingServiceState {
     std::sync::Arc::new(tokio::sync::Mutex::new(RecordingService::new(app_data_dir)))
 }
 
+// These independent temporary-profile fixtures share the process-wide native
+// writer coordinator. Serialize fixture lifetimes, not operations within one
+// fixture, so dedicated same-profile concurrency tests still exercise races.
+#[cfg(test)]
+async fn recording_fixture_guard() -> tokio::sync::MutexGuard<'static, ()> {
+    static FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    FIXTURE.lock().await
+}
+
 #[cfg(test)]
 mod phase_2c_split_tests {
     //! Phase 2c — media sidecar split-out, exercised via the live
@@ -1456,6 +1598,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn large_binary_format_peels_into_sidecar() {
+        let _fixture = recording_fixture_guard().await;
         let tmp = tempdir().unwrap();
         let svc = fresh_service(tmp.path(), true).await;
         // FrameSequence is binary-shaped: triggers the sidecar even
@@ -1475,7 +1618,38 @@ mod phase_2c_split_tests {
     }
 
     #[tokio::test]
+    async fn busy_housekeeping_preserves_recording_files_and_cached_payload() {
+        let _fixture = recording_fixture_guard().await;
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let envelope = fixture_envelope("keep", ExportFormat::Asciicast, 7, "payload".into());
+        svc.save_to_library(envelope.clone()).await.unwrap();
+        let mut config = svc.get_config().await;
+        config.auto_cleanup_enabled = true;
+        svc.update_config(config).await.unwrap();
+        let canonical = tmp.path().join("recording/recordings/keep.json.enc");
+        let bytes = std::fs::read(&canonical).unwrap();
+        {
+            let coordinator = sorng_encryption::settings_coordinator::lock().await;
+            assert!(svc.delete_from_library("keep").await.is_err());
+            assert!(svc.clear_library().await.is_err());
+            assert!(svc.run_auto_cleanup().await.is_err());
+            assert!(svc
+                .rename_in_library("keep", "changed".into())
+                .await
+                .is_err());
+            assert!(svc.save_to_library(envelope.clone()).await.is_err());
+            assert_eq!(svc.get_from_library("keep").await.unwrap().data, "payload");
+            assert_eq!(std::fs::read(&canonical).unwrap(), bytes);
+            drop(coordinator);
+        }
+        svc.save_to_library(envelope).await.unwrap();
+        assert_eq!(svc.get_from_library("keep").await.unwrap().data, "payload");
+    }
+
+    #[tokio::test]
     async fn text_format_under_threshold_stays_inline() {
+        let _fixture = recording_fixture_guard().await;
         let tmp = tempdir().unwrap();
         let svc = fresh_service(tmp.path(), true).await;
         // Asciicast is text-shaped + small: stays inline so a single
@@ -1495,18 +1669,14 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn text_format_over_threshold_promotes_to_sidecar() {
+        let _fixture = recording_fixture_guard().await;
         let tmp = tempdir().unwrap();
         let svc = fresh_service(tmp.path(), true).await;
         // Asciicast that's larger than the threshold still pages out:
         // the chunked-stream codec wins on seek and on metadata scan
         // bloat regardless of the textual nature.
         let big = "x".repeat((crate::types::MEDIA_SIDECAR_THRESHOLD_BYTES + 1) as usize);
-        let env = fixture_envelope(
-            "big",
-            ExportFormat::Asciicast,
-            big.len() as u64,
-            big,
-        );
+        let env = fixture_envelope("big", ExportFormat::Asciicast, big.len() as u64, big);
         svc.save_to_library(env).await.unwrap();
         let stored = svc.get_from_library("big").await.unwrap();
         assert!(stored.has_media_sidecar());
@@ -1515,6 +1685,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn metadata_only_edits_do_not_double_write_sidecar() {
+        let _fixture = recording_fixture_guard().await;
         let tmp = tempdir().unwrap();
         let svc = fresh_service(tmp.path(), true).await;
         let env = fixture_envelope(
@@ -1541,6 +1712,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn delete_sweeps_both_metadata_and_sidecar() {
+        let _fixture = recording_fixture_guard().await;
         let tmp = tempdir().unwrap();
         let svc = fresh_service(tmp.path(), true).await;
         let env = fixture_envelope(
@@ -1559,15 +1731,11 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn read_envelope_media_handles_inline_and_sidecar() {
+        let _fixture = recording_fixture_guard().await;
         let tmp = tempdir().unwrap();
         let svc = fresh_service(tmp.path(), true).await;
 
-        let inline = fixture_envelope(
-            "i1",
-            ExportFormat::Asciicast,
-            10,
-            "inline-body".to_string(),
-        );
+        let inline = fixture_envelope("i1", ExportFormat::Asciicast, 10, "inline-body".to_string());
         svc.save_to_library(inline).await.unwrap();
         let i = svc.get_from_library("i1").await.unwrap();
         let i_bytes = svc.read_envelope_media(&i).await.unwrap();
@@ -1597,6 +1765,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn locked_state_writes_plaintext_sidecar() {
+        let _fixture = recording_fixture_guard().await;
         let tmp = tempdir().unwrap();
         // Encryption state installed but never unlocked. With the
         // EXPLICIT plaintext opt-out set, media falls back to plain
@@ -1620,6 +1789,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn default_save_unlocked_produces_encrypted_output() {
+        let _fixture = recording_fixture_guard().await;
         // Default policy (encrypt_at_rest = true) + unlocked key →
         // every artifact lands as `.enc`, never plaintext.
         let tmp = tempdir().unwrap();
@@ -1643,6 +1813,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn locked_state_refuses_plaintext_under_default() {
+        let _fixture = recording_fixture_guard().await;
         // The core security guarantee: encrypt-at-rest is the DEFAULT,
         // so a locked / absent key must NOT silently produce a plaintext
         // recording — the save is refused with EncryptionRequired and
@@ -1667,7 +1838,10 @@ mod phase_2c_split_tests {
         assert!(!tmp.path().join("recording/recordings/R1.json").exists());
         assert!(!tmp.path().join("recording/recordings/R1.json.enc").exists());
         assert!(!tmp.path().join("recording/recordings/R1.media").exists());
-        assert!(!tmp.path().join("recording/recordings/R1.media.enc").exists());
+        assert!(!tmp
+            .path()
+            .join("recording/recordings/R1.media.enc")
+            .exists());
 
         // Case 2: no encryption state installed at all (boot-order race
         // or never configured) — same refusal under the default.
@@ -1689,6 +1863,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn explicit_opt_out_allows_plaintext_when_locked() {
+        let _fixture = recording_fixture_guard().await;
         // With the deliberate opt-out (encrypt_at_rest = false), a
         // locked / absent key is permitted to write plaintext — proving
         // the documented escape hatch still works.
@@ -1710,6 +1885,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn macro_persist_refuses_plaintext_under_default_when_locked() {
+        let _fixture = recording_fixture_guard().await;
         // Macros take the same persistence policy as envelopes.
         let tmp = tempdir().unwrap();
         let svc = RecordingService::new(tmp.path().to_string_lossy().as_ref());
@@ -1731,6 +1907,7 @@ mod phase_2c_split_tests {
 
     #[tokio::test]
     async fn legacy_envelope_without_sidecar_field_still_loads() {
+        let _fixture = recording_fixture_guard().await;
         // Forward-compat: an envelope persisted before this commit
         // has no `media_blob_basename` on disk. `serde(default,
         // skip_serializing_if)` means it deserialises as `None` and
@@ -1863,6 +2040,7 @@ mod phase_2c_engine_e2e_tests {
 
     #[tokio::test]
     async fn terminal_recording_snapshots_and_recovers_after_crash() {
+        let _fixture = recording_fixture_guard().await;
         // Incremental-flush durability (e4-F4): a long recorded session
         // that never reaches a clean stop (hard-kill / power-loss) must be
         // recoverable up to the last flush, instead of losing 100% of the
@@ -1890,7 +2068,8 @@ mod phase_2c_engine_e2e_tests {
                 .unwrap();
             // > TERMINAL_SNAPSHOT_EVERY_N_ENTRIES appends → at least one flush.
             for i in 0..(TERMINAL_SNAPSHOT_EVERY_N_ENTRIES + 12) {
-                svc.append_terminal_output(sid, &format!("line {i}\n")).await;
+                svc.append_terminal_output(sid, &format!("line {i}\n"))
+                    .await;
             }
             id
         };
@@ -1932,6 +2111,7 @@ mod phase_2c_engine_e2e_tests {
 
     #[tokio::test]
     async fn clean_stop_leaves_no_orphan_snapshot_to_recover() {
+        let _fixture = recording_fixture_guard().await;
         // A cleanly-stopped recording must NOT be resurrected on the next
         // boot — stop clears the in-flight snapshot.
         let tmp = tempdir().unwrap();
@@ -1952,7 +2132,8 @@ mod phase_2c_engine_e2e_tests {
             .await
             .unwrap();
         for i in 0..(TERMINAL_SNAPSHOT_EVERY_N_ENTRIES + 4) {
-            svc.append_terminal_output(sid, &format!("line {i}\n")).await;
+            svc.append_terminal_output(sid, &format!("line {i}\n"))
+                .await;
         }
         let snap = root
             .join("recording")
@@ -1961,7 +2142,10 @@ mod phase_2c_engine_e2e_tests {
         assert!(snap.exists(), "snapshot expected before stop");
         // Clean stop must sweep the snapshot.
         svc.stop_terminal_recording(sid).await.unwrap();
-        assert!(!snap.exists(), "clean stop must clear the in-flight snapshot");
+        assert!(
+            !snap.exists(),
+            "clean stop must clear the in-flight snapshot"
+        );
         assert_eq!(
             svc.recover_crashed_terminal_recordings().await.unwrap(),
             0,
@@ -1971,6 +2155,7 @@ mod phase_2c_engine_e2e_tests {
 
     #[tokio::test]
     async fn engine_screen_recording_with_frame_sequence_format_peels_into_sidecar() {
+        let _fixture = recording_fixture_guard().await;
         // Exercises: RecordingService::encode_compress_save_screen
         // FrameSequence is binary-shaped — `should_use_media_sidecar`
         // returns true regardless of compressed size — so any non-empty
@@ -2001,7 +2186,10 @@ mod phase_2c_engine_e2e_tests {
             "FrameSequence engine save must peel into sidecar"
         );
         assert!(env.data.is_empty(), "inline data must be cleared");
-        assert_eq!(env.media_blob_basename.as_deref(), Some(&*format!("{}.media", id)));
+        assert_eq!(
+            env.media_blob_basename.as_deref(),
+            Some(&*format!("{}.media", id))
+        );
 
         // Disk shape: metadata + sidecar both encrypted on the unlocked
         // path. Pin both names so a future codec rename surfaces here.
@@ -2012,21 +2200,30 @@ mod phase_2c_engine_e2e_tests {
             .path()
             .join(format!("recording/recordings/{}.media.enc", id));
         assert!(meta.exists(), "metadata file missing at {}", meta.display());
-        assert!(media.exists(), "sidecar file missing at {}", media.display());
+        assert!(
+            media.exists(),
+            "sidecar file missing at {}",
+            media.display()
+        );
 
         // Round-trip the bytes through the lazy-load helper; the
         // returned payload must be exactly the encoder+compressor
         // output the engine handed to the storage layer.
-        let expected_encoded = encoders::encode_frame_sequence_manifest(&rdp_fixture("eng-fs", 8))
-            .unwrap();
+        let expected_encoded =
+            encoders::encode_frame_sequence_manifest(&rdp_fixture("eng-fs", 8)).unwrap();
         let expected_b64 =
             compression::compress_to_b64(&expected_encoded, &CompressionAlgorithm::None).unwrap();
         let got = svc.read_envelope_media(&env).await.unwrap();
-        assert_eq!(got, expected_b64.into_bytes(), "sidecar round-trip mismatch");
+        assert_eq!(
+            got,
+            expected_b64.into_bytes(),
+            "sidecar round-trip mismatch"
+        );
     }
 
     #[tokio::test]
     async fn engine_large_text_recording_promotes_to_sidecar_via_threshold() {
+        let _fixture = recording_fixture_guard().await;
         // Exercises: RecordingService::encode_compress_save_terminal
         // Asciicast is text-shaped, so the only way it peels is when
         // `size_bytes > MEDIA_SIDECAR_THRESHOLD_BYTES`. We feed one
@@ -2066,17 +2263,28 @@ mod phase_2c_engine_e2e_tests {
             env.has_media_sidecar(),
             "asciicast over threshold must promote to sidecar"
         );
-        assert!(env.data.is_empty(), "inline data must be cleared after peel");
-        assert_eq!(env.media_blob_basename.as_deref(), Some(&*format!("{}.media", id)));
+        assert!(
+            env.data.is_empty(),
+            "inline data must be cleared after peel"
+        );
+        assert_eq!(
+            env.media_blob_basename.as_deref(),
+            Some(&*format!("{}.media", id))
+        );
 
         let media = tmp
             .path()
             .join(format!("recording/recordings/{}.media.enc", id));
-        assert!(media.exists(), "sidecar must land on disk at {}", media.display());
+        assert!(
+            media.exists(),
+            "sidecar must land on disk at {}",
+            media.display()
+        );
     }
 
     #[tokio::test]
     async fn engine_short_text_recording_stays_inline() {
+        let _fixture = recording_fixture_guard().await;
         // Exercises: RecordingService::encode_compress_save_terminal
         // Negative case: a tiny asciicast recording must not be split.
         // This pins that the engine doesn't gratuitously peel small
@@ -2100,10 +2308,7 @@ mod phase_2c_engine_e2e_tests {
             .unwrap();
 
         let env = svc.get_from_library(&id).await.unwrap();
-        assert!(
-            !env.has_media_sidecar(),
-            "small asciicast must stay inline"
-        );
+        assert!(!env.has_media_sidecar(), "small asciicast must stay inline");
         assert!(env.media_blob_basename.is_none());
         assert!(
             !env.data.is_empty(),
@@ -2123,6 +2328,7 @@ mod phase_2c_engine_e2e_tests {
 
     #[tokio::test]
     async fn engine_round_trip_through_save_then_read_envelope_media() {
+        let _fixture = recording_fixture_guard().await;
         // Exercises: RecordingService::encode_compress_save_screen
         //          + RecordingService::read_envelope_media
         // The contract: whatever the encoder+compressor produced and
@@ -2152,7 +2358,10 @@ mod phase_2c_engine_e2e_tests {
             .unwrap();
 
         let env = svc.get_from_library(&id).await.unwrap();
-        assert!(env.has_media_sidecar(), "round-trip needs a sidecar to exercise");
+        assert!(
+            env.has_media_sidecar(),
+            "round-trip needs a sidecar to exercise"
+        );
 
         let bytes = svc.read_envelope_media(&env).await.unwrap();
 
@@ -2171,6 +2380,7 @@ mod phase_2c_engine_e2e_tests {
 
     #[tokio::test]
     async fn engine_delete_sweeps_metadata_and_media_files() {
+        let _fixture = recording_fixture_guard().await;
         // Exercises: RecordingService::encode_compress_save_screen
         //          + RecordingService::delete_from_library
         // End-to-end delete: after a sidecar-producing engine save,

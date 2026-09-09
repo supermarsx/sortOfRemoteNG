@@ -1532,6 +1532,7 @@ impl TrustRuntime {
         f: impl FnOnce(Option<&SubKey>) -> Result<R, String>,
     ) -> Result<R, String> {
         if let Some(state) = &self.enc_state {
+            state.resolve_write_policy(ArtifactKind::TrustStore, false)?;
             return state
                 .with_sub_key_sync(ArtifactKind::TrustStore, f)
                 .map_err(str::to_string)?;
@@ -1578,7 +1579,7 @@ impl TrustRuntime {
     fn active_is_encrypted(&self) -> bool {
         if let Some(state) = &self.enc_state {
             return state
-                .with_sub_key_sync(ArtifactKind::TrustStore, |key| key.is_some())
+                .resolve_write_policy(ArtifactKind::TrustStore, true)
                 .unwrap_or(false);
         }
         self.active
@@ -1690,6 +1691,7 @@ impl TrustRuntime {
         let candidates = [
             canonical.to_path_buf(),
             sdbf::sibling(canonical, "bak"),
+            sdbf::sibling(canonical, "tmp"),
             canonical.with_extension("json.v0.bak"),
         ];
         candidates.iter().any(|path| {
@@ -1760,6 +1762,14 @@ impl TrustRuntime {
             })?;
             decrypt_with_subkey(key, &payload)?
         } else {
+            if let Some(state) = &self.enc_state {
+                if state.resolve_write_policy(ArtifactKind::TrustStore, false)? {
+                    return Err(
+                        "plaintext trust store conflicts with the authenticated encryption policy"
+                            .into(),
+                    );
+                }
+            }
             payload
         };
         if plain.len() as u64 > MAX_TRUST_STORE_BYTES {
@@ -1795,11 +1805,15 @@ impl TrustRuntime {
         if plain.len() as u64 > MAX_TRUST_STORE_BYTES {
             return Err("serialized trust store exceeds the size limit".to_string());
         }
+        let encrypt = match &self.enc_state {
+            Some(state) => state.resolve_write_policy(ArtifactKind::TrustStore, key.is_some())?,
+            None => key.is_some(),
+        };
         let payload = {
-            match key {
+            match key.filter(|_| encrypt) {
                 Some(key) => encrypt_with_subkey(key, &plain)?,
                 None => {
-                    if self.encryption_configured_for(canonical) {
+                    if key.is_none() && self.encryption_configured_for(canonical) {
                         return Err(
                             "trust store is encrypted; unlock first via Settings → Security"
                                 .to_string(),
@@ -1901,6 +1915,9 @@ impl TrustRuntime {
         database_id: &str,
         _coordinator: &tokio::sync::MutexGuard<'_, ()>,
     ) -> Result<(), String> {
+        if let Some(state) = &self.enc_state {
+            state.resolve_write_policy(ArtifactKind::TrustStore, false)?;
+        }
         let canonical = self.trust_file_path(database_id)?;
         // The database deletion command owns the settings coordinator already.
         // This low-level deletion seam never derives or installs key material.
@@ -2321,6 +2338,7 @@ mod runtime_tests {
 
     #[tokio::test]
     async fn rotation_refreshes_native_key_without_renderer_and_blocks_inflight_io() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let state = unlocked_state().await;
         let guard = install_runtime_for_tests(dir.path().join("databases"), Some(state.clone()));
@@ -2384,6 +2402,7 @@ mod runtime_tests {
 
     #[tokio::test]
     async fn guarded_and_standalone_deletion_share_transaction_order() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let guard = install_active_runtime_for_tests(dir.path().join("databases"), "delete");
         SyncTrustStore::shared()
@@ -2419,6 +2438,7 @@ mod runtime_tests {
 
     #[tokio::test]
     async fn activation_queues_and_failure_deactivates_instead_of_reusing_old_scope() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let state = unlocked_state().await;
         let guard = install_runtime_for_tests(dir.path().join("databases"), Some(state));
@@ -2496,6 +2516,7 @@ mod runtime_tests {
 
     #[tokio::test]
     async fn encrypted_round_trip_and_locked_fails_closed() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let state = unlocked_state().await;
         let guard = install_runtime_for_tests(dir.path().join("databases"), Some(state.clone()));
@@ -2529,7 +2550,7 @@ mod runtime_tests {
         let err = store
             .verify_identity_blocking("h:1", "tls", tls_identity("aa"))
             .unwrap_err();
-        assert!(err.contains("encrypted"), "{err}");
+        assert!(err.contains("locked"), "{err}");
         assert!(store
             .trust_identity_blocking("x:2".into(), "tls".into(), tls_identity("bb"), true)
             .is_err());
@@ -2539,6 +2560,7 @@ mod runtime_tests {
 
     #[tokio::test]
     async fn plaintext_mode_when_encryption_not_configured() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let locked = Arc::new(EncryptionState::new());
         let guard = install_runtime_for_tests(dir.path().join("databases"), Some(locked));
@@ -2589,6 +2611,7 @@ mod runtime_tests {
 
     #[tokio::test]
     async fn legacy_seed_migrates_global_and_matching_scoped_records_only() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let app_dir = dir.path();
         let mut legacy = TrustStoreData {
@@ -2675,6 +2698,7 @@ mod runtime_tests {
 
     #[tokio::test]
     async fn export_import_merge_replace_and_delete() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let guard = install_active_runtime_for_tests(dir.path().join("databases"), "src");
         let rt = guard.runtime.clone();

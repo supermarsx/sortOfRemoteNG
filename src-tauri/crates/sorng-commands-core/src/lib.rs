@@ -31,6 +31,12 @@ pub mod app_settings_commands;
 #[allow(dead_code)]
 #[path = "../../../src/app_shell_commands.rs"]
 mod app_shell_commands;
+#[path = "../../../src/artifact_encryption_commands.rs"]
+mod artifact_encryption_commands;
+#[doc(hidden)]
+pub mod artifact_handler;
+#[path = "../../../src/artifact_storage_adapters.rs"]
+mod artifact_storage_adapters;
 #[path = "../../../src/cpu_commands.rs"]
 mod cpu_commands;
 #[path = "../../../src/database_files.rs"]

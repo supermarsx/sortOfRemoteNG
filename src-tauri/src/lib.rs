@@ -75,6 +75,8 @@ pub mod app_settings_commands;
 // surfaced through `app_lib` so the e2e integration test at
 // `src-tauri/tests/encryption_rotation_e2e.rs` can call the
 // Tauri-agnostic `rotate_master_key_full_inner` helper directly.
+pub mod artifact_encryption_commands;
+pub mod artifact_storage_adapters;
 pub mod encryption_rotation_commands;
 
 #[cfg(test)]
@@ -123,6 +125,14 @@ fn init_tracing() {
     // by a more specific RUST_LOG directive.
     let secret_safety_filter =
         filter_fn(|metadata| tracing_metadata_is_safe(metadata.target(), metadata.level()));
+    let persistent_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let persistent_safety =
+        filter_fn(|metadata| tracing_metadata_is_safe(metadata.target(), metadata.level()));
+    let persistent_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(sorng_encryption::log_adapter::tracing_writer)
+        .with_filter(persistent_filter.and(persistent_safety));
 
     #[cfg(feature = "logs-json")]
     {
@@ -131,6 +141,7 @@ fn init_tracing() {
             .with_current_span(true)
             .with_span_list(true);
         let _ = Registry::default()
+            .with(persistent_layer)
             .with(format_layer.with_filter(environment_filter.and(secret_safety_filter)))
             .try_init();
     }
@@ -138,6 +149,7 @@ fn init_tracing() {
     {
         let format_layer = tracing_subscriber::fmt::layer();
         let _ = Registry::default()
+            .with(persistent_layer)
             .with(format_layer.with_filter(environment_filter.and(secret_safety_filter)))
             .try_init();
     }

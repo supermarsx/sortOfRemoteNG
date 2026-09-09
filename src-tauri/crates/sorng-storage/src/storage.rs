@@ -219,6 +219,8 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
+        let _coordinator =
+            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
         if json.len() > MAX_STORAGE_PLAINTEXT_BYTES {
             return Err("Connections storage exceeds the 255 MiB limit".to_string());
@@ -230,12 +232,8 @@ impl SecureStorage {
         // encryption state was not installed.
         let state = self.encryption_state.as_ref();
         let used_v2 = match state {
-            Some(state) if state.is_unlocked().await => true,
-            Some(_) => {
-                return Err(
-                    "Connections database encryption state is locked; unlock before saving"
-                        .to_string(),
-                );
+            Some(state) => {
+                state.resolve_write_policy(sorng_encryption::ArtifactKind::Connections, true)?
             }
             None if use_password => {
                 return Err(
@@ -334,6 +332,12 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn load_data(&self) -> Result<Option<StorageData>, String> {
+        let _coordinator =
+            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        if let Some(state) = &self.encryption_state {
+            // A plaintext override never bypasses the global locked/recovery gate.
+            state.resolve_write_policy(sorng_encryption::ArtifactKind::Connections, false)?;
+        }
         let path = Path::new(&self.store_path);
         if Self::checked_storage_metadata(path)?.is_none() {
             return Ok(None);
@@ -342,6 +346,16 @@ impl SecureStorage {
             fs::read(path).map_err(|_| "Failed to read connections storage".to_string())?;
         if raw_bytes.len() as u64 > MAX_STORAGE_FILE_BYTES {
             return Err("Connections storage exceeds the 256 MiB limit".to_string());
+        }
+        if let Some(state) = &self.encryption_state {
+            if state.resolve_write_policy(sorng_encryption::ArtifactKind::Connections, false)?
+                && !Self::is_v2_connections_blob(&raw_bytes)
+            {
+                return Err(
+                    "plaintext connections conflict with the authenticated encryption policy"
+                        .into(),
+                );
+            }
         }
 
         // v2 envelope binary blob.
@@ -460,6 +474,11 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn clear_storage(&self) -> Result<(), String> {
+        let _coordinator =
+            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        if let Some(state) = &self.encryption_state {
+            state.resolve_write_policy(sorng_encryption::ArtifactKind::Connections, false)?;
+        }
         let path = Path::new(&self.store_path);
         if Self::checked_storage_metadata(path)?.is_some() {
             fs::remove_file(path).map_err(|_| "Failed to clear connections storage".to_string())
@@ -580,6 +599,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn app_data_compare_and_swap_rejects_stale_writers() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
         let storage = build_storage(dir.path().join("cas.json").to_string_lossy().into());
 
@@ -614,6 +634,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn v2_envelope_used_when_state_unlocked() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
         let mut svc = build_storage(path.clone());
@@ -630,6 +651,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn requested_protection_without_state_refuses_plaintext_downgrade() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
         let svc = build_storage(path.clone());
@@ -644,6 +666,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn plaintext_path_when_no_state_installed() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
         let svc = build_storage(path.clone());
@@ -664,6 +687,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn locked_read_of_v2_surfaces_error() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Defence in depth: a v2 file with a locked state must error
         // rather than silently fall through to plaintext.
         let tmp = tempdir().unwrap();
@@ -680,6 +704,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn locked_state_refuses_plaintext_downgrade() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
         let mut svc = build_storage(path.clone());
@@ -688,7 +713,7 @@ mod connections_dispatch_tests {
 
         let err = svc.save_data(sample_data(), false).await.unwrap_err();
         assert!(
-            err.contains("encryption state is locked"),
+            err.contains("unlock the master key"),
             "expected locked-state downgrade refusal, got: {err}"
         );
         assert!(
@@ -699,6 +724,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn legacy_sorng_enc_fixture_is_rejected_on_load() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Commit Z removed the legacy reader. A stray `SORNG_ENC:`
         // file on disk (from a pre-purge install that never ran the
         // migrator) must surface as a JSON parse error instead of
@@ -727,6 +753,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn missing_parent_dir_self_heals_via_create_dir_all() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // The connections writer now routes through the durable writer,
         // which self-heals a missing parent (t21 resilience, previously
         // settings-only). Pointing at a non-existent multi-level parent
@@ -748,6 +775,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn garbage_canonical_file_surfaces_parse_error_on_load() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // 500 random bytes at the canonical path. After commit Z this
         // is dispatched as plaintext (vanishingly unlikely to start
         // with `SORNG\0`) and must produce a clean Err — either a
@@ -774,6 +802,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn load_against_missing_file_returns_none() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // No file at the path → load_data must return Ok(None), per
         // the documented contract.
         let tmp = tempdir().unwrap();
@@ -785,6 +814,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn leftover_tmp_file_does_not_block_next_write() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Pre-plant the durable writer's temp sibling (`.data.json.tmp`, a
         // hidden sibling in the same directory). A normal write must succeed
         // AND the leftover must no longer be present (it gets overwritten
@@ -817,6 +847,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn wrong_master_dek_after_eviction_fails_cleanly() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Simulate: data written under state_a's DEK, vault evicts,
         // user imports the WRONG portable .dek into state_b. The load
         // must error clean (GCM auth tag mismatch), not panic and not
@@ -846,6 +877,7 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn right_master_dek_after_eviction_decodes_cleanly() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Same as above but the imported portable .dek matches —
         // load succeeds and the data round-trips.
         let tmp = tempdir().unwrap();

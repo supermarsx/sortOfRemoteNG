@@ -8,8 +8,7 @@ pub async fn backup_update_config(
     config: BackupConfig,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_config(config);
-    Ok(())
+    service.update_config(config)
 }
 
 /// Get current backup configuration

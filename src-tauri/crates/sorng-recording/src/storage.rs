@@ -365,6 +365,56 @@ pub fn load_config(root: &Path) -> RecordingResult<RecordingGlobalConfig> {
     Ok(config)
 }
 
+pub async fn load_config_dispatched(
+    root: &Path,
+    enc: &EncryptionState,
+) -> RecordingResult<RecordingGlobalConfig> {
+    enc.resolve_write_policy(sorng_encryption::ArtifactKind::RecordingsMeta, false)
+        .map_err(RecordingError::StorageError)?;
+    let path = root.join("config.json");
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(RecordingGlobalConfig::default())
+        }
+        Err(e) => return Err(RecordingError::StorageError(e.to_string())),
+    };
+    if bytes.starts_with(sorng_encryption::envelope::MAGIC) {
+        let value = meta_codec::read(enc, &bytes)
+            .await
+            .map_err(|e| RecordingError::StorageError(e.to_string()))?
+            .ok_or_else(|| RecordingError::StorageError("empty recording config".into()))?;
+        Ok(serde_json::from_value(value)?)
+    } else {
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+}
+
+pub async fn save_config_dispatched(
+    root: &Path,
+    config: &RecordingGlobalConfig,
+    enc: &EncryptionState,
+) -> RecordingResult<()> {
+    // Legacy config files were plaintext, unlike saved recording metadata.
+    let encrypt = enc
+        .resolve_write_policy(sorng_encryption::ArtifactKind::RecordingsMeta, false)
+        .map_err(RecordingError::StorageError)?;
+    let bytes = if encrypt {
+        meta_codec::write(
+            enc,
+            &serde_json::to_value(config)?,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0; SALT_LEN],
+        )
+        .await
+        .map_err(|e| RecordingError::StorageError(e.to_string()))?
+    } else {
+        serde_json::to_vec_pretty(config)?
+    };
+    durable_write(&root.join("config.json"), &bytes)
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Auto-cleanup (files on disk)
 // ═══════════════════════════════════════════════════════════════════════
@@ -503,11 +553,17 @@ pub async fn save_envelope_dispatched(
     envelope: &SavedRecordingEnvelope,
     enc: &EncryptionState,
 ) -> RecordingResult<()> {
+    let encrypt = enc
+        .resolve_write_policy(
+            sorng_encryption::ArtifactKind::RecordingsMeta,
+            enc.is_unlocked().await,
+        )
+        .map_err(RecordingError::StorageError)?;
     let dir = recordings_dir(root);
     std::fs::create_dir_all(&dir)
         .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
 
-    if enc.is_unlocked().await {
+    if encrypt {
         let value = serde_json::to_value(envelope)?;
         // Wrap in an object if needed — codec requires object root.
         let obj = if value.is_object() {
@@ -532,7 +588,8 @@ pub async fn save_envelope_dispatched(
         remove_stale_plaintext_variants(&plain)?;
         Ok(())
     } else {
-        save_envelope(root, envelope)
+        save_envelope(root, envelope)?;
+        remove_plaintext_after_encryption(&envelope_enc_path(root, &envelope.id))
     }
 }
 
@@ -544,6 +601,8 @@ pub async fn load_envelope_dispatched(
     id: &str,
     enc: &EncryptionState,
 ) -> RecordingResult<SavedRecordingEnvelope> {
+    enc.resolve_write_policy(sorng_encryption::ArtifactKind::RecordingsMeta, false)
+        .map_err(RecordingError::StorageError)?;
     let enc_path = envelope_enc_path(root, id);
     if enc_path.exists() {
         if !enc.is_unlocked().await {
@@ -573,6 +632,8 @@ pub async fn load_all_envelopes_dispatched(
     root: &Path,
     enc: &EncryptionState,
 ) -> RecordingResult<Vec<SavedRecordingEnvelope>> {
+    enc.resolve_write_policy(sorng_encryption::ArtifactKind::RecordingsMeta, false)
+        .map_err(RecordingError::StorageError)?;
     let dir = recordings_dir(root);
     if !dir.exists() {
         return Ok(Vec::new());
@@ -662,11 +723,17 @@ pub async fn save_macro_dispatched(
     macro_rec: &MacroRecording,
     enc: &EncryptionState,
 ) -> RecordingResult<()> {
+    let encrypt = enc
+        .resolve_write_policy(
+            sorng_encryption::ArtifactKind::Macros,
+            enc.is_unlocked().await,
+        )
+        .map_err(RecordingError::StorageError)?;
     let dir = macros_dir(root);
     std::fs::create_dir_all(&dir)
         .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
 
-    if enc.is_unlocked().await {
+    if encrypt {
         let value = serde_json::to_value(macro_rec)?;
         let obj = if value.is_object() {
             value
@@ -688,7 +755,8 @@ pub async fn save_macro_dispatched(
         remove_stale_plaintext_variants(&plain)?;
         Ok(())
     } else {
-        save_macro(root, macro_rec)
+        save_macro(root, macro_rec)?;
+        remove_plaintext_after_encryption(&macro_enc_path(root, &macro_rec.id))
     }
 }
 
@@ -696,6 +764,8 @@ pub async fn load_all_macros_dispatched(
     root: &Path,
     enc: &EncryptionState,
 ) -> RecordingResult<Vec<MacroRecording>> {
+    enc.resolve_write_policy(sorng_encryption::ArtifactKind::Macros, false)
+        .map_err(RecordingError::StorageError)?;
     let dir = macros_dir(root);
     if !dir.exists() {
         return Ok(Vec::new());
@@ -829,11 +899,17 @@ pub async fn save_media_blob_dispatched(
     bytes: &[u8],
     enc: &EncryptionState,
 ) -> RecordingResult<()> {
+    let encrypt = enc
+        .resolve_write_policy(
+            sorng_encryption::ArtifactKind::RecordingsMedia,
+            enc.is_unlocked().await,
+        )
+        .map_err(RecordingError::StorageError)?;
     let dir = recordings_dir(root);
     std::fs::create_dir_all(&dir)
         .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
 
-    if enc.is_unlocked().await {
+    if encrypt {
         let blob = media_codec::write_one_shot(
             enc,
             bytes,
@@ -848,10 +924,14 @@ pub async fn save_media_blob_dispatched(
         remove_plaintext_after_encryption(&plain)?;
         Ok(())
     } else {
-        let plain = media_plain_path(root, basename);
-        durable_write(&plain, bytes)?;
-        Ok(())
+        save_media_blob_plaintext(root, basename, bytes)
     }
+}
+
+/// Explicit plaintext mode must retire the encrypted peer that readers prefer.
+pub fn save_media_blob_plaintext(root: &Path, basename: &str, bytes: &[u8]) -> RecordingResult<()> {
+    durable_write(&media_plain_path(root, basename), bytes)?;
+    remove_plaintext_after_encryption(&media_enc_path(root, basename))
 }
 
 /// Load the entire media blob, decrypting if the file is encrypted.
@@ -863,6 +943,8 @@ pub async fn load_media_blob_dispatched(
     basename: &str,
     enc: &EncryptionState,
 ) -> RecordingResult<Vec<u8>> {
+    enc.resolve_write_policy(sorng_encryption::ArtifactKind::RecordingsMedia, false)
+        .map_err(RecordingError::StorageError)?;
     let enc_path = media_enc_path(root, basename);
     if enc_path.exists() {
         if !enc.is_unlocked().await {
@@ -896,6 +978,8 @@ pub async fn read_media_chunk_dispatched(
     chunk_size_hint: usize,
     enc: &EncryptionState,
 ) -> RecordingResult<Vec<u8>> {
+    enc.resolve_write_policy(sorng_encryption::ArtifactKind::RecordingsMedia, false)
+        .map_err(RecordingError::StorageError)?;
     let enc_path = media_enc_path(root, basename);
     if enc_path.exists() {
         if !enc.is_unlocked().await {

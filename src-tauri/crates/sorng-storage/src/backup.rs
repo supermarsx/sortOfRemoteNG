@@ -424,9 +424,15 @@ impl BackupService {
     }
 
     /// Update backup configuration
-    pub fn update_config(&mut self, config: BackupConfig) {
+    pub fn update_config(&mut self, config: BackupConfig) -> Result<(), String> {
+        let _coordinator =
+            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        if let Some(state) = &self.encryption_state {
+            state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, false)?;
+        }
         self.config = config;
         self.calculate_next_scheduled_time();
+        Ok(())
     }
 
     /// Get current backup configuration
@@ -617,20 +623,37 @@ impl BackupService {
         // legacy SORNG1 paths. The migrator that converted SORNG1
         // files to v2 lived briefly between commits 57cf5505 and Z;
         // it's been removed now that the dev tree is fully migrated.
+        let snapshot_guard =
+            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        let policy_revision = self
+            .encryption_state
+            .as_ref()
+            .map(|state| state.artifact_policy_document().map(|doc| doc.revision))
+            .transpose()?;
+        let key_snapshot = match self.encryption_state.as_ref() {
+            Some(state) => state.snapshot().await,
+            None => None,
+        };
         let used_v2 = match self.encryption_state.as_ref() {
-            Some(state) if state.is_unlocked().await => true,
-            Some(_) => {
-                return Err(
-                    "Backup encryption state is locked; unlock before creating backups".to_string(),
-                );
+            Some(state) => {
+                state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, true)?
             }
             None => false,
         };
         let encrypted_data = if used_v2 {
-            self.encrypt_backup_v2(&final_data).await?
+            sorng_encryption::artifacts::backups::write(
+                key_snapshot.as_ref().ok_or("backup key is locked")?,
+                &final_data,
+                sorng_encryption::envelope::MasterKeyStorage::Vault,
+                sorng_encryption::password_wrap::Argon2Params::OWASP,
+                [0; sorng_encryption::envelope::SALT_LEN],
+            )
+            .await
+            .map_err(|e| e.to_string())?
         } else {
             final_data
         };
+        drop(snapshot_guard);
         let checksum = sha256_hex(&encrypted_data);
 
         let connections_count = data
@@ -702,6 +725,43 @@ impl BackupService {
                 }
             };
 
+            // Only local managed file publication holds the process barrier.
+            // Remote filesystem destinations are explicitly outside artifact
+            // transitions; never block unrelated saves over their I/O latency.
+            let remote = target_dir.to_string_lossy().starts_with("\\\\")
+                || target_dir.to_string_lossy().starts_with("//");
+            let _write_guard = if remote {
+                None
+            } else {
+                Some(sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?)
+            };
+            if let Some(state) = self.encryption_state.as_ref() {
+                let current_mode =
+                    state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, true)?;
+                if current_mode != used_v2
+                    || Some(state.artifact_policy_document()?.revision) != policy_revision
+                {
+                    return Err(
+                        "Backup protection changed while preparing; retry the backup".into(),
+                    );
+                }
+                if let Some(snapshot) = &key_snapshot {
+                    let current = state
+                        .sub_key(sorng_encryption::ArtifactKind::Backups)
+                        .await
+                        .ok_or("Backup encryption state is locked")?;
+                    let captured = snapshot
+                        .sub_key(sorng_encryption::ArtifactKind::Backups)
+                        .await
+                        .ok_or("Backup key snapshot is unavailable")?;
+                    if current.bytes() != captured.bytes() {
+                        return Err(
+                            "Backup master key changed while preparing; retry the backup".into(),
+                        );
+                    }
+                }
+            }
+
             if let Err(e) = fs::create_dir_all(&target_dir) {
                 target_results.push(TargetResult {
                     target_id: target.id.clone(),
@@ -721,7 +781,11 @@ impl BackupService {
             // Per-target delta decision: skip only when delta-skip is
             // on, *this destination* already has the current payload,
             // and the force-N valve hasn't fired.
-            let target_last_hash = find_last_payload_hash_for_target(&target_dir, &target.id);
+            let target_last_hash = find_last_payload_hash_for_target(
+                &target_dir,
+                &target.id,
+                self.encryption_state.as_deref(),
+            );
             let should_skip = self.config.delta_skip_enabled
                 && !force_emit
                 && target_last_hash.as_deref() == Some(payload_hash.as_str());
@@ -750,6 +814,8 @@ impl BackupService {
                 })?;
                 file.write_all(&encrypted_data)
                     .map_err(|e| format!("Failed to write backup file: {}", e))?;
+                file.sync_all()
+                    .map_err(|e| format!("Failed to sync backup file: {}", e))?;
                 Ok(encrypted_data.len() as u64)
             })();
 
@@ -777,8 +843,12 @@ impl BackupService {
                     if let Err(e) = serde_json::to_string_pretty(&metadata)
                         .map_err(|e| format!("Failed to serialize metadata: {}", e))
                         .and_then(|s| {
-                            fs::write(&metadata_path, s)
-                                .map_err(|e| format!("Failed to write metadata: {}", e))
+                            let bytes = encode_backup_metadata(
+                                s.as_bytes(),
+                                key_snapshot.as_ref(),
+                                used_v2,
+                            )?;
+                            crate::durable::durable_write(&metadata_path, &bytes)
                         })
                     {
                         // Roll back the data file so an orphan doesn't
@@ -852,6 +922,16 @@ impl BackupService {
             if limit == 0 {
                 // 0 means "unlimited" — skip cleanup entirely.
                 continue;
+            }
+            let remote = dir.to_string_lossy().starts_with("\\\\")
+                || dir.to_string_lossy().starts_with("//");
+            let _coordinator = if remote {
+                None
+            } else {
+                Some(sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?)
+            };
+            if let Some(state) = &self.encryption_state {
+                state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, false)?;
             }
             cleanup_backups_in_dir(&dir, limit as usize)?;
         }
@@ -977,7 +1057,8 @@ impl BackupService {
                 let meta_path = resolved.join(format!("{}.meta.json", filename));
                 let (id, backup_type, created_at, encrypted, compressed, payload_hash, target_id) =
                     if meta_path.exists() {
-                        let meta_content = fs::read_to_string(&meta_path).unwrap_or_default();
+                        let meta_content =
+                            read_backup_metadata(&meta_path, self.encryption_state.as_deref())?;
                         if let Ok(meta) = serde_json::from_str::<BackupMetadata>(&meta_content) {
                             (
                                 meta.id,
@@ -1040,7 +1121,12 @@ impl BackupService {
         target_id: &str,
     ) -> Result<serde_json::Value, String> {
         let target_root = resolve_configured_target_root(&self.config, target_id)?;
-        let pair = resolve_backup_pair(&target_root, backup_id, target_id)?;
+        let pair = resolve_backup_pair(
+            &target_root,
+            backup_id,
+            target_id,
+            self.encryption_state.as_deref(),
+        )?;
 
         // Validate the sidecar and filesystem length before reserving,
         // then hash the archive while reading it through a hard byte cap.
@@ -1092,15 +1178,48 @@ impl BackupService {
     /// Delete one exact backup data/sidecar pair from one configured target.
     pub async fn delete_backup(&mut self, backup_id: &str, target_id: &str) -> Result<(), String> {
         let target_root = resolve_configured_target_root(&self.config, target_id)?;
-        let pair = resolve_backup_pair(&target_root, backup_id, target_id)?;
+        let remote = target_root.to_string_lossy().starts_with("\\\\")
+            || target_root.to_string_lossy().starts_with("//");
+        let coordinator = if remote {
+            None
+        } else {
+            Some(sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?)
+        };
+        if let Some(state) = &self.encryption_state {
+            state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, false)?;
+        }
+        let pair = resolve_backup_pair(
+            &target_root,
+            backup_id,
+            target_id,
+            self.encryption_state.as_deref(),
+        )?;
 
         fs::remove_file(&pair.data_path)
             .map_err(|e| format!("Failed to delete backup data file: {}", e))?;
         fs::remove_file(&pair.metadata_path)
             .map_err(|e| format!("Failed to delete backup metadata file: {}", e))?;
 
+        drop(coordinator);
         self.update_backup_stats().await?;
         Ok(())
+    }
+
+    /// All configured local roots, including disabled destinations that may
+    /// still contain backups. Uninspectable/remote targets are not successes.
+    pub fn artifact_backup_roots(&self) -> (Vec<PathBuf>, Vec<String>) {
+        let mut roots = Vec::new();
+        let mut restrictions = Vec::new();
+        for target in self.config.effective_destinations() {
+            match resolve_target_dir(&target, &self.config.destination_path) {
+                Ok(path) if path.is_absolute() && !path.to_string_lossy().starts_with("\\\\") && !path.to_string_lossy().starts_with("//") => {
+                    if !roots.contains(&path) { roots.push(path); }
+                }
+                Ok(_) => restrictions.push(format!("Backup target '{}' is remote or not an absolute local directory; not inspected", target.label)),
+                Err(_) => restrictions.push(format!("Backup target '{}' has no available local directory; not inspected", target.label)),
+            }
+        }
+        (roots, restrictions)
     }
 
     /// List every v2-envelope backup archive and its integrity sidecar across
@@ -1224,7 +1343,7 @@ impl BackupService {
         inject_metadata_replace_failure: bool,
         retain_recovery_on_rollback_failure: bool,
     ) -> Result<u64, String> {
-        let metadata_json = read_backup_metadata(metadata_path)
+        let metadata_json = read_backup_metadata(metadata_path, Some(from))
             .map_err(|e| format!("read backup metadata: {e}"))?;
         let mut metadata: BackupMetadata = serde_json::from_str(&metadata_json)
             .map_err(|e| format!("parse backup metadata: {e}"))?;
@@ -1258,6 +1377,12 @@ impl BackupService {
         metadata.size_bytes = blob.len() as u64;
         let metadata_blob = serde_json::to_vec_pretty(&metadata)
             .map_err(|e| format!("serialize backup metadata: {e}"))?;
+        // Preserve a protected sidecar during full key rotation. Legacy
+        // plaintext sidecars remain legacy until an explicit artifact action.
+        let sidecar_encrypted = fs::read(metadata_path)
+            .map_err(|e| e.to_string())?
+            .starts_with(sorng_encryption::envelope::MAGIC);
+        let metadata_blob = encode_backup_metadata(&metadata_blob, Some(to), sidecar_encrypted)?;
 
         let tmp = backup_rewrite_sidecar_path(path, "rotating");
         let metadata_tmp = backup_rewrite_sidecar_path(metadata_path, "rotating");
@@ -1332,6 +1457,7 @@ impl BackupService {
     /// Encrypt under the v2 envelope. Caller already has the
     /// (plaintext-or-gzipped) payload; this is symmetric with
     /// `decrypt_backup_v2`.
+    #[cfg(test)]
     async fn encrypt_backup_v2(&self, plaintext: &[u8]) -> Result<Vec<u8>, String> {
         let state = self
             .encryption_state
@@ -1591,7 +1717,29 @@ fn read_and_verify_current_archive_with_limit(
     Ok(archive)
 }
 
-fn read_backup_metadata(path: &Path) -> Result<String, String> {
+fn encode_backup_metadata(
+    bytes: &[u8],
+    state: Option<&sorng_encryption::EncryptionState>,
+    encrypt: bool,
+) -> Result<Vec<u8>, String> {
+    if !encrypt {
+        return Ok(bytes.to_vec());
+    }
+    let state = state.ok_or("backup metadata requires an unlocked key")?;
+    state
+        .with_sub_key_sync(sorng_encryption::ArtifactKind::Backups, |key| {
+            crate::envelope_io::encrypt_with_subkey(key.ok_or("backup metadata is locked")?, bytes)
+        })
+        .map_err(str::to_string)?
+}
+
+fn read_backup_metadata(
+    path: &Path,
+    state: Option<&sorng_encryption::EncryptionState>,
+) -> Result<String, String> {
+    if let Some(state) = state {
+        state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, false)?;
+    }
     let mut file = File::open(path).map_err(|e| format!("Failed to open backup metadata: {e}"))?;
     if file
         .metadata()
@@ -1626,6 +1774,19 @@ fn read_backup_metadata(path: &Path) -> Result<String, String> {
             .map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
         bytes.extend_from_slice(&buffer[..count]);
     }
+    let bytes = if bytes.starts_with(sorng_encryption::envelope::MAGIC) {
+        state
+            .ok_or("backup metadata is encrypted; unlock first")?
+            .with_sub_key_sync(sorng_encryption::ArtifactKind::Backups, |key| {
+                crate::envelope_io::decrypt_with_subkey(
+                    key.ok_or("backup metadata is locked")?,
+                    &bytes,
+                )
+            })
+            .map_err(str::to_string)??
+    } else {
+        bytes
+    };
     String::from_utf8(bytes)
         .map_err(|_| "Failed to parse backup metadata: invalid UTF-8".to_string())
 }
@@ -1770,6 +1931,7 @@ fn resolve_backup_pair(
     target_root: &Path,
     backup_id: &str,
     target_id: &str,
+    state: Option<&sorng_encryption::EncryptionState>,
 ) -> Result<ResolvedBackupPair, String> {
     validate_backup_id(backup_id)?;
 
@@ -1799,7 +1961,7 @@ fn resolve_backup_pair(
             &target_root.join(format!("{}.meta.json", filename)),
             "Backup metadata file",
         )?;
-        let metadata_content = read_backup_metadata(&metadata_path)?;
+        let metadata_content = read_backup_metadata(&metadata_path, state)?;
         let metadata: BackupMetadata = serde_json::from_str(&metadata_content)
             .map_err(|e| format!("Failed to parse backup metadata: {}", e))?;
         if metadata.id != backup_id {
@@ -1835,7 +1997,11 @@ fn resolve_backup_pair(
 /// present. Used by the delta-skip comparator to decide whether
 /// *this destination* already has the current payload — independent
 /// of what other destinations did.
-fn find_last_payload_hash_for_target(dir: &Path, target_id: &str) -> Option<String> {
+fn find_last_payload_hash_for_target(
+    dir: &Path,
+    target_id: &str,
+    state: Option<&sorng_encryption::EncryptionState>,
+) -> Option<String> {
     if !dir.exists() {
         return None;
     }
@@ -1847,7 +2013,7 @@ fn find_last_payload_hash_for_target(dir: &Path, target_id: &str) -> Option<Stri
         if !filename.contains(".meta.json") {
             continue;
         }
-        let content = match fs::read_to_string(&path) {
+        let content = match read_backup_metadata(&path, state) {
             Ok(s) => s,
             Err(_) => continue,
         };
@@ -2241,6 +2407,7 @@ mod tests {
 
     #[tokio::test]
     async fn backup_service_new_defaults() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let state = BackupService::new("/tmp/test".to_string());
         let svc = state.lock().await;
         let cfg = svc.get_config();
@@ -2253,13 +2420,14 @@ mod tests {
 
     #[tokio::test]
     async fn backup_service_update_and_get_config() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let state = BackupService::new("/tmp/test".to_string());
         let mut svc = state.lock().await;
         let mut cfg = BackupConfig::default();
         cfg.enabled = true;
         cfg.frequency = BackupFrequency::Hourly;
         cfg.max_backups_to_keep = 10;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         let retrieved = svc.get_config();
         assert!(retrieved.enabled);
         assert_eq!(retrieved.frequency, BackupFrequency::Hourly);
@@ -2268,36 +2436,39 @@ mod tests {
 
     #[tokio::test]
     async fn backup_service_manual_no_next_time() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let state = BackupService::new("/tmp/test".to_string());
         let mut svc = state.lock().await;
         let mut cfg = BackupConfig::default();
         cfg.enabled = true;
         cfg.frequency = BackupFrequency::Manual;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         let status = svc.get_status();
         assert!(status.next_scheduled_time.is_none());
     }
 
     #[tokio::test]
     async fn backup_service_enabled_daily_has_next_time() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let state = BackupService::new("/tmp/test".to_string());
         let mut svc = state.lock().await;
         let mut cfg = BackupConfig::default();
         cfg.enabled = true;
         cfg.frequency = BackupFrequency::Daily;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         let status = svc.get_status();
         assert!(status.next_scheduled_time.is_some());
     }
 
     #[tokio::test]
     async fn backup_service_disabled_no_next_time() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let state = BackupService::new("/tmp/test".to_string());
         let mut svc = state.lock().await;
         let mut cfg = BackupConfig::default();
         cfg.enabled = false;
         cfg.frequency = BackupFrequency::Daily;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         let status = svc.get_status();
         assert!(status.next_scheduled_time.is_none());
     }
@@ -2311,6 +2482,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_backup_and_restore() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = std::env::temp_dir().join("sorng_backup_test");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
@@ -2321,7 +2493,7 @@ mod tests {
         let mut cfg = BackupConfig::default();
         cfg.destination_path = tmp.to_string_lossy().to_string();
         cfg.compress_backups = false;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({"connections": [{"name": "test"}]});
         let meta = svc.run_backup("full", &data).await.unwrap();
@@ -2349,6 +2521,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_backup_compressed() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = std::env::temp_dir().join("sorng_backup_test_gz");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
@@ -2359,7 +2532,7 @@ mod tests {
         let mut cfg = BackupConfig::default();
         cfg.destination_path = tmp.to_string_lossy().to_string();
         cfg.compress_backups = true;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({"connections": []});
         let meta = svc.run_backup("full", &data).await.unwrap();
@@ -2376,6 +2549,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_backup_encrypted_v2_and_compressed() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Replaces the old SORNG1+compress round-trip — same shape,
         // routed through the master DEK + v2 envelope.
         let tmp = std::env::temp_dir().join("sorng_backup_test_enc");
@@ -2388,7 +2562,7 @@ mod tests {
         let mut cfg = BackupConfig::default();
         cfg.destination_path = tmp.to_string_lossy().to_string();
         cfg.compress_backups = true;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         svc.set_encryption_state(unlocked_enc_state().await);
 
         let data = serde_json::json!({"connections": [{"name": "secure"}]});
@@ -2407,6 +2581,7 @@ mod tests {
 
     #[tokio::test]
     async fn backup_already_running_rejects() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let state = BackupService::new("/tmp/test_running".to_string());
         let mut svc = state.lock().await;
         svc.status.is_running = true;
@@ -2438,6 +2613,7 @@ mod tests {
 
     #[tokio::test]
     async fn multi_target_fan_out_writes_to_every_destination() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir_a = fresh_temp_dir("fanout_a");
         let dir_b = fresh_temp_dir("fanout_b");
         let state = BackupService::new(dir_a.to_string_lossy().to_string());
@@ -2462,7 +2638,7 @@ mod tests {
                 retention_override: None,
             },
         ];
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({"connections": [{"id": "c1", "name": "srv"}]});
         svc.run_backup("full", &data).await.unwrap();
@@ -2495,6 +2671,7 @@ mod tests {
 
     #[tokio::test]
     async fn delta_skip_blocks_redundant_writes() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = fresh_temp_dir("delta_skip");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
@@ -2503,7 +2680,7 @@ mod tests {
         cfg.delta_skip_enabled = true;
         // Disable the safety valve so the test deterministically skips.
         cfg.force_emit_every_n_skipped_ticks = 0;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({"connections": [{"id": "c1"}]});
         let first = svc.run_backup("full", &data).await.unwrap();
@@ -2532,6 +2709,7 @@ mod tests {
 
     #[tokio::test]
     async fn delta_skip_emits_for_changed_payload() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = fresh_temp_dir("delta_change");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
@@ -2539,7 +2717,7 @@ mod tests {
         let mut cfg = build_test_config(&tmp);
         cfg.delta_skip_enabled = true;
         cfg.force_emit_every_n_skipped_ticks = 0;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let payload1 = serde_json::json!({"connections": [{"id": "c1"}]});
         let payload2 = serde_json::json!({"connections": [{"id": "c2"}]});
@@ -2566,6 +2744,7 @@ mod tests {
 
     #[tokio::test]
     async fn force_emit_every_n_safety_valve_fires() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = fresh_temp_dir("force_n");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
@@ -2574,7 +2753,7 @@ mod tests {
         cfg.delta_skip_enabled = true;
         // After 2 skipped ticks the next tick must emit.
         cfg.force_emit_every_n_skipped_ticks = 2;
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({"connections": []});
         svc.run_backup("full", &data).await.unwrap(); // emit
@@ -2605,6 +2784,7 @@ mod tests {
 
     #[tokio::test]
     async fn per_target_recovery_writes_only_to_lagging_destination() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir_a = fresh_temp_dir("recover_a");
         let dir_b = fresh_temp_dir("recover_b");
         let state = BackupService::new(dir_a.to_string_lossy().to_string());
@@ -2631,7 +2811,7 @@ mod tests {
                 retention_override: None,
             },
         ];
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({"connections": [{"id": "c1"}]});
         svc.run_backup("full", &data).await.unwrap();
@@ -2680,6 +2860,7 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_target_is_skipped_with_disabled_status() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir_a = fresh_temp_dir("disabled_a");
         let dir_b = fresh_temp_dir("disabled_b");
         let state = BackupService::new(dir_a.to_string_lossy().to_string());
@@ -2704,7 +2885,7 @@ mod tests {
                 retention_override: None,
             },
         ];
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         svc.run_backup("full", &serde_json::json!({"connections": []}))
             .await
@@ -2735,6 +2916,7 @@ mod tests {
 
     #[tokio::test]
     async fn per_destination_retention_override_keeps_fewer() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir_a = fresh_temp_dir("retention_a");
         let dir_b = fresh_temp_dir("retention_b");
         let state = BackupService::new(dir_a.to_string_lossy().to_string());
@@ -2762,7 +2944,7 @@ mod tests {
                 }),
             },
         ];
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         // Different payload each tick so nothing gets delta-skipped.
         for i in 0..4u32 {
@@ -2802,11 +2984,12 @@ mod tests {
 
     #[tokio::test]
     async fn v2_envelope_used_when_state_unlocked() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = fresh_temp_dir("v2_write");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
         let cfg = build_test_config(&tmp);
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         svc.set_encryption_state(unlocked_enc_state().await);
 
         let data = serde_json::json!({ "connections": [{ "id": "c1" }] });
@@ -2837,6 +3020,7 @@ mod tests {
 
     #[tokio::test]
     async fn plaintext_path_when_no_state_installed() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // After commit Z the only encryption path is the v2 envelope.
         // With no encryption state installed, backups land as plain
         // bytes.
@@ -2844,7 +3028,7 @@ mod tests {
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
         let cfg = build_test_config(&tmp);
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({ "connections": [] });
         let _ = svc.perform_backup("manual", &data).await.unwrap();
@@ -2866,11 +3050,12 @@ mod tests {
 
     #[tokio::test]
     async fn v2_round_trip_via_restore() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = fresh_temp_dir("v2_restore");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
         let cfg = build_test_config(&tmp);
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         svc.set_encryption_state(unlocked_enc_state().await);
 
         let payload = serde_json::json!({
@@ -2890,13 +3075,14 @@ mod tests {
 
     #[tokio::test]
     async fn rewrite_backup_with_re_keys_in_place() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Phase A: confirm a v2 backup file can be re-encrypted under
         // a brand-new master DEK and that the original key can no
         // longer decrypt it afterwards.
         let tmp = fresh_temp_dir("rotate_v2");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
         let enc_a = unlocked_enc_state().await;
         svc.set_encryption_state(enc_a.clone());
 
@@ -2916,7 +3102,8 @@ mod tests {
             backup_path.file_name().unwrap().to_string_lossy()
         ));
         let metadata_before: BackupMetadata =
-            serde_json::from_slice(&std::fs::read(&metadata_path).unwrap()).unwrap();
+            serde_json::from_str(&read_backup_metadata(&metadata_path, Some(&enc_a)).unwrap())
+                .unwrap();
 
         // Stand up state B with a different DEK.
         let enc_b = sorng_encryption::EncryptionState::new();
@@ -2958,7 +3145,8 @@ mod tests {
         // state B now decrypts; state A no longer does.
         let bytes = std::fs::read(&backup_path).unwrap();
         let metadata_after: BackupMetadata =
-            serde_json::from_slice(&std::fs::read(&metadata_path).unwrap()).unwrap();
+            serde_json::from_str(&read_backup_metadata(&metadata_path, Some(&enc_b)).unwrap())
+                .unwrap();
         assert_ne!(metadata_after.checksum, metadata_before.checksum);
         assert_eq!(metadata_after.checksum, sha256_hex(&bytes));
         assert_eq!(metadata_after.size_bytes, bytes.len() as u64);
@@ -2993,10 +3181,11 @@ mod tests {
 
     #[tokio::test]
     async fn list_v2_files_includes_only_v2_backups() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let tmp = fresh_temp_dir("list_v2");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
         let enc = unlocked_enc_state().await;
         svc.set_encryption_state(enc);
 
@@ -3020,7 +3209,8 @@ mod tests {
         svc.update_config(config_with_targets(vec![
             test_target("duplicate-a", &tmp),
             test_target("duplicate-b", &tmp),
-        ]));
+        ]))
+        .unwrap();
         let pairs = svc.list_v2_backup_pairs().await;
         assert_eq!(pairs.len(), 1, "canonical archive paths must be unique");
         assert_eq!(pairs[0].archive_path, canonical_pair.archive_path);
@@ -3033,13 +3223,14 @@ mod tests {
 
     #[tokio::test]
     async fn restore_dispatches_on_v2_magic() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // After commit Z the dispatcher only recognises the v2
         // envelope; everything else is plaintext. This test exercises
         // both paths via the public encrypt/decrypt helpers.
         let tmp = fresh_temp_dir("v2_sniff");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
         let enc = unlocked_enc_state().await;
         svc.set_encryption_state(enc.clone());
 
@@ -3072,6 +3263,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_parent_dir_creates_or_errors_cleanly_backup() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // perform_backup calls fs::create_dir_all(&target_dir) before
         // writing — verify the auto-mkdir works for a missing multi-
         // level destination. Behaviour observed: AUTO-MKDIR.
@@ -3085,7 +3277,7 @@ mod tests {
         let mut svc = state.lock().await;
         let mut cfg = build_test_config(&nested);
         cfg.destination_path = nested.to_string_lossy().to_string();
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
 
         let data = serde_json::json!({"connections": [{"id": "c1"}]});
         let result = svc.run_backup("full", &data).await;
@@ -3103,6 +3295,7 @@ mod tests {
 
     #[tokio::test]
     async fn garbage_canonical_file_surfaces_parse_error_on_load_backup() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Plant a backup file at the destination whose contents are
         // 500 random bytes. The restore must error cleanly (not panic):
         // magic-byte sniff fails → treated as plaintext → JSON/UTF-8
@@ -3112,7 +3305,7 @@ mod tests {
         let tmp = fresh_temp_dir("layer_b_garbage");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
 
         let mut garbage = vec![0u8; 500];
         OsRng.fill_bytes(&mut garbage);
@@ -3147,13 +3340,14 @@ mod tests {
 
     #[tokio::test]
     async fn load_against_missing_file_returns_none_backup() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // No backup files anywhere → list_backups returns an empty Vec,
         // per the documented contract. (Backup has no Ok(None) shape —
         // the "empty list" is the equivalent.)
         let tmp = fresh_temp_dir("layer_b_missing");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
         let list = svc.list_backups().await.unwrap();
         assert!(list.is_empty(), "missing backup dir must yield empty list");
 
@@ -3169,6 +3363,7 @@ mod tests {
 
     #[tokio::test]
     async fn leftover_tmp_file_does_not_block_next_write_backup() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // perform_backup uses fs::File::create + write_all directly
         // (no .tmp shadow on the normal write path; only the rotation
         // helper uses `.rotating`). Verify that planting a stale
@@ -3181,7 +3376,7 @@ mod tests {
         let tmp = fresh_temp_dir("layer_b_leftover");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
 
         // Plant a stray .tmp / .rotating from a previously-killed
         // process. Both are alongside what a real write would produce.
@@ -3213,13 +3408,14 @@ mod tests {
 
     #[tokio::test]
     async fn wrong_master_dek_after_eviction_fails_cleanly_backup() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Write a v2 encrypted backup under state_a, then install
         // state_b with a DIFFERENT DEK. Restore must surface a clean
         // decrypt error (not a panic, not silent empty data).
         let tmp = fresh_temp_dir("layer_b_evict_wrong");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
         let state_a = unlocked_enc_state_with_bytes([1u8; 32]).await;
         svc.set_encryption_state(state_a);
 
@@ -3251,12 +3447,13 @@ mod tests {
 
     #[tokio::test]
     async fn right_master_dek_after_eviction_decodes_cleanly_backup() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // Same as above, but the imported state_b carries the SAME
         // bytes as the evicted state_a — restore succeeds.
         let tmp = fresh_temp_dir("layer_b_evict_right");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
+        svc.update_config(build_test_config(&tmp)).unwrap();
         let state_a = unlocked_enc_state_with_bytes([5u8; 32]).await;
         svc.set_encryption_state(state_a);
 
@@ -3278,20 +3475,21 @@ mod tests {
 
     #[tokio::test]
     async fn locked_state_refuses_plaintext_downgrade() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         // EncryptionState installed but never unlocked → refuse to write
         // rather than silently downgrading secrets to plaintext.
         let tmp = fresh_temp_dir("v2_locked");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
         let cfg = build_test_config(&tmp);
-        svc.update_config(cfg);
+        svc.update_config(cfg).unwrap();
         let locked = std::sync::Arc::new(sorng_encryption::EncryptionState::new());
         svc.set_encryption_state(locked);
 
         let data = serde_json::json!({ "connections": [] });
         let err = svc.perform_backup("manual", &data).await.unwrap_err();
         assert!(
-            err.contains("encryption state is locked"),
+            err.contains("unlock the master key"),
             "expected locked-state downgrade refusal, got: {err}"
         );
         let backup_files: Vec<_> = std::fs::read_dir(&tmp)
@@ -3394,6 +3592,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_empty_backup_ids_without_touching_files() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_empty_id");
         let target_id = "target-a";
         let (data_path, metadata_path) = write_test_backup_pair(
@@ -3405,7 +3604,8 @@ mod tests {
         );
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         assert!(svc.restore_backup_from_target("", target_id).await.is_err());
         assert!(svc.delete_backup("", target_id).await.is_err());
@@ -3417,6 +3617,7 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_match_backup_id_substrings() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_substring");
         let target_id = "target-a";
         let (short_data, short_metadata) = write_test_backup_pair(
@@ -3435,7 +3636,8 @@ mod tests {
         );
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         let restored = svc
             .restore_backup_from_target("1-aaaaaaaa", target_id)
@@ -3453,11 +3655,13 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_traversal_shaped_backup_ids() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_traversal");
         let target_id = "target-a";
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         assert!(svc
             .restore_backup_from_target("../1-aaaaaaaa", target_id)
@@ -3470,6 +3674,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_symlinked_backup_data() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_symlink");
         let outside = fresh_temp_dir("strict_symlink_outside");
         let target_id = "target-a";
@@ -3497,7 +3702,8 @@ mod tests {
 
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
         assert!(svc
             .restore_backup_from_target(backup_id, target_id)
             .await
@@ -3511,6 +3717,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_pair_copied_under_wrong_target() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root_a = fresh_temp_dir("strict_wrong_target_a");
         let root_b = fresh_temp_dir("strict_wrong_target_b");
         let backup_id = "1-aaaaaaaa";
@@ -3526,7 +3733,8 @@ mod tests {
         svc.update_config(config_with_targets(vec![
             test_target("target-a", &root_a),
             test_target("target-b", &root_b),
-        ]));
+        ]))
+        .unwrap();
 
         let error = svc
             .restore_backup_from_target(backup_id, "target-b")
@@ -3541,6 +3749,7 @@ mod tests {
 
     #[tokio::test]
     async fn deletes_only_exact_data_and_sidecar_pair() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_exact_pair");
         let target_id = "target-a";
         let backup_id = "1-aaaaaaaa";
@@ -3555,7 +3764,8 @@ mod tests {
         std::fs::write(&unrelated, br#"{"marker":"unrelated"}"#).unwrap();
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         let restored = svc
             .restore_backup_from_target(backup_id, target_id)
@@ -3572,6 +3782,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_size_mismatch_before_archive_decode() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_size_integrity");
         let target_id = "target-a";
         let backup_id = "1-aaaaaaaa";
@@ -3585,7 +3796,8 @@ mod tests {
         std::fs::write(&data_path, b"not-gzip-but-longer").unwrap();
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         let error = svc
             .restore_backup_from_target(backup_id, target_id)
@@ -3599,6 +3811,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_checksum_mismatch_before_json_parse() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_checksum_integrity");
         let target_id = "target-a";
         let backup_id = "1-aaaaaaaa";
@@ -3612,7 +3825,8 @@ mod tests {
         std::fs::write(&data_path, br#"{"marker":"evil"}"#).unwrap();
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         let error = svc
             .restore_backup_from_target(backup_id, target_id)
@@ -3626,6 +3840,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_legacy_sidecars_with_explicit_migration_guidance() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("strict_legacy_integrity");
         let target_id = "target-a";
         let backup_id = "1-aaaaaaaa";
@@ -3646,7 +3861,8 @@ mod tests {
         .unwrap();
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         let error = svc
             .restore_backup_from_target(backup_id, target_id)
@@ -3700,6 +3916,7 @@ mod tests {
 
     #[tokio::test]
     async fn restore_rejects_gzip_bomb_without_removing_recoverable_source() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("restore_gzip_bomb");
         let target_id = "target-a";
         let backup_id = "1-aaaaaaaa";
@@ -3718,7 +3935,8 @@ mod tests {
         );
         let state = BackupService::new(root.to_string_lossy().into_owned());
         let mut svc = state.lock().await;
-        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]))
+            .unwrap();
 
         let error = svc
             .restore_backup_from_target(backup_id, target_id)
@@ -3733,6 +3951,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_restore_payload_leaves_live_storage_unchanged() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let root = fresh_temp_dir("restore_storage_transaction");
         let storage_path = root.join("connections.json");
         let storage_state =
