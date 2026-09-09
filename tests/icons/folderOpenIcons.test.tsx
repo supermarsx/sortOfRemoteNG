@@ -19,6 +19,7 @@ import {
   FOLDER_OPEN_ICONS,
 } from "../../src/utils/icons/catalog/folders";
 import { CONNECTION_ICON_CATALOG } from "../../src/utils/icons/connectionIconCatalog";
+import { filterConnectionIcons } from "../../src/components/connection/editor/connectionIconPickerModel";
 import {
   getExpandedFolderIcon,
   resolveEffectiveConnectionIcon,
@@ -82,6 +83,14 @@ describe("matching folder open states", () => {
         expect(inset.getAttribute("height")).toBe(
           closed.querySelector("svg")!.getAttribute("height"),
         );
+        for (const node of [inset, closed.querySelector("svg")!]) {
+          expect(node.getAttribute("x")).toBe("12");
+          expect(node.getAttribute("y")).toBe("12");
+          expect(node.getAttribute("width")).toBe("11");
+          expect(node.getAttribute("height")).toBe("11");
+        }
+      } else {
+        expect(["folder", "folder-open"]).toContain(entry.key);
       }
       // Presentation must not turn an explicit persisted choice into another key.
       expect(resolved.key).toBe(entry.key);
@@ -107,6 +116,36 @@ describe("matching folder open states", () => {
         opened.querySelector('[data-role-frame="folder-open"]'),
       ).not.toBeNull();
       expect(opened.querySelector("svg")!.innerHTML).toBe(svg(Glyph).innerHTML);
+      const closed = svg(FOLDER_ICONS.find((entry) => entry.key === key)!.icon);
+      expect(closed.querySelector("svg")!.innerHTML).toBe(svg(Glyph).innerHTML);
+    },
+  );
+  it.each([
+    ["folder-building", "building"],
+    ["folder-company", "company"],
+    ["folder-company-branches", "company branches"],
+    ["folder-company-partners", "company partners"],
+    ["folder-printers", "printers"],
+    ["folder-serial", "serial connections"],
+    ["folder-personal-alt", "personal profile"],
+    ["folder-collective", "collective"],
+  ] as const)(
+    "finds and preserves the explicit new %s selection",
+    (key, query) => {
+      expect(
+        filterConnectionIcons(query)
+          .filter((entry) => entry.category === "folders")
+          .map((entry) => entry.key),
+      ).toContain(key);
+      const restored = JSON.parse(
+        JSON.stringify({ protocol: "ssh", isGroup: true, icon: key }),
+      );
+      const resolved = resolveEffectiveConnectionIcon(restored);
+      expect(resolved.key).toBe(key);
+      expect(getExpandedFolderIcon(resolved, true)).toBe(
+        FOLDER_OPEN_ICONS[key],
+      );
+      expect(restored.icon).toBe(key);
     },
   );
   it("keeps all emblem-bearing open states geometrically distinct", () => {

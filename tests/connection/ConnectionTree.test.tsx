@@ -69,7 +69,7 @@ function InitConnections({
 
 describe("ConnectionTree", () => {
   it.each([
-    { icon: "folder-lock", selector: ".lucide-folder-lock" },
+    { icon: "folder-lock", selector: '[data-role-frame="folder"]' },
     { icon: "server", selector: ".lucide-server" },
     { icon: undefined, selector: ".lucide-folder" },
     { icon: "unknown-folder-icon", selector: ".lucide-folder" },

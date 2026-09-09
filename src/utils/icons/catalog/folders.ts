@@ -2,12 +2,17 @@ import {
   ArrowLeftRight,
   Archive,
   BriefcaseBusiness,
+  Building,
+  Building2,
+  Cable,
+  ContactRound,
   createLucideIcon,
   Container,
   Clock,
   CodeXml,
   GitFork,
   Heart,
+  Handshake,
   Kanban,
   LockKeyhole,
   Network,
@@ -15,16 +20,6 @@ import {
   Settings,
   Folder,
   FolderOpen,
-  FolderArchive,
-  FolderClock,
-  FolderCode,
-  FolderCog,
-  FolderGit2,
-  FolderHeart,
-  FolderKanban,
-  FolderLock,
-  FolderSync,
-  FolderTree,
   Folders,
   Globe,
   HardDriveDownload,
@@ -32,12 +27,15 @@ import {
   Mail,
   Monitor,
   Phone,
+  Printer,
   Router,
   Server,
   ShieldCheck,
   Terminal,
   UserRound,
+  UsersRound,
   Wifi,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -60,6 +58,40 @@ const StorageBays = createLucideIcon("FolderStorageBays", [
 ]);
 
 const WorkFolder = createRoleIcon("WorkFolder", "folder", BriefcaseBusiness);
+const FolderCog = createRoleIcon("CogFolder", "folder", Settings);
+const FolderTree = createRoleIcon("TreeFolder", "folder", Network);
+const FolderLock = createRoleIcon("LockFolder", "folder", LockKeyhole);
+const FolderArchive = createRoleIcon("ArchiveFolder", "folder", Archive);
+const FolderCode = createRoleIcon("CodeFolder", "folder", CodeXml);
+const FolderGit2 = createRoleIcon("GitFolder", "folder", GitFork);
+const FolderSync = createRoleIcon("SyncFolder", "folder", RefreshCw);
+const FolderClock = createRoleIcon("ClockFolder", "folder", Clock);
+const FolderKanban = createRoleIcon("KanbanFolder", "folder", Kanban);
+const FolderHeart = createRoleIcon("HeartFolder", "folder", Heart);
+const BuildingFolder = createRoleIcon("BuildingFolder", "folder", Building);
+const CompanyFolder = createRoleIcon("CompanyFolder", "folder", Building2);
+const CompanyBranchesFolder = createRoleIcon(
+  "CompanyBranchesFolder",
+  "folder",
+  Workflow,
+);
+const CompanyPartnersFolder = createRoleIcon(
+  "CompanyPartnersFolder",
+  "folder",
+  Handshake,
+);
+const PrintersFolder = createRoleIcon("PrintersFolder", "folder", Printer);
+const SerialFolder = createRoleIcon("SerialFolder", "folder", Cable);
+const PersonalAltFolder = createRoleIcon(
+  "PersonalAltFolder",
+  "folder",
+  ContactRound,
+);
+const CollectiveFolder = createRoleIcon(
+  "CollectiveFolder",
+  "folder",
+  UsersRound,
+);
 const PersonalFolder = createRoleIcon("PersonalFolder", "folder", UserRound);
 const RemoteFolder = createRoleIcon("RemoteFolder", "folder", ArrowLeftRight);
 const RdpFolder = createRoleIcon("RdpFolder", "folder", Monitor);
@@ -308,12 +340,109 @@ export const FOLDER_ICONS = [
       "folders",
     ],
   ),
+  defineIcon("folder-building", "Building folder", "folders", BuildingFolder, [
+    "building",
+    "buildings",
+    "premises",
+    "site",
+    "property",
+  ]),
+  defineIcon("folder-company", "Company folder", "folders", CompanyFolder, [
+    "company",
+    "business",
+    "office",
+    "organization",
+  ]),
+  defineIcon(
+    "folder-company-branches",
+    "Company branches folder",
+    "folders",
+    CompanyBranchesFolder,
+    [
+      "company",
+      "branches",
+      "business",
+      "organization",
+      "departments",
+      "subsidiaries",
+    ],
+  ),
+  defineIcon(
+    "folder-company-partners",
+    "Company partners folder",
+    "folders",
+    CompanyPartnersFolder,
+    ["company", "partners", "business", "partnership", "clients"],
+  ),
+  defineIcon("folder-printers", "Printers folder", "folders", PrintersFolder, [
+    "printer",
+    "printers",
+    "printing",
+    "print servers",
+  ]),
+  defineIcon(
+    "folder-serial",
+    "Serial connections folder",
+    "folders",
+    SerialFolder,
+    ["serial", "connections", "rs232", "rs-232", "com ports", "console"],
+  ),
+  defineIcon(
+    "folder-personal-alt",
+    "Personal profile folder",
+    "folders",
+    PersonalAltFolder,
+    ["personal", "profile", "individual", "contact", "my connections"],
+  ),
+  defineIcon(
+    "folder-collective",
+    "Collective folder",
+    "folders",
+    CollectiveFolder,
+    ["collective", "team", "shared", "people", "community", "group"],
+  ),
 ] as const;
 
 /** Presentation-only counterparts. Keep saved keys and picker entries unchanged. */
 export const FOLDER_OPEN_ICONS: Readonly<
   Record<(typeof FOLDER_ICONS)[number]["key"], LucideIcon>
 > = Object.freeze({
+  "folder-building": createRoleIcon(
+    "OpenBuildingFolder",
+    "folder-open",
+    Building,
+  ),
+  "folder-company": createRoleIcon(
+    "OpenCompanyFolder",
+    "folder-open",
+    Building2,
+  ),
+  "folder-company-branches": createRoleIcon(
+    "OpenCompanyBranchesFolder",
+    "folder-open",
+    Workflow,
+  ),
+  "folder-company-partners": createRoleIcon(
+    "OpenCompanyPartnersFolder",
+    "folder-open",
+    Handshake,
+  ),
+  "folder-printers": createRoleIcon(
+    "OpenPrintersFolder",
+    "folder-open",
+    Printer,
+  ),
+  "folder-serial": createRoleIcon("OpenSerialFolder", "folder-open", Cable),
+  "folder-personal-alt": createRoleIcon(
+    "OpenPersonalAltFolder",
+    "folder-open",
+    ContactRound,
+  ),
+  "folder-collective": createRoleIcon(
+    "OpenCollectiveFolder",
+    "folder-open",
+    UsersRound,
+  ),
   folder: FolderOpen,
   // A deliberately selected open-folder glyph keeps its historical appearance.
   "folder-open": FolderOpen,
