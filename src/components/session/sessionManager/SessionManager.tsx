@@ -364,11 +364,12 @@ const SessionRowActions: React.FC<{
             disabled={
               Boolean(row.reattachUnavailable) || row.status === "disconnected"
             }
-            className="sor-icon-btn-xs"
+            className="sor-option-chip inline-flex shrink-0 items-center gap-1 px-2 py-1 text-xs whitespace-nowrap"
             title={row.reattachUnavailable ?? "Reattach RDP session"}
             aria-label={`Reattach ${row.title}`}
           >
             <PlugZap size={14} aria-hidden="true" />
+            <span>Reattach</span>
           </button>
         )}
         {onDetachToWindow && (
@@ -440,7 +441,7 @@ const SessionRowActions: React.FC<{
         {row.detached && onReattachSession && (
           <button
             type="button"
-            className="sor-icon-btn-xs"
+            className="sor-option-chip inline-flex shrink-0 items-center gap-1 px-2 py-1 text-xs whitespace-nowrap"
             disabled={
               Boolean(row.reattachUnavailable) || row.status === "disconnected"
             }
@@ -449,6 +450,7 @@ const SessionRowActions: React.FC<{
             onClick={() => onReattachSession(row.nativeId, row.connectionId)}
           >
             <PlugZap size={14} aria-hidden="true" />
+            <span>Reattach</span>
           </button>
         )}
         <button

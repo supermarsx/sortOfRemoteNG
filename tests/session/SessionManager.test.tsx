@@ -344,6 +344,8 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
       const button = await screen.findByTitle(
         `Reattach ${protocol.toUpperCase()} session`,
       );
+      expect(button).toHaveTextContent(/^Reattach$/);
+      expect(button.querySelector("span")).toBeVisible();
       expect(button).toBeEnabled();
       fireEvent.click(button);
       expect(onReattachSession).toHaveBeenCalledExactlyOnceWith(
@@ -384,6 +386,8 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(buttons.every((button) => button.hasAttribute("disabled"))).toBe(
       true,
     );
+    for (const button of buttons)
+      expect(button).toHaveTextContent(/^Reattach$/);
     expect(onReattachSession).not.toHaveBeenCalled();
   });
   it("wires SSH history reconnect to the host action and current saved connection", async () => {
