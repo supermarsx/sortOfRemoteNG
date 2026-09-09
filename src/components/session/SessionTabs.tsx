@@ -45,11 +45,13 @@ import {
 import { LayoutGrid } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useIconLibraryRevision } from "../../utils/icons/iconLibraryRuntime";
 import {
   getToolKeyFromProtocol,
   isToolProtocol,
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
+  ICON_EXPLORER_PROTOCOL,
 } from "../app/toolSession";
 import { getToolIcon } from "../app/toolDescriptors";
 import {
@@ -108,6 +110,9 @@ const getSessionIcon = (
   connections: readonly Connection[],
 ) => {
   if (isToolProtocol(session.protocol)) {
+    if (session.protocol === ICON_EXPLORER_PROTOCOL) {
+      return { icon: LayoutGrid, key: ICON_EXPLORER_PROTOCOL };
+    }
     const toolKey = getToolKeyFromProtocol(session.protocol);
     return toolKey
       ? { icon: getToolIcon(toolKey), key: `tool:${toolKey}` }
@@ -273,6 +278,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const tileSubmenuPanelId = useId();
   const { state, dispatch } = useConnections();
   const { settings: appSettings } = useSettings();
+  useIconLibraryRevision();
   const sessions = state.sessions.filter(
     (session) => !session.layout?.isDetached,
   );

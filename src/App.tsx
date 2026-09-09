@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import dynamic from "next/dynamic";
 import { useTrustCenterSession } from "./hooks/security/useTrustCenterSession";
+import { useIconExplorerSession } from "./hooks/icons/useIconExplorerSession";
 import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -282,6 +283,7 @@ const AppContent: React.FC = () => {
   );
   useCloseTabShortcut(state.sessions, activeSessionId, handleSessionClose);
   const openTrustCenter = useTrustCenterSession(setActiveSessionId);
+  const openIconExplorer = useIconExplorerSession(setActiveSessionId);
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();
@@ -1743,6 +1745,7 @@ const AppContent: React.FC = () => {
             }}
             openSettings={handleOpenSettings}
             openTrustCenter={openTrustCenter}
+            openIconExplorer={openIconExplorer}
             setRdpPanelOpen={toolShowSetters.current.rdpSessions}
             setShowProxyMenu={toolShowSetters.current.proxyChain}
             setShowShortcutManager={toolShowSetters.current.shortcutManager}

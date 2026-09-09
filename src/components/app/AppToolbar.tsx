@@ -14,6 +14,7 @@ import {
   ScreenShare,
   FlaskConical,
   Fingerprint,
+  LayoutGrid,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -56,6 +57,7 @@ interface AppToolbarProps {
    */
   openSettings: (tab?: SettingsTabId) => void;
   openTrustCenter: () => void;
+  openIconExplorer?: () => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setShowProxyMenu: (v: boolean) => void;
   setShowShortcutManager: (v: boolean) => void;
@@ -95,6 +97,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   openImportExport,
   openSettings,
   openTrustCenter,
+  openIconExplorer,
   setRdpPanelOpen,
   setShowProxyMenu,
   setShowShortcutManager,
@@ -260,6 +263,18 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               data-testid="toolbar-settings"
             >
               <ToolGlyph tool="settings" />
+            </button>
+          )}
+          {openIconExplorer && (appSettings.showIconExplorerIcon ?? true) && (
+            <button
+              type="button"
+              onClick={openIconExplorer}
+              className="app-bar-button p-2"
+              aria-label="Icon Explorer"
+              data-tooltip="Icon Explorer"
+              data-testid="toolbar-icon-explorer"
+            >
+              <LayoutGrid size={14} />
             </button>
           )}
           {(appSettings.showTrustCenterIcon ?? true) && (

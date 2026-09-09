@@ -12,6 +12,21 @@ export const RDP_INTERNALS_WINDOW_MESSAGE =
   "RDP Internals stays in the desktop viewer's window. Open it from the RDP desktop after moving that session.";
 export const RECORDING_PLAYER_PROTOCOL = "tool:recordingPlayer";
 export const TRUST_CENTER_PROTOCOL = "tool:trustCenter";
+export const ICON_EXPLORER_PROTOCOL = "tool:iconExplorer";
+
+export const createIconExplorerSession = (
+  source?: ConnectionSession,
+): ConnectionSession => ({
+  id: `icon-explorer-${source?.layout?.isDetached ? (source.layout.windowId ?? source.id) : "main"}`,
+  connectionId: "tool-icon-explorer",
+  name: "Icon Explorer",
+  status: "connected",
+  startTime: new Date(),
+  protocol: ICON_EXPLORER_PROTOCOL,
+  hostname: "",
+  tabGroupId: source?.tabGroupId,
+  ...(source?.layout?.isDetached ? { layout: { ...source.layout } } : {}),
+});
 
 export const createTrustCenterSession = (
   source?: ConnectionSession,

@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -8,6 +9,9 @@ import {
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionTabs } from "../../src/components/session/SessionTabs";
+import { createIconExplorerSession } from "../../src/components/app/toolSession";
+import { publishIconLibrary } from "../../src/utils/icons/iconLibraryRuntime";
+import { parsePassiveSvg } from "../../src/utils/icons/iconLibrary";
 import type {
   Connection,
   ConnectionSession,
@@ -175,6 +179,56 @@ describe("SessionTabs accessibility", () => {
   afterEach(() => {
     restoreTabSizing();
     clearRuntimeConnectionsForTests();
+    publishIconLibrary(undefined, { ready: false });
+  });
+
+  it("shows the canonical Icon Explorer glyph on its independent tool tab", () => {
+    mockSessions = [createIconExplorerSession()];
+    const { container } = renderTabs({ activeSessionId: "icon-explorer-main" });
+    expect(
+      container.querySelector('[data-session-icon="tool:iconExplorer"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-session-icon="tool:unknown"]'),
+    ).toBeNull();
+  });
+
+  it("reacts to committed custom-icon deletion without polling or a settings-context rerender", () => {
+    const key = "custom:12345678-1234-4123-8123-123456789abc";
+    publishIconLibrary(
+      {
+        version: 1,
+        customIcons: [
+          {
+            key,
+            label: "Custom session icon",
+            notes: "",
+            svg: parsePassiveSvg(
+              '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>',
+            ),
+          },
+        ],
+        builtInOverrides: {},
+      },
+      { ready: true },
+    );
+    mockConnections[0] = { ...mockConnections[0], icon: key };
+    const { container } = renderTabs();
+    expect(
+      container.querySelector('[data-session-icon="' + key + '"]'),
+    ).toBeInTheDocument();
+    act(() =>
+      publishIconLibrary(
+        { version: 1, customIcons: [], builtInOverrides: {} },
+        { ready: true },
+      ),
+    );
+    expect(
+      container.querySelector('[data-session-icon="' + key + '"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-session-icon="ssh"]'),
+    ).toBeInTheDocument();
   });
 
   it("shows that no session is selected when the tab list is empty", () => {

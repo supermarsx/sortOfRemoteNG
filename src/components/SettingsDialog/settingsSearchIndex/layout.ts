@@ -231,6 +231,24 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Layout",
   },
   {
+    key: "showIconExplorerIcon",
+    label: "Icon Explorer",
+    description:
+      "Show the Icon Explorer button to browse and manage your icon library",
+    tags: [
+      "toolbar",
+      "topbar",
+      "icon",
+      "explorer",
+      "SVG",
+      "library",
+      "secondary bar",
+    ],
+    synonyms: ["icon explorer button", "icon library shortcut", "topbar icons"],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
     key: "showTrustCenterIcon",
     label: "Trust Center",
     labelKey: "settingsLayout.trustCenter",

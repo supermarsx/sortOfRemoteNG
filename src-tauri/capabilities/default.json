@@ -42,6 +42,8 @@
     "core:webview:allow-internal-toggle-devtools",
     "dialog:default",
     "fs:default",
+    "fs:allow-stat",
+    "fs:allow-write-text-file",
     {
       "identifier": "fs:allow-read-file",
       "allow": [

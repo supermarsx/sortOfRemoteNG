@@ -513,6 +513,14 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             )}
           />
           <Toggle
+            checked={settings.showIconExplorerIcon ?? true}
+            onChange={(v) => updateSettings({ showIconExplorerIcon: v })}
+            icon={<LayoutGrid size={16} />}
+            label="Icon Explorer"
+            settingKey="showIconExplorerIcon"
+            infoTooltip="Show the Icon Explorer button to browse and manage your icon library"
+          />
+          <Toggle
             checked={settings.showTrustCenterIcon ?? true}
             onChange={(v) => updateSettings({ showTrustCenterIcon: v })}
             icon={<Fingerprint size={16} />}

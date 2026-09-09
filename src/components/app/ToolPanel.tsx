@@ -14,6 +14,7 @@ import {
   RDP_INTERNALS_PROTOCOL,
   RECORDING_PLAYER_PROTOCOL,
   TRUST_CENTER_PROTOCOL,
+  ICON_EXPLORER_PROTOCOL,
 } from "./toolSession";
 import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
@@ -26,6 +27,9 @@ const PerformanceMonitor = dynamic(
   { ssr: false },
 );
 const TrustCenterTab = dynamic(() => import("../security/TrustCenterTab"), {
+  ssr: false,
+});
+const IconExplorerTab = dynamic(() => import("../icons/IconExplorerTab"), {
   ssr: false,
 });
 const ActionLogViewer = dynamic(
@@ -237,6 +241,13 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
 
   if (session.protocol === RDP_INTERNALS_PROTOCOL) {
     return <RDPInternalsTab session={session} onClose={onClose} />;
+  }
+  if (session.protocol === ICON_EXPLORER_PROTOCOL) {
+    return (
+      <FeatureErrorBoundary title="Icon Explorer could not be displayed">
+        <IconExplorerTab />
+      </FeatureErrorBoundary>
+    );
   }
   if (session.protocol === TRUST_CENTER_PROTOCOL)
     return (

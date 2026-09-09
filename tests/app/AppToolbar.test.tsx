@@ -95,6 +95,24 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("opens the autonomous Icon Explorer even without an active database", () => {
+    const openIconExplorer = vi.fn();
+    const props = makeProps({ openIconExplorer });
+    const { rerender } = render(<AppToolbar {...props} />);
+    const button = screen.getByRole("button", { name: "Icon Explorer" });
+    expect(button).toHaveAttribute("data-tooltip", "Icon Explorer");
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    expect(openIconExplorer).toHaveBeenCalledOnce();
+    expect(props.openSettings).not.toHaveBeenCalled();
+    rerender(
+      <AppToolbar
+        {...props}
+        appSettings={{ ...props.appSettings, showIconExplorerIcon: false }}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Icon Explorer" })).toBeNull();
+  });
   it("shows the configurable Trust Center shortcut and uses the existing tab opener", () => {
     expect(defaultSettings.showTrustCenterIcon).toBe(true);
     expect(DEFAULT_VALUES.showTrustCenterIcon).toBe(true);
