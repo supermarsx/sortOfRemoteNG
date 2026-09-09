@@ -12,6 +12,8 @@ import { PIRATE_ICONS } from "./catalog/pirates";
 import { DEITY_RELIGION_ICONS } from "./catalog/deitiesReligion";
 import { NETWORK_ICONS } from "./catalog/network";
 import { ISP_PROVIDER_ICONS } from "./catalog/providers";
+import { HOSTING_PROVIDER_ICONS } from "./catalog/hostingProviders";
+import { DOMAIN_REGISTRAR_ICONS } from "./catalog/domainRegistrars";
 import { OPERATING_SYSTEM_ICONS } from "./catalog/operatingSystems";
 import { REMOTE_PROTOCOL_ICONS } from "./catalog/remoteProtocols";
 import { SECURITY_ICONS } from "./catalog/security";
@@ -51,6 +53,8 @@ export const CONNECTION_ICON_CATALOG = [
   ...SERVERS_DEVICES_ICONS,
   ...NETWORK_ICONS,
   ...ISP_PROVIDER_ICONS,
+  ...HOSTING_PROVIDER_ICONS,
+  ...DOMAIN_REGISTRAR_ICONS,
   ...CLOUD_ICONS,
   ...DATABASE_ICONS,
   ...DEVOPS_MONITORING_ICONS,

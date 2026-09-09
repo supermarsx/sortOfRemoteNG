@@ -1,10 +1,4 @@
-import {
-  Cloud,
-  CloudCog,
-  CloudDownload,
-  CloudLightning,
-  CloudUpload,
-} from "lucide-react";
+import { Cloud, Settings, Download, Zap, Upload } from "lucide-react";
 
 import {
   alibabacloud,
@@ -23,9 +17,26 @@ import {
   scaleway,
 } from "../brand";
 import { createRoleIcon } from "../createRoleIcon";
+import { ec2Instance } from "../brand/providerResourceIcons";
 import { defineIcon } from "./types";
 
 export const CLOUD_ICONS = [
+  defineIcon(
+    "ec2-instance",
+    "Amazon EC2 instance",
+    "cloud",
+    ec2Instance,
+    [
+      "ec2",
+      "ec2 instance",
+      "amazon ec2",
+      "aws ec2",
+      "aws instance",
+      "virtual machine",
+      "compute",
+    ],
+    "AWS architecture EC2 Instance resource glyph, uniformly scaled in monochrome; not the AWS service logo.",
+  ),
   defineIcon(
     "aws",
     "AWS",
@@ -60,26 +71,39 @@ export const CLOUD_ICONS = [
   defineIcon("heroku", "Heroku", "cloud", heroku, ["heroku", "cloud", "paas"]),
   defineIcon("scaleway", "Scaleway", "cloud", scaleway, [
     "scaleway",
+    "scaleway.com",
     "cloud",
     "hosting",
   ]),
   defineIcon("cloud", "Cloud", "cloud", Cloud, ["azure", "gcp", "provider"]),
-  defineIcon("cloud-cog", "Managed cloud", "cloud", CloudCog, [
-    "cloud admin",
-    "service",
-  ]),
-  defineIcon("cloud-upload", "Cloud upload", "cloud", CloudUpload, [
-    "upload",
-    "sync",
-  ]),
-  defineIcon("cloud-download", "Cloud download", "cloud", CloudDownload, [
-    "download",
-    "sync",
-  ]),
-  defineIcon("cloud-lightning", "Cloud compute", "cloud", CloudLightning, [
-    "compute",
-    "serverless",
-  ]),
+  defineIcon(
+    "cloud-cog",
+    "Managed cloud",
+    "cloud",
+    createRoleIcon("ManagedCloud", "cloud", Settings),
+    ["cloud admin", "service"],
+  ),
+  defineIcon(
+    "cloud-upload",
+    "Cloud upload",
+    "cloud",
+    createRoleIcon("CloudUpload", "cloud", Upload),
+    ["upload", "sync"],
+  ),
+  defineIcon(
+    "cloud-download",
+    "Cloud download",
+    "cloud",
+    createRoleIcon("CloudDownload", "cloud", Download),
+    ["download", "sync"],
+  ),
+  defineIcon(
+    "cloud-lightning",
+    "Cloud compute",
+    "cloud",
+    createRoleIcon("CloudCompute", "cloud", Zap),
+    ["compute", "serverless"],
+  ),
   defineIcon("googlecloud", "Google Cloud", "cloud", googlecloud, [
     "gcp",
     "google cloud",
@@ -161,13 +185,17 @@ export const CLOUD_ICONS = [
   ]),
   defineIcon("hetzner", "Hetzner", "cloud", hetzner, [
     "hetzner",
+    "hetzner.com",
+    "hetzner.de",
     "hosting",
     "cloud",
     "provider",
     "plain",
   ]),
-  defineIcon("ovh", "OVH", "cloud", ovh, [
+  defineIcon("ovh", "OVHcloud", "cloud", ovh, [
     "ovh",
+    "ovh.com",
+    "ovhcloud.com",
     "ovhcloud",
     "ovh cloud",
     "hosting",

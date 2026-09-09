@@ -208,6 +208,17 @@ export const BRAND_ICON_SLUGS = [
   "atandt",
   "movistar",
   "scaleway",
+  // Hosting platforms and domain registrars
+  "hostinger",
+  "netcup",
+  "upcloud",
+  "wpengine",
+  "namesilo",
+  "wix",
+  "spaceship",
+  "contabo",
+  "vultr",
+  "exoscale",
 ] as const;
 
 /** A slug known to be vendored into `generatedBrandIcons.ts`. */

@@ -1,6 +1,20 @@
 import type { LucideIcon } from "lucide-react";
 import type { BrandIconSlug } from "./brandIconSlugs";
 import { GENERATED_BRAND_ICONS } from "./generatedBrandIcons";
+import { putty } from "./puttyBrandIcon";
+import { noip } from "./noipBrandIcon";
+import {
+  HOSTING_HISTORICAL_BRAND_ICONS,
+  type HostingHistoricalBrandIconName,
+} from "./hostingHistoricalBrandIcons";
+import {
+  TELECOM_PUBLISHER_BRAND_ICONS,
+  type TelecomPublisherBrandIconName,
+} from "./telecomPublisherBrandIcons";
+import {
+  HOSTING_PUBLISHER_BRAND_ICONS,
+  type HostingPublisherBrandIconName,
+} from "./hostingPublisherBrandIcons";
 import {
   PUBLISHER_BRAND_ICONS,
   type PublisherBrandIconName,
@@ -41,13 +55,24 @@ export * from "./handAuthoredBrandIcons";
 export * from "./historicalBrandIcons";
 export * from "./identifierIcons";
 export * from "./publisherBrandIcons";
+export * from "./hostingPublisherBrandIcons";
+export { putty } from "./puttyBrandIcon";
+export { noip } from "./noipBrandIcon";
+export * from "./hostingHistoricalBrandIcons";
+export * from "./telecomPublisherBrandIcons";
+export * from "./hostingIdentifierIcons";
 
 /** Every brand mark this app ships, vendored and hand-authored alike. */
 export type BrandIconName =
+  | "putty"
+  | "noip"
   | BrandIconSlug
   | HandAuthoredBrandIconName
   | HistoricalBrandIconName
-  | PublisherBrandIconName;
+  | PublisherBrandIconName
+  | HostingPublisherBrandIconName
+  | HostingHistoricalBrandIconName
+  | TelecomPublisherBrandIconName;
 
 /**
  * Lookup of every brand mark by name, for tests and dynamic resolution.
@@ -56,8 +81,13 @@ export type BrandIconName =
  * what lets the bundler drop marks no entry uses.
  */
 export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
+  putty,
+  noip,
   ...GENERATED_BRAND_ICONS,
   ...HAND_AUTHORED_BRAND_ICONS,
   ...HISTORICAL_BRAND_ICONS,
   ...PUBLISHER_BRAND_ICONS,
+  ...HOSTING_PUBLISHER_BRAND_ICONS,
+  ...HOSTING_HISTORICAL_BRAND_ICONS,
+  ...TELECOM_PUBLISHER_BRAND_ICONS,
 };

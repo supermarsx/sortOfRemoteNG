@@ -5,6 +5,8 @@ export const CONNECTION_ICON_CATEGORIES = [
   "servers-devices",
   "network",
   "isp-providers",
+  "hosting-providers",
+  "domain-registrars",
   "cloud",
   "databases",
   "devops-monitoring",

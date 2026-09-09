@@ -10,6 +10,25 @@ const symbol = (name: string, ...paths: string[]) =>
 /** Additional pure asset silhouettes; existing saved device keys are untouched. */
 export const DEVICE_VARIANT_ICONS = [
   defineIcon(
+    "display-multi-screen",
+    "Multi-screen display array",
+    "servers-devices",
+    symbol(
+      "MultiScreenDisplayArray",
+      "M7 3h10v9H7ZM1 5h4v9H1ZM19 5h4v9h-4ZM3 14v3h18v-3M12 12v9M7 22h10",
+    ),
+    [
+      "multi-screen",
+      "multi screen",
+      "multiscreen",
+      "multiple monitors",
+      "triple monitor",
+      "three screens",
+      "display",
+      "monitor",
+    ],
+  ),
+  defineIcon(
     "restaurant-table",
     "Restaurant dining table",
     "servers-devices",

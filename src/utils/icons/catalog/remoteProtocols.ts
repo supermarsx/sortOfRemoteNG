@@ -8,7 +8,14 @@ import {
   Terminal,
 } from "lucide-react";
 
-import { anydesk, apple, microsoft, powershell, rustdesk } from "../brand";
+import {
+  anydesk,
+  apple,
+  microsoft,
+  powershell,
+  rustdesk,
+  putty,
+} from "../brand";
 import { defineIcon } from "./types";
 
 import { createRoleIcon } from "../createRoleIcon";
@@ -16,6 +23,22 @@ import { REMOTE_TOOL_ICONS } from "./remoteTools";
 import { NATIVE_PROTOCOL_ICONS } from "./nativeProtocols";
 
 export const REMOTE_PROTOCOL_ICONS = [
+  defineIcon(
+    "putty",
+    "PuTTY",
+    "remote-protocols",
+    putty,
+    [
+      "putty",
+      "putty.exe",
+      "putty ssh",
+      "ssh client",
+      "telnet",
+      "serial",
+      "terminal",
+    ],
+    "PuTTY author-generated computers-and-lightning geometry, adapted to transparent monochrome linework.",
+  ),
   defineIcon("monitor", "Desktop", "remote-protocols", Monitor, [
     "rdp",
     "desktop",

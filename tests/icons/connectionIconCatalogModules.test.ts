@@ -19,6 +19,8 @@ import { PIRATE_ICONS } from "../../src/utils/icons/catalog/pirates";
 import { DEITY_RELIGION_ICONS } from "../../src/utils/icons/catalog/deitiesReligion";
 import { NETWORK_ICONS } from "../../src/utils/icons/catalog/network";
 import { ISP_PROVIDER_ICONS } from "../../src/utils/icons/catalog/providers";
+import { HOSTING_PROVIDER_ICONS } from "../../src/utils/icons/catalog/hostingProviders";
+import { DOMAIN_REGISTRAR_ICONS } from "../../src/utils/icons/catalog/domainRegistrars";
 import { OPERATING_SYSTEM_ICONS } from "../../src/utils/icons/catalog/operatingSystems";
 import { REMOTE_PROTOCOL_ICONS } from "../../src/utils/icons/catalog/remoteProtocols";
 import { SECURITY_ICONS } from "../../src/utils/icons/catalog/security";
@@ -53,6 +55,16 @@ const CATALOG_MODULES: readonly CatalogModule[] = [
   },
   { name: "network", category: "network", entries: NETWORK_ICONS },
   { name: "providers", category: "isp-providers", entries: ISP_PROVIDER_ICONS },
+  {
+    name: "hostingProviders",
+    category: "hosting-providers",
+    entries: HOSTING_PROVIDER_ICONS,
+  },
+  {
+    name: "domainRegistrars",
+    category: "domain-registrars",
+    entries: DOMAIN_REGISTRAR_ICONS,
+  },
   { name: "cloud", category: "cloud", entries: CLOUD_ICONS },
   { name: "databases", category: "databases", entries: DATABASE_ICONS },
   {
@@ -117,7 +129,7 @@ describe("connection icon catalog modules", () => {
     expect(CATALOG_MODULES.map((module) => module.category)).toEqual([
       ...CONNECTION_ICON_CATEGORIES,
     ]);
-    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(21);
+    expect(CONNECTION_ICON_CATEGORIES).toHaveLength(23);
   });
 
   it("composes the catalog from every module without dropping entries", () => {

@@ -13,7 +13,7 @@ these composites are app UI symbols, not official alternate brand logos.
 
 ## Installed Simple Icons
 
-`src/utils/icons/brand/brandIconSlugs.ts` is the source of truth for the 161 paths
+`src/utils/icons/brand/brandIconSlugs.ts` is the source of truth for the 171 paths
 vendored from the installed `simple-icons` 16.28.0 package. Regenerate with
 `npm run icons:brand:generate`; validate with `npm run icons:brand:check`.
 Never hand-edit `generatedBrandIcons.ts`. The generator reads only requested
@@ -455,3 +455,113 @@ are checked; integration icons and persistence-safe default keys agree. Tool,
 status, log and aggregate-category icons remain semantic UI controls, not protocol
 brands. Service folders and alternative containers add local Lucide geometry
 without adding brand sources.
+
+## Hosting, domain, and access-provider additions
+
+Hosting providers and Domains & registrars are separate picker categories.
+Existing Porkbun, Namecheap, GoDaddy, Gandi, Cloudflare, and No-IP keys now browse
+beside the new DNS/registrar entries; IONOS has hosting as its primary category.
+Mixed-service companies carry search aliases for their other services, without
+duplicate saved keys. Hetzner, OVHcloud (`ovh`), and Scaleway retain their existing
+pure marks and Cloud category. Category placement is not a service endorsement.
+The ambiguous request “Level4 communications” is intentionally not mapped to a
+different company. No service availability is implied by an icon, including Freenom.
+
+### Pinned package marks
+
+The following ten additions use the installed Simple Icons 16.28.0 paths. Sources
+are recorded upstream and were checked for the intended identity; in particular,
+Spaceship means the domain registrar, not a similarly named software project.
+
+| Key         | Publisher artwork reference                                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hostinger` | [Hostinger newsroom](https://www.hostinger.com/newsroom)                                                                                    |
+| `netcup`    | [netcup SVG](https://www.netcup.de/static/assets/images/favicons/favicon.svg), [guidelines](https://www.netcup.eu/ueber-netcup/werbemittel) |
+| `upcloud`   | [UpCloud brand assets](https://upcloud.com/brand-assets/)                                                                                   |
+| `wpengine`  | [WP Engine brand assets](https://wpengine.com/brand-assets)                                                                                 |
+| `namesilo`  | [NameSilo publisher source](https://www.namesilo.com/support/v2)                                                                            |
+| `wix`       | [Wix design assets](https://www.wix.com/about/design-assets)                                                                                |
+| `spaceship` | [Spaceship registrar](https://www.spaceship.com)                                                                                            |
+| `contabo`   | [Contabo](https://contabo.com)                                                                                                              |
+| `vultr`     | [Vultr brand assets](https://www.vultr.com/company/brand-assets)                                                                            |
+| `exoscale`  | [Exoscale press](https://www.exoscale.com/press/)                                                                                           |
+
+### Publisher and historical geometry
+
+The local `hostingPublisherBrandIcons.ts`, `hostingHistoricalBrandIcons.ts`,
+`telecomPublisherBrandIcons.ts`, and `providerResourceIcons.ts` record SHA-256
+checksums of their source SVGs. Only local passive vector geometry ships; no
+source URL is fetched at runtime. Uniform scaling and monochrome fills are UI
+adaptations, not newly endorsed logos. Publisher trademark/artwork rights remain
+applicable even when a collection is freely licensed.
+
+| Key            | Exact source and adaptation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dominios-pt`  | [Publisher SVG](https://www.dominios.pt/wp-content/uploads/2026/03/logo-dominios-white-byteamblue.svg). Only the leading lowercase d path beginning `M23.11,2.65` is extracted; the separate period and remaining wordmark are excluded.                                                                                                                                                                                                                                                                              |
+| `rackspace`    | [Publisher SVG](https://www.rackspace.com/themes/custom/hansel/images/rs-logo-2021B.svg). Only the leading r subpath is extracted for small-size legibility. Its relative initial move is resolved to `M10.0488 13.2054`; the following line remains relative and all curves are unchanged.                                                                                                                                                                                                                           |
+| `amen-pt`      | Monochrome path trace of the compact parentheses emblem in the [publisher header raster](https://cdn-teamblue.services/amen.pt/img/header/logo.png). Not an original publisher SVG; the wordmark/team.blue endorsement line is excluded.                                                                                                                                                                                                                                                                              |
+| `noip`         | Monochrome contour trace of the [publisher compact raster](https://d2qr50rz2oof04.cloudfront.net/assets/img/logo/logo-grey-bug.png), linked by the [No-IP homepage](https://www.noip.com/). Green foreground becomes currentColor; the pale strike and letter counters become transparent. Not an original publisher SVG.                                                                                                                                                                                             |
+| `claranet`     | [Publisher favicon](https://www.claranet.com/favicon.svg). All three paths retain their independent relative-coordinate origins; joining them would corrupt the cloud/power emblem.                                                                                                                                                                                                                                                                                                                                   |
+| `sapo`         | First five paths of `svg#sapoLogo` on the [SAPO homepage](https://www.sapo.pt/): frog, two eye cutouts and two pupils. Even-odd monochrome fill preserves the eyes without a fixed background. [Publisher rebrand announcement](https://sobre.sapo.pt/novidades/noticias/artigos/um-novo-sapo-com-uma-nova-marca-para-uma-nova-era-digital).                                                                                                                                                                          |
+| `freenom`      | [Pinned historical collection SVG](https://raw.githubusercontent.com/homarr-labs/dashboard-icons/4f6ec5df68bdffd41395b395bb6f304553ba0677/svg/freenom.svg). Ring and centre-dot geometry retained; the source's `fill:none` first path is excluded. This is community-preserved historical artwork, not a verified current publisher release.                                                                                                                                                                         |
+| `bluehost`     | [2019 SVG](https://upload.wikimedia.org/wikipedia/commons/9/9a/Bluehost_logo_2019.svg), [source/author attribution](https://commons.wikimedia.org/wiki/File:Bluehost_logo_2019.svg). The nine grid polygons are extracted without the wordmark. Historical identification, not a current-brand claim.                                                                                                                                                                                                                 |
+| `ec2-instance` | [Official AWS architecture package](https://d1.awsstatic.com/onedam/marketing-channels/website/public/shared/architecture-icon-release/Icon-package_07312026.5846e92413caa21490223536cc97f1269e44fa92.zip), member `Resource-Icons_07312026/Res_Compute/Res_Amazon-EC2_Instance_48.svg`. Actual singular Instance resource, not a generic AWS logo or framed server. Original even-odd fill is preserved; orange becomes currentColor. See [AWS architecture icon terms](https://aws.amazon.com/architecture/icons/). |
+
+### Explicit app-authored alternatives
+
+These small geometric identifiers are **not official logos**, and their catalog
+descriptions say so. They are not included in `BRAND_ICONS`. They do not trace
+unknown raster artwork or claim vendor approval. Publisher references establish
+which company/service a label identifies, not the source of the authored shapes.
+
+| Key                 | Identifier and publisher reference                                                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dns-pt`            | .PT path lettering; [DNS.PT](https://www.dns.pt/) redirects to [the .PT registry](https://www.pt.pt/pt/). Its available Safari SVG was an unsuitable large raster trace. |
+| `ptisp`             | PI initials; [PTisp contact/identity page](https://ptisp.pt/company/contacts). A usable publisher vector was not verified.                                               |
+| `ptservidor`        | PS and server line; [PTServidor](https://www.ptservidor.pt/) exposes a raster header logo.                                                                               |
+| `webtuga`           | WT initials; [WebTuga](https://www.webtuga.pt/) exposes a raster header logo.                                                                                            |
+| `time4vps`          | Clock/four symbol; [Time4VPS](https://www.time4vps.com/). Usable publisher vector unavailable during bounded lookup.                                                     |
+| `network-solutions` | NS initials; [Network Solutions](https://www.networksolutions.com/). A current compact publisher vector was not verified.                                                |
+| `cogent`            | CC initials; [Cogent media kit](https://www.cogentco.com/en/media-kit) provides raster artwork.                                                                          |
+| `hostgator`         | HG initials; [HostGator](https://www.hostgator.com/). The linked Safari asset did not return verified SVG content.                                                       |
+
+The generic `isp` globe/distribution symbol, `dynamic-dns` domain/update service,
+and `display-multi-screen` three-screen array are app-authored, unbranded geometry, not provider marks.
+
+### PuTTY author-generated geometry
+
+The PuTTY icon comes from the author's [0.85 source archive](https://the.earth.li/~sgtatham/putty/0.85/putty-src.zip),
+SHA-256 `232c5c286a5b35f445dbbf49e159469acde372a3907aef738d88e28b4b0f6da2`.
+The reviewed, standalone `icons/mksvg.py` generator was run with the constant
+`putty_icon`, size 48 and `bw` mode, writing only to an in-memory stream.
+Generated SVG SHA-256: `ad9c058c5f30caed3d2fa07c4047532611c5b7c947d6f3a69f76ab33381dfc2a`.
+See the author's [icon design explanation](https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/putty-icons/).
+
+`puttyBrandIcon.ts` preserves its computers-and-lightning polygon/rectangle
+coordinates and scales uniformly. Black becomes currentColor; white is transparent
+so the cases and bolt use linework, not fixed white backgrounds. Inline styles are
+flattened into passive attributes; no mask, font, script or live generator ships.
+
+PuTTY is copyright 1997–2026 Simon Tatham. Portions copyright Robert de Bath,
+Joris van Rantwijk, Delian Delchev, Andreas Schultz, Jeroen Massar, Wez Furlong,
+Nicolas Barry, Justin Bradford, Ben Harris, Malcolm Smith, Ahmad Khalifa, Markus
+Kuhn, Colin Watson, Christopher Staite, Lorenz Diener, Christian Brabandt, Jeff
+Smith, Pavel Kryukov, Maxim Kuznetsov, Svyatoslav Kuzmich, Nico Williams, Viktor
+Dukhovni, Josh Dersch, Lars Brinkhoff, and CORE SDI S.A.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in the
+Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

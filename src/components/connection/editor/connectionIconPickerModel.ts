@@ -27,6 +27,8 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
   "servers-devices": "Servers & devices",
   network: "Network",
   "isp-providers": "ISPs & providers",
+  "hosting-providers": "Hosting providers",
+  "domain-registrars": "Domains & registrars",
   cloud: "Cloud",
   databases: "Databases",
   "devops-monitoring": "DevOps & monitoring",
