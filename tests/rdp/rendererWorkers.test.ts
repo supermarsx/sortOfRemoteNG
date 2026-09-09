@@ -954,6 +954,70 @@ describe("rdp worker blobs", () => {
     renderer.destroy();
   });
 
+  it.each([false, true])(
+    "preserves dirty Canvas2D content through resize (offscreen=%s)",
+    (offscreen) => {
+      if (!offscreen) vi.stubGlobal("OffscreenCanvas", undefined);
+      const contexts = new Map<
+        HTMLCanvasElement,
+        {
+          drawImage: ReturnType<typeof vi.fn>;
+          putImageData: ReturnType<typeof vi.fn>;
+        }
+      >();
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+        function (this: HTMLCanvasElement, kind: string) {
+          if (kind !== "2d") return null;
+          if (!contexts.has(this))
+            contexts.set(this, {
+              drawImage: vi.fn(),
+              putImageData: vi.fn(),
+            });
+          return contexts.get(this) as never;
+        },
+      );
+      const canvas = document.createElement("canvas");
+      canvas.width = 16;
+      canvas.height = 8;
+      const renderer = createFrameRenderer("canvas2d", canvas);
+      renderer.paintRegion(0, 0, 1, 1, new Uint8ClampedArray([1, 2, 3, 255]));
+      const back = offscreen
+        ? offscreenCanvases[0]
+        : [...contexts.keys()].find((item) => item !== canvas)!;
+      renderer.resize(32, 16);
+      const tmp = offscreen
+        ? offscreenCanvases[1]
+        : [...contexts.keys()].find(
+            (item) => item !== canvas && item !== back,
+          )!;
+      const backContext =
+        back instanceof HTMLCanvasElement
+          ? contexts.get(back)!
+          : back.getContext("2d")!;
+      const tmpContext =
+        tmp instanceof HTMLCanvasElement
+          ? contexts.get(tmp)!
+          : tmp.getContext("2d")!;
+      expect(tmpContext.drawImage).toHaveBeenCalledWith(back, 0, 0);
+      expect(backContext.drawImage).toHaveBeenCalledWith(
+        tmp,
+        0,
+        0,
+        16,
+        8,
+        0,
+        0,
+        32,
+        16,
+      );
+      expect(back.width).toBe(32);
+      expect(back.height).toBe(16);
+      renderer.present();
+      expect(contexts.get(canvas)!.drawImage).toHaveBeenCalledWith(back, 0, 0);
+      renderer.destroy();
+    },
+  );
+
   it("keeps Canvas2D snapshots atomic without OffscreenCanvas support", async () => {
     vi.stubGlobal("OffscreenCanvas", undefined);
     const contexts = new Map<

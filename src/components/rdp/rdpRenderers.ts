@@ -274,6 +274,14 @@ export function detectCapabilities(): RendererCapabilities {
 // Canvas 2D Renderer  —  putImageData (baseline, always works)
 // ═════════════════════════════════════════════════════════════════════════════
 
+function getCanvas2DContext(
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null {
+  // Narrow before calling the overload: the union also exposes non-2D contexts.
+  if (canvas instanceof HTMLCanvasElement) return canvas.getContext("2d");
+  return canvas.getContext("2d");
+}
+
 class Canvas2DRenderer implements FrameRenderer {
   readonly name = "Canvas 2D";
   readonly type: FrontendRendererType = "canvas2d";
@@ -364,18 +372,18 @@ class Canvas2DRenderer implements FrameRenderer {
           : document.createElement("canvas");
       tmp.width = oldW;
       tmp.height = oldH;
-      const tmpCtx = tmp.getContext("2d");
+      const tmpCtx = getCanvas2DContext(tmp);
       if (tmpCtx && this.dirty) {
         tmpCtx.drawImage(this.backBuffer, 0, 0);
       }
       this.backBuffer.width = width;
       this.backBuffer.height = height;
       // Re-acquire back-buffer context (resize invalidates it).
-      const bCtx = this.backBuffer.getContext("2d");
+      const bCtx = getCanvas2DContext(this.backBuffer);
       if (bCtx) {
         this.backCtx = bCtx;
         if (tmpCtx && this.dirty) {
-          this.backCtx.drawImage(tmp, 0, 0, oldW, oldH, 0, 0, width, height);
+          bCtx.drawImage(tmp, 0, 0, oldW, oldH, 0, 0, width, height);
         }
       }
     }
