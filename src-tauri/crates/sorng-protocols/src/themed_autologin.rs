@@ -118,10 +118,16 @@ pub fn build_autologin_injection_from_slots(
         Err(_) => return None,
     }
 
-    // Selectors are non-secret CSS strings; JSON-encode for the client. The
-    // client treats a set-but-unmatched selector as "do not fill".
-    let selectors_json =
-        serde_json::to_string(selectors).unwrap_or_else(|_| "null".to_string());
+    // JSON is embedded in an HTML script, whose parser recognizes closing tags
+    // even inside quoted JavaScript strings. Escape HTML-significant characters
+    // without changing the CSS selector value received by the client.
+    let selectors_json = serde_json::to_string(selectors)
+        .ok()?
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
 
     Some(autologin_client_script(&nonce, &selectors_json))
 }
@@ -139,7 +145,7 @@ pub fn build_autologin_injection(state: &AxumProxyState) -> Option<String> {
 /// The injected client bootstrap (the e3↔e5 seam).
 ///
 /// `nonce` is a 32-char hex string from [`fresh_nonce`] so it needs no escaping;
-/// `selectors_json` is `serde_json`-encoded.
+/// `selectors_json` is JSON-encoded and escaped for an HTML script context.
 ///
 /// **Contract for e5:** keep the public shape stable —
 /// - fetch `GET {AUTOLOGIN_PATH}?nonce=<nonce>` with `cache: 'no-store'`,
@@ -265,9 +271,7 @@ pub async fn autologin_cred_handler(
         &state.password,
     ) {
         DispenseOutcome::NotArmed => forbidden("auto-login not armed for this session"),
-        DispenseOutcome::BadNonce => {
-            forbidden("invalid, expired, or replayed auto-login nonce")
-        }
+        DispenseOutcome::BadNonce => forbidden("invalid, expired, or replayed auto-login nonce"),
         DispenseOutcome::Poisoned => server_error("auto_login_nonce lock poisoned"),
         DispenseOutcome::Ok { username, password } => {
             let body = AutoLoginCreds {
@@ -278,9 +282,7 @@ pub async fn autologin_cred_handler(
             // Serialize without touching any request/recording log.
             let json = match serde_json::to_string(&body) {
                 Ok(s) => s,
-                Err(_) => {
-                    return server_error("failed to serialize auto-login credential")
-                }
+                Err(_) => return server_error("failed to serialize auto-login credential"),
             };
             Response::builder()
                 .status(StatusCode::OK)
@@ -395,13 +397,11 @@ mod tests {
         let pass = RwLock::new("s3cret".to_string());
 
         // First call with the right nonce dispenses the credential.
-        let first =
-            outcome_creds(dispense_credential(&armed, &nonce, "abc123", &user, &pass));
+        let first = outcome_creds(dispense_credential(&armed, &nonce, "abc123", &user, &pass));
         assert_eq!(first, Some(("admin".into(), "s3cret".into())));
 
         // The nonce is consumed: a replay with the SAME nonce is refused...
-        let replay =
-            outcome_creds(dispense_credential(&armed, &nonce, "abc123", &user, &pass));
+        let replay = outcome_creds(dispense_credential(&armed, &nonce, "abc123", &user, &pass));
         assert_eq!(replay, None, "consumed nonce must not dispense again");
 
         // ...and crucially auto-login is now DISARMED, so even a fresh nonce
@@ -433,8 +433,7 @@ mod tests {
         assert_eq!(nonce.read().unwrap().as_deref(), Some("correct"));
 
         // The legitimate page's bootstrap can still redeem the real nonce.
-        let good =
-            outcome_creds(dispense_credential(&armed, &nonce, "correct", &user, &pass));
+        let good = outcome_creds(dispense_credential(&armed, &nonce, "correct", &user, &pass));
         assert_eq!(good, Some(("u".into(), "p".into())));
     }
 
@@ -472,9 +471,7 @@ mod tests {
     fn injection_is_none_when_not_armed() {
         let armed = AtomicBool::new(false);
         let nonce = RwLock::new(None);
-        assert!(
-            build_autologin_injection_from_slots(&armed, &nonce, &None).is_none()
-        );
+        assert!(build_autologin_injection_from_slots(&armed, &nonce, &None).is_none());
         // And no nonce was stashed.
         assert!(nonce.read().unwrap().is_none());
     }
@@ -484,8 +481,8 @@ mod tests {
         let armed = AtomicBool::new(true);
         let nonce = RwLock::new(None);
         let sel = Some(selectors());
-        let script = build_autologin_injection_from_slots(&armed, &nonce, &sel)
-            .expect("armed => injects");
+        let script =
+            build_autologin_injection_from_slots(&armed, &nonce, &sel).expect("armed => injects");
         // A nonce was stashed into the slot...
         let stashed = nonce.read().unwrap().clone().expect("nonce stashed");
         assert_eq!(stashed.len(), 32, "fresh_nonce is 32 hex chars");
@@ -504,8 +501,7 @@ mod tests {
         // builder never even receives the credential, so it cannot leak it.
         let armed = AtomicBool::new(true);
         let nonce = RwLock::new(None);
-        let script =
-            build_autologin_injection_from_slots(&armed, &nonce, &None).expect("armed");
+        let script = build_autologin_injection_from_slots(&armed, &nonce, &None).expect("armed");
         // Sanity: nothing that looks like a credential value is templated in.
         assert!(!script.contains("password\":\""));
         // The fetch is same-origin + no-store.
@@ -518,11 +514,40 @@ mod tests {
         let armed = AtomicBool::new(true);
         let nonce = RwLock::new(None);
         let sel = Some(selectors());
-        let script =
-            build_autologin_injection_from_slots(&armed, &nonce, &sel).expect("armed");
+        let script = build_autologin_injection_from_slots(&armed, &nonce, &sel).expect("armed");
         // Selectors are non-secret CSS strings, JSON-encoded for the client.
         assert!(script.contains("password_selector"));
         assert!(script.contains("#p"));
+    }
+
+    #[test]
+    fn injection_selector_json_cannot_escape_script_and_roundtrips_exactly() {
+        let armed = AtomicBool::new(true);
+        let nonce = RwLock::new(None);
+        let sel = Some(HttpAutoLoginSelectors {
+            username_selector: Some(
+                "#login > input[data-label=\"</ScRiPt><script>unsafe()</script>&\"]".into(),
+            ),
+            password_selector: Some("input[data-label=\"<!--\u{2028}\u{2029}\"]".into()),
+            submit_selector: Some("button[data-label=\"quote\\\" and slash\\\\\"]".into()),
+        });
+        let script = build_autologin_injection_from_slots(&armed, &nonce, &sel).expect("armed");
+        let lower = script.to_ascii_lowercase();
+        assert_eq!(lower.matches("<script>").count(), 1);
+        assert_eq!(lower.matches("</script>").count(), 1);
+        let json = script
+            .split_once("var SEL=")
+            .unwrap()
+            .1
+            .split_once(";\nfunction nativeSet")
+            .unwrap()
+            .0;
+        assert!(!json.contains(['<', '>', '&', '\u{2028}', '\u{2029}']));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+            serde_json::to_value(&sel).unwrap()
+        );
+        assert!(script.contains(nonce.read().unwrap().as_ref().unwrap()));
     }
 
     #[test]
