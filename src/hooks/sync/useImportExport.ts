@@ -2753,7 +2753,7 @@ export function useImportExport({
       )
     ) {
       warnings.push(
-        "mRemoteNG cannot preserve every advanced Raw Socket, RLogin, or PowerShell Remoting setting; review the imported connections after transfer.",
+        "mRemoteNG cannot preserve every advanced Raw Socket, RLogin, PowerShell Remoting, or website application profile and login selector; review the imported connections after transfer.",
       );
     }
     if (datasets.some((dataset) => !dataset.isCurrent)) {

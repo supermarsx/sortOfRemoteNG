@@ -213,13 +213,36 @@ describe("ExportTab", () => {
 
     advanceExportTo("format");
     expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
-      "mRemoteNG cannot preserve advanced RAW/TCP, RAW/UDP, RLogin, or PowerShell Remoting settings",
+      "mRemoteNG cannot preserve advanced RAW/TCP, RAW/UDP, RLogin, PowerShell Remoting, or website application profiles and login selectors",
     );
 
     advanceExportTo("connection");
     const connectionSection = screen.getByTestId("export-connections-section");
     fireEvent.click(within(connectionSection).getByRole("button"));
     expect(connectionSection).toHaveTextContent("RAW/UDP");
+  });
+
+  it("warns that mRemoteNG loses a website application profile without other advanced settings", async () => {
+    await renderExportTab({
+      connections: [
+        {
+          ...connections[0],
+          protocol: "https",
+          port: 443,
+          httpApplication: {
+            version: 1,
+            id: "portainer",
+            loginMode: "manual",
+          },
+        },
+      ],
+      config: { ...defaultConfig, format: "mremoteng" },
+    });
+
+    advanceExportTo("format");
+    expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
+      "website application profiles and login selectors",
+    );
   });
 
   it("orders conditional selection pages and renumbers later steps without gaps", async () => {

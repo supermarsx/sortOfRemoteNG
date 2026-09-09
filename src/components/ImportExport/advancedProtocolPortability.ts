@@ -8,6 +8,9 @@ import { normalizeAdvancedProtocolConnection } from "../../utils/connection/norm
 import { normalizeImportedProtocol } from "../../utils/connection/normalizeImportedProtocol";
 import { normalizePowerShellRemotingSettings } from "../../utils/powershell/normalizePowerShellRemoting";
 import { migrateRloginSettings } from "../../utils/rlogin/rloginSettings";
+import { normalizeHttpApplicationSettings } from "../../utils/connection/httpApplicationProfiles";
+import { normalizeHttpApplicationSelectors } from "../../utils/auth/httpApplicationLogin";
+import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 
 export const ADVANCED_PROTOCOL_PORTABILITY_VERSION = 1 as const;
 
@@ -16,6 +19,8 @@ export const ADVANCED_PROTOCOL_NATIVE_FIELDS = [
   "RawSocketSettings",
   "RloginSettings",
   "PowerShellRemotingSettings",
+  "HttpApplication",
+  "HttpAutoLoginSelectors",
 ] as const;
 
 export type AdvancedProtocolNativeField =
@@ -149,6 +154,12 @@ export function mapPortableProtocol(source: unknown): ImportedProtocolMapping {
 export function normalizeImportedAdvancedProtocolConnection(
   connection: Connection,
 ): Connection {
+  const imported = deepCopy(connection);
+  // Our credential-free exports reserve this exact sentinel. Never replay it
+  // as a real website password when a saved profile requests automatic login.
+  if (imported.password === SECRET_PLACEHOLDER) delete imported.password;
+  if (imported.basicAuthPassword === SECRET_PLACEHOLDER)
+    delete imported.basicAuthPassword;
   const inferredProtocol =
     (typeof connection.protocol === "string" && connection.protocol.trim()) ||
     (connection.rawSocketSettings
@@ -158,7 +169,7 @@ export function normalizeImportedAdvancedProtocolConnection(
         : connection.powerShellRemoting
           ? "winrm"
           : "");
-  if (!inferredProtocol) return deepCopy(connection);
+  if (!inferredProtocol) return imported;
   const mapping = mapPortableProtocol(inferredProtocol);
   const canonicalSourceProtocol = inferredProtocol.trim().toLowerCase();
   const forceRawTransport =
@@ -166,7 +177,7 @@ export function normalizeImportedAdvancedProtocolConnection(
     (connection.rawSocketSettings === undefined ||
       canonicalSourceProtocol !== "raw");
   const seeded: Connection = {
-    ...deepCopy(connection),
+    ...imported,
     protocol: mapping.protocol,
     ...(forceRawTransport
       ? {
@@ -344,11 +355,23 @@ export function serializeNativeAdvancedProtocolSettings(
   connection: Connection,
 ): NativeAdvancedProtocolRecord {
   const safe = resetLocalConsent(connection);
+  // Profiles contain their own version. Only their allowlisted non-secret
+  // metadata and the shared bounded selector shape can enter native formats.
+  // Invalid selector overrides refuse export instead of silently becoming a
+  // generic form detector after import.
+  const httpApplication = normalizeHttpApplicationSettings(
+    safe.httpApplication,
+  );
+  const httpAutoLoginSelectors = normalizeHttpApplicationSelectors(
+    safe.httpAutoLoginSelectors,
+  );
   return {
     AdvancedSettingsVersion: String(ADVANCED_PROTOCOL_PORTABILITY_VERSION),
     RawSocketSettings: stringifySetting(safe.rawSocketSettings),
     RloginSettings: stringifySetting(safe.rloginSettings),
     PowerShellRemotingSettings: stringifySetting(safe.powerShellRemoting),
+    HttpApplication: stringifySetting(httpApplication),
+    HttpAutoLoginSelectors: stringifySetting(httpAutoLoginSelectors),
   };
 }
 
@@ -367,6 +390,21 @@ const escapeCsv = (value: unknown): string => {
     : stringValue;
 };
 
+/** Native inventory formats have one username slot. A selected website profile
+ * must retain the same website pair chosen by the runtime, never a stale generic
+ * username. No password is written; generic websites and other protocols keep
+ * their existing export representation. */
+function nativeExportUsername(connection: Connection): string | undefined {
+  if (
+    (connection.protocol === "http" || connection.protocol === "https") &&
+    connection.httpApplication !== undefined
+  ) {
+    return resolveHttpBasicCredentials({ ...connection, authType: "basic" })
+      ?.username;
+  }
+  return connection.username;
+}
+
 export function serializeConnectionsToNativeXml(
   connections: Connection[],
 ): string {
@@ -379,7 +417,7 @@ export function serializeConnectionsToNativeXml(
       `Type="${escapeXml(String(connection.protocol).toUpperCase())}"`,
       `Server="${escapeXml(connection.hostname)}"`,
       `Port="${escapeXml(connection.port)}"`,
-      `Username="${escapeXml(connection.username)}"`,
+      `Username="${escapeXml(nativeExportUsername(connection))}"`,
       `Domain="${escapeXml(connection.domain)}"`,
       `Description="${escapeXml(connection.description)}"`,
       `ParentId="${escapeXml(connection.parentId)}"`,
@@ -436,7 +474,7 @@ export function serializeDatasetsToNativeCsv(
         connection.protocol,
         connection.hostname,
         connection.port,
-        connection.username,
+        nativeExportUsername(connection),
         connection.domain,
         connection.description,
         connection.parentId,
@@ -481,7 +519,11 @@ export function parseNativeAdvancedProtocolSettings(
   record: Record<string, unknown>,
 ): Pick<
   Connection,
-  "rawSocketSettings" | "rloginSettings" | "powerShellRemoting"
+  | "rawSocketSettings"
+  | "rloginSettings"
+  | "powerShellRemoting"
+  | "httpApplication"
+  | "httpAutoLoginSelectors"
 > {
   const rawSocketSettings = parseSetting(
     getCaseInsensitive(record, "RawSocketSettings", "RawSettings"),
@@ -497,14 +539,46 @@ export function parseNativeAdvancedProtocolSettings(
       "WinRMSettings",
     ),
   );
+  const rawHttpApplication = getCaseInsensitive(record, "HttpApplication");
+  // parseSetting deliberately tolerates old optional fields. A present but
+  // malformed application profile must instead survive as invalid metadata;
+  // dropping it would revive the legacy HTTP Basic fallback.
+  let httpApplication =
+    rawHttpApplication === undefined
+      ? undefined
+      : normalizeHttpApplicationSettings(
+          parseSetting(rawHttpApplication) ?? null,
+        );
+  const rawHttpSelectors = getCaseInsensitive(record, "HttpAutoLoginSelectors");
+  let httpAutoLoginSelectors: Connection["httpAutoLoginSelectors"];
+  if (rawHttpSelectors !== undefined) {
+    try {
+      const parsed = parseSetting(rawHttpSelectors);
+      if (parsed === undefined || parsed === null)
+        throw new Error("Invalid application selectors");
+      httpAutoLoginSelectors = normalizeHttpApplicationSelectors(parsed);
+    } catch {
+      // No valid override may be replaced silently with generic detection.
+      httpApplication = {
+        ...(httpApplication ?? normalizeHttpApplicationSettings(null)!),
+        invalid: true,
+      };
+    }
+  }
 
   return {
     ...(rawSocketSettings !== undefined ? { rawSocketSettings } : {}),
     ...(rloginSettings !== undefined ? { rloginSettings } : {}),
     ...(powerShellRemoting !== undefined ? { powerShellRemoting } : {}),
+    ...(httpApplication !== undefined ? { httpApplication } : {}),
+    ...(httpAutoLoginSelectors !== undefined ? { httpAutoLoginSelectors } : {}),
   } as Pick<
     Connection,
-    "rawSocketSettings" | "rloginSettings" | "powerShellRemoting"
+    | "rawSocketSettings"
+    | "rloginSettings"
+    | "powerShellRemoting"
+    | "httpApplication"
+    | "httpAutoLoginSelectors"
   >;
 }
 
@@ -531,6 +605,8 @@ export function hasAdvancedProtocolSettings(connection: Connection): boolean {
     connection.protocol === "winrm" ||
     connection.rawSocketSettings !== undefined ||
     connection.rloginSettings !== undefined ||
-    connection.powerShellRemoting !== undefined
+    connection.powerShellRemoting !== undefined ||
+    connection.httpApplication !== undefined ||
+    connection.httpAutoLoginSelectors !== undefined
   );
 }

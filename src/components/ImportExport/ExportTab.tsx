@@ -563,7 +563,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       ? [
           t("exportTab.warningAdvancedProtocolSettings", {
             defaultValue:
-              "mRemoteNG cannot preserve advanced RAW/TCP, RAW/UDP, RLogin, or PowerShell Remoting settings; only compatible endpoint fields are exported.",
+              "mRemoteNG cannot preserve advanced RAW/TCP, RAW/UDP, RLogin, PowerShell Remoting, or website application profiles and login selectors; only compatible endpoint fields are exported.",
           }),
         ]
       : []),
