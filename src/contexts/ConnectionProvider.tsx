@@ -44,6 +44,18 @@ import type {
 } from "../types/documents/document";
 import { normalizeDatabaseDocuments } from "../utils/documents/validation";
 import { verifyDocumentAttachments } from "../utils/documents/documentAttachments";
+import type {
+  DatabaseCredentialScope,
+  DatabaseCredentialSnapshot,
+  DatabaseCredentialVault,
+  DatabaseCredentialVaultApi,
+} from "../types/security/databaseCredentialVault";
+import {
+  applyDatabaseCredentialChanges,
+  databaseCredentialMetadata,
+  normalizeDatabaseCredentialVault,
+  selectDatabaseCredentialFacets,
+} from "../utils/security/databaseCredentialVault";
 import { AutomationLibraryAccessError } from "../utils/recording/automationLibraryAccess";
 import { getInvoke } from "../utils/tauri/invoke";
 import {
@@ -439,6 +451,19 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const automationFaultRef = useRef(false);
   const documentsBusyRef = useRef(false);
   const documentsFaultRef = useRef(false);
+  const vaultBusyRef = useRef(false);
+  const vaultFaultRef = useRef(false);
+  const vaultReviewsRef = useRef(
+    new Map<
+      string,
+      {
+        scope: DatabaseCredentialScope;
+        data: DatabaseCredentialVault;
+        target: DatabaseDataTarget;
+      }
+    >(),
+  );
+  const [vaultChangeRevision, setVaultChangeRevision] = useState(0);
   const [documentsChangeRevision, setDocumentsChangeRevision] = useState(0);
   const [automationChangeRevision, setAutomationChangeRevision] = useState(0);
   const recycleReviewsRef = useRef(
@@ -518,6 +543,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         if (access.databaseId !== databaseManager.getCurrentDatabase()?.id)
           return;
         recycleReviewsRef.current.clear();
+        vaultReviewsRef.current.clear();
         loadGenerationRef.current += 1;
         // Suspension masks the bin and invalidates reviews without discarding the
         // provider's recoverable dirty data. Global close/switch clears it below.
@@ -566,6 +592,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           loadedStorageRef.current = null;
           automationFaultRef.current = false;
           documentsFaultRef.current = false;
+          vaultFaultRef.current = false;
+          vaultReviewsRef.current.clear();
           recycleReviewsRef.current.clear();
           stateRef.current = {
             ...stateRef.current,
@@ -859,7 +887,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    if (automationFaultRef.current || documentsFaultRef.current)
+    if (
+      automationFaultRef.current ||
+      documentsFaultRef.current ||
+      vaultFaultRef.current
+    )
       throw new Error(
         "A database library write could not be verified. Reload the database before saving; pending connection edits were retained.",
       );
@@ -971,6 +1003,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       recycleLoadingRef.current = true;
       setRecycleLoading(true);
       recycleReviewsRef.current.clear();
+      vaultReviewsRef.current.clear();
       publishDatabaseAvailability("loading");
       try {
         // Never replace the rendered rows while their owning database still has
@@ -1024,6 +1057,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           loadedStorageRef.current = data;
           automationFaultRef.current = false;
           documentsFaultRef.current = false;
+          vaultFaultRef.current = false;
+          vaultReviewsRef.current.clear();
+          setVaultChangeRevision((value) => value + 1);
           setDocumentsChangeRevision((value) => value + 1);
           setAutomationChangeRevision((value) => value + 1);
           recycleReviewsRef.current.clear();
@@ -1118,7 +1154,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       },
     ): Promise<RecycleBinOutcome> => {
       scope = { ...scope };
-      if (recycleBusyRef.current || documentsBusyRef.current)
+      if (
+        recycleBusyRef.current ||
+        documentsBusyRef.current ||
+        vaultBusyRef.current
+      )
         throw new Error("A Recycle Bin operation is already in progress.");
       assertRecycleScope(scope);
       recycleBusyRef.current = true;
@@ -1222,7 +1262,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       const policy = proposedPolicy
         ? normalizeRecycleBinPolicy(proposedPolicy)
         : undefined;
-      if (recycleBusyRef.current || documentsBusyRef.current)
+      if (
+        recycleBusyRef.current ||
+        documentsBusyRef.current ||
+        vaultBusyRef.current
+      )
         throw new Error("A Recycle Bin operation is already in progress.");
       assertRecycleScope(scope);
       await flushPendingSave();
@@ -1323,7 +1367,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     )
       return;
     const expire = () => {
-      if (recycleBusyRef.current || documentsBusyRef.current) return;
+      if (
+        recycleBusyRef.current ||
+        documentsBusyRef.current ||
+        vaultBusyRef.current
+      )
+        return;
       let scope: RecycleBinScope;
       try {
         scope = captureRecycleScope();
@@ -1483,7 +1532,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           throw new Error(
             "The database library write could not be verified. Reload before applying another edit.",
           );
-        if (automationBusyRef.current || documentsBusyRef.current)
+        if (
+          automationBusyRef.current ||
+          documentsBusyRef.current ||
+          vaultBusyRef.current
+        )
           throw new Error(
             "Another automation library write is pending. Reload before retrying.",
           );
@@ -1653,6 +1706,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         if (
           documentsBusyRef.current ||
           automationBusyRef.current ||
+          vaultBusyRef.current ||
           recycleBusyRef.current
         )
           throw new Error(
@@ -1718,6 +1772,236 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     documentsChangeRevision,
   ]);
 
+  const credentialVault = useMemo<DatabaseCredentialVaultApi>(() => {
+    void recycleAccessGeneration;
+    let scope: DatabaseCredentialScope | null = null;
+    try {
+      if (
+        !recycleLoading &&
+        databaseManager.getCurrentDatabase()?.protectionFormat === "sorng-db"
+      ) {
+        const current = captureRecycleScope();
+        scope = {
+          databaseId: current.databaseId,
+          generation: current.generation,
+        };
+      }
+    } catch {
+      /* No metadata from a suspended owner. */
+    }
+    const assertScope = (expected: DatabaseCredentialScope) => {
+      if (!mountedRef.current)
+        throw new Error("The credential vault is no longer open.");
+      let current;
+      try {
+        current = captureRecycleScope();
+      } catch {
+        throw new Error(
+          "Open and unlock the owning protected database to access its credential vault.",
+        );
+      }
+      if (
+        current.databaseId !== expected.databaseId ||
+        current.generation !== expected.generation
+      )
+        throw new Error(
+          "The owning credential database changed. Reload and review the vault.",
+        );
+      if (vaultFaultRef.current)
+        throw new Error(
+          "A credential vault write could not be verified. Reload the database before retrying; keep your private draft.",
+        );
+      activeDatabaseTargetRef.current?.assertAccessible?.();
+    };
+    const requireManaged = async (expected: DatabaseCredentialScope) => {
+      assertScope(expected);
+      if (!(await getInvoke()))
+        throw new Error(
+          "The credential vault requires the native desktop app and a managed protected database. No plaintext fallback was created.",
+        );
+      assertScope(expected);
+      const target = activeDatabaseTargetRef.current;
+      if (!target?.assertAccessible || !target.verifyCurrent)
+        throw new Error(
+          "Reopen the updated protected database before using its credential vault.",
+        );
+      const status = await databaseManager.getDatabaseProtectionStatus(
+        expected.databaseId,
+      );
+      assertScope(expected);
+      if (status.kind !== "managed")
+        throw new Error(
+          "Protect the current database with managed protection first (Settings → Security → Current database).",
+        );
+      if (
+        !status.unlocked ||
+        !status.securityRevision ||
+        status.securityRevision !==
+          databaseManager.getCurrentDatabase()?.securityRevision ||
+        target !== activeDatabaseTargetRef.current
+      )
+        throw new Error(
+          "The managed database lease changed. Unlock and reload before using its credential vault.",
+        );
+      target.assertAccessible();
+      return target;
+    };
+    const reviewed = (snapshot: DatabaseCredentialSnapshot) => {
+      const receipt = vaultReviewsRef.current.get(snapshot.receipt);
+      if (
+        !receipt ||
+        snapshot.scope?.databaseId !== receipt.scope.databaseId ||
+        snapshot.scope?.generation !== receipt.scope.generation ||
+        snapshot.revision !== receipt.data.revision ||
+        receipt.target !== activeDatabaseTargetRef.current
+      )
+        throw new Error(
+          "The credential vault review expired. Reload and review before continuing.",
+        );
+      assertScope(receipt.scope);
+      const current = normalizeDatabaseCredentialVault(
+        loadedStorageRef.current?.credentialVault,
+      );
+      if (JSON.stringify(current) !== JSON.stringify(receipt.data))
+        throw new Error(
+          "The credential vault changed since this review. Reload before continuing.",
+        );
+      return receipt;
+    };
+    const verify = async (expected: DatabaseCredentialScope) => {
+      await requireManaged(expected);
+      await flushPendingSave();
+      const target = await requireManaged(expected);
+      await target.verifyCurrent!();
+      assertScope(expected);
+      if (target !== activeDatabaseTargetRef.current)
+        throw new Error(
+          "The credential vault lease changed. Reload before continuing.",
+        );
+      // An ordinary connection autosave may have started during native checks.
+      // Join it before taking the private snapshot or disclosing a credential.
+      await flushPendingSave();
+      assertScope(expected);
+      if (target !== activeDatabaseTargetRef.current)
+        throw new Error(
+          "The credential vault lease changed. Reload before continuing.",
+        );
+      return target;
+    };
+    return {
+      scope,
+      changeRevision: vaultChangeRevision,
+      async list(expectedScope) {
+        const expected = { ...expectedScope };
+        const target = await verify(expected);
+        let data = normalizeDatabaseCredentialVault(
+          loadedStorageRef.current?.credentialVault,
+        );
+        // All current reviews share one immutable baseline rather than retaining
+        // up to 32 independent copies of a potentially large secret collection.
+        const existing = vaultReviewsRef.current.values().next().value;
+        if (
+          existing &&
+          existing.target === target &&
+          existing.scope.databaseId === expected.databaseId &&
+          existing.scope.generation === expected.generation &&
+          JSON.stringify(existing.data) === JSON.stringify(data)
+        )
+          data = existing.data;
+        // Bounded, provider-private reviews; never expose the secret-bearing baseline.
+        while (vaultReviewsRef.current.size >= 32)
+          vaultReviewsRef.current.delete(
+            vaultReviewsRef.current.keys().next().value!,
+          );
+        const receipt = crypto.randomUUID();
+        vaultReviewsRef.current.set(receipt, { scope: expected, data, target });
+        return {
+          scope: { ...expected },
+          revision: data.revision,
+          receipt,
+          entries: data.entries.map(databaseCredentialMetadata),
+        };
+      },
+      async resolve(snapshot, id, facets) {
+        const captured = { ...snapshot, scope: { ...snapshot.scope } };
+        const requested = [...facets];
+        const prior = reviewed(captured);
+        await verify(prior.scope);
+        const current = reviewed(captured);
+        const entry = current.data.entries.find((item) => item.id === id);
+        if (!entry)
+          throw new Error(
+            "The selected vault credential is unavailable. Select a credential from this database.",
+          );
+        return selectDatabaseCredentialFacets(entry, requested);
+      },
+      async compareAndSwap(snapshot, changes) {
+        const captured = { ...snapshot, scope: { ...snapshot.scope } };
+        const prior = reviewed(captured);
+        const proposed = applyDatabaseCredentialChanges(prior.data, changes);
+        if (
+          vaultBusyRef.current ||
+          documentsBusyRef.current ||
+          automationBusyRef.current ||
+          recycleBusyRef.current
+        )
+          throw new Error(
+            "Another private database edit is pending. Wait, reload and review before saving credentials.",
+          );
+        vaultBusyRef.current = true;
+        try {
+          const target = await verify(prior.scope);
+          reviewed(captured);
+          const data = { ...buildStorageSnapshot(), credentialVault: proposed };
+          const write = (async () => {
+            try {
+              await target.save(data);
+              assertScope(prior.scope);
+              if (target !== activeDatabaseTargetRef.current)
+                throw new Error(
+                  "The credential vault lease changed during save. Reload before continuing.",
+                );
+              loadedStorageRef.current = {
+                ...loadedStorageRef.current!,
+                credentialVault: proposed,
+              };
+              vaultReviewsRef.current.clear();
+              setVaultChangeRevision((value) => value + 1);
+            } catch {
+              if (
+                prior.scope.generation === loadGenerationRef.current &&
+                target === activeDatabaseTargetRef.current
+              )
+                vaultFaultRef.current = true;
+              vaultReviewsRef.current.clear();
+              throw new Error(
+                "The credential vault save could not be verified. Reload the database and review before retrying; no automatic retry was made.",
+              );
+            }
+          })();
+          saveLoopRef.current = write;
+          try {
+            await write;
+          } finally {
+            if (saveLoopRef.current === write) saveLoopRef.current = null;
+          }
+          if (dirtyRevisionRef.current > persistedRevisionRef.current)
+            await flushPendingSave();
+        } finally {
+          vaultBusyRef.current = false;
+        }
+      },
+    };
+  }, [
+    recycleAccessGeneration,
+    recycleLoading,
+    databaseManager,
+    captureRecycleScope,
+    flushPendingSave,
+    buildStorageSnapshot,
+    vaultChangeRevision,
+  ]);
+
   const debouncedSave = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -1734,8 +2018,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // the awaited native close path instead of discarding the debounce.
   useEffect(() => {
     mountedRef.current = true;
+    const vaultReviews = vaultReviewsRef.current;
     return () => {
       mountedRef.current = false;
+      vaultReviews.clear();
       void flushPendingSave().catch(() => {
         // The failed snapshot remains retained for an explicit retry.
       });
@@ -1784,6 +2070,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       recycleBin,
       automationLibrary,
       documents,
+      credentialVault,
       databaseAvailability,
     }),
     [
@@ -1797,6 +2084,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       recycleBin,
       automationLibrary,
       documents,
+      credentialVault,
       databaseAvailability,
     ],
   );

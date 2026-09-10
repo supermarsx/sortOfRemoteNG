@@ -109,6 +109,7 @@ export interface ConnectionContextType {
   recycleBin?: ConnectionRecycleBinApi;
   automationLibrary?: import("../types/recording/automationLibrary").DatabaseAutomationApi;
   documents?: import("../types/documents/document").DatabaseDocumentStore;
+  credentialVault?: import("../types/security/databaseCredentialVault").DatabaseCredentialVaultApi;
 }
 
 export const ConnectionContext = createContext<

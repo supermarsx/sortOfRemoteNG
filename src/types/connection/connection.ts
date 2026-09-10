@@ -24,6 +24,7 @@ import type { ConnectionTypeCategory } from "../integrations/registry";
 import type { VoipPhoneSettings } from "../voipPhone";
 import type { HttpProxyPolicy } from "./httpProxyPolicy";
 import type { HttpFormAutomation } from "./httpFormAutomation";
+import type { ConnectionCredentialSource } from "../security/databaseCredentialVault";
 
 import type {
   MysqlDialectHint,
@@ -208,6 +209,8 @@ export interface Connection
   protocol: ConnectionProtocol;
   hostname: string;
   port: number;
+  /** Resolves only in the connection's captured owning database, never globally. */
+  credentialSource?: ConnectionCredentialSource;
   username?: string;
   password?: string;
   domain?: string;

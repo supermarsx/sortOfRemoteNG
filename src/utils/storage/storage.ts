@@ -44,6 +44,8 @@ export interface StorageData {
   automationLibrary?: import("../../types/recording/automationLibrary").DatabaseAutomationLibrary;
   /** Native managed-database documents; private payloads never enter session snapshots. */
   documents?: import("../../types/documents/document").DatabaseDocuments;
+  /** Reusable credentials belong exclusively to this managed database. */
+  credentialVault?: import("../../types/security/databaseCredentialVault").DatabaseCredentialVault;
   /** Color tag palette definitions, keyed by id. */
   colorTags?: Record<string, { name: string; color: string; global?: boolean }>;
 }
