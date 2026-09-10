@@ -19,7 +19,9 @@ PowerShell checks conservatively reject `using`, `requires`, `configuration`, `d
 
 ## Terminal defaults and categories
 
-Browse default scripts to filter 32 diagnostic templates by category, platform, or text and inspect their source. The original eight defaults retain their saved IDs. The 24 additional system, service, storage, network, and package-inventory templates are catalog-only: select and import them explicitly to create independent custom copies. They are not automatically added to existing libraries.
+The embedded **Browse scripts** subtab includes 191 app-shipped entries: 32 Script Manager diagnostic templates and 159 Bulk SSH commands. Filter by source, category, platform, or text and inspect source; results are paged in groups of 50. Bulk entries are preview/copy-only and direct you to Bulk SSH Commander. Vendor CLI commands are not mislabeled as Bash imports.
+
+The original eight Script Manager defaults retain their saved IDs. The 24 additional system, service, storage, network, and package-inventory templates are catalog-only: select and import them explicitly to create independent custom copies. They are not automatically added to existing libraries.
 
 Restoring an original default keeps its ID. Replacing a saved default version requires explicit review. Only selected defaults are restored; other custom scripts, modified defaults, and deleted-default markers remain unchanged. A concurrent library change or unavailable storage refuses the import rather than overwriting an unreviewed library.
 
@@ -34,3 +36,7 @@ Website scripts are JavaScript records, not terminal commands or interaction mac
 Source is limited to 64 KiB and must not contain literal credentials. The manager never executes scripts. To use a saved script, refresh/reopen the HTTP/HTTPS action library if necessary and pin it there. Running still requires global script availability, explicit per-connection JavaScript permission, the current page/session access checks, and the configured confirmation.
 
 This is page JavaScript, not a browser-extension userscript engine. Metadata such as `@grant`, `@require`, and automatic URL matching does not provide privileges or automatic execution.
+
+## Public catalogs and portable packages
+
+Browse can also load a manually selected public raw HTTPS JSON index or local package. Select saved scripts/macros and **Export package** to create an index you can upload directly to a public Git repository; no JSON authoring is required. Refresh updates preview only. Imports require explicit destination and conflict review, and external publisher claims are never treated as verified official sources. See [Public automation catalogs]({{ '/scripts/catalogs/' | relative_url }}) for publishing, safety limits, and the four native script/macro formats.

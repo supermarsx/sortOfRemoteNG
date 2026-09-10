@@ -7,6 +7,7 @@
 //! cron expressions, output pattern matching, file-change watchers, and
 //! manual invocation.
 pub mod conditions;
+pub mod catalog;
 pub mod engine;
 pub mod error;
 pub mod history;

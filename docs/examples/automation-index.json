@@ -1,0 +1,26 @@
+{
+  "format": "sorng-automation-index",
+  "version": 1,
+  "id": "synthetic-example-package",
+  "name": "Synthetic diagnostic example",
+  "description": "Documentation fixture, not an official external feed. Import does not execute it.",
+  "entries": [
+    {
+      "id": "synthetic-uname",
+      "kind": "terminal-script",
+      "description": "Display the kernel name on a Unix-like host.",
+      "platforms": ["linux", "macos"],
+      "payload": {
+        "id": "synthetic-uname",
+        "name": "Kernel name",
+        "description": "Read-only example; review before executing.",
+        "script": "uname -s",
+        "language": "sh",
+        "category": "System",
+        "osTags": ["linux", "macos"],
+        "createdAt": "2026-09-10T00:00:00Z",
+        "updatedAt": "2026-09-10T00:00:00Z"
+      }
+    }
+  ]
+}

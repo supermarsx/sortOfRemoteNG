@@ -4,6 +4,7 @@ pub fn is_command(command: &str) -> bool {
     matches!(
         command,
         "script_tooling_capabilities"
+            | "script_catalog_fetch"
             | "script_tooling_analyze"
             | "script_tooling_format"
             | "warpgate_connect"
@@ -426,6 +427,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
     tauri::generate_handler![
         // Warpgate bastion host admin commands
         script_tooling_commands::script_tooling_capabilities,
+        script_catalog_commands::script_catalog_fetch,
         script_tooling_commands::script_tooling_analyze,
         script_tooling_commands::script_tooling_format,
         warpgate_commands::warpgate_connect,

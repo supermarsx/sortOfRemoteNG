@@ -27,6 +27,8 @@
       url: /gif-recording/
     - title: Script libraries
       url: /scripts/libraries/
+    - title: Public automation catalogs
+      url: /scripts/catalogs/
     - title: Integrations
       url: /integrations/
     - title: Synology File Station

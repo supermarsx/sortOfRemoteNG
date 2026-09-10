@@ -50,6 +50,7 @@ mod portable_commands;
 mod scheduler_commands;
 
 mod script_tooling_commands;
+mod script_catalog_commands;
 mod tools_handler;
 
 pub fn is_command(command: &str) -> bool {
