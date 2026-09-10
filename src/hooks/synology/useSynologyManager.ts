@@ -15,6 +15,8 @@ import { useSynologyAdminActions } from "./useSynologyAdminActions";
 import { useSynologyFileSharing } from "./useSynologyFileSharing";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { validateSynologyAdminResponse } from "./synologyResponse";
+import { useSynologySectionAccess } from "./useSynologySectionAccess";
+import { SYNOLOGY_READ_LABELS } from "../../utils/synology/synologySectionLabels";
 export type { SynologyTab } from "./synologyAdminData";
 
 export function useSynologyManager(
@@ -97,6 +99,15 @@ export function useSynologyManager(
     assertSessionAccess,
   );
   const refreshFiles = fileStation.refresh;
+  const sectionAccess = useSynologySectionAccess({
+    instanceId,
+    sessionId,
+    connected: connectionStatus === "connected",
+    isActive: isOpen,
+    assertCurrent: assertSessionAccess,
+    onSessionExpired: notifySessionExpired,
+    fileStationReady: !!fileStation.fileList && !fileStation.error,
+  });
   const loadTabData = useCallback(
     async (tab: SynologyTab) => {
       if (tab === "fileStation") {
@@ -136,7 +147,9 @@ export function useSynologyManager(
             Object.assign(patch, {
               [field]: empty[field as keyof SynologyAdminData],
             });
-            failures.push(`${field}: ${toSafeManagementError(error)}`);
+            failures.push(
+              `${SYNOLOGY_READ_LABELS[field as keyof SynologyAdminData]}: ${toSafeManagementError(error)}`,
+            );
           }
         }),
       );
@@ -219,6 +232,7 @@ export function useSynologyManager(
     dataLoading,
     lastRefreshed,
     fileStation,
+    sectionAccess,
     sharing,
     loadTabData,
     logPage,

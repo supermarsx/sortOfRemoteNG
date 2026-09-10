@@ -55,6 +55,26 @@ pub fn syn_fs_session_health(
     state.session_health(&instance_id, &expected_session_id)
 }
 
+/// Read-only section discovery. Release the service lock before bounded probes
+/// so checking optional DSM features never blocks the file explorer.
+#[tauri::command]
+pub async fn syn_get_section_access(
+    state: State<'_, SynologyServiceState>,
+    instance_id: String,
+    expected_session_id: String,
+    section: String,
+) -> Result<sorng_synology::section_access::SectionAccessSnapshot, String> {
+    let context = state
+        .resolve(Some(&instance_id), Some(&expected_session_id))
+        .await?
+        .section_access_context(&expected_session_id)
+        .map_err(synology_command_error)?;
+    context
+        .probe(&section)
+        .await
+        .map_err(synology_command_error)
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Existing IPC fields plus mandatory scope.
 pub async fn syn_fs_list(

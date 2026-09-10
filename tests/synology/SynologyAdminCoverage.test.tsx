@@ -228,8 +228,21 @@ beforeEach(() =>
   vi
     .mocked(invoke)
     .mockReset()
-    .mockImplementation(async (command) => fixtures[command] ?? null),
+    .mockImplementation(async (command, args) =>
+      command === "syn_get_section_access"
+        ? {
+            section: (args as { section: string }).section,
+            status: "available",
+            reason: "Primary section read succeeded.",
+          }
+        : (fixtures[command] ?? null),
+    ),
 );
+const openTab = async (tab: string) => {
+  const button = screen.getByTestId(`synology-tab-${tab}`);
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+};
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -318,8 +331,7 @@ describe("Synology native admin coverage", () => {
         cmd === command ? payload : (fixtures[cmd] ?? null),
       );
       render(<SynologySessionContent connection={connection()} />);
-      if (tab !== "fileStation")
-        fireEvent.click(screen.getByTestId(`synology-tab-${tab}`));
+      if (tab !== "fileStation") await openTab(tab);
       fireEvent.click(screen.getByRole("button", { name: label }));
       const form = screen.getByRole("dialog", { name: label });
       for (const [field, value] of Object.entries(fields))
@@ -363,7 +375,7 @@ describe("Synology native admin coverage", () => {
     ["notifications", "admin@example.test"],
   ])("renders actual camelCase %s DTO values", async (tab, value) => {
     render(<SynologySessionContent connection={connection()} />);
-    fireEvent.click(screen.getByTestId(`synology-tab-${tab}`));
+    await openTab(tab);
     expect(await screen.findByText(value)).toBeInTheDocument();
     const calls = vi
       .mocked(invoke)
@@ -379,7 +391,7 @@ describe("Synology native admin coverage", () => {
   });
   it("prefills exact VM identity, confirms once, and never calls force shutdown automatically", async () => {
     render(<SynologySessionContent connection={connection()} />);
-    fireEvent.click(screen.getByTestId("synology-tab-vms"));
+    await openTab("vms");
     const cell = await screen.findByText("Build VM");
     fireEvent.click(
       within(cell.closest("tr")!).getByRole("button", { name: "Force off" }),
@@ -410,7 +422,7 @@ describe("Synology native admin coverage", () => {
         : (fixtures[command] ?? null),
     );
     render(<SynologySessionContent connection={connection()} />);
-    fireEvent.click(screen.getByTestId("synology-tab-users"));
+    await openTab("users");
     await screen.findByText("user-0");
     expect(screen.queryByText("user-69")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next Users" }));
@@ -428,7 +440,7 @@ describe("Synology native admin coverage", () => {
       return fixtures[command] ?? null;
     });
     render(<SynologySessionContent connection={connection()} />);
-    fireEvent.click(screen.getByTestId("synology-tab-vms"));
+    await openTab("vms");
     await screen.findByText("Build VM");
     fail = true;
     fireEvent.click(screen.getByTitle("Refresh"));
@@ -437,6 +449,8 @@ describe("Synology native admin coverage", () => {
     );
     expect(screen.queryByText("Build VM")).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).not.toHaveTextContent("private-token");
+    expect(screen.getByRole("alert")).toHaveTextContent("Virtual machines:");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("vms:");
   });
   it("definitive expiry revokes only captured receipt; generic 403 does not", async () => {
     const c = connection();
@@ -446,7 +460,7 @@ describe("Synology native admin coverage", () => {
       return fixtures[command] ?? null;
     });
     render(<SynologySessionContent connection={c} />);
-    fireEvent.click(screen.getByTestId("synology-tab-vms"));
+    await openTab("vms");
     await waitFor(() =>
       expect(c.notifySessionExpired).toHaveBeenCalledWith(
         "session-a",
@@ -461,7 +475,7 @@ describe("Synology native admin coverage", () => {
         <SynologySessionContent connection={c} />
       </SessionRenderActivityContext.Provider>,
     );
-    fireEvent.click(screen.getByTestId("synology-tab-vms"));
+    await openTab("vms");
     await screen.findByText("Build VM");
     rerender(
       <SessionRenderActivityContext.Provider value={{ isActive: false }}>
@@ -520,6 +534,7 @@ describe("typed domain-action invocation", () => {
       ...Object.values(ADMIN_READS).flatMap((group) => Object.values(group)),
       ...SYNOLOGY_ADMIN_ACTIONS.map((action) => action.command),
       "syn_get_smart_info",
+      "syn_get_section_access",
       "syn_fs_connect",
       "syn_fs_cancel_connect",
       "syn_fs_disconnect",

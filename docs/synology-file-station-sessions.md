@@ -52,6 +52,18 @@ supported NAS administration tools such as system, storage, network, users and
 packages. Individual operations depend on DSM version, installed packages and
 account permissions; this is not coverage of every DSM API.
 
+The sidebar checks each section's primary read operations once per API session,
+with at most three checks in flight. File Station stays usable as soon as its
+listing is read; other sections are disabled only while their access check is
+pending. Checks pause when the session tab or app is hidden. There is no access
+polling; use **Recheck section access** after changing packages or permissions.
+
+Sections with confirmed permission denial or unavailable APIs are grouped under
+**Unavailable sections**, with the reason. **Could not verify** is different:
+a network, compatibility or checking error does not prove denial, so you can
+still try that section or recheck. A successful read does not grant permission
+to change NAS settings; each action retains its own server-side permission check.
+
 The API view uses the credentials saved in Application, without a second
 username/password form in the session tab. A DSM authenticator challenge opens
 a one-time-code dialog. Browser cookies do not authenticate the API explorer.

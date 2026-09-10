@@ -58,6 +58,7 @@ pub mod notifications;
 pub mod packages;
 pub mod security;
 pub mod scoped_files;
+pub mod section_access;
 pub mod service;
 pub mod services;
 pub mod shares;

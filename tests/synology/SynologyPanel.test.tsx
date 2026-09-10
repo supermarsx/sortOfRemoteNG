@@ -377,8 +377,14 @@ describe("SynologyPanel mounted native File Station workflow", () => {
   it("keeps Dashboard, Services, System and Storage admin views available on same scoped client", async () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     await connect();
+    await waitFor(() =>
+      expect(screen.getByTestId("synology-tab-dashboard")).toBeEnabled(),
+    );
     fireEvent.click(screen.getByTestId("synology-tab-dashboard"));
     await screen.findByText("DS920+");
+    await waitFor(() =>
+      expect(screen.getByTestId("synology-tab-services")).toBeEnabled(),
+    );
     fireEvent.click(screen.getByTestId("synology-tab-services"));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith(
@@ -389,6 +395,9 @@ describe("SynologyPanel mounted native File Station workflow", () => {
         }),
       ),
     );
+    await waitFor(() =>
+      expect(screen.getByTestId("synology-tab-system")).toBeEnabled(),
+    );
     fireEvent.click(screen.getByTestId("synology-tab-system"));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith(
@@ -398,6 +407,9 @@ describe("SynologyPanel mounted native File Station workflow", () => {
           expectedSessionId: "receipt-a",
         }),
       ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("synology-tab-storage")).toBeEnabled(),
     );
     fireEvent.click(screen.getByTestId("synology-tab-storage"));
     await waitFor(() =>
