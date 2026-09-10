@@ -42,7 +42,7 @@ const ToolbarGroup: React.FC<{ label: string; children: React.ReactNode }> = ({
     <div
       role="group"
       aria-label={label}
-      className="flex shrink-0 items-center gap-1 border-[var(--color-border)] [&:not(:first-child)]:border-l [&:not(:first-child)]:pl-2"
+      className="relative flex shrink-0 items-center gap-1 [&:not(:first-child)]:pl-2 before:pointer-events-none before:absolute before:left-0 before:top-1/2 before:h-1/2 before:-translate-y-1/2 before:border-l before:border-[var(--color-border)] before:content-[''] first:before:hidden"
     >
       {actions}
     </div>

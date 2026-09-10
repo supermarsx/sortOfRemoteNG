@@ -95,6 +95,25 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("uses centered half-height decorative group dividers while preserving first-group spacing", () => {
+    render(<AppToolbar {...makeProps()} />);
+    for (const group of screen.getAllByRole("group")) {
+      expect(group).toHaveClass(
+        "relative",
+        "before:absolute",
+        "before:top-1/2",
+        "before:h-1/2",
+        "before:-translate-y-1/2",
+        "before:border-l",
+        "before:border-[var(--color-border)]",
+        "before:pointer-events-none",
+        "first:before:hidden",
+        "[&:not(:first-child)]:pl-2",
+      );
+      expect(group).not.toHaveClass("[&:not(:first-child)]:border-l");
+    }
+  });
+
   it("keeps only Quick Connect, Databases and Settings on the left, grouping every other action on the right", () => {
     const props = makeProps({
       openIconExplorer: vi.fn(),
