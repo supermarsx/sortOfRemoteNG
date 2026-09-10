@@ -102,6 +102,12 @@ describe("SynologyPanel mounted native File Station workflow", () => {
   });
   it("shows accessible credentials with verified HTTPS, no PAT/self-signed/initial OTP fields", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
+    expect(
+      screen.getByRole("dialog", { name: "Synology NAS API" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Synology NAS API" }),
+    ).toBeInTheDocument();
     for (const label of ["Host", "Port", "Username", "Password"])
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     expect(screen.getByLabelText("HTTPS")).toBeChecked();
@@ -123,6 +129,9 @@ describe("SynologyPanel mounted native File Station workflow", () => {
   it("scoped login opens shared folders without requiring dashboard administration", async () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     await connect();
+    expect(
+      screen.getByRole("heading", { name: "File Station" }),
+    ).toBeInTheDocument();
     expect(
       await screen.findByRole("button", { name: "public" }),
     ).toBeInTheDocument();

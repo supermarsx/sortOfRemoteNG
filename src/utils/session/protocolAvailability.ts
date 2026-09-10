@@ -435,14 +435,14 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
       "Read-only management overview. Native Supermicro client initialization is local-only; each dashboard, storage, or firmware section becomes provider-verified only after its registered read succeeds, with partial failures reported per section.",
   }),
   synology: capability({
-    label: "Synology File Station",
+    label: "Synology NAS API",
     classification: "fully-interactive",
     sessionEntry: "client-owned",
     frontendPath: "src/components/synology/SynologySessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-synology",
     testPath: "tests/synology/SynologySessionPanel.test.tsx",
     detail:
-      "Saved NAS connection with independent scoped File Station sessions and interactive one-time codes. Website MFA does not authorize the API.",
+      "Saved NAS connection with independent scoped sessions for File Station and supported NAS administration, with interactive one-time codes. Available operations depend on DSM, installed packages, and account permissions. Website MFA does not authorize the API.",
   }),
   "voip-phone": capability({
     label: "VoIP Phone",

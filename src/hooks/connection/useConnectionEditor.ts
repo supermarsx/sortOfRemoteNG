@@ -431,8 +431,8 @@ const BUILT_IN_PROTOCOL_METADATA: Omit<ProtocolOption, "icon">[] = [
   },
   {
     value: "synology",
-    label: "Synology File Station",
-    desc: "NAS files with independent sessions and interactive OTP",
+    label: "Synology NAS API",
+    desc: "NAS files and supported administration with interactive OTP",
     labelKey: "connectionEditor.protocolOptions.synology.label",
     descKey: "connectionEditor.protocolOptions.synology.description",
     color: "cyan",

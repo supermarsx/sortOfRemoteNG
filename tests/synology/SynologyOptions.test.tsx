@@ -39,7 +39,15 @@ describe("Synology HTTP application views", () => {
       screen.getByRole("combobox", { name: "Synology access mode" }),
     ).toHaveTextContent("Website");
     expect(screen.queryByLabelText("DSM API password")).not.toBeInTheDocument();
-    selectMode("File explorer — File Station API");
+    selectMode("Synology NAS API");
+    expect(
+      screen.getByRole("combobox", { name: "Synology access mode" }),
+    ).toHaveTextContent("Synology NAS API");
+    expect(
+      screen.getByText(
+        /provides File Station and supported NAS administration/,
+      ),
+    ).toBeInTheDocument();
     expect(savedShape()).toMatchObject({
       protocol: "https",
       hostname: "nas.example.test",

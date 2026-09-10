@@ -1,16 +1,21 @@
 ---
-title: Synology browser and File Station views
-description: Choose a website or API explorer and understand its authentication status.
+title: Synology browser and NAS API views
+description: Choose the DSM website or Synology NAS API and understand its authentication status.
 ---
 
-# Synology browser and File Station views
+# Synology browser and NAS API views
 
 Choose **HTTP** or **HTTPS**, then **Protocol → Application → Synology DSM**.
 Synology is an application, not a transport protocol. Choose either the DSM
-website or **File explorer — File Station API**. Existing saved Synology records
+website or **Synology NAS API**. Existing saved Synology records
 remain readable; editing and saving them uses the HTTP(S) application format.
 
-The API explorer uses the credentials saved in Application, without a second
+**Synology NAS API** includes the **File Station** file-management section and
+supported NAS administration tools such as system, storage, network, users and
+packages. Individual operations depend on DSM version, installed packages and
+account permissions; this is not coverage of every DSM API.
+
+The API view uses the credentials saved in Application, without a second
 username/password form in the session tab. A DSM authenticator challenge opens
 a one-time-code dialog. Browser cookies do not authenticate the API explorer.
 The API currently supports direct routing and verified system TLS, not browser

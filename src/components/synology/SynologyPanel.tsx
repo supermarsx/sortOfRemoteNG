@@ -137,7 +137,7 @@ export const SynologyPanel: React.FC<SynologyPanelProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      ariaLabel="Synology NAS Manager"
+      ariaLabel="Synology NAS API"
       onClose={onClose}
       backdropClassName="bg-black/50"
       panelClassName="max-w-7xl h-[92vh] rounded-xl overflow-hidden border border-border"

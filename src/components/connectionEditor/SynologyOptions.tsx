@@ -47,7 +47,7 @@ export default function SynologyOptions({
           label="Synology access mode"
           value={native ? "native" : "website"}
           options={[
-            { value: "native", label: "File explorer — File Station API" },
+            { value: "native", label: "Synology NAS API" },
             { value: "website", label: "Website — DSM in browser" },
           ]}
           onChange={(value) =>
@@ -131,11 +131,12 @@ export default function SynologyOptions({
         </div>
       )}
       <p className="text-xs text-[var(--color-textSecondary)]">
-        Native File Station uses the saved username/password and asks for
-        one-time codes interactively. Codes are never saved. Native proxy/VPN
-        routes and browser certificate overrides are not supported; configured
-        overrides are refused, not ignored. Website sign-in does not unlock the
-        native API.
+        Synology NAS API provides File Station and supported NAS administration
+        tools, subject to account permissions and installed packages. It uses
+        the saved username/password and asks for one-time codes interactively.
+        Codes are never saved. Native proxy/VPN routes and browser certificate
+        overrides are not supported; configured overrides are refused, not
+        ignored. Website sign-in does not unlock the native API.
       </p>
     </section>
   );

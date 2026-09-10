@@ -81,7 +81,7 @@ export const voipPhoneRuntimeDescriptor = {
 
 export const synologyRuntimeDescriptor = {
   protocol: "synology",
-  label: "Synology File Station",
+  label: "Synology NAS API",
   category: "file-storage",
   frontendPath: "src/components/synology/SynologySessionPanel.tsx",
   backendPath: "src-tauri/crates/sorng-synology",

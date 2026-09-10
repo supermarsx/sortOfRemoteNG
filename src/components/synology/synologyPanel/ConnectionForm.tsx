@@ -32,7 +32,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               )}
               <div>
                 <p className="text-xs text-[var(--color-textSecondary)]">
-                  Synology File Station
+                  Synology NAS API
                 </p>
                 <h2 className="text-lg font-semibold">
                   {connecting
@@ -78,8 +78,9 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               <LogIn className="mx-auto mb-3 h-8 w-8 text-teal-500" />
               <h2 className="text-xl font-semibold">Connect to Synology NAS</h2>
               <p className="mt-1 text-sm text-[var(--color-textSecondary)]">
-                Browse File Station with your DSM account. A one-time code will
-                be requested if the NAS requires it.
+                Use File Station and supported NAS administration tools with
+                your DSM account. A one-time code will be requested if the NAS
+                requires it.
               </p>
             </div>
             {mgr.connectionError && !mgr.challenge && (

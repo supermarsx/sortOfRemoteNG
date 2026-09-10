@@ -13,7 +13,7 @@ export default function SynologyHeader({
       icon={Database}
       iconColor="text-teal-500"
       iconBg="bg-teal-500/20"
-      title="Synology NAS Manager"
+      title="Synology NAS API"
       subtitle={
         connection.connectionStatus === "connected"
           ? connection.host

@@ -31,7 +31,7 @@
       url: /scripts/catalogs/
     - title: Integrations
       url: /integrations/
-    - title: Synology File Station
+    - title: Synology NAS API
       url: /synology-file-station/
     - title: Web viewer troubleshooting
       url: /http-viewer-trust/

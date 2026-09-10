@@ -58,7 +58,7 @@ function RuntimeUnavailable({
           </span>
           <div>
             <p className="text-xs text-[var(--color-textSecondary)] mb-1">
-              Synology File Station
+              Synology NAS API
             </p>
             <h2 id={titleId} className="text-lg font-semibold">
               {unknown
@@ -70,7 +70,7 @@ function RuntimeUnavailable({
         <p className="text-sm text-[var(--color-textSecondary)]">
           {unknown
             ? "The app could not verify the running desktop's native capabilities. This is not a NAS login or network failure."
-            : "This running desktop does not report the native features required for File Station. Your saved connection is unchanged; no NAS sign-in was attempted."}
+            : "This running desktop does not report the native features required for Synology NAS API. Your saved connection is unchanged; no NAS sign-in was attempted."}
         </p>
         {!unknown && (
           <p className="text-xs text-[var(--color-textSecondary)]">

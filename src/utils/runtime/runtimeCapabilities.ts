@@ -127,7 +127,7 @@ const PROTOCOL_REQUIREMENTS: Record<
   "voip-phone": { capability: "ops", label: "VoIP phone", cargoFeature: "ops" },
   synology: {
     capability: "ops",
-    label: "Synology File Station",
+    label: "Synology NAS API",
     cargoFeature: "ops,platform",
   },
 };
@@ -222,7 +222,7 @@ export const getRuntimeProtocolUnavailableMessage = (
     capabilities.source === "native" &&
     capabilities.platform !== true
   )
-    return 'Synology File Station requires the full build with both "ops" and "platform" features.';
+    return 'Synology NAS API requires the full build with both "ops" and "platform" features.';
   if (!requirement || capabilities[requirement.capability] === true)
     return null;
 

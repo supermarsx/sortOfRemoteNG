@@ -1,13 +1,13 @@
 ---
-title: Synology File Station
+title: Synology NAS API
 eyebrow: Use the app
-description: Browse and manage NAS files with session-scoped DSM login and one-time-code authentication.
+description: Manage files and supported NAS administration with session-scoped DSM login and one-time-code authentication.
 permalink: /synology-file-station/
 ---
 
-Create a saved **Synology** connection and choose **Native File Station** in its Synology access settings. Opening the connection embeds the explorer in its session tab, without a second enclosing dialog or close button. The session owns its NAS client: two open NAS tabs do not replace one another. The saved target is fixed for that session; edit the connection to change host, port, or transport.
+Create a saved **HTTP** or **HTTPS** connection, choose **Protocol → Application → Synology DSM**, then choose **Synology NAS API** in its access settings. Opening the connection embeds the API view in its session tab, without a second enclosing dialog or close button. **File Station** is its file-management section; the other tabs expose supported NAS administration. The session owns its NAS client: two open NAS tabs do not replace one another. The saved target is fixed for that session; edit the connection to change host, port, or transport.
 
-The standalone **Synology NAS Manager** also remains available: enter the NAS hostname, DSM port, username and password, then choose **Connect**. File Station opens at the shared-folder list; open a share to manage files. Administration tabs use the same authenticated session when your account has permission.
+The standalone **Synology NAS API** window also remains available: enter the NAS hostname, DSM port, username and password, then choose **Connect**. File Station opens at the shared-folder list; open a share to manage files. Administration tabs use the same authenticated session when your account has permission.
 
 ## Sign in and two-factor authentication
 
