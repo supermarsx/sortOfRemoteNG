@@ -6,6 +6,7 @@ import { PORTAINER_AUTO_LOGIN_SELECTORS } from "../../components/integrations/po
 import { NPM_AUTO_LOGIN_SELECTORS } from "../../components/integrations/nginxProxyMgr/webUiLaunch";
 import { PROXMOX_AUTO_LOGIN_SELECTORS } from "../../components/integrations/proxmox/webUiLaunch";
 import { PFSENSE_AUTO_LOGIN_SELECTORS } from "../../components/integrations/pfsense/webUiLaunch";
+import { SELF_HOSTED_VAULT_PROFILES } from "./selfHostedVaultProfiles";
 
 export interface HttpApplicationProfile {
   id: string;
@@ -27,6 +28,8 @@ export interface HttpApplicationProfile {
   /** Safe source-reviewed path for an explicit external-browser handoff. */
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];
+  requiresHttps?: boolean;
+  loginFlow?: "bitwarden";
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -79,6 +82,7 @@ const unavailable = (
 
 /** Browser capabilities, not a claim that every native API credential logs into a website. */
 export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
+  ...SELF_HOSTED_VAULT_PROFILES,
   {
     id: "generic-form",
     label: "Generic login form",

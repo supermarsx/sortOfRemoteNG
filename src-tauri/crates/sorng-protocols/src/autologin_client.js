@@ -55,6 +55,7 @@
   var fetchController = null;
   function cancelRun() {
     stopped = true;
+    if (window.__sorng_bitwarden_login) window.__sorng_bitwarden_login.cancel();
     if (fetchController) fetchController.abort();
     fetchController = null;
     if (cancelActive) cancelActive();
@@ -1001,6 +1002,17 @@
         var creds = null;
         try {
           if (stopped) return;
+          if (data && data.loginFlow === "bitwarden") {
+            if (!window.__sorng_bitwarden_login) {
+              report({ ok: false, reason: "autologin-client-unavailable" });
+              return;
+            }
+            return window.__sorng_bitwarden_login.run(data, {
+              fillField: fillField,
+              isVisible: isVisible,
+              report: report,
+            });
+          }
           if (
             !data ||
             typeof data.username !== "string" ||
@@ -1017,6 +1029,7 @@
           if (data && typeof data === "object") {
             data.username = null;
             data.password = null;
+            data.continuation = null;
             if (
               data.formAutomation &&
               Array.isArray(data.formAutomation.fields)

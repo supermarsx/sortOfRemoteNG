@@ -71,6 +71,7 @@ async fn proxy_with_policy(
         proxy_authority: authority,
         auto_login_armed: Arc::new(AtomicBool::new(false)),
         auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
+        bitwarden_continuation: Default::default(),
         auto_login_selectors: None,
         http_form_automation: None,
         client,
@@ -82,6 +83,7 @@ async fn proxy_with_policy(
         credentials_applied: None,
     });
     let router = axum::Router::new()
+        .route(AUTOLOGIN_PATH, axum::routing::get(autologin_cred_handler))
         .fallback(axum_proxy_handler)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -139,6 +141,171 @@ async fn fetch(proxy: &FixtureProxy, path: &str) -> reqwest::Response {
         .send()
         .await
         .unwrap()
+}
+
+async fn reviewed_vault_proxy() -> FixtureProxy {
+    let proxy = proxy_with_mode(
+        "https://synthetic.invalid/".into(),
+        client(),
+        UpstreamAuthMode::BitwardenForm,
+    )
+    .await;
+    let state = &proxy.state;
+    *state.username.write().unwrap() = "synthetic-user".into();
+    *state.password.write().unwrap() = "synthetic-master-password".into();
+    state.auto_login_armed.store(true, Ordering::SeqCst);
+    state.document_sequence.store(1, Ordering::SeqCst);
+    state.global_sessions.lock().unwrap().sessions.insert(
+        state.session_id.clone(),
+        ProxySessionEntry {
+            target_url: state.target_url.clone(),
+            username: "synthetic-user".into(),
+            password: "synthetic-master-password".into(),
+            upstream_auth_mode: UpstreamAuthMode::BitwardenForm,
+            proxy_policy: Default::default(),
+            custom_headers: HashMap::new(),
+            upstream_proxy_url: None,
+            target_origin: state.target_origin.clone(),
+            connection_id: state.connection_id.clone(),
+            created_at: String::new(),
+            local_port: 1,
+            min_tls_version: "1.2".into(),
+            verify_ssl: true,
+            accepted_cert_fingerprint: None,
+            request_count: state.request_count.clone(),
+            error_count: state.error_count.clone(),
+            last_error: state.last_error.clone(),
+            shutdown_tx: None,
+        },
+    );
+    let html = crate::themed_autologin::build_autologin_injection(state, 1).unwrap();
+    assert!(!html.contains("synthetic-user") && !html.contains("synthetic-master-password"));
+    proxy
+}
+
+#[tokio::test]
+async fn reviewed_vault_staged_grants_are_one_use_and_keep_password_out_of_email_response() {
+    let proxy = reviewed_vault_proxy().await;
+    let nonce = proxy
+        .state
+        .auto_login_nonce
+        .read()
+        .unwrap()
+        .clone()
+        .unwrap();
+    let first = fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={nonce}")).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.headers()["cache-control"], "no-store");
+    let body = first.text().await.unwrap();
+    assert!(!body.contains("password"));
+    let data: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(data["username"], "synthetic-user");
+    assert_eq!(
+        fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={nonce}"))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let token = data["continuation"].as_str().unwrap();
+    assert_eq!(
+        fetch(
+            &proxy,
+            &format!("{AUTOLOGIN_PATH}?phase=password&nonce=wrong")
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    let password = fetch(
+        &proxy,
+        &format!("{AUTOLOGIN_PATH}?phase=password&nonce={token}"),
+    )
+    .await;
+    assert_eq!(password.status(), StatusCode::OK);
+    assert!(password
+        .text()
+        .await
+        .unwrap()
+        .contains("synthetic-master-password"));
+    assert_eq!(
+        fetch(
+            &proxy,
+            &format!("{AUTOLOGIN_PATH}?phase=password&nonce={token}")
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert!(proxy
+        .state
+        .global_sessions
+        .lock()
+        .unwrap()
+        .request_log
+        .is_empty());
+    assert!(crate::themed_autologin::build_autologin_injection(&proxy.state, 1).is_none());
+}
+
+#[tokio::test]
+async fn reviewed_vault_document_navigation_and_session_stop_revoke_pending_passwords() {
+    for stop in [false, true] {
+        let proxy = reviewed_vault_proxy().await;
+        let nonce = proxy
+            .state
+            .auto_login_nonce
+            .read()
+            .unwrap()
+            .clone()
+            .unwrap();
+        let data: serde_json::Value = fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={nonce}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if stop {
+            proxy
+                .state
+                .global_sessions
+                .lock()
+                .unwrap()
+                .sessions
+                .remove(&proxy.state.session_id);
+        } else {
+            proxy.state.document_sequence.fetch_add(1, Ordering::SeqCst);
+        }
+        let token = data["continuation"].as_str().unwrap();
+        let reply = fetch(
+            &proxy,
+            &format!("{AUTOLOGIN_PATH}?phase=password&nonce={token}"),
+        )
+        .await;
+        assert_eq!(reply.status(), StatusCode::FORBIDDEN);
+        assert!(!reply
+            .text()
+            .await
+            .unwrap()
+            .contains("synthetic-master-password"));
+    }
+}
+
+#[tokio::test]
+async fn reviewed_vault_old_document_nonce_cannot_begin_after_new_navigation() {
+    let proxy = reviewed_vault_proxy().await;
+    let nonce = proxy
+        .state
+        .auto_login_nonce
+        .read()
+        .unwrap()
+        .clone()
+        .unwrap();
+    proxy.state.document_sequence.fetch_add(1, Ordering::SeqCst);
+    assert_eq!(
+        fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={nonce}"))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert!(crate::themed_autologin::build_autologin_injection(&proxy.state, 1).is_none());
 }
 
 #[tokio::test]

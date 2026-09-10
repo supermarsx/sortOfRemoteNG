@@ -57,6 +57,7 @@
 /// Embedded at compile time so it ships inside the binary with no runtime file
 /// dependency. Validated with `node --check`.
 pub const AUTOLOGIN_CLIENT_JS: &str = include_str!("autologin_client.js");
+pub const BITWARDEN_CLIENT_JS: &str = include_str!("bitwarden_autologin_client.js");
 
 /// The full e5 client asset wrapped in a `<script>` element, ready to splice
 /// into served HTML **ahead of** the e3 bootstrap so its
@@ -67,7 +68,10 @@ pub const AUTOLOGIN_CLIENT_JS: &str = include_str!("autologin_client.js");
 /// (the nonce + selectors are passed to `fetchCredsAndRun` by the e3 bootstrap),
 /// so it never needs templating and never embeds a credential.
 pub fn autologin_client_asset_script() -> String {
-    format!("<script>{}</script>", AUTOLOGIN_CLIENT_JS)
+    format!(
+        "<script>{}{}</script>",
+        BITWARDEN_CLIENT_JS, AUTOLOGIN_CLIENT_JS
+    )
 }
 
 #[cfg(test)]
@@ -86,8 +90,8 @@ mod tests {
     fn asset_uses_same_origin_no_store_fetch() {
         // Endpoint contract: same-origin + no-store, the documented path.
         assert!(AUTOLOGIN_CLIENT_JS.contains("/__sortofremoteng_autologin"));
-        assert!(AUTOLOGIN_CLIENT_JS.contains("credentials: 'same-origin'"));
-        assert!(AUTOLOGIN_CLIENT_JS.contains("cache: 'no-store'"));
+        assert!(AUTOLOGIN_CLIENT_JS.contains("credentials: \"same-origin\""));
+        assert!(AUTOLOGIN_CLIENT_JS.contains("cache: \"no-store\""));
     }
 
     #[test]

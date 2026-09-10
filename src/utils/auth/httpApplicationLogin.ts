@@ -16,10 +16,10 @@ export function validateHttpApplicationTarget(
   const profileId = normalizeHttpApplicationSettings(
     connection?.httpApplication,
   )?.id;
-  const hostedLoginUrl = profileId
-    ? getHttpApplicationProfile(profileId)?.hostedLoginUrl
-    : undefined;
-  if (!hostedLoginUrl && profileId !== "tacticalrmm") return;
+  const profile = profileId ? getHttpApplicationProfile(profileId) : undefined;
+  const hostedLoginUrl = profile?.hostedLoginUrl;
+  if (!hostedLoginUrl && profileId !== "tacticalrmm" && !profile?.requiresHttps)
+    return;
   let valid = false;
   try {
     const target = new URL(targetUrl);
@@ -38,13 +38,14 @@ export function validateHttpApplicationTarget(
         ? "Cloudflare Dashboard requires HTTPS at dash.cloudflare.com on port 443. Use the dashboard address in Application settings, or choose Generic website for another host."
         : hostedLoginUrl
           ? `${getHttpApplicationProfile(profileId!)!.label} requires HTTPS at ${new URL(hostedLoginUrl).hostname} on port 443. Use the hosted login address in Application settings, or choose a custom profile for another host.`
-          : "Tactical RMM requires an HTTPS dashboard address. Review the connection protocol and address; API keys and MeshCentral credentials cannot sign into this dashboard.",
+          : `${profile?.label ?? "This application"} requires an HTTPS website address. Review the connection protocol and address; API keys are not website passwords.`,
     );
 }
 
 export interface HttpApplicationLogin {
   credentials: { username: string; password: string } | null;
-  upstreamAuthMode?: "none" | "basic" | "digest" | "header";
+  upstreamAuthMode?: "none" | "basic" | "digest" | "header" | "bitwarden-form";
+  loginFlow?: "bitwarden";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
 }
@@ -60,6 +61,7 @@ export function sameHttpApplicationLogin(
       !!right &&
       left.upstreamAuthMode === right.upstreamAuthMode &&
       left.autoLogin === right.autoLogin &&
+      left.loginFlow === right.loginFlow &&
       left.credentials?.username === right.credentials?.username &&
       left.credentials?.password === right.credentials?.password &&
       left.selectors?.usernameSelector === right.selectors?.usernameSelector &&
@@ -165,6 +167,23 @@ export function resolveHttpApplicationLogin(
     throw new Error(
       "Automatic form login requires both the website username and password.",
     );
+  if (profile.loginFlow === "bitwarden") {
+    if (
+      Object.keys(
+        normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors) ??
+          {},
+      ).length
+    )
+      throw new Error(
+        "The reviewed web-vault flow does not accept selector overrides. Clear Advanced selectors or use manual login.",
+      );
+    return {
+      credentials,
+      upstreamAuthMode: "bitwarden-form",
+      loginFlow: "bitwarden",
+      autoLogin: true,
+    };
+  }
   const selectors = {
     ...profile.selectors,
     ...normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors),

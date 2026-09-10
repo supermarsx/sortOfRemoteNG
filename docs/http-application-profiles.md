@@ -30,6 +30,11 @@ Webmin has reviewed username/password selectors for its classic and Authentic Th
 
 ## Cloudflare Dashboard and interactive 2FA
 
+**Mail / storage** also includes self-hosted Bitwarden, community Vaultwarden and
+Nextcloud. They require your saved HTTPS origin and start in manual mode. Their
+explicit login flows, supported authenticator challenges and browser handoff
+limitations are documented in [Website application login]({{ '/http-application-logins/' | relative_url }}).
+
 Choose **Networking / proxies → Cloudflare Dashboard**. This is a manual-only hosted profile, not a Cloudflare API integration. **Use Cloudflare Dashboard address** explicitly sets HTTPS, `dash.cloudflare.com`, and port 443; selecting the profile alone leaves your existing address and TLS settings unchanged. A different host, port, or plain HTTP address is refused before native preflight. Saved passwords, API tokens, and old form selectors are not sent by this profile.
 
 Sign in on the website and enter its authenticator or email-code prompt yourself. Cloudflare also offers SSO and social login; its security-key authentication uses WebAuthn. The web toolbar's **2FA Codes** panel only displays and manually copies already configured per-connection authenticator codes. It does not enroll Cloudflare, automatically fill a challenge, or create Cloudflare recovery codes. Configure an authenticator through the existing connection TOTP settings only if you deliberately want its secret stored under your database's protection policy. See Cloudflare's [sign-in options](https://developers.cloudflare.com/fundamentals/user-profiles/login/) and [two-factor authentication instructions](https://developers.cloudflare.com/fundamentals/user-profiles/2fa/).

@@ -476,6 +476,9 @@ pub enum UpstreamAuthMode {
     Digest,
     #[serde(rename = "header")]
     Header,
+    /// Closed capability gate: old backends reject instead of generically filling.
+    #[serde(rename = "bitwarden-form")]
+    BitwardenForm,
     /// Form-only or manual application login: never inject proxy credentials
     /// into Authorization. Opted-in form fill may still consume them once.
     #[serde(rename = "none")]
@@ -489,7 +492,7 @@ pub enum UpstreamAuthMode {
 impl UpstreamAuthMode {
     fn authorization_value(self, username: &str, password: &str) -> Option<String> {
         match self {
-            Self::Basic | Self::Digest | Self::Header | Self::None => None,
+            Self::Basic | Self::Digest | Self::Header | Self::None | Self::BitwardenForm => None,
             Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
                 Some(format!("{username} {password}"))
             }
@@ -503,7 +506,7 @@ impl UpstreamAuthMode {
     pub fn manager_visible_username(self, username: &str) -> String {
         match self {
             Self::Basic | Self::Digest => username.to_string(),
-            Self::PfSenseV1 | Self::Header | Self::None => String::new(),
+            Self::PfSenseV1 | Self::Header | Self::None | Self::BitwardenForm => String::new(),
         }
     }
 
@@ -521,7 +524,7 @@ impl UpstreamAuthMode {
                 Some(value) => request.header(reqwest::header::AUTHORIZATION, value),
                 None => request,
             },
-            Self::Basic | Self::Digest | Self::Header | Self::None => request,
+            Self::Basic | Self::Digest | Self::Header | Self::None | Self::BitwardenForm => request,
         }
     }
 
@@ -658,6 +661,7 @@ mod upstream_auth_mode_tests {
         ));
         for (mode, expected) in [
             (UpstreamAuthMode::None, "Bearer fixture-session"),
+            (UpstreamAuthMode::BitwardenForm, "Bearer fixture-session"),
             (UpstreamAuthMode::Basic, "Basic YWRtaW46c2VjcmV0"),
             (UpstreamAuthMode::PfSenseV1, "admin secret"),
         ] {
@@ -1169,6 +1173,8 @@ pub struct AxumProxyState {
     /// armed HTML page, themed-auth arms on a 401). Minted on each injected
     /// page; consumed on first read by `autologin_cred_handler`.
     pub auto_login_nonce: Arc<std::sync::RwLock<Option<String>>>,
+    pub bitwarden_continuation:
+        Arc<std::sync::Mutex<Option<crate::themed_autologin::BitwardenContinuation>>>,
     /// t20: optional CSS-selector overrides for the device login form
     /// (authoritative when set). Non-secret; passed through to the injected
     /// client so a set-but-unmatched selector means "do not fill".
@@ -1228,7 +1234,11 @@ fn collect_upstream_headers(
                 name,
                 "if-none-match" | "if-modified-since" | "if-range" | "range"
             ))
-            || (name == "authorization" && mode != UpstreamAuthMode::None)
+            || (name == "authorization"
+                && !matches!(
+                    mode,
+                    UpstreamAuthMode::None | UpstreamAuthMode::BitwardenForm
+                ))
             || matches!(
                 name,
                 "host"
@@ -1390,7 +1400,18 @@ pub async fn axum_proxy_handler(
     // Reserve navigation START order, so a slow prior page never acquires a
     // newer identity merely by finishing last. XHR does not consume a sequence.
     let document_sequence = if document_request {
-        state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1
+        // Serialize a reviewed password handout with document invalidation.
+        // A queued old-page redemption cannot observe a pre-navigation sequence.
+        if state.upstream_auth_mode == UpstreamAuthMode::BitwardenForm {
+            let mut continuation = state.bitwarden_continuation.lock().ok();
+            let next = state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1;
+            if let Some(slot) = continuation.as_mut() {
+                **slot = None;
+            }
+            next
+        } else {
+            state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1
+        }
     } else {
         0
     };
@@ -1771,7 +1792,8 @@ pub async fn axum_proxy_handler(
                 // when not armed. The injected HTML carries ONLY a per-page
                 // nonce + non-secret selectors — never the credential.
                 let autologin_script =
-                    crate::themed_autologin::build_autologin_injection(&state).unwrap_or_default();
+                    crate::themed_autologin::build_autologin_injection(&state, document_sequence)
+                        .unwrap_or_default();
                 // e5 hardened client asset defines
                 // `window.__sorng_autologin.fetchCredsAndRun`, which the e3
                 // bootstrap checks for and defers to. It MUST appear BEFORE the
@@ -2101,6 +2123,8 @@ pub use crate::themed_auth::authentication_challenge_schemes;
 // `crate::themed_autologin::...` path fails there. Routing through `http` mirrors
 // the existing `crate::http::themed_auth_post_handler` pattern: both crate roots
 // expose a `http` module that re-exports from this file.
-pub use crate::themed_autologin::{autologin_cred_handler, AUTOLOGIN_PATH};
+pub use crate::themed_autologin::{
+    autologin_cred_handler, validate_reviewed_login_config, AUTOLOGIN_PATH,
+};
 
 // ─── Web Session Recording Commands ──────────────────────────────

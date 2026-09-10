@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   proxyInvalid: false,
   verifySsl: true,
   credentialOverrides: {} as Record<string, unknown>,
+  settingsReady: false,
+  availability: { status: "ready", databaseId: "owner", generation: 1 },
+  assertLease: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -45,10 +48,20 @@ vi.mock("../../src/contexts/useConnections", () => ({
       ],
     },
     dispatch: mocks.dispatch,
+    databaseAvailability: mocks.availability,
   }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
-  useSettings: () => ({ settings: { httpsTrustPolicy: mocks.policy } }),
+  useSettings: () => ({
+    settings: { httpsTrustPolicy: mocks.policy },
+    settingsReady: mocks.settingsReady,
+  }),
+}));
+vi.mock("../../src/utils/session/sessionDatabaseOwnership", () => ({
+  captureSessionDatabaseAccess: () => {
+    mocks.assertLease();
+    return mocks.assertLease;
+  },
 }));
 vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({
@@ -113,6 +126,13 @@ describe("HTTPS certificate and native trust stages", () => {
     mocks.proxyInvalid = false;
     mocks.verifySsl = true;
     mocks.credentialOverrides = {};
+    mocks.settingsReady = false;
+    mocks.availability = {
+      status: "ready",
+      databaseId: "owner",
+      generation: 1,
+    };
+    mocks.assertLease.mockReset();
     mocks.verify.mockReset().mockResolvedValue({ status: "trusted" });
     mocks.trust.mockReset().mockResolvedValue(undefined);
     mocks.invoke.mockReset().mockImplementation(async (command: string) => {
@@ -135,6 +155,98 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(iframe.src).toContain(proxy.proxy_url);
     return { ...hook, iframe };
   }
+  it("runs reviewed web-vault mode only in the owning lease and revokes the frame/proxy on lock without reconnecting", async () => {
+    mocks.settingsReady = true;
+    mocks.credentialOverrides = {
+      httpApplication: { version: 1, id: "vaultwarden", loginMode: "form" },
+    };
+    const owned = { ...session, ownerDatabaseId: "owner" };
+    const { result, rerender, iframe } = await loadingFixture(owned);
+    const starts = () =>
+      mocks.invoke.mock.calls.filter(
+        ([name]) => name === "start_basic_auth_proxy",
+      );
+    expect(starts()).toHaveLength(1);
+    expect(result.current.currentUrl).toBe("https://10.10.10.2/#/login");
+    expect(starts()[0][1].config).toMatchObject({
+      upstream_auth_mode: "bitwarden-form",
+      http_auto_login: true,
+    });
+    expect(mocks.assertLease).toHaveBeenCalled();
+    mocks.availability = {
+      status: "suspended",
+      databaseId: "owner",
+      generation: 2,
+    };
+    rerender();
+    await act(async () => {});
+    expect(iframe.src).toBe("about:blank");
+    expect(mocks.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: proxy.session_id,
+    });
+    expect(result.current.loadError).toContain("owning database");
+    mocks.availability = {
+      status: "ready",
+      databaseId: "owner",
+      generation: 3,
+    };
+    rerender();
+    await act(async () => {});
+    expect(starts()).toHaveLength(1);
+  });
+  it("stops a late reviewed proxy result after owner revocation and never attaches it", async () => {
+    mocks.settingsReady = true;
+    mocks.credentialOverrides = {
+      httpApplication: {
+        version: 1,
+        id: "bitwarden-self-hosted",
+        loginMode: "form",
+      },
+    };
+    let resolve!: (value: typeof proxy) => void;
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "get_tls_certificate_info"
+        ? cert
+        : command === "start_basic_auth_proxy"
+          ? new Promise((done) => {
+              resolve = done;
+            })
+          : undefined,
+    );
+    const hook = renderHook(() =>
+      useWebBrowser({ ...session, ownerDatabaseId: "owner" }),
+    );
+    await waitFor(() => expect(resolve).toBeTypeOf("function"));
+    mocks.availability = {
+      status: "ready",
+      databaseId: "other",
+      generation: 2,
+    };
+    hook.rerender();
+    await act(async () => {
+      resolve(proxy);
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: proxy.session_id,
+    });
+    expect(hook.result.current.loadError).toContain("owning database");
+  });
+  it("refuses a web-vault attempt without a ready owning database before TLS or native start", async () => {
+    mocks.settingsReady = true;
+    mocks.credentialOverrides = {
+      httpApplication: { version: 1, id: "vaultwarden", loginMode: "form" },
+    };
+    const hook = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([name]) =>
+          name === "get_tls_certificate_info" ||
+          name === "start_basic_auth_proxy",
+      ),
+    ).toBe(false);
+    expect(hook.result.current.loadError).toContain("owning database");
+  });
   it("forwards typed proxy controls and header authentication without putting parameters in the frame URL", async () => {
     mocks.credentialOverrides = {
       authType: "header",

@@ -35,6 +35,61 @@ or unsupported forms remain interactive rather than receiving a guessed code.
 
 ## Explicit automatic authenticator codes
 
+### Self-hosted Bitwarden, Vaultwarden and Nextcloud
+
+Under **Mail / storage**, choose **Bitwarden (self-hosted)**, **Vaultwarden**, or
+**Nextcloud** and keep your own HTTPS hostname/port. These presets require HTTPS
+but never change the address or certificate policy when selected. Vaultwarden is
+a community server with a patched Bitwarden web vault; it is not Bitwarden's
+official server, and this profile does not sign into Vaultwarden's `/admin`
+token page. Nextcloud uses its website account password, not a WebDAV app password.
+
+For Bitwarden/Vaultwarden, explicitly select **Automatic form login** and save
+the website email/master password in the connection's protected database. The
+embedded viewer opens the fixed `/#/login` route; start on its email-entry screen.
+The reviewed web-vault flow enters email and clicks
+Continue once; the native backend retains the master password until the same
+reviewed form displays its original password controls. It then releases the
+password once and submits once. There is no password-only remembered-account
+shortcut and no retry after rejection. Native grants expire after 30 seconds;
+the client stops after 15 seconds, or immediately on changed form/navigation or
+owning-database lock/switch. Reopen the owning database and explicitly reload to
+start again. This flow requires the matching updated desktop backend: an older
+backend rejects its closed authentication mode, not a generic form fallback.
+
+The fixed two-stage flow does not accept Advanced selector, delay, fill-only or
+additional-field overrides; clear those options or use manual login. The tested
+controls match Bitwarden web-v2026.7.0 and the corresponding Vaultwarden web-vault
+build. Different versions, custom themes, remembered-account screens and
+organization-required SSO may need manual login. Nextcloud uses the reviewed
+ordinary POST login form; its existing request token remains website-managed.
+Root-path deployments use `/login`; enter a subdirectory deployment's login URL
+manually when necessary.
+
+Optional automatic authenticator codes require the separate explicit setup below.
+For web vaults, only the selected **authenticator app** provider is recognized at
+the root application path, never the email, recovery, device approval or passkey
+controls. Nextcloud recognizes only the installed `twofactor_totp` app at
+`/login/challenge/totp` or `/index.php/login/challenge/totp`; other providers,
+enrollment and subdirectory challenge paths remain manual. Selecting a profile
+does not select or enable an authenticator.
+
+Use **Open in system browser** for SSO, WebAuthn/passkeys/security keys or an
+incompatible embedded login. That explicit action uses the saved HTTPS origin,
+without passwords, callback parameters or current-page fragments. Browser cookies
+and network routing are separate; a browser login does not authenticate the embedded
+tab. Nothing bypasses the website's master-password, MFA or certificate checks.
+
+Reviewed primary sources: [Bitwarden web-v2026.7.0 two-stage login](https://github.com/bitwarden/clients/blob/web-v2026.7.0/libs/auth/src/angular/login/login.component.html),
+[authenticator-only component](https://github.com/bitwarden/clients/blob/web-v2026.7.0/libs/auth/src/angular/two-factor-auth/two-factor-auth.component.html),
+[Vaultwarden web-vault builds](https://github.com/dani-garcia/bw_web_builds),
+[Nextcloud login](https://github.com/nextcloud/server/blob/e99db582af5fa540e09947512fc75eaed811745a/core/src/components/login/LoginForm.vue),
+[Nextcloud TOTP challenge](https://github.com/nextcloud/twofactor_totp/blob/3ffad2aee422d83c9d410c75b7eda9f430a3ca05/templates/challenge.php).
+Verification uses synthetic rendered forms and local mock servers, not live vaults,
+user credentials, or a guarantee for every deployed version.
+
+### Enable an existing authenticator
+
 1. Enroll your authenticator with the website using its normal account-security
    process. Configure the existing secret in this connection under **Protocol →
    Recovery → 2FA / TOTP**. This app does not enroll/reset the website account.

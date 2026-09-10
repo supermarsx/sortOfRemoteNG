@@ -421,6 +421,7 @@ pub async fn start_basic_auth_proxy(
 ) -> Result<ProxyMediatorResponse, String> {
     let validated_target = validate_proxy_target_url(&config.target_url)?;
     let proxy_policy = config.proxy_policy.clone().unwrap_or_default();
+    validate_reviewed_login_config(&config)?;
     proxy_policy.validate(&validated_target)?;
     if let Some(options) = &config.http_form_automation {
         options.validate()?;
@@ -502,6 +503,7 @@ pub async fn start_basic_auth_proxy(
             config.http_auto_login && proxy_policy.page_scripts != PageScripts::Block,
         )),
         auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
+        bitwarden_continuation: Default::default(),
         auto_login_selectors: config.http_auto_login_selectors.clone(),
         http_form_automation: config.http_form_automation.clone(),
         client,
@@ -878,6 +880,7 @@ pub async fn restart_proxy_session(
         // which preserves the single-shot guarantee.
         auto_login_armed: Arc::new(AtomicBool::new(false)),
         auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
+        bitwarden_continuation: Default::default(),
         auto_login_selectors: None,
         http_form_automation: None,
         client,

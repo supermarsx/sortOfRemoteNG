@@ -59,6 +59,10 @@ use std::sync::{Arc, RwLock};
 use crate::http::{AxumProxyState, HttpAutoLoginSelectors};
 use crate::themed_auth::fresh_nonce;
 
+#[path = "bitwarden_autologin.rs"]
+mod bitwarden;
+pub use bitwarden::{validate_config as validate_reviewed_login_config, BitwardenContinuation};
+
 /// Bounded form options. Literal values are secret-capable and never embedded in HTML.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -150,6 +154,8 @@ pub struct AutoLoginCreds {
 pub struct AutoLoginQuery {
     #[serde(default)]
     pub nonce: String,
+    #[serde(default)]
+    pub phase: Option<String>,
 }
 
 /// The same-origin path the injected bootstrap fetches its credential from.
@@ -207,12 +213,16 @@ pub fn build_autologin_injection_from_slots(
 
 /// `&AxumProxyState` wrapper over [`build_autologin_injection_from_slots`] for
 /// the proxy handler's call site.
-pub fn build_autologin_injection(state: &AxumProxyState) -> Option<String> {
-    build_autologin_injection_from_slots(
+pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64) -> Option<String> {
+    let injection = build_autologin_injection_from_slots(
         &state.auto_login_armed,
         &state.auto_login_nonce,
         &state.auto_login_selectors,
-    )
+    )?;
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::BitwardenForm {
+        bitwarden::bind_document(state, document_sequence)?;
+    }
+    Some(injection)
 }
 
 /// The injected client bootstrap (the e3↔e5 seam).
@@ -282,6 +292,12 @@ pub async fn autologin_cred_handler(
         .is_some_and(|options| options.validate().is_err())
     {
         return forbidden("invalid advanced form settings");
+    }
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::BitwardenForm {
+        return bitwarden::dispense(&state, &query);
+    }
+    if query.phase.is_some() {
+        return forbidden("unsupported login phase");
     }
     match dispense_credential(
         &state.auto_login_armed,

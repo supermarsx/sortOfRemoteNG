@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import { debugLog } from "../../utils/core/debugLogger";
 import {
   clearWebBrowserFrame,
@@ -309,6 +310,9 @@ export function useWebBrowser(session: ConnectionSession) {
       if (profile?.hostedLoginUrl)
         target.pathname = new URL(profile.hostedLoginUrl).pathname;
       else if (profile?.loginPath) target.pathname = profile.loginPath;
+      // Enter the reviewed SPA route directly. An empty hash would let initial
+      // router startup look like a navigation revocation between the two grants.
+      if (profile?.loginFlow === "bitwarden") target.hash = "/login";
       if (
         target.username ||
         target.password ||
@@ -352,6 +356,15 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, [connection]);
   const resolvedCreds = applicationAuth.login?.credentials ?? null;
+  const reviewedFlowScope =
+    settingsReady === true &&
+    databaseAvailability?.status === "ready" &&
+    databaseAvailability.databaseId === session.ownerDatabaseId
+      ? `${databaseAvailability.databaseId}:${databaseAvailability.generation}`
+      : "";
+  const reviewedFlowScopeRef = useRef(reviewedFlowScope);
+  reviewedFlowScopeRef.current = reviewedFlowScope;
+  const reviewedFlowStartedRef = useRef<string | null>(null);
   const proxyOptions = useMemo(() => {
     try {
       const policy = normalizeHttpProxyPolicy(connection?.httpProxyPolicy);
@@ -1024,6 +1037,29 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, []);
 
+  useEffect(() => {
+    if (
+      reviewedFlowStartedRef.current === null ||
+      reviewedFlowStartedRef.current === reviewedFlowScope
+    )
+      return;
+    reviewedFlowStartedRef.current = null;
+    navGenRef.current += 1;
+    trustResolveRef.current?.(false);
+    trustResolveRef.current = null;
+    setTrustPrompt(null);
+    clearWebBrowserFrame(iframeRef.current);
+    void stopProxy();
+    applyNavigationFailure(
+      localNavigationFailure(
+        "navigation_cancelled",
+        "Website login stopped",
+        activeNavigationUrlRef.current,
+        "The owning database was locked, changed or closed. Reopen it and explicitly reload to start a new login attempt.",
+      ),
+    );
+  }, [reviewedFlowScope, stopProxy, applyNavigationFailure]);
+
   // ── Navigation ─────────────────────────────────────────────
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
@@ -1103,10 +1139,32 @@ export function useWebBrowser(session: ConnectionSession) {
       activeNavigationUrlRef.current = urlObj.toString();
       armNavigationDeadline(gen, url);
       try {
+        let assertReviewedFlow = () => {};
+        if (applicationAuth.login?.loginFlow === "bitwarden") {
+          const scope = reviewedFlowScopeRef.current;
+          if (!scope)
+            throw new Error(
+              "Open and unlock this session's owning database before starting reviewed website login.",
+            );
+          const assertLease = captureSessionDatabaseAccess(session);
+          reviewedFlowStartedRef.current = scope;
+          assertReviewedFlow = () => {
+            assertLease();
+            if (
+              reviewedFlowScopeRef.current !== scope ||
+              gen !== navGenRef.current
+            )
+              throw new Error(
+                "Reviewed website login was cancelled because its database access or navigation changed.",
+              );
+          };
+          assertReviewedFlow();
+        }
         const upstreamProxyUrl = getGlobalHttpProxyUrl({ failClosed: true });
         if (urlObj.protocol === "https:") {
           const trusted = await fetchAndVerifyCert(upstreamProxyUrl);
           if (!trusted || gen !== navGenRef.current) return;
+          assertReviewedFlow();
           armNavigationDeadline(gen, url);
         }
         setWaitingForTrust(false);
@@ -1138,6 +1196,7 @@ export function useWebBrowser(session: ConnectionSession) {
         } else {
           await stopProxy();
           if (gen !== navGenRef.current) return;
+          assertReviewedFlow();
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
             {
@@ -1213,6 +1272,7 @@ export function useWebBrowser(session: ConnectionSession) {
           }
           let protectedProxyUrl: string;
           try {
+            assertReviewedFlow();
             protectedProxyUrl = validateProtectedProxyUrl(response);
           } catch (error) {
             await stopProxy(response.session_id);
@@ -1287,13 +1347,12 @@ export function useWebBrowser(session: ConnectionSession) {
       settings.webRecording,
       webRecorder,
       markSessionConnected,
-      session.hostname,
+      session,
       clearNavigationFailure,
       applyNavigationFailure,
       beginLoadingPresentation,
       armNavigationDeadline,
       navigateFrame,
-      session.protocol,
     ],
   );
 
@@ -2475,7 +2534,10 @@ export function useWebBrowser(session: ConnectionSession) {
     // Auth
     hasAuth,
     authLabel:
-      applicationAuth.login?.upstreamAuthMode === "none" &&
+      ["none", "bitwarden-form"].includes(
+        applicationAuth.login?.upstreamAuthMode ?? "",
+      ) &&
+      applicationAuth.login &&
       applicationAuth.login.autoLogin
         ? "Form login"
         : "Basic Auth",
