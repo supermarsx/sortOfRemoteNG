@@ -9,6 +9,7 @@ import type { DatabaseDataTarget } from "../../src/utils/connection/databaseMana
 import {
   getVaultRuntimeUnsupportedMessage,
   resolveRuntimeVaultCredential,
+  runtimeCredentialTargetKey,
   withoutConnectionLocalCredentials,
 } from "../../src/utils/security/runtimeCredentialVault";
 import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
@@ -118,6 +119,60 @@ beforeEach(() => {
   };
 });
 describe("runtime database vault boundary", () => {
+  it("compares nested target settings semantically while retaining sensitive values and array order", () => {
+    const input = fixture({
+      protocol: "https",
+      port: 443,
+      httpApplication: { version: 1, id: "generic-form", loginMode: "form" },
+      httpHeaders: { "X-Tenant": "a", "X-Context": "b" },
+      httpFormAutomation: {
+        version: 1,
+        fillDelayMs: 0,
+        submitDelayMs: 0,
+        detectionTimeoutMs: 1000,
+        submit: false,
+        fields: [
+          { selector: "#one", value: "one" },
+          { selector: "#two", value: "two" },
+        ],
+      },
+    });
+    const original = runtimeCredentialTargetKey(input.connection);
+    const reordered = {
+      ...input.connection,
+      httpApplication: {
+        loginMode: "form" as const,
+        id: "generic-form",
+        version: 1 as const,
+      },
+      httpHeaders: { "X-Context": "b", "X-Tenant": "a" },
+    };
+    expect(runtimeCredentialTargetKey(reordered)).toBe(original);
+    expect(
+      runtimeCredentialTargetKey({
+        ...reordered,
+        httpHeaders: { ...reordered.httpHeaders, "X-Tenant": "changed" },
+      }),
+    ).not.toBe(original);
+    expect(
+      runtimeCredentialTargetKey({ ...reordered, hostname: "other.invalid" }),
+    ).not.toBe(original);
+    expect(
+      runtimeCredentialTargetKey({
+        ...reordered,
+        credentialSource: { kind: "local" },
+      }),
+    ).not.toBe(original);
+    expect(
+      runtimeCredentialTargetKey({
+        ...reordered,
+        httpFormAutomation: {
+          ...input.connection.httpFormAutomation!,
+          fields: [...input.connection.httpFormAutomation!.fields].reverse(),
+        },
+      }),
+    ).not.toBe(original);
+  });
   it("rejects a local-mode ID collision from another database before returning a local fallback", async () => {
     const input = fixture({ credentialSource: { kind: "local" } });
     state.availability = {

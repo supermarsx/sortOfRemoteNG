@@ -5,6 +5,7 @@ import type {
   ConnectionSession,
 } from "../../types/connection/connection";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
+import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import {
   getRuntimeWebNavigation,
   registerRuntimeConnection,
@@ -55,7 +56,7 @@ export function useHttpRedirectReview(options: Options) {
         connectionCount: undefined,
       }
     : undefined;
-  const signature = JSON.stringify([
+  const signature = stableJsonStringify([
     connectionIdentity,
     options.accessKey,
     options.sourceOrigin,

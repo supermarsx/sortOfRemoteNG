@@ -19,6 +19,7 @@ import {
   resolveRuntimeConnection,
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import type { HttpRedirectReview } from "../../src/utils/protocol/httpRedirectReview";
+import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 
 const h = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -251,6 +252,51 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it.each(["manual", "form"] as const)(
+    "does not stop a %s login proxy after an equivalent native-storage round trip",
+    async (loginMode) => {
+      h.connections = [
+        {
+          ...h.connections[0],
+          basicAuthUsername: "fixture-user",
+          basicAuthPassword: "fixture-password",
+          httpApplication: { version: 1, id: "synology-dsm", loginMode },
+        },
+      ];
+      const view = await mounted();
+      const iframe = view.container.querySelector("iframe")!;
+      redirect(iframe, "https://relay.example.test/");
+      await screen.findByRole("region", { name: "Redirect review" });
+      const source = iframe.src;
+      // Native StorageData uses serde_json::Value sorted object maps; provider
+      // SET_CONNECTIONS applies this normalizer to every rehydrated connection.
+      const nativeClone = JSON.parse(
+        JSON.stringify(h.connections[0], (_key, value: unknown) =>
+          value && typeof value === "object" && !Array.isArray(value)
+            ? Object.fromEntries(
+                Object.entries(value).sort(([left], [right]) =>
+                  left.localeCompare(right),
+                ),
+              )
+            : value,
+        ),
+      ) as Connection;
+      h.connections = [normalizeAdvancedProtocolConnection(nativeClone)];
+      view.rerender(<Harness />);
+      await act(async () => {});
+      expect(
+        h.invoke.mock.calls.filter(
+          ([name]) => name === "stop_basic_auth_proxy",
+        ),
+      ).toHaveLength(0);
+      expect(proxies).toHaveLength(1);
+      expect(view.container.querySelector("iframe")).toBe(iframe);
+      expect(iframe.src).toBe(source);
+      expect(
+        screen.getByRole("button", { name: "Continue in this tab" }),
+      ).toBeVisible();
+    },
+  );
   it("keeps the review through the automatic connection-completion bookkeeping update", async () => {
     const view = await mounted();
     redirect(
@@ -278,6 +324,47 @@ describe("actual website redirect review integration", () => {
       h.invoke.mock.calls.filter(([name]) => name === "review_proxy_redirect"),
     ).toHaveLength(reads);
   });
+  it.each(["password", "target"])(
+    "still stops the proxy when its actual %s changes",
+    async (change) => {
+      h.connections = [
+        {
+          ...h.connections[0],
+          basicAuthUsername: "fixture-user",
+          basicAuthPassword: "fixture-password",
+          httpApplication: {
+            version: 1,
+            id: "synology-dsm",
+            loginMode: "form",
+          },
+        },
+      ];
+      const view = await mounted();
+      redirect(
+        view.container.querySelector("iframe")!,
+        "https://relay.example.test/",
+      );
+      await screen.findByRole("region", { name: "Redirect review" });
+      h.connections = [
+        {
+          ...h.connections[0],
+          ...(change === "password"
+            ? { basicAuthPassword: "changed-password" }
+            : { hostname: "changed.example.test" }),
+        },
+      ];
+      view.rerender(<Harness />);
+      await waitFor(() =>
+        expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+          sessionId: "proxy-1",
+        }),
+      );
+      expect(
+        screen.queryByRole("button", { name: "Continue in this tab" }),
+      ).toBeNull();
+      expect(proxies).toHaveLength(1);
+    },
+  );
   it("replays the retained redirect failure once settings readiness arrives, without another page message", async () => {
     h.settingsReady = false;
     const view = await mounted();

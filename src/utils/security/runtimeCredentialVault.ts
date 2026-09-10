@@ -10,6 +10,7 @@ import type {
 import type { DatabaseDataTarget } from "../connection/databaseManager";
 import { normalizeConnectionCredentialSource } from "./databaseCredentialVault";
 import { isSynologyFileConnection } from "../../types/protocols/synology";
+import { stableJsonStringify } from "../core/stableJsonStringify";
 
 export function getVaultRuntimeUnsupportedMessage(
   connection: Partial<Connection>,
@@ -50,7 +51,7 @@ export function getVaultRuntimeUnsupportedMessage(
 export function runtimeCredentialTargetKey(
   connection: Partial<Connection>,
 ): string {
-  return JSON.stringify([
+  return stableJsonStringify([
     connection.id,
     connection.protocol,
     connection.hostname,

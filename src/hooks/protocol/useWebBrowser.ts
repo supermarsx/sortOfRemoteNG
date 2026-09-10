@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import { retryTransientTrustRead } from "../../utils/auth/retryTransientTrustRead";
 import { debugLog } from "../../utils/core/debugLogger";
+import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import {
   clearWebBrowserFrame,
   navigateWebBrowserFrame,
@@ -441,7 +442,7 @@ export function useWebBrowser(session: ConnectionSession) {
       };
     }
   }, [connection, applicationAuth.login?.upstreamAuthMode]);
-  const proxyInputs = JSON.stringify([
+  const proxyInputs = stableJsonStringify([
     connection?.httpProxyPolicy,
     connection?.httpHeaders,
     connection?.httpFormAutomation,
