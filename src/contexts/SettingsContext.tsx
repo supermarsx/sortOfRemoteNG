@@ -55,6 +55,8 @@ export const defaultSettings: GlobalSettings = {
   colorScheme: "blue",
   primaryAccentColor: "#3b82f6",
   useCustomAccent: false,
+  folderIconColorMode: "default",
+  folderIconCustomColor: "#f59e0b",
   customCss: "",
   autoSaveEnabled: false,
   autoSaveIntervalMinutes: 5,

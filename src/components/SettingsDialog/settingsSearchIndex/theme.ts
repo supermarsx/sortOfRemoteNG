@@ -156,6 +156,35 @@ export const THEME_SEARCH_ENTRIES: SettingSearchEntry[] = [
 
   // ─── Background glow ────────────────────────────────────────────
   {
+    key: "folderIconColorMode",
+    label: "Folder icon color",
+    description:
+      "Choose default theme yellow, follow the accent, or a custom color for open and closed connection-tree folder icons.",
+    tags: [
+      "folder",
+      "highlight",
+      "icon",
+      "color",
+      "appearance",
+      "accent",
+      "tree",
+    ],
+    synonyms: ["folder tint", "folder colour", "yellow folders"],
+    values: ["default", "accent", "custom"],
+    section: "theme",
+    sectionLabel: "Theme",
+  },
+  {
+    key: "folderIconCustomColor",
+    label: "Custom folder icon color",
+    description:
+      "Pick a custom folder icon color; select Custom color mode to show the picker.",
+    tags: ["folder", "highlight", "icon", "custom", "color", "picker", "hex"],
+    synonyms: ["custom folder colour"],
+    section: "theme",
+    sectionLabel: "Theme",
+  },
+  {
     key: "backgroundGlowEnabled",
     label: "Enable background glow effect",
     labelKey: "themeSettings.enableBackgroundGlow",

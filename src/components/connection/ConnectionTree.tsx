@@ -22,6 +22,7 @@ import { ConnectionTreeRow } from "./connectionTree/ConnectionTreeItem";
 import RenameModal from "./connectionTree/RenameModal";
 import ConnectOptionsModal from "./connectionTree/ConnectOptionsModal";
 import PanelContextMenu from "./connectionTree/PanelContextMenu";
+import { resolveFolderIconColor } from "../../utils/settings/folderIconColor";
 
 const ROW_HEIGHT = 32;
 const OVERSCAN = 8;
@@ -270,6 +271,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
         <ConnectionTreeRow
           key={connection.id}
           connection={connection}
+          folderIconColor={resolveFolderIconColor(mgr.settings)}
           level={level}
           setSize={setSize}
           posInSet={posInSet}

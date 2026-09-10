@@ -8,6 +8,8 @@ import MultiSelectMenu from "./MultiSelectMenu";
 import React, { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useConnections } from "../../../contexts/useConnections";
+import { useSettings } from "../../../contexts/SettingsContext";
+import { resolveFolderIconColor } from "../../../utils/settings/folderIconColor";
 import { isToolProtocol } from "../../app/toolSession";
 import { getExpandedFolderIcon } from "../../../utils/icons/resolveConnectionIcon";
 import { useIconLibraryRevision } from "../../../utils/icons/iconLibraryRuntime";
@@ -22,6 +24,7 @@ import {
 } from "lucide-react";
 
 interface RowState {
+  folderIconColor?: string;
   dispatch: ReturnType<typeof useConnections>["dispatch"];
   isSelected: boolean;
   isMultiSelected: boolean;
@@ -34,6 +37,7 @@ interface RowState {
 }
 
 export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
+  folderIconColor = "var(--color-warning)",
   dispatch,
   isSelected,
   isMultiSelected,
@@ -304,6 +308,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
             size={16}
             aria-label={iconResolution.ariaLabel}
             className={`mr-2 ${connection.isGroup ? "text-warning" : getStatusColor(activeSession?.status)}`}
+            style={connection.isGroup ? { color: folderIconColor } : undefined}
           />
           {connection.favorite && (
             <Star
@@ -436,9 +441,11 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
 // state directly so unrelated session/context changes do not wake every row.
 const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = (props) => {
   const { state, dispatch } = useConnections();
+  const { settings } = useSettings();
   return (
     <ConnectionTreeRow
       {...props}
+      folderIconColor={resolveFolderIconColor(settings)}
       dispatch={dispatch}
       isSelected={state.selectedConnectionIds.has(props.connection.id)}
       isMultiSelected={state.selectedConnectionIds.size > 1}

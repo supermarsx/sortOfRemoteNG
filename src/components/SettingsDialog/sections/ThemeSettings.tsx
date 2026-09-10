@@ -16,6 +16,7 @@ import {
   Maximize2,
   Timer,
   Brush,
+  Folder,
 } from "lucide-react";
 import {
   useThemeSettings,
@@ -33,6 +34,10 @@ import {
 } from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import { LoadingElementSection } from "./theme/LoadingElementSection";
+import {
+  normalizeFolderIconColor,
+  normalizeFolderIconMode,
+} from "../../../utils/settings/folderIconColor";
 
 type Mgr = ReturnType<typeof useThemeSettings>;
 
@@ -69,6 +74,46 @@ const AppearanceSection: React.FC<{
           "Select the base theme that controls the overall look and feel of the application.",
         )}
       />
+      <SettingsSelectRow
+        settingKey="folderIconColorMode"
+        icon={<Folder size={16} />}
+        label="Folder icon color"
+        value={normalizeFolderIconMode(settings.folderIconColorMode)}
+        options={[
+          { value: "default", label: "Default (theme yellow)" },
+          { value: "accent", label: "Follow accent color" },
+          { value: "custom", label: "Custom color" },
+        ]}
+        onChange={(value) =>
+          updateSettings({
+            folderIconColorMode: normalizeFolderIconMode(value),
+          })
+        }
+        infoTooltip="Tint open and closed folder icons in the connection tree. Connection status colors and favorite stars are unchanged."
+      />
+      {normalizeFolderIconMode(settings.folderIconColorMode) === "custom" && (
+        <label
+          className="sor-settings-select-row"
+          data-setting-key="folderIconCustomColor"
+        >
+          <span className="sor-settings-row-label">
+            Custom folder icon color
+          </span>
+          <input
+            type="color"
+            aria-label="Custom folder icon color"
+            value={normalizeFolderIconColor(settings.folderIconCustomColor)}
+            onChange={(event) =>
+              updateSettings({
+                folderIconCustomColor: normalizeFolderIconColor(
+                  event.target.value,
+                ),
+              })
+            }
+            className="h-8 w-10 cursor-pointer rounded-md border border-[var(--color-border)] bg-[var(--color-input)]"
+          />
+        </label>
+      )}
       {/* Not a settings primitive — a swatch grid. The anchor is declared on
           the wrapper so search results can still scroll it into view. */}
       <div className="space-y-2" data-setting-key="colorScheme">
@@ -342,9 +387,7 @@ const TransparencySection: React.FC<{
           min={0}
           max={1}
           step={0.01}
-          onChange={(v) =>
-            updateSettings({ windowTransparencyOpacity: v })
-          }
+          onChange={(v) => updateSettings({ windowTransparencyOpacity: v })}
           infoTooltip={mgr.t(
             "themeSettings.opacityLevelTooltip",
             "Controls how transparent the window is (0 = fully transparent, 1 = fully opaque).",
@@ -562,12 +605,35 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
           "Color scheme, background glow, window transparency, animations, and custom CSS.",
         )}
       />
-      <AppearanceSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
-      <GlowSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
-      <TransparencySection mgr={mgr} settings={settings} updateSettings={updateSettings} />
-      <AnimationsSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
-      <LoadingElementSection settings={settings} updateSettings={updateSettings} />
-      <CustomCssSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
+      <AppearanceSection
+        mgr={mgr}
+        settings={settings}
+        updateSettings={updateSettings}
+      />
+      <GlowSection
+        mgr={mgr}
+        settings={settings}
+        updateSettings={updateSettings}
+      />
+      <TransparencySection
+        mgr={mgr}
+        settings={settings}
+        updateSettings={updateSettings}
+      />
+      <AnimationsSection
+        mgr={mgr}
+        settings={settings}
+        updateSettings={updateSettings}
+      />
+      <LoadingElementSection
+        settings={settings}
+        updateSettings={updateSettings}
+      />
+      <CustomCssSection
+        mgr={mgr}
+        settings={settings}
+        updateSettings={updateSettings}
+      />
     </div>
   );
 };

@@ -68,6 +68,47 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
   fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...seed };
 }
 
+describe("folder icon appearance persistence", () => {
+  it("normalizes malformed loaded and patched values", async () => {
+    fakeStoredSettings = {
+      folderIconColorMode: "unsafe",
+      folderIconCustomColor: "url(invalid)",
+    };
+    const manager = SettingsManager.getInstance();
+    expect(await manager.loadSettings()).toMatchObject({
+      folderIconColorMode: "default",
+      folderIconCustomColor: "#f59e0b",
+    });
+    await manager.saveSettings({
+      folderIconColorMode: "invalid",
+      folderIconCustomColor: "#abc;",
+    } as any);
+    expect(fakeStoredSettings).toMatchObject({
+      folderIconColorMode: "default",
+      folderIconCustomColor: "#f59e0b",
+    });
+  });
+
+  it.each(["default", "accent", "custom"] as const)(
+    "persists %s mode and a valid custom color without changing other settings",
+    async (mode) => {
+      const manager = SettingsManager.getInstance();
+      await manager.loadSettings();
+      await manager.saveSettings({
+        folderIconColorMode: mode,
+        folderIconCustomColor: "#AB12EF",
+        colorScheme: "green",
+      });
+      SettingsManager.resetInstance();
+      expect(await SettingsManager.getInstance().loadSettings()).toMatchObject({
+        folderIconColorMode: mode,
+        folderIconCustomColor: "#ab12ef",
+        colorScheme: "green",
+      });
+    },
+  );
+});
+
 describe("SSH external link global opt-in persistence", () => {
   it.each([undefined, null, false, "true", "false", 1, {}, []])(
     "normalizes a missing or malformed stored opt-in (%j) to disabled",

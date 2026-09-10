@@ -28,6 +28,10 @@ import {
   validateProxyRequestLogLimit,
 } from "./proxyRequestLog";
 import { normalizeSshReconnectSettings } from "../ssh/sshReconnectPolicy";
+import {
+  normalizeFolderIconMode,
+  normalizeFolderIconColor,
+} from "./folderIconColor";
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQuickActions";
 import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
 import {
@@ -315,6 +319,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   theme: "dark",
   colorScheme: "blue",
   primaryAccentColor: "#3b82f6",
+  folderIconColorMode: "default",
+  folderIconCustomColor: "#f59e0b",
   useCustomAccent: false,
   customCss: "",
   autoSaveEnabled: false,
@@ -1142,6 +1148,12 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      folderIconColorMode: normalizeFolderIconMode(
+        normalizedStored.folderIconColorMode,
+      ),
+      folderIconCustomColor: normalizeFolderIconColor(
+        normalizedStored.folderIconCustomColor,
+      ),
       proxyRequestLogLimit: normalizeProxyRequestLogLimit(
         normalizedStored.proxyRequestLogLimit,
       ),
@@ -1259,6 +1271,14 @@ export class SettingsManager {
     if ("proxyRequestLogLimit" in safePatch)
       safePatch.proxyRequestLogLimit = validateProxyRequestLogLimit(
         safePatch.proxyRequestLogLimit,
+      );
+    if ("folderIconColorMode" in safePatch)
+      safePatch.folderIconColorMode = normalizeFolderIconMode(
+        safePatch.folderIconColorMode,
+      );
+    if ("folderIconCustomColor" in safePatch)
+      safePatch.folderIconCustomColor = normalizeFolderIconColor(
+        safePatch.folderIconCustomColor,
       );
     if ("sessionQuickActions" in safePatch)
       safePatch.sessionQuickActions = normalizeSessionQuickActions(

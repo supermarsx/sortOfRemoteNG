@@ -164,6 +164,8 @@ export interface GlobalSettings {
   colorScheme: ColorScheme;
   primaryAccentColor?: string;
   useCustomAccent?: boolean;
+  folderIconColorMode?: "default" | "accent" | "custom";
+  folderIconCustomColor?: string;
   customCss?: string;
   autoSaveEnabled: boolean;
   autoSaveIntervalMinutes: number;

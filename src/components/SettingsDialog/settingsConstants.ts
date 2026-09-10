@@ -413,6 +413,8 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   theme: "dark",
   colorScheme: "blue",
   primaryAccentColor: "#3b82f6",
+  folderIconColorMode: "default",
+  folderIconCustomColor: "#f59e0b",
   autoSaveEnabled: false,
   autoSaveIntervalMinutes: 5,
   singleWindowMode: false,
