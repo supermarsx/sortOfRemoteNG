@@ -327,7 +327,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           }
           className="max-w-md text-center"
         >
-          {onActivateSession && dispatch && onDatabaseSelect ? (
+          {onActivateSession && onDatabaseSelect ? (
             <button
               type="button"
               className="sor-btn sor-btn-secondary mt-4"
