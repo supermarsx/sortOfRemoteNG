@@ -7,6 +7,7 @@ import { NPM_AUTO_LOGIN_SELECTORS } from "../../components/integrations/nginxPro
 import { PROXMOX_AUTO_LOGIN_SELECTORS } from "../../components/integrations/proxmox/webUiLaunch";
 import { PFSENSE_AUTO_LOGIN_SELECTORS } from "../../components/integrations/pfsense/webUiLaunch";
 import { SELF_HOSTED_VAULT_PROFILES } from "./selfHostedVaultProfiles";
+import { HOSTED_DASHBOARD_PROFILES } from "./hostedDashboardProfiles";
 
 export interface HttpApplicationProfile {
   id: string;
@@ -83,6 +84,7 @@ const unavailable = (
 /** Browser capabilities, not a claim that every native API credential logs into a website. */
 export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   ...SELF_HOSTED_VAULT_PROFILES,
+  ...HOSTED_DASHBOARD_PROFILES,
   {
     id: "generic-form",
     label: "Generic login form",

@@ -1,4 +1,5 @@
 import type { Connection } from "../../types/connection/connection";
+import { HOSTED_DASHBOARD_ICON_SUGGESTIONS } from "./hostedDashboardIconSuggestions";
 import {
   getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
@@ -14,6 +15,7 @@ import {
  * catalog marks (including honestly described app-authored identifiers).
  * LXD / Incus is a combined profile, so it uses a neutral cluster symbol. */
 export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
+  ...HOSTED_DASHBOARD_ICON_SUGGESTIONS,
   custom: "web-application",
   "generic-form": "web-application",
   "http-basic": "web-application",

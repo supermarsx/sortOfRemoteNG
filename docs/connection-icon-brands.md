@@ -732,6 +732,29 @@ Reference SVG SHA-256 values:
 `irc` is explicitly a **generic app-authored protocol symbol**: a channel hash
 inside a speech bubble, not a claimed official IRC, network or client logo.
 
+### Hosted dashboard additions (2026-09-10)
+
+YouTube, iCloud, Claude, OpenRouter, Facebook, Instagram, Gmail, Google Analytics,
+Google Ads and Google Search Console use the installed, pinned Simple Icons
+paths via `brandIconSlugs.ts` and `npm run icons:brand:generate` (CC0 collection;
+underlying trademarks remain their owners'). Zoom reuses the existing mark.
+
+`adobe` uses the leading A contour from the [publisher SVG wordmark](https://www.adobe.com/federal/assets/svgs/adobe-logo.svg),
+with a uniform transform and theme color. Source SHA-256:
+`54213e56d564e8174ec2de6aa5f91907aebadc38215f4c3597d1e9b83cce127a`.
+`registro-br` uses the entire [publisher pinned-tab SVG](https://registro.br/assets/img/favicon/safari-pinned-tab.svg),
+uniformly scaling its 325×325 view box to 24×24. Source SHA-256:
+`07da9afa01fcbf117ad288213ea8ebec2fff7eabcb569504d7ea2263536b9fde`.
+These are monochrome identification adaptations, not endorsements or new licenses.
+
+`marcaria` and `freedns` are distinct **app-authored vector identifiers**, not
+official-logo reproductions or raster tracings. No verified publisher vector was
+available in this review. Their catalogue descriptions say so explicitly.
+All added marks are passive local SVG geometry without frames, external resources,
+fonts, scripts or raster payloads. `tests/icons/hostedDashboardIcons.test.tsx`
+checks search, uniqueness, light/dark theme color, exact collection paths and
+safe icon-library export/import at 16/24/32/96px.
+
 `tests/icons/messagingPlatformIcons.test.tsx` covers all 30 new and six retained
 choices: unique categories/keys, common-name searches, saved selection resolution,
 pure passive rendering, exact collection/publisher geometry and strict icon

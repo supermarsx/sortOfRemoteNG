@@ -15,9 +15,11 @@ import {
 } from "../brand";
 import { defineIcon } from "./types";
 import { createLucideIcon } from "lucide-react";
+import { HOSTED_REGISTRAR_ICONS } from "./hostedDashboards";
 
 /** Registrars, the .PT registry, and DNS services. Saved keys are unchanged. */
 export const DOMAIN_REGISTRAR_ICONS = [
+  ...HOSTED_REGISTRAR_ICONS,
   defineIcon(
     "dynamic-dns",
     "Dynamic DNS",

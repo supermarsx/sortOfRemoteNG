@@ -252,6 +252,17 @@ export const BRAND_ICON_SLUGS = [
   "webex",
   "wire",
   "gitter",
+  // Hosted account / dashboard marks (not authentication capabilities).
+  "claude",
+  "openrouter",
+  "facebook",
+  "instagram",
+  "gmail",
+  "googleanalytics",
+  "googleads",
+  "googlesearchconsole",
+  "youtube",
+  "icloud",
 ] as const;
 
 /** A slug known to be vendored into `generatedBrandIcons.ts`. */

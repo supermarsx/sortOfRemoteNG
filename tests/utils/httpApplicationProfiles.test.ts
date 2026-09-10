@@ -30,10 +30,10 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(55);
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(89);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(55);
+    ).toBe(89);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -46,6 +46,8 @@ describe("HTTP application profile policy", () => {
       "bitwarden-self-hosted",
       "vaultwarden",
       "nextcloud",
+      "gitlab-self-hosted",
+      "sqlpad",
       "portainer",
       "nginxProxyMgr",
       "proxmox",

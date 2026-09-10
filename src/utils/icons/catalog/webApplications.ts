@@ -38,6 +38,7 @@ import { BUSINESS_APPLICATION_ICONS } from "./businessApplications";
 import { BUSINESS_SYSTEM_ICONS } from "./businessSystems";
 import { BANKING_ICONS } from "./banking";
 import { ADMIN_PANEL_ICONS } from "./adminPanels";
+import { HOSTED_DASHBOARD_ICONS } from "./hostedDashboards";
 
 /**
  * Web and application icons. Seeded with generic Lucide entries so the category
@@ -46,6 +47,7 @@ import { ADMIN_PANEL_ICONS } from "./adminPanels";
  */
 export const WEB_APPLICATION_ICONS = [
   ...ADMIN_PANEL_ICONS,
+  ...HOSTED_DASHBOARD_ICONS,
   defineIcon(
     "haproxy",
     "HAProxy",
