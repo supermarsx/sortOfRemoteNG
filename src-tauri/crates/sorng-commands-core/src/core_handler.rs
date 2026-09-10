@@ -123,6 +123,7 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_commit_master_recovery"
             | "encryption_cancel_master_recovery"
             | "encryption_setup"
+            | "encryption_validate_new_password"
             | "encryption_unlock"
             | "encryption_lock"
             | "encryption_change_password"
@@ -1483,6 +1484,7 @@ define_command_group!(
         master_recovery_commands::encryption_commit_master_recovery,
         master_recovery_commands::encryption_cancel_master_recovery,
         encryption_commands::encryption_setup,
+        encryption_commands::encryption_validate_new_password,
         encryption_commands::encryption_unlock,
         encryption_commands::encryption_lock,
         encryption_commands::encryption_change_password,

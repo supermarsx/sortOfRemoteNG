@@ -755,6 +755,20 @@ async fn change_inner_with_initialization(
     vault: &(impl VaultProvider + Sync),
 ) -> Result<ChangeResult, String> {
     let snapshot = managed_snapshot(root, state, id).await?;
+    if let Some(target) = &target {
+        if target
+            .new_slots
+            .iter()
+            .any(|slot| matches!(slot, NewSlotInput::Password { .. }))
+        {
+            let policy = sorng_encryption::password_policy::read_locked(root, state).await?;
+            for slot in &target.new_slots {
+                if let NewSlotInput::Password { password, .. } = slot {
+                    sorng_encryption::password_policy::validate(password, &policy, "database")?;
+                }
+            }
+        }
+    }
     if revision(&snapshot) != expected_revision || snapshot.data != expected_data {
         return Err(
             "database security or contents changed; reload before changing protection".into(),

@@ -17,6 +17,7 @@ import type { SecuritySettingsProps } from "./security/types";
 import CurrentDatabaseSecuritySection from "./security/CurrentDatabaseSecuritySection";
 import ConnectionRecycleBinSection from "./security/ConnectionRecycleBinSection";
 import YubiKeySecuritySection from "./security/YubiKeySecuritySection";
+import PasswordPolicySection from "./security/PasswordPolicySection";
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
@@ -46,6 +47,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         Global policies, export defaults, and key tools
       </h3>
       <EncryptionAlgorithmSection />
+      <PasswordPolicySection />
       <KeyDerivationSection />
       <ExportSecuritySection
         settings={settings}

@@ -6,6 +6,7 @@ export * from "../ssh/sshSettings";
 
 // Imports needed for GlobalSettings interface
 import type { BackupConfig } from "./backupSettings";
+import type { PasswordPolicy } from "../security/passwordPolicy";
 import type { CloudSyncConfig } from "./cloudSyncSettings";
 import type { OpenVPNConfig } from "./vpnSettings";
 import type { LoadingElementSettings } from "../../components/ui/display/loadingElement/types";
@@ -577,6 +578,7 @@ export interface GlobalSettings {
   exportEncryption: boolean;
   exportPassword?: string;
   exportSecurity: ExportSecuritySettings;
+  passwordPolicy?: PasswordPolicy;
 
   // SSH Terminal Settings
   sshTerminal: SSHTerminalConfig;

@@ -34,6 +34,8 @@ import {
 } from "./folderIconColor";
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQuickActions";
 import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
+import { DEFAULT_PASSWORD_POLICY } from "../../types/security/passwordPolicy";
+import { normalizePasswordPolicy } from "../security/passwordPolicy";
 import {
   validateIconLibrary,
   type IconLibraryData,
@@ -665,6 +667,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   exportEncryption: false,
   exportPassword: undefined,
   exportSecurity: defaultExportSecuritySettings,
+  passwordPolicy: DEFAULT_PASSWORD_POLICY,
 
   sshTerminal: defaultSSHTerminalConfig,
   sshConnection: defaultSSHConnectionConfig,
@@ -1217,6 +1220,12 @@ export class SettingsManager {
           normalizedStored.exportEncryption ??
           DEFAULT_SETTINGS.exportSecurity.encryptByDefault,
       },
+      // Preserve malformed optional policy for explicit repair in Security;
+      // every new-password validator still refuses it, never silently disables.
+      passwordPolicy:
+        normalizedStored.passwordPolicy === undefined
+          ? { ...DEFAULT_PASSWORD_POLICY }
+          : normalizedStored.passwordPolicy,
       backup: migrateBackupConfig({
         ...DEFAULT_SETTINGS.backup,
         ...(normalizedStored.backup ?? {}),
@@ -1275,6 +1284,10 @@ export class SettingsManager {
     const safePatch = { ...patch } as Partial<GlobalSettings> & {
       restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
     };
+    if ("passwordPolicy" in safePatch)
+      safePatch.passwordPolicy = normalizePasswordPolicy(
+        safePatch.passwordPolicy,
+      );
     if ("proxyRequestLogLimit" in safePatch)
       safePatch.proxyRequestLogLimit = validateProxyRequestLogLimit(
         safePatch.proxyRequestLogLimit,

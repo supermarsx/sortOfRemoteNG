@@ -11,6 +11,7 @@ import {
   normalizePbkdf2Iterations,
 } from "../crypto/webCryptoAes";
 import type { DatabaseExportSnapshot } from "./databaseManager";
+import { validateNewPassword } from "../security/passwordPolicy";
 
 export interface DatabaseBulkExportOptions {
   encrypted: boolean;
@@ -57,6 +58,7 @@ export async function saveDatabaseBulkExport(
   validateDatabaseBulkExport(options);
   let content = JSON.stringify(buildDatabaseBulkExport(snapshots), null, 2);
   if (options.encrypted) {
+    await validateNewPassword(options.password, "export");
     content = await encryptWithPassword(content, options.password, {
       iterations: normalizePbkdf2Iterations(
         options.security.keyDerivationIterations,

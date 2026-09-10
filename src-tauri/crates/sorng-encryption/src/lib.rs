@@ -49,6 +49,7 @@ pub mod lockout;
 pub mod log_adapter;
 pub mod log_sink;
 pub mod master_recovery;
+pub mod password_policy;
 pub mod password_wrap;
 pub mod profile_guard;
 pub mod settings_coordinator;
@@ -73,6 +74,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "encryption_commit_master_recovery",
     "encryption_cancel_master_recovery",
     "encryption_setup",
+    "encryption_validate_new_password",
     "encryption_unlock",
     "encryption_lock",
     "encryption_change_password",

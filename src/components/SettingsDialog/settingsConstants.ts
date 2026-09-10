@@ -27,6 +27,7 @@ import {
   RefreshCw,
   LucideIcon,
 } from "lucide-react";
+import { DEFAULT_PASSWORD_POLICY } from "../../types/security/passwordPolicy";
 import {
   GlobalSettings,
   defaultSSHTerminalConfig,
@@ -509,6 +510,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   proxyRequestLogLimit: 10000,
   exportEncryption: false,
   exportSecurity: defaultExportSecuritySettings,
+  passwordPolicy: DEFAULT_PASSWORD_POLICY,
   globalProxy: {
     type: "http",
     host: "",

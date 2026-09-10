@@ -24,20 +24,10 @@ import {
 } from "./webCryptoAes";
 
 export type ExportFormat =
-  | "json"
-  | "xml"
-  | "csv"
-  | "txt"
-  | "markdown"
-  | "html"
-  | "excel"
-  | "mremoteng";
+  "json" | "xml" | "csv" | "txt" | "markdown" | "html" | "excel" | "mremoteng";
 
 export type ExportEncryptionScheme =
-  | "aes-gcm"
-  | "aes-cbc"
-  | "office"
-  | "mremoteng";
+  "aes-gcm" | "aes-cbc" | "office" | "mremoteng";
 
 export interface EncryptExportInput {
   /** Raw payload bytes from the serializer. */
@@ -361,6 +351,8 @@ export async function encryptExport(
   format: ExportFormat,
   input: EncryptExportInput,
 ): Promise<EncryptExportResult> {
+  const { validateNewPassword } = await import("../security/passwordPolicy");
+  await validateNewPassword(input.password, "export");
   switch (schemeForFormat(format)) {
     case "aes-gcm":
       return encryptAesGcm(input);
@@ -454,10 +446,7 @@ export async function decryptMremotengDocument(
 // ─── Classified decryption errors ────────────────────────────────────
 
 export type DecryptErrorKind =
-  | "wrong-password"
-  | "corrupted"
-  | "unsupported"
-  | "unknown";
+  "wrong-password" | "corrupted" | "unsupported" | "unknown";
 
 /**
  * Classified error thrown by the decrypt helpers in this module so the

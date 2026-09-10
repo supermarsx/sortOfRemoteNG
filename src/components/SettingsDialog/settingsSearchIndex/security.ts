@@ -37,6 +37,24 @@ const CREDSSP_TAGS = [
 
 export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "passwordPolicy",
+    label: "Local password policy",
+    description:
+      "Requirements for new application/database protection and export passwords; existing unlock passwords remain valid.",
+    tags: [
+      "password",
+      "policy",
+      "minimum",
+      "uppercase",
+      "lowercase",
+      "digit",
+      "symbol",
+      "generate",
+    ],
+    section: "security",
+    sectionLabel: "Security",
+  },
+  {
     key: "hardwareKeyManagement",
     label: "YubiKey and hardware security keys",
     description:

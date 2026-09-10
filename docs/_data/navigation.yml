@@ -42,6 +42,8 @@
 
 - label: Security & your data
   items:
+    - title: Local password policy
+      url: /password-policy/
     - title: Security overview
       url: /security-overview/
     - title: Encryption & recovery

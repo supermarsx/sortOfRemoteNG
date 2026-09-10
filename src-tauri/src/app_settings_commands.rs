@@ -584,6 +584,12 @@ async fn write_app_settings_locked(
 ) -> Result<u64, String> {
     enc_state.resolve_write_policy(sorng_encryption::ArtifactKind::Settings, false)?;
     reject_rest_api_secret_patch(&patch)?;
+    if let Some(policy) = patch.get("passwordPolicy") {
+        sorng_encryption::password_policy::parse(Some(policy))?;
+        if dir.join(DEK_ENC_FILENAME).exists() && !enc_state.is_unlocked().await {
+            return Err("Unlock storage before changing password policy.".into());
+        }
+    }
     // Reserve before any fallible filesystem work. Failed writes may leave a
     // harmless gap, but a durable commit can never be followed by a generation
     // allocation error that falsely reports the write as failed.

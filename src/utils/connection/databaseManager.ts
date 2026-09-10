@@ -22,6 +22,7 @@ import {
 import { getInvoke } from "../tauri/invoke";
 import { databaseProtection } from "./databaseProtection";
 import { normalizeHttpAutoMfa } from "./httpAutoMfa";
+import { validateNewPassword } from "../security/passwordPolicy";
 import { normalizeRecycleBin } from "./recycleBin";
 import { rebindDatabaseQuickActions } from "./rebindDatabaseQuickActions";
 import {
@@ -1103,6 +1104,8 @@ export class DatabaseManager {
     isEncrypted: boolean = false,
     password?: string,
   ): Promise<ConnectionDatabase> {
+    if (isEncrypted && password)
+      await validateNewPassword(password, "database");
     if (isEncrypted && !password) {
       throw new InvalidPasswordError(
         "A password is required before creating an encrypted database.",
@@ -2511,6 +2514,7 @@ export class DatabaseManager {
     const jsonData = JSON.stringify(exportData, null, 2);
 
     if (exportPassword) {
+      await validateNewPassword(exportPassword, "export");
       return encryptExportWithPassword(
         jsonData,
         exportPassword,
@@ -2622,6 +2626,7 @@ export class DatabaseManager {
     currentPassword: string | undefined,
     newPassword: string,
   ): Promise<DatabaseSecurityOutcome> {
+    await validateNewPassword(newPassword, "database");
     if (!newPassword)
       throw new InvalidPasswordError(
         "A non-empty new database password is required.",

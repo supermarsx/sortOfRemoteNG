@@ -67,6 +67,54 @@ fn password_target(cipher: &str) -> ProtectionTarget {
 }
 
 #[tokio::test]
+async fn new_password_policy_refuses_before_managed_data_or_vault_mutation() {
+    let _coordinator = sorng_encryption::settings_coordinator::lock().await;
+    let (root, state, data) = fixture().await;
+    let vault = FakeVault::default();
+    let policy = sorng_encryption::password_policy::PasswordPolicy {
+        enabled: true,
+        min_length: 20,
+        ..Default::default()
+    };
+    std::fs::write(
+        root.path().join("settings.json"),
+        serde_json::to_vec(&json!({"passwordPolicy":policy})).unwrap(),
+    )
+    .unwrap();
+    let before = managed_snapshot(root.path(), &state, "db")
+        .await
+        .unwrap()
+        .data;
+    let error = change_inner(
+        root.path(),
+        &state,
+        "main",
+        "db",
+        "r0",
+        data.clone(),
+        None,
+        Some(data),
+        Some(password_target("aes-256-gcm")),
+        false,
+        false,
+        &vault,
+    )
+    .await
+    .err()
+    .expect("new weak password must be refused");
+    assert!(error.contains("20 characters"));
+    assert!(!error.contains("fixture-only"));
+    assert_eq!(
+        managed_snapshot(root.path(), &state, "db")
+            .await
+            .unwrap()
+            .data,
+        before
+    );
+    assert!(vault.entries.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn managed_database_content_cas_retains_library_against_stale_or_unreviewed_save() {
     let _coordinator = sorng_encryption::settings_coordinator::lock().await;
     let (root, state, data) = fixture().await;

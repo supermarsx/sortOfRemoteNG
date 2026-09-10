@@ -446,6 +446,24 @@ pub async fn encryption_status(
 }
 
 #[tauri::command]
+pub async fn encryption_validate_new_password(
+    app: AppHandle,
+    state: State<'_, EncryptionState>,
+    password: String,
+    purpose: String,
+) -> Result<(), String> {
+    let _guard = crate::settings_coordinator::lock().await;
+    let password = Zeroizing::new(password);
+    crate::password_policy::validate_saved_locked(
+        &ensure_app_data_dir(&app)?,
+        &state,
+        &password,
+        &purpose,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn encryption_setup(
     app: AppHandle,
     state: State<'_, EncryptionState>,
@@ -458,6 +476,13 @@ pub async fn encryption_setup(
     let dir = ensure_app_data_dir(&app)?;
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
     crate::profile_guard::require_fresh_profile(&dir)?;
+
+    if let SetupMethod::Password { password, .. } | SetupMethod::VaultAndPassword { password, .. } =
+        &method
+    {
+        crate::password_policy::validate_saved_locked(&dir, &state, password, "application")
+            .await?;
+    }
 
     match method {
         SetupMethod::Vault => {
@@ -772,6 +797,16 @@ pub async fn encryption_change_password(
     let _settings_guard = crate::settings_coordinator::lock().await;
     let old_password = Zeroizing::new(old_password);
     let new_password = Zeroizing::new(new_password);
+    if !state.is_unlocked().await {
+        return Err("Unlock storage before changing its password.".into());
+    }
+    crate::password_policy::validate_saved_locked(
+        &ensure_app_data_dir(&app)?,
+        &state,
+        &new_password,
+        "application",
+    )
+    .await?;
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
     let blob = read_bounded_regular_file(&dek_path, password_wrap::FILE_LEN as u64)?;
 
@@ -1095,6 +1130,13 @@ pub async fn encryption_export_portable_dek(
 ) -> Result<u64, String> {
     let _settings_guard = crate::settings_coordinator::lock().await;
     let password = Zeroizing::new(password);
+    crate::password_policy::validate_saved_locked(
+        &ensure_app_data_dir(&app)?,
+        &state,
+        &password,
+        "portable-export",
+    )
+    .await?;
     if !state.is_unlocked().await {
         return Err("state is locked; unlock before exporting".into());
     }
