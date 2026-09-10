@@ -21,6 +21,7 @@ import {
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import type { HttpRedirectReview } from "../../src/utils/protocol/httpRedirectReview";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
+import { mergeLocalSessionUpdate } from "../../src/utils/session/sessionLifecycle";
 
 const h = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -133,7 +134,9 @@ function Harness() {
   h.dispatch.mockImplementation(
     (action: { type: string; payload: ConnectionSession | Connection }) => {
       if (action.type === "UPDATE_SESSION")
-        setSession(action.payload as ConnectionSession);
+        setSession((current) =>
+          mergeLocalSessionUpdate(current, action.payload as ConnectionSession),
+        );
       if (action.type === "UPDATE_CONNECTION") {
         const row = action.payload as Connection;
         h.connections = h.connections.map((current) =>

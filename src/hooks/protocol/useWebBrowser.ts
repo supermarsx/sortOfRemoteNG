@@ -488,7 +488,7 @@ export function useWebBrowser(session: ConnectionSession) {
     dispatch({
       type: "UPDATE_SESSION",
       payload: {
-        ...session,
+        id: session.id,
         status: "connected",
         errorMessage: undefined,
       },
@@ -1207,7 +1207,10 @@ export function useWebBrowser(session: ConnectionSession) {
       dispatch({
         type: "UPDATE_SESSION",
         payload: {
-          ...session,
+          // Local tab changes are patches, not native lifecycle snapshots.
+          // Replaying the current actor generation/revision makes the reducer
+          // correctly reject this update after the first redirect.
+          id: session.id,
           connectionId: target.id,
           name: target.name,
           hostname: target.hostname,
