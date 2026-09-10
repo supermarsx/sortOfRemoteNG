@@ -7,7 +7,14 @@
  * unit tests on individual components would miss.
  */
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Tauri mocks (hoisted) ────────────────────────────────────────────────
@@ -599,37 +606,61 @@ describe("ConnectionProvider state management", () => {
 
   it("dispatches DELETE_CONNECTION", async () => {
     const conn = makeConnection();
-
-    function Deleter() {
-      const { state, dispatch } = useConnections();
-      const step = React.useRef(0);
-
-      React.useEffect(() => {
-        if (step.current === 0) {
-          step.current = 1;
-          dispatch({ type: "ADD_CONNECTION", payload: conn });
-        }
-      }, [dispatch]);
-
-      React.useEffect(() => {
-        if (step.current === 1 && state.connections.length > 0) {
-          step.current = 2;
-          dispatch({ type: "DELETE_CONNECTION", payload: conn.id });
-        }
-      }, [state.connections, dispatch]);
-      return null;
-    }
-
-    renderWithProvider(
-      <>
-        <Deleter />
-        <ConnectionStateView />
-      </>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId("conn-count")).toHaveTextContent("0");
+    const manager = DatabaseManager.getInstance();
+    const database = {
+      id: "runtime-delete-fixture",
+      name: "Synthetic opened database",
+      isEncrypted: false,
+      createdAt: conn.createdAt,
+      updatedAt: conn.updatedAt,
+      lastAccessed: conn.updatedAt,
+    };
+    const target = {
+      databaseId: database.id,
+      assertAccessible: vi.fn(),
+      load: vi.fn(async () => ({
+        connections: [conn],
+        settings: {},
+        timestamp: 0,
+      })),
+      save: vi.fn(async () => {}),
+    };
+    const current = vi
+      .spyOn(manager, "getCurrentDatabase")
+      .mockReturnValue(database);
+    const capture = vi
+      .spyOn(manager, "captureCurrentDatabaseDataTarget")
+      .mockReturnValue(target);
+    const access = vi
+      .spyOn(manager, "getDatabaseAccessState")
+      .mockReturnValue(null);
+    const view = renderHook(() => useConnections(), {
+      wrapper: ({ children }) => (
+        <ConnectionProvider>{children}</ConnectionProvider>
+      ),
     });
+    try {
+      await act(async () => {
+        await view.result.current.loadData(database.id);
+      });
+      expect(view.result.current.databaseAvailability?.status).toBe("ready");
+      await act(async () => {
+        await view.result.current.dispatchAndFlush({
+          type: "DELETE_CONNECTION",
+          payload: conn.id,
+        });
+      });
+      expect(view.result.current.state.connections).toEqual([]);
+      expect(
+        view.result.current.state.recycleBinData?.entries[0].connection.id,
+      ).toBe(conn.id);
+      expect(target.save).toHaveBeenCalledTimes(1);
+    } finally {
+      view.unmount();
+      current.mockRestore();
+      capture.mockRestore();
+      access.mockRestore();
+    }
   });
 
   it("dispatches ADD_SESSION and REMOVE_SESSION", async () => {

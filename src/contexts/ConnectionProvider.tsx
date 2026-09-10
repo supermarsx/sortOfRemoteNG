@@ -144,9 +144,13 @@ export const reconcileSessionSnapshot = (
     if (!current) return incoming;
     matchedSessions++;
     const reconciled = reconcileSessionLifecycleSnapshot(current, incoming);
-    return reconciled.ownerDatabaseId === current.ownerDatabaseId
+    // A previously ownerless tool may have been explicitly bound in its
+    // owning window. Carry that first authoritative owner across window moves;
+    // a nonempty existing owner remains immutable even in newer snapshots.
+    const ownerDatabaseId = current.ownerDatabaseId || incoming.ownerDatabaseId;
+    return reconciled.ownerDatabaseId === ownerDatabaseId
       ? reconciled
-      : { ...reconciled, ownerDatabaseId: current.ownerDatabaseId };
+      : { ...reconciled, ownerDatabaseId };
   });
   onDiagnostics?.({
     indexedSessions,

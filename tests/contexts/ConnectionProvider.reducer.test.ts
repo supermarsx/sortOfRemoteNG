@@ -49,6 +49,59 @@ const state: ConnectionState = {
   tabGroups: [],
 };
 
+describe("session database owner snapshot reconciliation", () => {
+  it("carries the first authoritative bind to an ownerless recipient and preserves it across repeated moves", () => {
+    const tool = {
+      ...session,
+      protocol: "tool:trustCenter",
+      ownerDatabaseId: undefined,
+    };
+    const bound = connectionReducer(
+      { ...state, sessions: [tool] },
+      {
+        type: "BIND_TOOL_DATABASE_OWNER",
+        payload: {
+          sessionId: tool.id,
+          databaseId: "database-a",
+          generation: 1,
+        },
+      },
+    ).sessions[0];
+    const recipient = connectionReducer(
+      { ...state, sessions: [tool] },
+      {
+        type: "SET_SESSIONS",
+        payload: [bound],
+      },
+    );
+    expect(recipient.sessions[0].ownerDatabaseId).toBe("database-a");
+    const duplicate = connectionReducer(recipient, {
+      type: "SET_SESSIONS",
+      payload: [bound],
+    });
+    const movedAgain = connectionReducer(duplicate, {
+      type: "SET_SESSIONS",
+      payload: [
+        { ...bound, ownerDatabaseId: "database-b", lifecycleRevision: 100 },
+      ],
+    });
+    expect(movedAgain.sessions[0].ownerDatabaseId).toBe("database-a");
+    const legacySnapshot = connectionReducer(movedAgain, {
+      type: "SET_SESSIONS",
+      payload: [tool],
+    });
+    expect(legacySnapshot.sessions[0].ownerDatabaseId).toBe("database-a");
+    expect(tool.ownerDatabaseId).toBeUndefined();
+  });
+  it("does not turn arbitrary UPDATE_SESSION into an initial owner-binding operation", () => {
+    const result = connectionReducer(state, {
+      type: "UPDATE_SESSION",
+      payload: { id: session.id, ownerDatabaseId: "unapproved" },
+    });
+    expect(result.sessions[0].ownerDatabaseId).toBeUndefined();
+  });
+});
+
 describe("folder default tab-group inheritance", () => {
   const connection = (
     id: string,
