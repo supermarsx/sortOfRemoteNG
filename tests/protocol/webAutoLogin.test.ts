@@ -113,6 +113,54 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     });
   });
 
+  it.each([undefined, "/site/administrator/", "/private-entry/"])(
+    "starts Joomla at its reviewed administrator path %s and revokes on path edits",
+    async (loginPath) => {
+      connections.push({
+        id: "conn-1",
+        protocol: "http",
+        username: "fixture-user",
+        password: "fixture-password",
+        httpApplication: {
+          version: 1,
+          id: "joomla",
+          loginMode: "form",
+          loginPath,
+        },
+      });
+      const { result, rerender } = renderHook(() => useWebBrowser(session));
+      await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+      expect(result.current.currentUrl).toBe(
+        `http://device.local${loginPath ?? "/administrator/"}`,
+      );
+      expect(lastProxyConfig()).toMatchObject({
+        username: "fixture-user",
+        password: "fixture-password",
+        http_auto_login: true,
+      });
+      connections[0] = {
+        ...connections[0],
+        httpApplication: {
+          version: 1,
+          id: "joomla",
+          loginMode: "form",
+          loginPath: "/new-entry/",
+        },
+      };
+      rerender();
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+          sessionId: "proxy-1",
+        }),
+      );
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) => command === "start_basic_auth_proxy",
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
   it("maps httpAutoLogin + camelCase selectors to the snake_case config when armed", async () => {
     connections.push({
       id: "conn-1",

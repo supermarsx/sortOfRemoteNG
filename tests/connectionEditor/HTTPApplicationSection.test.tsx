@@ -33,6 +33,33 @@ const value = () =>
   JSON.parse(screen.getByTestId("value").textContent!) as Partial<Connection>;
 
 describe("HTTP Application subtab", () => {
+  it("edits Joomla's administrator entry path without changing authority or granting login", () => {
+    render(<Fixture />);
+    choose("Website application", "Joomla Administrator");
+    const path = screen.getByLabelText("Administrator path");
+    expect(path).toHaveAttribute("placeholder", "/administrator/");
+    fireEvent.change(path, { target: { value: "/portal/staff-entry/" } });
+    expect(value()).toMatchObject({
+      ...initial,
+      httpApplication: {
+        version: 1,
+        id: "joomla",
+        loginMode: "manual",
+        loginPath: "/portal/staff-entry/",
+      },
+    });
+    fireEvent.change(path, {
+      target: { value: "https://other.test/?secret=x" },
+    });
+    expect(
+      screen.getByText(/Enter a path beginning with one slash/),
+    ).toBeInTheDocument();
+    fireEvent.change(path, { target: { value: "" } });
+    expect(value().httpApplication?.loginPath).toBeUndefined();
+    expect(
+      screen.queryByText(/Enter a path beginning with one slash/),
+    ).not.toBeInTheDocument();
+  });
   it("offers Cloudflare in networking with manual 2FA guidance and an explicit address action only", () => {
     render(<Fixture />);
     choose("Application category", "Networking / proxies");

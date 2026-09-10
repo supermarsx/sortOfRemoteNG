@@ -309,6 +309,8 @@ export function useWebBrowser(session: ConnectionSession) {
           : undefined;
       if (profile?.hostedLoginUrl)
         target.pathname = new URL(profile.hostedLoginUrl).pathname;
+      else if (profileSettings?.loginPath && !profileSettings.invalid)
+        target.pathname = profileSettings.loginPath;
       else if (profile?.loginPath) target.pathname = profile.loginPath;
       // Enter the reviewed SPA route directly. An empty hash would let initial
       // router startup look like a navigation revocation between the two grants.
@@ -1371,6 +1373,7 @@ export function useWebBrowser(session: ConnectionSession) {
     if (
       previousInputs === proxyInputs &&
       previous.profile?.id === connection?.httpApplication?.id &&
+      previous.profile?.loginPath === connection?.httpApplication?.loginPath &&
       previous.auth.error === applicationAuth.error &&
       sameHttpApplicationLogin(previous.auth.login, applicationAuth.login)
     )

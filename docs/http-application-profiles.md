@@ -41,6 +41,28 @@ Sign in on the website and enter its authenticator or email-code prompt yourself
 
 For security keys, Windows Hello, external SSO, or incompatible challenges, select **Open Cloudflare in system browser** in the session. This explicit action opens only the fixed public HTTPS dashboard address, with no saved credentials, proxy URL, or current-page query attached. The system browser uses separate cookies and its own network route and TLS policy, outside this app's proxy and Trust Center. Signing in there does not authenticate the embedded tab. Embedded/custom browsers have limited Cloudflare challenge support, so this preset does not promise a successful embedded login. See [supported browsers](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/).
 
+## Joomla administrator path
+
+The **Joomla Administrator** preset opens `/administrator/` by default, not the
+public site root. Under **Protocol → Application → Administrator path**, enter
+`/site/administrator/` for a subdirectory install, or an existing custom entry
+such as `/staff-entry/`. Leave it blank to use the default. This changes only the
+entry path on the configured host and port, for both the embedded viewer and
+original-origin browser action; it does not rename Joomla's administrator folder.
+
+Only a path is accepted: no full URL, query string, fragment, percent-encoded
+characters, backslash or `.` / `..` segments. Do not put a security extension's
+secret URL parameter here. Query-secret extensions, custom templates and access
+checks may need manual sign-in. The same reviewed username/password form is used
+only when present, with the site's POST action and CSRF controls preserved.
+Changing this path stops the previous protected session; reload explicitly to
+use it. Selecting a path never enables automatic login.
+
+Joomla's official guide calls this the website address “appended with
+/administrator” and notes that security extensions may require an alternative
+login URL. See [Logging in to Joomla](https://guide.joomla.org/user-content-management/getting-started/getting-started-logging-in-to-joomla)
+and the [Joomla 5.4 administrator form](https://github.com/joomla/joomla-cms/blob/5.4-dev/administrator/modules/mod_login/tmpl/default.php).
+
 ## Analytics, CMS and database administration
 
 The following six presets start in **Manual browsing** and require HTTPS. The

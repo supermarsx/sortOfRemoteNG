@@ -373,6 +373,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     label: "Joomla Administrator",
     category: "business",
     capability: "known-form",
+    loginPath: "/administrator/",
     // Joomla 5.4 administrator/modules/mod_login/tmpl/default.php.
     selectors: {
       usernameSelector:
@@ -382,7 +383,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
       submitSelector: 'form#form-login button#btn-login-submit[type="submit"]',
     },
     description:
-      "Reviewed Joomla administrator login at /administrator/. Complete the captive MFA challenge after the password step. Custom front-end login modules, third-party MFA plugins, security keys and SSO are not inferred from this administrator preset.",
+      "Reviewed Joomla administrator login at /administrator/. Configure an explicit administrator path for a subdirectory or custom entry slug. This does not rename Joomla's administrator directory or bypass security extensions. Complete the captive MFA challenge after the password step; custom templates, query-secret extensions, security keys and SSO may require manual sign-in.",
   },
   {
     id: "drupal",
@@ -560,6 +561,19 @@ export function getHttpApplicationLoginModes(
 }
 
 /** Allowlisted, bounded metadata only; invalid imports must not fall back to legacy Basic. */
+/** Deliberately pathname-only: no URL, encoded separator, traversal or query secret. */
+export function isSafeHttpApplicationLoginPath(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 512 &&
+    /^\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]*$/.test(value) &&
+    !value.split("/").some((segment) => segment === "." || segment === "..")
+  );
+}
+
 export function normalizeHttpApplicationSettings(
   value: unknown,
 ): HttpApplicationSettings | undefined {
@@ -587,12 +601,16 @@ export function normalizeHttpApplicationSettings(
   const realmValid =
     raw.realm === undefined ||
     (safeString(raw.realm, 128) && /^[A-Za-z0-9._-]+$/.test(raw.realm));
+  const loginPathValid =
+    raw.loginPath === undefined ||
+    (id === "joomla" && isSafeHttpApplicationLoginPath(raw.loginPath));
   const valid =
     raw.version === 1 &&
     !!profile &&
     validMode &&
     getHttpApplicationLoginModes(profile).includes(loginMode) &&
     realmValid &&
+    loginPathValid &&
     raw.invalid !== true;
   return {
     version: 1,
@@ -600,6 +618,9 @@ export function normalizeHttpApplicationSettings(
     loginMode: validMode ? loginMode : "manual",
     ...(id === "proxmox" && realmValid && typeof raw.realm === "string"
       ? { realm: raw.realm }
+      : {}),
+    ...(loginPathValid && typeof raw.loginPath === "string"
+      ? { loginPath: raw.loginPath }
       : {}),
     ...(!valid ? { invalid: true as const } : {}),
   };

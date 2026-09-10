@@ -43,7 +43,10 @@ export function getHttpApplicationExternalTarget(
       return null;
     validateHttpApplicationTarget(connection, target.toString());
     const external = new URL(
-      profile?.hostedLoginUrl ?? profile?.loginPath ?? "/",
+      profile?.hostedLoginUrl ??
+        settings?.loginPath ??
+        profile?.loginPath ??
+        "/",
       savedOrigin,
     );
     if (

@@ -80,6 +80,8 @@ export interface HttpApplicationSettings {
   loginMode: "manual" | "form" | "basic" | "digest";
   /** Proxmox account realm; applied only to the volatile login username. */
   realm?: string;
+  /** Joomla administrator entry pathname only; never a URL or query secret. */
+  loginPath?: string;
   /** Preserves fail-closed status when imported profile metadata is malformed. */
   invalid?: true;
 }

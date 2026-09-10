@@ -12,6 +12,7 @@ import {
   getHttpApplicationProfile,
   getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
+  isSafeHttpApplicationLoginPath,
 } from "../../../utils/connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "../../../utils/auth/httpCredentials";
 import type { Mgr } from "./types";
@@ -178,6 +179,50 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
             formData={mgr.formData}
             setFormData={mgr.setFormData}
           />
+          {profile.id === "joomla" && (
+            <div className="max-w-xl space-y-2">
+              <label
+                htmlFor="joomla-administrator-path"
+                className="block text-sm font-medium"
+              >
+                Administrator path
+              </label>
+              <input
+                id="joomla-administrator-path"
+                className="sor-form-input"
+                placeholder="/administrator/"
+                value={mgr.formData.httpApplication?.loginPath ?? ""}
+                onChange={(event) => {
+                  if (!settings) return;
+                  const loginPath = event.target.value || undefined;
+                  mgr.setFormData((previous) => ({
+                    ...previous,
+                    httpApplication: {
+                      ...settings,
+                      loginPath,
+                      invalid: undefined,
+                    },
+                  }));
+                }}
+              />
+              <p className="text-xs text-[var(--color-textMuted)]">
+                Blank uses /administrator/. For example, /site/administrator/ or
+                an existing custom /staff-entry/ slug. Same-host paths only: no
+                full URLs, query secrets, fragments or encoded characters. This
+                does not configure or bypass a Joomla security extension;
+                unsupported login templates remain manual.
+              </p>
+              {mgr.formData.httpApplication?.loginPath !== undefined &&
+                !isSafeHttpApplicationLoginPath(
+                  mgr.formData.httpApplication.loginPath,
+                ) && (
+                  <p role="alert" className="text-sm text-error">
+                    Enter a path beginning with one slash, without a query,
+                    fragment or traversal.
+                  </p>
+                )}
+            </div>
+          )}
           {profile.id === "cloudflare" && (
             <div className="max-w-2xl rounded border border-[var(--color-border)] p-3 space-y-3">
               <p className="text-sm text-[var(--color-textSecondary)]">
