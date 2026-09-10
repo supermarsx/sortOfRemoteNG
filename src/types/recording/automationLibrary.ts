@@ -81,6 +81,8 @@ export interface DatabaseAutomationScope {
 /** The provider owns durable writes; callers must never create a DB side store. */
 export interface DatabaseAutomationApi {
   scope: DatabaseAutomationScope | null;
+  /** Notification only; not an access lease or persisted library revision. */
+  changeRevision?: number;
   read(
     expectedScope: DatabaseAutomationScope,
   ): Promise<DatabaseAutomationLibrary>;

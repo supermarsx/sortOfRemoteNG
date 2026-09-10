@@ -602,6 +602,7 @@ pub async fn database_protection_save<R: Runtime>(
     session_id: String,
     expected_security_revision: String,
     data: Value,
+    expected_data: Option<Value>,
 ) -> Result<SaveResult, String> {
     let _guard = sorng_encryption::settings_coordinator::lock().await;
     let root = native_root(&window, &state)?;
@@ -613,6 +614,7 @@ pub async fn database_protection_save<R: Runtime>(
         &session_id,
         &expected_security_revision,
         data,
+        expected_data,
     )
     .await
 }
@@ -655,6 +657,7 @@ pub async fn database_protection_load<R: Runtime>(
         session_expires_at,
     })
 }
+#[allow(clippy::too_many_arguments)] // Window/session/security/content boundaries are independent.
 async fn save_inner(
     root: &Path,
     state: &EncryptionState,
@@ -663,6 +666,7 @@ async fn save_inner(
     session: &str,
     expected_revision: &str,
     data: Value,
+    expected_data: Option<Value>,
 ) -> Result<SaveResult, String> {
     let snapshot = managed_snapshot(root, state, id).await?;
     if revision(&snapshot) != expected_revision {
@@ -674,7 +678,8 @@ async fn save_inner(
         &scope(&profile, id, expected_revision, window, state),
     )?;
     let mut envelope = DatabaseEnvelope::parse(&snapshot.data, id)?;
-    envelope.open(&key)?;
+    let current = envelope.open(&key)?;
+    crate::database_files::assert_database_content_matches(Some(&current), expected_data.as_ref())?;
     envelope.replace_data(&data, &key)?;
     session_key(
         session,

@@ -9,6 +9,10 @@ import {
   AppDataJsonStore,
   containsLikelySecretText,
 } from "../storage/appDataJsonStore";
+import {
+  normalizeAutomationProvenanceMap,
+  pruneAutomationProvenance,
+} from "./automationProvenance";
 
 export const WEB_AUTOMATION_STORE_KEY = "recording.web-automation.v1";
 export const MAX_WEB_SCRIPT_BYTES = 64 * 1024;
@@ -124,7 +128,7 @@ export function normalizeWebAutomationItem(value: unknown): WebAutomationItem {
 export function normalizeWebAutomationLibrary(
   value: unknown,
 ): WebAutomationLibrary {
-  const raw = record(value, ["version", "scripts", "macros"]);
+  const raw = record(value, ["version", "scripts", "macros", "provenance"]);
   if (
     raw.version !== 1 ||
     !Array.isArray(raw.scripts) ||
@@ -151,6 +155,9 @@ export function normalizeWebAutomationLibrary(
     version: 1,
     scripts: scripts as BrowserScript[],
     macros: macros as WebInteractionMacro[],
+    ...(raw.provenance === undefined
+      ? {}
+      : { provenance: normalizeAutomationProvenanceMap(raw.provenance) }),
   };
 }
 
@@ -187,6 +194,7 @@ export async function saveWebAutomationItem(
         "This library item changed. Reload and review before saving.",
       );
     return normalizeWebAutomationLibrary({
+      ...library,
       version: 1,
       scripts: [
         ...library.scripts.filter((candidate) => candidate.id !== validated.id),
@@ -217,10 +225,21 @@ export async function deleteWebAutomationItem(
       throw new Error(
         "This library item changed. Reload and review before deleting.",
       );
+    const scripts = library.scripts.filter((item) => item.id !== expected.id),
+      macros = library.macros.filter((item) => item.id !== expected.id);
     return {
+      ...library,
       version: 1,
-      scripts: library.scripts.filter((item) => item.id !== expected.id),
-      macros: library.macros.filter((item) => item.id !== expected.id),
+      scripts,
+      macros,
+      ...(library.provenance === undefined
+        ? {}
+        : {
+            provenance: pruneAutomationProvenance(library.provenance, {
+              "website-script": scripts.map((item) => item.id),
+              "website-macro": macros.map((item) => item.id),
+            }),
+          }),
     };
   });
   assertCurrent();

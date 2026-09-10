@@ -214,11 +214,16 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         .set_active(Some("unrelated-active".into()), None)
         .unwrap();
     let request = json!({"databaseId":"db","sessionId":opened["sessionId"],
-        "expectedSecurityRevision":opened["securityRevision"],"data":{"connections":[{"id":"saved"}]}});
+        "expectedSecurityRevision":opened["securityRevision"],"expectedData":data,"data":{"connections":[{"id":"saved"}]}});
     assert!(invoke(&main, names[4], request.clone()).is_err());
     let saved = invoke(&other, names[4], request.clone()).unwrap();
     assert_eq!(saved["committed"], true);
     assert_eq!(saved["securityRevision"], opened["securityRevision"]);
+    // Same security generation is not permission to overwrite newer content.
+    assert!(invoke(&other, names[4], request.clone()).is_err());
+    let mut unreviewed = request.clone();
+    unreviewed.as_object_mut().unwrap().remove("expectedData");
+    assert!(invoke(&other, names[4], unreviewed).is_err());
     let load_request = json!({"databaseId":"db","sessionId":opened["sessionId"],"expectedSecurityRevision":opened["securityRevision"]});
     assert!(invoke(&main, names[6], load_request.clone()).is_err());
     let reloaded = invoke(&other, names[6], load_request.clone()).unwrap();
@@ -358,7 +363,7 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         .unwrap();
         let edited =
             json!({"connections":[{"id":"fixture","password":"not-on-disk"}],"settings":{}});
-        let save=invoke(&main,names[4],json!({"databaseId":id,"sessionId":unlocked["sessionId"],"expectedSecurityRevision":unlocked["securityRevision"],"data":edited})).unwrap();
+        let save=invoke(&main,names[4],json!({"databaseId":id,"sessionId":unlocked["sessionId"],"expectedSecurityRevision":unlocked["securityRevision"],"expectedData":unlocked["data"],"data":edited})).unwrap();
         assert_eq!(save["committed"], true);
         let loaded=invoke(&main,names[6],json!({"databaseId":id,"sessionId":unlocked["sessionId"],"expectedSecurityRevision":unlocked["securityRevision"]})).unwrap();
         assert_eq!(loaded["data"], edited);

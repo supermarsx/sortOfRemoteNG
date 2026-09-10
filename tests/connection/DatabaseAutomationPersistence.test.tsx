@@ -1,0 +1,294 @@
+import React from "react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
+import { useConnections } from "../../src/contexts/useConnections";
+import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
+import type { StorageData } from "../../src/utils/storage/storage";
+import type { DatabaseDataTarget } from "../../src/utils/connection/databaseManager";
+
+const state = vi.hoisted(() => ({
+  currentId: "db-a",
+  locked: false,
+  desktop: true,
+  saved: null as StorageData | null,
+  save: vi.fn(),
+  change: null as
+    | null
+    | ((value: { reason: string; database: null; databaseId: string }) => void),
+  access: null as null | ((value: { databaseId: string }) => void),
+  transition: null as null | (() => Promise<void>),
+  manager: {} as Record<string, unknown>,
+}));
+vi.mock("../../src/utils/connection/databaseManager", () => ({
+  DatabaseManager: { getInstance: () => state.manager },
+}));
+vi.mock("../../src/utils/settings/settingsManager", () => ({
+  SettingsManager: { getInstance: () => ({ logAction: vi.fn() }) },
+}));
+vi.mock("../../src/utils/tauri/invoke", () => ({
+  getInvoke: async () => (state.desktop ? vi.fn() : null),
+}));
+vi.mock("../../src/utils/storage/connectionNotesVault", () => ({
+  activateConnectionNotes: vi.fn(),
+}));
+const initial = (): StorageData => ({
+  connections: [
+    {
+      id: "host",
+      name: "before",
+      protocol: "ssh",
+      hostname: "fixture.invalid",
+      port: 22,
+      isGroup: false,
+      createdAt: "2026-09-10",
+      updatedAt: "2026-09-10",
+    },
+  ],
+  settings: { retained: true },
+  timestamp: 1,
+});
+const proposed = () => ({
+  ...emptyDatabaseAutomationLibrary(),
+  revision: 1,
+  terminalMacros: [
+    {
+      id: "fixture",
+      name: "Private macro",
+      steps: [
+        { command: "printf private-fixture", delayMs: 0, sendNewline: true },
+      ],
+      createdAt: "2026-09-10",
+      updatedAt: "2026-09-10",
+    },
+  ],
+});
+const wrapper = ({ children }: { children: React.ReactNode }) => (
+  <ConnectionProvider>{children}</ConnectionProvider>
+);
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+beforeEach(() => {
+  state.currentId = "db-a";
+  state.locked = false;
+  state.desktop = true;
+  state.saved = initial();
+  state.save.mockReset().mockImplementation(async (data: StorageData) => {
+    state.saved = structuredClone(data);
+  });
+  state.manager = {
+    getCurrentDatabase: () =>
+      state.currentId ? { id: state.currentId } : null,
+    getDatabaseAccessState: () => ({
+      status: state.locked ? "suspended" : "ready",
+    }),
+    onCurrentDatabaseChange: (listener: typeof state.change) => {
+      state.change = listener;
+      return () => {
+        state.change = null;
+      };
+    },
+    onDatabaseAccessChange: (listener: typeof state.access) => {
+      state.access = listener;
+      return () => {
+        state.access = null;
+      };
+    },
+    registerBeforeDatabaseTransition: (listener: typeof state.transition) => {
+      state.transition = listener;
+      return () => {
+        state.transition = null;
+      };
+    },
+    captureCurrentDatabaseDataTarget: (): DatabaseDataTarget => {
+      const id = state.currentId;
+      return {
+        databaseId: id,
+        assertAccessible: () => {
+          if (state.locked || state.currentId !== id)
+            throw new Error("Access changed");
+        },
+        load: async () => structuredClone(state.saved),
+        save: (data) => state.save(data),
+      };
+    },
+  };
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+async function mount() {
+  const hook = renderHook(() => useConnections(), { wrapper });
+  await act(async () => {
+    await hook.result.current.loadData("db-a");
+  });
+  return hook;
+}
+
+describe("owning database automation persistence", () => {
+  it("reads legacy absence as empty and returns only after complete durable save", async () => {
+    const { result } = await mount(),
+      api = result.current.automationLibrary!,
+      scope = api.scope!;
+    const prior = await api.read(scope);
+    expect(prior).toEqual(emptyDatabaseAutomationLibrary());
+    const gate = deferred();
+    state.save.mockImplementationOnce(async (data: StorageData) => {
+      await gate.promise;
+      state.saved = structuredClone(data);
+    });
+    let settled = false;
+    const write = api.compareAndSwap(scope, prior, proposed()).then(() => {
+      settled = true;
+    });
+    await waitFor(() => expect(state.save).toHaveBeenCalledOnce());
+    expect(settled).toBe(false);
+    expect(state.saved?.automationLibrary).toBeUndefined();
+    let transitioned = false;
+    const barrier = state.transition!().then(() => {
+      transitioned = true;
+    });
+    await Promise.resolve();
+    expect(transitioned).toBe(false);
+    await act(async () => {
+      gate.resolve();
+      await write;
+      await barrier;
+    });
+    expect(await api.read(scope)).toEqual(proposed());
+    expect(state.saved?.settings).toEqual({ retained: true });
+    expect(JSON.stringify(result.current.state)).not.toContain(
+      "private-fixture",
+    );
+  });
+  it("does not publish or silently retry refused private data; explicit reload recovers", async () => {
+    const { result } = await mount(),
+      api = result.current.automationLibrary!,
+      scope = api.scope!;
+    const prior = await api.read(scope);
+    state.save.mockRejectedValueOnce(new Error("Synthetic disk refusal"));
+    await expect(api.compareAndSwap(scope, prior, proposed())).rejects.toThrow(
+      "refusal",
+    );
+    await expect(api.read(scope)).rejects.toThrow("could not be verified");
+    await act(async () => {
+      await result.current.flushPendingSave();
+    });
+    expect(state.save).toHaveBeenCalledOnce();
+    expect(state.saved?.automationLibrary).toBeUndefined();
+    await act(async () => {
+      await result.current.loadData("db-a");
+    });
+    const current = result.current.automationLibrary!;
+    expect(await current.read(current.scope!)).toEqual(
+      emptyDatabaseAutomationLibrary(),
+    );
+  });
+  it("preserves overlapping connection edits and library data in ordered saves", async () => {
+    const { result } = await mount(),
+      api = result.current.automationLibrary!,
+      scope = api.scope!;
+    const gate = deferred();
+    state.save.mockImplementationOnce(async (data: StorageData) => {
+      await gate.promise;
+      state.saved = structuredClone(data);
+    });
+    const write = api.compareAndSwap(scope, await api.read(scope), proposed());
+    await waitFor(() => expect(state.save).toHaveBeenCalledOnce());
+    act(() =>
+      result.current.dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: {
+          ...result.current.state.connections[0],
+          name: "edited while saving",
+        },
+      }),
+    );
+    await act(async () => {
+      gate.resolve();
+      await write;
+    });
+    expect(state.save).toHaveBeenCalledTimes(2);
+    expect(state.saved?.connections[0].name).toBe("edited while saving");
+    expect(state.saved?.automationLibrary).toEqual(proposed());
+  });
+  it("masks locked ownership and rejects pre-lock reviews even after reopening", async () => {
+    const { result } = await mount(),
+      api = result.current.automationLibrary!,
+      scope = api.scope!;
+    const prior = await api.read(scope);
+    act(() => {
+      state.locked = true;
+      state.access!({ databaseId: "db-a" });
+    });
+    expect(result.current.automationLibrary?.scope).toBeNull();
+    await expect(
+      api.compareAndSwap(scope, prior, proposed()),
+    ).rejects.toThrow();
+    act(() => {
+      state.locked = false;
+      state.access!({ databaseId: "db-a" });
+    });
+    await expect(
+      result.current.automationLibrary!.compareAndSwap(
+        scope,
+        prior,
+        proposed(),
+      ),
+    ).rejects.toThrow("changed");
+    expect(state.save).not.toHaveBeenCalled();
+  });
+  it("never installs a late save into another owner after forced lock/close", async () => {
+    const { result } = await mount(),
+      api = result.current.automationLibrary!,
+      scope = api.scope!;
+    const gate = deferred();
+    state.save.mockImplementationOnce(async () => {
+      await gate.promise;
+    });
+    const write = api.compareAndSwap(scope, await api.read(scope), proposed());
+    const refused = expect(write).rejects.toThrow();
+    await waitFor(() => expect(state.save).toHaveBeenCalledOnce());
+    act(() => {
+      state.currentId = "";
+      state.change!({ reason: "lock", database: null, databaseId: "db-a" });
+    });
+    await act(async () => {
+      gate.resolve();
+      await refused;
+    });
+    expect(result.current.automationLibrary?.scope).toBeNull();
+    expect(result.current.state.connections).toEqual([]);
+  });
+  it("preserves malformed field verbatim during unrelated connection saves and refuses library reads", async () => {
+    const malformed = { version: 99, original: "retained" };
+    state.saved = {
+      ...initial(),
+      automationLibrary:
+        malformed as unknown as StorageData["automationLibrary"],
+    };
+    const { result } = await mount(),
+      api = result.current.automationLibrary!;
+    await expect(api.read(api.scope!)).rejects.toThrow("Invalid");
+    await act(async () => {
+      await result.current.dispatchAndFlush({
+        type: "UPDATE_CONNECTION",
+        payload: { ...result.current.state.connections[0], name: "changed" },
+      });
+    });
+    expect(state.saved?.automationLibrary).toEqual(malformed);
+  });
+  it("refuses browser mode without creating a database side store", async () => {
+    const { result } = await mount();
+    state.desktop = false;
+    const api = result.current.automationLibrary!;
+    await expect(api.read(api.scope!)).rejects.toThrow("desktop");
+    expect(state.save).not.toHaveBeenCalled();
+  });
+});

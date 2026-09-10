@@ -29,6 +29,11 @@ export interface WebAutomationLibrary {
   version: 1;
   scripts: BrowserScript[];
   macros: WebInteractionMacro[];
+  /** Informational sidecar; executable payloads remain strictly unchanged. */
+  provenance?: Record<
+    string,
+    import("./automationLibrary").AutomationProvenance
+  >;
 }
 
 export interface WebAutomationDocument {

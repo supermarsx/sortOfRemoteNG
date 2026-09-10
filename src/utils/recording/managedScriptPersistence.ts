@@ -1,4 +1,6 @@
 import type { ManagedScript } from "../../components/recording/ScriptManager";
+import type { AutomationProvenance } from "../../types/recording/automationLibrary";
+import { normalizeAutomationProvenanceMap } from "./automationProvenance";
 import {
   AppDataJsonStore,
   containsLikelySecretText,
@@ -9,6 +11,7 @@ export interface PersistedManagedScripts {
   customScripts: ManagedScript[];
   modifiedDefaults: ManagedScript[];
   deletedDefaultIds: string[];
+  provenance?: Record<string, AutomationProvenance>;
 }
 
 const isManagedScript = (value: unknown): value is ManagedScript => {
@@ -97,6 +100,9 @@ const sanitizeManagedScripts = (
       customScripts: customScripts.value,
       modifiedDefaults: modifiedDefaults.value,
       deletedDefaultIds: [...deletedDefaultIds],
+      ...(record.provenance === undefined
+        ? {}
+        : { provenance: normalizeAutomationProvenanceMap(record.provenance) }),
     },
     changed:
       customScripts.changed ||
@@ -111,6 +117,15 @@ export const managedScriptsStore =
   new AppDataJsonStore<PersistedManagedScripts>({
     key: "recording.managed-scripts",
     legacyLocalStorageKey: "managedScripts",
+    sanitize: sanitizeManagedScripts,
+  });
+
+/** Scoped API cannot create a plaintext browser fallback if the bridge vanishes. */
+export const nativeManagedScriptsStore =
+  new AppDataJsonStore<PersistedManagedScripts>({
+    key: "recording.managed-scripts",
+    legacyLocalStorageKey: "managedScripts",
+    requireNative: true,
     sanitize: sanitizeManagedScripts,
   });
 
@@ -150,14 +165,12 @@ export const buildManagedScriptsSnapshot = (
   assertManagedScriptsAreSecretFree(scripts);
   const defaultIds = defaults.map((script) => script.id);
   const remainingDefaultIds = scripts
-    .filter((script) => script.id.startsWith("default-"))
+    .filter((script) => defaultIds.includes(script.id))
     .map((script) => script.id);
   return {
-    customScripts: scripts.filter(
-      (script) => !script.id.startsWith("default-"),
-    ),
+    customScripts: scripts.filter((script) => !defaultIds.includes(script.id)),
     modifiedDefaults: scripts.filter((script) =>
-      script.id.startsWith("default-"),
+      defaultIds.includes(script.id),
     ),
     deletedDefaultIds: defaultIds.filter(
       (id) => !remainingDefaultIds.includes(id),

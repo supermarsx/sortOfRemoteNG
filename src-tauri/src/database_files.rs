@@ -793,11 +793,13 @@ pub async fn load_database_data(
 /// the per-DB-password layer is compartmentalisation across users
 /// of the same machine, P4 is at-rest protection of the file itself.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Explicit content and security CAS fields.
 pub async fn save_database_data(
     app: AppHandle,
     enc_state: tauri::State<'_, EncryptionState>,
     database_id: String,
     data: serde_json::Value,
+    expected_data: Option<serde_json::Value>,
     expected_security_revision: Option<String>,
     migration_metadata: Option<serde_json::Value>,
 ) -> Result<(), String> {
@@ -830,6 +832,10 @@ pub async fn save_database_data(
         return Err("database security changed; stale password-bearing save was rejected".into());
     }
     let existing = encrypted_load(&enc_state, ArtifactKind::Connections, &path).await?;
+    assert_database_content_matches(
+        existing.as_ref().map(|entry| &entry.value),
+        expected_data.as_ref(),
+    )?;
     reject_managed_raw_write(row, existing.as_ref().map(|entry| &entry.value), &data)?;
     validate_data_shape(
         &data,
@@ -845,6 +851,20 @@ pub async fn save_database_data(
         configured,
     )
     .await
+}
+
+/// Absence means create-if-absent, never permission to overwrite an existing DB.
+pub(crate) fn assert_database_content_matches(
+    current: Option<&serde_json::Value>,
+    expected: Option<&serde_json::Value>,
+) -> Result<(), String> {
+    if current != expected {
+        return Err(
+            "database contents changed or no reviewed baseline is available; reload before saving"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 /// Atomically change the per-database password representation and its index flag.
@@ -1734,6 +1754,20 @@ pub async fn databases_encryption_status(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn database_content_cas_requires_existing_baseline_and_create_absence() {
+        let old = serde_json::json!({"connections":[],"automationLibrary":{"revision":1}});
+        let newer = serde_json::json!({"connections":[],"automationLibrary":{"revision":2}});
+        assert!(super::assert_database_content_matches(None, None).is_ok());
+        assert!(super::assert_database_content_matches(Some(&old), Some(&old)).is_ok());
+        assert!(super::assert_database_content_matches(Some(&old), None).is_err());
+        assert!(super::assert_database_content_matches(None, Some(&old)).is_err());
+        assert!(super::assert_database_content_matches(Some(&newer), Some(&old)).is_err());
+        let opaque = serde_json::json!("synthetic-encrypted-generation-one");
+        let other = serde_json::json!("synthetic-encrypted-generation-two");
+        assert!(super::assert_database_content_matches(Some(&opaque), Some(&opaque)).is_ok());
+        assert!(super::assert_database_content_matches(Some(&other), Some(&opaque)).is_err());
+    }
     use super::*;
     use tempfile::tempdir;
 

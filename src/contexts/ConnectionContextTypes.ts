@@ -93,6 +93,7 @@ export interface ConnectionContextType {
   loadData: (expectedDatabaseId?: string) => Promise<boolean>;
   /** Absent only in older embedded/test contexts; never fall back to side storage. */
   recycleBin?: ConnectionRecycleBinApi;
+  automationLibrary?: import("../types/recording/automationLibrary").DatabaseAutomationApi;
 }
 
 export const ConnectionContext = createContext<

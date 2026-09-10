@@ -1,4 +1,9 @@
 import type { TerminalMacro } from "../../types/recording/macroTypes";
+import type { AutomationProvenance } from "../../types/recording/automationLibrary";
+import {
+  normalizeAutomationProvenanceMap,
+  pruneAutomationProvenance,
+} from "./automationProvenance";
 import {
   AppDataJsonStore,
   type SanitizedValue,
@@ -13,6 +18,7 @@ interface MacroLibrary {
   version: 1;
   macros: TerminalMacro[];
   legacyDigest: string | null;
+  provenance?: Record<string, AutomationProvenance>;
 }
 
 /** Commands are private library data, never copied into connection favorites. */
@@ -107,6 +113,9 @@ function sanitize(value: unknown): SanitizedValue<MacroLibrary> {
       version: 1,
       macros: validateTerminalMacros(library.macros),
       legacyDigest: library.legacyDigest,
+      ...(library.provenance === undefined
+        ? {}
+        : { provenance: normalizeAutomationProvenanceMap(library.provenance) }),
     },
     changed: false,
   };
@@ -216,9 +225,17 @@ export async function updateTerminalMacros(
       throw new Error(
         "Terminal macro library disappeared; reload before editing.",
       );
+    const macros = validateTerminalMacros(transform(current.macros));
     return {
       ...current,
-      macros: validateTerminalMacros(transform(current.macros)),
+      macros,
+      ...(current.provenance === undefined
+        ? {}
+        : {
+            provenance: pruneAutomationProvenance(current.provenance, {
+              "terminal-macro": macros.map((item) => item.id),
+            }),
+          }),
     };
   });
 }

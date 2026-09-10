@@ -22,7 +22,12 @@ import {
 import { getInvoke } from "../tauri/invoke";
 import { databaseProtection } from "./databaseProtection";
 import { normalizeRecycleBin } from "./recycleBin";
-import { stripExportSecrets } from "../../components/ImportExport/exportSecurity";
+import {
+  stripExportSecrets,
+  containsExportSecrets,
+} from "../../components/ImportExport/exportSecurity";
+import { normalizeDatabaseAutomationLibrary } from "../recording/automationLibraryValidation";
+import { containsLikelySecretText } from "../storage/appDataJsonStore";
 import type {
   DatabaseAccessState,
   DatabaseProtectionUnlockResult,
@@ -357,6 +362,7 @@ export interface DatabaseExportSnapshot {
   tabGroups: StorageData["tabGroups"];
   colorTags: StorageData["colorTags"];
   recycleBin?: StorageData["recycleBin"];
+  automationLibrary?: StorageData["automationLibrary"];
   /**
    * Trust Center records belonging to the exported database (t62 / D6).
    *
@@ -711,6 +717,7 @@ export class DatabaseManager {
       this.forgetUnlockedDatabase(id);
       this.managedAccess.delete(id);
       this.credentialSecurityRevisions.set(id, result.securityRevision);
+      this.latestLoadedRepresentations.set(id, structuredClone(data));
       if (this.currentDatabase?.id === id) {
         this.currentDatabase = {
           ...this.currentDatabase,
@@ -756,6 +763,7 @@ export class DatabaseManager {
     )
       throw new Error("Invalid native database session response.");
     this.forgetUnlockedDatabase(id);
+    this.latestLoadedRepresentations.set(id, structuredClone(result.data));
     const { sessionId, sessionExpiresAt, securityRevision } = result;
     this.managedSessions.set(id, {
       sessionId,
@@ -851,6 +859,7 @@ export class DatabaseManager {
     }
   }
   private readonly loadedRepresentations = new WeakMap<StorageData, unknown>();
+  private readonly latestLoadedRepresentations = new Map<string, unknown>();
   private readonly loadedSecurityRevisions = new WeakMap<StorageData, string>();
   private readonly indexSnapshots = new WeakMap<
     ConnectionDatabase[],
@@ -890,6 +899,7 @@ export class DatabaseManager {
     this.securityEpoch += 1;
     this.unlockedDatabasePasswords.clear();
     this.credentialSecurityRevisions.clear();
+    this.latestLoadedRepresentations.clear();
     this.currentPassword = null;
     for (const id of this.managedAccess.keys())
       this.suspendManagedDatabase(id, "global-lock");
@@ -1108,14 +1118,21 @@ export class DatabaseManager {
         { connections: [], settings: {}, timestamp: Date.now() },
         password,
         collection.securityRevision ?? "",
+        { expectedData: null },
       );
       this.rememberUnlockedDatabase(collection, password);
     } else {
-      await this.saveDatabaseData(collection.id, {
-        connections: [],
-        settings: {},
-        timestamp: Date.now(),
-      });
+      await this.saveDatabaseData(
+        collection.id,
+        {
+          connections: [],
+          settings: {},
+          timestamp: Date.now(),
+        },
+        undefined,
+        collection.securityRevision ?? "",
+        { expectedData: null },
+      );
     }
 
     // Log collection creation
@@ -1342,6 +1359,7 @@ export class DatabaseManager {
     const epoch = this.captureDatabaseEpoch(databaseId);
     const passwordAtCapture = this.currentPassword || undefined;
     const revisionAtCapture = this.credentialSecurityRevisions.get(databaseId);
+    let expectedData = this.latestLoadedRepresentations.get(databaseId);
     const resolvePassword = () => {
       this.assertDatabaseEpoch(databaseId, epoch);
       if (revisionAtCapture === undefined)
@@ -1361,14 +1379,30 @@ export class DatabaseManager {
           );
       },
       load: () =>
-        this.loadDatabaseData(databaseId, resolvePassword(), revisionAtCapture),
-      save: (data) =>
-        this.saveDatabaseData(
+        this.loadDatabaseData(
           databaseId,
-          data,
           resolvePassword(),
           revisionAtCapture,
-        ),
+        ).then((data) => {
+          if (data) expectedData = this.loadedRepresentations.get(data);
+          return data;
+        }),
+      save: (data) => {
+        const password = resolvePassword();
+        if (expectedData === undefined)
+          throw new Error(
+            "Database content baseline is unavailable. Reload before saving.",
+          );
+        return this.saveDatabaseData(
+          databaseId,
+          data,
+          password,
+          revisionAtCapture,
+          { expectedData },
+        ).then(() => {
+          expectedData = this.loadedRepresentations.get(data);
+        });
+      },
     };
   }
 
@@ -1609,6 +1643,7 @@ export class DatabaseManager {
   }
 
   private forgetUnlockedDatabase(databaseId: string): void {
+    this.latestLoadedRepresentations.delete(databaseId);
     clearTimeout(this.managedTimers.get(databaseId));
     this.managedTimers.delete(databaseId);
     this.managedSessions.delete(databaseId);
@@ -1659,6 +1694,19 @@ export class DatabaseManager {
     includePasswords: boolean,
     trustRecords?: TrustExportDocument | null,
   ): DatabaseExportSnapshot {
+    const automationLibrary =
+      data.automationLibrary === undefined
+        ? undefined
+        : normalizeDatabaseAutomationLibrary(data.automationLibrary);
+    if (
+      automationLibrary &&
+      !includePasswords &&
+      (containsExportSecrets(automationLibrary) ||
+        containsLikelySecretText(JSON.stringify(automationLibrary)))
+    )
+      throw new Error(
+        "The database automation library contains possible literal credentials. Review it or use an explicitly credential-including protected export; no partial library was exported.",
+      );
     return {
       ...(trustRecords ? { trustRecords } : {}),
       collection: {
@@ -1674,6 +1722,7 @@ export class DatabaseManager {
       settings: data.settings ?? {},
       tabGroups: data.tabGroups ?? [],
       colorTags: data.colorTags ?? {},
+      ...(automationLibrary ? { automationLibrary } : {}),
       ...(data.recycleBin
         ? {
             recycleBin: {
@@ -1901,6 +1950,7 @@ export class DatabaseManager {
         cloneStorageData(sourceData),
         sourceCollection.isEncrypted ? duplicatePassword : undefined,
         duplicatedCollection.securityRevision ?? "",
+        { expectedData: null },
       );
       this.assertDatabaseEpoch(collectionId, epoch);
       await this.assertSnapshotCurrent(collectionId, sourceData);
@@ -1966,7 +2016,13 @@ export class DatabaseManager {
     data: StorageData,
     password?: string,
     expectedSecurityRevision?: string,
+    contentExpectation?: { expectedData: unknown },
   ): Promise<void> {
+    // Capture before ANY await; a later read must not bless an older writer.
+    const expectedData = contentExpectation
+      ? contentExpectation.expectedData
+      : (this.loadedRepresentations.get(data) ??
+        this.latestLoadedRepresentations.get(collectionId));
     const epoch = this.captureDatabaseEpoch(collectionId);
     let revision =
       expectedSecurityRevision ??
@@ -1981,6 +2037,10 @@ export class DatabaseManager {
     if (collection.protectionFormat === "sorng-db") {
       this.assertDatabaseEpoch(collectionId, epoch);
       const session = this.requireManagedSession(collectionId);
+      if (expectedData === undefined)
+        throw new Error(
+          "Database content baseline is unavailable. Reload before saving; no data was overwritten.",
+        );
       let outcome;
       try {
         outcome = await databaseProtection.save(
@@ -1988,6 +2048,7 @@ export class DatabaseManager {
           session.sessionId,
           session.securityRevision,
           data,
+          expectedData,
         );
       } catch (error) {
         // A missed cross-window notification must not leave revoked access visible.
@@ -2018,6 +2079,8 @@ export class DatabaseManager {
           /* The save is committed even if the notification fails. */
         }
       }
+      this.loadedRepresentations.set(data, structuredClone(data));
+      this.latestLoadedRepresentations.set(collectionId, structuredClone(data));
       return;
     }
     if (collection?.isEncrypted && !password) {
@@ -2028,6 +2091,10 @@ export class DatabaseManager {
     if (collection.isEncrypted !== Boolean(password))
       throw new Error(
         "Database security changed; stale password-bearing save was rejected.",
+      );
+    if (expectedData === undefined)
+      throw new Error(
+        "Database content baseline is unavailable. Reload before saving; no data was overwritten.",
       );
     // An explicitly supplied, previously unverified password must decrypt the
     // current generation before it can authorize replacing it. Initial creation
@@ -2054,6 +2121,7 @@ export class DatabaseManager {
         await invoke("save_database_data", {
           databaseId: collectionId,
           data: payload,
+          expectedData,
           expectedSecurityRevision: revision,
         });
       } catch (error) {
@@ -2067,6 +2135,11 @@ export class DatabaseManager {
         throw error;
       }
       this.assertDatabaseEpoch(collectionId, epoch);
+      this.loadedRepresentations.set(data, structuredClone(payload));
+      this.latestLoadedRepresentations.set(
+        collectionId,
+        structuredClone(payload),
+      );
       return;
     }
 
@@ -2074,7 +2147,7 @@ export class DatabaseManager {
     const key = `mremote-database-${collectionId}`;
     const legacyKey = `mremote-collection-${collectionId}`;
     await IndexedDbService.transactItemsStrict(
-      [this.databasesKey],
+      [this.databasesKey, key, legacyKey],
       (values) => {
         this.assertDatabaseEpoch(collectionId, epoch);
         const rows = values[this.databasesKey];
@@ -2082,6 +2155,11 @@ export class DatabaseManager {
           ? rows.find((row: ConnectionDatabase) => row.id === collectionId)
           : undefined;
         this.assertSecurityRevision(collectionId, revision!, latest);
+        if (
+          JSON.stringify(values[key] ?? values[legacyKey] ?? null) !==
+          JSON.stringify(expectedData)
+        )
+          throw new Error("Database contents changed; reload before saving.");
         if (latest.isEncrypted !== Boolean(password)) {
           throw new Error(
             "Database security changed; stale password-bearing save was rejected.",
@@ -2095,6 +2173,11 @@ export class DatabaseManager {
       },
     );
     this.assertDatabaseEpoch(collectionId, epoch);
+    this.loadedRepresentations.set(data, structuredClone(payload));
+    this.latestLoadedRepresentations.set(
+      collectionId,
+      structuredClone(payload),
+    );
   }
 
   async loadDatabaseData(
@@ -2141,6 +2224,11 @@ export class DatabaseManager {
       }
       this.requireManagedSession(collectionId);
       this.loadedSecurityRevisions.set(result.data, result.securityRevision);
+      this.loadedRepresentations.set(result.data, structuredClone(result.data));
+      this.latestLoadedRepresentations.set(
+        collectionId,
+        structuredClone(result.data),
+      );
       return result.data;
     }
     let stored: any = null;
@@ -2250,6 +2338,10 @@ export class DatabaseManager {
           );
           this.rememberUnlockedDatabase(collection, password);
           this.loadedRepresentations.set(parsed, stored);
+          this.latestLoadedRepresentations.set(
+            collectionId,
+            structuredClone(stored),
+          );
           this.loadedSecurityRevisions.set(parsed, revision);
           return parsed;
         } catch (error) {
@@ -2283,6 +2375,10 @@ export class DatabaseManager {
           structuredClone(stored),
         );
         this.loadedSecurityRevisions.set(stored as StorageData, revision);
+        this.latestLoadedRepresentations.set(
+          collectionId,
+          structuredClone(stored),
+        );
         return stored as StorageData;
       }
     } catch (error) {
@@ -2586,6 +2682,10 @@ export class DatabaseManager {
       this.currentDatabase = updated;
     }
     this.rememberUnlockedDatabase(updated, newPassword);
+    this.latestLoadedRepresentations.set(
+      collectionId,
+      structuredClone(payload),
+    );
     if (this.currentDatabase?.id === collectionId) {
       emitCurrentDatabaseChange({
         reason: "security-change",
@@ -2722,6 +2822,13 @@ export class DatabaseManager {
       connections,
       settings: parsed?.settings ?? {},
       timestamp: Date.now(),
+      ...(parsed?.automationLibrary === undefined
+        ? {}
+        : {
+            automationLibrary: normalizeDatabaseAutomationLibrary(
+              parsed.automationLibrary,
+            ),
+          }),
       ...(parsed?.recycleBin !== undefined
         ? { recycleBin: normalizeRecycleBin(parsed.recycleBin) }
         : {}),

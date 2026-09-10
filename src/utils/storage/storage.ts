@@ -40,6 +40,8 @@ export interface StorageData {
   tabGroups?: import("../../types/connection/connection").TabGroup[];
   /** Deleted connections and retention are protected by this database's envelope. */
   recycleBin?: import("../../types/connection/recycleBin").DatabaseRecycleBin;
+  /** Scoped scripts/macros travel only inside this database's protected envelope. */
+  automationLibrary?: import("../../types/recording/automationLibrary").DatabaseAutomationLibrary;
   /** Color tag palette definitions, keyed by id. */
   colorTags?: Record<string, { name: string; color: string; global?: boolean }>;
 }

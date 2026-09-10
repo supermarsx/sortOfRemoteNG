@@ -66,6 +66,81 @@ fn password_target(cipher: &str) -> ProtectionTarget {
     serde_json::from_value(json!({"dataCipher":cipher,"keepSlotIds":[],"newSlots":[{"type":"password","label":"Recovery","password":"fixture-only","argon2":{"memoryKib":8192,"timeCost":1,"parallelism":1}}]})).unwrap()
 }
 
+#[tokio::test]
+async fn managed_database_content_cas_retains_library_against_stale_or_unreviewed_save() {
+    let _coordinator = sorng_encryption::settings_coordinator::lock().await;
+    let (root, state, data) = fixture().await;
+    let vault = FakeVault::default();
+    let protected = change_inner(
+        root.path(),
+        &state,
+        "main",
+        "db",
+        "r0",
+        data.clone(),
+        None,
+        Some(data.clone()),
+        Some(password_target("aes-256-gcm")),
+        false,
+        false,
+        &vault,
+    )
+    .await
+    .unwrap();
+    let session = protected.session_id.as_deref().unwrap();
+    let mut edited = data.clone();
+    edited["automationLibrary"] =
+        json!({"version":1,"revision":1,"privateFixture":"library-script"});
+    assert!(
+        save_inner(
+            root.path(),
+            &state,
+            "main",
+            "db",
+            session,
+            &protected.security_revision,
+            edited.clone(),
+            Some(data.clone())
+        )
+        .await
+        .unwrap()
+        .committed
+    );
+    let durable = managed_snapshot(root.path(), &state, "db")
+        .await
+        .unwrap()
+        .data;
+    for expected in [None, Some(data.clone())] {
+        assert!(save_inner(
+            root.path(),
+            &state,
+            "main",
+            "db",
+            session,
+            &protected.security_revision,
+            data.clone(),
+            expected
+        )
+        .await
+        .err()
+        .unwrap()
+        .contains("baseline"));
+        assert_eq!(
+            managed_snapshot(root.path(), &state, "db")
+                .await
+                .unwrap()
+                .data,
+            durable
+        );
+    }
+    let envelope = DatabaseEnvelope::parse(&durable, "db").unwrap();
+    let key = envelope
+        .unlock_password(&envelope.slots[0].id, "fixture-only")
+        .unwrap();
+    assert_eq!(envelope.open(&key).unwrap(), edited);
+    assert!(!durable.to_string().contains("library-script"));
+}
+
 #[test]
 fn managed_database_lock_reports_revocation_even_when_notification_fails() {
     let state = EncryptionState::new();
@@ -407,7 +482,8 @@ async fn managed_database_password_cipher_change_cas_and_raw_endpoint_fences() {
         "db",
         &unlock.session_id,
         &unlock.security_revision,
-        data.clone()
+        data.clone(),
+        Some(data.clone())
     )
     .await
     .is_err());
@@ -418,7 +494,8 @@ async fn managed_database_password_cipher_change_cas_and_raw_endpoint_fences() {
         "db",
         &unlock.session_id,
         "r0",
-        data.clone()
+        data.clone(),
+        Some(data.clone())
     )
     .await
     .is_err());
@@ -453,7 +530,8 @@ async fn managed_database_password_cipher_change_cas_and_raw_endpoint_fences() {
         "db",
         &unlock.session_id,
         &changed.security_revision,
-        data.clone()
+        data.clone(),
+        Some(data.clone())
     )
     .await
     .is_err());
@@ -490,6 +568,7 @@ async fn managed_database_password_cipher_change_cas_and_raw_endpoint_fences() {
         changed.session_id.as_deref().unwrap(),
         &changed.security_revision,
         edited.clone(),
+        Some(data.clone()),
     )
     .await
     .unwrap();
@@ -651,7 +730,8 @@ async fn managed_database_vault_enrollment_failure_restart_and_device_binding() 
         "db",
         &opened.session_id,
         &opened.security_revision,
-        data
+        data.clone(),
+        Some(data)
     )
     .await
     .is_err());
@@ -731,6 +811,7 @@ async fn managed_database_eax_save_restart_clone_and_rekey_preserve_cas_and_key_
             initial.session_id.as_deref().unwrap(),
             &initial.security_revision,
             edited.clone(),
+            Some(data.clone()),
         )
         .await
         .unwrap();
@@ -768,7 +849,8 @@ async fn managed_database_eax_save_restart_clone_and_rekey_preserve_cas_and_key_
             "db",
             initial.session_id.as_deref().unwrap(),
             &initial.security_revision,
-            data.clone()
+            data.clone(),
+            Some(edited.clone())
         )
         .await
         .is_err());
@@ -860,7 +942,8 @@ async fn managed_database_eax_save_restart_clone_and_rekey_preserve_cas_and_key_
             "db",
             &opened.session_id,
             &opened.security_revision,
-            edited.clone()
+            edited.clone(),
+            Some(edited.clone())
         )
         .await
         .is_err());

@@ -33,6 +33,13 @@ import type {
   RecycleBinScope,
 } from "../types/connection/recycleBin";
 import { SettingsManager } from "../utils/settings/settingsManager";
+import type {
+  DatabaseAutomationApi,
+  DatabaseAutomationScope,
+} from "../types/recording/automationLibrary";
+import { normalizeDatabaseAutomationLibrary } from "../utils/recording/automationLibraryValidation";
+import { AutomationLibraryAccessError } from "../utils/recording/automationLibraryAccess";
+import { getInvoke } from "../utils/tauri/invoke";
 import {
   ConnectionState,
   ConnectionAction,
@@ -406,6 +413,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const connectionsRef = useRef(state.connections);
   const recycleBinRef = useRef(state.recycleBinData ?? emptyRecycleBin());
   const loadedStorageRef = useRef<StorageData | null>(null);
+  const automationBusyRef = useRef(false);
+  const automationFaultRef = useRef(false);
+  const [automationChangeRevision, setAutomationChangeRevision] = useState(0);
   const recycleReviewsRef = useRef(
     new Map<
       string,
@@ -464,6 +474,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             dirtyRevisionRef.current > persistedRevisionRef.current;
           loadGenerationRef.current += 1;
           saveGenerationRef.current += 1;
+          setRecycleAccessGeneration((generation) => generation + 1);
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = null;
           saveLoopRef.current = null;
@@ -477,6 +488,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           tabGroupsRef.current = [];
           recycleBinRef.current = emptyRecycleBin();
           loadedStorageRef.current = null;
+          automationFaultRef.current = false;
           recycleReviewsRef.current.clear();
           stateRef.current = {
             ...stateRef.current,
@@ -731,6 +743,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       saveTimerRef.current = null;
     }
 
+    if (saveLoopRef.current) return saveLoopRef.current;
     if (
       !hasLoadedRef.current ||
       !activeDatabaseTargetRef.current ||
@@ -739,9 +752,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    if (saveLoopRef.current) {
-      return saveLoopRef.current;
-    }
+    if (automationFaultRef.current)
+      throw new Error(
+        "A database library write could not be verified. Reload the database before saving; pending connection edits were retained.",
+      );
 
     const generation = saveGenerationRef.current;
     const saveLoop = (async () => {
@@ -900,6 +914,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           tabGroupsRef.current = tabGroups;
           recycleBinRef.current = recycleBin;
           loadedStorageRef.current = data;
+          automationFaultRef.current = false;
+          setAutomationChangeRevision((value) => value + 1);
           recycleReviewsRef.current.clear();
           baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
           baseDispatch({ type: "SET_TAB_GROUPS", payload: tabGroups });
@@ -1270,6 +1286,154 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     cancelReview,
   ]);
 
+  const assertAutomationScope = useCallback(
+    (expected: DatabaseAutomationScope) => {
+      let current: RecycleBinScope;
+      try {
+        current = captureRecycleScope();
+      } catch {
+        throw new AutomationLibraryAccessError({
+          code: "database-unavailable",
+          message:
+            "Open and unlock the exact owning database to access its automation library.",
+          retryable: true,
+        });
+      }
+      if (
+        current.databaseId !== expected.databaseId ||
+        current.generation !== expected.generation
+      )
+        throw new AutomationLibraryAccessError({
+          code: "access-changed",
+          message:
+            "The owning database changed. Reload and review its library before continuing.",
+          retryable: true,
+        });
+    },
+    [captureRecycleScope],
+  );
+  const automationLibrary = useMemo<DatabaseAutomationApi>(() => {
+    void recycleAccessGeneration;
+    let scope: DatabaseAutomationScope | null = null;
+    try {
+      if (!recycleLoading) {
+        const current = captureRecycleScope();
+        scope = {
+          databaseId: current.databaseId,
+          generation: current.generation,
+        };
+      }
+    } catch {
+      /* Locked/closed/loading libraries remain private. */
+    }
+    const requireDesktop = async () => {
+      if (!(await getInvoke()))
+        throw new AutomationLibraryAccessError({
+          code: "desktop-required",
+          message:
+            "Database automation libraries require the desktop app. No side store or browser fallback was created.",
+          retryable: true,
+        });
+    };
+    return {
+      scope,
+      changeRevision: automationChangeRevision,
+      async read(expectedScope) {
+        expectedScope = { ...expectedScope };
+        assertAutomationScope(expectedScope);
+        if (automationFaultRef.current)
+          throw new Error(
+            "The database library write could not be verified. Reload the database before reading or retrying; the prior preview was not replaced.",
+          );
+        await requireDesktop();
+        assertAutomationScope(expectedScope);
+        await flushPendingSave();
+        assertAutomationScope(expectedScope);
+        return normalizeDatabaseAutomationLibrary(
+          loadedStorageRef.current?.automationLibrary,
+        );
+      },
+      async compareAndSwap(expectedScope, expected, replacement) {
+        expectedScope = { ...expectedScope };
+        const reviewed = normalizeDatabaseAutomationLibrary(expected);
+        const proposed = normalizeDatabaseAutomationLibrary(replacement);
+        if (proposed.revision !== reviewed.revision + 1)
+          throw new Error("Invalid automation library revision.");
+        assertAutomationScope(expectedScope);
+        if (automationFaultRef.current)
+          throw new Error(
+            "The database library write could not be verified. Reload before applying another edit.",
+          );
+        if (automationBusyRef.current)
+          throw new Error(
+            "Another automation library write is pending. Reload before retrying.",
+          );
+        automationBusyRef.current = true;
+        try {
+          await requireDesktop();
+          assertAutomationScope(expectedScope);
+          await flushPendingSave();
+          assertAutomationScope(expectedScope);
+          const current = normalizeDatabaseAutomationLibrary(
+            loadedStorageRef.current?.automationLibrary,
+          );
+          if (JSON.stringify(current) !== JSON.stringify(reviewed))
+            throw new AutomationLibraryAccessError({
+              code: "conflict",
+              message:
+                "The database library changed. Reload and review before saving.",
+              retryable: true,
+            });
+          const proposedSnapshot = {
+            ...buildStorageSnapshot(),
+            automationLibrary: proposed,
+          };
+          const target = activeDatabaseTargetRef.current!;
+          // Serialize with connection autosave, but do not publish or mark the
+          // private edit dirty until the native durable write has succeeded.
+          const write = (async () => {
+            try {
+              await target.save(proposedSnapshot);
+              assertAutomationScope(expectedScope);
+              loadedStorageRef.current = {
+                ...loadedStorageRef.current!,
+                automationLibrary: proposed,
+              };
+              setAutomationChangeRevision((value) => value + 1);
+            } catch (error) {
+              if (
+                expectedScope.generation === loadGenerationRef.current &&
+                target === activeDatabaseTargetRef.current
+              )
+                automationFaultRef.current = true;
+              throw error;
+            }
+          })();
+          saveLoopRef.current = write;
+          try {
+            await write;
+          } finally {
+            if (saveLoopRef.current === write) saveLoopRef.current = null;
+          }
+          // Edits made while the native write was pending keep their own dirty
+          // revision and now save against the advanced content baseline.
+          if (dirtyRevisionRef.current > persistedRevisionRef.current)
+            await flushPendingSave();
+        } finally {
+          automationBusyRef.current = false;
+        }
+      },
+    };
+  }, [
+    recycleAccessGeneration,
+    recycleLoading,
+    captureRecycleScope,
+    assertAutomationScope,
+    flushPendingSave,
+    buildStorageSnapshot,
+    automationChangeRevision,
+  ]);
+
   // Debounced auto-save: coalesces rapid connection changes into a single write.
   const debouncedSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -1335,6 +1499,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       flushPendingSave,
       loadData,
       recycleBin,
+      automationLibrary,
     }),
     [
       state,
@@ -1345,6 +1510,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       flushPendingSave,
       loadData,
       recycleBin,
+      automationLibrary,
     ],
   );
 

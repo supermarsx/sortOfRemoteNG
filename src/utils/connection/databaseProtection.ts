@@ -138,10 +138,11 @@ export const databaseProtection = {
     sessionId: string,
     expectedSecurityRevision: string,
     data: StorageData,
+    expectedData: unknown,
   ) {
     return (await nativeInvoke())<DatabaseProtectionSaveResult>(
       "database_protection_save",
-      { databaseId, sessionId, expectedSecurityRevision, data },
+      { databaseId, sessionId, expectedSecurityRevision, data, expectedData },
     );
   },
   async change(request: DatabaseProtectionChangeRequest) {
