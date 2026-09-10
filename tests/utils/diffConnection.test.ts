@@ -32,6 +32,20 @@ function makeConn(overrides: Partial<Connection> = {}): Connection {
 }
 
 describe("diffConnection", () => {
+  it("masks vault credential reference IDs in audit output", () => {
+    const before = makeConn({ credentialSource: { kind: "local" } }),
+      after = makeConn({
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      });
+    const delta = diffConnection(before, after);
+    expect(delta).toEqual([
+      { field: "credentialSource", before: null, after: null, secret: true },
+    ]);
+    expect(formatConnectionDiff(delta)).toBe("credentialSource changed");
+  });
   it("returns empty for no changes", () => {
     const conn = makeConn();
     expect(diffConnection(conn, conn)).toEqual([]);
@@ -73,7 +87,9 @@ describe("diffConnection", () => {
   it("captures multiple field changes in one diff", () => {
     const before = makeConn({ name: "A", hostname: "host-a", port: 22 });
     const after = makeConn({ name: "B", hostname: "host-b", port: 2222 });
-    const fields = diffConnection(before, after).map((d) => d.field).sort();
+    const fields = diffConnection(before, after)
+      .map((d) => d.field)
+      .sort();
     expect(fields).toEqual(["hostname", "name", "port"]);
   });
 

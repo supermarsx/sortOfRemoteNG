@@ -18,6 +18,7 @@ import CurrentDatabaseSecuritySection from "./security/CurrentDatabaseSecuritySe
 import ConnectionRecycleBinSection from "./security/ConnectionRecycleBinSection";
 import YubiKeySecuritySection from "./security/YubiKeySecuritySection";
 import PasswordPolicySection from "./security/PasswordPolicySection";
+import DatabaseCredentialVaultSection from "./security/DatabaseCredentialVaultSection";
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
@@ -43,6 +44,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         onBeforeCurrentLock={onBeforeCurrentLock}
       />
       <ConnectionRecycleBinSection />
+      <DatabaseCredentialVaultSection />
       <h3 className="text-sm font-medium">
         Global policies, export defaults, and key tools
       </h3>

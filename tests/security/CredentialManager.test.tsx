@@ -35,10 +35,10 @@ vi.mock("../../src/contexts/ToastContext", () => ({
   ),
 }));
 
-import { CredentialManager } from "../../src/components/security/CredentialManager";
+import { CredentialRotationTracker as CredentialManager } from "../../src/components/security/CredentialManager";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 
-describe("CredentialManager", () => {
+describe("CredentialManager rotation tracker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockImplementation((command: string) => {

@@ -44,6 +44,7 @@ export interface ConnectionFieldDelta {
  * empty-to-set transition is more sensitive than a port edit.
  */
 const SECRET_FIELDS = new Set<keyof Connection | string>([
+  "credentialSource",
   "password",
   "basicAuthPassword",
   "httpHeaders",

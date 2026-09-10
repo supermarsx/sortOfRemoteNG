@@ -489,6 +489,17 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
       data-editor-search-field="protocol-options"
       className="space-y-3"
     >
+      {mgr.formData.credentialSource?.kind === "vault" && (
+        <p
+          role="note"
+          className="rounded border border-primary/30 p-3 text-xs text-[var(--color-textSecondary)]"
+        >
+          This connection uses a database vault reference. Local username,
+          password, key and TOTP values below are preserved but ignored. Change
+          Credential source in General to use them; independent
+          provider-specific tokens are not vault password/key facets.
+        </p>
+      )}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
         <div
           role="tablist"

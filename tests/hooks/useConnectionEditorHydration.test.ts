@@ -2,6 +2,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useConnectionEditor } from "../../src/hooks/connection/useConnectionEditor";
 import type { Connection } from "../../src/types/connection/connection";
+import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 
 const mocks = vi.hoisted(() => ({
   flush: vi.fn(),
@@ -12,9 +13,14 @@ const mocks = vi.hoisted(() => ({
   instances: [],
   createInstance: vi.fn(),
   updateInstance: vi.fn(),
+  vault: undefined as DatabaseCredentialVaultApi | undefined,
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
-  useConnections: () => ({ state: mocks.state, dispatchAndFlush: mocks.flush }),
+  useConnections: () => ({
+    state: mocks.state,
+    dispatchAndFlush: mocks.flush,
+    credentialVault: mocks.vault,
+  }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
   useSettings: () => ({ settings: mocks.settings }),
@@ -100,6 +106,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.settings.autoSaveEnabled = false;
   mocks.state.connections = [];
+  mocks.vault = undefined;
   mocks.flush.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -108,6 +115,117 @@ afterEach(() => {
 });
 
 describe("connection editor draft ownership", () => {
+  const vaultId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const vaultApi = (): DatabaseCredentialVaultApi => ({
+    scope: { databaseId: "db-a", generation: 1 },
+    changeRevision: 0,
+    list: vi.fn<DatabaseCredentialVaultApi["list"]>(async (scope) => ({
+      scope,
+      revision: 0,
+      receipt: "review",
+      entries: [
+        {
+          id: vaultId,
+          name: "Reusable",
+          createdAt: "2026-09-10T00:00:00.000Z",
+          updatedAt: "2026-09-10T00:00:00.000Z",
+          availableFacets: ["password"],
+        },
+      ],
+    })),
+    resolve: vi.fn(),
+    compareAndSwap: vi.fn(),
+  });
+  it("persists only an explicitly selected same-database reference and preserves ignored local fields", async () => {
+    mocks.vault = vaultApi();
+    const { result } = editor({ ...connectionA, password: "LOCAL_SECRET" });
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        credentialSource: { kind: "vault", credentialId: vaultId },
+      })),
+    );
+    await act(() => result.current.saveNow());
+    expect(mocks.flush).toHaveBeenCalledOnce();
+    expect(mocks.flush.mock.calls[0][0].payload).toMatchObject({
+      credentialSource: { kind: "vault", credentialId: vaultId },
+      password: "LOCAL_SECRET",
+    });
+    expect(mocks.vault.list).toHaveBeenCalledWith({
+      databaseId: "db-a",
+      generation: 1,
+    });
+    expect(mocks.vault.resolve).not.toHaveBeenCalled();
+  });
+  it("refuses saving a missing vault reference without using a local credential fallback", async () => {
+    mocks.vault = vaultApi();
+    vi.mocked(mocks.vault.list).mockResolvedValue({
+      scope: mocks.vault.scope!,
+      revision: 0,
+      receipt: "review",
+      entries: [],
+    });
+    const { result } = editor({ ...connectionA, password: "LOCAL_SECRET" });
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        credentialSource: { kind: "vault", credentialId: vaultId },
+      })),
+    );
+    await act(() => result.current.saveNow());
+    expect(mocks.flush).not.toHaveBeenCalled();
+    expect(result.current.formData.credentialSource?.kind).toBe("vault");
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("selected vault credential is unavailable"),
+    );
+  });
+  it("fences a reference save when the database access generation changes during metadata review", async () => {
+    mocks.vault = vaultApi();
+    const gate = deferred();
+    const list = mocks.vault.list;
+    vi.mocked(mocks.vault.list).mockImplementationOnce(async (scope) => {
+      await gate.promise;
+      return {
+        scope,
+        revision: 0,
+        receipt: "review",
+        entries: [
+          {
+            id: vaultId,
+            name: "Reusable",
+            createdAt: "2026-09-10T00:00:00.000Z",
+            updatedAt: "2026-09-10T00:00:00.000Z",
+            availableFacets: ["password"],
+          },
+        ],
+      };
+    });
+    const { result, rerender } = editor();
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        credentialSource: { kind: "vault", credentialId: vaultId },
+      })),
+    );
+    let pending!: Promise<Connection | null>;
+    await act(async () => {
+      pending = result.current.saveNow();
+    });
+    expect(list).toHaveBeenCalledOnce();
+    mocks.vault = {
+      ...mocks.vault,
+      scope: { databaseId: "db-a", generation: 2 },
+    };
+    rerender({ connection: connectionA, open: true });
+    await act(async () => {
+      gate.resolve();
+      await pending;
+    });
+    expect(mocks.flush).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("vault owner changed"),
+    );
+  });
   it("initializes an unsaved draft with only its requested folder and persists only after Save", async () => {
     const folder = {
       ...connectionA,

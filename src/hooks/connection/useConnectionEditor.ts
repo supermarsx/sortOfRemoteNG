@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
 import {
   Monitor,
   Terminal,
@@ -839,7 +840,12 @@ export function useConnectionEditor(
   onClose: () => void,
   initialParentId?: string,
 ) {
-  const { state, dispatchAndFlush } = useConnections();
+  const { state, dispatchAndFlush, credentialVault } = useConnections();
+  const credentialVaultRef = useRef(credentialVault);
+  credentialVaultRef.current = credentialVault;
+  const credentialEditorScopeRef = useRef(
+    credentialVault?.scope ? { ...credentialVault.scope } : null,
+  );
   const { settings } = useSettings();
   const { toast } = useToastContext();
   const {
@@ -1101,6 +1107,9 @@ export function useConnectionEditor(
     // optimistic, not-yet-persisted saves and must not reset the draft/baseline.
     // Switching connection or closing/reopening starts a fresh editing session.
     const connection = incomingConnectionRef.current;
+    credentialEditorScopeRef.current = credentialVaultRef.current?.scope
+      ? { ...credentialVaultRef.current.scope }
+      : null;
     isInitializedRef.current = false;
     lastEnqueuedRevisionRef.current = null;
     let initializationFrame: number | undefined;
@@ -1252,6 +1261,9 @@ export function useConnectionEditor(
       return {
         ...(connection || {}),
         ...effectiveFormData,
+        credentialSource: normalizeConnectionCredentialSource(
+          effectiveFormData.credentialSource,
+        ),
         id: connection?.id || generateId(),
         name: effectiveFormData.name || "New Connection",
         protocol: effectiveFormData.protocol as Connection["protocol"],
@@ -1277,6 +1289,31 @@ export function useConnectionEditor(
       runtimeConnection: Connection;
       instance?: IntegrationInstance;
     }> => {
+      const source = normalizeConnectionCredentialSource(
+        runtimeConnection.credentialSource,
+      );
+      if (source?.kind === "vault") {
+        const expected = credentialEditorScopeRef.current;
+        const assertOwner = () => {
+          const api = credentialVaultRef.current;
+          if (
+            !expected ||
+            !api?.scope ||
+            api.scope.databaseId !== expected.databaseId ||
+            api.scope.generation !== expected.generation
+          )
+            throw new Error(
+              "The credential vault owner changed or is locked. Reopen this connection editor in its owning database.",
+            );
+          return api;
+        };
+        const snapshot = await assertOwner().list({ ...expected! });
+        assertOwner();
+        if (!snapshot.entries.some((entry) => entry.id === source.credentialId))
+          throw new Error(
+            "The selected vault credential is unavailable in this database. Choose another credential before saving.",
+          );
+      }
       if (!isIntegrationConnectionProtocol(runtimeConnection.protocol)) {
         return {
           persistentConnection: runtimeConnection,

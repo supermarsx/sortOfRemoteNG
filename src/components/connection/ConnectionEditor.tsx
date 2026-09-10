@@ -62,6 +62,7 @@ import {
 import { ConnectionEditorSearchBar } from "./editor/ConnectionEditorSearchBar";
 import { CONNECTION_ICON_SEARCH_TERMS } from "./editor/connectionIconPickerModel";
 import { NotesSection } from "./editor/NotesSection";
+import CredentialSourceSection from "../connectionEditor/CredentialSourceSection";
 import { OrganizeSection } from "./editor/OrganizeSection";
 import { ParentSelector } from "./editor/ParentSelector";
 import { ProtocolSections } from "./editor/ProtocolSections";
@@ -2199,6 +2200,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 {!mgr.formData.isGroup && (
                   <>
                     <ProtocolGrid mgr={mgr} />
+                    <CredentialSourceSection
+                      formData={mgr.formData}
+                      setFormData={mgr.setFormData}
+                    />
                     <ConnectionFields
                       mgr={mgr}
                       onOpenApplication={() => {

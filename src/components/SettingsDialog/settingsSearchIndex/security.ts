@@ -37,6 +37,25 @@ const CREDSSP_TAGS = [
 
 export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "databaseCredentialVault",
+    label: "Database credential vault",
+    description:
+      "Manage reusable credentials in this protected database; usernames, passwords, private keys, TOTP and non-portable social/passkey metadata.",
+    tags: [
+      "vault",
+      "credential",
+      "database",
+      "password",
+      "private key",
+      "totp",
+      "passkey",
+      "social",
+      "reusable",
+    ],
+    section: "security",
+    sectionLabel: "Security",
+  },
+  {
     key: "passwordPolicy",
     label: "Local password policy",
     description:

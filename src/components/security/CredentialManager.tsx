@@ -1,4 +1,11 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+  useContext,
+  useRef,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   Key,
@@ -24,6 +31,10 @@ import {
 import { Select } from "../ui/forms";
 import { useCredentials } from "../../hooks/security/useCredentials";
 import { useToastContext } from "../../contexts/ToastContext";
+import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
+import DatabaseCredentialVault from "./DatabaseCredentialVault";
+import { credentialVaultScopeKey } from "../../hooks/security/useDatabaseCredentialVault";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import type {
   TrackedCredential,
   RotationPolicy,
@@ -290,7 +301,7 @@ function DuplicatesPanel({
 /*  Main Component                                                    */
 /* ------------------------------------------------------------------ */
 
-export function CredentialManager() {
+export function CredentialRotationTracker() {
   const { t } = useTranslation();
   const creds = useCredentials();
   const { toast } = useToastContext();
@@ -1015,6 +1026,90 @@ export function CredentialManager() {
         />
       )}
     </div>
+  );
+}
+
+/** Database secrets and global rotation metadata deliberately remain separate. */
+export function CredentialManager() {
+  const context = useContext(ConnectionContext);
+  const key = credentialVaultScopeKey(context?.credentialVault);
+  const latestKey = useRef(key);
+  latestKey.current = key;
+  const [view, setView] = useState<"vault" | "rotation">("vault");
+  const [dirty, setDirty] = useState(false),
+    [busy, setBusy] = useState(false);
+  const [review, setReview] = useState<{ id: string; key: string } | null>(
+    null,
+  );
+  const reviewRef = useRef(review);
+  reviewRef.current = review;
+  return (
+    <section className="flex h-full min-h-0 flex-col text-[var(--color-text)]">
+      <div
+        role="tablist"
+        aria-label="Credential stores"
+        className="flex shrink-0 gap-2 border-b border-[var(--color-border)] p-3"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "vault"}
+          className="sor-option-chip"
+          disabled={busy}
+          onClick={() => setView("vault")}
+        >
+          Database vault
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "rotation"}
+          className="sor-option-chip"
+          disabled={busy}
+          onClick={() => {
+            if (view === "rotation") return;
+            if (dirty) {
+              const next = { id: crypto.randomUUID(), key };
+              reviewRef.current = next;
+              setReview(next);
+            } else setView("rotation");
+          }}
+        >
+          Rotation tracker
+        </button>
+      </div>
+      {view === "vault" ? (
+        <DatabaseCredentialVault
+          onDirtyChange={setDirty}
+          onBusyChange={setBusy}
+        />
+      ) : (
+        <CredentialRotationTracker />
+      )}
+      <ConfirmDialog
+        isOpen={!!review && review.key === key}
+        title="Discard private draft"
+        message="Discard the unsaved credential changes before opening the separate global rotation tracker?"
+        confirmText="Discard changes"
+        confirmOnEnter={false}
+        onCancel={() => {
+          reviewRef.current = null;
+          setReview(null);
+        }}
+        onConfirm={() => {
+          if (
+            !review ||
+            reviewRef.current?.id !== review.id ||
+            latestKey.current !== review.key ||
+            busy
+          )
+            return;
+          reviewRef.current = null;
+          setReview(null);
+          setView("rotation");
+        }}
+      />
+    </section>
   );
 }
 
