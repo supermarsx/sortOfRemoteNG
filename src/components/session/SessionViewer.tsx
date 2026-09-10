@@ -553,7 +553,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "connected" ||
         session.status === "reconnecting")
     ) {
-      return <WebBrowser session={session} />;
+      return <WebBrowser key={session.connectionId} session={session} />;
     }
 
     if (

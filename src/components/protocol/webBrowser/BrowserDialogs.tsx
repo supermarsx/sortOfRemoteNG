@@ -3,13 +3,9 @@ import React from "react";
 import { TrustWarningDialog } from "../../security/TrustWarningDialog";
 import { InputDialog } from "../../ui/dialogs/InputDialog";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
-import RedirectReviewDialog from "./RedirectReviewDialog";
 
 const BrowserDialogs: React.FC<SectionProps> = ({ mgr }) => (
   <>
-    {mgr.redirectReview && (
-      <RedirectReviewDialog manager={mgr.redirectReview} />
-    )}
     <ConfirmDialog
       isOpen={mgr.showClearSessionConfirm}
       title="Clear this website session?"

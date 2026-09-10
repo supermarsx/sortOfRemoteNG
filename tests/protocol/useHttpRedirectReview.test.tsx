@@ -71,6 +71,7 @@ function fixture(enabled = true) {
   const stopSource = vi.fn(async () => {
     proxy = "";
   });
+  const continueInTab = vi.fn();
   const options = {
     connection: source,
     session,
@@ -82,6 +83,7 @@ function fixture(enabled = true) {
     proxySessionId: () => proxy,
     navigationToken: () => navigationToken,
     stopSource,
+    continueInTab,
   };
   const hook = renderHook((next = options) => useHttpRedirectReview(next), {
     initialProps: options,
@@ -90,6 +92,7 @@ function fixture(enabled = true) {
     ...hook,
     options,
     stopSource,
+    continueInTab,
     navigate: () => {
       generation++;
     },
@@ -109,6 +112,64 @@ beforeEach(() => {
   h.invoke.mockResolvedValue(receipt);
 });
 describe("reviewed anonymous redirect handoff", () => {
+  it("carries only an explicitly enabled login in the current tab and refuses it for anonymous mode", async () => {
+    const view = fixture();
+    view.rerender({
+      ...view.options,
+      connection: {
+        ...source,
+        httpRedirectAuthentication: {
+          version: 1,
+          mode: "saved-login",
+          allowInsecureHttp: false,
+        },
+      },
+    });
+    await act(() => view.result.current.offer());
+    await act(() => view.result.current.accept("anonymous", true));
+    expect(view.stopSource).not.toHaveBeenCalled();
+    await act(() => view.result.current.accept("current", true));
+    expect(view.continueInTab).toHaveBeenCalledOnce();
+    const target = view.continueInTab.mock.calls[0][0] as Connection;
+    expect(target.basicAuthPassword).toBe("private-password");
+    expect(target.httpAutoLogin).toBe(false);
+    expect(target.httpsTrustPolicy).toBe("always-ask");
+  });
+  it("replaces the current tab with a registered credential-free target after verified stop", async () => {
+    const launch = vi.fn();
+    window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+    const view = fixture();
+    await act(() => view.result.current.offer());
+    await act(() => view.result.current.accept("current"));
+    expect(view.stopSource).toHaveBeenCalledWith("proxy");
+    expect(view.continueInTab).toHaveBeenCalledOnce();
+    expect(view.stopSource.mock.invocationCallOrder[0]).toBeLessThan(
+      view.continueInTab.mock.invocationCallOrder[0],
+    );
+    const target = view.continueInTab.mock.calls[0][0] as Connection;
+    expect(target.id).not.toBe(source.id);
+    expect(resolveRuntimeConnection([], target.id)).toBe(target);
+    expect(getRuntimeWebNavigation(target.id)?.initialUrl).toBe(
+      receipt.destinationUrl,
+    );
+    expect(target).toMatchObject({
+      httpAutoLogin: false,
+      httpVerifySsl: true,
+      httpsTrustPolicy: "always-ask",
+    });
+    expect(JSON.stringify(target)).not.toContain("private-");
+    expect(source.basicAuthPassword).toBe("private-password");
+    expect(launch).not.toHaveBeenCalled();
+    window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+  });
+  it("does not replace a tab after its database locks", async () => {
+    const view = fixture();
+    await act(() => view.result.current.offer());
+    h.locked = true;
+    await act(() => view.result.current.accept("current"));
+    expect(view.stopSource).not.toHaveBeenCalled();
+    expect(view.continueInTab).not.toHaveBeenCalled();
+  });
   it("does not stop or launch after downgrade consent changes during receipt consumption", async () => {
     const launch = vi.fn();
     window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);

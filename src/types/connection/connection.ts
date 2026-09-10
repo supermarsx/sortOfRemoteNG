@@ -267,6 +267,8 @@ export interface Connection
   basicAuthUsername?: string;
   basicAuthPassword?: string;
   httpVerifySsl?: boolean;
+  /** Explicit reviewed handoffs only; browser sessions and hardware keys are never copied. */
+  httpRedirectAuthentication?: import("../../utils/protocol/httpRedirectAuthentication").HttpRedirectAuthentication;
   httpBookmarks?: HttpBookmarkItem[];
 
   /**

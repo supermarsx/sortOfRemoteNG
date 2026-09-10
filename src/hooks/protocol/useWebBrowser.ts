@@ -1157,6 +1157,24 @@ export function useWebBrowser(session: ConnectionSession) {
         setProxyAlive(false);
       }
     },
+    continueInTab: (target) => {
+      // The redirect hook consumed the native receipt and stopped the original
+      // proxy. A new connection ID remounts WebBrowser with fresh trust, cookies,
+      // history and automation state while preserving this tab's position/owner.
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...session,
+          connectionId: target.id,
+          name: target.name,
+          hostname: target.hostname,
+          protocol: target.protocol,
+          status: "connecting",
+          errorMessage: undefined,
+          integration: undefined,
+        },
+      });
+    },
   });
   const redirectReviewRef = useRef(redirectReview);
   redirectReviewRef.current = redirectReview;

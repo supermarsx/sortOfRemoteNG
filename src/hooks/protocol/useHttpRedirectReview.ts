@@ -8,9 +8,14 @@ import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabas
 import {
   getRuntimeWebNavigation,
   registerRuntimeConnection,
+  releaseRuntimeConnection,
 } from "../../utils/session/runtimeConnectionRegistry";
 import { OPEN_RUNTIME_CONNECTION_EVENT } from "../session/useRuntimeConnectionLaunch";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import {
+  authenticatedRedirectConnection,
+  redirectAuthenticationAvailability,
+} from "../../utils/protocol/httpRedirectAuthentication";
 import {
   anonymousRedirectConnection,
   parseHttpRedirectReview,
@@ -28,6 +33,8 @@ interface Options {
   proxySessionId: () => string;
   navigationToken: () => string | null;
   stopSource: (sessionId: string) => Promise<void>;
+  /** Replace only the tab's ephemeral target, never the saved connection. */
+  continueInTab?: (connection: Connection) => void;
 }
 interface Pending {
   review: HttpRedirectReview;
@@ -160,7 +167,11 @@ export function useHttpRedirectReview(options: Options) {
     setBusy(false);
     setError("");
   };
-  const accept = async () => {
+  const accept = async (
+    destination: "current" | "anonymous" = "anonymous",
+    carrySavedLogin = false,
+    insecureApproved = false,
+  ) => {
     const receipt = pending.current;
     if (!receipt || accepting.current) return;
     accepting.current = true;
@@ -169,6 +180,19 @@ export function useHttpRedirectReview(options: Options) {
     setBusy(true);
     setError("");
     try {
+      if (destination !== "current" && destination !== "anonymous")
+        throw new Error();
+      if (destination === "current" && !captured.continueInTab)
+        throw new Error();
+      if (
+        carrySavedLogin &&
+        (destination !== "current" ||
+          !redirectAuthenticationAvailability(
+            captured.connection,
+            receipt.review,
+          ).available)
+      )
+        throw new Error();
       receipt.assertCurrent();
       if (
         captured.proxySessionId() !== receipt.review.sessionId ||
@@ -191,13 +215,18 @@ export function useHttpRedirectReview(options: Options) {
         JSON.stringify(consumed) !== JSON.stringify(receipt.review)
       )
         throw new Error();
+      // Validate the complete destination/login choice before stopping the
+      // source. The new object remains volatile and is never a saved edit.
+      const connection = carrySavedLogin
+        ? authenticatedRedirectConnection(
+            captured.connection,
+            consumed,
+            insecureApproved,
+          )
+        : anonymousRedirectConnection(captured.connection, consumed);
       await captured.stopSource(receipt.review.sessionId);
       receipt.assertLaunchCurrent();
       if (token !== action.current) return;
-      const connection = anonymousRedirectConnection(
-        captured.connection,
-        consumed,
-      );
       registerRuntimeConnection(connection, {
         initialUrl: consumed.destinationUrl,
         redirectHops:
@@ -205,11 +234,19 @@ export function useHttpRedirectReview(options: Options) {
           1,
         assertCurrent: receipt.assertLaunchCurrent,
       });
-      window.dispatchEvent(
-        new CustomEvent(OPEN_RUNTIME_CONNECTION_EVENT, {
-          detail: { connection, source: "httpRedirect" },
-        }),
-      );
+      try {
+        receipt.assertLaunchCurrent();
+        if (destination === "current") captured.continueInTab!(connection);
+        else
+          window.dispatchEvent(
+            new CustomEvent(OPEN_RUNTIME_CONNECTION_EVENT, {
+              detail: { connection, source: "httpRedirect" },
+            }),
+          );
+      } catch (error) {
+        releaseRuntimeConnection(connection.id);
+        throw error;
+      }
       pending.current = null;
       setReview(null);
     } catch {
@@ -223,6 +260,10 @@ export function useHttpRedirectReview(options: Options) {
     }
   };
   return {
+    authentication: redirectAuthenticationAvailability(
+      options.connection,
+      review,
+    ),
     review: review && pending.current?.signature === signature ? review : null,
     busy,
     error,

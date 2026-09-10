@@ -109,6 +109,42 @@ describe("proxy failure bridge validation", () => {
 });
 
 describe("embedded web failure recovery screen", () => {
+  it("renders redirect review inside the page without a modal and keeps the source iframe inert", () => {
+    const mgr = manager({
+      redirectReview: {
+        review: {
+          receiptId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          sessionId: "s",
+          sourceOrigin: "https://source.invalid",
+          destinationUrl: "https://target.invalid/",
+          navigationToken: null,
+          documentSequence: 1,
+          removedQuery: false,
+        },
+        busy: false,
+        error: "",
+        accept: vi.fn(),
+        cancel: vi.fn(),
+        offer: vi.fn(),
+        authentication: {
+          configured: false,
+          available: false,
+          insecure: false,
+          reason: "",
+        },
+      },
+    });
+    const { container } = render(<ContentArea mgr={mgr} />);
+    expect(container).toContainElement(
+      screen.getByRole("region", { name: "Redirect review" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(container.querySelector("iframe")).toHaveAttribute("inert");
+    expect(container.querySelector("iframe")).toHaveClass("invisible");
+    expect(
+      screen.getByRole("button", { name: "Continue in this tab" }),
+    ).toBeInTheDocument();
+  });
   it("keeps page and bookmarks interactive beneath an indeterminate top progress line", () => {
     const mgr = manager({
       loadError: "",

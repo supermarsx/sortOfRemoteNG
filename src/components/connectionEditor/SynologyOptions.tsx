@@ -111,10 +111,12 @@ export default function SynologyOptions({
           />
           <p className="text-xs text-[var(--color-textSecondary)]">
             DSM website only. Also enables reviewed cross-origin redirects in
-            Advanced. Every handoff still requires your approval and opens a new
-            anonymous, unencrypted HTTP tab. Saved credentials, cookies, form
-            bodies, custom headers and query parameters are not carried over.
-            Leave this off unless an HTTP reverse-proxy handoff is necessary.
+            Advanced. Every handoff still requires your approval; continue in
+            this tab or open an anonymous HTTP tab. Authentication is stripped
+            unless saved-login forwarding is separately enabled and approved in
+            Advanced. Cookies, form bodies, custom headers and query parameters
+            are not carried over. Leave this off unless an HTTP reverse-proxy
+            handoff is necessary.
           </p>
           {!proxyPolicy ? (
             <p role="alert" className="text-xs text-error">

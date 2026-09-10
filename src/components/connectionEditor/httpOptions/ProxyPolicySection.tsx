@@ -7,6 +7,7 @@ import {
 } from "../../../types/connection/httpProxyPolicy";
 import { normalizeHttpProxyPolicy } from "../../../utils/connection/httpProxyPolicy";
 import type { Mgr } from "./types";
+import RedirectAuthenticationOptions from "./RedirectAuthenticationOptions";
 
 /** Draft-only editor. Native validation is repeated before opening a proxy. */
 export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
@@ -137,7 +138,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           update({ allowCrossOriginRedirects })
         }
         label="Allow reviewed cross-origin redirects"
-        description="Offer to open redirect destinations in a new anonymous tab after review, with a fresh trust check for HTTPS. Saved credentials, cookies, form bodies, custom headers and query parameters are not carried over. Some SSO and QuickConnect handoffs may require manual sign-in."
+        description="Review the destination, then continue in this tab or open a new anonymous tab, with a fresh trust check for HTTPS. Authentication is stripped unless saved-login forwarding is explicitly configured and approved below."
         variant="form"
       />
       <CheckboxField
@@ -147,9 +148,10 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           update({ allowHttpDowngradeRedirects })
         }
         label="Allow reviewed HTTPS-to-HTTP downgrades"
-        description="Separate security exception for temporary reverse-proxy handoffs. Each downgrade still requires explicit review and opens an anonymous, unencrypted HTTP tab. Requires reviewed cross-origin redirects and is overridden by the strict HTTPS setting above. Leave off unless you understand the risk."
+        description="Separate security exception for temporary reverse-proxy handoffs. Each downgrade requires review. Requires reviewed cross-origin redirects and is overridden by the strict HTTPS setting above. This option alone never authorizes sending a password to HTTP."
         variant="form"
       />
+      <RedirectAuthenticationOptions mgr={mgr} />
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Extra upstream query parameters</h4>
         <p className="text-xs text-[var(--color-textMuted)]">

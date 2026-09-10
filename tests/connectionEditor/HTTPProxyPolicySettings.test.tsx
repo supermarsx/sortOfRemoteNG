@@ -25,6 +25,37 @@ function Fixture({
 const draft = () => JSON.parse(screen.getByTestId("draft").textContent!);
 
 describe("Internal proxy controls", () => {
+  it("saves default-off redirect authentication separately and preserves it on remount", () => {
+    const view = render(<Fixture initial={{ protocol: "https" }} />);
+    const carry = screen.getByRole("checkbox", {
+      name: /Carry saved login through reviewed redirects/,
+    });
+    expect(carry).not.toBeChecked();
+    const insecure = screen.getByRole("checkbox", {
+      name: /Allow saved login to be sent to unencrypted HTTP/,
+    });
+    expect(insecure).toBeDisabled();
+    fireEvent.click(carry);
+    expect(draft().httpRedirectAuthentication).toEqual({
+      version: 1,
+      mode: "saved-login",
+      allowInsecureHttp: false,
+    });
+    fireEvent.click(insecure);
+    const saved = JSON.parse(JSON.stringify(draft()));
+    view.unmount();
+    render(<Fixture initial={saved} />);
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Carry saved login through reviewed redirects/,
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Allow saved login to be sent to unencrypted HTTP/,
+      }),
+    ).toBeChecked();
+  });
   it("offers default-off reviewed redirects without enabling or copying authentication", () => {
     render(<Fixture initial={{ protocol: "https" }} />);
     const control = screen.getByRole("checkbox", {
