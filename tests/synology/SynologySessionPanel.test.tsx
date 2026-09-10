@@ -1,0 +1,269 @@
+import React from "react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
+import type { DatabaseAvailability } from "../../src/contexts/ConnectionContextTypes";
+import SynologySessionPanel from "../../src/components/synology/SynologySessionPanel";
+import { disconnectSynologySession } from "../../src/utils/session/synologySessionLifecycle";
+
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  dispatch: vi.fn(),
+  owner: "db-a",
+  allowed: true,
+  lock: () => {},
+  access: (_event: unknown) => {},
+  current: () => {},
+  capabilities: vi.fn(),
+}));
+let connections: Connection[] = [];
+let availability: DatabaseAvailability;
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (_name: string, fn: () => void) => {
+    mocks.lock = fn;
+    return () => {};
+  }),
+}));
+vi.mock("../../src/utils/tauri/invoke", () => ({
+  getInvoke: async () => mocks.invoke,
+}));
+vi.mock("../../src/contexts/useConnections", () => ({
+  useConnections: () => ({
+    state: { connections },
+    dispatch: mocks.dispatch,
+    databaseAvailability: availability,
+  }),
+}));
+vi.mock("../../src/utils/connection/databaseManager", () => ({
+  DatabaseManager: {
+    getInstance: () => ({
+      getCurrentDatabase: () => ({ id: mocks.owner }),
+      captureCurrentDatabaseDataTarget: () => ({
+        databaseId: mocks.owner,
+        assertAccessible: () => {
+          if (!mocks.allowed) throw new Error("locked");
+        },
+      }),
+      onCurrentDatabaseChange: (fn: () => void) => {
+        mocks.current = fn;
+        return () => {};
+      },
+    }),
+  },
+  onDatabaseAccessChange: (fn: (event: unknown) => void) => {
+    mocks.access = fn;
+    return () => {};
+  },
+}));
+vi.mock(
+  "../../src/utils/runtime/runtimeCapabilities",
+  async (importOriginal) => ({
+    ...(await importOriginal<object>()),
+    loadRuntimeCapabilities: mocks.capabilities,
+  }),
+);
+vi.mock("../../src/components/synology/SynologyPanel", () => ({
+  SynologySessionContent: ({
+    connection,
+  }: {
+    connection: ReturnType<
+      typeof import("../../src/hooks/synology/useSynologyFileConnection").useSynologyFileConnection
+    >;
+  }) => (
+    <section aria-label={connection.instanceId}>
+      <span>{connection.host}</span>
+      <span>{connection.connectionStatus}</span>
+      <button onClick={() => void connection.disconnect()}>
+        Disconnect {connection.instanceId}
+      </button>
+    </section>
+  ),
+}));
+
+const saved = (id: string): Connection => ({
+  id,
+  name: id,
+  protocol: "synology",
+  hostname: `${id}.example.test`,
+  port: 5001,
+  username: "user",
+  password: "synthetic-private-password",
+  isGroup: false,
+  createdAt: "2026-09-01",
+  updatedAt: "2026-09-01",
+});
+const session = (id: string, connectionId = id): ConnectionSession => ({
+  id,
+  connectionId,
+  ownerDatabaseId: "db-a",
+  name: id,
+  protocol: "synology",
+  hostname: `${connectionId}.example.test`,
+  status: "connecting",
+  startTime: new Date(),
+});
+beforeEach(() => {
+  mocks.invoke.mockReset();
+  mocks.dispatch.mockClear();
+  mocks.owner = "db-a";
+  mocks.allowed = true;
+  connections = [saved("one"), saved("two")];
+  availability = { status: "ready", databaseId: "db-a", generation: 1 };
+  mocks.capabilities.mockResolvedValue({
+    source: "native",
+    ops: true,
+    platform: true,
+  });
+  mocks.invoke.mockImplementation(
+    async (command: string, args: { instanceId?: string }) =>
+      command === "syn_fs_connect"
+        ? {
+            status: "connected",
+            sessionId: `receipt-${args.instanceId}`,
+            message: "ok",
+          }
+        : undefined,
+  );
+});
+afterEach(cleanup);
+describe("saved Synology session ownership", () => {
+  it("does not mount login actions or send credentials before runtime capability validation", async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.capabilities.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render(<SynologySessionPanel session={session("one")} />);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "runtime availability",
+    );
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    await act(async () =>
+      resolve({ source: "native", ops: true, platform: false }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("platform");
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+  it("mounts two independent NAS sessions and awaited close releases only its instance", async () => {
+    render(
+      <>
+        <SynologySessionPanel session={session("one")} />
+        <SynologySessionPanel session={session("two")} />
+      </>,
+    );
+    await waitFor(() =>
+      expect(screen.getAllByText("connected")).toHaveLength(2),
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "syn_fs_connect",
+      expect.objectContaining({
+        instanceId: "one",
+        host: "one.example.test",
+        password: "synthetic-private-password",
+      }),
+    );
+    await act(() => disconnectSynologySession("one"));
+    expect(mocks.invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: "one",
+      expectedSessionId: "receipt-one",
+    });
+    expect(screen.getAllByText("connected")).toHaveLength(1);
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      "synthetic-private-password",
+    );
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain("receipt-");
+  });
+  it("refuses known owner A under B and does not mount secret-bearing content", () => {
+    mocks.owner = "db-b";
+    availability = { status: "ready", databaseId: "db-b", generation: 2 };
+    render(<SynologySessionPanel session={session("one")} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("owning database");
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+  it("cancels a pending login and releases late success on same-owner suspension", async () => {
+    let resolve!: (result: unknown) => void;
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "syn_fs_connect"
+        ? new Promise((done) => {
+            resolve = done;
+          })
+        : Promise.resolve(undefined),
+    );
+    const { rerender } = render(
+      <SynologySessionPanel session={session("one")} />,
+    );
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "syn_fs_connect",
+        expect.anything(),
+      ),
+    );
+    availability = { status: "suspended", databaseId: "db-a", generation: 2 };
+    mocks.allowed = false;
+    rerender(<SynologySessionPanel session={session("one")} />);
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "syn_fs_cancel_connect",
+      expect.objectContaining({ instanceId: "one" }),
+    );
+    await act(async () =>
+      resolve({ status: "connected", sessionId: "late", message: "ok" }),
+    );
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+        instanceId: "one",
+        expectedSessionId: "late",
+      }),
+    );
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+  });
+  it("revokes immediately on the native master-lock event", async () => {
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(screen.getByText("connected")).toBeInTheDocument(),
+    );
+    await act(async () => mocks.lock());
+    expect(screen.getByRole("alert")).toHaveTextContent("owning database");
+    expect(mocks.invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: "one",
+      expectedSessionId: "receipt-one",
+    });
+  });
+  it("blocks inherited routes and does not offer Connect before capability readiness", async () => {
+    connections = [
+      { ...saved("one"), parentId: "folder" },
+      { ...saved("folder"), isGroup: true, proxyChainId: "explicit-route" },
+    ];
+    render(<SynologySessionPanel session={session("one")} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("proxy/VPN");
+    await act(async () => {});
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+  it("manual disconnect remains usable without replaying saved credentials", async () => {
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(screen.getByText("connected")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect one" }));
+    await waitFor(() =>
+      expect(screen.getByText("disconnected")).toBeInTheDocument(),
+    );
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "syn_fs_connect",
+      ),
+    ).toHaveLength(1);
+  });
+});

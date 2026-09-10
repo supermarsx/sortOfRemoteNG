@@ -17,6 +17,7 @@ import {
 import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import type { SubProps } from "./types";
+import FileDetailsSharing from "./FileDetailsSharing";
 import type {
   FileStationReview,
   useSynologyFileStation,
@@ -57,8 +58,8 @@ function TaskProgress({ fs }: { fs: Explorer }) {
     </div>
   );
 }
-const formatBytes = (bytes: number | undefined) => {
-  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return "—";
+const formatBytes = (bytes: number | null | undefined) => {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return "—";
   if (!bytes) return "0 B";
   const power = Math.min(4, Math.floor(Math.log(bytes) / Math.log(1024)));
   return `${(bytes / 1024 ** power).toFixed(power ? 1 : 0)} ${["B", "KiB", "MiB", "GiB", "TiB"][power]}`;
@@ -186,7 +187,13 @@ function ActionReview({
   );
 }
 
-export function FileStationExplorer({ fs }: { fs: Explorer }) {
+export function FileStationExplorer({
+  fs,
+  mgr,
+}: {
+  fs: Explorer;
+  mgr: SubProps["mgr"];
+}) {
   const id = useId();
   const [pathDraft, setPathDraft] = useState(fs.currentPath);
   const [pathBase, setPathBase] = useState(fs.currentPath);
@@ -343,6 +350,10 @@ export function FileStationExplorer({ fs }: { fs: Explorer }) {
           </label>
         </div>
         <div className="flex flex-wrap gap-2">
+          <FileDetailsSharing
+            key={`${mgr.instanceId}:${mgr.sessionId}:${fs.currentPath}`}
+            mgr={mgr}
+          />
           <button
             className="sor-btn-secondary-sm"
             disabled={fs.busy || root}
@@ -570,6 +581,6 @@ export function FileStationExplorer({ fs }: { fs: Explorer }) {
   );
 }
 const FileStationView: React.FC<SubProps> = ({ mgr }) => (
-  <FileStationExplorer fs={mgr.fileStation} />
+  <FileStationExplorer fs={mgr.fileStation} mgr={mgr} />
 );
 export default FileStationView;

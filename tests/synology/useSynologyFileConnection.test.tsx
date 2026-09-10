@@ -25,6 +25,161 @@ const setup = () => {
 beforeEach(() => vi.mocked(invoke).mockReset());
 afterEach(cleanup);
 describe("scoped Synology sign-in", () => {
+  it.each([
+    null,
+    { status: "__proto__" },
+    { status: "connected", sessionId: "" },
+  ])("rejects malformed authentication outcomes %j", async (response) => {
+    vi.mocked(invoke).mockResolvedValue(response);
+    const { result } = setup();
+    await act(() => result.current.connect());
+    expect(result.current.connectionStatus).toBe("error");
+    expect(result.current.sessionId).toBeNull();
+    expect(result.current.challenge).toBeNull();
+  });
+  it("isolates simultaneous NAS tabs and expires only the matching receipt", async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) =>
+      command === "syn_fs_connect"
+        ? {
+            status: "connected",
+            sessionId: `receipt-${(args as { instanceId: string }).instanceId}`,
+            message: "Connected",
+          }
+        : undefined,
+    );
+    const config = {
+      host: "nas.example.test",
+      port: 5001,
+      username: "user",
+      password: "secret-value",
+      useHttps: true,
+    };
+    const a = renderHook(() =>
+      useSynologyFileConnection(true, {
+        instanceId: "tab-a",
+        initialConfig: config,
+      }),
+    );
+    const b = renderHook(() =>
+      useSynologyFileConnection(true, {
+        instanceId: "tab-b",
+        initialConfig: config,
+      }),
+    );
+    await act(async () => {
+      await Promise.all([
+        a.result.current.connect(),
+        b.result.current.connect(),
+      ]);
+    });
+    expect(a.result.current.sessionId).toBe("receipt-tab-a");
+    expect(b.result.current.sessionId).toBe("receipt-tab-b");
+    act(() => b.result.current.notifySessionExpired("receipt-tab-a"));
+    expect(b.result.current.connectionStatus).toBe("connected");
+    await act(() => a.result.current.disconnect());
+    expect(invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: "tab-a",
+      expectedSessionId: "receipt-tab-a",
+    });
+    expect(b.result.current.connectionStatus).toBe("connected");
+    act(() => b.result.current.notifySessionExpired("receipt-tab-b"));
+    expect(b.result.current.connectionStatus).toBe("disconnected");
+    expect(b.result.current.sessionId).toBeNull();
+  });
+  it("cancels the exact native attempt on close and refuses stale success after access revocation", async () => {
+    const pending = deferred<SynologyFileAuthResult>();
+    vi.mocked(invoke).mockImplementation((command) =>
+      command === "syn_fs_connect"
+        ? pending.promise
+        : Promise.resolve(undefined),
+    );
+    let allowed = true;
+    const access = () => {
+      if (!allowed) throw new Error("locked");
+    };
+    const config = {
+      host: "nas.example.test",
+      port: 5001,
+      username: "user",
+      password: "secret",
+      useHttps: true,
+    };
+    const hook = renderHook(
+      ({ open }) =>
+        useSynologyFileConnection(open, {
+          instanceId: "saved-tab",
+          initialConfig: config,
+          assertCurrent: access,
+        }),
+      { initialProps: { open: true } },
+    );
+    let attempt!: Promise<void>;
+    act(() => {
+      attempt = hook.result.current.connect();
+    });
+    const request = vi
+      .mocked(invoke)
+      .mock.calls.find(([command]) => command === "syn_fs_connect")![1] as {
+      requestId: string;
+    };
+    allowed = false;
+    hook.rerender({ open: false });
+    expect(invoke).toHaveBeenCalledWith("syn_fs_cancel_connect", {
+      instanceId: "saved-tab",
+      requestId: request.requestId,
+    });
+    await act(async () => {
+      pending.resolve({
+        status: "connected",
+        sessionId: "late",
+        message: "ok",
+      });
+      await attempt;
+    });
+    expect(hook.result.current.sessionId).toBeNull();
+    expect(invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: "saved-tab",
+      expectedSessionId: "late",
+    });
+  });
+  it("locks a saved target tuple and cannot send credentials to an edited host", async () => {
+    const hook = renderHook(() =>
+      useSynologyFileConnection(true, {
+        instanceId: "saved",
+        initialConfig: {
+          host: "nas.example.test",
+          port: 5001,
+          username: "user",
+          password: "secret",
+          useHttps: true,
+        },
+      }),
+    );
+    act(() => hook.result.current.setHost("different.example.test"));
+    await act(() => hook.result.current.connect());
+    expect(invoke).not.toHaveBeenCalled();
+    expect(hook.result.current.connectionError).toContain("Edit Connection");
+  });
+  it("clears an OTP challenge after a transport failure and preserves safe actionable errors", async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ status: "otp_required", message: "code" })
+      .mockRejectedValueOnce(
+        new Error(
+          "This client IP is blocked by the NAS. password=private-password code 123456",
+        ),
+      );
+    const { result } = setup();
+    await act(() => result.current.connect());
+    act(() => result.current.setOtpCode("123456"));
+    await act(() => result.current.submitOtp());
+    expect(result.current.challenge).toBeNull();
+    expect(result.current.connectionError).toContain("client IP is blocked");
+    expect(result.current.connectionError).not.toContain("private-password");
+    expect(result.current.connectionError).not.toContain("123456");
+    const count = vi.mocked(invoke).mock.calls.length;
+    await act(() => result.current.submitOtp());
+    expect(vi.mocked(invoke).mock.calls).toHaveLength(count);
+  });
   it("defaults to verified HTTPS, no insecure/PAT/remembered-device options", async () => {
     vi.mocked(invoke).mockResolvedValue({
       status: "connected",
@@ -40,6 +195,8 @@ describe("scoped Synology sign-in", () => {
       password: "private-password",
       useHttps: true,
       otpCode: null,
+      instanceId: result.current.instanceId,
+      requestId: expect.any(String),
     });
     expect(result.current.connectionStatus).toBe("connected");
     expect(result.current.password).toBe("");
@@ -127,6 +284,7 @@ describe("scoped Synology sign-in", () => {
     });
     expect(result.current.sessionId).toBe("new-receipt");
     expect(invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: result.current.instanceId,
       expectedSessionId: "old-receipt",
     });
     expect(invoke).not.toHaveBeenCalledWith("syn_disconnect");

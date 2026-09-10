@@ -47,7 +47,7 @@ const native = async (command: string, args?: Record<string, unknown>) => {
       : files;
   if (command === "syn_get_dashboard")
     return {
-      system_info: { model: "DS920+", version: "7.2" },
+      systemInfo: { model: "DS920+", version: "7.2" },
       utilization: null,
       storage: null,
       network: null,
@@ -127,6 +127,8 @@ describe("SynologyPanel mounted native File Station workflow", () => {
       await screen.findByRole("button", { name: "public" }),
     ).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("syn_fs_connect", {
+      instanceId: expect.any(String),
+      requestId: expect.any(String),
       host: "nas.example.test",
       port: 5001,
       username: "alice",
@@ -137,6 +139,7 @@ describe("SynologyPanel mounted native File Station workflow", () => {
     expect(invoke).toHaveBeenCalledWith(
       "syn_fs_list",
       expect.objectContaining({
+        instanceId: expect.any(String),
         expectedSessionId: "receipt-a",
         folderPath: null,
       }),
@@ -189,7 +192,9 @@ describe("SynologyPanel mounted native File Station workflow", () => {
       target: { value: "123456" },
     });
     fireEvent.click(verify);
-    await screen.findByText("Invalid code. Try again.");
+    await screen.findByText(
+      "The one-time code was not accepted. Enter a fresh code.",
+    );
     expect(within(popup).getByLabelText("One-time code")).toHaveValue("");
     fireEvent.change(within(popup).getByLabelText("One-time code"), {
       target: { value: "234567" },
@@ -262,6 +267,7 @@ describe("SynologyPanel mounted native File Station workflow", () => {
     fireEvent.click(confirm);
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("syn_fs_create_folder", {
+        instanceId: expect.any(String),
         expectedSessionId: "receipt-a",
         folderPath: "/public",
         name: "created",
@@ -319,15 +325,33 @@ describe("SynologyPanel mounted native File Station workflow", () => {
     await screen.findByText("DS920+");
     fireEvent.click(screen.getByTestId("synology-tab-services"));
     await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("syn_list_services"),
+      expect(invoke).toHaveBeenCalledWith(
+        "syn_list_services",
+        expect.objectContaining({
+          instanceId: expect.any(String),
+          expectedSessionId: "receipt-a",
+        }),
+      ),
     );
     fireEvent.click(screen.getByTestId("synology-tab-system"));
     await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("syn_get_system_info"),
+      expect(invoke).toHaveBeenCalledWith(
+        "syn_get_system_info",
+        expect.objectContaining({
+          instanceId: expect.any(String),
+          expectedSessionId: "receipt-a",
+        }),
+      ),
     );
     fireEvent.click(screen.getByTestId("synology-tab-storage"));
     await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("syn_get_storage_overview"),
+      expect(invoke).toHaveBeenCalledWith(
+        "syn_get_storage_overview",
+        expect.objectContaining({
+          instanceId: expect.any(String),
+          expectedSessionId: "receipt-a",
+        }),
+      ),
     );
   });
   it("renders bounded task progress without declaring unfinished work complete", async () => {
@@ -377,6 +401,7 @@ describe("SynologyPanel mounted native File Station workflow", () => {
     fireEvent.click(screen.getByTitle("Disconnect"));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+        instanceId: expect.any(String),
         expectedSessionId: "receipt-a",
       }),
     );

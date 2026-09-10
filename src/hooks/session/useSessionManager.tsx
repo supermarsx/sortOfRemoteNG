@@ -65,6 +65,7 @@ import {
   type SessionCloseStateById,
 } from "../../utils/session/sessionClose";
 import { recordForcedSessionCleanupEvidence } from "../../utils/session/forcedSessionCleanupLedger";
+import { disconnectSynologySession } from "../../utils/session/synologySessionLifecycle";
 
 export function usesGenericSessionTimer(protocol: string): boolean {
   return usesLegacyGenericTimer(protocol);
@@ -1051,6 +1052,31 @@ export const useSessionManager = () => {
     session: ConnectionSession,
     connection: Connection,
   ) => {
+    if (session.protocol === "synology") {
+      try {
+        await disconnectSynologySession(session.id);
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            id: session.id,
+            status: "disconnected",
+            errorMessage:
+              "Sign in again in this NAS tab. One-time codes and failed file operations are not replayed.",
+          },
+        });
+      } catch {
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            id: session.id,
+            status: "error",
+            errorMessage:
+              "NAS cleanup failed. Retry Disconnect before signing in again.",
+          },
+        });
+      }
+      return;
+    }
     if (hasSessionVpnCleanupQuarantine(session)) {
       dispatch({
         type: "UPDATE_SESSION",
@@ -1380,12 +1406,36 @@ export const useSessionManager = () => {
     // Integration providers register their exact backend cleanup with the
     // mounted host. Await it before removing the owning session; host unmount
     // remains an idempotent fallback.
-    if (isIntegrationConnectionProtocol(session.protocol)) {
+    if (session.protocol === "synology" && !authoritativeSession) {
+      const confirmActive =
+        settings.confirmCloseActiveTab &&
+        session.id === activeSessionIdRef.current &&
+        session.status === "connected";
+      const warn =
+        resolveConnectionWarnOnClose(
+          connection?.warnOnClose,
+          settings.warnOnClose,
+        ) && !abandoned;
+      if (
+        (confirmActive || warn) &&
+        !(await showConfirm(
+          "Close this NAS session? Running file operations will be cancelled.",
+        ))
+      )
+        return false;
+      if (!isCurrentCloseAttempt(attempt)) return false;
+    }
+    if (
+      isIntegrationConnectionProtocol(session.protocol) ||
+      session.protocol === "synology"
+    ) {
       return runBoundedSessionCleanup(attempt, async () => {
         markSessionEnding(sessionId);
         lifecycle.beginEnding(sessionId);
         try {
-          await releaseIntegrationSession(sessionId);
+          if (session.protocol === "synology")
+            await disconnectSynologySession(sessionId);
+          else await releaseIntegrationSession(sessionId);
         } catch (error) {
           if (!isCurrentCloseAttempt(attempt)) return false;
           const detail =

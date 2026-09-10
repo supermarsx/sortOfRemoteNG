@@ -62,6 +62,7 @@ const BUILT_IN_PROTOCOLS: ReadonlySet<string> =
     "anydesk",
     "http",
     "https",
+    "synology",
     "telnet",
     "raw",
     "rlogin",

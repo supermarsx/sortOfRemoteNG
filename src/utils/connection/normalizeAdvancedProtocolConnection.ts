@@ -5,6 +5,7 @@ import {
   normalizeRawSocketSettings,
 } from "../../types/protocols/rawSocket";
 import { normalizeArdSettings } from "../../types/protocols/ard";
+import { normalizeSynologySettings } from "../../types/protocols/synology";
 import {
   normalizeSerialSettings,
   serialHostnameFor,
@@ -99,6 +100,14 @@ export function normalizeAdvancedProtocolConnection(
     );
   }
   const canInitialize = input.isGroup !== true;
+  if (
+    input.synologySettings !== undefined ||
+    (canInitialize && protocol === "synology")
+  ) {
+    next.synologySettings = normalizeSynologySettings(input.synologySettings);
+    if (protocol === "synology" && !isValidNetworkPort(input.port))
+      next.port = next.synologySettings.useHttps ? 5001 : 5000;
+  }
 
   if (
     rawMigration ||

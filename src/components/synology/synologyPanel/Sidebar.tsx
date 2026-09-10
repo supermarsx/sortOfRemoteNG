@@ -56,7 +56,7 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
 
   return (
-    <div className="w-48 shrink-0 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-surfaceHover)]">
+    <div className="w-36 md:w-48 shrink-0 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-surfaceHover)]">
       {/* Tabs */}
       <nav className="flex-1 overflow-y-auto py-2">
         {TABS.map(({ key, icon: Icon, label }) => (
@@ -64,6 +64,7 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
             key={key}
             onClick={() => mgr.changeTab(key)}
             data-testid={`synology-tab-${key}`}
+            aria-current={mgr.activeTab === key ? "page" : undefined}
             className={`w-full flex items-center gap-2 px-4 py-2 text-xs transition-colors ${
               mgr.activeTab === key
                 ? "bg-teal-500/15 text-teal-400 font-medium border-r-2 border-teal-500"
@@ -76,6 +77,11 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
         ))}
       </nav>
 
+      {mgr.lastRefreshed && (
+        <p className="px-3 py-1 text-[10px] text-text-muted">
+          Last checked {new Date(mgr.lastRefreshed).toLocaleTimeString()}
+        </p>
+      )}
       {/* Footer actions */}
       <div className="p-3 border-t border-[var(--color-border)] flex items-center gap-2">
         <button

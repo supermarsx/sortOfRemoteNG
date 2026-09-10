@@ -35,7 +35,8 @@ const list = (command: string) =>
   Promise.resolve(command === "syn_fs_list" ? files : undefined);
 const setup = async () => {
   const hook = renderHook(
-    ({ receipt, active }) => useSynologyFileStation(receipt, active),
+    ({ receipt, active }) =>
+      useSynologyFileStation("instance-a", receipt, active),
     { initialProps: { receipt: "receipt-a", active: true } },
   );
   await waitFor(() => expect(hook.result.current.loading).toBe(false));
@@ -52,6 +53,7 @@ describe("File Station session and operation lifecycle", () => {
   it("lists shares at root, then scopes paged/sorted directory requests", async () => {
     const { result } = await setup();
     expect(invoke).toHaveBeenCalledWith("syn_fs_list", {
+      instanceId: "instance-a",
       expectedSessionId: "receipt-a",
       folderPath: null,
       offset: 0,
@@ -66,6 +68,7 @@ describe("File Station session and operation lifecycle", () => {
     });
     await waitFor(() =>
       expect(invoke).toHaveBeenLastCalledWith("syn_fs_list", {
+        instanceId: "instance-a",
         expectedSessionId: "receipt-a",
         folderPath: "/public",
         offset: 100,
@@ -92,6 +95,7 @@ describe("File Station session and operation lifecycle", () => {
     expect(requests.length).toBeGreaterThan(0);
     for (const [, args] of requests)
       expect(args).toMatchObject({
+        instanceId: "instance-a",
         expectedSessionId: "receipt-b",
         folderPath: null,
         offset: 0,
@@ -165,6 +169,7 @@ describe("File Station session and operation lifecycle", () => {
       expect(invoke).toHaveBeenCalledWith(
         "syn_fs_start_task",
         expect.objectContaining({
+          instanceId: "instance-a",
           expectedSessionId: "receipt-a",
           operation: kind,
           paths: ["/public/notes.txt"],
@@ -245,6 +250,7 @@ describe("File Station session and operation lifecycle", () => {
     act(() => result.current.setPage(1));
     await waitFor(() =>
       expect(invoke).toHaveBeenLastCalledWith("syn_fs_task_status", {
+        instanceId: "instance-a",
         expectedSessionId: "receipt-a",
         taskId: "search-a",
         offset: 100,
@@ -254,6 +260,7 @@ describe("File Station session and operation lifecycle", () => {
     act(() => result.current.setFileSearch(""));
     await act(() => result.current.searchFiles());
     expect(invoke).toHaveBeenCalledWith("syn_fs_stop_task", {
+      instanceId: "instance-a",
       expectedSessionId: "receipt-a",
       taskId: "search-a",
     });
@@ -303,6 +310,7 @@ describe("File Station session and operation lifecycle", () => {
     expect(invoke).toHaveBeenCalledWith(
       "syn_fs_start_task",
       expect.objectContaining({
+        instanceId: "instance-a",
         expectedSessionId: "receipt-b",
         operation: "copy",
       }),
@@ -363,6 +371,7 @@ describe("File Station session and operation lifecycle", () => {
     );
     await act(() => result.current.upload());
     expect(invoke).toHaveBeenCalledWith("syn_fs_upload", {
+      instanceId: "instance-a",
       expectedSessionId: "receipt-a",
       folderPath: "/public",
       overwrite: null,
@@ -371,6 +380,7 @@ describe("File Station session and operation lifecycle", () => {
     act(() => result.current.toggleSelection("/public/notes.txt"));
     await act(() => result.current.download());
     expect(invoke).toHaveBeenCalledWith("syn_fs_download", {
+      instanceId: "instance-a",
       expectedSessionId: "receipt-a",
       path: "/public/notes.txt",
     });

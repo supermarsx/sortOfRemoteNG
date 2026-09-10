@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  invokeManagement,
+  toSafeManagementError,
+} from "../../utils/security/managementInvoke";
 import type {
   FileListItem,
   FileListResult,
@@ -16,11 +19,7 @@ const hasControl = (value: string) =>
     (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
   );
 const explain = (error: unknown) =>
-  error instanceof Error
-    ? error.message
-    : typeof error === "string"
-      ? error
-      : "The File Station operation failed.";
+  toSafeManagementError(error, "The File Station operation failed.");
 export const validSynologyPath = (path: string) =>
   path.startsWith("/") &&
   path.length <= 4096 &&
@@ -34,7 +33,12 @@ export const validSynologyName = (name: string) =>
   !name.includes("/") &&
   !name.includes("\\") &&
   !hasControl(name);
-type Scope = { sessionId: string; generation: number; path: string };
+type Scope = {
+  instanceId: string;
+  sessionId: string;
+  generation: number;
+  path: string;
+};
 export interface FileStationReview {
   id: number;
   kind: "create" | "rename" | "delete" | "copy" | "move";
@@ -43,8 +47,11 @@ export interface FileStationReview {
 }
 
 export function useSynologyFileStation(
+  instanceId: string,
   sessionId: string | null,
   active: boolean,
+  onSessionExpired?: (expectedSessionId: string) => void,
+  assertSessionAccess?: () => void,
 ) {
   const [currentPath, setCurrentPath] = useState("/");
   const [pathOwner, setPathOwner] = useState(sessionId);
@@ -61,8 +68,11 @@ export function useSynologyFileStation(
     [message, setMessage] = useState<string | null>(null);
   const [task, setTask] = useState<SynologyFileTaskStatus | null>(null);
   const latest = useRef({
+    instanceId,
     sessionId,
     active,
+    onSessionExpired,
+    assertSessionAccess,
     currentPath,
     page,
     sortBy,
@@ -71,13 +81,38 @@ export function useSynologyFileStation(
   const effectivePath = pathOwner === sessionId ? currentPath : "/";
   const effectivePage = pathOwner === sessionId ? page : 0;
   latest.current = {
+    instanceId,
     sessionId,
     active,
+    onSessionExpired,
+    assertSessionAccess,
     currentPath: effectivePath,
     page: effectivePage,
     sortBy,
     sortDirection,
   };
+  const invoke = useCallback(
+    async <T>(command: string, args: Record<string, unknown>): Promise<T> => {
+      try {
+        // Exact-receipt task cancellation remains allowed during teardown.
+        if (command !== "syn_fs_stop_task")
+          latest.current.assertSessionAccess?.();
+        const value = await invokeManagement<T>(command, args);
+        if (command !== "syn_fs_stop_task")
+          latest.current.assertSessionAccess?.();
+        return value;
+      } catch (error) {
+        if (
+          args.instanceId === latest.current.instanceId &&
+          args.expectedSessionId === latest.current.sessionId &&
+          toSafeManagementError(error).startsWith("SYNOLOGY_SESSION_EXPIRED: ")
+        )
+          latest.current.onSessionExpired?.(String(args.expectedSessionId));
+        throw error;
+      }
+    },
+    [],
+  );
   const alive = useRef(true),
     generation = useRef(0),
     readVersion = useRef(0),
@@ -86,6 +121,7 @@ export function useSynologyFileStation(
     operation = useRef(0);
   const reviewRef = useRef<FileStationReview | null>(null);
   const taskRef = useRef<{
+    instanceId: string;
     sessionId: string;
     taskId: string;
     operation: SynologyFileOperation;
@@ -96,8 +132,10 @@ export function useSynologyFileStation(
     timer: ReturnType<typeof setTimeout>;
     resolve: () => void;
   } | null>(null);
-  const previousScope = useRef(`${sessionId}:${active}:${effectivePath}`);
-  const scopeKey = `${sessionId}:${active}:${effectivePath}`;
+  const previousScope = useRef(
+    `${instanceId}:${sessionId}:${active}:${effectivePath}`,
+  );
+  const scopeKey = `${instanceId}:${sessionId}:${active}:${effectivePath}`;
   if (previousScope.current !== scopeKey) {
     previousScope.current = scopeKey;
     generation.current++;
@@ -105,18 +143,22 @@ export function useSynologyFileStation(
   }
   const capture = useCallback((): Scope => {
     const current = latest.current;
+    current.assertSessionAccess?.();
     if (!current.sessionId || !current.active)
       throw new Error("Reconnect to the NAS and open File Station first.");
     return {
+      instanceId: current.instanceId,
       sessionId: current.sessionId,
       generation: generation.current,
       path: current.currentPath,
     };
   }, []);
   const check = useCallback((scope: Scope) => {
+    latest.current.assertSessionAccess?.();
     if (
       !alive.current ||
       !latest.current.active ||
+      latest.current.instanceId !== scope.instanceId ||
       latest.current.sessionId !== scope.sessionId ||
       generation.current !== scope.generation ||
       latest.current.currentPath !== scope.path
@@ -136,22 +178,32 @@ export function useSynologyFileStation(
     if (pending) {
       // Replacement/revocation is handled by the native session registry. An
       // old receipt must never prevent operations on the new NAS session.
-      if (pending.sessionId !== latest.current.sessionId) {
+      if (
+        pending.instanceId !== latest.current.instanceId ||
+        pending.sessionId !== latest.current.sessionId
+      ) {
         if (taskRef.current === pending) taskRef.current = null;
         return;
       }
       await invoke("syn_fs_stop_task", {
+        instanceId: pending.instanceId,
         expectedSessionId: pending.sessionId,
         taskId: pending.taskId,
       });
       if (taskRef.current === pending) taskRef.current = null;
     }
-  }, []);
+  }, [invoke]);
   const refresh = useCallback(async () => {
     const current = latest.current;
     if (!current.sessionId || !current.active || busyRef.current) return;
-    const scope = capture(),
-      read = ++readVersion.current;
+    let scope: Scope;
+    try {
+      scope = capture();
+    } catch (failure) {
+      if (alive.current) setError(explain(failure));
+      return;
+    }
+    const read = ++readVersion.current;
     setLoading(true);
     setError(null);
     try {
@@ -166,6 +218,7 @@ export function useSynologyFileStation(
         const result = await invoke<SynologyFileTaskStatus>(
           "syn_fs_task_status",
           {
+            instanceId: scope.instanceId,
             expectedSessionId: scope.sessionId,
             taskId: search.taskId,
             offset: current.page * PAGE_SIZE,
@@ -177,6 +230,7 @@ export function useSynologyFileStation(
         data = result.files;
       } else
         data = await invoke<FileListResult>("syn_fs_list", {
+          instanceId: scope.instanceId,
           expectedSessionId: scope.sessionId,
           folderPath: scope.path === "/" ? null : scope.path,
           offset: current.page * PAGE_SIZE,
@@ -195,7 +249,7 @@ export function useSynologyFileStation(
     } finally {
       if (alive.current && read === readVersion.current) setLoading(false);
     }
-  }, [capture, check]);
+  }, [capture, check, invoke]);
   const cancelTask = useCallback(async () => {
     const cancelled = ++operation.current;
     busyRef.current = true;
@@ -234,7 +288,7 @@ export function useSynologyFileStation(
     setCurrentPath("/");
     setPage(0);
     setFileSearch("");
-  }, [sessionId]);
+  }, [instanceId, sessionId]);
   useEffect(() => {
     operation.current++;
     busyRef.current = false;
@@ -328,6 +382,7 @@ export function useSynologyFileStation(
     await stopOwnedTask();
     check(scope);
     const started = await invoke<{ taskId: string }>("syn_fs_start_task", {
+      instanceId: scope.instanceId,
       expectedSessionId: scope.sessionId,
       operation: kind,
       paths,
@@ -341,6 +396,7 @@ export function useSynologyFileStation(
       generation.current !== scope.generation
     ) {
       await invoke("syn_fs_stop_task", {
+        instanceId: scope.instanceId,
         expectedSessionId: scope.sessionId,
         taskId: started.taskId,
       });
@@ -349,6 +405,7 @@ export function useSynologyFileStation(
     if (!started.taskId)
       throw new Error("The NAS did not return a file task receipt.");
     taskRef.current = {
+      instanceId: scope.instanceId,
       sessionId: scope.sessionId,
       taskId: started.taskId,
       operation: kind,
@@ -366,6 +423,7 @@ export function useSynologyFileStation(
       const status = await invoke<SynologyFileTaskStatus>(
         "syn_fs_task_status",
         {
+          instanceId: scope.instanceId,
           expectedSessionId: scope.sessionId,
           taskId: started.taskId,
           offset: 0,
@@ -454,6 +512,7 @@ export function useSynologyFileStation(
         );
       if (captured.kind === "create") {
         await invoke("syn_fs_create_folder", {
+          instanceId: scope.instanceId,
           expectedSessionId: scope.sessionId,
           folderPath: scope.path,
           name: value,
@@ -462,6 +521,7 @@ export function useSynologyFileStation(
         setMessage("Folder created.");
       } else if (captured.kind === "rename") {
         await invoke("syn_fs_rename", {
+          instanceId: scope.instanceId,
           expectedSessionId: scope.sessionId,
           path: paths[0],
           name: value,
@@ -501,11 +561,16 @@ export function useSynologyFileStation(
         kind === "upload" ? "syn_fs_upload" : "syn_fs_download",
         kind === "upload"
           ? {
+              instanceId: scope.instanceId,
               expectedSessionId: scope.sessionId,
               folderPath: scope.path,
               overwrite: null,
             }
-          : { expectedSessionId: scope.sessionId, path: item!.path },
+          : {
+              instanceId: scope.instanceId,
+              expectedSessionId: scope.sessionId,
+              path: item!.path,
+            },
       );
       check(scope);
       if (!result.cancelled)

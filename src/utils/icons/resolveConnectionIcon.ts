@@ -57,6 +57,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   lenovo: "lenovo",
   supermicro: "supermicro",
   "voip-phone": "voip",
+  synology: "synology",
 });
 
 export type EffectiveConnectionIconSource =

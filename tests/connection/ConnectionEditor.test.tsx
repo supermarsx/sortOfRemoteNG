@@ -193,6 +193,7 @@ vi.mock("../../src/utils/discovery/defaultPorts", () => ({
       vnc: 5900,
       http: 80,
       https: 443,
+      synology: 5001,
       raw: 23,
       rlogin: 513,
       winrm: 5985,
@@ -320,6 +321,7 @@ describe("ConnectionEditor", () => {
           mysql: true,
           postgresql: true,
           mongodb: true,
+          platform: true,
         };
       }
       if (command === "read_app_data") return integrationConfigRaw;
@@ -554,6 +556,40 @@ describe("ConnectionEditor", () => {
   });
 
   describe("New Connection", () => {
+    it("offers saved Synology File Station with manual DSM website switching and preserves the target", async () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      await screen.findByRole("option", { name: /^Synology File Station/i });
+      fireEvent.click(
+        screen.getByRole("option", { name: /^Synology File Station/i }),
+      );
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+        "Synology File Station",
+      );
+      expect(screen.getByTestId("editor-port")).toHaveValue(5001);
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "nas.example.test" },
+      });
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Synology access mode" }),
+      );
+      fireEvent.mouseDown(
+        screen.getByRole("option", {
+          name: "DSM website (interactive sign-in)",
+        }),
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent("HTTPS");
+      expect(screen.getByTestId("editor-hostname")).toHaveValue(
+        "nas.example.test",
+      );
+      expect(screen.getByTestId("editor-port")).toHaveValue(5001);
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(
+        screen.getByRole("tab", { name: "Application" }),
+      ).toBeInTheDocument();
+    });
     it("should initialize with default values for new connection", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 

@@ -64,6 +64,14 @@ const unavailable = (
 /** Browser capabilities, not a claim that every native API credential logs into a website. */
 export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   {
+    id: "synology-dsm",
+    label: "Synology DSM",
+    category: "mailStorage",
+    capability: "manual",
+    description:
+      "Interactive DSM website sign-in and MFA. Use the system browser at the NAS origin for security keys or approval challenges. Website sign-in does not authorize the separate native File Station API.",
+  },
+  {
     id: "custom",
     label: "Custom application",
     category: "custom",

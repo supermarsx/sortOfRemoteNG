@@ -79,7 +79,18 @@ export const voipPhoneRuntimeDescriptor = {
   importPanel: () => import("../../components/voipPhone/VoipPhoneSessionPanel"),
 } satisfies BuiltInManagementRuntimeDescriptor<"voip-phone">;
 
+export const synologyRuntimeDescriptor = {
+  protocol: "synology",
+  label: "Synology File Station",
+  category: "file-storage",
+  frontendPath: "src/components/synology/SynologySessionPanel.tsx",
+  backendPath: "src-tauri/crates/sorng-synology",
+  testPath: "tests/synology/SynologySessionPanel.test.tsx",
+  importPanel: () => import("../../components/synology/SynologySessionPanel"),
+} satisfies BuiltInManagementRuntimeDescriptor<"synology">;
+
 export const builtInManagementRuntimeRegistry = [
+  synologyRuntimeDescriptor,
   idracRuntimeDescriptor,
   iloRuntimeDescriptor,
   lenovoRuntimeDescriptor,

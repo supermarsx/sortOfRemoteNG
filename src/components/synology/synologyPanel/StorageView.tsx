@@ -1,218 +1,101 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
-import { HardDrive, Activity, Search } from "lucide-react";
 import type { SubProps } from "./types";
-
-const formatBytes = (bytes: number) => {
-  if (!bytes) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-};
-
-const StorageView: React.FC<SubProps> = ({ mgr }) => {
-  const { t } = useTranslation();
-
+import AdminTable from "./AdminTable";
+export default function StorageView({ mgr }: SubProps) {
   return (
-    <div className="p-6 space-y-6 overflow-y-auto flex-1">
-      <h3 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-        <HardDrive className="w-4 h-4 text-warning" />
-        {t("synology.storage.title", "Storage Management")}
-      </h3>
-
-      {/* Volumes */}
-      <section>
-        <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">
-          {t("synology.storage.volumes", "Volumes")} ({mgr.volumes.length})
-        </h4>
-        {mgr.volumes.length > 0 ? (
-          <div className="space-y-2">
-            {mgr.volumes.map((vol) => {
-              const total = vol.size?.total ?? 0;
-              const used = vol.size?.used ?? 0;
-              const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-              return (
-                <div
-                  key={vol.id ?? vol.display_name}
-                  className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-[var(--color-text)]">
-                      {vol.display_name ?? vol.id}
-                    </span>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded ${
-                        vol.status === "normal"
-                          ? "bg-success/15 text-success"
-                          : vol.status === "crashed"
-                            ? "bg-error/15 text-error"
-                            : "bg-warning/15 text-warning"
-                      }`}
-                    >
-                      {vol.status}
-                    </span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-[var(--color-bg)] overflow-hidden mb-1">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        pct > 90
-                          ? "bg-error"
-                          : pct > 70
-                            ? "bg-warning"
-                            : "bg-teal-500"
-                      }`}
-                      style={{ width: `${Math.min(pct, 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] text-[var(--color-textSecondary)]">
-                    <span>
-                      {formatBytes(used)} / {formatBytes(total)}
-                    </span>
-                    <span>{pct}% used</span>
-                  </div>
-                  {vol.fs_type && (
-                    <div className="text-[10px] text-[var(--color-textSecondary)] mt-1">
-                      FS: {vol.fs_type}
-                      {vol.pool_path ? ` | Pool: ${vol.pool_path}` : ""}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-sm text-[var(--color-textSecondary)]">
-            {t("synology.storage.noVolumes", "No volumes found")}
-          </div>
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">
+      <AdminTable
+        title="Disks"
+        rows={mgr.disks}
+        columns={[
+          ["id", "ID"],
+          ["name", "Name"],
+          ["model", "Model"],
+          ["sizeTotal", "Bytes"],
+          ["temp", "Temperature °C"],
+          ["status", "Status"],
+          ["smartStatus", "SMART"],
+        ]}
+        actions={(row) => (
+          <button
+            className="sor-btn-secondary-sm"
+            onClick={() => void mgr.loadSmartInfo(String(row.id))}
+          >
+            SMART details
+          </button>
         )}
-      </section>
-
-      {/* Disks */}
-      <section>
-        <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2">
-          {t("synology.storage.disks", "Physical Disks")} ({mgr.disks.length})
-        </h4>
-        {mgr.disks.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-left text-[var(--color-textSecondary)] border-b border-[var(--color-border)]">
-                  <th className="pb-2 pr-3">ID</th>
-                  <th className="pb-2 pr-3">Model</th>
-                  <th className="pb-2 pr-3">Size</th>
-                  <th className="pb-2 pr-3">Temp</th>
-                  <th className="pb-2 pr-3">Status</th>
-                  <th className="pb-2 pr-3">SMART</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mgr.disks.map((disk) => (
-                  <tr
-                    key={disk.id ?? disk.name}
-                    className="border-b border-[var(--color-border)]/50"
-                  >
-                    <td className="py-2 pr-3 font-medium text-[var(--color-text)]">
-                      {disk.id ?? disk.name}
-                    </td>
-                    <td className="py-2 pr-3 text-[var(--color-textSecondary)]">
-                      {disk.model ?? "—"}
-                    </td>
-                    <td className="py-2 pr-3 text-[var(--color-textSecondary)]">
-                      {disk.size_total ? formatBytes(disk.size_total) : "—"}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={
-                          (disk.temp ?? 0) > 50
-                            ? "text-error"
-                            : (disk.temp ?? 0) > 40
-                              ? "text-warning"
-                              : "text-success"
-                        }
-                      >
-                        {disk.temp ?? "—"}°C
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded ${
-                          disk.status === "normal"
-                            ? "bg-success/15 text-success"
-                            : "bg-error/15 text-error"
-                        }`}
-                      >
-                        {disk.status}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <button
-                        onClick={() => mgr.loadSmartInfo(disk.id ?? disk.name ?? "")}
-                        className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--color-bg)] border border-[var(--color-border)] text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
-                      >
-                        <Search className="w-3 h-3" />
-                        SMART
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-8 text-sm text-[var(--color-textSecondary)]">
-            {t("synology.storage.noDisks", "No disks found")}
-          </div>
-        )}
-      </section>
-
-      {/* SMART dialog */}
+      />
       {mgr.selectedDiskSmart && (
-        <section>
-          <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-            <Activity className="w-3.5 h-3.5 text-primary" />
-            {t("synology.storage.smartInfo", "S.M.A.R.T. Information")}
-          </h4>
-          <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-[var(--color-textSecondary)]">
-                  Overall:{" "}
-                </span>
-                <span className="text-[var(--color-text)] font-medium">
-                  {mgr.selectedDiskSmart.overall_status ?? "—"}
-                </span>
-              </div>
-              <div>
-                <span className="text-[var(--color-textSecondary)]">
-                  Temperature:{" "}
-                </span>
-                <span className="text-[var(--color-text)] font-medium">
-                  {mgr.selectedDiskSmart.temperature ?? "—"}°C
-                </span>
-              </div>
-              <div>
-                <span className="text-[var(--color-textSecondary)]">
-                  Power On Hours:{" "}
-                </span>
-                <span className="text-[var(--color-text)] font-medium">
-                  {mgr.selectedDiskSmart.power_on_hours ?? "—"}
-                </span>
-              </div>
-              <div>
-                <span className="text-[var(--color-textSecondary)]">
-                  Bad Sectors:{" "}
-                </span>
-                <span className="text-[var(--color-text)] font-medium">
-                  {mgr.selectedDiskSmart.bad_sectors ?? "—"}
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
+        <>
+          <AdminTable
+            title="SMART health"
+            rows={[mgr.selectedDiskSmart]}
+            columns={[
+              ["diskName", "Disk"],
+              ["healthStatus", "Health"],
+              ["temperature", "Temperature °C"],
+              ["powerOnHours", "Power-on hours"],
+              ["reallocatedSectors", "Reallocated sectors"],
+            ]}
+          />
+          <AdminTable
+            title="SMART attributes"
+            rows={mgr.selectedDiskSmart.attributes ?? []}
+            columns={[
+              ["id", "ID"],
+              ["name", "Name"],
+              ["current", "Current"],
+              ["worst", "Worst"],
+              ["threshold", "Threshold"],
+              ["raw", "Raw value"],
+              ["status", "Status"],
+            ]}
+          />
+        </>
       )}
+      <AdminTable
+        title="Volumes"
+        rows={mgr.volumes}
+        columns={[
+          ["id", "ID"],
+          ["displayName", "Name"],
+          ["status", "Status"],
+          ["fsType", "Filesystem"],
+          ["sizeTotal", "Total bytes"],
+          ["sizeUsed", "Used bytes"],
+          ["sizeFree", "Free bytes"],
+          ["usagePercent", "Used %"],
+        ]}
+      />
+      <AdminTable
+        title="Storage pools"
+        rows={mgr.storageOverview?.storagePools ?? []}
+        columns={[
+          ["id", "ID"],
+          ["status", "Status"],
+          ["raidType", "RAID"],
+          ["size", "Bytes"],
+          ["disks", "Disks"],
+        ]}
+      />
+      <AdminTable
+        title="SSD caches"
+        rows={mgr.storageOverview?.ssdCaches ?? []}
+        columns={[
+          ["id", "ID"],
+          ["status", "Status"],
+          ["size", "Bytes"],
+          ["readHit", "Read hits"],
+          ["writeHit", "Write hits"],
+        ]}
+      />
+      <AdminTable
+        title="Hot spares"
+        rows={mgr.storageOverview?.hotSpares ?? []}
+        columns={[
+          ["diskId", "Disk"],
+          ["status", "Status"],
+        ]}
+      />
     </div>
   );
-};
-
-export default StorageView;
+}

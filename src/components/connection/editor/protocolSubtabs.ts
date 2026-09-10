@@ -153,6 +153,7 @@ export function getProtocolSubtabs(
   formData: Readonly<Partial<Connection>>,
 ): readonly ProtocolSubtabDescriptor[] {
   const protocol = formData.protocol ?? "";
+  if (protocol === "synology") return selectSubtabs(["connection", "recovery"]);
 
   if (protocol === "rdp") {
     return selectSubtabs([

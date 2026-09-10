@@ -7,6 +7,7 @@ import BMCOptions, {
 } from "../../connectionEditor/BMCOptions";
 import CloudProviderOptions from "../../connectionEditor/CloudProviderOptions";
 import HTTPOptions from "../../connectionEditor/HTTPOptions";
+import SynologyOptions from "../../connectionEditor/SynologyOptions";
 import { ConnectionFavoritesSection } from "../../connectionEditor/ConnectionFavoritesSection";
 import RDPOptions from "../../connectionEditor/RDPOptions";
 import RloginOptions from "../../connectionEditor/RloginOptions";
@@ -62,6 +63,10 @@ const ProtocolSubtabContent: React.FC<{
   const protocol = mgr.formData.protocol ?? "";
 
   if (subtabId === "recovery") return <RecoverySections mgr={mgr} />;
+  if (protocol === "synology")
+    return (
+      <SynologyOptions formData={mgr.formData} setFormData={mgr.setFormData} />
+    );
   if (subtabId === "favorites")
     return (
       <ConnectionFavoritesSection

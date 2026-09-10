@@ -121,7 +121,8 @@ export type BuiltInConnectionProtocol =
   | "ilo"
   | "lenovo"
   | "supermicro"
-  | "voip-phone";
+  | "voip-phone"
+  | "synology";
 
 export type IntegrationConnectionProtocol =
   `${typeof INTEGRATION_PROTOCOL_PREFIX}${string}`;
@@ -400,6 +401,8 @@ export interface Connection
     onConnect?: string[];
     onDisconnect?: string[];
   };
+
+  synologySettings?: import("../protocols/synology").SynologySettings;
 
   // Proxy/VPN chaining
   proxyChainId?: string;

@@ -429,6 +429,15 @@ const BUILT_IN_PROTOCOL_METADATA: Omit<ProtocolOption, "icon">[] = [
     category: "cloud",
   },
   {
+    value: "synology",
+    label: "Synology File Station",
+    desc: "NAS files with independent sessions and interactive OTP",
+    labelKey: "connectionEditor.protocolOptions.synology.label",
+    descKey: "connectionEditor.protocolOptions.synology.description",
+    color: "cyan",
+    category: "file-storage",
+  },
+  {
     value: "voip-phone",
     label: "VoIP Phone (Yealink)",
     desc: "Desk-phone web admin: status, web UI, reboot",

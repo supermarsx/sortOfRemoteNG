@@ -20,6 +20,7 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   proxmox: "proxmox",
   pfsense: "pfsense",
   cloudflare: "cloudflare",
+  "synology-dsm": "synology",
   ilo: "hpe",
   idrac: "dell",
   lenovo: "lenovo",

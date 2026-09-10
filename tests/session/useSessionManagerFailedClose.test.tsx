@@ -149,6 +149,7 @@ vi.mock("../../src/hooks/integrations/IntegrationSessionLifecycle", () => ({
 }));
 
 import { useSessionManager } from "../../src/hooks/session/useSessionManager";
+import { registerSynologySession } from "../../src/utils/session/synologySessionLifecycle";
 
 const makeConnection = (
   id: string,
@@ -231,6 +232,53 @@ beforeEach(() => {
 });
 
 describe("handleSessionClose — sessions with no live transport", () => {
+  it("keeps a NAS instance on cancelled Close and awaits exact cleanup on confirmation", async () => {
+    const conn = makeConnection("nas", {
+      protocol: "synology",
+      port: 5001,
+      warnOnClose: true,
+    });
+    const session = makeSession("nas-tab", conn.id, {
+      protocol: "synology",
+      status: "connected",
+    });
+    seed([conn], [session]);
+    let finish!: () => void;
+    const cleanup = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const release = registerSynologySession(session.id, cleanup);
+    const { result } = renderHook(() => useSessionManager());
+    let closing!: Promise<boolean>;
+    act(() => {
+      closing = result.current.handleSessionClose(session.id);
+    });
+    expect(result.current.confirmDialog?.props.message).toContain(
+      "NAS session",
+    );
+    act(() => result.current.confirmDialog?.props.onCancel());
+    await expect(closing).resolves.toBe(false);
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(removeDispatched(session.id)).toBe(false);
+    act(() => {
+      closing = result.current.handleSessionClose(session.id);
+    });
+    await act(async () => {
+      result.current.confirmDialog?.props.onConfirm();
+      await Promise.resolve();
+    });
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(removeDispatched(session.id)).toBe(false);
+    await act(async () => {
+      finish();
+      await closing;
+    });
+    expect(removeDispatched(session.id)).toBe(true);
+    release();
+  });
   it("closes an error SSH tab with no backend id: no confirm even with warnOnClose", async () => {
     const conn = makeConnection("ssh-1", { warnOnClose: true });
     const session = makeSession("s-error", conn.id);

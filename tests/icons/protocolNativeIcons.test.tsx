@@ -91,7 +91,7 @@ describe("protocol-native icon wiring", () => {
   });
 
   it("covers the entire built-in selection list with canonical catalog icons", () => {
-    expect(PROTOCOL_OPTIONS).toHaveLength(37);
+    expect(PROTOCOL_OPTIONS).toHaveLength(38);
     expect(PROTOCOL_OPTIONS.map((option) => option.value).sort()).toEqual(
       Object.keys(PROTOCOL_ICON_DEFAULTS).sort(),
     );
@@ -233,8 +233,8 @@ describe("protocol-native icon wiring", () => {
     },
   );
 
-  it("renders all 37 built-in and 27 integration defaults without appliance wrappers", () => {
-    expect(PROTOCOL_OPTIONS).toHaveLength(37);
+  it("renders all 38 built-in and 27 integration defaults without appliance wrappers", () => {
+    expect(PROTOCOL_OPTIONS).toHaveLength(38);
     expect(integrationRegistry).toHaveLength(27);
     const options = [...PROTOCOL_OPTIONS, ...INTEGRATION_PROTOCOL_OPTIONS];
     for (const option of options) {

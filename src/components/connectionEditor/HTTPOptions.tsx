@@ -10,6 +10,7 @@ import CustomHeadersSection from "./httpOptions/CustomHeadersSection";
 import { ConnectionFavoritesSection } from "./ConnectionFavoritesSection";
 import HeaderModal from "./httpOptions/HeaderModal";
 import ApplicationSection from "./httpOptions/ApplicationSection";
+import SynologyOptions from "./SynologyOptions";
 import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
 
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
@@ -26,6 +27,10 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   return (
     <>
       {shows("application") && <ApplicationSection mgr={mgr} />}
+      {shows("application") &&
+        formData.httpApplication?.id === "synology-dsm" && (
+          <SynologyOptions formData={formData} setFormData={setFormData} />
+        )}
       {shows("authentication") &&
         (formData.httpApplication !== undefined ? (
           <p className="text-sm text-[var(--color-textSecondary)]">

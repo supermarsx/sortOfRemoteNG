@@ -125,6 +125,11 @@ const PROTOCOL_REQUIREMENTS: Record<
     cargoFeature: "ops",
   },
   "voip-phone": { capability: "ops", label: "VoIP phone", cargoFeature: "ops" },
+  synology: {
+    capability: "ops",
+    label: "Synology File Station",
+    cargoFeature: "ops,platform",
+  },
 };
 
 // Integration routing follows the app command-crate feature gates, not the
@@ -212,6 +217,8 @@ export const getRuntimeProtocolUnavailableMessage = (
   capabilities: RuntimeCapabilities,
 ): string | null => {
   const requirement = getRuntimeProtocolRequirement(protocol);
+  if (protocol?.toLowerCase() === "synology" && capabilities.platform !== true)
+    return 'Synology File Station requires the full build with both "ops" and "platform" features.';
   if (!requirement || capabilities[requirement.capability] === true)
     return null;
 

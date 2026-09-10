@@ -16,6 +16,7 @@ afterEach(() => resetBuiltInManagementRuntimeLeasesForTests());
  * (t66) rides the same runtime registry but is a `networking` device.
  */
 const EXPECTED_RUNTIME_CATEGORIES: Record<string, string> = {
+  synology: "file-storage",
   idrac: "lights-out",
   ilo: "lights-out",
   lenovo: "lights-out",

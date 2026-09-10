@@ -43,6 +43,7 @@ const KNOWN_SCHEMES = [
   // Web
   "http",
   "https",
+  "synology",
   // Remote-desktop / shell
   "ssh",
   "ard",
@@ -269,6 +270,7 @@ const SCHEME_PROTOCOLS: Readonly<Record<string, ConnectionProtocol>> =
     lenovo: "lenovo",
     supermicro: "supermicro",
     "voip-phone": "voip-phone",
+    synology: "synology",
   });
 
 export interface CanonicalWebAuthority {

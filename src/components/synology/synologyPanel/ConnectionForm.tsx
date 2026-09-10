@@ -49,7 +49,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
                 autoComplete="off"
                 value={mgr.host}
                 onChange={(e) => mgr.setHost(e.target.value)}
-                disabled={disabled}
+                disabled={disabled || mgr.targetLocked}
               />
             </label>
             <label
@@ -65,7 +65,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
                 className={inputClass}
                 value={mgr.port || ""}
                 onChange={(e) => mgr.setPort(Number(e.target.value))}
-                disabled={disabled}
+                disabled={disabled || mgr.targetLocked}
               />
             </label>
           </div>
@@ -97,7 +97,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               type="checkbox"
               checked={mgr.useHttps}
               onChange={(e) => mgr.setUseHttps(e.target.checked)}
-              disabled={disabled}
+              disabled={disabled || mgr.targetLocked}
             />
             HTTPS
           </label>

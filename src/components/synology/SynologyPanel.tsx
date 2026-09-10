@@ -2,7 +2,8 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { useSynologyManager } from "../../hooks/synology/useSynologyManager";
 import Modal from "../ui/overlays/Modal";
-import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
+import { useSynologyFileConnection } from "../../hooks/synology/useSynologyFileConnection";
+import AdminTools from "./synologyPanel/AdminTools";
 import type { SynologyPanelProps } from "./synologyPanel/types";
 import SynologyHeader from "./synologyPanel/SynologyHeader";
 import ConnectionForm from "./synologyPanel/ConnectionForm";
@@ -29,15 +30,15 @@ import {
 } from "./synologyPanel/SecondaryViews";
 import { AlertCircle } from "lucide-react";
 
-export const SynologyPanel: React.FC<SynologyPanelProps> = ({
-  isOpen,
-  onClose,
-}) => {
+export function SynologySessionContent({
+  connection,
+  isActive = true,
+}: {
+  connection: ReturnType<typeof useSynologyFileConnection>;
+  isActive?: boolean;
+}) {
   const { t } = useTranslation();
-  const mgr = useSynologyManager(isOpen);
-
-  if (!isOpen) return null;
-
+  const mgr = useSynologyManager(isActive, connection);
   const renderContent = () => {
     switch (mgr.activeTab) {
       case "dashboard":
@@ -82,60 +83,54 @@ export const SynologyPanel: React.FC<SynologyPanelProps> = ({
   };
 
   return (
-    <>
-      <Modal
-        isOpen={isOpen}
-        ariaLabel="Synology NAS Manager"
-        onClose={onClose}
-        backdropClassName="bg-black/50"
-        panelClassName="max-w-7xl h-[92vh] rounded-xl overflow-hidden border border-[var(--color-border)]"
-        contentClassName="bg-[var(--color-surface)]"
-      >
-        <div
-          className="flex flex-1 min-h-0 flex-col h-full"
-          data-testid="synology-panel"
-        >
-          <SynologyHeader mgr={mgr} onClose={onClose} />
-
-          {mgr.connectionStatus !== "connected" ? (
-            <ConnectionForm mgr={mgr} />
-          ) : (
-            <div className="flex flex-1 min-h-0">
-              <Sidebar mgr={mgr} />
-              <div className="flex flex-1 flex-col min-w-0 min-h-0">
-                {/* Error bar */}
-                {mgr.dataError && (
-                  <div className="flex items-center gap-2 px-4 py-2 bg-error/10 border-b border-error/30 text-error text-xs">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{mgr.dataError}</span>
-                    <button
-                      onClick={mgr.clearDataError}
-                      className="ml-auto text-error/60 hover:text-error text-[10px]"
-                    >
-                      {t("common.dismiss", "Dismiss")}
-                    </button>
-                  </div>
-                )}
-                {renderContent()}
+    <div
+      className="flex flex-1 min-h-0 min-w-0 flex-col h-full bg-surface text-text"
+      data-testid="synology-panel"
+    >
+      {mgr.connectionStatus !== "connected" ? (
+        <ConnectionForm mgr={mgr} />
+      ) : (
+        <div className="flex flex-1 min-h-0 min-w-0">
+          <Sidebar mgr={mgr} />
+          <div className="flex flex-1 flex-col min-w-0 min-h-0">
+            {mgr.dataError && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 px-4 py-2 bg-error/10 border-b border-error/30 text-error text-xs"
+              >
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-pre-line">{mgr.dataError}</span>
+                <button onClick={mgr.clearDataError} className="ml-auto">
+                  {t("common.dismiss", "Dismiss")}
+                </button>
               </div>
-            </div>
-          )}
+            )}
+            <AdminTools mgr={mgr} />
+            {renderContent()}
+          </div>
         </div>
-      </Modal>
-
-      {/* Confirm dialog */}
-      <ConfirmDialog
-        isOpen={mgr.confirmOpen}
-        onCancel={mgr.cancelConfirm}
-        onConfirm={mgr.executeConfirm}
-        title={mgr.confirmTitle}
-        message={mgr.confirmMessage}
-        confirmText={t("common.confirm", "Confirm")}
-        cancelText={t("common.cancel", "Cancel")}
-        variant="danger"
-      />
-    </>
+      )}
+    </div>
+  );
+}
+export const SynologyPanel: React.FC<SynologyPanelProps> = ({
+  isOpen,
+  onClose,
+}) => {
+  const connection = useSynologyFileConnection(isOpen);
+  if (!isOpen) return null;
+  return (
+    <Modal
+      isOpen={isOpen}
+      ariaLabel="Synology NAS Manager"
+      onClose={onClose}
+      backdropClassName="bg-black/50"
+      panelClassName="max-w-7xl h-[92vh] rounded-xl overflow-hidden border border-border"
+      contentClassName="bg-surface flex flex-col min-h-0"
+    >
+      <SynologyHeader connection={connection} onClose={onClose} />
+      <SynologySessionContent connection={connection} isActive={isOpen} />
+    </Modal>
   );
 };
-
 export default SynologyPanel;

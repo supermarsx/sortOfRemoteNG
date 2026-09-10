@@ -8,8 +8,7 @@ export const ADDITIONAL_AUDITED_PROTOCOLS = ["mac", "ipmi", "k8s"] as const;
 export type AdditionalAuditedProtocol =
   (typeof ADDITIONAL_AUDITED_PROTOCOLS)[number];
 export type AuditedProtocol =
-  | BuiltInConnectionProtocol
-  | AdditionalAuditedProtocol;
+  BuiltInConnectionProtocol | AdditionalAuditedProtocol;
 
 export type ProtocolAvailabilityClass =
   | "fully-interactive"
@@ -19,13 +18,10 @@ export type ProtocolAvailabilityClass =
   | "genuinely-unsupported";
 
 export type ProtocolVerificationModel =
-  | "not-applicable"
-  | "local-initialized-then-provider-verified";
+  "not-applicable" | "local-initialized-then-provider-verified";
 
 export type ProtocolSessionEntry =
-  | "client-owned"
-  | "legacy-generic-timer"
-  | "none";
+  "client-owned" | "legacy-generic-timer" | "none";
 
 export interface ProtocolAvailability {
   label: string;
@@ -437,6 +433,16 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     verificationModel: "local-initialized-then-provider-verified",
     detail:
       "Read-only management overview. Native Supermicro client initialization is local-only; each dashboard, storage, or firmware section becomes provider-verified only after its registered read succeeds, with partial failures reported per section.",
+  }),
+  synology: capability({
+    label: "Synology File Station",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/synology/SynologySessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-synology",
+    testPath: "tests/synology/SynologySessionPanel.test.tsx",
+    detail:
+      "Saved NAS connection with independent scoped File Station sessions and interactive one-time codes. Website MFA does not authorize the API.",
   }),
   "voip-phone": capability({
     label: "VoIP Phone",
