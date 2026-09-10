@@ -138,6 +138,68 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("saved Synology session ownership", () => {
+  it.each([
+    { ops: false, platform: true },
+    { ops: true, platform: false },
+  ])(
+    "shows a dedicated missing-build page without NAS requests (%j)",
+    async (flags) => {
+      mocks.capabilities.mockResolvedValue({ source: "native", ...flags });
+      const close = vi.fn();
+      render(<SynologySessionPanel session={session("one")} onClose={close} />);
+      expect(
+        await screen.findByRole("heading", {
+          name: "Feature unavailable in this build",
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("npm run tauri:dev")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /reconnect|retry/i }),
+      ).not.toBeInTheDocument();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(
+        screen.queryByText("synthetic-private-password"),
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Close session" }));
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
+  it("does not mislabel missing desktop IPC as a disabled compiled feature", async () => {
+    mocks.capabilities.mockResolvedValue({
+      source: "unavailable",
+      ops: false,
+      platform: false,
+    });
+    render(<SynologySessionPanel session={session("one")} />);
+    expect(
+      await screen.findByRole("heading", {
+        name: "Desktop capabilities unavailable",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        name: "Feature unavailable in this build",
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("npm run tauri:dev")).not.toBeInTheDocument();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+  it("keeps authentication/network failure on the connection view after capabilities succeed", async () => {
+    mocks.invoke.mockRejectedValue(new Error("Synology connection failed"));
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "syn_fs_connect",
+        expect.anything(),
+      ),
+    );
+    expect(
+      screen.queryByRole("heading", {
+        name: /capabilities unavailable|Feature unavailable/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "one" })).toBeInTheDocument();
+  });
   it("does not mount login actions or send credentials before runtime capability validation", async () => {
     let resolve!: (value: unknown) => void;
     mocks.capabilities.mockReturnValueOnce(

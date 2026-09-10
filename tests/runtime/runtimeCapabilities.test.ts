@@ -28,6 +28,35 @@ const leanCapabilities: RuntimeCapabilities = {
 };
 
 describe("runtime capabilities", () => {
+  it("distinguishes Synology feature omissions from unavailable capability detection", () => {
+    expect(
+      getRuntimeProtocolUnavailableMessage("synology", {
+        ...leanCapabilities,
+        source: "unavailable",
+      }),
+    ).toContain("could not read");
+    expect(
+      getRuntimeProtocolUnavailableMessage("synology", {
+        ...leanCapabilities,
+        ops: true,
+        platform: false,
+      }),
+    ).toContain('"platform"');
+    expect(
+      getRuntimeProtocolUnavailableMessage("synology", {
+        ...leanCapabilities,
+        ops: false,
+        platform: true,
+      }),
+    ).toContain("unavailable in this build");
+    expect(
+      getRuntimeProtocolUnavailableMessage("synology", {
+        ...leanCapabilities,
+        ops: true,
+        platform: true,
+      }),
+    ).toBeNull();
+  });
   beforeEach(() => {
     tauriMocks.invoke.mockReset();
     resetRuntimeCapabilitiesCacheForTests();

@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { PackageX, CircleHelp, X } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import type {
   Connection,
@@ -21,20 +22,100 @@ import { registerSynologySession } from "../../utils/session/synologySessionLife
 import {
   getRuntimeProtocolUnavailableMessage,
   loadRuntimeCapabilities,
+  type RuntimeCapabilities,
 } from "../../utils/runtime/runtimeCapabilities";
 import { SynologySessionContent } from "./SynologyPanel";
 
 const unavailable =
   "Open and unlock this session's owning database, then reopen the Synology connection.";
 
+function RuntimeUnavailable({
+  capabilities,
+  onClose,
+}: {
+  capabilities: RuntimeCapabilities;
+  onClose?: () => void;
+}) {
+  const unknown = capabilities.source !== "native";
+  const titleId = useId();
+  const Icon = unknown ? CircleHelp : PackageX;
+  const missing = [
+    capabilities.ops !== true ? "ops" : null,
+    capabilities.platform !== true ? "platform" : null,
+  ].filter(Boolean);
+  return (
+    <section
+      role="alert"
+      aria-labelledby={titleId}
+      className="flex h-full min-h-0 items-center justify-center overflow-auto p-6"
+    >
+      <div className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="rounded-lg bg-warning/10 p-2 text-warning">
+            <Icon size={24} aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-xs text-[var(--color-textSecondary)] mb-1">
+              Synology File Station
+            </p>
+            <h2 id={titleId} className="text-lg font-semibold">
+              {unknown
+                ? "Desktop capabilities unavailable"
+                : "Feature unavailable in this build"}
+            </h2>
+          </div>
+        </div>
+        <p className="text-sm text-[var(--color-textSecondary)]">
+          {unknown
+            ? "The app could not verify the running desktop's native capabilities. This is not a NAS login or network failure."
+            : "This running desktop does not report the native features required for File Station. Your saved connection is unchanged; no NAS sign-in was attempted."}
+        </p>
+        {!unknown && (
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            Required build capabilities not reported:{" "}
+            <code>{missing.join(", ")}</code>.
+          </p>
+        )}
+        <div className="rounded-lg bg-[var(--color-background)] p-3 text-sm space-y-2">
+          <p>
+            {unknown
+              ? "Open the installed desktop app, or update/reinstall it if this message persists."
+              : "Use the current full desktop build. If developing, stop the existing desktop process and relaunch with:"}
+          </p>
+          {!unknown && (
+            <code className="block select-text break-all text-xs">
+              npm run tauri:dev
+            </code>
+          )}
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            Restarting with the correct binary is required. Reloading this page
+            or retrying NAS credentials cannot add compiled capabilities.
+            Explicit reduced builds must include both ops and platform.
+          </p>
+        </div>
+        {onClose && (
+          <div className="flex justify-end">
+            <button className="sor-btn sor-btn-secondary" onClick={onClose}>
+              <X size={14} />
+              Close session
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function BoundSynologySession({
   session,
   saved,
   connections,
+  onClose,
 }: {
   session: ConnectionSession;
   saved: Connection;
   connections: Connection[];
+  onClose?: () => void;
 }) {
   const { dispatch, databaseAvailability } = useConnections();
   const [revoked, setRevoked] = useState(false);
@@ -162,11 +243,15 @@ function BoundSynologySession({
   ]);
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
   const [capabilityReady, setCapabilityReady] = useState(false);
+  const [capabilities, setCapabilities] = useState<RuntimeCapabilities | null>(
+    null,
+  );
   useEffect(() => {
     let disposed = false;
     void loadRuntimeCapabilities().then((caps) => {
       if (disposed) return;
       const error = getRuntimeProtocolUnavailableMessage("synology", caps);
+      setCapabilities(caps);
       setCapabilityError(error);
       setCapabilityReady(true);
       if (!error && !issue && saved.username && saved.password)
@@ -178,15 +263,17 @@ function BoundSynologySession({
     // Initial connection only; no automatic retries after auth or network failures.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  if (issue || capabilityError)
+  if (issue)
     return (
       <div
         role="alert"
         className="p-4 text-sm text-[var(--color-textSecondary)]"
       >
-        {issue ?? capabilityError}
+        {issue}
       </div>
     );
+  if (capabilityError && capabilities)
+    return <RuntimeUnavailable capabilities={capabilities} onClose={onClose} />;
   if (!capabilityReady)
     return (
       <div role="status" className="p-4 text-sm">
@@ -198,6 +285,7 @@ function BoundSynologySession({
 
 export default function SynologySessionPanel({
   session,
+  onClose,
 }: {
   session: ConnectionSession;
   onClose?: () => void;
@@ -229,6 +317,7 @@ export default function SynologySessionPanel({
       session={session}
       saved={saved}
       connections={state.connections}
+      onClose={onClose}
     />
   );
 }

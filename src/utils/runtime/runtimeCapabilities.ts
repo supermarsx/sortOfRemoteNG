@@ -217,7 +217,11 @@ export const getRuntimeProtocolUnavailableMessage = (
   capabilities: RuntimeCapabilities,
 ): string | null => {
   const requirement = getRuntimeProtocolRequirement(protocol);
-  if (protocol?.toLowerCase() === "synology" && capabilities.platform !== true)
+  if (
+    protocol?.trim().toLowerCase() === "synology" &&
+    capabilities.source === "native" &&
+    capabilities.platform !== true
+  )
     return 'Synology File Station requires the full build with both "ops" and "platform" features.';
   if (!requirement || capabilities[requirement.capability] === true)
     return null;
