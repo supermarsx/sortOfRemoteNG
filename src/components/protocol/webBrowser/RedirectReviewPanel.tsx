@@ -114,7 +114,7 @@ export default function RedirectReviewPanel({
                     {downgrade
                       ? "This redirect reduces connection security. "
                       : "Both addresses use HTTP. "}
-                    Information you enter in the new tab is not protected by
+                    Information you enter at the destination is not protected by
                     TLS. Continue only if you understand and trust this
                     destination.
                   </p>
