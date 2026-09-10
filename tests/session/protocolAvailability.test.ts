@@ -16,6 +16,8 @@ import {
   getDirectSessionUnavailableMessage,
   getProtocolAvailability,
 } from "../../src/utils/session/protocolAvailability";
+import { getRuntimeProtocolOptions } from "../../src/utils/connection/protocolOptionRegistry";
+import { UNAVAILABLE_RUNTIME_CAPABILITIES } from "../../src/utils/runtime/runtimeCapabilities";
 
 const BUILT_IN_PROTOCOLS = [
   "rdp",
@@ -54,6 +56,7 @@ const BUILT_IN_PROTOCOLS = [
   "ilo",
   "lenovo",
   "supermicro",
+  "synology",
   "voip-phone",
 ] as const satisfies readonly BuiltInConnectionProtocol[];
 
@@ -89,7 +92,7 @@ describe("protocol availability contract", () => {
     }
   });
 
-  it("exposes every picker-ready built-in exactly once and no staged or management identity", () => {
+  it("retains raw option metadata for each compatible built-in without staged or management-only routes", () => {
     const managementProtocols = new Set<string>(BUILT_IN_MANAGEMENT_PROTOCOLS);
     const hiddenDirectProtocols = new Set<string>(
       BUILT_IN_HIDDEN_DIRECT_PROTOCOLS,
@@ -99,14 +102,16 @@ describe("protocol availability contract", () => {
         !managementProtocols.has(protocol) &&
         !hiddenDirectProtocols.has(protocol),
     ).sort();
-    const pickerProtocols = PROTOCOL_OPTIONS.map((option) => option.value);
+    // Raw option metadata also resolves existing records. The actual new-
+    // connection picker applies its separate taxonomy/capability filters.
+    const registeredProtocols = PROTOCOL_OPTIONS.map((option) => option.value);
 
-    expect([...pickerProtocols].sort()).toEqual(expectedDirectProtocols);
-    expect(new Set(pickerProtocols).size).toBe(pickerProtocols.length);
+    expect([...registeredProtocols].sort()).toEqual(expectedDirectProtocols);
+    expect(new Set(registeredProtocols).size).toBe(registeredProtocols.length);
 
     for (const protocol of BUILT_IN_MANAGEMENT_PROTOCOLS) {
       const availability = getProtocolAvailability(protocol);
-      expect(pickerProtocols, protocol).not.toContain(protocol);
+      expect(registeredProtocols, protocol).not.toContain(protocol);
       expect(availability?.classification, protocol).toBe("management-only");
       expect(availability?.sessionEntry, protocol).toBe("none");
       expect(availability?.detail, protocol).toMatch(
@@ -116,9 +121,40 @@ describe("protocol availability contract", () => {
 
     for (const protocol of BUILT_IN_HIDDEN_DIRECT_PROTOCOLS) {
       const availability = getProtocolAvailability(protocol);
-      expect(pickerProtocols, protocol).not.toContain(protocol);
+      expect(registeredProtocols, protocol).not.toContain(protocol);
       expect(availability?.sessionEntry, protocol).toBe("client-owned");
       expect(availability?.frontendPath, protocol).toMatch(/Panel\.tsx$/);
+    }
+  });
+
+  it("keeps the legacy Synology route while new connections use HTTP(S), not a Synology protocol choice", () => {
+    expect(getProtocolAvailability("synology")).toMatchObject({
+      sessionEntry: "client-owned",
+      frontendPath: "src/components/synology/SynologySessionPanel.tsx",
+    });
+    expect(getDirectSessionUnavailableMessage("synology")).toBeNull();
+    expect(PROTOCOL_OPTIONS.some(({ value }) => value === "synology")).toBe(
+      true,
+    );
+    for (const capabilities of [
+      UNAVAILABLE_RUNTIME_CAPABILITIES,
+      {
+        ...UNAVAILABLE_RUNTIME_CAPABILITIES,
+        source: "native" as const,
+        ops: true,
+        platform: true,
+      },
+    ]) {
+      const pickerProtocols = getRuntimeProtocolOptions(
+        PROTOCOL_OPTIONS,
+        INTEGRATION_PROTOCOL_OPTIONS,
+        capabilities,
+      ).map(({ value }) => value);
+      expect(pickerProtocols).not.toContain("synology");
+      expect(pickerProtocols).not.toContain("integration:synology");
+      expect(pickerProtocols).toEqual(
+        expect.arrayContaining(["http", "https"]),
+      );
     }
   });
 
