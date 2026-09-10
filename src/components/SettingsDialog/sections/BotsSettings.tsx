@@ -17,6 +17,10 @@ export default function BotsSettings({
       <SectionHeading
         icon={<Bot className="w-5 h-5 text-primary" />}
         title={t("integrations.telegram.bots", "Bots")}
+        description={t(
+          "integrations.telegram.botsDescription",
+          "Manage bot connections, notifications, and messaging integrations.",
+        )}
       />
       <TelegramSettingsSection s={settings} u={updateSettings} />
     </div>

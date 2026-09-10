@@ -1,5 +1,5 @@
 // Telegram bot management — rendered by the dedicated Bots settings tab.
-// This section is a collapsible sub-panel
+// This section is a visible settings panel
 // that binds the full 78-command sorng-telegram surface via `useTelegram()`:
 // a bot registry manager on top, then a tabbed management surface (send, message
 // ops, chat admin, files, webhooks, notification rules, monitoring, templates,
@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SectionProps } from "../behavior/types";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { useTelegram } from "../../../../hooks/integration/useTelegram";
 import { useIntegrationConfigStore } from "../../../../hooks/integrations/useIntegrationConfigStore";
 import type {
@@ -36,12 +36,10 @@ import type {
 
 // ─── Shared UI helpers ───────────────────────────────────────────────────────
 
-const field =
-  "w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]";
+const field = "sor-form-input min-w-0";
 const btn =
-  "app-bar-button inline-flex items-center gap-1 rounded px-2 py-1 text-xs disabled:opacity-50";
-const card =
-  "rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] p-3";
+  "sor-btn-secondary-sm inline-flex items-center gap-1.5 disabled:opacity-50";
+const card = "sor-settings-card min-w-0";
 
 /** Parse a chat-id input: numeric id or `@username` string (mirrors `ChatId`). */
 function parseChatId(input: string): ChatId {
@@ -53,7 +51,7 @@ const Labeled: React.FC<{ label: string; children: React.ReactNode }> = ({
   label,
   children,
 }) => (
-  <label className="flex flex-col gap-1 text-xs text-[var(--color-textSecondary)]">
+  <label className="flex min-w-0 flex-col gap-1.5 text-sm text-[var(--color-textSecondary)]">
     <span>{label}</span>
     {children}
   </label>
@@ -324,12 +322,12 @@ const BotManager: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   );
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className={card}>
-        <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
+        <h4 className="sor-settings-section-header mb-3">
           {t("integrations.telegram.addBot", "Add bot")}
         </h4>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <Labeled label={t("integrations.telegram.botName", "Name")}>
             <input
               className={field}
@@ -1883,87 +1881,84 @@ const TelegramSettingsSection: React.FC<SectionProps> = () => {
     // state (a chat id, a message body, a bot token) or lives in the encrypted
     // integration credential store — none of them is a `GlobalSettings` key, so
     // none gets its own `settingKey`. The panel itself is what search should
-    // find and scroll to, and this wrapper stays mounted while it is collapsed.
-    <div data-setting-key="telegram.bots">
-      <SettingsCollapsibleSection
+    // find and scroll to.
+    <div data-setting-key="telegram.bots" className="min-w-0 space-y-4">
+      <SettingsSectionHeader
         title={t("integrations.telegram.title", "Telegram bots")}
         icon={<Send className="w-4 h-4 text-primary" />}
-        defaultOpen={false}
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            {t(
-              "integrations.telegram.intro",
-              "Configure Telegram bots for connection-event notifications, monitoring alerts, digests, and manual messaging. Bot tokens are stored encrypted in the OS credential vault, never in the settings file.",
-            )}
-          </p>
-
-          {mgr.error && (
-            <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs text-red-400">
-              {mgr.error}
-              <button className="ml-2 underline" onClick={mgr.clearError}>
-                {t("integrations.telegram.dismiss", "Dismiss")}
-              </button>
-            </div>
+      />
+      <div className="flex min-w-0 flex-col gap-4">
+        <p className="text-sm leading-relaxed text-[var(--color-textSecondary)]">
+          {t(
+            "integrations.telegram.intro",
+            "Configure Telegram bots for connection-event notifications, monitoring alerts, digests, and manual messaging. Bot tokens are stored encrypted in the OS credential vault, never in the settings file.",
           )}
+        </p>
 
-          <BotManager mgr={mgr} />
-
-          <div className="border-t border-[var(--color-border)] pt-3">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[var(--color-textSecondary)]">
-                {t("integrations.telegram.activeBot", "Manage bot")}:
-              </span>
-              <select
-                className={field}
-                style={{ maxWidth: 220 }}
-                value={activeBot}
-                onChange={(e) => setSelectedBot(e.target.value)}
-              >
-                {botNames.length === 0 && (
-                  <option value="">
-                    {t("integrations.telegram.noBots", "No bots")}
-                  </option>
-                )}
-                {botNames.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-3 flex flex-wrap gap-1">
-              {TABS.map((tb) => (
-                <button
-                  key={tb.key}
-                  onClick={() => setTab(tb.key)}
-                  className={`rounded px-2 py-1 text-xs ${
-                    tab === tb.key
-                      ? "bg-primary text-[var(--color-text)]"
-                      : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]"
-                  }`}
-                >
-                  {t(tb.label, tb.fallback)}
-                </button>
-              ))}
-            </div>
-
-            {tab === "send" && <SendTab mgr={mgr} bot={activeBot} />}
-            {tab === "messages" && <MessagesTab mgr={mgr} bot={activeBot} />}
-            {tab === "chats" && <ChatsTab mgr={mgr} bot={activeBot} />}
-            {tab === "files" && <FilesTab mgr={mgr} bot={activeBot} />}
-            {tab === "webhooks" && <WebhooksTab mgr={mgr} bot={activeBot} />}
-            {tab === "rules" && <RulesTab mgr={mgr} />}
-            {tab === "monitoring" && <MonitoringTab mgr={mgr} />}
-            {tab === "templates" && <TemplatesTab mgr={mgr} />}
-            {tab === "scheduled" && <ScheduledTab mgr={mgr} />}
-            {tab === "broadcast" && <BroadcastTab mgr={mgr} />}
-            {tab === "digests" && <DigestsTab mgr={mgr} />}
-            {tab === "logs" && <LogsTab mgr={mgr} />}
+        {mgr.error && (
+          <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs text-red-400">
+            {mgr.error}
+            <button className="ml-2 underline" onClick={mgr.clearError}>
+              {t("integrations.telegram.dismiss", "Dismiss")}
+            </button>
           </div>
+        )}
+
+        <BotManager mgr={mgr} />
+
+        <div className={card}>
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <span className="text-xs text-[var(--color-textSecondary)]">
+              {t("integrations.telegram.activeBot", "Manage bot")}:
+            </span>
+            <select
+              className={field}
+              style={{ maxWidth: 220 }}
+              aria-label={t("integrations.telegram.activeBot", "Manage bot")}
+              value={activeBot}
+              onChange={(e) => setSelectedBot(e.target.value)}
+            >
+              {botNames.length === 0 && (
+                <option value="">
+                  {t("integrations.telegram.noBots", "No bots")}
+                </option>
+              )}
+              {botNames.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-1.5 border-b border-[var(--color-border)] pb-3">
+            {TABS.map((tb) => (
+              <button
+                key={tb.key}
+                onClick={() => setTab(tb.key)}
+                className={
+                  tab === tb.key ? "sor-btn-primary-sm" : "sor-btn-secondary-sm"
+                }
+              >
+                {t(tb.label, tb.fallback)}
+              </button>
+            ))}
+          </div>
+
+          {tab === "send" && <SendTab mgr={mgr} bot={activeBot} />}
+          {tab === "messages" && <MessagesTab mgr={mgr} bot={activeBot} />}
+          {tab === "chats" && <ChatsTab mgr={mgr} bot={activeBot} />}
+          {tab === "files" && <FilesTab mgr={mgr} bot={activeBot} />}
+          {tab === "webhooks" && <WebhooksTab mgr={mgr} bot={activeBot} />}
+          {tab === "rules" && <RulesTab mgr={mgr} />}
+          {tab === "monitoring" && <MonitoringTab mgr={mgr} />}
+          {tab === "templates" && <TemplatesTab mgr={mgr} />}
+          {tab === "scheduled" && <ScheduledTab mgr={mgr} />}
+          {tab === "broadcast" && <BroadcastTab mgr={mgr} />}
+          {tab === "digests" && <DigestsTab mgr={mgr} />}
+          {tab === "logs" && <LogsTab mgr={mgr} />}
         </div>
-      </SettingsCollapsibleSection>
+      </div>
     </div>
   );
 };

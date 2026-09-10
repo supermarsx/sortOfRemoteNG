@@ -50,7 +50,6 @@ describe("TelegramSettingsSection in Bots settings", () => {
         : implementation(command, args),
     );
     render(<TelegramSettingsSection s={noopSettings} u={noop} />);
-    fireEvent.click(screen.getByRole("button", { name: /Telegram bots/i }));
     fireEvent.click(screen.getByRole("button", { name: "Rules" }));
     await screen.findByText("Bot service unavailable");
     const calls = () =>
@@ -85,7 +84,6 @@ describe("TelegramSettingsSection in Bots settings", () => {
       const view = render(
         <TelegramSettingsSection s={noopSettings} u={noop} />,
       );
-      fireEvent.click(screen.getByRole("button", { name: /Telegram bots/i }));
       fireEvent.click(screen.getByRole("button", { name: tab }));
       expect(pending).toHaveLength(1);
       await act(async () => pending[0]([]));
@@ -99,20 +97,40 @@ describe("TelegramSettingsSection in Bots settings", () => {
       expect(pending).toHaveLength(2);
     },
   );
-  it("renders collapsed, then reveals the bot manager when expanded", async () => {
-    render(<TelegramSettingsSection s={noopSettings} u={noop} />);
-
-    // Collapsed: the title trigger is present.
-    const trigger = screen.getByRole("button", { name: /Telegram bots/i });
-    expect(trigger).toBeInTheDocument();
-
-    fireEvent.click(trigger);
-
-    // Expanded: the add-bot form field appears; refreshBots was called.
+  it("shows a visible settings heading and shared cards and controls without a collapsing page wrapper", async () => {
+    const { container } = render(
+      <TelegramSettingsSection s={noopSettings} u={noop} />,
+    );
+    expect(screen.getByRole("heading", { name: "Telegram bots" })).toHaveClass(
+      "sor-settings-section-header",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Telegram bots/i }),
+    ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByPlaceholderText("alerts-bot")).toBeInTheDocument(),
     );
     expect(invokeMock).toHaveBeenCalledWith("telegram_list_bots", undefined);
+    expect(screen.getByPlaceholderText("alerts-bot")).toHaveClass(
+      "sor-form-input",
+    );
+    expect(
+      screen.getByPlaceholderText("alerts-bot").closest(".sor-settings-card"),
+    ).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Rules" })).toHaveClass(
+      "sor-btn-secondary-sm",
+    );
+    expect(screen.getByRole("combobox", { name: "Manage bot" })).toHaveClass(
+      "sor-form-input",
+    );
+    expect(
+      container.querySelector('[data-setting-key="telegram.bots"]'),
+    ).not.toBeNull();
+    expect(
+      invokeMock.mock.calls.some(([command]) =>
+        /telegram_(add_bot|send_message|remove_bot)/.test(command),
+      ),
+    ).toBe(false);
   });
 
   it("api wrappers map to the correct registered command names + camelCase args", () => {
@@ -146,7 +164,6 @@ describe("TelegramSettingsSection in Bots settings", () => {
 
   it("add-bot registers the bot and persists an encrypted instance", async () => {
     render(<TelegramSettingsSection s={noopSettings} u={noop} />);
-    fireEvent.click(screen.getByRole("button", { name: /Telegram bots/i }));
 
     await waitFor(() =>
       expect(screen.getByPlaceholderText("alerts-bot")).toBeInTheDocument(),
