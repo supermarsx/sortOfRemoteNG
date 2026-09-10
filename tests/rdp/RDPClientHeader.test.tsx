@@ -55,6 +55,16 @@ const buildProps = () => {
 };
 
 describe("RDPClientHeader", () => {
+  it("disables local TOTP editing when the vault adapter is unavailable", () => {
+    const { props } = buildProps();
+    const reason = "Vault TOTP is unavailable. Local codes are ignored.";
+    render(<RDPClientHeader {...props} totpUnavailableReason={reason} />);
+    const button = screen.getByRole("button", { name: "2FA Codes" });
+    expect(button).toBeDisabled();
+    expect(button.parentElement).toHaveAttribute("data-tooltip", reason);
+    fireEvent.click(button);
+    expect(props.onUpdateTotpConfigs).not.toHaveBeenCalled();
+  });
   it("opens diagnostics and settings in the same session's Internals tab", () => {
     const { props } = buildProps();
     render(<RDPClientHeader {...props} />);

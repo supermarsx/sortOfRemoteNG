@@ -1,4 +1,7 @@
-import type { Connection } from "../../types/connection/connection";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
 
 /**
  * Volatile connection definitions used by Quick Connect sessions.
@@ -43,6 +46,25 @@ export function resolveRuntimeConnection(
 export function releaseRuntimeConnection(connectionId: string): void {
   runtimeConnections.delete(connectionId);
   webNavigation.delete(connectionId);
+}
+
+/** Synchronous same-tab handoff: retain an old ephemeral definition while any
+ * other session still owns it. Saved connections are never modified. */
+export function releaseReplacedRuntimeConnection(
+  previousConnectionId: string,
+  replacingSessionId: string,
+  sessions: readonly ConnectionSession[],
+): boolean {
+  if (
+    sessions.some(
+      (session) =>
+        session.id !== replacingSessionId &&
+        session.connectionId === previousConnectionId,
+    )
+  )
+    return false;
+  releaseRuntimeConnection(previousConnectionId);
+  return true;
 }
 
 export function clearRuntimeConnectionsForTests(): void {

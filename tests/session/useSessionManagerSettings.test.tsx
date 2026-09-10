@@ -160,6 +160,64 @@ describe("useSessionManager settings effects", () => {
       expect(usesGenericSessionTimer(option.value), option.value).toBe(false);
     }
   });
+  it("omits ignored local vault facets from onDisconnect automation", async () => {
+    const connection = makeConnection({
+      id: "conn-existing",
+      warnOnClose: false,
+      credentialSource: {
+        kind: "vault",
+        credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      },
+      username: "IGNORED_USER",
+      password: "IGNORED_PASSWORD",
+      totpSecret: "IGNORED_SEED",
+      httpHeaders: { Authorization: "IGNORED_HEADER" },
+    });
+    const session = makeSession();
+    connectionMocks.state = { connections: [connection], sessions: [session] };
+    SettingsManager.getInstance().applyInMemory({
+      confirmCloseActiveTab: false,
+    });
+    const { result } = renderHook(() => useSessionManager());
+    await act(async () => {
+      await result.current.handleSessionClose(session.id);
+    });
+    const call = connectionMocks.executeScriptsForTrigger.mock.calls.find(
+      ([trigger]) => trigger === "onDisconnect",
+    );
+    expect(call).toBeDefined();
+    expect(call![1].connection).toMatchObject({
+      id: connection.id,
+      credentialSource: connection.credentialSource,
+    });
+    expect(JSON.stringify(call)).not.toContain("IGNORED_");
+    expect(connection.password).toBe("IGNORED_PASSWORD");
+  });
+  it.each(["ftp", "ssh"] as const)(
+    "refuses %s vault failures before onConnect automation or status probes",
+    async (protocol) => {
+      const connection = makeConnection({
+        protocol,
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+        statusCheck: { enabled: true } as Connection["statusCheck"],
+      });
+      connectionMocks.state.connections = [connection];
+      const { result } = renderHook(() => useSessionManager());
+      await act(async () => {
+        await result.current.handleConnect(connection);
+      });
+      expect(connectionMocks.executeScriptsForTrigger).not.toHaveBeenCalled();
+      expect(connectionMocks.startChecking).not.toHaveBeenCalled();
+      expect(
+        connectionMocks.dispatch.mock.calls.some(
+          ([action]) => action.payload?.status === "error",
+        ),
+      ).toBe(true);
+    },
+  );
   it("checks a reviewed redirect's captured owner after asynchronous capability loading before adding any session", async () => {
     const runtime = await import("../../src/utils/runtime/runtimeCapabilities");
     const capabilities = await runtime.loadRuntimeCapabilities();

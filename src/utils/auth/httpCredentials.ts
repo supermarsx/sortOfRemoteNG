@@ -1,4 +1,5 @@
 import type { Connection } from "../../types/connection/connection";
+import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
 
 /** Match HTTP editor/Quick Connect defaults without changing the selected auth
  * mode or mixing a dedicated Basic username with an unrelated generic secret. */
@@ -7,6 +8,8 @@ export function resolveHttpBasicCredentials(
 ): { username: string; password: string } | null {
   if (
     !connection ||
+    normalizeConnectionCredentialSource(connection.credentialSource)?.kind ===
+      "vault" ||
     (connection.authType !== undefined &&
       connection.authType !== "basic" &&
       connection.authType !== "password")

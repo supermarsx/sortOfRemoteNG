@@ -20,6 +20,12 @@ import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
+import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
+import {
+  getVaultRuntimeUnsupportedMessage,
+  runtimeCredentialTargetKey,
+  withoutConnectionLocalCredentials,
+} from "../../utils/security/runtimeCredentialVault";
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import * as macroService from "../../utils/recording/macroService";
 import {
@@ -35,6 +41,7 @@ import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostn
 import {
   getRuntimeWebNavigation,
   resolveRuntimeConnection,
+  releaseReplacedRuntimeConnection,
 } from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
@@ -278,7 +285,10 @@ export function useWebBrowser(session: ConnectionSession) {
     dispatchAndFlush,
     recycleBin,
     databaseAvailability,
+    credentialVault,
   } = useConnections();
+  const sessionsRef = useRef(state.sessions);
+  sessionsRef.current = state.sessions;
   const { settings, settingsReady } = useSettings();
   const { toast } = useToastContext();
   const connection = resolveRuntimeConnection(
@@ -386,6 +396,15 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, [connection]);
   const resolvedCreds = applicationAuth.login?.credentials ?? null;
+  const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
+  const vaultSource = connection?.credentialSource?.kind === "vault";
+  const noncredentialConnection = useMemo(
+    () =>
+      connection && vaultSource
+        ? withoutConnectionLocalCredentials(connection)
+        : connection,
+    [connection, vaultSource],
+  );
   const reviewedFlowScope =
     settingsReady === true &&
     databaseAvailability?.status === "ready" &&
@@ -426,6 +445,10 @@ export function useWebBrowser(session: ConnectionSession) {
     connection?.httpProxyPolicy,
     connection?.httpHeaders,
     connection?.httpFormAutomation,
+    connection ? runtimeCredentialTargetKey(connection) : null,
+    vaultSource
+      ? [credentialVault?.scope, credentialVault?.changeRevision]
+      : null,
   ]);
   const previousProxyInputs = useRef(proxyInputs);
   const previousApplicationAuth = useRef({
@@ -433,7 +456,12 @@ export function useWebBrowser(session: ConnectionSession) {
     profile: connection?.httpApplication,
   });
 
-  const hasAuth = resolvedCreds !== null;
+  const hasAuth =
+    resolvedCreds !== null ||
+    (vaultSource &&
+      !!applicationAuth.login &&
+      (applicationAuth.login.upstreamAuthMode !== "none" ||
+        applicationAuth.login.autoLogin));
   const selectedApplication = normalizeHttpApplicationSettings(
     connection?.httpApplication,
   );
@@ -1134,7 +1162,7 @@ export function useWebBrowser(session: ConnectionSession) {
   }, []);
 
   const redirectReview = useHttpRedirectReview({
-    connection,
+    connection: noncredentialConnection,
     session,
     sourceOrigin: targetResolution.url
       ? new URL(targetResolution.url).origin
@@ -1161,6 +1189,17 @@ export function useWebBrowser(session: ConnectionSession) {
       // The redirect hook consumed the native receipt and stopped the original
       // proxy. A new connection ID remounts WebBrowser with fresh trust, cookies,
       // history and automation state while preserving this tab's position/owner.
+      const currentSessions = sessionsRef.current ?? [];
+      const currentSession = currentSessions.find(
+        (item) => item.id === session.id,
+      );
+      if (
+        !currentSession ||
+        currentSession.connectionId !== session.connectionId
+      )
+        throw new Error(
+          "The redirect source session changed before its replacement was applied.",
+        );
       dispatch({
         type: "UPDATE_SESSION",
         payload: {
@@ -1174,6 +1213,12 @@ export function useWebBrowser(session: ConnectionSession) {
           integration: undefined,
         },
       });
+      if (target.id !== session.connectionId)
+        releaseReplacedRuntimeConnection(
+          session.connectionId,
+          session.id,
+          currentSessions,
+        );
     },
   });
   const redirectReviewRef = useRef(redirectReview);
@@ -1281,8 +1326,13 @@ export function useWebBrowser(session: ConnectionSession) {
       }
       activeNavigationUrlRef.current = urlObj.toString();
       armNavigationDeadline(gen, url);
+      let attemptPassword = "";
+      let attemptUsername = "";
       try {
         let assertReviewedFlow = () => {};
+        const unsupportedVault =
+          connection && getVaultRuntimeUnsupportedMessage(connection);
+        if (unsupportedVault) throw new Error(unsupportedVault);
         if (
           ["bitwarden", "synology"].includes(
             applicationAuth.login?.loginFlow ?? "",
@@ -1313,6 +1363,35 @@ export function useWebBrowser(session: ConnectionSession) {
           if (!trusted || gen !== navGenRef.current) return;
           assertReviewedFlow();
           armNavigationDeadline(gen, url);
+        }
+        const existingProxy = proxySessionIdRef.current;
+        const vault = await resolveVaultCredential(() => {
+          if (
+            gen !== navGenRef.current ||
+            proxySessionIdRef.current !== existingProxy
+          )
+            throw new Error("The website credential attempt was cancelled.");
+        }, !!existingProxy);
+        const assertPriorFlow = assertReviewedFlow;
+        assertReviewedFlow = () => {
+          assertPriorFlow();
+          vault?.assertCurrent();
+        };
+        assertReviewedFlow();
+        let attemptLogin =
+          vault && !existingProxy
+            ? resolveHttpApplicationLogin(connection, {
+                username: vault.facets.username ?? "",
+                password: vault.facets.password ?? "",
+              })
+            : applicationAuth.login;
+        attemptPassword = attemptLogin?.credentials?.password ?? "";
+        attemptUsername = vault
+          ? (attemptLogin?.credentials?.username ?? "")
+          : "";
+        if (vault) {
+          vault.facets = {};
+          reviewedFlowStartedRef.current = reviewedFlowScopeRef.current;
         }
         setWaitingForTrust(false);
         // ── Universal proxy mediation (P1) ──
@@ -1352,8 +1431,8 @@ export function useWebBrowser(session: ConnectionSession) {
                 // Empty strings when no auth — the backend treats
                 // (empty, empty) as "no credentials" and skips the
                 // basic_auth() call on every upstream request.
-                username: resolvedCreds?.username ?? "",
-                password: resolvedCreds?.password ?? "",
+                username: attemptLogin?.credentials?.username ?? "",
+                password: attemptLogin?.credentials?.password ?? "",
                 ...(applicationAuth.login?.upstreamAuthMode
                   ? {
                       upstream_auth_mode:
@@ -1411,6 +1490,7 @@ export function useWebBrowser(session: ConnectionSession) {
               },
             },
           );
+          attemptLogin = null;
           if (gen !== navGenRef.current) {
             invoke("stop_basic_auth_proxy", {
               sessionId: response.session_id,
@@ -1459,15 +1539,24 @@ export function useWebBrowser(session: ConnectionSession) {
         debugLog("WebBrowser", "Navigation initiated", { url, hasAuth });
       } catch (error) {
         if (gen !== navGenRef.current) return;
-        console.error("Navigation failed:", error);
-        const msg = error instanceof Error ? error.message : String(error);
+        const rawMessage =
+          error instanceof Error ? error.message : String(error);
+        const msg = [attemptPassword, attemptUsername]
+          .filter(Boolean)
+          .reduce(
+            (message, secret) => message.split(secret).join("[redacted]"),
+            rawMessage,
+          );
+        console.error("Navigation failed:", msg);
         const errorMessage =
           msg.includes("401") || msg.includes("Unauthorized")
             ? applicationAuth.login?.upstreamAuthMode === "none"
               ? "The website requires authentication. Review its Application login mode or sign in manually; form credentials are not sent as HTTP Basic."
-              : !resolvedCreds
-                ? "Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials."
-                : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings."
+              : vaultSource
+                ? "The website rejected the vault login or requires additional authentication. Review the selected vault entry and Application login mode."
+                : !resolvedCreds
+                  ? "Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials."
+                  : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings."
             : `Failed to load page: ${msg}`;
         applyNavigationFailure(
           localNavigationFailure(
@@ -1478,6 +1567,9 @@ export function useWebBrowser(session: ConnectionSession) {
             errorMessage,
           ),
         );
+      } finally {
+        attemptPassword = "";
+        attemptUsername = "";
       }
     },
     [
@@ -1501,6 +1593,8 @@ export function useWebBrowser(session: ConnectionSession) {
       armNavigationDeadline,
       navigateFrame,
       cancelTrustRead,
+      resolveVaultCredential,
+      vaultSource,
     ],
   );
 
@@ -1631,12 +1725,18 @@ export function useWebBrowser(session: ConnectionSession) {
   // result belongs only to the same navigation generation and proxy session.
   const restartOwnedProxy = useCallback(
     async (sid: string, gen: number) => {
+      const vault = await resolveVaultCredential(() => {
+        if (gen !== navGenRef.current || proxySessionIdRef.current !== sid)
+          throw new Error("The website restart was cancelled.");
+      }, true);
+      vault?.assertCurrent();
       const resp = await invoke<ProxyMediatorResponse>(
         "restart_proxy_session",
         { sessionId: sid },
       );
       let protectedProxyUrl: string;
       try {
+        vault?.assertCurrent();
         protectedProxyUrl = validateProtectedProxyUrl(resp);
       } catch (error) {
         await stopProxy(resp.session_id);
@@ -1671,6 +1771,7 @@ export function useWebBrowser(session: ConnectionSession) {
       armNavigationDeadline,
       navigateFrame,
       beginLoadingPresentation,
+      resolveVaultCredential,
     ],
   );
 
@@ -2614,11 +2715,12 @@ export function useWebBrowser(session: ConnectionSession) {
   });
 
   const autoMfa = useWebAutoMfa({
-    connection,
+    connection: noncredentialConnection,
     ownerDatabaseId: session.ownerDatabaseId,
     availability: databaseAvailability,
     settingsReady: settingsReady === true,
     blocked:
+      vaultSource ||
       waitingForTrust ||
       !!trustPrompt ||
       !!loadError ||
@@ -2641,7 +2743,7 @@ export function useWebBrowser(session: ConnectionSession) {
     autoMfa,
     // Context
     session,
-    connection,
+    connection: noncredentialConnection,
     settings,
     // Navigation
     currentUrl,

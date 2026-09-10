@@ -1,4 +1,7 @@
 import React from "react";
+import { useConnections } from "../../contexts/useConnections";
+import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
+import { getVaultRuntimeUnsupportedMessage } from "../../utils/security/runtimeCredentialVault";
 import dynamic from "next/dynamic";
 import { Monitor, AlertCircle } from "lucide-react";
 import { LoadingElement } from "../ui/display/loadingElement";
@@ -300,6 +303,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
   settingsInitialTab,
   settingsInitialTabNonce,
 }) => {
+  const { state, credentialVault, databaseAvailability } = useConnections();
   const renderContent = () => {
     // Tool tabs render their own component
     if (isToolProtocol(session.protocol)) {
@@ -322,6 +326,44 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         />
       );
     }
+
+    if (
+      session.ownerDatabaseId &&
+      state.connections.some((item) => item.id === session.connectionId) &&
+      (databaseAvailability?.status !== "ready" ||
+        databaseAvailability.databaseId !== session.ownerDatabaseId)
+    )
+      return (
+        <GenericErrorView
+          session={{
+            ...session,
+            errorMessage:
+              "Open and unlock this session's owning database. A connection from a different database will not be substituted, even if its ID matches.",
+          }}
+        />
+      );
+    const connection = resolveRuntimeConnection(
+      state.connections,
+      session.connectionId,
+    );
+    const vaultError = connection
+      ? getVaultRuntimeUnsupportedMessage(connection)
+      : null;
+    const vaultLocked =
+      connection?.credentialSource?.kind === "vault" &&
+      (!credentialVault?.scope ||
+        credentialVault.scope.databaseId !== session.ownerDatabaseId);
+    if (vaultError || vaultLocked)
+      return (
+        <GenericErrorView
+          session={{
+            ...session,
+            errorMessage:
+              vaultError ??
+              "Open and unlock this session's owning protected database to use its vault credential. No local fallback was used.",
+          }}
+        />
+      );
 
     // Windows management tools (connection-scoped)
     if (isWinmgmtProtocol(session.protocol)) {

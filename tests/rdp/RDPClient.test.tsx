@@ -41,6 +41,10 @@ const tauriCoreMocks = vi.hoisted(() => ({
     onmessage: ((data: unknown) => void) | null;
   }>,
 }));
+const vaultAttempt = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock("../../src/hooks/security/useRuntimeCredentialVault", () => ({
+  useRuntimeCredentialVault: () => vaultAttempt.resolve,
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -547,6 +551,10 @@ const installOpenVpnLeaseRuntime = (
 describe("RDPClient", () => {
   beforeEach(() => {
     resetSessionLifecycleAllocatorForTests();
+    vaultAttempt.resolve.mockReset().mockResolvedValue(null);
+    Reflect.deleteProperty(mockConnection, "credentialSource");
+    Reflect.deleteProperty(mockConnection, "domain");
+    Reflect.deleteProperty(mockConnection, "totpConfigs");
     vi.clearAllMocks();
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
     MockResizeObserver.reset();
@@ -587,6 +595,100 @@ describe("RDPClient", () => {
   });
 
   describe("RDP Connection", () => {
+    it("rejects retained local TOTP writes after selecting a vault credential", () => {
+      const codes = [
+        {
+          id: "local",
+          account: "Preserved",
+          secret: "JBSWY3DPEHPK3PXP",
+          issuer: "Fixture",
+          digits: 6 as const,
+          period: 30,
+          algorithm: "sha1" as const,
+        },
+      ];
+      Object.assign(mockConnection, { totpConfigs: codes });
+      const view = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      const retained = view.result.current.handleUpdateTotpConfigs;
+      Object.assign(mockConnection, {
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      });
+      view.rerender();
+      connectionContextMocks.dispatch.mockClear();
+      act(() => {
+        retained([]);
+        view.result.current.handleUpdateTotpConfigs([]);
+      });
+      expect(
+        connectionContextMocks.dispatch.mock.calls.some(
+          ([action]) => action.type === "UPDATE_CONNECTION",
+        ),
+      ).toBe(false);
+      expect(Reflect.get(mockConnection, "totpConfigs")).toBe(codes);
+      expect(view.result.current.connection?.totpConfigs).toBeUndefined();
+      view.unmount();
+    });
+    it("uses an attempt-only vault pair and never falls back to an ignored local domain", async () => {
+      Object.assign(mockConnection, {
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+        domain: "IGNORED_DOMAIN",
+      });
+      vaultAttempt.resolve.mockImplementation(
+        async (assertCurrent: () => void) => ({
+          facets: {
+            username: "VAULT_RDP_USER",
+            password: "VAULT_RDP_PASSWORD",
+          },
+          assertCurrent,
+        }),
+      );
+      renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.objectContaining({
+            username: "VAULT_RDP_USER",
+            password: "VAULT_RDP_PASSWORD",
+            domain: undefined,
+          }),
+        ),
+      );
+      expect(mockConnection.password).toBe("testpass");
+      expect(
+        JSON.stringify(connectionContextMocks.dispatch.mock.calls),
+      ).not.toContain("VAULT_RDP_PASSWORD");
+      expect(
+        JSON.stringify(connectionContextMocks.dispatch.mock.calls),
+      ).not.toContain("VAULT_RDP_USER");
+    });
+    it("does not dial or reattach RDP when vault resolution refuses access", async () => {
+      Object.assign(mockConnection, {
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      });
+      vaultAttempt.resolve.mockRejectedValue(
+        new Error("The database vault credential is unavailable."),
+      );
+      renderWithProviders(mockSession);
+      await screen.findByText(/vault credential is unavailable/);
+      expect(
+        mockInvoke.mock.calls.some(
+          ([command]) =>
+            command === "connect_rdp" || command === "reattach_rdp_session",
+        ),
+      ).toBe(false);
+      expect(rdpBinaryIpcPreflightMocks.assert).not.toHaveBeenCalled();
+    });
     it("never substitutes another same-connection actor or dials anew for explicit reattachment", async () => {
       const manager = DatabaseManager.getInstance();
       const current = vi

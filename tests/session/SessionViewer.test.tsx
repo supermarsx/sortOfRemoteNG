@@ -1,9 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionViewer } from "../../src/components/session/SessionViewer";
-import type { ConnectionSession } from "../../src/types/connection/connection";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
 
 const mockState = vi.hoisted(() => ({
+  connections: [] as Connection[],
+  vaultScope: null as { databaseId: string; generation: number } | null,
   throwWebTerminal: false,
   toolTabViewerProps: vi.fn(),
   windowsToolPanelProps: vi.fn(),
@@ -32,6 +37,17 @@ const mockState = vi.hoisted(() => ({
   nxNativeClientProps: vi.fn(),
   smbClientProps: vi.fn(),
   idracSessionPanelProps: vi.fn(),
+}));
+vi.mock("../../src/contexts/useConnections", () => ({
+  useConnections: () => ({
+    state: { connections: mockState.connections },
+    credentialVault: { scope: mockState.vaultScope },
+    databaseAvailability: {
+      status: "ready",
+      databaseId: mockState.vaultScope?.databaseId ?? "fixture",
+      generation: 1,
+    },
+  }),
 }));
 
 vi.mock("../../src/components/app/ToolPanel", () => ({
@@ -280,6 +296,90 @@ describe("SessionViewer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.throwWebTerminal = false;
+    mockState.connections = [];
+    mockState.vaultScope = null;
+  });
+  it("blocks an unwired vault protocol before mounting its client", () => {
+    const session = createSession({
+      protocol: "ftp",
+      ownerDatabaseId: "vault-db",
+    });
+    mockState.connections = [
+      {
+        id: session.connectionId,
+        name: "FTP",
+        hostname: session.hostname,
+        port: 21,
+        protocol: "ftp",
+        isGroup: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      },
+    ];
+    mockState.vaultScope = { databaseId: "vault-db", generation: 1 };
+    render(<SessionViewer session={session} />);
+    expect(
+      screen.getByText(/Database vault authentication is not supported/),
+    ).toBeInTheDocument();
+    expect(mockState.ftpClientProps).not.toHaveBeenCalled();
+  });
+  it("blocks a vault SSH client for a locked or different owning database", () => {
+    const session = createSession({
+      protocol: "ssh",
+      ownerDatabaseId: "vault-db",
+    });
+    mockState.connections = [
+      {
+        id: session.connectionId,
+        name: "SSH",
+        hostname: session.hostname,
+        port: 22,
+        protocol: "ssh",
+        isGroup: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      },
+    ];
+    render(<SessionViewer session={session} />);
+    expect(
+      screen.getByText(/Open and unlock this session's owning/),
+    ).toBeInTheDocument();
+    expect(mockState.webTerminalProps).not.toHaveBeenCalled();
+  });
+  it("never mounts a DB B local connection for a DB A vault session with a colliding ID", () => {
+    const session = createSession({
+      protocol: "ssh",
+      ownerDatabaseId: "database-a",
+    });
+    mockState.connections = [
+      {
+        id: session.connectionId,
+        name: "Wrong database local SSH",
+        hostname: session.hostname,
+        protocol: "ssh",
+        port: 22,
+        isGroup: false,
+        createdAt: "2026-09-10T00:00:00Z",
+        updatedAt: "2026-09-10T00:00:00Z",
+        credentialSource: { kind: "local" },
+        username: "OTHER_DB_USER",
+        password: "OTHER_DB_PASSWORD",
+      },
+    ];
+    mockState.vaultScope = { databaseId: "database-b", generation: 1 };
+    render(<SessionViewer session={session} />);
+    expect(
+      screen.getByText(/different database will not be substituted/),
+    ).toBeInTheDocument();
+    expect(mockState.webTerminalProps).not.toHaveBeenCalled();
   });
 
   it("routes tool protocol sessions and wires close callback", async () => {

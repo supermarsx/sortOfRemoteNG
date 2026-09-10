@@ -34,7 +34,7 @@ const source = {
   },
   totpSecret: "never-transfer",
   httpHeaders: { "X-Token": "never-transfer" },
-  credentialSource: { kind: "vault", credentialId: "never-transfer" },
+  credentialSource: { kind: "local" },
   httpFormAutomation: { beforeLoadScript: "never-transfer" },
 } as unknown as Connection;
 describe("reviewed redirect saved-login forwarding", () => {
@@ -61,7 +61,7 @@ describe("reviewed redirect saved-login forwarding", () => {
     expect(result.httpRedirectAuthentication?.mode).toBe("saved-login");
     expect(result.httpsTrustPolicy).toBe("always-ask");
     expect(JSON.stringify(result)).not.toContain("never-transfer");
-    expect(source).toHaveProperty("credentialSource.kind", "vault");
+    expect(source).toHaveProperty("credentialSource.kind", "local");
     expect(
       anonymousRedirectConnection(source, review).basicAuthPassword,
     ).toBeUndefined();
@@ -127,4 +127,22 @@ describe("reviewed redirect saved-login forwarding", () => {
       ).available,
     ).toBe(false);
   });
+  it.each(["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "invalid-reference"])(
+    "never forwards ignored local credentials from a vault source (%s)",
+    (credentialId) => {
+      const vault = {
+        ...source,
+        credentialSource: { kind: "vault" as const, credentialId },
+      };
+      expect(redirectAuthenticationAvailability(vault, review).available).toBe(
+        false,
+      );
+      expect(() =>
+        authenticatedRedirectConnection(vault, review, false),
+      ).toThrow();
+      const anonymous = anonymousRedirectConnection(vault, review);
+      expect(anonymous.credentialSource).toBeUndefined();
+      expect(anonymous.basicAuthPassword).toBeUndefined();
+    },
+  );
 });

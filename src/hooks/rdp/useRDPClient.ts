@@ -20,6 +20,9 @@ import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import * as macroService from "../../utils/recording/macroService";
 import { useConnections } from "../../contexts/useConnections";
+import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
+import { withoutConnectionLocalCredentials } from "../../utils/security/runtimeCredentialVault";
+import type { DatabaseCredentialFacets } from "../../types/security/databaseCredentialVault";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useSettings } from "../../contexts/SettingsContext";
@@ -222,6 +225,7 @@ export function useRDPClient(session: ConnectionSession) {
     state.connections,
     session.connectionId,
   );
+  const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
 
   const rdpSettings: RDPConnectionSettings = useMemo(
     () => mergeRdpSettings(connection?.rdpSettings, settings.rdpDefaults),
@@ -1211,6 +1215,8 @@ export function useRDPClient(session: ConnectionSession) {
     let attemptVpnLeaseOwnerId: string | null = null;
     let attemptRdpBackendSessionId: string | null = null;
     let assertReattachAccess: (() => void) | undefined;
+    let assertVaultAccess: (() => void) | undefined;
+    let vaultFacets: DatabaseCredentialFacets | null = null;
     let lifecycleAttempt: SessionLifecycleActorAttempt | null = null;
 
     const releaseAttemptVpnLease = async () => {
@@ -1295,6 +1301,7 @@ export function useRDPClient(session: ConnectionSession) {
       cleanupTarget?: () => Promise<boolean | void>,
     ) => {
       assertReattachAccess?.();
+      assertVaultAccess?.();
       if (!stale()) return false;
       const targetClean = cleanupTarget ? await cleanupTarget() : true;
       if (targetClean !== false) await releaseAttemptVpnLease();
@@ -1361,6 +1368,19 @@ export function useRDPClient(session: ConnectionSession) {
 
     let runtimePath: RuntimeNetworkPath | null = null;
     try {
+      setConnectionStatus("connecting");
+      setStatusMessage(
+        conn?.credentialSource?.kind === "vault"
+          ? "Checking the owning database credential..."
+          : "Checking binary IPC transport...",
+      );
+      const vault = await resolveVaultCredential(() => {
+        if (stale())
+          throw new Error("The RDP credential attempt was cancelled.");
+      });
+      assertVaultAccess = vault?.assertCurrent;
+      vaultFacets = vault?.facets ?? null;
+      if (await stopIfStale()) return;
       if (sess.reattachOnly)
         assertReattachAccess = captureSessionDatabaseAccess(sess);
       const reservation = reserveSessionLifecycleActorAttempt(
@@ -1705,9 +1725,13 @@ export function useRDPClient(session: ConnectionSession) {
         connectionId: conn.id,
         host: dialHost,
         port: dialPort,
-        username: conn.username || "",
-        password: conn.password || "",
-        domain: conn.domain,
+        username: vaultFacets
+          ? (vaultFacets.username ?? "")
+          : conn.username || "",
+        password: vaultFacets
+          ? (vaultFacets.password ?? "")
+          : conn.password || "",
+        domain: vaultFacets ? vaultFacets.domain : conn.domain,
         width: resW,
         height: resH,
         rdpSettings: effectiveSettings,
@@ -1735,6 +1759,7 @@ export function useRDPClient(session: ConnectionSession) {
         conn.rdpSettings?.deviceRedirection?.inheritGlobalDrives,
       );
 
+      assertVaultAccess?.();
       const sessionId = (await invoke(
         "connect_rdp",
         connectionDetails,
@@ -1841,6 +1866,7 @@ export function useRDPClient(session: ConnectionSession) {
       // *new* blank renderer, discarding any frames already painted.
     } catch (error) {
       assertReattachAccess = undefined;
+      assertVaultAccess = undefined;
       if (
         await stopIfStale(async () => {
           const actorClean = await closeAttemptRdpBackend();
@@ -1854,6 +1880,8 @@ export function useRDPClient(session: ConnectionSession) {
       await teardownRdpTunnel();
       if (actorClean) await releaseAttemptVpnLease();
       const safeError = formatRuntimeNetworkPathError(error, runtimePath, [
+        vaultFacets?.password,
+        vaultFacets?.username,
         conn?.password,
         conn?.passphrase,
       ]);
@@ -1862,6 +1890,7 @@ export function useRDPClient(session: ConnectionSession) {
       console.error("RDP initialization failed:", safeError);
       toast.error("RDP connection failed", 5000);
     } finally {
+      vaultFacets = null;
       if (
         lifecycleAttempt &&
         sessionRef.current.lifecycleActorReservationId ===
@@ -3571,7 +3600,11 @@ export function useRDPClient(session: ConnectionSession) {
 
   const handleUpdateTotpConfigs = useCallback(
     (configs: NonNullable<Connection["totpConfigs"]>) => {
-      if (connection) {
+      if (
+        connection &&
+        connectionRef.current === connection &&
+        connectionRef.current.credentialSource?.kind !== "vault"
+      ) {
         dispatch({
           type: "UPDATE_CONNECTION",
           payload: { ...connection, totpConfigs: configs },
@@ -3720,7 +3753,9 @@ export function useRDPClient(session: ConnectionSession) {
     activeScheduling: pipelineRef.current?.getActiveScheduling() ?? "vsync",
     tripleBuffered: pipelineRef.current?.getRenderer()?.tripleBuffered ?? false,
     // Derived
-    connection,
+    connection: connection
+      ? withoutConnectionLocalCredentials(connection)
+      : connection,
     magnifierEnabled,
     magnifierZoom,
     perfLabel,

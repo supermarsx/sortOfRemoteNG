@@ -23,6 +23,8 @@ import {
   MAX_SESSION_VPN_LEASE_BINDINGS,
 } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
+import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
+import { withoutConnectionLocalCredentials } from "../../utils/security/runtimeCredentialVault";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useToastContext } from "../../contexts/ToastContext";
 import { useSettings } from "../../contexts/SettingsContext";
@@ -256,6 +258,7 @@ export function useWebTerminal(
     () => resolveRuntimeConnection(state.connections, session.connectionId),
     [state.connections, session.connectionId],
   );
+  const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
 
   const sshTerminalConfig = useMemo(
     () =>
@@ -1328,6 +1331,7 @@ export function useWebTerminal(
       };
       let attemptVpnLeaseOwnerId: string | null = null;
       let assertReattachAccess: (() => void) | undefined;
+      let assertVaultAccess: (() => void) | undefined;
       let attemptSshSessionId: string | null = null;
       let lifecycleAttempt: SessionLifecycleActorAttempt | null = null;
       let attemptWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1484,6 +1488,7 @@ export function useWebTerminal(
 
       const stopIfStale = async () => {
         assertReattachAccess?.();
+        assertVaultAccess?.();
         if (!stale()) return false;
         if (await cleanupAttemptSsh()) {
           await releaseAttemptVpnLease();
@@ -1588,12 +1593,15 @@ export function useWebTerminal(
       writeLine(`\x1b[90mHost: ${currentSession.hostname}\x1b[0m`);
       writeLine(`\x1b[90mPort: ${currentConnection.port || 22}\x1b[0m`);
       writeLine(
-        `\x1b[90mUser: ${currentConnection.username || "unknown"}\x1b[0m`,
+        `\x1b[90mUser: ${currentConnection.credentialSource?.kind === "vault" ? "database vault" : currentConnection.username || "unknown"}\x1b[0m`,
       );
 
       const authMethod =
         currentConnection.authType ||
-        (currentConnection.privateKey ? "key" : "password");
+        (currentConnection.credentialSource?.kind !== "vault" &&
+        currentConnection.privateKey
+          ? "key"
+          : "password");
       writeLine(`\x1b[90mAuth: ${authMethod}\x1b[0m`);
       writeLine(
         `\x1b[90mHost key checking: ${strictHostKeyChecking ? "enabled" : "disabled"}\x1b[0m`,
@@ -1601,6 +1609,10 @@ export function useWebTerminal(
 
       let unlistenHostKeyPrompt: (() => void) | null = null;
       let sshPassword: string | null = null;
+      let sshUsername =
+        currentConnection.credentialSource?.kind === "vault"
+          ? ""
+          : currentConnection.username || "";
       let privateKeyPassphrase: string | null = null;
       let totpSecret: string | null = null;
       let proxyCommandPassword: string | null = null;
@@ -1679,6 +1691,17 @@ export function useWebTerminal(
       };
 
       try {
+        const vault = await resolveVaultCredential(() => {
+          if (stale())
+            throw new Error("The SSH credential attempt was cancelled.");
+        });
+        assertVaultAccess = vault?.assertCurrent;
+        if (vault) {
+          sshUsername = vault.facets.username ?? "";
+          sshPassword = vault.facets.password ?? null;
+          vault.facets = {};
+        }
+        if (await stopIfStale()) return;
         const reservation = reserveSessionLifecycleActorAttempt(
           sessionRef.current,
           expectedLifecycleAuthority,
@@ -1784,7 +1807,7 @@ export function useWebTerminal(
           async (event) => {
             const payload = event.payload;
             const expectedPort = currentConnection.port || 22;
-            const expectedUsername = currentConnection.username || "";
+            const expectedUsername = sshUsername;
             if (
               payload.host !== currentSession.hostname ||
               payload.port !== expectedPort ||
@@ -1903,7 +1926,7 @@ export function useWebTerminal(
         const sshConfig: Record<string, unknown> = {
           host: currentSession.hostname,
           port: currentConnection.port || 22,
-          username: currentConnection.username || "",
+          username: sshUsername,
           jump_hosts: resolved.jump_hosts,
           proxy_config: resolved.proxy_config,
           proxy_chain: resolved.proxy_chain,
@@ -1963,9 +1986,12 @@ export function useWebTerminal(
 
         switch (authMethod) {
           case "password":
-            if (!currentConnection.password)
+            sshPassword =
+              currentConnection.credentialSource?.kind === "vault"
+                ? sshPassword
+                : (currentConnection.password ?? null);
+            if (!sshPassword)
               throw new Error("Password authentication requires a password");
-            sshPassword = currentConnection.password;
             sshConfig.password = sshPassword;
             sshConfig.private_key_path = null;
             sshConfig.private_key_passphrase = null;
@@ -1993,6 +2019,7 @@ export function useWebTerminal(
         }
 
         armAttemptWatchdog(Number(sshConfig.connect_timeout) || 30);
+        assertVaultAccess?.();
         const sessionId = await invoke<string>("connect_ssh", {
           config: sshConfig,
         });
@@ -2045,7 +2072,7 @@ export function useWebTerminal(
           sessionId,
           connectionId: currentConnection.id ?? null,
           host: currentSession.hostname ?? null,
-          username: currentConnection.username ?? null,
+          username: sshUsername || null,
         }).catch(() => {});
 
         // Fire the "connected" lifecycle event
@@ -2054,7 +2081,7 @@ export function useWebTerminal(
             sessionId,
             connectionId: currentConnection.id,
             host: currentSession.hostname,
-            username: currentConnection.username,
+            username: sshUsername,
             port: currentConnection.port || 22,
             eventType: "connected",
             timestamp: new Date().toISOString(),
@@ -2090,7 +2117,7 @@ export function useWebTerminal(
             const proxyConfig = buildProxyCommandConfig();
             const host = currentSession.hostname;
             const port = currentConnection.port || 22;
-            const username = currentConnection.username || "";
+            const username = sshUsername;
             // Fetch the exact redacted command for review.
             const expanded = await invoke<string>("expand_proxy_command", {
               config: proxyConfig,
@@ -2154,6 +2181,10 @@ export function useWebTerminal(
           }
         }
         const secrets = [
+          sshPassword,
+          currentConnection.credentialSource?.kind === "vault"
+            ? sshUsername
+            : null,
           ...(runtimePath?.redactionSecrets ?? []),
           currentConnection.password,
           currentConnection.passphrase,
@@ -2235,6 +2266,7 @@ export function useWebTerminal(
         }
         finishSessionLifecycleActorAttempt(lifecycleAttempt);
         sshPassword = null;
+        sshUsername = "";
         privateKeyPassphrase = null;
         totpSecret = null;
         proxyCommandPassword = null;
@@ -3633,15 +3665,24 @@ export function useWebTerminal(
     replayMacro: handleReplayMacro,
   });
 
-  const totpConfigs = connection?.totpConfigs ?? [];
+  const totpConfigs =
+    connection?.credentialSource?.kind === "vault"
+      ? []
+      : (connection?.totpConfigs ?? []);
 
   const handleUpdateTotpConfigs = useCallback(
     (configs: TOTPConfig[]) => {
-      if (connection)
-        dispatch({
-          type: "UPDATE_CONNECTION",
-          payload: { ...connection, totpConfigs: configs },
-        });
+      // Also fence a retained local-editor callback after the source switches.
+      if (
+        !connection ||
+        connectionRef.current !== connection ||
+        connectionRef.current.credentialSource?.kind === "vault"
+      )
+        return;
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...connection, totpConfigs: configs },
+      });
     },
     [connection, dispatch],
   );
@@ -3672,7 +3713,9 @@ export function useWebTerminal(
   return {
     /* context */
     session,
-    connection,
+    connection: connection
+      ? withoutConnectionLocalCredentials(connection)
+      : connection,
     settings,
     isSsh,
     sshTerminalConfig,

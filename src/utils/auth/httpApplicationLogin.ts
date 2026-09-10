@@ -7,6 +7,7 @@ import {
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "./httpCredentials";
+import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
 
 /** Hosted presets cannot label an arbitrary origin as their provider's login. */
 export function validateHttpApplicationTarget(
@@ -117,7 +118,16 @@ export function normalizeHttpApplicationSelectors(
 /** Prepare one protected proxy session; never mutate or re-save the connection. */
 export function resolveHttpApplicationLogin(
   connection: Partial<Connection> | null | undefined,
+  vaultCredentials?: { username: string; password: string },
 ): HttpApplicationLogin {
+  const usesVault =
+    normalizeConnectionCredentialSource(connection?.credentialSource)?.kind ===
+    "vault";
+  const deferred = usesVault && vaultCredentials === undefined;
+  const credentialsFor = (candidate: Partial<Connection> | null | undefined) =>
+    usesVault
+      ? (vaultCredentials ?? null)
+      : resolveHttpBasicCredentials(candidate);
   if (connection?.httpApplication === undefined) {
     if (connection?.authType === "header")
       return {
@@ -127,7 +137,7 @@ export function resolveHttpApplicationLogin(
       };
     if (connection?.authType === "digest")
       return {
-        credentials: resolveHttpBasicCredentials({
+        credentials: credentialsFor({
           ...connection,
           authType: "basic",
         }),
@@ -135,7 +145,7 @@ export function resolveHttpApplicationLogin(
         autoLogin: false,
       };
     return {
-      credentials: resolveHttpBasicCredentials(connection),
+      credentials: credentialsFor(connection),
       autoLogin: connection?.httpAutoLogin ?? false,
       selectors: connection?.httpAutoLoginSelectors,
     };
@@ -150,11 +160,11 @@ export function resolveHttpApplicationLogin(
   const profile = getHttpApplicationProfile(settings.id)!;
   if (settings.loginMode === "manual")
     return { credentials: null, upstreamAuthMode: "none", autoLogin: false };
-  const credentials = resolveHttpBasicCredentials({
+  const credentials = credentialsFor({
     ...connection,
     authType: "basic",
   });
-  if (!credentials)
+  if (!credentials && !deferred)
     throw new Error(
       "Application login requires this connection's saved website credentials. Review Application settings.",
     );
@@ -164,7 +174,7 @@ export function resolveHttpApplicationLogin(
       upstreamAuthMode: settings.loginMode,
       autoLogin: false,
     };
-  if (!credentials.username || !credentials.password)
+  if (!deferred && (!credentials?.username || !credentials.password))
     throw new Error(
       "Automatic form login requires both the website username and password.",
     );
@@ -201,11 +211,13 @@ export function resolveHttpApplicationLogin(
     );
   }
   const username =
-    settings.id === "proxmox" && !credentials.username.includes("@")
+    settings.id === "proxmox" &&
+    credentials &&
+    !credentials.username.includes("@")
       ? `${credentials.username}@${settings.realm ?? "pam"}`
-      : credentials.username;
+      : (credentials?.username ?? "");
   return {
-    credentials: { ...credentials, username },
+    credentials: credentials ? { ...credentials, username } : null,
     upstreamAuthMode: "none",
     autoLogin: true,
     ...(Object.keys(selectors).length ? { selectors } : {}),

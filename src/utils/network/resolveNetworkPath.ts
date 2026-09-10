@@ -21,6 +21,7 @@ import {
   type VpnProfileCatalogSnapshot,
 } from "./vpnProviderCatalog";
 import { isIpAddressInCidr, isLiteralIpAddress } from "./vpnRoutingPolicy";
+import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
 
 /** Marker used by {@link redactNetworkPathSecrets}. */
 export const NETWORK_PATH_REDACTED = "[REDACTED]" as const;
@@ -1109,6 +1110,28 @@ function appendSingleSshConfig(
         "missing-reference",
         "error",
         `SSH connection reference "${config.connectionId}" does not exist in the supplied connection snapshot.`,
+        source,
+      );
+      return;
+    }
+    // A referenced transport is a separate authentication boundary. Until a
+    // scoped hop-vault adapter exists, neither inherited local secrets nor
+    // inline overrides may substitute for its selected vault credential.
+    let localCredentialSource = false;
+    try {
+      localCredentialSource =
+        normalizeConnectionCredentialSource(
+          referencedConnection.credentialSource,
+        )?.kind !== "vault";
+    } catch {
+      // Malformed source data may contain secrets; use a fixed diagnostic.
+    }
+    if (!localCredentialSource) {
+      addIssue(
+        state,
+        "invalid-layer",
+        "error",
+        "Referenced SSH transport hops require local credentials. Vault-backed or invalid credential sources are not supported for hops; no local or inline fallback was used.",
         source,
       );
       return;

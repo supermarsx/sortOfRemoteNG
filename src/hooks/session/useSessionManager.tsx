@@ -3,6 +3,13 @@ import { useTranslation } from "react-i18next";
 import { getDocumentDraft } from "../../utils/documents/documentDrafts";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
+import {
+  getVaultRuntimeUnsupportedMessage,
+  resolveRuntimeVaultCredential,
+  runtimeCredentialTargetKey,
+  withoutConnectionLocalCredentials,
+} from "../../utils/security/runtimeCredentialVault";
 import {
   Connection,
   ConnectionSession,
@@ -258,7 +265,12 @@ const sessionVpnUncorrelatedOwnerIds = (
  */
 export const useSessionManager = () => {
   const { t } = useTranslation();
-  const { state, dispatch } = useConnections();
+  const { state, dispatch, credentialVault, databaseAvailability } =
+    useConnections();
+  const databaseAvailabilityRef = useRef(databaseAvailability);
+  databaseAvailabilityRef.current = databaseAvailability;
+  const credentialVaultRef = useRef(credentialVault);
+  credentialVaultRef.current = credentialVault;
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
@@ -716,6 +728,72 @@ export const useSessionManager = () => {
     ) {
       return false;
     }
+    // This precedes onConnect automation, status probes and every reconnect.
+    try {
+      const availability = databaseAvailabilityRef.current;
+      if (
+        session.ownerDatabaseId &&
+        stateRef.current.connections.some(
+          (item) => item.id === session.connectionId,
+        ) &&
+        (availability?.status !== "ready" ||
+          availability.databaseId !== session.ownerDatabaseId)
+      )
+        throw new Error(
+          "Open and unlock this session's owning database. A connection from another database will not be substituted.",
+        );
+      const unsupported = getVaultRuntimeUnsupportedMessage(connection);
+      if (unsupported) throw new Error(unsupported);
+      if (connection.credentialSource?.kind === "vault") {
+        const api = credentialVaultRef.current;
+        const target =
+          DatabaseManager.getInstance().captureCurrentDatabaseDataTarget();
+        if (!api?.scope || !target)
+          throw new Error(
+            "Open and unlock the owning protected database before using vault credentials.",
+          );
+        const scopeKey = JSON.stringify(api.scope);
+        const key = runtimeCredentialTargetKey(connection);
+        await resolveRuntimeVaultCredential({
+          api,
+          connection,
+          session,
+          target,
+          validateOnly: true,
+          assertCurrent: () => {
+            const latest = resolveRuntimeConnection(
+              stateRef.current.connections,
+              connection.id,
+            );
+            if (
+              isUnmountedRef.current ||
+              endingSessionIdsRef.current.has(session.id) ||
+              credentialVaultRef.current?.changeRevision !==
+                api.changeRevision ||
+              JSON.stringify(credentialVaultRef.current?.scope) !== scopeKey ||
+              !latest ||
+              runtimeCredentialTargetKey(latest) !== key
+            )
+              throw new Error(
+                "The vault credential attempt was cancelled because its database or connection changed.",
+              );
+          },
+        });
+      }
+    } catch (error) {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          status: "error",
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : "The database vault credential is unavailable. No local fallback was used.",
+        },
+      });
+      return false;
+    }
     const settings = settingsManager.getSettings();
     const startTime = Date.now();
 
@@ -728,7 +806,7 @@ export const useSessionManager = () => {
 
     try {
       await scriptEngine.executeScriptsForTrigger("onConnect", {
-        connection,
+        connection: withoutConnectionLocalCredentials(connection),
         session,
       });
     } catch (error) {
@@ -915,10 +993,12 @@ export const useSessionManager = () => {
     const runtimeCapabilities = await loadRuntimeCapabilities();
     assertCurrent?.();
     const unsupportedMessage =
+      getVaultRuntimeUnsupportedMessage(connection) ??
       getRuntimeProtocolUnavailableMessage(
         isSynologyFileConnection(connection) ? "synology" : connection.protocol,
         runtimeCapabilities,
-      ) ?? getUnsupportedDirectSessionMessage(connection.protocol);
+      ) ??
+      getUnsupportedDirectSessionMessage(connection.protocol);
 
     // Check for existing session for protocols that should reuse connections
     const reuseSessionProtocols = ["ssh", "http", "https"];
@@ -1000,6 +1080,9 @@ export const useSessionManager = () => {
     const session: ConnectionSession = {
       id: generateId(),
       connectionId: connection.id,
+      ...(connection.credentialSource?.kind === "vault"
+        ? { ownerDatabaseId: credentialVaultRef.current?.scope?.databaseId }
+        : {}),
       name:
         settings.hostnameOverride && connection.hostname
           ? connection.hostname
@@ -1661,7 +1744,7 @@ export const useSessionManager = () => {
       if (connection) {
         try {
           await scriptEngine.executeScriptsForTrigger("onDisconnect", {
-            connection,
+            connection: withoutConnectionLocalCredentials(connection),
             session,
           });
         } catch (error) {

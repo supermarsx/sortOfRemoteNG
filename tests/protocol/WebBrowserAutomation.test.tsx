@@ -12,11 +12,20 @@ import type {
   Connection,
   ConnectionSession,
 } from "../../src/types/connection/connection";
+import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
+import * as redirectHooks from "../../src/hooks/protocol/useHttpRedirectReview";
+import {
+  clearRuntimeConnectionsForTests,
+  registerRuntimeConnection,
+  resolveRuntimeConnection,
+} from "../../src/utils/session/runtimeConnectionRegistry";
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
   dispatch: vi.fn(),
   connections: [] as Connection[],
+  sessions: [] as ConnectionSession[],
   locked: false,
+  vaultApi: undefined as DatabaseCredentialVaultApi | undefined,
   settings: {
     proxyKeepaliveEnabled: false,
     webRecording: { autoRecordWebSessions: false },
@@ -40,9 +49,10 @@ vi.mock("../../src/utils/tauri/invoke", () => ({
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
-    state: { connections: native.connections },
+    state: { connections: native.connections, sessions: native.sessions },
     dispatch: native.dispatch,
     dispatchAndFlush: native.dispatch,
+    credentialVault: native.vaultApi,
     databaseAvailability: {
       status: "ready",
       databaseId: "owned-demo",
@@ -84,6 +94,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
         assertAccessible: () => {
           if (native.locked) throw new Error("locked");
         },
+        readCurrent: async () => ({ connections: native.connections }),
       }),
     }),
   },
@@ -112,6 +123,9 @@ const holdFrameLoad = (event: Event) => {
 beforeEach(() => {
   document.addEventListener("load", holdFrameLoad, true);
   native.locked = false;
+  native.vaultApi = undefined;
+  native.sessions = [];
+  clearRuntimeConnectionsForTests();
   native.connections = [
     {
       id: "automation-demo",
@@ -149,6 +163,7 @@ afterEach(() => {
   cleanup();
   document.removeEventListener("load", holdFrameLoad, true);
   vi.restoreAllMocks();
+  clearRuntimeConnectionsForTests();
 });
 async function mount() {
   const connection = native.connections[0];
@@ -162,6 +177,7 @@ async function mount() {
     status: "connected",
     startTime: new Date(),
   };
+  native.sessions = [session];
   const view = render(<WebBrowser session={session} />);
   const iframe = screen.getByTitle(connection.name) as HTMLIFrameElement;
   await waitFor(() => expect(iframe.src).toContain(proxy.proxy_url));
@@ -198,6 +214,135 @@ async function mount() {
   return { ...view, iframe, post, identity, emit };
 }
 describe("real WebBrowser iframe and website automation integration", () => {
+  it.each([false, true])(
+    "releases a replaced redirect registry only when no other tab owns it (other owner=%s)",
+    async (otherOwner) => {
+      const original = redirectHooks.useHttpRedirectReview;
+      let replace: ((connection: Connection) => void) | undefined;
+      vi.spyOn(redirectHooks, "useHttpRedirectReview").mockImplementation(
+        (options) => {
+          replace = options.continueInTab;
+          return original(options);
+        },
+      );
+      const source = native.connections[0];
+      registerRuntimeConnection(source);
+      const view = await mount();
+      if (otherOwner)
+        native.sessions.push({ ...native.sessions[0], id: "other-tab" });
+      const target = {
+        ...source,
+        id: "new-redirect",
+        hostname: "new.example.test",
+      };
+      act(() => replace!(target));
+      expect(native.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          id: "web-session",
+          connectionId: target.id,
+        }),
+      });
+      expect(resolveRuntimeConnection([], source.id)).toBe(
+        otherOwner ? source : undefined,
+      );
+      expect(native.connections[0]).toBe(source);
+      view.unmount();
+    },
+  );
+  function configureVault(): DatabaseCredentialVaultApi {
+    const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    Object.assign(native.connections[0], {
+      credentialSource: { kind: "vault", credentialId: id },
+      authType: "basic",
+      username: "IGNORED_USER",
+      password: "IGNORED_PASSWORD",
+      basicAuthUsername: "OLD_BASIC",
+      basicAuthPassword: "OLD_BASIC_PASSWORD",
+    });
+    native.vaultApi = {
+      scope: { databaseId: "owned-demo", generation: 1 },
+      changeRevision: 1,
+      list: vi.fn<DatabaseCredentialVaultApi["list"]>(async () => ({
+        scope: { databaseId: "owned-demo", generation: 1 },
+        revision: 1,
+        receipt: "vault-review",
+        entries: [
+          {
+            id,
+            name: "Fixture login",
+            createdAt: stamp,
+            updatedAt: stamp,
+            availableFacets: ["username", "password"],
+          },
+        ],
+      })),
+      resolve: vi.fn(async () => ({
+        username: "VAULT_WEB_USER",
+        password: "VAULT_WEB_PASSWORD",
+      })),
+      compareAndSwap: vi.fn(),
+    };
+    return native.vaultApi;
+  }
+  it("resolves a vault pair only for native start and never persists it or revives dedicated local Basic credentials", async () => {
+    const api = configureVault();
+    const view = await mount();
+    expect(api.resolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      ["username", "password"],
+    );
+    expect(native.invoke).toHaveBeenCalledWith("start_basic_auth_proxy", {
+      config: expect.objectContaining({
+        username: "VAULT_WEB_USER",
+        password: "VAULT_WEB_PASSWORD",
+      }),
+    });
+    expect(JSON.stringify(native.dispatch.mock.calls)).not.toContain(
+      "VAULT_WEB_PASSWORD",
+    );
+    expect(native.connections[0].password).toBe("IGNORED_PASSWORD");
+    view.unmount();
+  });
+  it("refuses a deferred vault password if database access was revoked before native start", async () => {
+    const api = configureVault();
+    let finish!: (value: { username: string; password: string }) => void;
+    vi.mocked(api.resolve).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const connection = native.connections[0];
+    const view = render(
+      <WebBrowser
+        session={{
+          id: "vault-web",
+          connectionId: connection.id,
+          ownerDatabaseId: "owned-demo",
+          hostname: connection.hostname,
+          name: connection.name,
+          protocol: "http",
+          status: "connecting",
+          startTime: new Date(),
+        }}
+      />,
+    );
+    await waitFor(() => expect(api.resolve).toHaveBeenCalled());
+    native.locked = true;
+    await act(async () =>
+      finish({ username: "VAULT_WEB_USER", password: "VAULT_WEB_PASSWORD" }),
+    );
+    expect(
+      native.invoke.mock.calls.some(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(native.dispatch.mock.calls)).not.toContain(
+      "VAULT_WEB_PASSWORD",
+    );
+    view.unmount();
+  });
   it("mounts the automatic MFA guard and retains manual fallback for a non-HTTPS session", async () => {
     native.connections[0].httpApplication = {
       version: 1,

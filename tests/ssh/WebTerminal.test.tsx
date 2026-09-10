@@ -1,5 +1,6 @@
 import {
   render,
+  renderHook,
   screen,
   fireEvent,
   waitFor,
@@ -8,6 +9,8 @@ import {
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WebTerminal } from "../../src/components/ssh/WebTerminal";
+import { useWebTerminal } from "../../src/hooks/ssh/useWebTerminal";
+import TotpPopover from "../../src/components/ssh/webTerminal/TotpPopover";
 import { ConnectionSession } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { SessionFullscreenProvider } from "../../src/contexts/SessionFullscreenProvider";
@@ -17,6 +20,10 @@ import type { PersistedManagedScripts } from "../../src/utils/recording/managedS
 
 const scriptLibrary = vi.hoisted(() => ({
   value: null as PersistedManagedScripts | null,
+}));
+const vaultAttempt = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock("../../src/hooks/security/useRuntimeCredentialVault", () => ({
+  useRuntimeCredentialVault: () => vaultAttempt.resolve,
 }));
 vi.mock(
   "../../src/utils/recording/managedScriptPersistence",
@@ -290,6 +297,9 @@ describe("WebTerminal", () => {
   beforeEach(() => {
     scriptLibrary.value = null;
     vi.clearAllMocks();
+    vaultAttempt.resolve.mockReset().mockResolvedValue(null);
+    Reflect.deleteProperty(mockConnection, "credentialSource");
+    Reflect.deleteProperty(mockConnection, "totpConfigs");
     mockDispatch.mockClear();
     hostKeyPromptListener = undefined;
     shellClosedListener = undefined;
@@ -312,6 +322,130 @@ describe("WebTerminal", () => {
   });
 
   describe("SSH Connection", () => {
+    it("masks local TOTP facets and blocks current and retained update callbacks in vault mode", () => {
+      const localCodes = [
+        {
+          id: "local",
+          account: "Preserved",
+          secret: "JBSWY3DPEHPK3PXP",
+          issuer: "Fixture",
+          digits: 6 as const,
+          period: 30,
+          algorithm: "sha1" as const,
+        },
+      ];
+      Object.assign(mockConnection, { totpConfigs: localCodes });
+      const view = renderHook(() => useWebTerminal(mockSession), {
+        wrapper: SessionFullscreenProvider,
+      });
+      expect(view.result.current.totpConfigs).toEqual(localCodes);
+      const retainedUpdate = view.result.current.handleUpdateTotpConfigs;
+      Object.assign(mockConnection, {
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      });
+      view.rerender();
+      expect(view.result.current.totpConfigs).toEqual([]);
+      mockDispatch.mockClear();
+      act(() => {
+        retainedUpdate([]);
+        view.result.current.handleUpdateTotpConfigs([]);
+      });
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(Reflect.get(mockConnection, "totpConfigs")).toBe(localCodes);
+      view.unmount();
+    });
+    it("disables the local TOTP popover with an honest vault availability explanation", () => {
+      Object.assign(mockConnection, {
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+        totpConfigs: [
+          {
+            account: "Ignored local authenticator",
+            secret: "JBSWY3DPEHPK3PXP",
+          },
+        ],
+      });
+      const hook = renderHook(() => useWebTerminal(mockSession), {
+        wrapper: SessionFullscreenProvider,
+      });
+      const view = render(<TotpPopover mgr={hook.result.current} />);
+      const button = screen.getByRole("button", { name: "2FA Codes" });
+      expect(button).toBeDisabled();
+      expect(button.parentElement).toHaveAttribute(
+        "data-tooltip",
+        expect.stringContaining("connection-local codes are ignored"),
+      );
+      fireEvent.click(button);
+      expect(
+        screen.queryByText("Ignored local authenticator"),
+      ).not.toBeInTheDocument();
+      view.unmount();
+      hook.unmount();
+    });
+    it("uses an attempt-only vault password without saving it or falling back to local credentials", async () => {
+      Object.assign(mockConnection, {
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      });
+      vaultAttempt.resolve.mockImplementation(
+        async (assertCurrent: () => void) => ({
+          facets: {
+            username: "VAULT_SSH_USER",
+            password: "VAULT_SSH_PASSWORD",
+          },
+          assertCurrent,
+        }),
+      );
+      renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("connect_ssh", {
+          config: expect.objectContaining({
+            username: "VAULT_SSH_USER",
+            password: "VAULT_SSH_PASSWORD",
+            private_key_path: null,
+          }),
+        }),
+      );
+      expect(mockConnection.password).toBe("testpass");
+      expect(JSON.stringify(mockDispatch.mock.calls)).not.toContain(
+        "VAULT_SSH_PASSWORD",
+      );
+      expect(JSON.stringify(mockDispatch.mock.calls)).not.toContain(
+        "VAULT_SSH_USER",
+      );
+    });
+    it("does not dial SSH or reattach when vault resolution refuses access", async () => {
+      Object.assign(mockConnection, {
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      });
+      vaultAttempt.resolve.mockRejectedValue(
+        new Error("The database vault credential is unavailable."),
+      );
+      renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "UPDATE_SESSION",
+            payload: expect.objectContaining({ status: "error" }),
+          }),
+        ),
+      );
+      expect(
+        mockInvoke.mock.calls.some(
+          ([command]) => command === "connect_ssh" || command === "start_shell",
+        ),
+      ).toBe(false);
+    });
     it("should display connection details during SSH connection", async () => {
       mockInvoke.mockResolvedValueOnce("ssh-session-123");
 

@@ -44,6 +44,7 @@ export interface RDPClientHeaderProps {
   onUpdateServerCertValidation: (mode: "validate" | "warn" | "ignore") => void;
   totpConfigs?: TOTPConfig[];
   onUpdateTotpConfigs: (configs: TOTPConfig[]) => void;
+  totpUnavailableReason?: string;
   handleAutoTypeTOTP?: (code: string) => void;
   totpDefaultIssuer?: string;
   totpDefaultDigits?: number;

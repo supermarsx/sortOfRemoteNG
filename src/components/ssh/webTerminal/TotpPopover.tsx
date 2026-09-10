@@ -3,23 +3,31 @@ import RDPTotpPanel from "../../rdp/RDPTotpPanel";
 import { Shield } from "lucide-react";
 
 function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
+  const vaultSelected = mgr.connection?.credentialSource?.kind === "vault";
   return (
-    <div className="relative" ref={mgr.totpBtnRef}>
+    <div
+      className="relative"
+      ref={mgr.totpBtnRef}
+      data-tooltip={
+        vaultSelected
+          ? "Vault TOTP is not supported for SSH yet. Preserved connection-local codes are ignored."
+          : undefined
+      }
+    >
       <button
         type="button"
+        disabled={vaultSelected}
         onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
         className={`app-bar-button p-2 relative ${mgr.showTotpPanel ? "text-primary" : ""}`}
-        data-tooltip="2FA Codes"
+        data-tooltip={vaultSelected ? undefined : "2FA Codes"}
         aria-label="2FA Codes"
       >
         <Shield size={14} />
         {mgr.totpConfigs.length > 0 && (
-          <span className="sor-notification-dot">
-            {mgr.totpConfigs.length}
-          </span>
+          <span className="sor-notification-dot">{mgr.totpConfigs.length}</span>
         )}
       </button>
-      {mgr.showTotpPanel && (
+      {mgr.showTotpPanel && !vaultSelected && (
         <RDPTotpPanel
           configs={mgr.totpConfigs}
           onUpdate={mgr.handleUpdateTotpConfigs}

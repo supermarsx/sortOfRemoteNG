@@ -7,13 +7,19 @@ const TotpButton: React.FC<{
   mgr: Mgr;
   p: RDPClientHeaderProps;
 }> = ({ mgr, p }) => {
-  const configs = p.totpConfigs ?? [];
+  const configs = p.totpUnavailableReason ? [] : (p.totpConfigs ?? []);
   return (
-    <div ref={mgr.totpBtnRef} className="relative">
+    <div
+      ref={mgr.totpBtnRef}
+      className="relative"
+      data-tooltip={p.totpUnavailableReason}
+    >
       <button
+        disabled={!!p.totpUnavailableReason}
+        aria-label="2FA Codes"
         onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
         className={`${mgr.showTotpPanel ? btnActive : btnDefault} relative`}
-        data-tooltip="2FA Codes"
+        data-tooltip={p.totpUnavailableReason ? undefined : "2FA Codes"}
       >
         <Shield size={14} />
         {configs.length > 0 && (
@@ -22,7 +28,7 @@ const TotpButton: React.FC<{
           </span>
         )}
       </button>
-      {mgr.showTotpPanel && (
+      {mgr.showTotpPanel && !p.totpUnavailableReason && (
         <RDPTotpPanel
           configs={configs}
           onUpdate={p.onUpdateTotpConfigs}
@@ -38,6 +44,5 @@ const TotpButton: React.FC<{
     </div>
   );
 };
-
 
 export default TotpButton;
