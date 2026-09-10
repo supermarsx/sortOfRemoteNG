@@ -594,14 +594,22 @@ test("real-repository dry-run is read-only and reports the complete direct graph
   const before = await artifactHashes();
   const result = dryRunCompatibleUpdate(REPOSITORY_ROOT);
   const after = await artifactHashes();
+  const manifest = JSON.parse(
+    await readFile(path.join(REPOSITORY_ROOT, "package.json"), "utf8"),
+  );
+  const directDependencies = {
+    ...manifest.dependencies,
+    ...manifest.devDependencies,
+  };
   assert.deepEqual(after, before);
   assert.equal(result.mode, "dry-run");
-  assert.equal(result.parity.total, 57);
+  assert.equal(result.parity.total, Object.keys(directDependencies).length);
   assert.equal(result.parity.bunVersion, "1.3.11");
   assert.ok(result.policy.eligible.length > 0);
   assert.deepEqual(result.policy.exactHolds, [
     "@types/node",
     "@vitest/coverage-v8",
+    "prettier",
     "vitest",
   ]);
   assert.deepEqual(result.policy.explicitHolds, expectedCompatibleHolds());
