@@ -5,8 +5,9 @@ import {
   setSynologyAccessMode,
   isSynologyFileConnection,
 } from "../../types/protocols/synology";
-import { Select, PasswordInput } from "../ui/forms";
+import { Select, PasswordInput, CheckboxField } from "../ui/forms";
 import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
+import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
 
 export default function SynologyOptions({
   formData,
@@ -31,6 +32,18 @@ export default function SynologyOptions({
           : savedSettings.useHttps,
   };
   const native = isSynologyFileConnection(formData);
+  const website =
+    !native &&
+    (formData.protocol === "http" || formData.protocol === "https") &&
+    formData.httpApplication?.id === "synology-dsm";
+  let proxyPolicy: ReturnType<typeof normalizeHttpProxyPolicy> | null = null;
+  if (website) {
+    try {
+      proxyPolicy = normalizeHttpProxyPolicy(formData.httpProxyPolicy);
+    } catch {
+      // Do not repair malformed saved security controls through an alias.
+    }
+  }
   const credentials = resolveHttpBasicCredentials({
     ...formData,
     authType: "basic",
@@ -60,6 +73,69 @@ export default function SynologyOptions({
           }
         />
       </label>
+      {website && (
+        <div className="space-y-2">
+          <CheckboxField
+            variant="form"
+            label="Allow insecure redirects — review each HTTPS-to-HTTP handoff"
+            aria-label="Allow insecure redirects"
+            checked={proxyPolicy?.allowHttpDowngradeRedirects === true}
+            disabled={!proxyPolicy || proxyPolicy.httpsOnly}
+            onChange={(enabled) =>
+              setFormData((previous) => {
+                if (
+                  isSynologyFileConnection(previous) ||
+                  !["http", "https"].includes(previous.protocol ?? "") ||
+                  previous.httpApplication?.id !== "synology-dsm"
+                )
+                  return previous;
+                try {
+                  const current = normalizeHttpProxyPolicy(
+                    previous.httpProxyPolicy,
+                  );
+                  if (enabled && current.httpsOnly) return previous;
+                  return {
+                    ...previous,
+                    httpProxyPolicy: {
+                      ...current,
+                      allowHttpDowngradeRedirects: enabled,
+                      allowCrossOriginRedirects:
+                        enabled || current.allowCrossOriginRedirects === true,
+                    },
+                  };
+                } catch {
+                  return previous;
+                }
+              })
+            }
+          />
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            DSM website only. Also enables reviewed cross-origin redirects in
+            Advanced. Every handoff still requires your approval and opens a new
+            anonymous, unencrypted HTTP tab. Saved credentials, cookies, form
+            bodies, custom headers and query parameters are not carried over.
+            Leave this off unless an HTTP reverse-proxy handoff is necessary.
+          </p>
+          {!proxyPolicy ? (
+            <p role="alert" className="text-xs text-error">
+              The saved proxy controls are invalid. Review Advanced → Internal
+              proxy controls before changing redirect permissions.
+            </p>
+          ) : proxyPolicy.httpsOnly ? (
+            <p role="status" className="text-xs text-warning">
+              Require HTTPS upstream in Advanced blocks insecure redirects and
+              takes precedence. This checkbox does not turn that protection off.
+            </p>
+          ) : proxyPolicy.allowHttpDowngradeRedirects &&
+            !proxyPolicy.allowCrossOriginRedirects ? (
+            <p role="status" className="text-xs text-warning">
+              Reviewed cross-origin redirects are currently off in Advanced, so
+              insecure handoffs remain blocked. Re-enable this checkbox to
+              enable both review permissions.
+            </p>
+          ) : null}
+        </div>
+      )}
       {native && (
         <label className="block text-sm">
           Transport
@@ -136,7 +212,9 @@ export default function SynologyOptions({
         the saved username/password and asks for one-time codes interactively.
         Codes are never saved. Native proxy/VPN routes and browser certificate
         overrides are not supported; configured overrides are refused, not
-        ignored. Website sign-in does not unlock the native API.
+        ignored. Website sign-in does not unlock the native API. The website
+        redirect exception does not apply to the NAS API; it never forwards an
+        authenticated API request to an insecure redirect.
       </p>
     </section>
   );
