@@ -35,6 +35,11 @@ pub struct HttpProxyPolicy {
     pub page_scripts: PageScripts,
     pub https_only: bool,
     pub same_origin_only: bool,
+    #[serde(default)]
+    pub allow_cross_origin_redirects: bool,
+    /// Separate opt-in to review (never automatically follow) an HTTP handoff.
+    #[serde(default)]
+    pub allow_http_downgrade_redirects: bool,
     pub cache_mode: CacheMode,
     pub query_parameters: Vec<QueryParameter>,
 }
@@ -47,6 +52,14 @@ impl std::fmt::Debug for HttpProxyPolicy {
             .field("page_scripts", &self.page_scripts)
             .field("https_only", &self.https_only)
             .field("same_origin_only", &self.same_origin_only)
+            .field(
+                "allow_cross_origin_redirects",
+                &self.allow_cross_origin_redirects,
+            )
+            .field(
+                "allow_http_downgrade_redirects",
+                &self.allow_http_downgrade_redirects,
+            )
             .field("cache_mode", &self.cache_mode)
             .field("query_parameter_count", &self.query_parameters.len())
             .finish_non_exhaustive()
@@ -60,6 +73,8 @@ impl Default for HttpProxyPolicy {
             page_scripts: PageScripts::Allow,
             https_only: false,
             same_origin_only: false,
+            allow_cross_origin_redirects: false,
+            allow_http_downgrade_redirects: false,
             cache_mode: CacheMode::Normal,
             query_parameters: Vec::new(),
         }

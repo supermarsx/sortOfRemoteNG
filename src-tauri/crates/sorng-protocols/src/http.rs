@@ -34,8 +34,11 @@ mod web_automation;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
 #[path = "http_digest.rs"]
 mod http_digest;
+#[path = "http_redirect.rs"]
+mod redirect;
 #[path = "http_upstream.rs"]
 mod upstream;
+pub use redirect::ProxyRedirectReview;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -905,6 +908,7 @@ pub struct ProxySessionManager {
     pub request_log: VecDeque<ProxyRequestLogEntry>,
     request_log_capacity: usize,
     next_request_log_id: u64,
+    redirect_reviews: HashMap<String, redirect::PendingRedirect>,
 }
 
 pub struct ProxySessionEntry {
@@ -967,6 +971,7 @@ impl ProxySessionManager {
             request_log: VecDeque::new(),
             request_log_capacity: 10_000,
             next_request_log_id: 0,
+            redirect_reviews: HashMap::new(),
         }))
     }
 
@@ -1900,6 +1905,20 @@ pub async fn axum_proxy_handler(
         }
         Err(e) => {
             // P2: themed HTML error page in place of the plain-text
+            let redirect_review_available =
+                if let upstream::UpstreamError::CrossOriginRedirect(destination) = &e {
+                    document_request
+                        && matches!(method_str.as_str(), "GET" | "HEAD")
+                        && body_bytes.is_empty()
+                        && redirect::record(
+                            &state,
+                            destination,
+                            document_sequence,
+                            navigation_token.clone(),
+                        )
+                } else {
+                    false
+                };
             // 502. Categorize the reqwest error, then render a page
             // whose layout, palette, and iconography match the app's
             // own error views (GenericErrorView / FeatureErrorBoundary).
@@ -1910,6 +1929,17 @@ pub async fn axum_proxy_handler(
                 upstream::UpstreamError::Policy(_) => {
                     crate::themed_errors::ProxyErrorKind::BadRequest
                 }
+                upstream::UpstreamError::CrossOriginRedirect(destination) => {
+                    if redirect_review_available {
+                        crate::themed_errors::ProxyErrorKind::RedirectReview
+                    } else if state.target_url.starts_with("https:")
+                        && destination.scheme() == "http"
+                    {
+                        crate::themed_errors::ProxyErrorKind::InsecureRedirect
+                    } else {
+                        crate::themed_errors::ProxyErrorKind::CrossOriginRedirect
+                    }
+                }
                 upstream::UpstreamError::Deadline => crate::themed_errors::ProxyErrorKind::Timeout,
             };
             // Never surface the raw reqwest error here. When an app-level
@@ -1919,6 +1949,7 @@ pub async fn axum_proxy_handler(
             // secrets into themed pages, manager state, recordings, or logs.
             let err_msg = match e {
                 upstream::UpstreamError::Policy(message) => message.to_string(),
+                upstream::UpstreamError::CrossOriginRedirect(_) => kind.hint().to_string(),
                 upstream::UpstreamError::Deadline => "The complete upstream request timed out while negotiating authentication or redirects.".to_string(),
                 upstream::UpstreamError::Transport(_) => {
                     format!("Upstream request failed ({}): {}", kind.code(), kind.hint())

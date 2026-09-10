@@ -5,6 +5,7 @@ import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import type { StorageData } from "../../src/utils/storage/storage";
 import type { Connection } from "../../src/types/connection/connection";
+import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyPolicy";
 import { normalizeRecycleBin } from "../../src/utils/connection/recycleBin";
 import { containsExportSecrets } from "../../src/components/ImportExport/exportSecurity";
 import {
@@ -115,6 +116,28 @@ describe("full database Recycle Bin portability", () => {
     );
     expect((await manager.loadDatabaseData(id))?.recycleBin).toEqual(
       fixture().recycleBin,
+    );
+  });
+  it("roundtrips the redirect opt-in through credential-free export without private query parameters", async () => {
+    const data = fixture();
+    data.connections[0].httpProxyPolicy = {
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      allowCrossOriginRedirects: true,
+      allowHttpDowngradeRedirects: true,
+      queryParameters: [{ name: "token", value: "private-redirect-query" }],
+    };
+    await manager.saveDatabaseData(id, data);
+    const json = await manager.exportDatabase(id, false);
+    const exported = JSON.parse(json) as StorageData;
+    expect(
+      exported.connections[0].httpProxyPolicy?.allowCrossOriginRedirects,
+    ).toBe(true);
+    expect(
+      exported.connections[0].httpProxyPolicy?.allowHttpDowngradeRedirects,
+    ).toBe(true);
+    expect(json).not.toContain("private-redirect-query");
+    expect(exported.connections[0].httpProxyPolicy?.queryParameters).toEqual(
+      [],
     );
   });
   it("preserves reference-only MFA metadata and removes malformed secret-bearing MFA extensions", async () => {

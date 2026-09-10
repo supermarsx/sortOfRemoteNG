@@ -5,6 +5,46 @@ import {
 } from "../../src/utils/connection/httpProxyPolicy";
 
 describe("HTTP proxy policy validation", () => {
+  it("defaults reviewed redirects off for absent/legacy policies and rejects malformed opt-ins", () => {
+    const legacy = { ...normalizeHttpProxyPolicy(undefined) };
+    delete legacy.allowCrossOriginRedirects;
+    delete legacy.allowHttpDowngradeRedirects;
+    expect(normalizeHttpProxyPolicy(legacy).allowHttpDowngradeRedirects).toBe(
+      false,
+    );
+    for (const value of ["true", 1, null, {}])
+      expect(() =>
+        normalizeHttpProxyPolicy({
+          ...legacy,
+          allowHttpDowngradeRedirects: value,
+        }),
+      ).toThrow("Invalid HTTP proxy policy");
+    const enabled = {
+      ...legacy,
+      allowCrossOriginRedirects: true,
+      allowHttpDowngradeRedirects: true,
+    };
+    expect(
+      normalizeHttpProxyPolicy(JSON.parse(JSON.stringify(enabled))),
+    ).toMatchObject(enabled);
+    expect(normalizeHttpProxyPolicy(undefined).allowCrossOriginRedirects).toBe(
+      false,
+    );
+    expect(normalizeHttpProxyPolicy(legacy).allowCrossOriginRedirects).toBe(
+      false,
+    );
+    expect(
+      normalizeHttpProxyPolicy({ ...legacy, allowCrossOriginRedirects: true })
+        .allowCrossOriginRedirects,
+    ).toBe(true);
+    for (const value of ["true", 1, null, {}])
+      expect(() =>
+        normalizeHttpProxyPolicy({
+          ...legacy,
+          allowCrossOriginRedirects: value,
+        }),
+      ).toThrow("Invalid HTTP proxy policy");
+  });
   it("preserves absent legacy behavior and returns independent parameter arrays", () => {
     const a = normalizeHttpProxyPolicy(undefined);
     a.queryParameters.push({ name: "tenant", value: "private" });

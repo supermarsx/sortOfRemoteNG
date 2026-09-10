@@ -25,6 +25,31 @@ function Fixture({
 const draft = () => JSON.parse(screen.getByTestId("draft").textContent!);
 
 describe("Internal proxy controls", () => {
+  it("offers default-off reviewed redirects without enabling or copying authentication", () => {
+    render(<Fixture initial={{ protocol: "https" }} />);
+    const control = screen.getByRole("checkbox", {
+      name: /Allow reviewed cross-origin redirects/,
+    });
+    expect(control).not.toBeChecked();
+    const downgrade = screen.getByRole("checkbox", {
+      name: /Allow reviewed HTTPS-to-HTTP downgrades/,
+    });
+    expect(downgrade).not.toBeChecked();
+    expect(downgrade).toBeDisabled();
+    fireEvent.click(control);
+    expect(downgrade).toBeEnabled();
+    fireEvent.click(downgrade);
+    expect(draft().httpProxyPolicy.allowHttpDowngradeRedirects).toBe(true);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Require HTTPS upstream/ }),
+    );
+    expect(downgrade).toBeDisabled();
+    expect(draft().httpProxyPolicy.allowCrossOriginRedirects).toBe(true);
+    expect(draft().httpAutoLogin).toBeUndefined();
+    expect(draft().httpProxyPolicy.queryParameters).toEqual([]);
+    fireEvent.click(control);
+    expect(draft().httpProxyPolicy.allowCrossOriginRedirects).toBe(false);
+  });
   it("does not silently change legacy drafts and makes HTTPS enforcement explicit", () => {
     render(<Fixture />);
     expect(draft().httpProxyPolicy).toBeUndefined();

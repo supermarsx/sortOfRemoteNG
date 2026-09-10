@@ -1,0 +1,313 @@
+import { act, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useHttpRedirectReview } from "../../src/hooks/protocol/useHttpRedirectReview";
+import {
+  clearRuntimeConnectionsForTests,
+  getRuntimeWebNavigation,
+  registerRuntimeConnection,
+  resolveRuntimeConnection,
+} from "../../src/utils/session/runtimeConnectionRegistry";
+import { OPEN_RUNTIME_CONNECTION_EVENT } from "../../src/hooks/session/useRuntimeConnectionLaunch";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
+import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyPolicy";
+const h = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  locked: false,
+  route: undefined as string | undefined,
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => h.invoke(...args),
+}));
+vi.mock("../../src/utils/session/sessionDatabaseOwnership", () => ({
+  captureSessionDatabaseAccess: () => {
+    const check = () => {
+      if (h.locked) throw new Error("locked");
+    };
+    check();
+    return check;
+  },
+}));
+vi.mock("../../src/hooks/integration/httpProxy", () => ({
+  getGlobalHttpProxyUrl: () => h.route,
+}));
+const source: Connection = {
+  id: "source",
+  name: "Source",
+  protocol: "https",
+  hostname: "source.invalid",
+  port: 443,
+  isGroup: false,
+  createdAt: "2026-09-10",
+  updatedAt: "2026-09-10",
+  basicAuthUsername: "private-user",
+  basicAuthPassword: "private-password",
+};
+const session: ConnectionSession = {
+  id: "s",
+  connectionId: "source",
+  name: "Source",
+  protocol: "https",
+  hostname: "source.invalid",
+  status: "connected",
+  startTime: new Date(),
+  ownerDatabaseId: "db-a",
+};
+const receipt = {
+  receiptId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  sessionId: "proxy",
+  sourceOrigin: "https://source.invalid",
+  destinationUrl: "https://target.invalid/admin/",
+  navigationToken: "a".repeat(32),
+  documentSequence: 1,
+  removedQuery: true,
+};
+function fixture(enabled = true) {
+  let generation = 1,
+    proxy = "proxy",
+    navigationToken = "a".repeat(32);
+  const stopSource = vi.fn(async () => {
+    proxy = "";
+  });
+  const options = {
+    connection: source,
+    session,
+    sourceOrigin: receipt.sourceOrigin,
+    accessKey: "db-a:1",
+    route: undefined,
+    enabled,
+    generation: () => generation,
+    proxySessionId: () => proxy,
+    navigationToken: () => navigationToken,
+    stopSource,
+  };
+  const hook = renderHook((next = options) => useHttpRedirectReview(next), {
+    initialProps: options,
+  });
+  return {
+    ...hook,
+    options,
+    stopSource,
+    navigate: () => {
+      generation++;
+    },
+    changeToken: () => {
+      navigationToken = "b".repeat(32);
+    },
+    changeProxy: () => {
+      proxy = "replacement";
+    },
+  };
+}
+beforeEach(() => {
+  vi.clearAllMocks();
+  h.locked = false;
+  h.route = undefined;
+  clearRuntimeConnectionsForTests();
+  h.invoke.mockResolvedValue(receipt);
+});
+describe("reviewed anonymous redirect handoff", () => {
+  it("does not stop or launch after downgrade consent changes during receipt consumption", async () => {
+    const launch = vi.fn();
+    window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+    const downgraded = {
+      ...receipt,
+      destinationUrl: "http://target.invalid/admin/",
+    };
+    h.invoke.mockResolvedValue(downgraded);
+    const view = fixture();
+    const policy = {
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      allowCrossOriginRedirects: true,
+      allowHttpDowngradeRedirects: true,
+    };
+    view.rerender({
+      ...view.options,
+      connection: { ...source, httpProxyPolicy: policy },
+    });
+    await act(() => view.result.current.offer());
+    let finish!: (value: unknown) => void;
+    h.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.accept();
+    });
+    view.rerender({
+      ...view.options,
+      connection: {
+        ...source,
+        httpProxyPolicy: { ...policy, allowHttpDowngradeRedirects: false },
+      },
+    });
+    await act(async () => {
+      finish(downgraded);
+      await pending;
+    });
+    expect(view.stopSource).not.toHaveBeenCalled();
+    expect(launch).not.toHaveBeenCalled();
+    window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+  });
+  it("only offers a downgrade under captured explicit policy and opens it anonymously after review", async () => {
+    const launch = vi.fn();
+    window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+    h.invoke.mockResolvedValue({
+      ...receipt,
+      destinationUrl: "http://target.invalid/admin/",
+    });
+    const view = fixture();
+    await act(() => view.result.current.offer());
+    expect(view.result.current.review).toBeNull();
+    const policy = {
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      allowCrossOriginRedirects: true,
+      allowHttpDowngradeRedirects: true,
+    };
+    view.rerender({
+      ...view.options,
+      connection: {
+        ...source,
+        httpProxyPolicy: { ...policy, httpsOnly: true },
+      },
+    });
+    await act(() => view.result.current.offer());
+    expect(view.result.current.review).toBeNull();
+    view.rerender({
+      ...view.options,
+      connection: { ...source, httpProxyPolicy: policy },
+    });
+    await act(() => view.result.current.offer());
+    expect(view.result.current.review?.destinationUrl).toBe(
+      "http://target.invalid/admin/",
+    );
+    expect(launch).not.toHaveBeenCalled();
+    await act(() => view.result.current.accept());
+    const connection = (launch.mock.calls[0][0] as CustomEvent).detail
+      .connection;
+    expect(connection).toMatchObject({
+      protocol: "http",
+      httpAutoLogin: false,
+      httpProxyPolicy: {
+        httpsOnly: false,
+        allowCrossOriginRedirects: true,
+        allowHttpDowngradeRedirects: true,
+      },
+    });
+    expect(JSON.stringify(connection)).not.toContain("private-");
+    window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+  });
+  it("does nothing by default and ignores forged/mismatched native receipts", async () => {
+    const disabled = fixture(false);
+    await act(() => disabled.result.current.offer());
+    expect(h.invoke).not.toHaveBeenCalled();
+    disabled.unmount();
+    const view = fixture();
+    h.invoke.mockResolvedValue({ ...receipt, sessionId: "foreign" });
+    await act(() => view.result.current.offer());
+    expect(view.result.current.review).toBeNull();
+    h.invoke.mockResolvedValue({ ...receipt, navigationToken: "c".repeat(32) });
+    await act(() => view.result.current.offer());
+    expect(view.result.current.review).toBeNull();
+  });
+  it("cancel neither consumes nor stops the source, and the same receipt cannot re-prompt", async () => {
+    const view = fixture();
+    await act(() => view.result.current.offer());
+    expect(view.result.current.review).toEqual(receipt);
+    act(() => view.result.current.cancel());
+    await act(() => view.result.current.offer());
+    expect(view.result.current.review).toBeNull();
+    expect(view.stopSource).not.toHaveBeenCalled();
+    expect(
+      h.invoke.mock.calls.every((call) => call[1].receiptId === null),
+    ).toBe(true);
+  });
+  it("requires explicit acceptance, consumes once, closes source, then launches anonymous destination with an independent owner guard", async () => {
+    const launch = vi.fn();
+    window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+    const view = fixture();
+    await act(() => view.result.current.offer());
+    expect(launch).not.toHaveBeenCalled();
+    await act(async () => {
+      const first = view.result.current.accept();
+      const duplicate = view.result.current.accept();
+      await Promise.all([first, duplicate]);
+    });
+    expect(
+      h.invoke.mock.calls.filter((call) => call[1].receiptId !== null),
+    ).toHaveLength(1);
+    expect(view.stopSource).toHaveBeenCalledWith("proxy");
+    expect(launch).toHaveBeenCalledOnce();
+    const connection = (launch.mock.calls[0][0] as CustomEvent).detail
+      .connection as Connection;
+    expect(JSON.stringify(connection)).not.toContain("private-");
+    expect(resolveRuntimeConnection([], connection.id)).toBe(connection);
+    const navigation = getRuntimeWebNavigation(connection.id)!;
+    expect(navigation.initialUrl).toBe(receipt.destinationUrl);
+    expect(navigation.redirectHops).toBe(1);
+    view.unmount();
+    expect(() => navigation.assertCurrent()).not.toThrow();
+    h.locked = true;
+    expect(() => navigation.assertCurrent()).toThrow();
+    window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+  });
+  it.each(["lock", "navigation", "token", "proxy", "route"])(
+    "rejects stale %s changes while native receipt consumption is pending",
+    async (change) => {
+      const launch = vi.fn();
+      window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+      const view = fixture();
+      await act(() => view.result.current.offer());
+      let resolve!: (value: unknown) => void;
+      h.invoke.mockImplementationOnce(
+        () =>
+          new Promise((finish) => {
+            resolve = finish;
+          }),
+      );
+      let pending!: Promise<void>;
+      act(() => {
+        pending = view.result.current.accept();
+      });
+      if (change === "lock") h.locked = true;
+      else if (change === "navigation") view.navigate();
+      else if (change === "token") view.changeToken();
+      else if (change === "proxy") view.changeProxy();
+      else h.route = "http://changed.invalid:8080";
+      await act(async () => {
+        resolve(receipt);
+        await pending;
+      });
+      expect(launch).not.toHaveBeenCalled();
+      expect(view.stopSource).not.toHaveBeenCalled();
+      window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launch);
+    },
+  );
+  it("fails closed when settings change, source stop fails, or five handoffs were used", async () => {
+    const view = fixture();
+    await act(() => view.result.current.offer());
+    view.rerender({ ...view.options, enabled: false });
+    expect(view.result.current.review).toBeNull();
+    view.unmount();
+    const stopped = fixture();
+    await act(() => stopped.result.current.offer());
+    stopped.stopSource.mockRejectedValueOnce(new Error("unavailable"));
+    await act(() => stopped.result.current.accept());
+    expect(stopped.result.current.error).toContain("No destination");
+    stopped.unmount();
+    registerRuntimeConnection(source, {
+      initialUrl: "https://source.invalid/",
+      redirectHops: 5,
+      assertCurrent: () => {},
+    });
+    const limited = fixture();
+    await act(() => limited.result.current.offer());
+    expect(limited.result.current.review).toBeNull();
+    expect(limited.result.current.error).toContain("Five redirect");
+  });
+});

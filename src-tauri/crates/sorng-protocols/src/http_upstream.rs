@@ -4,6 +4,7 @@ use super::{http_digest, AxumProxyState, UpstreamAuthMode};
 pub(super) enum UpstreamError {
     Transport(reqwest::Error),
     Policy(&'static str),
+    CrossOriginRedirect(reqwest::Url),
     Deadline,
 }
 impl From<reqwest::Error> for UpstreamError {
@@ -130,9 +131,16 @@ async fn send_inner(
             .join(location)
             .map_err(|_| UpstreamError::Policy("The upstream returned an invalid redirect."))?;
         // Check BEFORE another send, even when browsing restrictions are off.
-        if next.origin() != url.origin() || !next.username().is_empty() || next.password().is_some()
+        if !matches!(next.scheme(), "http" | "https")
+            || !next.username().is_empty()
+            || next.password().is_some()
         {
-            return Err(UpstreamError::Policy("The upstream redirected outside this connection's approved origin. Credentials were not sent. Open the destination as a separate connection and review its trust."));
+            return Err(UpstreamError::Policy(
+                "The upstream returned an invalid redirect destination. No request was sent.",
+            ));
+        }
+        if next.origin() != url.origin() {
+            return Err(UpstreamError::CrossOriginRedirect(next));
         }
         if (status == reqwest::StatusCode::SEE_OTHER && method != reqwest::Method::HEAD)
             || (matches!(status.as_u16(), 301 | 302) && method == reqwest::Method::POST)

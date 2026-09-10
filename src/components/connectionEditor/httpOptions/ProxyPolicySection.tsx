@@ -128,7 +128,26 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
         checked={policy.sameOriginOnly}
         onChange={(sameOriginOnly) => update({ sameOriginOnly })}
         label="Same-origin resources and forms"
-        description="Restrict page resources and form submissions to this origin. Cross-origin redirects through the proxy are always refused. This is not a complete browser navigation sandbox and may break SSO or CDN-based apps."
+        description="Restrict page resources and form submissions to this origin. The proxy never forwards credentials to another origin. This is not a complete browser navigation sandbox and may break SSO or CDN-based apps."
+        variant="form"
+      />
+      <CheckboxField
+        checked={policy.allowCrossOriginRedirects === true}
+        onChange={(allowCrossOriginRedirects) =>
+          update({ allowCrossOriginRedirects })
+        }
+        label="Allow reviewed cross-origin redirects"
+        description="Offer to open redirect destinations in a new anonymous tab after review, with a fresh trust check for HTTPS. Saved credentials, cookies, form bodies, custom headers and query parameters are not carried over. Some SSO and QuickConnect handoffs may require manual sign-in."
+        variant="form"
+      />
+      <CheckboxField
+        checked={policy.allowHttpDowngradeRedirects === true}
+        disabled={!policy.allowCrossOriginRedirects || policy.httpsOnly}
+        onChange={(allowHttpDowngradeRedirects) =>
+          update({ allowHttpDowngradeRedirects })
+        }
+        label="Allow reviewed HTTPS-to-HTTP downgrades"
+        description="Separate security exception for temporary reverse-proxy handoffs. Each downgrade still requires explicit review and opens an anonymous, unencrypted HTTP tab. Requires reviewed cross-origin redirects and is overridden by the strict HTTPS setting above. Leave off unless you understand the risk."
         variant="form"
       />
       <div className="space-y-2">

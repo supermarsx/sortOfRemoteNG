@@ -11,6 +11,12 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../src/types/connection/connection";
 import { certificateInfoFixture } from "../fixtures/certificateInspection";
+import { anonymousRedirectConnection } from "../../src/utils/protocol/httpRedirectReview";
+import {
+  registerRuntimeConnection,
+  clearRuntimeConnectionsForTests,
+} from "../../src/utils/session/runtimeConnectionRegistry";
+import type { Connection } from "../../src/types/connection/connection";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -127,6 +133,7 @@ const proxy = {
 
 describe("HTTPS certificate and native trust stages", () => {
   beforeEach(() => {
+    clearRuntimeConnectionsForTests();
     mocks.policy = "tofu";
     mocks.proxyInvalid = false;
     mocks.proxy = "http://proxy.fixture:8080";
@@ -149,6 +156,7 @@ describe("HTTPS certificate and native trust stages", () => {
   });
   afterEach(() => {
     cleanup();
+    clearRuntimeConnectionsForTests();
     vi.useRealTimers();
   });
   async function loadingFixture(value = session) {
@@ -161,6 +169,86 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(iframe.src).toContain(proxy.proxy_url);
     return { ...hook, iframe };
   }
+  it.each(["https", "http"] as const)(
+    "opens a reviewed anonymous %s destination with its own trust and path, never the source credentials",
+    async (protocol) => {
+      const source: Connection = {
+        id: "source",
+        name: "Source",
+        hostname: "source.invalid",
+        protocol: "https",
+        port: 443,
+        isGroup: false,
+        createdAt: "2026-09-10",
+        updatedAt: "2026-09-10",
+        basicAuthUsername: "source-private",
+        basicAuthPassword: "source-secret",
+        httpVerifySsl: false,
+        httpProxyPolicy: {
+          version: 1,
+          pageScripts: "allow",
+          httpsOnly: false,
+          sameOriginOnly: false,
+          cacheMode: "normal",
+          queryParameters: [],
+          allowCrossOriginRedirects: true,
+          allowHttpDowngradeRedirects: true,
+        },
+      };
+      const destination = anonymousRedirectConnection(source, {
+        receiptId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        sessionId: "source-proxy",
+        sourceOrigin: "https://source.invalid",
+        destinationUrl: `${protocol}://destination.invalid/admin/`,
+        documentSequence: 1,
+        navigationToken: null,
+        removedQuery: true,
+      });
+      registerRuntimeConnection(destination, {
+        initialUrl: `${protocol}://destination.invalid/admin/`,
+        redirectHops: 1,
+        assertCurrent: () => {},
+      });
+      const { result, iframe } = await loadingFixture({
+        ...session,
+        connectionId: destination.id,
+        protocol,
+        hostname: destination.hostname,
+        ownerDatabaseId: "owner",
+      });
+      if (protocol === "https")
+        expect(mocks.invoke).toHaveBeenCalledWith("get_tls_certificate_info", {
+          host: "destination.invalid",
+          port: 443,
+          proxyUrl: mocks.proxy,
+        });
+      else
+        expect(
+          mocks.invoke.mock.calls.some(
+            ([name]) => name === "get_tls_certificate_info",
+          ),
+        ).toBe(false);
+      expect(result.current.currentUrl).toBe(
+        `${protocol}://destination.invalid/admin/`,
+      );
+      expect(new URL(iframe.src).pathname).toBe("/admin/");
+      const config = mocks.invoke.mock.calls.find(
+        ([name]) => name === "start_basic_auth_proxy",
+      )![1].config;
+      expect(config).toMatchObject({
+        target_url: `${protocol}://destination.invalid/`,
+        username: "",
+        password: "",
+        verify_ssl: true,
+        http_auto_login: false,
+      });
+      if (protocol === "https")
+        expect(config.accepted_cert_fingerprint).toBe(cert.fingerprint);
+      else expect(config.accepted_cert_fingerprint).toBeNull();
+      expect(JSON.stringify(config)).not.toContain("source-private");
+      expect(JSON.stringify(config)).not.toContain("source-secret");
+    },
+  );
   it("runs reviewed web-vault mode only in the owning lease and revokes the frame/proxy on lock without reconnecting", async () => {
     mocks.settingsReady = true;
     mocks.credentialOverrides = {
@@ -270,9 +358,11 @@ describe("HTTPS certificate and native trust stages", () => {
     const config = mocks.invoke.mock.calls.find(
       ([name]) => name === "start_basic_auth_proxy",
     )?.[1].config;
-    expect(config.proxy_policy).toEqual(
-      mocks.credentialOverrides.httpProxyPolicy,
-    );
+    expect(config.proxy_policy).toEqual({
+      ...(mocks.credentialOverrides.httpProxyPolicy as object),
+      allowCrossOriginRedirects: false,
+      allowHttpDowngradeRedirects: false,
+    });
     expect(config.custom_headers).toEqual({
       Authorization: "Bearer synthetic-only",
     });

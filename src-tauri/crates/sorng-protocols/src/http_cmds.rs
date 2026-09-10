@@ -600,6 +600,7 @@ pub fn stop_basic_auth_proxy(
 ) -> Result<(), String> {
     let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     if let Some(mut entry) = mgr.sessions.remove(&session_id) {
+        mgr.discard_redirect_review(&session_id);
         // Signal the axum server to shut down.
         if let Some(tx) = entry.shutdown_tx.take() {
             let _ = tx.send(());
@@ -608,6 +609,19 @@ pub fn stop_basic_auth_proxy(
     } else {
         Err(format!("Proxy session {} not found", session_id))
     }
+}
+
+/// List all active proxy sessions.
+#[tauri::command]
+pub fn review_proxy_redirect(
+    session_id: String,
+    receipt_id: Option<String>,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<Option<ProxyRedirectReview>, String> {
+    let mut manager = sessions
+        .lock()
+        .map_err(|_| "Proxy navigation review is unavailable".to_string())?;
+    Ok(manager.review_redirect(&session_id, receipt_id.as_deref()))
 }
 
 /// List all active proxy sessions.
@@ -698,6 +712,7 @@ pub fn stop_all_proxy_sessions(
 ) -> Result<u32, String> {
     let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     let count = mgr.sessions.len() as u32;
+    mgr.clear_redirect_reviews();
     for (_id, mut entry) in mgr.sessions.drain() {
         if let Some(tx) = entry.shutdown_tx.take() {
             let _ = tx.send(());
@@ -824,6 +839,7 @@ pub async fn restart_proxy_session(
     {
         let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         if let Some(mut entry) = mgr.sessions.remove(&session_id) {
+            mgr.discard_redirect_review(&session_id);
             if let Some(tx) = entry.shutdown_tx.take() {
                 let _ = tx.send(());
             }

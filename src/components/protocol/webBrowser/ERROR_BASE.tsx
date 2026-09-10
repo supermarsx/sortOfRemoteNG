@@ -130,6 +130,22 @@ function presentationFor(
           "Open externally to compare the browser's cookie and redirect behavior.",
         ],
       };
+    case "cross_origin_redirect":
+    case "redirect_review":
+    case "insecure_redirect":
+      return {
+        eyebrow:
+          kind === "insecure_redirect"
+            ? "HTTPS downgrade blocked"
+            : "A different website origin needs review",
+        icon: Globe2,
+        tone: "warning",
+        suggestions: [
+          "The proxy did not forward credentials or replay a form submission to another origin.",
+          "Enable reviewed cross-origin redirects in the connection's Advanced proxy settings for GET/HEAD navigation handoffs.",
+          "HTTPS-to-HTTP is blocked unless the separate reviewed downgrade option is enabled and Require HTTPS upstream is off. A permitted downgrade still needs your explicit review and opens anonymously without TLS.",
+        ],
+      };
     case "http_status":
       return {
         eyebrow: status

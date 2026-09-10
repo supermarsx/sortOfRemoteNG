@@ -160,6 +160,45 @@ describe("useSessionManager settings effects", () => {
       expect(usesGenericSessionTimer(option.value), option.value).toBe(false);
     }
   });
+  it("checks a reviewed redirect's captured owner after asynchronous capability loading before adding any session", async () => {
+    const runtime = await import("../../src/utils/runtime/runtimeCapabilities");
+    const capabilities = await runtime.loadRuntimeCapabilities();
+    let release!: (value: typeof capabilities) => void;
+    const loading = new Promise<typeof capabilities>((resolve) => {
+      release = resolve;
+    });
+    const load = vi
+      .spyOn(runtime, "loadRuntimeCapabilities")
+      .mockReturnValueOnce(loading);
+    let ownerCurrent = true;
+    const assertCurrent = () => {
+      if (!ownerCurrent) throw new Error("Redirect owner changed");
+    };
+    const { result } = renderHook(() => useSessionManager());
+    let opening!: Promise<string | undefined>;
+    act(() => {
+      opening = result.current.handleConnect(
+        makeConnection({
+          protocol: "https",
+          hostname: "destination.invalid",
+          port: 443,
+        }),
+        assertCurrent,
+      );
+    });
+    ownerCurrent = false;
+    await act(async () => {
+      release(capabilities);
+      await expect(opening).rejects.toThrow("Redirect owner changed");
+    });
+    expect(
+      connectionMocks.dispatch.mock.calls.some(
+        ([action]) => action.type === "ADD_SESSION",
+      ),
+    ).toBe(false);
+    expect(connectionMocks.executeScriptsForTrigger).not.toHaveBeenCalled();
+    load.mockRestore();
+  });
 
   it.each(["native", "website"] as const)(
     "routes the Synology %s view without advertising a new protocol",

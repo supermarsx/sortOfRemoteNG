@@ -1,5 +1,8 @@
 //! Actual protected Axum proxy route regressions; all endpoints and credentials
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
+#[path = "http_redirect_tests.rs"]
+mod redirect_tests;
+
 use super::*;
 use axum::body::Body;
 use axum::http::{HeaderMap, Response, StatusCode};
@@ -462,8 +465,8 @@ async fn redirect_origin_is_mandatory_even_without_optional_policies() {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert!(response.text().await.unwrap().contains("approved origin"));
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(response.text().await.unwrap().contains("cross_origin_redirect"));
     }
     assert_eq!(foreign_calls.load(Ordering::Relaxed), 0);
     foreign.abort();

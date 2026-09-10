@@ -68,6 +68,9 @@ pub enum ProxyErrorKind {
     /// `reqwest::Error::is_redirect()`: too many hops or policy
     /// violation.
     RedirectLoop,
+    CrossOriginRedirect,
+    RedirectReview,
+    InsecureRedirect,
     /// Catch-all for `reqwest::Error` variants none of the above
     /// matched.
     Other,
@@ -84,6 +87,9 @@ impl ProxyErrorKind {
             ProxyErrorKind::GenericConnect => "connection_failed",
             ProxyErrorKind::BadRequest => "bad_request",
             ProxyErrorKind::RedirectLoop => "redirect_loop",
+            ProxyErrorKind::CrossOriginRedirect => "cross_origin_redirect",
+            ProxyErrorKind::RedirectReview => "redirect_review",
+            ProxyErrorKind::InsecureRedirect => "insecure_redirect",
             ProxyErrorKind::Other => "upstream_failure",
         }
     }
@@ -96,6 +102,9 @@ impl ProxyErrorKind {
             ProxyErrorKind::Timeout => StatusCode::GATEWAY_TIMEOUT,
             ProxyErrorKind::BadRequest => StatusCode::BAD_REQUEST,
             ProxyErrorKind::RedirectLoop => StatusCode::LOOP_DETECTED,
+            ProxyErrorKind::CrossOriginRedirect
+            | ProxyErrorKind::RedirectReview
+            | ProxyErrorKind::InsecureRedirect => StatusCode::FORBIDDEN,
             _ => StatusCode::BAD_GATEWAY,
         }
     }
@@ -110,6 +119,9 @@ impl ProxyErrorKind {
             ProxyErrorKind::GenericConnect => "Can't reach the server",
             ProxyErrorKind::BadRequest => "Request couldn't be built",
             ProxyErrorKind::RedirectLoop => "Too many redirects",
+            ProxyErrorKind::CrossOriginRedirect => "Redirect needs a separate connection",
+            ProxyErrorKind::RedirectReview => "Review redirect destination",
+            ProxyErrorKind::InsecureRedirect => "Insecure redirect blocked",
             ProxyErrorKind::Other => "Upstream request failed",
         }
     }
@@ -132,6 +144,12 @@ impl ProxyErrorKind {
                 "The request couldn't be assembled. The URL or headers may be malformed.",
             ProxyErrorKind::RedirectLoop =>
                 "The server redirected too many times. There may be a loop in its configuration.",
+            ProxyErrorKind::CrossOriginRedirect =>
+                "The server redirected to another origin. No credentials or form body were forwarded. Reviewed redirects require the connection opt-in and a top-level GET or HEAD without a body; submitted forms are never replayed. Open a separate connection if this request cannot be reviewed.",
+            ProxyErrorKind::RedirectReview =>
+                "This page redirects to another origin. Review the destination in the browser dialog to open a fresh anonymous tab. Credentials, cookies, form bodies and query parameters are not transferred.",
+            ProxyErrorKind::InsecureRedirect =>
+                "The HTTPS server redirected to plaintext HTTP. Review requires both Allow reviewed cross-origin redirects and Allow reviewed HTTPS-to-HTTP downgrades, with Require HTTPS upstream off. Only GET/HEAD navigation without a form body is eligible; nothing is automatically forwarded. Prefer a secure destination. An explicitly approved HTTP tab opens anonymously without TLS.",
             ProxyErrorKind::Other =>
                 "The upstream request failed for an unexpected reason. The detail below may help.",
         }
@@ -159,7 +177,11 @@ impl ProxyErrorKind {
                 r#"<path d="M19.69 14a6.9 6.9 0 0 0 .31-2V5l-8-3-3.16 1.18"/><path d="M4.73 4.73L4 5v7c0 6 8 10 8 10a20.29 20.29 0 0 0 5.62-4.38"/><line x1="1" y1="1" x2="23" y2="23"/>"#
             }
             // Bad request / Redirect loop → alert-triangle.
-            ProxyErrorKind::BadRequest | ProxyErrorKind::RedirectLoop => {
+            ProxyErrorKind::BadRequest
+            | ProxyErrorKind::RedirectLoop
+            | ProxyErrorKind::CrossOriginRedirect
+            | ProxyErrorKind::RedirectReview
+            | ProxyErrorKind::InsecureRedirect => {
                 r#"<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3.05h16.94a2 2 0 0 0 1.71-3.05l-8.47-14.14a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>"#
             }
             // Other → alert-circle (the catch-all icon used by
@@ -175,7 +197,14 @@ impl ProxyErrorKind {
     /// (real failures) stay red while timeout/redirect (potentially
     /// transient or self-induced) sit in warning yellow.
     fn is_warning(self) -> bool {
-        matches!(self, ProxyErrorKind::Timeout | ProxyErrorKind::RedirectLoop)
+        matches!(
+            self,
+            ProxyErrorKind::Timeout
+                | ProxyErrorKind::RedirectLoop
+                | ProxyErrorKind::CrossOriginRedirect
+                | ProxyErrorKind::RedirectReview
+                | ProxyErrorKind::InsecureRedirect
+        )
     }
 }
 

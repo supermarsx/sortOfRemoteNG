@@ -30,6 +30,8 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
           "pageScripts",
           "httpsOnly",
           "sameOriginOnly",
+          "allowCrossOriginRedirects",
+          "allowHttpDowngradeRedirects",
           "cacheMode",
           "queryParameters",
         ].includes(key),
@@ -42,6 +44,10 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     !["allow", "inline-only", "block"].includes(value.pageScripts) ||
     typeof value.httpsOnly !== "boolean" ||
     typeof value.sameOriginOnly !== "boolean" ||
+    (value.allowCrossOriginRedirects !== undefined &&
+      typeof value.allowCrossOriginRedirects !== "boolean") ||
+    (value.allowHttpDowngradeRedirects !== undefined &&
+      typeof value.allowHttpDowngradeRedirects !== "boolean") ||
     typeof value.cacheMode !== "string" ||
     !["normal", "bypass"].includes(value.cacheMode) ||
     !Array.isArray(value.queryParameters) ||
@@ -74,6 +80,8 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     pageScripts: value.pageScripts as HttpProxyPolicy["pageScripts"],
     httpsOnly: value.httpsOnly,
     sameOriginOnly: value.sameOriginOnly,
+    allowCrossOriginRedirects: value.allowCrossOriginRedirects === true,
+    allowHttpDowngradeRedirects: value.allowHttpDowngradeRedirects === true,
     cacheMode: value.cacheMode as HttpProxyPolicy["cacheMode"],
     queryParameters,
   };

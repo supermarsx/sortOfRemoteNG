@@ -122,6 +122,18 @@ Changing an application's login settings stops its old protected web session. Re
 
 HTTPS inspection, trust approval, accepted-certificate pinning, and configured outbound proxy routing remain in force. Selecting an application does not weaken TLS or create an external-browser SSO session. Credential-origin checks cannot be disabled by browsing policy; blocking page scripts also disables automatic form login. See [Web viewer trust and authentication]({{ '/http-viewer-trust/' | relative_url }}) for diagnostics and transport details.
 
+## Reviewed reverse-proxy redirects
+
+Under **Protocol → Advanced → Internal proxy controls**, **Allow reviewed cross-origin redirects** is off by default. Enable it to review a server's top-level GET/HEAD redirect before opening its destination in a new anonymous tab. This supports canonical-host and reverse-proxy handoffs without treating another origin as the original trusted website. The destination path is retained; query parameters and URL fragments are removed and the review warns when this happens. Form POSTs are never replayed to another origin.
+
+**Allow reviewed HTTPS-to-HTTP downgrades** is a separate, default-off security exception for temporary HTTP handoffs. It requires the first checkbox and is overridden by **Require HTTPS upstream**. When enabled, the review clearly identifies **SECURITY DOWNGRADE** and requires an explicit click. HTTP has no TLS: information subsequently entered there can be observed or modified in transit. Prefer correcting the reverse proxy or opening its secure final address instead. No Synology/QuickConnect hostname gets an automatic exception.
+
+HTTP-to-HTTP can also be reviewed, with an unencrypted-connection warning. HTTP-to-HTTPS and HTTPS-to-HTTPS destinations undergo a fresh certificate inspection and normal trust approval. Each hop requires its own review, with a limit of five handoffs. This includes temporary HTTP destinations that redirect back to HTTPS; saved opt-ins do not approve a destination automatically.
+
+Accepting consumes a short-lived, single-use receipt and stops the source proxy. Cancel leaves the source usable. The new tab receives no source website passwords, Basic/Digest credentials, cookies, custom headers, secret query parameters, form bodies, saved automatic login, MFA, scripts or favorites. Existing transport routing is retained. The temporary destination is not saved as a connection. Opening or closing databases, changing navigation/settings, or changing the network route invalidates a pending review. Query-based SSO and some portal handoffs may not work anonymously and require manual sign-in; this is not shared-cookie SSO support.
+
+Both review flags survive saved-connection export/import; credential-free exports still remove secret query values. Missing flags in older records mean off, and malformed non-boolean flags are refused.
+
 ## Save, export, and compatibility
 
 Profiles are versioned, non-secret connection metadata. JSON/clone and native CSV/XML portability retain the selected profile and bounded selector overrides; credential-free exports still remove passwords. Exports that include credentials may contain plaintext secrets and must be protected. Third-party formats do not gain application-profile support automatically.

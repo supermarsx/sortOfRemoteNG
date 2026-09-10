@@ -20,6 +20,7 @@ import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
+import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
@@ -31,7 +32,10 @@ import {
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
 import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
-import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
+import {
+  getRuntimeWebNavigation,
+  resolveRuntimeConnection,
+} from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import {
@@ -77,6 +81,9 @@ export type ProxyFailureKind =
   | "connection_failed"
   | "bad_request"
   | "redirect_loop"
+  | "cross_origin_redirect"
+  | "redirect_review"
+  | "insecure_redirect"
   | "upstream_failure"
   | "http_status"
   | "invalid_navigation"
@@ -103,6 +110,9 @@ const PROXY_FAILURE_KINDS = new Set<ProxyFailureKind>([
   "connection_failed",
   "bad_request",
   "redirect_loop",
+  "cross_origin_redirect",
+  "redirect_review",
+  "insecure_redirect",
   "upstream_failure",
   "http_status",
 ]);
@@ -317,6 +327,21 @@ export function useWebBrowser(session: ConnectionSession) {
       // Enter the reviewed SPA route directly. An empty hash would let initial
       // router startup look like a navigation revocation between the two grants.
       if (profile?.loginFlow === "bitwarden") target.hash = "/login";
+      const redirected = getRuntimeWebNavigation(session.connectionId);
+      if (redirected) {
+        const initial = new URL(redirected.initialUrl);
+        if (
+          initial.origin !== target.origin ||
+          initial.username ||
+          initial.password ||
+          initial.search ||
+          initial.hash
+        )
+          throw new Error(
+            "The reviewed redirect target no longer matches this tab.",
+          );
+        target.pathname = initial.pathname;
+      }
       if (
         target.username ||
         target.password ||
@@ -344,6 +369,7 @@ export function useWebBrowser(session: ConnectionSession) {
     connection?.httpApplication,
     session.hostname,
     session.protocol,
+    session.connectionId,
   ]);
   const normalizedHostname = targetResolution.hostname;
 
@@ -1107,6 +1133,34 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, []);
 
+  const redirectReview = useHttpRedirectReview({
+    connection,
+    session,
+    sourceOrigin: targetResolution.url
+      ? new URL(targetResolution.url).origin
+      : "",
+    accessKey: reviewedFlowScope,
+    route: getGlobalHttpProxyUrl(),
+    enabled: proxyOptions.policy?.allowCrossOriginRedirects === true,
+    generation: () => navGenRef.current,
+    proxySessionId: () => proxySessionIdRef.current,
+    navigationToken: () => pendingFrameRef.current?.token ?? null,
+    stopSource: async (id) => {
+      // Unlike generic best-effort cleanup, a handoff requires confirmed stop.
+      await invoke("stop_basic_auth_proxy", { sessionId: id });
+      if (proxySessionIdRef.current === id) {
+        proxySessionIdRef.current = "";
+        proxyUrlRef.current = "";
+        pendingFrameRef.current = null;
+        currentDocumentRef.current = null;
+        clearWebBrowserFrame(iframeRef.current);
+        setProxyAlive(false);
+      }
+    },
+  });
+  const redirectReviewRef = useRef(redirectReview);
+  redirectReviewRef.current = redirectReview;
+
   useEffect(() => {
     if (
       reviewedFlowStartedRef.current === null ||
@@ -1848,6 +1902,8 @@ export function useWebBrowser(session: ConnectionSession) {
       );
       if (failure) {
         applyNavigationFailure(failure);
+        if (failure.kind === "redirect_review")
+          void redirectReviewRef.current.offer();
         return;
       }
 
@@ -2619,6 +2675,7 @@ export function useWebBrowser(session: ConnectionSession) {
       applicationAuth.login.autoLogin
         ? "Form login"
         : "Basic Auth",
+    redirectReview,
     resolvedCreds,
     sslVerifyDisabled,
     iconPadding,

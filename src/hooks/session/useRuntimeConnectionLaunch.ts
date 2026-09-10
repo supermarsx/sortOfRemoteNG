@@ -4,12 +4,13 @@ import type { Connection } from "../../types/connection/connection";
 import {
   releaseRuntimeConnection,
   resolveRuntimeConnection,
+  getRuntimeWebNavigation,
 } from "../../utils/session/runtimeConnectionRegistry";
 
 export const OPEN_RUNTIME_CONNECTION_EVENT = "open-runtime-connection" as const;
 
 export type RuntimeConnectionLaunchSource =
-  "nginxProxyMgr" | "pfsense" | "portainer" | "proxmox";
+  "nginxProxyMgr" | "pfsense" | "portainer" | "proxmox" | "httpRedirect";
 
 interface RuntimeConnectionLaunchDetail {
   connection: Connection;
@@ -21,6 +22,7 @@ const RUNTIME_CONNECTION_LAUNCH_SOURCES = new Set<string>([
   "pfsense",
   "portainer",
   "proxmox",
+  "httpRedirect",
 ]);
 
 const isRuntimeConnection = (value: unknown): value is Connection => {
@@ -63,13 +65,27 @@ export function parseRuntimeConnectionLaunch(
   ) {
     return null;
   }
+  if (detail.source === "httpRedirect") {
+    const navigation = getRuntimeWebNavigation(detail.connection.id);
+    if (!navigation || !["http", "https"].includes(detail.connection.protocol))
+      return null;
+    try {
+      navigation.assertCurrent();
+    } catch {
+      releaseRuntimeConnection(detail.connection.id);
+      return null;
+    }
+  }
   return detail as RuntimeConnectionLaunchDetail;
 }
 
 /** Bridge registered integration WebGUI launchers into the canonical session
  * path. Failed or declined opens release the ephemeral credential record. */
 export function useRuntimeConnectionLaunch(
-  handleConnect: (connection: Connection) => Promise<string | undefined>,
+  handleConnect: (
+    connection: Connection,
+    assertCurrent?: () => void,
+  ) => Promise<string | undefined>,
 ): void {
   const handleConnectRef = useRef(handleConnect);
   useEffect(() => {
@@ -81,8 +97,14 @@ export function useRuntimeConnectionLaunch(
       const detail = parseRuntimeConnectionLaunch(event);
       if (!detail) return;
 
-      void handleConnectRef
-        .current(detail.connection)
+      const open =
+        detail.source === "httpRedirect"
+          ? handleConnectRef.current(
+              detail.connection,
+              getRuntimeWebNavigation(detail.connection.id)?.assertCurrent,
+            )
+          : handleConnectRef.current(detail.connection);
+      void open
         .then((sessionId) => {
           if (!sessionId) releaseRuntimeConnection(detail.connection.id);
         })

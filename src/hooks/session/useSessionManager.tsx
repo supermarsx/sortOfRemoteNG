@@ -908,9 +908,12 @@ export const useSessionManager = () => {
    */
   const handleConnect = async (
     connection: Connection,
+    assertCurrent?: () => void,
   ): Promise<string | undefined> => {
+    assertCurrent?.();
     const settings = settingsManager.getSettings();
     const runtimeCapabilities = await loadRuntimeCapabilities();
+    assertCurrent?.();
     const unsupportedMessage =
       getRuntimeProtocolUnavailableMessage(
         isSynologyFileConnection(connection) ? "synology" : connection.protocol,
@@ -971,6 +974,7 @@ export const useSessionManager = () => {
       // awaited close path so integration controllers, native transports and
       // VPN ownership are released before the replacement session is opened.
       for (const session of realSessions) {
+        assertCurrent?.();
         const closed = await handleSessionCloseRef.current(session.id, session);
         if (!closed) {
           await showAlert(
@@ -992,6 +996,7 @@ export const useSessionManager = () => {
     const isIntegrationSession = isIntegrationConnectionProtocol(
       connection.protocol,
     );
+    assertCurrent?.();
     const session: ConnectionSession = {
       id: generateId(),
       connectionId: connection.id,
