@@ -441,8 +441,8 @@ describe("Extended settings section centralization", () => {
 
     expect(screen.getByText("Default Trust Policy")).toBeInTheDocument();
     expect(screen.getByText("General Certificate Policy")).toBeInTheDocument();
-    // Trust Database, Trust Policies, Policy Guide, Verification Options,
-    // Stored Identities.
+    // Database management, legacy recovery, policies, guide and verification
+    // remain here; identity inspection lives in the dedicated Trust Center.
     expect(
       container.querySelectorAll(".sor-settings-card").length,
     ).toBeGreaterThanOrEqual(5);
@@ -458,7 +458,11 @@ describe("Extended settings section centralization", () => {
     for (const header of sectionHeaders) {
       const icon = header.firstElementChild;
       expect(icon?.tagName.toLowerCase()).toBe("svg");
-      expect(icon?.getAttribute("class")).toContain("text-primary");
+      expect(icon?.getAttribute("class")).toContain(
+        header.textContent?.includes("Legacy trust recovery")
+          ? "text-warning"
+          : "text-primary",
+      );
     }
 
     // Each policy now renders as a standard SettingsSelectRow, identified
@@ -535,21 +539,45 @@ describe("Extended settings section centralization", () => {
     });
   });
 
-  it("groups Trust Center identities by explicit record type", async () => {
+  it("opens dedicated identity management from the settings actions", () => {
+    const onOpenTrustCenter = vi.fn();
+    render(
+      <TrustVerificationSettings
+        settings={trustSettings}
+        updateSettings={vi.fn()}
+        onOpenTrustCenter={onOpenTrustCenter}
+      />,
+    );
+
+    for (const name of [
+      "Open dedicated Trust Center",
+      /Export JSON.*Trust Center/,
+      /Import JSON.*Trust Center/,
+      /Import from known_hosts.*Trust Center/,
+    ]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeEnabled();
+      fireEvent.click(button);
+    }
+    expect(onOpenTrustCenter).toHaveBeenCalledTimes(4);
+    expect(screen.queryByText("Primary HTTPS")).not.toBeInTheDocument();
+  });
+
+  it("disables dedicated identity actions when no tab launcher is available", () => {
     render(
       <TrustVerificationSettings
         settings={trustSettings}
         updateSettings={vi.fn()}
       />,
     );
-
-    expect(
-      await screen.findByText(/HTTPS Certificates \(1\)/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/General Certificates \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/RDP Certificates \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/SSH Host Keys \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Legacy TLS \(1\)/i)).toBeInTheDocument();
+    for (const name of [
+      "Open dedicated Trust Center",
+      /Export JSON.*Trust Center/,
+      /Import JSON.*Trust Center/,
+      /Import from known_hosts.*Trust Center/,
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
   });
 
   it("uses centralized card shells in RecoverySettings", () => {
