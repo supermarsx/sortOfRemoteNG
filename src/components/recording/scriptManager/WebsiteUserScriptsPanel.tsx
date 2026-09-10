@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
-import { useWebsiteUserScripts } from "../../../hooks/recording/useWebsiteUserScripts";
+import {
+  useWebsiteUserScripts,
+  type WebsiteUserScriptsLibraryBinding,
+} from "../../../hooks/recording/useWebsiteUserScripts";
 import type { BrowserScript } from "../../../types/recording/webAutomation";
 import ScriptCodeEditor from "../../ui/editor/ScriptCodeEditor";
 import { MAX_WEB_SCRIPT_BYTES } from "../../../utils/recording/webAutomationLibrary";
@@ -88,11 +91,23 @@ function LibraryRecovery({ mgr }: { mgr: Manager }) {
   const code =
     mgr.diagnostic?.code ??
     (mgr.settingsReady === false ? "initializing" : null);
-  const guidance = code ? RECOVERY[code] : null;
+  const guidance =
+    mgr.scope.kind === "database" &&
+    (code === "locked" || code === "access-changed")
+      ? {
+          title: "Selected database library access changed",
+          steps: [
+            "Reopen and unlock the explicitly selected database, and unlock app encryption if it is locked.",
+            "Retry and review this database library. No app-wide fallback or empty reset is performed.",
+          ],
+        }
+      : code
+        ? RECOVERY[code]
+        : null;
   if (!guidance)
     return mgr.ready ? null : (
       <p role="status" className="text-sm">
-        Loading the app-wide protected library…
+        Loading the selected protected library…
       </p>
     );
   return (
@@ -143,6 +158,7 @@ type Manager = ReturnType<typeof useWebsiteUserScripts>;
 interface Callbacks {
   onDirtyChange?: (dirty: boolean) => void;
   onBusyChange?: (busy: boolean) => void;
+  library?: WebsiteUserScriptsLibraryBinding;
 }
 function AccessibleScripts({
   mgr,
@@ -453,8 +469,9 @@ function AccessibleScripts({
 export default function WebsiteUserScriptsPanel({
   onDirtyChange,
   onBusyChange,
+  library,
 }: Callbacks = {}) {
-  const mgr = useWebsiteUserScripts();
+  const mgr = useWebsiteUserScripts(library);
   useEffect(() => {
     onBusyChange?.(mgr.busy);
     return () => onBusyChange?.(false);
@@ -467,16 +484,26 @@ export default function WebsiteUserScriptsPanel({
       <div className="border-b border-[var(--color-border)] p-4 space-y-2">
         <h2 className="font-medium">Website userscripts · JavaScript</h2>
         <p className="text-sm">
-          An app-wide protected library for HTTP/HTTPS favorites, independent of
-          the currently open connection database. Pin saved scripts from the
-          website action bar; running still requires global availability,
-          explicit per-connection script permission and normal confirmation.
-          Editing here grants none of those permissions.
+          {mgr.scope.kind === "app"
+            ? "An app-wide protected library, independent of the currently open connection database."
+            : "A protected library belonging only to the explicitly selected database."}{" "}
+          Pin saved scripts from the website action bar; running still requires
+          global availability, explicit per-connection script permission and
+          normal confirmation. Editing here grants none of those permissions.
         </p>
         <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--color-textMuted)]">
           <div>
             <dt className="inline font-medium">Scope: </dt>
-            <dd className="inline">App-wide</dd>
+            <dd
+              className="inline"
+              title={
+                mgr.scope.kind === "database" ? mgr.scope.databaseId : undefined
+              }
+            >
+              {mgr.scope.kind === "app"
+                ? "App-wide"
+                : `Selected database (${mgr.scope.databaseId.slice(0, 8)}…)`}
+            </dd>
           </div>
           <div>
             <dt className="inline font-medium">Settings: </dt>

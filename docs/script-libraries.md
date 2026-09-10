@@ -29,7 +29,9 @@ Package inventory templates cover dpkg, RPM, pacman, APK, zypper, Homebrew, wing
 
 ## Website userscripts
 
-Open Website userscripts explicitly to access the existing protected HTTP/HTTPS script library. The view captures its owning database and becomes unavailable after database switching, access suspension, or global encryption lock. Reopen it after unlocking the original database. There is no browser-storage fallback or empty-library reset on an access failure.
+Open Website userscripts explicitly and choose its app-wide or database destination. The app library is independent of the open connection database; a database library requires that exact database to be open and unlocked. Database switching or access-generation changes invalidate database reviews and clear their private drafts. Global encryption/access revocation also hides private source. Retry the selected destination after restoring access; there is no silent app fallback, browser-storage fallback, or empty-library reset.
+
+Writes preserve native script IDs, reviewed provenance, and unrelated macro families through the shared library authority. An externally changed library refreshes the list without discarding a draft; replacing/deleting still requires its exact reviewed version. Scope changes use the manager's unsaved-draft confirmation, while access revocation clears the private editor immediately.
 
 Website scripts are JavaScript records, not terminal commands or interaction macros. Editing preserves their IDs, so existing connection favorites continue referencing them. Duplication creates a new ID. Deletion is reviewed and leaves existing favorite references unresolved; remove those references in the connection editor's Favorites section if no longer needed. Interaction macros in the same protected library are preserved.
 

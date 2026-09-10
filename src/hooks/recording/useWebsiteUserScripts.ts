@@ -15,6 +15,11 @@ import {
   AutomationLibraryAccessError,
   automationLibraryDiagnostic,
 } from "../../utils/recording/automationLibraryAccess";
+import {
+  useScopedWebsiteUserScripts,
+  type WebsiteUserScriptsLibraryBinding,
+} from "./useScopedWebsiteUserScripts";
+export type { WebsiteUserScriptsLibraryBinding } from "./useScopedWebsiteUserScripts";
 
 const INITIALIZING: AutomationLibraryDiagnostic = {
   code: "initializing",
@@ -30,8 +35,9 @@ const LOCKED: AutomationLibraryDiagnostic = {
 };
 
 /** App-wide management is independent of connection DB ownership. Never executes code. */
-export function useWebsiteUserScripts() {
-  const { settingsReady } = useSettings();
+function useAppWebsiteUserScripts(active: boolean) {
+  const settings = useSettings();
+  const settingsReady = active && settings.settingsReady;
   const [scripts, setScripts] = useState<BrowserScript[]>([]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -131,6 +137,7 @@ export function useWebsiteUserScripts() {
     }
   }, [assertCurrent]);
   useEffect(() => {
+    if (!active) return;
     live.current = true;
     let disposed = false,
       offNative: (() => void) | undefined;
@@ -176,7 +183,7 @@ export function useWebsiteUserScripts() {
       offNative?.();
       window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
     };
-  }, [settingsReady, reload, revoke, invalidatePending]);
+  }, [active, settingsReady, reload, revoke, invalidatePending]);
   const renderedGeneration = generation.current;
   const mutate = async (
     operation: (check: () => void) => Promise<{ scripts: BrowserScript[] }>,
@@ -230,4 +237,12 @@ export function useWebsiteUserScripts() {
       mutate((check) => deleteWebAutomationItem(expected, check)),
     reload,
   };
+}
+
+export function useWebsiteUserScripts(
+  binding?: WebsiteUserScriptsLibraryBinding,
+) {
+  const app = useAppWebsiteUserScripts(!binding);
+  const scoped = useScopedWebsiteUserScripts(binding);
+  return binding ? scoped : app;
 }
