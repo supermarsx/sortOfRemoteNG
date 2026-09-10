@@ -235,6 +235,14 @@ describe("Core settings section centralization", () => {
     } as unknown as GlobalSettings;
 
     render(<ThemeSettings settings={settings} updateSettings={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Blue" })).toHaveClass(
+      "sor-accent-choice",
+      "sor-accent-choice-card",
+    );
+    expect(screen.getByRole("button", { name: "Blue" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     const expectedCalls = [
       ["themeSettings.colorScheme", "Color Scheme"],

@@ -1964,11 +1964,7 @@ const EditorTabs: React.FC<{
               aria-selected={isActive}
               data-testid={`connection-editor-tab-${tab.id}`}
               onClick={() => onTabChange(tab.id)}
-              className={`h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors ${
-                isActive
-                  ? "bg-primary/15 text-primary"
-                  : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
-              }`}
+              className="sor-accent-choice h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-medium whitespace-nowrap"
             >
               <Icon size={15} />
               {tab.label}

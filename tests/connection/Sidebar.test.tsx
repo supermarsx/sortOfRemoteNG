@@ -6,37 +6,38 @@ import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 
 // Mock child components
-vi.mock('../../src/components/connection/ConnectionTree', () => ({
+vi.mock("../../src/components/connection/ConnectionTree", () => ({
   ConnectionTree: ({ onEdit, onDelete, onConnect }: any) => (
     <div data-testid="connection-tree">
       <button onClick={() => onEdit(mockConnection)}>Edit Connection</button>
-      <button onClick={() => onDelete(mockConnection)}>Delete Connection</button>
+      <button onClick={() => onDelete(mockConnection)}>
+        Delete Connection
+      </button>
       <button onClick={() => onConnect(mockConnection)}>Connect</button>
     </div>
-  )
+  ),
 }));
 
-
-vi.mock('react-i18next', () => ({
+vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key
-  })
+    t: (key: string) => key,
+  }),
 }));
 
 const mockConnection: Connection = {
-  id: 'test-connection',
-  name: 'Test Connection',
-  protocol: 'rdp',
-  hostname: '192.168.1.100',
+  id: "test-connection",
+  name: "Test Connection",
+  protocol: "rdp",
+  hostname: "192.168.1.100",
   port: 3389,
-  username: 'testuser',
-  password: 'testpass',
-  domain: '',
-  description: 'Test connection',
+  username: "testuser",
+  password: "testpass",
+  domain: "",
+  description: "Test connection",
   isGroup: false,
-  tags: ['test', 'rdp'],
+  tags: ["test", "rdp"],
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
 const mockProps = {
@@ -60,7 +61,7 @@ const renderWithProviders = (props = mockProps) => {
       <ConnectionProvider>
         <Sidebar {...props} />
       </ConnectionProvider>
-    </ToastProvider>
+    </ToastProvider>,
   );
 };
 
@@ -74,15 +75,27 @@ describe("Sidebar", () => {
       renderWithProviders();
 
       expect(screen.getByText("connections.title")).toBeInTheDocument();
-      expect(screen.getByPlaceholderText("connections.search")).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText("connections.search"),
+      ).toBeInTheDocument();
       expect(screen.getByTestId("connection-tree")).toBeInTheDocument();
     });
 
     it("should render action buttons", () => {
       renderWithProviders();
 
-      expect(screen.getByRole('button', { name: /^connections\.new$/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /connections\.newFolder/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /^connections\.new$/i }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("toolbar-new-connection")).toHaveClass(
+        "sor-accent-action",
+      );
+      expect(screen.getByTestId("toolbar-new-connection")).not.toHaveClass(
+        "bg-primary",
+      );
+      expect(
+        screen.getByRole("button", { name: /connections\.newFolder/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -91,34 +104,36 @@ describe("Sidebar", () => {
       renderWithProviders();
 
       const searchInput = screen.getByPlaceholderText("connections.search");
-      fireEvent.change(searchInput, { target: { value: 'test search' } });
+      fireEvent.change(searchInput, { target: { value: "test search" } });
 
-      expect(searchInput).toHaveValue('test search');
+      expect(searchInput).toHaveValue("test search");
     });
 
     it("search input has accessible label", () => {
       renderWithProviders();
 
-      const searchInput = screen.getByRole('textbox');
-      expect(searchInput).toHaveAttribute('aria-label', 'connections.search');
+      const searchInput = screen.getByRole("textbox");
+      expect(searchInput).toHaveAttribute("aria-label", "connections.search");
     });
 
     it("search input reserves space for its leading icon", () => {
       renderWithProviders();
 
-      expect(screen.getByTestId("sidebar-search")).toHaveClass("sor-form-input-xs-icon-left");
+      expect(screen.getByTestId("sidebar-search")).toHaveClass(
+        "sor-form-input-xs-icon-left",
+      );
     });
 
     it("should clear search when clear button is clicked", () => {
       renderWithProviders();
 
       const searchInput = screen.getByPlaceholderText("connections.search");
-      fireEvent.change(searchInput, { target: { value: 'test search' } });
+      fireEvent.change(searchInput, { target: { value: "test search" } });
 
-      const clearButton = screen.getByRole('button', { name: /clear/i });
+      const clearButton = screen.getByRole("button", { name: /clear/i });
       fireEvent.click(clearButton);
 
-      expect(searchInput).toHaveValue('');
+      expect(searchInput).toHaveValue("");
     });
   });
 
@@ -126,23 +141,26 @@ describe("Sidebar", () => {
     it("should call onNewConnection when new connection button is clicked", () => {
       renderWithProviders();
 
-      const newButton = screen.getByRole('button', { name: /^connections\.new$/i });
+      const newButton = screen.getByRole("button", {
+        name: /^connections\.new$/i,
+      });
       fireEvent.click(newButton);
 
       expect(mockProps.onNewConnection).toHaveBeenCalledExactlyOnceWith();
     });
   });
 
-
   describe("Filter Functionality", () => {
     it("should toggle filter panel", () => {
       renderWithProviders();
 
-      const filterButton = screen.getByRole('button', { name: /filter/i });
+      const filterButton = screen.getByRole("button", { name: /filter/i });
       fireEvent.click(filterButton);
 
       // Filter panel should be visible (this would need more specific testing)
-      expect(screen.getByRole('button', { name: /filter/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /filter/i }),
+      ).toBeInTheDocument();
     });
 
     it("should show tag filters when available", () => {
@@ -158,7 +176,9 @@ describe("Sidebar", () => {
     it("should expand all connections", () => {
       renderWithProviders();
 
-      const expandButton = screen.getByRole('button', { name: /connections\.expandAll/i });
+      const expandButton = screen.getByRole("button", {
+        name: /connections\.expandAll/i,
+      });
       fireEvent.click(expandButton);
 
       // This would need more complex state testing
@@ -168,7 +188,9 @@ describe("Sidebar", () => {
     it("should collapse all connections", () => {
       renderWithProviders();
 
-      const collapseButton = screen.getByRole('button', { name: /connections\.collapseAll/i });
+      const collapseButton = screen.getByRole("button", {
+        name: /connections\.collapseAll/i,
+      });
       fireEvent.click(collapseButton);
 
       expect(screen.getByTestId("connection-tree")).toBeInTheDocument();
@@ -180,9 +202,9 @@ describe("Sidebar", () => {
       renderWithProviders();
 
       // The toggle button should exist (ChevronLeft/ChevronRight icons)
-      const toggleButtons = screen.getAllByRole('button').filter(button =>
-        button.querySelector('svg')
-      );
+      const toggleButtons = screen
+        .getAllByRole("button")
+        .filter((button) => button.querySelector("svg"));
 
       expect(toggleButtons.length).toBeGreaterThan(0);
     });
@@ -192,7 +214,7 @@ describe("Sidebar", () => {
     it("should pass connection handlers to tree", () => {
       renderWithProviders();
 
-      const editButton = screen.getByText('Edit Connection');
+      const editButton = screen.getByText("Edit Connection");
       fireEvent.click(editButton);
 
       expect(mockProps.onEditConnection).toHaveBeenCalledWith(mockConnection);
@@ -201,7 +223,7 @@ describe("Sidebar", () => {
     it("should handle delete action", () => {
       renderWithProviders();
 
-      const deleteButton = screen.getByText('Delete Connection');
+      const deleteButton = screen.getByText("Delete Connection");
       fireEvent.click(deleteButton);
 
       expect(mockProps.onDeleteConnection).toHaveBeenCalledWith(mockConnection);
@@ -210,7 +232,7 @@ describe("Sidebar", () => {
     it("should handle connect action", () => {
       renderWithProviders();
 
-      const connectButton = screen.getByText('Connect');
+      const connectButton = screen.getByText("Connect");
       fireEvent.click(connectButton);
 
       expect(mockProps.onConnect).toHaveBeenCalledWith(mockConnection);

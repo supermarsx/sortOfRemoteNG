@@ -163,14 +163,14 @@ export default function PasswordPolicySection() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="sor-btn-primary"
+              className="sor-btn sor-btn-primary"
               onClick={() => void apply()}
             >
               Apply password policy
             </button>
             <button
               type="button"
-              className="sor-btn-secondary"
+              className="sor-btn sor-btn-secondary"
               onClick={() => void generate()}
             >
               Generate using saved policy
@@ -198,7 +198,7 @@ export default function PasswordPolicySection() {
             />
             <button
               type="button"
-              className="sor-btn-secondary mt-2"
+              className="sor-btn sor-btn-secondary mt-2"
               onClick={() => setGenerated("")}
             >
               Clear generated password

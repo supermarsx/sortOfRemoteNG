@@ -382,11 +382,8 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
                   updateSettings({ defaultTabLayout: option.value })
                 }
                 data-testid={`default-tab-layout-${option.value}`}
-                className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
-                  settings.defaultTabLayout === option.value
-                    ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
-                    : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
-                }`}
+                aria-pressed={settings.defaultTabLayout === option.value}
+                className="sor-accent-choice sor-accent-choice-card flex flex-col items-center p-3 rounded-lg"
               >
                 <LayoutGrid className="w-5 h-5 mb-1" />
                 <span className="text-sm font-medium">
@@ -429,11 +426,8 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
                 onClick={() =>
                   updateSettings({ tabGrouping: option.value as any })
                 }
-                className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
-                  settings.tabGrouping === option.value
-                    ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
-                    : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
-                }`}
+                aria-pressed={settings.tabGrouping === option.value}
+                className="sor-accent-choice sor-accent-choice-card flex flex-col items-center p-3 rounded-lg"
               >
                 <Layers className="w-5 h-5 mb-1" />
                 <span className="text-sm font-medium">

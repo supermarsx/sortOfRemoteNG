@@ -53,11 +53,7 @@ const LayoutModeButton: React.FC<{
     onClick={() => onClick(mode)}
     data-testid={testId}
     aria-pressed={currentMode === mode}
-    className={`p-2 rounded transition-colors ${
-      currentMode === mode
-        ? "bg-primary text-[var(--color-text)]"
-        : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-    }`}
+    className="sor-accent-choice p-2 rounded"
     title={title}
   >
     {icon}
@@ -80,97 +76,103 @@ const CustomGridPopover: React.FC<{
   const { t } = useTranslation();
 
   return (
-  <div className="relative" ref={mgr.customGridButtonRef}>
-    <button
-      onClick={() => mgr.setShowCustomGrid(!mgr.showCustomGrid)}
-      className={`p-2 rounded transition-colors ${
-        mgr.showCustomGrid
-          ? "bg-primary text-[var(--color-text)]"
-          : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-      }`}
-      title={t("session.tabLayout.customGrid.buttonTitle", "Custom grid layout")}
-    >
-      <Settings2 size={16} />
-    </button>
+    <div className="relative" ref={mgr.customGridButtonRef}>
+      <button
+        onClick={() => mgr.setShowCustomGrid(!mgr.showCustomGrid)}
+        aria-expanded={mgr.showCustomGrid}
+        aria-pressed={mgr.showCustomGrid}
+        className="sor-accent-choice p-2 rounded"
+        title={t(
+          "session.tabLayout.customGrid.buttonTitle",
+          "Custom grid layout",
+        )}
+      >
+        <Settings2 size={16} />
+      </button>
 
-    <PopoverSurface
-      isOpen={mgr.showCustomGrid}
-      onClose={() => mgr.setShowCustomGrid(false)}
-      anchorRef={mgr.customGridButtonRef}
-      align="start"
-      className="sor-popover-panel p-4 min-w-[200px]"
-      dataTestId="tab-layout-custom-grid-popover"
-    >
-      <div className="text-[var(--color-text)] text-sm font-medium mb-3">
-        {t("session.tabLayout.customGrid.title", "Custom Grid Layout")}
-      </div>
-      <div className="space-y-3">
-        <div>
-          <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
-            {t("session.tabLayout.customGrid.columns", "Columns")}
-          </label>
-          <div className="flex items-center space-x-2">
-            <Slider
-              value={mgr.customCols}
-              onChange={(v: number) => mgr.setCustomCols(v)}
-              min={1}
-              max={mgr.maxCustomGridDim}
-              className="flex-1"
-            />
-            <span className="text-[var(--color-text)] text-sm w-6">
-              {mgr.customCols}
-            </span>
-          </div>
+      <PopoverSurface
+        isOpen={mgr.showCustomGrid}
+        onClose={() => mgr.setShowCustomGrid(false)}
+        anchorRef={mgr.customGridButtonRef}
+        align="start"
+        className="sor-popover-panel p-4 min-w-[200px]"
+        dataTestId="tab-layout-custom-grid-popover"
+      >
+        <div className="text-[var(--color-text)] text-sm font-medium mb-3">
+          {t("session.tabLayout.customGrid.title", "Custom Grid Layout")}
         </div>
-        <div>
-          <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
-            {t("session.tabLayout.customGrid.rows", "Rows")}
-          </label>
-          <div className="flex items-center space-x-2">
-            <Slider
-              value={mgr.customRows}
-              onChange={(v: number) => mgr.setCustomRows(v)}
-              min={1}
-              max={mgr.maxCustomGridDim}
-              className="flex-1"
-            />
-            <span className="text-[var(--color-text)] text-sm w-6">
-              {mgr.customRows}
-            </span>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
+              {t("session.tabLayout.customGrid.columns", "Columns")}
+            </label>
+            <div className="flex items-center space-x-2">
+              <Slider
+                value={mgr.customCols}
+                onChange={(v: number) => mgr.setCustomCols(v)}
+                min={1}
+                max={mgr.maxCustomGridDim}
+                className="flex-1"
+              />
+              <span className="text-[var(--color-text)] text-sm w-6">
+                {mgr.customCols}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="border border-[var(--color-border)] rounded p-2">
-          <div
-            className="grid gap-1"
-            style={{
-              gridTemplateColumns: `repeat(${mgr.customCols}, 1fr)`,
-              gridTemplateRows: `repeat(${mgr.customRows}, 1fr)`,
-            }}
+          <div>
+            <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
+              {t("session.tabLayout.customGrid.rows", "Rows")}
+            </label>
+            <div className="flex items-center space-x-2">
+              <Slider
+                value={mgr.customRows}
+                onChange={(v: number) => mgr.setCustomRows(v)}
+                min={1}
+                max={mgr.maxCustomGridDim}
+                className="flex-1"
+              />
+              <span className="text-[var(--color-text)] text-sm w-6">
+                {mgr.customRows}
+              </span>
+            </div>
+          </div>
+          <div className="border border-[var(--color-border)] rounded p-2">
+            <div
+              className="grid gap-1"
+              style={{
+                gridTemplateColumns: `repeat(${mgr.customCols}, 1fr)`,
+                gridTemplateRows: `repeat(${mgr.customRows}, 1fr)`,
+              }}
+            >
+              {Array.from({ length: mgr.customCols * mgr.customRows }).map(
+                (_, i) => (
+                  <div
+                    key={i}
+                    className={`h-4 rounded ${i < totalTabCount ? "bg-primary" : "bg-[var(--color-surfaceHover)]"}`}
+                  />
+                ),
+              )}
+            </div>
+            <div className="text-[var(--color-textMuted)] text-xs mt-1 text-center">
+              {mgr.customCols * mgr.customRows}{" "}
+              {t("session.tabLayout.customGrid.tilesSuffix", "tiles ·")}{" "}
+              {Math.min(totalTabCount, mgr.customCols * mgr.customRows)}{" "}
+              {t("session.tabLayout.customGrid.filledSuffix", "filled ·")}{" "}
+              {sessionCount}{" "}
+              {sessionCount === 1
+                ? t("session.tabLayout.customGrid.sessionOne", "session")
+                : t("session.tabLayout.customGrid.sessionOther", "sessions")}
+            </div>
+          </div>
+          <button
+            onClick={mgr.handleCustomGridApply}
+            className="sor-btn sor-btn-primary w-full"
           >
-            {Array.from({ length: mgr.customCols * mgr.customRows }).map(
-              (_, i) => (
-                <div
-                  key={i}
-                  className={`h-4 rounded ${i < totalTabCount ? "bg-primary" : "bg-[var(--color-surfaceHover)]"}`}
-                />
-              ),
-            )}
-          </div>
-          <div className="text-[var(--color-textMuted)] text-xs mt-1 text-center">
-            {mgr.customCols * mgr.customRows} {t("session.tabLayout.customGrid.tilesSuffix", "tiles ·")}{" "}
-            {Math.min(totalTabCount, mgr.customCols * mgr.customRows)} {t("session.tabLayout.customGrid.filledSuffix", "filled ·")}{" "}
-            {sessionCount} {sessionCount === 1 ? t("session.tabLayout.customGrid.sessionOne", "session") : t("session.tabLayout.customGrid.sessionOther", "sessions")}
-          </div>
+            {t("session.tabLayout.customGrid.applyLayout", "Apply Layout")}
+          </button>
         </div>
-        <button
-          onClick={mgr.handleCustomGridApply}
-          className="w-full px-3 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded text-sm transition-colors"
-        >
-          {t("session.tabLayout.customGrid.applyLayout", "Apply Layout")}
-        </button>
-      </div>
-    </PopoverSurface>
-  </div>
+      </PopoverSurface>
+    </div>
   );
 };
 
@@ -195,7 +197,11 @@ const HiddenSessionsMenu: React.FC<{
         onClick={() => setOpen((v) => !v)}
         data-testid="tab-layout-hidden-pill"
         className="text-warning text-xs px-2 py-1 rounded border border-warning/40 hover:bg-warning/10 transition-colors select-none"
-        title={t("session.tabLayout.hiddenTooltip", "{{count}} session(s) not visible in the current tiling — click to promote one into a tile", { count: hiddenSessions.length })}
+        title={t(
+          "session.tabLayout.hiddenTooltip",
+          "{{count}} session(s) not visible in the current tiling — click to promote one into a tile",
+          { count: hiddenSessions.length },
+        )}
       >
         +{hiddenSessions.length} {t("session.tabLayout.hiddenLabel", "hidden")}
       </button>
@@ -207,7 +213,10 @@ const HiddenSessionsMenu: React.FC<{
         className="sor-popover-panel min-w-[220px] max-h-[280px] overflow-y-auto"
       >
         <div className="px-3 py-1.5 text-[10px] text-[var(--color-textMuted)] border-b border-[var(--color-border)]">
-          {t("session.tabLayout.hiddenMenuTitle", "Hidden sessions — click to promote")}
+          {t(
+            "session.tabLayout.hiddenMenuTitle",
+            "Hidden sessions — click to promote",
+          )}
         </div>
         {hiddenSessions.map((s) => (
           <button
@@ -329,7 +338,8 @@ const TileHeader: React.FC<TileHeaderProps> = ({
         ariaLabel={t("session.tabLayout.tile.actionsAria", "Tile actions")}
       >
         <div className="px-3 py-1.5 text-[10px] text-[var(--color-textMuted)] border-b border-[var(--color-border)]">
-          {t("session.tabLayout.tile.label", "Tile")} {slotIndex + 1} {t("session.tabLayout.tile.of", "of")} {totalSlots}
+          {t("session.tabLayout.tile.label", "Tile")} {slotIndex + 1}{" "}
+          {t("session.tabLayout.tile.of", "of")} {totalSlots}
         </div>
         <div
           className="sor-menu-submenu"
@@ -345,17 +355,25 @@ const TileHeader: React.FC<TileHeaderProps> = ({
             onClick={() => setShowSubmenu((v) => !v)}
           >
             <SquareStack size={14} className="mr-2" />
-            <span className="flex-1">{t("session.tabLayout.tile.showInThisTile", "Show in this tile…")}</span>
+            <span className="flex-1">
+              {t("session.tabLayout.tile.showInThisTile", "Show in this tile…")}
+            </span>
           </button>
           <div
             className="sor-menu-submenu-panel"
             role="menu"
             tabIndex={-1}
-            aria-label={t("session.tabLayout.tile.showInThisTileAria", "Show session in this tile")}
+            aria-label={t(
+              "session.tabLayout.tile.showInThisTileAria",
+              "Show session in this tile",
+            )}
           >
             {otherSessions.length === 0 ? (
               <div className="px-3 py-2 text-xs text-[var(--color-textMuted)]">
-                {t("session.tabLayout.tile.noOtherSessions", "No other sessions")}
+                {t(
+                  "session.tabLayout.tile.noOtherSessions",
+                  "No other sessions",
+                )}
               </div>
             ) : (
               otherSessions.map((s) => (
@@ -382,7 +400,8 @@ const TileHeader: React.FC<TileHeaderProps> = ({
           }}
           className="sor-menu-item"
         >
-          <Maximize2 size={14} className="mr-2" /> {t("session.tabLayout.tile.maximize", "Maximize (switch to tabs)")}
+          <Maximize2 size={14} className="mr-2" />{" "}
+          {t("session.tabLayout.tile.maximize", "Maximize (switch to tabs)")}
         </button>
         <div className="sor-menu-divider" />
         <button
@@ -392,7 +411,8 @@ const TileHeader: React.FC<TileHeaderProps> = ({
           }}
           className="sor-menu-item"
         >
-          <ExternalLink size={14} className="mr-2" /> {t("session.tabLayout.tile.detachWindow", "Detach to new window")}
+          <ExternalLink size={14} className="mr-2" />{" "}
+          {t("session.tabLayout.tile.detachWindow", "Detach to new window")}
         </button>
         <button
           onClick={() => {
@@ -401,7 +421,8 @@ const TileHeader: React.FC<TileHeaderProps> = ({
           }}
           className="sor-menu-item sor-menu-item-danger"
         >
-          <X size={14} className="mr-2" /> {t("session.tabLayout.tile.closeSession", "Close session")}
+          <X size={14} className="mr-2" />{" "}
+          {t("session.tabLayout.tile.closeSession", "Close session")}
         </button>
       </MenuSurface>
     </>
@@ -583,8 +604,14 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         key: "sessions",
         label:
           connectionCount === 1
-            ? t("session.tabLayout.counters.sessionsOne", "{{count}} session", { count: connectionCount })
-            : t("session.tabLayout.counters.sessionsOther", "{{count}} sessions", { count: connectionCount }),
+            ? t("session.tabLayout.counters.sessionsOne", "{{count}} session", {
+                count: connectionCount,
+              })
+            : t(
+                "session.tabLayout.counters.sessionsOther",
+                "{{count}} sessions",
+                { count: connectionCount },
+              ),
       },
     ];
     if (toolCount > 0) {
@@ -592,8 +619,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         key: "tools",
         label:
           toolCount === 1
-            ? t("session.tabLayout.counters.toolsOne", "{{count}} tool", { count: toolCount })
-            : t("session.tabLayout.counters.toolsOther", "{{count}} tools", { count: toolCount }),
+            ? t("session.tabLayout.counters.toolsOne", "{{count}} tool", {
+                count: toolCount,
+              })
+            : t("session.tabLayout.counters.toolsOther", "{{count}} tools", {
+                count: toolCount,
+              }),
       });
     }
     if (winmgmtCount > 0) {
@@ -601,8 +632,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         key: "winmgmt",
         label:
           winmgmtCount === 1
-            ? t("session.tabLayout.counters.panelsOne", "{{count}} panel", { count: winmgmtCount })
-            : t("session.tabLayout.counters.panelsOther", "{{count}} panels", { count: winmgmtCount }),
+            ? t("session.tabLayout.counters.panelsOne", "{{count}} panel", {
+                count: winmgmtCount,
+              })
+            : t("session.tabLayout.counters.panelsOther", "{{count}} panels", {
+                count: winmgmtCount,
+              }),
       });
     }
     if (integrationCount > 0) {
@@ -610,8 +645,16 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         key: "integrations",
         label:
           integrationCount === 1
-            ? t("session.tabLayout.counters.integrationsOne", "{{count}} integration", { count: integrationCount })
-            : t("session.tabLayout.counters.integrationsOther", "{{count}} integrations", { count: integrationCount }),
+            ? t(
+                "session.tabLayout.counters.integrationsOne",
+                "{{count}} integration",
+                { count: integrationCount },
+              )
+            : t(
+                "session.tabLayout.counters.integrationsOther",
+                "{{count}} integrations",
+                { count: integrationCount },
+              ),
       });
     }
     return chips;
@@ -682,7 +725,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <LayoutModeButton
             mode="splitVertical"
             currentMode={layout.mode}
-            title={t("session.tabLayout.modes.splitVertical", "Split left/right")}
+            title={t(
+              "session.tabLayout.modes.splitVertical",
+              "Split left/right",
+            )}
             icon={<Columns size={16} />}
             onClick={mgr.handleLayoutModeChange}
             testId="layout-mode-splitVertical"
@@ -690,7 +736,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <LayoutModeButton
             mode="splitHorizontal"
             currentMode={layout.mode}
-            title={t("session.tabLayout.modes.splitHorizontal", "Split top/bottom")}
+            title={t(
+              "session.tabLayout.modes.splitHorizontal",
+              "Split top/bottom",
+            )}
             icon={<Rows size={16} />}
             onClick={mgr.handleLayoutModeChange}
             testId="layout-mode-splitHorizontal"
@@ -698,7 +747,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <LayoutModeButton
             mode="sideBySide"
             currentMode={layout.mode}
-            title={t("session.tabLayout.modes.sideBySide", "Side-by-side (2 cols, fill rows)")}
+            title={t(
+              "session.tabLayout.modes.sideBySide",
+              "Side-by-side (2 cols, fill rows)",
+            )}
             icon={<SquareStack size={16} />}
             onClick={mgr.handleLayoutModeChange}
             testId="layout-mode-sideBySide"
@@ -706,7 +758,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <LayoutModeButton
             mode="grid2"
             currentMode={layout.mode}
-            title={t("session.tabLayout.modes.grid2", "2 side by side (capped)")}
+            title={t(
+              "session.tabLayout.modes.grid2",
+              "2 side by side (capped)",
+            )}
             icon={<LayoutGrid size={16} />}
             onClick={mgr.handleLayoutModeChange}
             testId="layout-mode-grid2"
@@ -730,7 +785,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <LayoutModeButton
             mode="mosaic"
             currentMode={layout.mode}
-            title={t("session.tabLayout.modes.mosaic", "Auto mosaic (sqrt grid)")}
+            title={t(
+              "session.tabLayout.modes.mosaic",
+              "Auto mosaic (sqrt grid)",
+            )}
             icon={<Square size={16} />}
             onClick={mgr.handleLayoutModeChange}
             testId="layout-mode-mosaic"
@@ -738,7 +796,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <LayoutModeButton
             mode="miniMosaic"
             currentMode={layout.mode}
-            title={t("session.tabLayout.modes.miniMosaic", "Mini mosaic (preview grid)")}
+            title={t(
+              "session.tabLayout.modes.miniMosaic",
+              "Mini mosaic (preview grid)",
+            )}
             icon={<Grid3X3 size={14} />}
             onClick={mgr.handleLayoutModeChange}
             testId="layout-mode-miniMosaic"

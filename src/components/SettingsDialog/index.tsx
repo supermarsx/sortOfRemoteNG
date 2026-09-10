@@ -121,11 +121,8 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
                   mgr.setActiveTab(tab.id);
                   mgr.setHighlightKey(null);
                 }}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-left transition-colors ${
-                  mgr.activeTab === tab.id
-                    ? "bg-primary text-[var(--color-text)]"
-                    : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]"
-                }`}
+                aria-current={mgr.activeTab === tab.id ? "page" : undefined}
+                className="sor-accent-choice w-full flex items-center space-x-3 px-3 py-2 rounded-md text-left"
               >
                 <Icon size={16} />
                 <span className="text-sm">{label}</span>
@@ -317,7 +314,7 @@ const ContentPanel: React.FC<
             {saveRequired && (
               <button
                 onClick={mgr.handleSave}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors"
+                className="sor-btn sor-btn-sm sor-btn-primary"
               >
                 <Save size={14} />
                 {mgr.t("settings.save", "Save")}

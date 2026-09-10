@@ -51,7 +51,8 @@ const ThemeModeGrid: React.FC<{
             <button
               key={value}
               onClick={() => onThemeChange(value as Theme)}
-              className={`p-4 rounded-lg border-2 transition-colors flex flex-col items-center space-y-2 ${theme === value ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"}`}
+              aria-pressed={theme === value}
+              className="sor-accent-choice sor-accent-choice-card p-4 rounded-lg flex flex-col items-center space-y-2"
             >
               <Icon size={24} className="text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-text)] font-medium capitalize">
@@ -82,7 +83,8 @@ const ColorSchemeGrid: React.FC<{
           <button
             key={scheme.name}
             onClick={() => onColorSchemeChange(scheme.name as ColorScheme)}
-            className={`p-4 rounded-lg border-2 transition-colors ${colorScheme === scheme.name ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"}`}
+            aria-pressed={colorScheme === scheme.name}
+            className="sor-accent-choice sor-accent-choice-card p-4 rounded-lg"
           >
             <div className="flex items-center space-x-2 mb-2">
               <Palette
@@ -245,7 +247,7 @@ const ImportExportSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <div className="flex flex-wrap gap-3">
         <button
           onClick={mgr.handleExportAll}
-          className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors text-sm"
+          className="sor-btn sor-btn-primary"
         >
           <Download size={16} />
           {t("themeSelector.exportAllCustom", "Export All Custom")}

@@ -131,12 +131,11 @@ const AppearanceSection: React.FC<{
             <button
               key={option.value}
               onClick={() => mgr.handleSchemeChange(option.value)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all ${
+              aria-pressed={
                 !settings.useCustomAccent &&
                 settings.colorScheme === option.value
-                  ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
-                  : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
-              }`}
+              }
+              className="sor-accent-choice sor-accent-choice-card flex items-center gap-2 px-3 py-2 rounded-md text-sm"
             >
               <span
                 className="w-3 h-3 rounded-full border border-black/30 flex-shrink-0"

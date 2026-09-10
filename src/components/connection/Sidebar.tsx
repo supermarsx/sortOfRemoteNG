@@ -356,7 +356,7 @@ const SidebarToolbar: React.FC<{
       <button
         onClick={() => onNewConnection()}
         disabled={noCollection}
-        className="p-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-primary"
+        className="sor-accent-action p-1.5 rounded"
         title={mgr.t("connections.new")}
         data-testid="toolbar-new-connection"
       >

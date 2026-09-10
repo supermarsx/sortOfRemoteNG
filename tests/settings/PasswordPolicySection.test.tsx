@@ -37,6 +37,33 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("password policy settings", () => {
+  it("themes every policy action and retains disabled settings gating", async () => {
+    const view = render(<PasswordPolicySection />);
+    expect(
+      screen.getByRole("button", { name: "Apply password policy" }),
+    ).toHaveClass("sor-btn", "sor-btn-primary");
+    const generate = screen.getByRole("button", {
+      name: "Generate using saved policy",
+    });
+    expect(generate).toHaveClass("sor-btn", "sor-btn-secondary");
+    fireEvent.click(generate);
+    const clear = await screen.findByRole("button", {
+      name: "Clear generated password",
+    });
+    expect(clear).toHaveClass("sor-btn", "sor-btn-secondary");
+    fireEvent.click(clear);
+    expect(
+      screen.queryByLabelText("Generated policy password"),
+    ).not.toBeInTheDocument();
+    mocks.ready = false;
+    view.rerender(<PasswordPolicySection />);
+    expect(
+      screen.getByRole("button", { name: "Apply password policy" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Generate using saved policy" }),
+    ).toBeDisabled();
+  });
   it("retains an invalid saved policy until explicit review and repair", async () => {
     mocks.policy = { enabled: "broken" };
     render(<PasswordPolicySection />);

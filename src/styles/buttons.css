@@ -66,21 +66,144 @@ summary[aria-disabled="true"] {
   box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 50%);
 }
 
-/* ── Filled variants ─────────────────────────────────────────── */
+/* ── Outlined accent actions and selected choices ──────────────
+ * Keep labels on the theme's readable text color: custom accents can be
+ * very light or dark. Accent identifies the border, not the text contrast.
+ * These visual-only helpers don't impose padding/layout on compact controls.
+ */
+.sor-btn-primary,
+.sor-btn-primary-sm,
+.sor-btn-accent,
+.sor-accent-action {
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+  color: var(--color-text);
+  border: 1px solid
+    color-mix(in srgb, var(--color-primary) 70%, var(--color-text));
+  box-shadow: none;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+:is(
+    .sor-btn-primary,
+    .sor-btn-primary-sm,
+    .sor-btn-accent,
+    .sor-accent-action
+  ):not(:disabled):not([aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--color-primary) 11%, transparent);
+  border-color: var(--color-primary);
+}
+:is(
+    .sor-btn-primary,
+    .sor-btn-primary-sm,
+    .sor-btn-accent,
+    .sor-accent-action
+  ):not(:disabled):not([aria-disabled="true"]):active {
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
 
-.sor-btn-primary {
-  background: var(--color-primary);
-  color: #fff;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 80%, black);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+.sor-accent-choice {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-textSecondary);
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
-.sor-btn-primary:hover {
-  background: color-mix(in srgb, var(--color-primary) 88%, black);
+.sor-accent-choice-card {
+  border-color: var(--color-border);
+  background: color-mix(in srgb, var(--color-surfaceHover) 50%, transparent);
 }
-.sor-btn-primary:active {
-  background: color-mix(in srgb, var(--color-primary) 78%, black);
+.sor-accent-choice:not(:disabled):not([aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--color-primary) 45%,
+    var(--color-border)
+  );
+  color: var(--color-text);
+}
+.sor-accent-choice:is(
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  [aria-current="page"]
+) {
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 70%, var(--color-text));
+  color: var(--color-text);
+}
+.sor-accent-choice:is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"]
+  ):not(:disabled):not([aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--color-primary) 11%, transparent);
+  border-color: var(--color-primary);
+}
+:is(
+  .sor-btn-primary,
+  .sor-btn-primary-sm,
+  .sor-btn-accent,
+  .sor-accent-action,
+  .sor-accent-choice
+):focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
   box-shadow: none;
 }
+:is(
+  .sor-btn-primary,
+  .sor-btn-primary-sm,
+  .sor-btn-accent,
+  .sor-accent-action,
+  .sor-accent-choice
+):is(:disabled, [aria-disabled="true"]) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(
+    .sor-btn-primary,
+    .sor-btn-primary-sm,
+    .sor-btn-accent,
+    .sor-accent-action,
+    .sor-accent-choice
+  ) {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  :is(
+    .sor-btn-primary,
+    .sor-btn-primary-sm,
+    .sor-btn-accent,
+    .sor-accent-action
+  ),
+  .sor-accent-choice:is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-current="page"]
+  ) {
+    border-color: Highlight;
+    background: Canvas;
+    color: CanvasText;
+  }
+  :is(
+    .sor-btn-primary,
+    .sor-btn-primary-sm,
+    .sor-btn-accent,
+    .sor-accent-action,
+    .sor-accent-choice
+  ):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* ── Neutral and destructive variants ───────────────────────── */
 
 .sor-btn-secondary {
   background: color-mix(in srgb, var(--color-border) 65%, transparent);
@@ -109,20 +232,6 @@ summary[aria-disabled="true"] {
 }
 
 /* ── Tinted / soft variants ──────────────────────────────────── */
-
-.sor-btn-accent {
-  background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 18%, transparent);
-  color: color-mix(in srgb, var(--color-accent, var(--color-primary)) 80%, white);
-  border: 1px solid color-mix(in srgb, var(--color-accent, var(--color-primary)) 32%, transparent);
-}
-.sor-btn-accent:hover {
-  background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 28%, transparent);
-  color: color-mix(in srgb, var(--color-accent, var(--color-primary)) 65%, white);
-  border-color: color-mix(in srgb, var(--color-accent, var(--color-primary)) 48%, transparent);
-}
-.sor-btn-accent:active {
-  background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 36%, transparent);
-}
 
 .sor-btn-ghost {
   background: transparent;
@@ -183,15 +292,9 @@ summary[aria-disabled="true"] {
   gap: 0.375rem;
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
-  background: var(--color-primary);
-  color: #fff;
   font-size: 0.75rem;
   font-weight: 500;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 80%, black);
-  transition: background-color 150ms ease;
 }
-.sor-btn-primary-sm:hover { background: color-mix(in srgb, var(--color-primary) 85%, black); }
-.sor-btn-primary-sm:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .sor-btn-secondary-sm {
   display: inline-flex;
@@ -207,8 +310,13 @@ summary[aria-disabled="true"] {
   border: 1px solid var(--color-border);
   transition: background-color 150ms ease;
 }
-.sor-btn-secondary-sm:hover { background: var(--color-border); }
-.sor-btn-secondary-sm:disabled { opacity: 0.45; cursor: not-allowed; }
+.sor-btn-secondary-sm:hover {
+  background: var(--color-border);
+}
+.sor-btn-secondary-sm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .sor-btn-danger-sm {
   display: inline-flex;
@@ -224,8 +332,13 @@ summary[aria-disabled="true"] {
   border: 1px solid color-mix(in srgb, var(--color-error) 75%, black);
   transition: background-color 150ms ease;
 }
-.sor-btn-danger-sm:hover { background: color-mix(in srgb, var(--color-error) 85%, black); }
-.sor-btn-danger-sm:disabled { opacity: 0.45; cursor: not-allowed; }
+.sor-btn-danger-sm:hover {
+  background: color-mix(in srgb, var(--color-error) 85%, black);
+}
+.sor-btn-danger-sm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* ── Icon buttons ────────────────────────────────────────────── */
 .sor-icon-btn {
@@ -235,13 +348,18 @@ summary[aria-disabled="true"] {
   padding: 0.375rem;
   border-radius: 0.375rem;
   color: var(--color-textSecondary);
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 .sor-icon-btn:hover {
   color: var(--color-primary);
   background: color-mix(in srgb, var(--color-border) 60%, transparent);
 }
-.sor-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.sor-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .sor-icon-btn-sm {
   display: inline-flex;
@@ -250,13 +368,18 @@ summary[aria-disabled="true"] {
   padding: 0.25rem;
   border-radius: 0.25rem;
   color: var(--color-textSecondary);
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 .sor-icon-btn-sm:hover {
   color: var(--color-text);
   background: color-mix(in srgb, var(--color-border) 60%, transparent);
 }
-.sor-icon-btn-sm:disabled { opacity: 0.45; cursor: not-allowed; }
+.sor-icon-btn-sm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .sor-icon-btn-danger {
   display: inline-flex;
@@ -265,10 +388,15 @@ summary[aria-disabled="true"] {
   padding: 0.375rem;
   border-radius: 0.375rem;
   color: var(--color-textSecondary);
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 .sor-icon-btn-danger:hover {
   color: var(--color-error);
   background: color-mix(in srgb, var(--color-error) 12%, transparent);
 }
-.sor-icon-btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+.sor-icon-btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

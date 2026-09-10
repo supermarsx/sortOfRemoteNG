@@ -297,7 +297,12 @@ describe("Extended settings section centralization", () => {
       secondaryBarCard.querySelectorAll("label"),
     );
 
-    expect(secondaryBarRows).toHaveLength(22);
+    expect(
+      within(secondaryBarCard).getByRole("checkbox", { name: /^Documents/ }),
+    ).toBeInTheDocument();
+    expect(secondaryBarRows).toHaveLength(
+      within(secondaryBarCard).getAllByRole("checkbox").length,
+    );
     for (const row of secondaryBarRows) {
       const iconWrapper = row.querySelector(".sor-settings-toggle-icon");
       expect(iconWrapper).not.toBeNull();
@@ -307,7 +312,7 @@ describe("Extended settings section centralization", () => {
       );
     }
     expect(secondaryBarCard.querySelectorAll("[data-tooltip]")).toHaveLength(
-      22,
+      secondaryBarRows.length,
     );
 
     expect(
@@ -322,6 +327,47 @@ describe("Extended settings section centralization", () => {
     fireEvent.click(rememberSize);
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ persistWindowSize: false }),
+    );
+  });
+
+  it("uses outlined layout choices with explicit selected state and unchanged callbacks", () => {
+    const updateSettings = vi.fn();
+    const view = render(
+      <LayoutSettings
+        settings={{
+          ...layoutSettings,
+          defaultTabLayout: "tabs",
+          tabGrouping: "protocol",
+        }}
+        updateSettings={updateSettings}
+      />,
+    );
+    expect(screen.getByTestId("default-tab-layout-tabs")).toHaveClass(
+      "sor-accent-choice",
+      "sor-accent-choice-card",
+    );
+    expect(screen.getByTestId("default-tab-layout-tabs")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const grid = screen.getByTestId("default-tab-layout-grid2");
+    expect(grid).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(grid);
+    expect(updateSettings).toHaveBeenCalledWith({ defaultTabLayout: "grid2" });
+    view.rerender(
+      <LayoutSettings
+        settings={{
+          ...layoutSettings,
+          defaultTabLayout: "grid2",
+          tabGrouping: "protocol",
+        }}
+        updateSettings={updateSettings}
+      />,
+    );
+    expect(grid).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("default-tab-layout-tabs")).toHaveAttribute(
+      "aria-pressed",
+      "false",
     );
   });
 

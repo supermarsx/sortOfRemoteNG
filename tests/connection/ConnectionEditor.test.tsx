@@ -472,6 +472,9 @@ describe("ConnectionEditor", () => {
 
     it("should organize editor settings into tabs", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
+      expect(screen.getByTestId("connection-editor-tab-general")).toHaveClass(
+        "sor-accent-choice",
+      );
 
       expect(
         screen.getByTestId("connection-editor-tab-general"),
@@ -491,6 +494,15 @@ describe("ConnectionEditor", () => {
 
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
+      expect(
+        screen.getByTestId("connection-editor-tab-general"),
+      ).toHaveAttribute("aria-selected", "false");
+      expect(screen.getByTestId("connection-editor-tab-protocol")).toHaveClass(
+        "sor-accent-choice",
+      );
+      expect(
+        screen.getByTestId("connection-editor-tab-protocol"),
+      ).toHaveAttribute("aria-selected", "true");
       expect(
         screen.getByTestId("connection-editor-panel-protocol"),
       ).toBeInTheDocument();

@@ -90,8 +90,23 @@ describe("TabLayoutManager", () => {
 
   it("opens and closes the custom-grid popover", async () => {
     renderManager();
+    expect(screen.getByTestId("layout-mode-tabs")).toHaveClass(
+      "sor-accent-choice",
+    );
+    expect(screen.getByTestId("layout-mode-tabs")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("layout-mode-grid2")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
 
     fireEvent.click(screen.getByTitle("Custom grid layout"));
+    expect(screen.getByTitle("Custom grid layout")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       await screen.findByTestId("tab-layout-custom-grid-popover"),
     ).toBeInTheDocument();
@@ -102,6 +117,10 @@ describe("TabLayoutManager", () => {
         screen.queryByTestId("tab-layout-custom-grid-popover"),
       ).not.toBeInTheDocument();
     });
+    expect(screen.getByTitle("Custom grid layout")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("applies custom grid layout and closes popover", async () => {
@@ -263,39 +282,48 @@ describe("TabLayoutManager", () => {
     renderManager(vi.fn(), []);
 
     const ownedFallbacks: Array<[string, string]> = [
-      ["session.tabLayout.customGrid.buttonTitle","Custom grid layout"],
-      ["session.tabLayout.customGrid.title","Custom Grid Layout"],
-      ["session.tabLayout.customGrid.columns","Columns"],
-      ["session.tabLayout.customGrid.rows","Rows"],
-      ["session.tabLayout.customGrid.tilesSuffix","tiles ·"],
-      ["session.tabLayout.customGrid.filledSuffix","filled ·"],
-      ["session.tabLayout.customGrid.sessionOne","session"],
-      ["session.tabLayout.customGrid.applyLayout","Apply Layout"],
-      ["session.tabLayout.hiddenLabel","hidden"],
-      ["session.tabLayout.hiddenMenuTitle","Hidden sessions — click to promote"],
-      ["session.tabLayout.tile.menu","Tile menu"],
-      ["session.tabLayout.tile.detach","Detach"],
-      ["session.tabLayout.tile.close","Close"],
-      ["session.tabLayout.tile.label","Tile"],
-      ["session.tabLayout.tile.of","of"],
-      ["session.tabLayout.tile.showInThisTile","Show in this tile…"],
-      ["session.tabLayout.tile.showInThisTileAria","Show session in this tile"],
-      ["session.tabLayout.tile.noOtherSessions","No other sessions"],
-      ["session.tabLayout.tile.maximize","Maximize (switch to tabs)"],
-      ["session.tabLayout.tile.detachWindow","Detach to new window"],
-      ["session.tabLayout.tile.closeSession","Close session"],
-      ["session.tabLayout.modes.tabs","Tabs (single pane)"],
-      ["session.tabLayout.modes.splitVertical","Split left/right"],
-      ["session.tabLayout.modes.splitHorizontal","Split top/bottom"],
-      ["session.tabLayout.modes.sideBySide","Side-by-side (2 cols, fill rows)"],
-      ["session.tabLayout.modes.grid2","2 side by side (capped)"],
-      ["session.tabLayout.modes.grid4","4 squares (capped)"],
-      ["session.tabLayout.modes.grid6","6 squares (capped)"],
-      ["session.tabLayout.modes.mosaic","Auto mosaic (sqrt grid)"],
-      ["session.tabLayout.modes.miniMosaic","Mini mosaic (preview grid)"],
-      ["session.tabLayout.clickToFocus","Click to focus"],
-      ["session.tabLayout.noSessionSelected","No session selected"],
-      ["session.tabLayout.tile.actionsAria","Tile actions"],
+      ["session.tabLayout.customGrid.buttonTitle", "Custom grid layout"],
+      ["session.tabLayout.customGrid.title", "Custom Grid Layout"],
+      ["session.tabLayout.customGrid.columns", "Columns"],
+      ["session.tabLayout.customGrid.rows", "Rows"],
+      ["session.tabLayout.customGrid.tilesSuffix", "tiles ·"],
+      ["session.tabLayout.customGrid.filledSuffix", "filled ·"],
+      ["session.tabLayout.customGrid.sessionOne", "session"],
+      ["session.tabLayout.customGrid.applyLayout", "Apply Layout"],
+      ["session.tabLayout.hiddenLabel", "hidden"],
+      [
+        "session.tabLayout.hiddenMenuTitle",
+        "Hidden sessions — click to promote",
+      ],
+      ["session.tabLayout.tile.menu", "Tile menu"],
+      ["session.tabLayout.tile.detach", "Detach"],
+      ["session.tabLayout.tile.close", "Close"],
+      ["session.tabLayout.tile.label", "Tile"],
+      ["session.tabLayout.tile.of", "of"],
+      ["session.tabLayout.tile.showInThisTile", "Show in this tile…"],
+      [
+        "session.tabLayout.tile.showInThisTileAria",
+        "Show session in this tile",
+      ],
+      ["session.tabLayout.tile.noOtherSessions", "No other sessions"],
+      ["session.tabLayout.tile.maximize", "Maximize (switch to tabs)"],
+      ["session.tabLayout.tile.detachWindow", "Detach to new window"],
+      ["session.tabLayout.tile.closeSession", "Close session"],
+      ["session.tabLayout.modes.tabs", "Tabs (single pane)"],
+      ["session.tabLayout.modes.splitVertical", "Split left/right"],
+      ["session.tabLayout.modes.splitHorizontal", "Split top/bottom"],
+      [
+        "session.tabLayout.modes.sideBySide",
+        "Side-by-side (2 cols, fill rows)",
+      ],
+      ["session.tabLayout.modes.grid2", "2 side by side (capped)"],
+      ["session.tabLayout.modes.grid4", "4 squares (capped)"],
+      ["session.tabLayout.modes.grid6", "6 squares (capped)"],
+      ["session.tabLayout.modes.mosaic", "Auto mosaic (sqrt grid)"],
+      ["session.tabLayout.modes.miniMosaic", "Mini mosaic (preview grid)"],
+      ["session.tabLayout.clickToFocus", "Click to focus"],
+      ["session.tabLayout.noSessionSelected", "No session selected"],
+      ["session.tabLayout.tile.actionsAria", "Tile actions"],
     ];
     for (const [key, fallback] of ownedFallbacks) {
       expect(tabLayoutT).toHaveBeenCalledWith(key, fallback);

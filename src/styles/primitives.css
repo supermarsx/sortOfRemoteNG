@@ -107,21 +107,36 @@
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   border-radius: 0.375rem;
+  border: 1px solid transparent;
   font-size: 0.875rem;
   text-align: left;
   color: var(--color-textSecondary);
   transition:
     background-color 150ms ease,
-    color 150ms ease;
+    color 150ms ease,
+    border-color 150ms ease;
 }
-.sor-sidebar-tab:hover {
+.sor-sidebar-tab:not(:disabled):not([aria-disabled="true"]):hover {
   background: var(--color-border);
   color: var(--color-text);
 }
 
 .sor-sidebar-tab-active {
-  background: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 70%, var(--color-text));
   color: var(--color-text);
+}
+.sor-sidebar-tab-active:not(:disabled):not([aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--color-primary) 11%, transparent);
+}
+.sor-sidebar-tab:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sor-sidebar-tab {
+    transition: none;
+  }
 }
 
 /* ── Mini buttons (TOTP panels etc.) ─────────────────────────── */

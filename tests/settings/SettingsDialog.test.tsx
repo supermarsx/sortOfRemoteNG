@@ -141,10 +141,13 @@ vi.mock("../../src/components/SettingsDialog/sections/GeneralSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-general" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/BehaviorSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-behavior" />,
-}));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/BehaviorSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-behavior" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/sections/ThemeSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-theme" />,
@@ -153,22 +156,31 @@ vi.mock("../../src/components/SettingsDialog/sections/LayoutSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-layout" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/SecuritySettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-security" />,
-}));
-vi.mock("../../src/components/SettingsDialog/sections/PerformanceSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-performance" />,
-}));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/SecuritySettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-security" />,
+  }),
+);
+vi.mock(
+  "../../src/components/SettingsDialog/sections/PerformanceSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-performance" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/sections/ProxySettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-proxy" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/AdvancedSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-advanced" />,
-}));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/AdvancedSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-advanced" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/sections/StartupSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-startup" />,
@@ -181,49 +193,73 @@ vi.mock("../../src/components/SettingsDialog/sections/McpSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-mcp" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/RecoverySettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-recovery" />,
-}));
-vi.mock("../../src/components/SettingsDialog/sections/SSHTerminalSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-ssh" />,
-}));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/RecoverySettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-recovery" />,
+  }),
+);
+vi.mock(
+  "../../src/components/SettingsDialog/sections/SSHTerminalSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-ssh" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/sections/BackupSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-backup" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/CloudSyncSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-cloudsync" />,
-}));
-vi.mock("../../src/components/SettingsDialog/sections/TrustVerificationSettings", () => ({
-  TrustVerificationSettings: () => <div data-testid="section-trust" />,
-}));
-vi.mock("../../src/components/SettingsDialog/sections/WebBrowserSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-webbrowser" />,
-}));
-vi.mock("../../src/components/settingsDialog/sections/RDPDefaultSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-rdp" />,
-}));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/CloudSyncSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-cloudsync" />,
+  }),
+);
+vi.mock(
+  "../../src/components/SettingsDialog/sections/TrustVerificationSettings",
+  () => ({
+    TrustVerificationSettings: () => <div data-testid="section-trust" />,
+  }),
+);
+vi.mock(
+  "../../src/components/SettingsDialog/sections/WebBrowserSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-webbrowser" />,
+  }),
+);
+vi.mock(
+  "../../src/components/settingsDialog/sections/RDPDefaultSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-rdp" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/sections/BackendSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-backend" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/RecordingSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-recording" />,
-}));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/RecordingSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-recording" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/sections/MacroSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-macros" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/DiagnosticsSettings", () => ({
-  __esModule: true,
-  default: () => <div data-testid="section-diagnostics" />,
-}));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/DiagnosticsSettings",
+  () => ({
+    __esModule: true,
+    default: () => <div data-testid="section-diagnostics" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/sections/AboutSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-about" />,
@@ -285,6 +321,16 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(screen.getByText("Behavior"));
 
+    expect(screen.getByTestId("settings-tab-behavior")).toHaveClass(
+      "sor-accent-choice",
+    );
+    expect(screen.getByTestId("settings-tab-behavior")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByTestId("settings-tab-general")).not.toHaveAttribute(
+      "aria-current",
+    );
     expect(screen.queryByTestId("section-general")).not.toBeInTheDocument();
     expect(screen.getByTestId("section-behavior")).toBeInTheDocument();
   });
