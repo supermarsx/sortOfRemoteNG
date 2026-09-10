@@ -12,6 +12,28 @@ const review = {
   removedQuery: false,
 };
 describe("redirect review decision", () => {
+  it("shows which handoff in a reverse-proxy chain is being reviewed without automatic acceptance", () => {
+    const accept = vi.fn();
+    render(
+      <RedirectReviewDialog
+        manager={{
+          review,
+          redirectStep: 3,
+          maxRedirectHops: 5,
+          busy: false,
+          error: "",
+          accept,
+          cancel: vi.fn(),
+          offer: vi.fn(),
+        }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Redirect 3 of 5 maximum",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("several addresses");
+    expect(accept).not.toHaveBeenCalled();
+  });
   it("requires an explicit click on a clearly identified security downgrade", () => {
     const accept = vi.fn();
     render(

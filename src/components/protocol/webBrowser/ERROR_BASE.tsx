@@ -130,8 +130,18 @@ function presentationFor(
           "Open externally to compare the browser's cookie and redirect behavior.",
         ],
       };
-    case "cross_origin_redirect":
     case "redirect_review":
+      return {
+        eyebrow: "Navigation paused for review",
+        icon: Globe2,
+        tone: "warning",
+        suggestions: [
+          "Reviewed redirects are enabled. Open the destination review on this page to continue in this tab or open an anonymous tab.",
+          "Synology and other reverse proxies can use several addresses. Each new origin gets its own review and HTTPS trust check; a bounded chain prevents endless redirects.",
+          "Cookies and submitted forms are not replayed across origins. Saved login forwarding and plaintext HTTP each require their separate configured permissions and approval.",
+        ],
+      };
+    case "cross_origin_redirect":
     case "insecure_redirect":
       return {
         eyebrow:
@@ -143,7 +153,7 @@ function presentationFor(
         suggestions: [
           "The proxy did not forward credentials or replay a form submission to another origin.",
           "Enable reviewed cross-origin redirects in the connection's Advanced proxy settings for GET/HEAD navigation handoffs.",
-          "HTTPS-to-HTTP is blocked unless the separate reviewed downgrade option is enabled and Require HTTPS upstream is off. A permitted downgrade still needs your explicit review and opens anonymously without TLS.",
+          "HTTPS-to-HTTP is blocked unless the separate reviewed downgrade option is enabled and Require HTTPS upstream is off. Sending a saved login over HTTP requires additional, explicit approval.",
         ],
       };
     case "http_status":
@@ -221,6 +231,10 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
     detail: mgr.loadError,
   };
   const failure = mgr.navigationFailure ?? fallbackFailure;
+  const isRedirectReview = failure.kind === "redirect_review";
+  const reason = isRedirectReview
+    ? "The internal proxy paused a redirect for your review. This is not an access-denied response from the destination. Review the next address on this page; another review may follow if the website redirects again."
+    : failure.reason;
   const presentation = presentationFor(failure.kind, failure.status);
   const FailureIcon = presentation.icon;
   const isWarning = presentation.tone === "warning";
@@ -253,7 +267,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
                   >
                     {presentation.eyebrow}
                   </span>
-                  {failure.status !== null && (
+                  {failure.status !== null && !isRedirectReview && (
                     <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-0.5 font-mono text-[11px] text-[var(--color-textMuted)]">
                       HTTP {failure.status}
                     </span>
@@ -263,7 +277,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
                   {failure.title}
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--color-textSecondary)]">
-                  {failure.reason}
+                  {reason}
                 </p>
               </div>
             </div>
@@ -279,6 +293,16 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
+              {isRedirectReview && mgr.redirectReview && (
+                <button
+                  onClick={() => void mgr.redirectReview.offer(true)}
+                  disabled={mgr.redirectReview.busy}
+                  className={ERROR_PRIMARY}
+                >
+                  <Globe2 size={15} />
+                  Review destination
+                </button>
+              )}
               <button onClick={mgr.handleRefresh} className={ERROR_PRIMARY}>
                 <RefreshCw size={15} />
                 Retry

@@ -287,6 +287,79 @@ describe("reviewed anonymous redirect handoff", () => {
     expect(
       h.invoke.mock.calls.every((call) => call[1].receiptId === null),
     ).toBe(true);
+    await act(() => view.result.current.offer(true));
+    expect(view.result.current.review).toEqual(receipt);
+    expect(view.stopSource).not.toHaveBeenCalled();
+  });
+  it("preserves an in-flight receipt across connection bookkeeping but still cancels authentication changes", async () => {
+    const view = fixture();
+    let finish!: (value: unknown) => void;
+    h.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.offer();
+    });
+    view.rerender({
+      ...view.options,
+      connection: {
+        ...source,
+        lastConnected: "2026-09-10T23:00:00Z",
+        connectionCount: 2,
+      },
+    });
+    await act(async () => {
+      finish(receipt);
+      await pending;
+    });
+    expect(view.result.current.review).toEqual(receipt);
+    expect(view.result.current.redirectStep).toBe(1);
+    expect(view.result.current.maxRedirectHops).toBe(5);
+    view.rerender({
+      ...view.options,
+      connection: { ...source, basicAuthPassword: "changed" },
+    });
+    expect(view.result.current.review).toBeNull();
+    await act(() => view.result.current.accept("current"));
+    expect(view.stopSource).not.toHaveBeenCalled();
+  });
+  it("keeps ordinary load discovery failures silent but explains explicit unavailable review", async () => {
+    const view = fixture();
+    h.invoke.mockRejectedValue(new Error("unavailable"));
+    await act(() => view.result.current.offer(false, true));
+    expect(view.result.current.error).toBe("");
+    expect(view.result.current.review).toBeNull();
+    await act(() => view.result.current.offer(true));
+    expect(view.result.current.error).toContain(
+      "Redirect review is unavailable",
+    );
+  });
+  it("deduplicates discovery with a simultaneous confirmed redirect and preserves its error feedback", async () => {
+    const view = fixture();
+    let reject!: (error: Error) => void;
+    h.invoke.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.offer(false, true);
+    });
+    await act(() => view.result.current.offer());
+    expect(h.invoke).toHaveBeenCalledOnce();
+    await act(async () => {
+      reject(new Error("unavailable"));
+      await pending;
+    });
+    expect(view.result.current.error).toContain(
+      "Redirect review is unavailable",
+    );
   });
   it("requires explicit acceptance, consumes once, closes source, then launches anonymous destination with an independent owner guard", async () => {
     const launch = vi.fn();

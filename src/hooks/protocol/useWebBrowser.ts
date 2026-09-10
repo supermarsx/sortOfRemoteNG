@@ -1225,6 +1225,17 @@ export function useWebBrowser(session: ConnectionSession) {
   redirectReviewRef.current = redirectReview;
 
   useEffect(() => {
+    // React may hydrate owner/settings readiness after the error bridge arrives.
+    // Recheck that retained native failure after the review hook's cancellation
+    // effects have settled; never poll or automatically accept a destination.
+    if (
+      navigationFailure?.kind === "redirect_review" &&
+      navigationFailure.sessionId === proxySessionIdRef.current
+    )
+      void redirectReviewRef.current.offer();
+  }, [navigationFailure, reviewedFlowScope, connection]);
+
+  useEffect(() => {
     if (
       reviewedFlowStartedRef.current === null ||
       reviewedFlowStartedRef.current === reviewedFlowScope
@@ -2021,8 +2032,6 @@ export function useWebBrowser(session: ConnectionSession) {
       );
       if (failure) {
         applyNavigationFailure(failure);
-        if (failure.kind === "redirect_review")
-          void redirectReviewRef.current.offer();
         return;
       }
 
@@ -2088,6 +2097,11 @@ export function useWebBrowser(session: ConnectionSession) {
       awaitingFrameGenerationRef.current !== navGenRef.current
     )
       return;
+    // A themed native redirect page may have no accepted readiness/failure
+    // message (for example an internal link changed the path). Only a current
+    // native receipt can authorize this review; no URL or destination is read
+    // from the page, and an ordinary load with no receipt stays unchanged.
+    void redirectReviewRef.current.offer(false, true);
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;

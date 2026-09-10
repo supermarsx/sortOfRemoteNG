@@ -109,6 +109,46 @@ describe("proxy failure bridge validation", () => {
 });
 
 describe("embedded web failure recovery screen", () => {
+  it("presents the proxy's redirect pause as review, not a NAS HTTP 403, and can reopen its review", () => {
+    const offer = vi.fn();
+    const mgr = manager({
+      navigationFailure: {
+        ...failure,
+        kind: "redirect_review",
+        status: 403,
+        title: "Review redirect destination",
+        reason: "Review the destination in the browser dialog.",
+      },
+      redirectReview: {
+        review: null,
+        busy: false,
+        error: "",
+        offer,
+        accept: vi.fn(),
+        cancel: vi.fn(),
+        redirectStep: 2,
+        maxRedirectHops: 5,
+        authentication: {
+          configured: false,
+          available: false,
+          insecure: false,
+          reason: "",
+        },
+      },
+    });
+    render(<ErrorPage mgr={mgr} />);
+    expect(screen.getByText("Navigation paused for review")).toBeVisible();
+    expect(screen.queryByText("HTTP 403")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/not an access-denied response from the destination/),
+    ).toBeVisible();
+    expect(screen.getByText(/Reviewed redirects are enabled/)).toBeVisible();
+    expect(
+      screen.queryByText(/Enable reviewed cross-origin redirects/),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Review destination" }));
+    expect(offer).toHaveBeenCalledWith(true);
+  });
   it("renders redirect review inside the page without a modal and keeps the source iframe inert", () => {
     const mgr = manager({
       redirectReview: {
@@ -132,6 +172,8 @@ describe("embedded web failure recovery screen", () => {
           insecure: false,
           reason: "",
         },
+        redirectStep: 1,
+        maxRedirectHops: 5,
       },
     });
     const { container } = render(<ContentArea mgr={mgr} />);

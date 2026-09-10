@@ -13,7 +13,12 @@ type ReviewManager = Pick<
   ReturnType<typeof useHttpRedirectReview>,
   "review" | "busy" | "error" | "accept" | "cancel" | "offer"
 > &
-  Partial<Pick<ReturnType<typeof useHttpRedirectReview>, "authentication">>;
+  Partial<
+    Pick<
+      ReturnType<typeof useHttpRedirectReview>,
+      "authentication" | "redirectStep" | "maxRedirectHops"
+    >
+  >;
 
 /** Redirect review belongs to the browser viewport, never a global modal. */
 export default function RedirectReviewPanel({
@@ -72,6 +77,17 @@ export default function RedirectReviewPanel({
         </header>
         {review && (
           <>
+            {manager.redirectStep !== undefined &&
+              manager.maxRedirectHops !== undefined && (
+                <p
+                  role="status"
+                  className="text-xs text-[var(--color-textSecondary)]"
+                >
+                  Redirect {manager.redirectStep} of {manager.maxRedirectHops}{" "}
+                  maximum. Reverse proxies can redirect through several
+                  addresses; review each destination before continuing.
+                </p>
+              )}
             <dl className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-sm">
               <div className="min-w-0 px-4 pt-4 pb-3">
                 <dt className="mb-1.5 text-xs font-medium text-[var(--color-textSecondary)]">

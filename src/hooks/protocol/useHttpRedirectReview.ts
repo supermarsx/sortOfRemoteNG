@@ -42,9 +42,21 @@ interface Pending {
   assertLaunchCurrent: () => void;
   signature: string;
 }
+export const MAX_HTTP_REDIRECT_HANDOFFS = 5;
+
 export function useHttpRedirectReview(options: Options) {
+  // Successful connection bookkeeping arrives on a delayed timer. It must not
+  // dismiss a live receipt. All other fields remain part of the security fence,
+  // including future authentication, route and policy settings.
+  const connectionIdentity = options.connection
+    ? {
+        ...options.connection,
+        lastConnected: undefined,
+        connectionCount: undefined,
+      }
+    : undefined;
   const signature = JSON.stringify([
-    options.connection,
+    connectionIdentity,
     options.accessKey,
     options.sourceOrigin,
     options.route,
@@ -56,6 +68,11 @@ export function useHttpRedirectReview(options: Options) {
   const pending = useRef<Pending | null>(null);
   const action = useRef(0);
   const accepting = useRef(false);
+  const offering = useRef<{
+    key: string;
+    reportError: boolean;
+    userInitiated: boolean;
+  } | null>(null);
   const dismissedReceipt = useRef<string | null>(null);
   const [review, setReview] = useState<HttpRedirectReview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,15 +94,47 @@ export function useHttpRedirectReview(options: Options) {
     setBusy(false);
     setError("");
   }, [signature]);
-  const offer = async () => {
+  const offer = async (userInitiated = false, discoveryOnly = false) => {
     const current = latest.current;
     const { options: captured } = current;
-    if (!captured.enabled || !captured.connection || !captured.accessKey)
+    if (!captured.enabled || !captured.connection || !captured.accessKey) {
+      if (userInitiated)
+        setError(
+          !captured.enabled
+            ? "Enable reviewed cross-origin redirects in this connection's settings, then reload the source page."
+            : "Open and unlock this session's owning database before reviewing the destination.",
+        );
       return;
+    }
     const id = captured.proxySessionId(),
       generation = captured.generation(),
       navigationToken = captured.navigationToken();
-    if (!id || pending.current?.review.sessionId === id) return;
+    if (!id) {
+      if (userInitiated)
+        setError(
+          "The source proxy is no longer available. Reload the source page to request a new redirect.",
+        );
+      return;
+    }
+    if (pending.current?.review.sessionId === id || accepting.current) return;
+    if (userInitiated) dismissedReceipt.current = null;
+    const requestKey = JSON.stringify([
+      current.signature,
+      id,
+      generation,
+      navigationToken,
+    ]);
+    if (offering.current?.key === requestKey) {
+      offering.current.reportError ||= !discoveryOnly;
+      offering.current.userInitiated ||= userInitiated;
+      return;
+    }
+    const request = {
+      key: requestKey,
+      reportError: !discoveryOnly,
+      userInitiated,
+    };
+    offering.current = request;
     const token = ++action.current;
     try {
       const assertOwner = captureSessionDatabaseAccess(captured.session);
@@ -133,11 +182,16 @@ export function useHttpRedirectReview(options: Options) {
         receipt.receiptId === dismissedReceipt.current ||
         (receipt.navigationToken !== null &&
           receipt.navigationToken !== captured.navigationToken())
-      )
+      ) {
+        if (request.userInitiated)
+          setError(
+            "No current redirect destination is available. Reload the source page and review its next redirect.",
+          );
         return;
+      }
       const depth =
         getRuntimeWebNavigation(captured.connection.id)?.redirectHops ?? 0;
-      if (depth >= 5) {
+      if (depth >= MAX_HTTP_REDIRECT_HANDOFFS) {
         setError(
           "Five redirect handoffs have already been reviewed. Open the intended destination as a separate connection; no redirect loop was followed.",
         );
@@ -152,10 +206,12 @@ export function useHttpRedirectReview(options: Options) {
       setError("");
       setReview(receipt);
     } catch {
-      if (live.current && token === action.current)
+      if (request.reportError && live.current && token === action.current)
         setError(
           "Redirect review is unavailable. Restore access to the owning database and retry; nothing was forwarded.",
         );
+    } finally {
+      if (offering.current === request) offering.current = null;
     }
   };
   const cancel = () => {
@@ -260,6 +316,12 @@ export function useHttpRedirectReview(options: Options) {
     }
   };
   return {
+    redirectStep: Math.min(
+      (getRuntimeWebNavigation(options.connection?.id ?? "")?.redirectHops ??
+        0) + 1,
+      MAX_HTTP_REDIRECT_HANDOFFS,
+    ),
+    maxRedirectHops: MAX_HTTP_REDIRECT_HANDOFFS,
     authentication: redirectAuthenticationAvailability(
       options.connection,
       review,

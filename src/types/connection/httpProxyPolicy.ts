@@ -5,7 +5,7 @@ export interface HttpProxyPolicy {
   httpsOnly: boolean;
   /** Restricts mediated redirects, resources and forms; not a browser sandbox. */
   sameOriginOnly: boolean;
-  /** Review redirects in a fresh anonymous tab; never forward credentials. */
+  /** Review each origin before same-tab or anonymous handoff; login consent is separate. */
   allowCrossOriginRedirects?: boolean;
   /** Separate explicit downgrade review consent; httpsOnly always takes precedence. */
   allowHttpDowngradeRedirects?: boolean;
