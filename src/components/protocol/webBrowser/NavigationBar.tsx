@@ -264,6 +264,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
         {mgr.showTotpPanel && (
           <WebTotpPanel
             configs={mgr.totpConfigs}
+            autoMfa={mgr.autoMfa}
             ownerDatabaseId={mgr.session.ownerDatabaseId}
             connectionId={mgr.connection?.id}
             anchorRef={mgr.totpBtnRef}

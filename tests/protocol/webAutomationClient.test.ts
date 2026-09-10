@@ -94,6 +94,104 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("actual injected page-only automation client", () => {
+  const otpProbe = {
+    nonce: "b".repeat(32),
+    codeSelector: "#otp",
+    submitSelector: "#otp-submit",
+    submission: "post",
+  };
+  const otpCode = () => ({
+    nonce: otpProbe.nonce,
+    code: "123456",
+    expires: Date.now() + 20000,
+  });
+  function otpPage(extra = "") {
+    setupPage(
+      `<form method="post" action="/verify"><input id="otp" name="otp" autocomplete="one-time-code"><button id="otp-submit" type="submit">Verify</button>${extra}</form>`,
+    );
+    const submit = vi.fn((event: Event) => event.preventDefault());
+    document.querySelector("form")!.addEventListener("submit", submit);
+    return submit;
+  }
+  it("submits one matching OTP challenge without recording values or echoing its code", () => {
+    const submit = otpPage();
+    command("recordStart");
+    command("totpProbe", otpProbe);
+    command("totpSubmit", otpCode());
+    expect(submit).toHaveBeenCalledOnce();
+    gesture("change", document.querySelector("#otp")!);
+    command("totpSubmit", otpCode());
+    command("totpProbe", { ...otpProbe, nonce: "c".repeat(32) });
+    expect(submit).toHaveBeenCalledOnce();
+    expect(reports().filter((item) => item.status === "step")).toEqual([]);
+    expect(JSON.stringify(reports())).not.toContain("123456");
+  });
+  it.each([
+    "hidden",
+    "ambiguous",
+    "disabled",
+    "password",
+    "get",
+    "external",
+    "empty",
+    "foreign-submit",
+  ])("refuses unsupported OTP %s forms", (variant) => {
+    const submit = otpPage(
+      variant === "password" ? '<input type="password">' : "",
+    );
+    const field = document.querySelector<HTMLInputElement>("#otp")!,
+      button = document.querySelector<HTMLButtonElement>("#otp-submit")!,
+      form = document.querySelector("form")!;
+    if (variant === "hidden") field.hidden = true;
+    if (variant === "ambiguous") form.append(field.cloneNode());
+    if (variant === "disabled") button.disabled = true;
+    if (variant === "get") form.method = "get";
+    if (variant === "external") form.action = "https://other.example/otp";
+    if (variant === "empty") field.value = "manual-value";
+    if (variant === "foreign-submit")
+      button.setAttribute("formaction", "https://other.example/otp");
+    command("totpProbe", otpProbe);
+    command("totpSubmit", otpCode());
+    expect(submit).not.toHaveBeenCalled();
+    expect(field.value).not.toBe("123456");
+    expect(reports().slice(-1)[0].status).toBe("failed");
+  });
+  it.each(["action", "replacement", "expired", "cancel", "nonce"])(
+    "rejects a stale OTP challenge after %s",
+    (variant) => {
+      const submit = otpPage();
+      command("totpProbe", otpProbe);
+      if (variant === "action")
+        document.querySelector("form")!.action = "/changed";
+      if (variant === "replacement")
+        document
+          .querySelector("#otp")!
+          .replaceWith(document.querySelector("#otp")!.cloneNode());
+      if (variant === "cancel") command("totpCancel");
+      command("totpSubmit", {
+        ...otpCode(),
+        ...(variant === "expired" ? { expires: Date.now() - 1 } : {}),
+        ...(variant === "nonce" ? { nonce: "c".repeat(32) } : {}),
+      });
+      expect(submit).not.toHaveBeenCalled();
+      expect(document.querySelector<HTMLInputElement>("#otp")!.value).toBe("");
+    },
+  );
+  it("allows reviewed SPA handlers but prevents implicit GET fallback navigation", () => {
+    setupPage(
+      '<form><input id="otp" autocomplete="one-time-code"><button id="otp-submit" type="submit">Verify</button></form>',
+    );
+    const observed: boolean[] = [];
+    document
+      .querySelector("form")!
+      .addEventListener("submit", (event) =>
+        observed.push(event.defaultPrevented),
+      );
+    command("totpProbe", { ...otpProbe, submission: "spa" });
+    command("totpSubmit", otpCode());
+    expect(observed).toEqual([true]);
+    expect(reports().slice(-1)[0].status).toBe("ok");
+  });
   it("blocks a public-looking form when an external password control belongs to it", () => {
     setupPage(
       '<form id="linked"><input type="submit"></form><input form="linked" type="password" value="external-secret">',

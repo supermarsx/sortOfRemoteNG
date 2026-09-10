@@ -5,7 +5,15 @@ import type {
 import { normalizeWebInteractionStep } from "./webAutomationLibrary";
 
 export type WebAutomationAction =
-  "recordStart" | "recordStop" | "step" | "script" | "dark" | "cancel";
+  | "recordStart"
+  | "recordStop"
+  | "step"
+  | "script"
+  | "dark"
+  | "cancel"
+  | "totpProbe"
+  | "totpSubmit"
+  | "totpCancel";
 export interface WebAutomationContext {
   frame: Window;
   document: WebAutomationDocument;
@@ -196,13 +204,16 @@ export class WebAutomationBridge {
       );
     }
   }
-  cancel(disableDark = false): void {
+  cancel(
+    disableDark = false,
+    action: "cancel" | "totpCancel" = "cancel",
+  ): void {
     // Revocation may already make current() unavailable. Cleanup only targets
     // the previously addressed document; a replacement rejects its identity.
     const context = this.current() ?? this.lastContext;
     if (context)
       try {
-        this.send(context, token(), "cancel");
+        this.send(context, token(), action);
         if (disableDark)
           this.send(context, token(), "dark", { enabled: false });
       } catch {

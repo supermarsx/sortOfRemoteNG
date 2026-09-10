@@ -117,6 +117,47 @@ describe("full database Recycle Bin portability", () => {
       fixture().recycleBin,
     );
   });
+  it("preserves reference-only MFA metadata and removes malformed secret-bearing MFA extensions", async () => {
+    const data = fixture();
+    const metadata = {
+      version: 1 as const,
+      enabled: true,
+      origin: "https://nas.example",
+      totpConfigId: "auth",
+      challengeId: "wordpress-two-factor-totp",
+    };
+    data.connections[0].httpAutoMfa = metadata;
+    data.connections[0].totpConfigs = [
+      {
+        id: "auth",
+        secret: "MFA-SYNTHETIC-SEED",
+        backupCodes: ["MFA-SYNTHETIC-BACKUP"],
+        issuer: "Fixture",
+        account: "Demo",
+        algorithm: "sha1",
+        digits: 6,
+        period: 30,
+      },
+    ];
+    await manager.saveDatabaseData(id, data);
+    const safe = await manager.exportDatabase(id, false);
+    expect(safe).not.toMatch(/MFA-SYNTHETIC/);
+    expect(JSON.parse(safe).connections[0].httpAutoMfa).toEqual(metadata);
+    const copy = await manager.importDatabase(safe, {
+      collectionName: "MFA metadata",
+      includeTrust: false,
+    });
+    expect(
+      (await manager.loadDatabaseData(copy.id))?.connections[0].httpAutoMfa,
+    ).toEqual(metadata);
+    Object.assign(data.connections[0].httpAutoMfa!, {
+      secret: "MFA-HIDDEN-SECRET",
+    });
+    await manager.saveDatabaseData(id, data);
+    expect(await manager.exportDatabase(id, false)).not.toContain(
+      "MFA-HIDDEN-SECRET",
+    );
+  });
 
   it("retains complete archived records and indefinite policy when credentials are explicitly included", async () => {
     const data = fixture();

@@ -17,6 +17,7 @@ export interface WebTotpPanelProps {
   connectionId: string | undefined;
   onClose: () => void;
   anchorRef?: React.RefObject<HTMLElement | null>;
+  autoMfa?: { status: string | null; canRetry: boolean; retry: () => void };
 }
 type Code = { value: string; expires: number };
 const unavailable =
@@ -30,6 +31,7 @@ export default function WebTotpPanel({
   connectionId,
   onClose,
   anchorRef,
+  autoMfa,
 }: WebTotpPanelProps) {
   const manager = DatabaseManager.getInstance();
   const access = useMemo(() => {
@@ -257,8 +259,23 @@ export default function WebTotpPanel({
           <>
             <p className="text-xs text-[var(--color-textSecondary)]">
               Copy a code from an existing authenticator configuration, then
-              paste it yourself. Nothing is typed or submitted automatically.
+              paste it yourself. Copying here never types or submits a code.
             </p>
+            {autoMfa?.status && (
+              <div className="rounded border border-[var(--color-border)] p-2 space-y-2 text-xs">
+                <p role="status">{autoMfa.status}</p>
+                {autoMfa.canRetry && (
+                  <button
+                    className="sor-btn sor-btn-secondary"
+                    onClick={() => {
+                      if (canAccess()) autoMfa.retry();
+                    }}
+                  >
+                    Check for 2FA challenge again
+                  </button>
+                )}
+              </div>
+            )}
             {!configs.length && (
               <p className="text-sm">
                 No saved authenticator configurations. Use your existing

@@ -17,6 +17,7 @@ import { generateId } from "../../utils/core/id";
 import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
+import { useWebAutoMfa } from "./useWebAutoMfa";
 import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
@@ -252,7 +253,13 @@ export function validateProtectedProxyUrl(
    ═══════════════════════════════════════════════════════════════ */
 
 export function useWebBrowser(session: ConnectionSession) {
-  const { state, dispatch, dispatchAndFlush, recycleBin } = useConnections();
+  const {
+    state,
+    dispatch,
+    dispatchAndFlush,
+    recycleBin,
+    databaseAvailability,
+  } = useConnections();
   const { settings, settingsReady } = useSettings();
   const { toast } = useToastContext();
   const connection = resolveRuntimeConnection(
@@ -2261,8 +2268,22 @@ export function useWebBrowser(session: ConnectionSession) {
       dispatchAndFlush({ type: "UPDATE_CONNECTION", payload: updated }),
   });
 
+  const autoMfa = useWebAutoMfa({
+    connection,
+    ownerDatabaseId: session.ownerDatabaseId,
+    availability: databaseAvailability,
+    settingsReady: settingsReady === true,
+    blocked:
+      waitingForTrust || !!trustPrompt || !!loadError || !!sslVerifyDisabled,
+    currentUrl,
+    navigationKey: `${session.id}:${currentUrl}:${isLoading}`,
+    iframe: iframeRef,
+    getDocument: getAutomationDocument,
+  });
+
   return {
     automation,
+    autoMfa,
     // Context
     session,
     connection,

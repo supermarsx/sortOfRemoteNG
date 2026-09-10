@@ -21,6 +21,7 @@ import {
 
 import { getInvoke } from "../tauri/invoke";
 import { databaseProtection } from "./databaseProtection";
+import { normalizeHttpAutoMfa } from "./httpAutoMfa";
 import { normalizeRecycleBin } from "./recycleBin";
 import { rebindDatabaseQuickActions } from "./rebindDatabaseQuickActions";
 import {
@@ -348,6 +349,8 @@ export interface DatabaseDataTarget {
   assertAccessible?: () => void;
   /** Verify persisted contents without advancing this writer's CAS baseline. */
   verifyCurrent?: () => Promise<void>;
+  /** Lease-checked read without advancing any writer's persisted CAS baseline. */
+  readCurrent?: () => Promise<StorageData | null>;
   load: () => Promise<StorageData | null>;
   save: (data: StorageData) => Promise<void>;
 }
@@ -387,6 +390,15 @@ function redactConnectionSecrets(connection: Connection): Connection {
   delete next.privateKey;
   delete next.passphrase;
   delete next.totpSecret;
+  // This new field is metadata-only. Malformed imported extension properties
+  // must not smuggle secrets into a credential-free database export.
+  if (next.httpAutoMfa !== undefined) {
+    try {
+      next.httpAutoMfa = normalizeHttpAutoMfa(next.httpAutoMfa);
+    } catch {
+      delete next.httpAutoMfa;
+    }
+  }
   if (next.totpConfigs) {
     next.totpConfigs = next.totpConfigs.map((config) => {
       const metadata = { ...config };
@@ -1411,6 +1423,22 @@ export class DatabaseManager {
           throw new Error(
             "Database contents changed in another window. Reload and review the library before running an action.",
           );
+      },
+      readCurrent: async () => {
+        const currentAccess = this.getDatabaseAccessState(databaseId);
+        if (currentAccess && currentAccess.status !== "ready")
+          throw new Error("Database access is suspended.");
+        const data = await this.loadDatabaseData(
+          databaseId,
+          resolvePassword(),
+          revisionAtCapture,
+          { preserveBaseline: true },
+        );
+        resolvePassword();
+        const access = this.getDatabaseAccessState(databaseId);
+        if (access && access.status !== "ready")
+          throw new Error("Database access is suspended.");
+        return data;
       },
       save: (data) => {
         const password = resolvePassword();

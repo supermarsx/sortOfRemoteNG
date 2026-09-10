@@ -21,6 +21,17 @@ export interface HttpApplicationProfile {
   description: string;
   usernameLabel?: string;
   selectors?: Readonly<HttpAutoLoginSelectors>;
+  totpChallenges?: readonly HttpApplicationTotpChallenge[];
+}
+
+/** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
+export interface HttpApplicationTotpChallenge {
+  id: string;
+  label: string;
+  codeSelector: string;
+  submitSelector: string;
+  paths: readonly string[];
+  submission: "post" | "spa";
 }
 
 export const HTTP_APPLICATION_CATEGORIES = {
@@ -123,6 +134,158 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     capability: "manual",
     description:
       "Hosted HTTPS dashboard with interactive sign-in and two-factor authentication. No saved password, API token, or automatic form login is supplied. Use the system browser for SSO, security keys, or unsupported embedded-browser challenges.",
+  },
+  {
+    id: "tacticalrmm",
+    label: "Tactical RMM",
+    category: "management",
+    capability: "known-form",
+    // amidaware/tacticalrmm-web v0.101.64: LoginView.vue + routes.js.
+    // Quasar forwards autocomplete to its native inputs. Scope submit to the
+    // primary form; the separate OTP dialog must never receive the password.
+    selectors: {
+      usernameSelector: 'form input[autocomplete="username"]',
+      passwordSelector:
+        'form input[autocomplete="current-password"][type="password"]',
+      submitSelector:
+        'form:has(input[autocomplete="username"]):has(input[autocomplete="current-password"]) button[type="submit"]',
+    },
+    totpChallenges: [
+      {
+        id: "tacticalrmm-totp",
+        label: "Tactical RMM authenticator token",
+        codeSelector:
+          '.q-dialog form input[autocomplete="one-time-code"][inputmode="numeric"]',
+        submitSelector:
+          '.q-dialog form:has(input[autocomplete="one-time-code"][inputmode="numeric"]) button[type="submit"]',
+        paths: ["/login"],
+        submission: "spa",
+      },
+    ],
+    description:
+      "HTTPS dashboard account login at /login, followed by the website's separate authenticator-token prompt. Standard installations use a separate API origin, which may not work through this single-origin viewer: use the external browser if the backend is unavailable. API keys and MeshCentral credentials are not dashboard passwords; SSO and security keys stay interactive.",
+  },
+  {
+    id: "meshcentral",
+    label: "MeshCentral",
+    category: "management",
+    capability: "known-form",
+    // Ylianst/MeshCentral views/login.handlebars: never reset/create-account forms.
+    selectors: {
+      usernameSelector: '#loginpanel form input#username[name="username"]',
+      passwordSelector:
+        '#loginpanel form input#password[name="password"][type="password"]',
+      submitSelector: '#loginpanel form input#loginButton[type="submit"]',
+    },
+    description:
+      "Reviewed MeshCentral web account login. Authenticator, email and SMS codes share a challenge field, so second-factor selection and submission remain manual. Security keys, Duo, SSO and device enrollment are not automated; this is not an agent or API-token login.",
+  },
+  {
+    id: "guacamole",
+    label: "Apache Guacamole",
+    category: "management",
+    capability: "known-form",
+    // Apache guacamole-client 1.6.0 login/form templates + CredentialsInfo.java.
+    selectors: {
+      usernameSelector: 'form.login-form input[name="username"]',
+      passwordSelector:
+        'form.login-form input[name="password"][type="password"]',
+      submitSelector:
+        'form.login-form input.login[type="submit"][name="login"]',
+    },
+    totpChallenges: [
+      {
+        id: "guacamole-totp",
+        label: "Apache Guacamole TOTP extension — enrolled authenticator",
+        // Angular hides enrollment only when the server sends no enrollment QR.
+        codeSelector:
+          'form.login-form .totp-code-field:has(> .totp-enroll.ng-hide) .totp-code input[name="guac-totp"]',
+        submitSelector:
+          'form.login-form input.continue-login[type="submit"][name="login"]',
+        paths: ["/guacamole/", "/"],
+        submission: "spa",
+      },
+    ],
+    description:
+      "Reviewed Guacamole 1.6 username/password login, normally at /guacamole/. Optional automatic codes target only the installed TOTP extension's already-enrolled challenge. Enrollment, Duo, SAML, OpenID Connect and custom authentication extensions remain interactive; remote desktop credentials are not Guacamole website credentials.",
+  },
+  {
+    id: "wordpress",
+    label: "WordPress",
+    category: "business",
+    capability: "known-form",
+    usernameLabel: "Username or email",
+    // WordPress core wp-login.php; excludes reset/registration/application tokens.
+    selectors: {
+      usernameSelector: 'form#loginform input#user_login[name="log"]',
+      passwordSelector:
+        'form#loginform input#user_pass[name="pwd"][type="password"]',
+      submitSelector: 'form#loginform input#wp-submit[type="submit"]',
+    },
+    totpChallenges: [
+      {
+        id: "wordpress-two-factor-totp",
+        label: "WordPress Two-Factor plugin — authenticator app",
+        codeSelector:
+          'form[name="validate_2fa_form"]:has(input[name="provider"][value="Two_Factor_Totp"]) input#authcode[autocomplete="one-time-code"]',
+        submitSelector:
+          'form[name="validate_2fa_form"]:has(input[name="provider"][value="Two_Factor_Totp"]) input#submit[type="submit"]',
+        paths: ["/wp-login.php"],
+        submission: "post",
+      },
+    ],
+    description:
+      "Reviewed WordPress core username/email and password form at /wp-login.php. Automatic TOTP supports only the separately selected Two-Factor plugin authenticator challenge, not every MFA plugin. Custom login themes, Wordfence, email codes, passkeys, CAPTCHA and SSO may require manual interaction.",
+  },
+  {
+    id: "joomla",
+    label: "Joomla Administrator",
+    category: "business",
+    capability: "known-form",
+    // Joomla 5.4 administrator/modules/mod_login/tmpl/default.php.
+    selectors: {
+      usernameSelector:
+        'form#form-login input#mod-login-username[name="username"]',
+      passwordSelector:
+        'form#form-login input#mod-login-password[name="passwd"][type="password"]',
+      submitSelector: 'form#form-login button#btn-login-submit[type="submit"]',
+    },
+    description:
+      "Reviewed Joomla administrator login at /administrator/. Complete the captive MFA challenge after the password step. Custom front-end login modules, third-party MFA plugins, security keys and SSO are not inferred from this administrator preset.",
+  },
+  {
+    id: "drupal",
+    label: "Drupal",
+    category: "business",
+    capability: "known-form",
+    // Drupal core/modules/user/src/Form/UserLoginForm.php (Drupal 11).
+    selectors: {
+      usernameSelector:
+        'form[data-drupal-selector="user-login-form"] input[name="name"]',
+      passwordSelector:
+        'form[data-drupal-selector="user-login-form"] input[name="pass"][type="password"]',
+      submitSelector:
+        'form[data-drupal-selector="user-login-form"] input[type="submit"]',
+    },
+    description:
+      "Reviewed Drupal core username/password form at /user/login. Two-factor authentication is provided by contributed modules and their plugins, not one universal core challenge. Modified forms, passkeys, approval prompts and SSO remain interactive.",
+  },
+  {
+    id: "payload-cms",
+    label: "Payload CMS",
+    category: "business",
+    capability: "known-form",
+    usernameLabel: "Email or username",
+    // payloadcms/payload packages/ui/src/views/Login/LoginForm + LoginField.
+    selectors: {
+      usernameSelector:
+        'form.login__form input[name="email"], form.login__form input[name="username"]',
+      passwordSelector:
+        'form.login__form input[name="password"][type="password"]',
+      submitSelector: 'form.login__form button[type="submit"]',
+    },
+    description:
+      "Reviewed Payload admin email/username and password form, normally /admin/login. Admin routes, authentication strategies and MFA are project-configurable; this preset does not invent a universal Payload two-factor form. Custom MFA, passkeys and external identity providers remain interactive.",
   },
   generic(
     "ilo",

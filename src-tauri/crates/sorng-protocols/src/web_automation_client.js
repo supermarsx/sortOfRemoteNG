@@ -14,6 +14,170 @@
     darkDesired = false,
     darkLoading = null;
   var closed = false;
+  var totpChallenge = null,
+    totpSubmitted = false;
+  function totpTarget(payload) {
+    if (
+      !payload ||
+      typeof payload.nonce !== "string" ||
+      !/^[0-9a-f]{32}$/.test(payload.nonce) ||
+      !["post", "spa"].includes(payload.submission)
+    )
+      throw new Error("challenge");
+    var selectors = [payload.codeSelector, payload.submitSelector];
+    if (
+      selectors.some(function (selector) {
+        return (
+          typeof selector !== "string" ||
+          !selector.length ||
+          selector.length > 512
+        );
+      })
+    )
+      throw new Error("challenge");
+    var fields = document.querySelectorAll(payload.codeSelector),
+      buttons = document.querySelectorAll(payload.submitSelector);
+    if (fields.length !== 1 || buttons.length !== 1)
+      throw new Error("challenge");
+    var field = fields[0],
+      button = buttons[0],
+      form = field.form;
+    if (
+      !(field instanceof HTMLInputElement) ||
+      !["text", "tel", "number"].includes(field.type) ||
+      field.ownerDocument !== document ||
+      field.disabled ||
+      field.matches(":disabled") ||
+      field.readOnly ||
+      !visible(field) ||
+      !(form instanceof HTMLFormElement) ||
+      !form.isConnected ||
+      form.ownerDocument !== document ||
+      !(
+        (button instanceof HTMLButtonElement ||
+          button instanceof HTMLInputElement) &&
+        button.type === "submit"
+      ) ||
+      button.form !== form ||
+      button.disabled ||
+      button.matches(":disabled") ||
+      !visible(button) ||
+      button.ownerDocument !== document ||
+      Array.prototype.some.call(form.elements, function (control) {
+        return (
+          control instanceof HTMLInputElement && control.type === "password"
+        );
+      })
+    )
+      throw new Error("challenge");
+    if (
+      (form.target && form.target !== "_self") ||
+      (button.formTarget && button.formTarget !== "_self")
+    )
+      throw new Error("challenge");
+    var action =
+      button.getAttribute("formaction") || form.getAttribute("action") || "";
+    var method = (
+      button.getAttribute("formmethod") ||
+      form.getAttribute("method") ||
+      "get"
+    ).toLowerCase();
+    if (payload.submission === "spa") {
+      // Reviewed SPA handlers receive submit, but native navigation is prevented.
+      if (
+        action ||
+        button.hasAttribute("formaction") ||
+        button.hasAttribute("formmethod") ||
+        form.hasAttribute("method")
+      )
+        throw new Error("challenge");
+    } else if (method !== "post") throw new Error("challenge");
+    var target = new URL(action || location.href, document.baseURI);
+    if (target.origin !== location.origin || target.username || target.password)
+      throw new Error("challenge");
+    return {
+      field: field,
+      button: button,
+      form: form,
+      fingerprint: JSON.stringify([
+        target.href,
+        method,
+        form.target,
+        button.formTarget,
+        payload.submission,
+      ]),
+    };
+  }
+  function probeTotp(payload) {
+    totpChallenge = null;
+    if (totpSubmitted) throw new Error("challenge");
+    var target = totpTarget(payload);
+    if (target.field.value) throw new Error("challenge");
+    totpChallenge = {
+      payload: payload,
+      target: target,
+      expires: Date.now() + 15000,
+    };
+  }
+  function submitTotp(payload) {
+    var challenge = totpChallenge;
+    totpChallenge = null;
+    if (
+      totpSubmitted ||
+      !challenge ||
+      !payload ||
+      payload.nonce !== challenge.payload.nonce ||
+      typeof payload.code !== "string" ||
+      !/^[0-9]{6,8}$/.test(payload.code) ||
+      Date.now() >= challenge.expires ||
+      !Number.isFinite(payload.expires) ||
+      Date.now() >= payload.expires ||
+      payload.expires > Date.now() + 3600000
+    )
+      throw new Error("challenge");
+    var target = totpTarget(challenge.payload),
+      original = challenge.target;
+    if (
+      target.field !== original.field ||
+      target.button !== original.button ||
+      target.form !== original.form ||
+      target.fingerprint !== original.fingerprint ||
+      target.field.value
+    )
+      throw new Error("challenge");
+    var setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    ).set;
+    setValue.call(target.field, payload.code);
+    target.field.dispatchEvent(new Event("input", { bubbles: true }));
+    target.field.dispatchEvent(new Event("change", { bubbles: true }));
+    try {
+      var checked = totpTarget(challenge.payload);
+      if (
+        checked.field !== original.field ||
+        checked.button !== original.button ||
+        checked.form !== original.form ||
+        checked.fingerprint !== original.fingerprint ||
+        checked.field.value !== payload.code ||
+        Date.now() >= payload.expires
+      )
+        throw new Error("challenge");
+    } catch (_) {
+      setValue.call(target.field, "");
+      throw new Error("challenge");
+    }
+    totpSubmitted = true; // Consumed before clicking, including uncertain outcomes.
+    if (challenge.payload.submission === "spa")
+      target.form.addEventListener(
+        "submit",
+        function (event) {
+          event.preventDefault();
+        },
+        { capture: true, once: true },
+      );
+    target.button.click();
+  }
   function matches(message) {
     return (
       message &&
@@ -294,6 +458,18 @@
       payload = request.payload;
     try {
       switch (request.action) {
+        case "totpProbe":
+          probeTotp(payload);
+          reply(request, event.origin, "ok");
+          return;
+        case "totpSubmit":
+          submitTotp(payload);
+          reply(request, event.origin, "ok");
+          return;
+        case "totpCancel":
+          totpChallenge = null;
+          reply(request, event.origin, "ok");
+          return;
         case "recordStart":
           recording = { request: request, origin: event.origin };
           stepNumber = 0;
@@ -348,6 +524,7 @@
   });
   window.addEventListener("pagehide", function () {
     closed = true;
+    totpChallenge = null;
     recording = null;
     darkDesired = false;
     document.removeEventListener("click", record, true);

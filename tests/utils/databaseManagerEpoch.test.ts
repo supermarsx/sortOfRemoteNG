@@ -40,6 +40,26 @@ beforeEach(async () => {
 });
 
 describe("database credential epochs", () => {
+  it("reads current data for authorization without advancing a writer's CAS baseline", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.selectDatabase(collection.id, "fixture-password");
+    const captured = manager.captureCurrentDatabaseDataTarget()!;
+    expect(await captured.readCurrent!()).toMatchObject(data);
+    encrypted = await encryptWithPassword(
+      JSON.stringify({ ...data, timestamp: 2 }),
+      "fixture-password",
+      { iterations: 10000 },
+    );
+    expect(await captured.readCurrent!()).toMatchObject({ timestamp: 2 });
+    await expect(captured.verifyCurrent!()).rejects.toThrow("changed");
+    manager.invalidatePendingDatabaseOperations();
+    await expect(captured.readCurrent!()).rejects.toThrow("access expired");
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "save_database_data",
+      ),
+    ).toBe(false);
+  });
   it("does not repopulate an unlock cache after global invalidation during a pending read", async () => {
     const manager = DatabaseManager.getInstance();
     let complete!: () => void;

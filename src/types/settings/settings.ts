@@ -1195,6 +1195,8 @@ export interface NetworkDiscoveryConfig {
 }
 
 export interface TOTPConfig {
+  /** Stable connection-local reference; assigned explicitly for legacy entries. */
+  id?: string;
   secret: string;
   issuer: string;
   account: string;

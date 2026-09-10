@@ -30,10 +30,10 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(36);
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(43);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(36);
+    ).toBe(43);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -42,7 +42,20 @@ describe("HTTP application profile policy", () => {
       HTTP_APPLICATION_PROFILES.filter(
         (profile) => profile.capability === "known-form",
       ).map((profile) => profile.id),
-    ).toEqual(["portainer", "nginxProxyMgr", "proxmox", "pfsense", "webmin"]);
+    ).toEqual([
+      "portainer",
+      "nginxProxyMgr",
+      "proxmox",
+      "pfsense",
+      "tacticalrmm",
+      "meshcentral",
+      "guacamole",
+      "wordpress",
+      "joomla",
+      "drupal",
+      "payload-cms",
+      "webmin",
+    ]);
   });
   it("makes Cloudflare manual-only and ignores retained website credentials, API headers, and automatic selectors", () => {
     const selected = {

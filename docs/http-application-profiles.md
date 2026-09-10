@@ -37,6 +37,14 @@ For security keys, Windows Hello, external SSO, or incompatible challenges, sele
 
 ## Form overrides and safety
 
+Tactical RMM, WordPress, Joomla Administrator, Drupal, Payload CMS, MeshCentral,
+and Apache Guacamole have source-reviewed password-form presets. Automatic
+authenticator codes require a separate explicit, saved HTTPS-origin opt-in and
+support only the reviewed Tactical, WordPress Two-Factor plugin and Guacamole
+TOTP-extension challenges. Other providers remain manual. See the
+[website login and 2FA guide]({{ '/http-application-logins/' | relative_url }})
+for setup, exact scope, source references, and proxy/true-origin limitations.
+
 For a website without a preset, choose **Custom websites → Custom application**. It also starts in Manual browsing. After opting into form login, enter all three CSS selectors—for example `input[name="username"]`, `input[type="password"]`, and `button[type="submit"]`. The selectors identify visible controls in the same login form, not API endpoints. Custom form login refuses missing, invalid, or unmatched selectors and never falls back to generic detection. Each selector is limited to 512 characters; no script or custom JavaScript is accepted.
 
 Optional CSS selector overrides are bounded and validated. Leave them blank to use a reviewed preset or generic detection. Explicit selectors must match visible controls in the intended form; an unmatched override is not permission to fill a different field. Delayed single-page-app forms can receive the one-shot fill during the bounded attempt window; credentials are cleared after completion, timeout, or cancellation.

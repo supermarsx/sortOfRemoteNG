@@ -43,6 +43,11 @@ vi.mock("../../src/contexts/useConnections", () => ({
     state: { connections: native.connections },
     dispatch: native.dispatch,
     dispatchAndFlush: native.dispatch,
+    databaseAvailability: {
+      status: "ready",
+      databaseId: "owned-demo",
+      generation: 1,
+    },
     recycleBin: {
       snapshot: { scope: { databaseId: "owned-demo", generation: 1 } },
     },
@@ -193,6 +198,36 @@ async function mount() {
   return { ...view, iframe, post, identity, emit };
 }
 describe("real WebBrowser iframe and website automation integration", () => {
+  it("mounts the automatic MFA guard and retains manual fallback for a non-HTTPS session", async () => {
+    native.connections[0].httpApplication = {
+      version: 1,
+      id: "wordpress",
+      loginMode: "manual",
+    };
+    native.connections[0].httpAutoMfa = {
+      version: 1,
+      enabled: true,
+      origin: "https://panel.example.test",
+      challengeId: "wordpress-two-factor-totp",
+      totpConfigId: "auth",
+    };
+    native.connections[0].totpConfigs = [];
+    const view = await mount();
+    view.emit("proxy_document_start");
+    view.emit("proxy_dom_ready");
+    fireEvent.click(screen.getByRole("button", { name: "2FA Codes" }));
+    expect(
+      await screen.findByText(/Automatic 2FA stopped/),
+    ).toBeInTheDocument();
+    expect(
+      native.invoke.mock.calls.some(
+        ([command]) => command === "totp_compute_code",
+      ),
+    ).toBe(false);
+    expect(
+      view.post.mock.calls.some(([message]) => message.action === "totpSubmit"),
+    ).toBe(false);
+  });
   it("opens the web-only 2FA panel in an anchored portal without moving the browser header or exposing seed-management actions", async () => {
     const { container } = await mount();
     const button = screen.getByRole("button", { name: "2FA Codes" });

@@ -16,6 +16,7 @@ import {
 import { resolveHttpBasicCredentials } from "../../../utils/auth/httpCredentials";
 import type { Mgr } from "./types";
 import ApplicationIconSuggestion from "./ApplicationIconSuggestion";
+import AutomaticMfaSection from "./AutomaticMfaSection";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -45,6 +46,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       // A fresh selection must never revive a prior app's automatic submission.
       httpAutoLogin: false,
       httpAutoLoginSelectors: undefined,
+      httpAutoMfa: { version: 1, enabled: false },
     }));
   const updateSettings = (change: Partial<HttpApplicationSettings>) => {
     if (!settings) return;
@@ -307,8 +309,9 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
             <>
               <p className="text-sm text-[var(--color-textSecondary)]">
                 One automatic submission per proxy session. No preemptive Basic
-                header is sent. MFA, CAPTCHA, external SSO, and a rejected login
-                remain manual.
+                header is sent. Authenticator codes require the separate
+                explicit setting below. CAPTCHA, external SSO, and a rejected
+                login remain manual.
               </p>
               <details
                 key={profile.id}
@@ -369,6 +372,9 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                 </div>
               </details>
             </>
+          )}
+          {!settings?.invalid && (
+            <AutomaticMfaSection key={profile.id} mgr={mgr} profile={profile} />
           )}
           <p className="text-xs text-[var(--color-textMuted)]">
             Saved passwords follow this connection database's existing

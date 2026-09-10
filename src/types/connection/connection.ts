@@ -82,6 +82,16 @@ export interface HttpApplicationSettings {
   invalid?: true;
 }
 
+/** Explicit first-party OTP opt-in; references an existing authenticator only. */
+export interface HttpAutoMfaSettings {
+  version: 1;
+  enabled: boolean;
+  totpConfigId?: string;
+  challengeId?: string;
+  /** Canonical HTTPS upstream origin approved when enabling; never proxy origin. */
+  origin?: string;
+}
+
 export const INTEGRATION_PROTOCOL_PREFIX = "integration:" as const;
 
 export type BuiltInConnectionProtocol =
@@ -281,6 +291,7 @@ export interface Connection
    */
   httpAutoLoginSelectors?: HttpAutoLoginSelectors;
   httpApplication?: HttpApplicationSettings;
+  httpAutoMfa?: HttpAutoMfaSettings;
   httpAutomation?: import("./sessionQuickActions").HttpAutomationConfig;
   sshQuickActions?: import("./sessionQuickActions").SshQuickActionsConfig;
 
