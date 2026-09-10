@@ -1,0 +1,71 @@
+import type { Connection } from "../../types/connection/connection";
+import type { StorageData } from "../storage/storage";
+import type { QuickActionReference } from "../../types/connection/sessionQuickActions";
+import {
+  normalizeHttpAutomation,
+  normalizeSshQuickActions,
+} from "./sessionQuickActions";
+
+/** Only whole-database copies own the copied library. Connection-only copies
+ * retain their original scope and must not silently resolve another item. */
+export function rebindDatabaseQuickActions(
+  data: StorageData,
+  sourceDatabaseId: unknown,
+  destinationDatabaseId: string,
+): StorageData {
+  if (
+    typeof sourceDatabaseId !== "string" ||
+    !sourceDatabaseId ||
+    sourceDatabaseId === destinationDatabaseId
+  )
+    return data;
+  const refs = (items: QuickActionReference[]) =>
+    items.map((item) =>
+      item.scope?.kind === "database" &&
+      item.scope.databaseId === sourceDatabaseId
+        ? {
+            ...item,
+            scope: {
+              kind: "database" as const,
+              databaseId: destinationDatabaseId,
+            },
+          }
+        : item,
+    );
+  const connection = (value: Connection): Connection => {
+    const next = { ...value };
+    // Malformed optional settings remain repairable, never replaced by defaults.
+    try {
+      if (value.sshQuickActions !== undefined) {
+        const config = normalizeSshQuickActions(value.sshQuickActions);
+        next.sshQuickActions = { ...config, items: refs(config.items) };
+      }
+    } catch {
+      /* Preserve invalid source verbatim. */
+    }
+    try {
+      if (value.httpAutomation !== undefined) {
+        const config = normalizeHttpAutomation(value.httpAutomation);
+        next.httpAutomation = { ...config, items: refs(config.items) };
+      }
+    } catch {
+      /* Preserve invalid source verbatim. */
+    }
+    return next;
+  };
+  return {
+    ...data,
+    connections: data.connections.map(connection),
+    ...(data.recycleBin
+      ? {
+          recycleBin: {
+            ...data.recycleBin,
+            entries: data.recycleBin.entries.map((entry) => ({
+              ...entry,
+              connection: connection(entry.connection),
+            })),
+          },
+        }
+      : {}),
+  };
+}

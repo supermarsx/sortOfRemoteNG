@@ -6,6 +6,8 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import type { ConnectionAction } from "../../src/contexts/ConnectionContextTypes";
+import type { DatabaseAutomationApi } from "../../src/types/recording/automationLibrary";
+import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
 const fixture = vi.hoisted(() => ({
   database: "db-a",
   accessible: true,
@@ -15,12 +17,14 @@ const fixture = vi.hoisted(() => ({
   macros: vi.fn(),
   flush: vi.fn(),
   save: vi.fn(),
+  databaseLibrary: undefined as DatabaseAutomationApi | undefined,
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: { connections: fixture.connections },
     flushPendingSave: fixture.flush,
     dispatchAndFlush: fixture.save,
+    automationLibrary: fixture.databaseLibrary,
   }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
@@ -42,7 +46,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   },
 }));
 vi.mock("../../src/utils/recording/managedScriptPersistence", () => ({
-  managedScriptsStore: { key: "scripts", load: fixture.scripts },
+  nativeManagedScriptsStore: { key: "scripts", load: fixture.scripts },
   resolveManagedScripts: (_defaults: unknown, value: unknown) => value,
 }));
 vi.mock("../../src/components/recording/scriptManager/shared", () => ({
@@ -103,6 +107,7 @@ beforeEach(() => {
   fixture.accessible = true;
   fixture.settings = {};
   fixture.connections = [connection()];
+  fixture.databaseLibrary = undefined;
   fixture.scripts.mockReset().mockResolvedValue({ value: [script] });
   fixture.macros.mockReset().mockResolvedValue([macro]);
   fixture.flush.mockReset().mockResolvedValue(undefined);
@@ -114,6 +119,95 @@ beforeEach(() => {
     });
 });
 describe("SSH connection favorites", () => {
+  it("keeps identical app/database favorites separate, refreshes durable DB changes, and never falls back", async () => {
+    const db = emptyDatabaseAutomationLibrary();
+    db.terminalScripts.customScripts = [
+      {
+        ...script,
+        name: "DB Inspect",
+        script: "db-fixture",
+        language: "sh",
+        osTags: ["linux"],
+        category: "System",
+        createdAt: "2026-09-10",
+        updatedAt: "2026-09-10",
+      },
+    ];
+    fixture.databaseLibrary = {
+      scope: { databaseId: "db-a", generation: 1 },
+      changeRevision: 0,
+      read: vi.fn(async () => structuredClone(db)),
+      compareAndSwap: vi.fn(),
+    };
+    const ref = {
+      kind: "script" as const,
+      id: script.id,
+      scope: { kind: "database" as const, databaseId: "db-a" },
+    };
+    const view = setup();
+    await waitFor(() =>
+      expect(
+        view.result.current.available.some(
+          (item) => item.name === "DB Inspect",
+        ),
+      ).toBe(true),
+    );
+    await act(() => view.result.current.add(ref));
+    view.rerender();
+    expect(fixture.connections[0].sshQuickActions!.items).toHaveLength(2);
+    await act(() => view.result.current.run(ref));
+    expect(view.options.runScript).toHaveBeenCalledWith(
+      expect.objectContaining({ script: "db-fixture" }),
+      expect.any(Function),
+    );
+    db.terminalScripts.customScripts[0].name = "DB Changed";
+    fixture.databaseLibrary.changeRevision = 1;
+    view.rerender();
+    await waitFor(() =>
+      expect(view.result.current.favorites[1].name).toBe("DB Changed"),
+    );
+    db.terminalScripts.customScripts = [];
+    vi.mocked(view.options.runScript).mockClear();
+    await act(() => view.result.current.run(ref));
+    expect(view.options.runScript).not.toHaveBeenCalled();
+    expect(view.result.current.error).toContain("No substitute");
+  });
+  it("revalidates a reviewed app item after confirmation and refuses edits or deletion", async () => {
+    let checked = false;
+    const runScript = vi.fn(async (_script, assertReviewed) => {
+      fixture.scripts.mockResolvedValue({
+        value: [{ ...script, script: "changed-after-review" }],
+      });
+      await assertReviewed();
+      checked = true;
+    });
+    const view = setup({ runScript });
+    await waitFor(() =>
+      expect(view.result.current.favorites[0]?.missing).toBe(false),
+    );
+    await act(() => view.result.current.run({ kind: "script", id: script.id }));
+    expect(checked).toBe(false);
+    expect(view.result.current.error).toContain(
+      "reviewed library entry changed",
+    );
+  });
+  it("refuses a foreign database reference despite identical current DB/app IDs", async () => {
+    fixture.connections[0].sshQuickActions!.items = [
+      {
+        kind: "script",
+        id: script.id,
+        scope: { kind: "database", databaseId: "other" },
+      },
+    ];
+    const view = setup();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.favorites[0].missing).toBe(true);
+    await act(() =>
+      view.result.current.run(fixture.connections[0].sshQuickActions!.items[0]),
+    );
+    expect(view.options.runScript).not.toHaveBeenCalled();
+    expect(view.result.current.error).toContain("No app-wide substitute");
+  });
   it("loads metadata only, searches libraries, and never runs on load or add", async () => {
     const view = setup();
     await waitFor(() =>
@@ -198,6 +292,7 @@ describe("SSH connection favorites", () => {
     );
     expect(view.options.runScript).toHaveBeenCalledWith(
       expect.objectContaining({ script: "fresh-fixture" }),
+      expect.any(Function),
     );
     expect(view.actor).toHaveBeenCalledOnce();
   });

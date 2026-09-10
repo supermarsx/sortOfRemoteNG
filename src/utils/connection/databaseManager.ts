@@ -22,6 +22,7 @@ import {
 import { getInvoke } from "../tauri/invoke";
 import { databaseProtection } from "./databaseProtection";
 import { normalizeRecycleBin } from "./recycleBin";
+import { rebindDatabaseQuickActions } from "./rebindDatabaseQuickActions";
 import {
   stripExportSecrets,
   containsExportSecrets,
@@ -345,6 +346,8 @@ export interface DatabaseDataTarget {
   readonly databaseId: string;
   /** Synchronous epoch/lease guard without reading data or exposing credentials. */
   assertAccessible?: () => void;
+  /** Verify persisted contents without advancing this writer's CAS baseline. */
+  verifyCurrent?: () => Promise<void>;
   load: () => Promise<StorageData | null>;
   save: (data: StorageData) => Promise<void>;
 }
@@ -1387,6 +1390,28 @@ export class DatabaseManager {
           if (data) expectedData = this.loadedRepresentations.get(data);
           return data;
         }),
+      verifyCurrent: async () => {
+        const baseline = expectedData;
+        if (baseline === undefined)
+          throw new Error(
+            "Database content baseline is unavailable. Reload before running a database action.",
+          );
+        const data = await this.loadDatabaseData(
+          databaseId,
+          resolvePassword(),
+          revisionAtCapture,
+          { preserveBaseline: true },
+        );
+        resolvePassword();
+        if (
+          !data ||
+          JSON.stringify(this.loadedRepresentations.get(data)) !==
+            JSON.stringify(baseline)
+        )
+          throw new Error(
+            "Database contents changed in another window. Reload and review the library before running an action.",
+          );
+      },
       save: (data) => {
         const password = resolvePassword();
         if (expectedData === undefined)
@@ -1868,6 +1893,7 @@ export class DatabaseManager {
         {
           description: sourceCollection.description,
           data: source,
+          sourceDatabaseId: collectionId,
           confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
         },
       );
@@ -1947,7 +1973,11 @@ export class DatabaseManager {
       this.assertDatabaseEpoch(collectionId, epoch);
       await this.saveDatabaseData(
         duplicatedCollection.id,
-        cloneStorageData(sourceData),
+        rebindDatabaseQuickActions(
+          cloneStorageData(sourceData),
+          collectionId,
+          duplicatedCollection.id,
+        ),
         sourceCollection.isEncrypted ? duplicatePassword : undefined,
         duplicatedCollection.securityRevision ?? "",
         { expectedData: null },
@@ -2184,6 +2214,7 @@ export class DatabaseManager {
     collectionId: string,
     password?: string,
     expectedSecurityRevision?: string,
+    options?: { preserveBaseline?: boolean },
   ): Promise<StorageData | null> {
     const epoch = this.captureDatabaseEpoch(collectionId);
     const key = `mremote-database-${collectionId}`;
@@ -2225,10 +2256,11 @@ export class DatabaseManager {
       this.requireManagedSession(collectionId);
       this.loadedSecurityRevisions.set(result.data, result.securityRevision);
       this.loadedRepresentations.set(result.data, structuredClone(result.data));
-      this.latestLoadedRepresentations.set(
-        collectionId,
-        structuredClone(result.data),
-      );
+      if (!options?.preserveBaseline)
+        this.latestLoadedRepresentations.set(
+          collectionId,
+          structuredClone(result.data),
+        );
       return result.data;
     }
     let stored: any = null;
@@ -2271,7 +2303,8 @@ export class DatabaseManager {
           const legacy = values[legacyKey];
           // Read, canonical-absent check and legacy move share one transaction;
           // no captured legacy value can overwrite another window's commit.
-          const migrate = canonical === null && legacy !== null;
+          const migrate =
+            !options?.preserveBaseline && canonical === null && legacy !== null;
           return {
             set: migrate ? { [key]: legacy } : {},
             remove: migrate ? [legacyKey] : [],
@@ -2336,12 +2369,14 @@ export class DatabaseManager {
             revision,
             epoch,
           );
-          this.rememberUnlockedDatabase(collection, password);
+          if (!options?.preserveBaseline)
+            this.rememberUnlockedDatabase(collection, password);
           this.loadedRepresentations.set(parsed, stored);
-          this.latestLoadedRepresentations.set(
-            collectionId,
-            structuredClone(stored),
-          );
+          if (!options?.preserveBaseline)
+            this.latestLoadedRepresentations.set(
+              collectionId,
+              structuredClone(stored),
+            );
           this.loadedSecurityRevisions.set(parsed, revision);
           return parsed;
         } catch (error) {
@@ -2369,16 +2404,18 @@ export class DatabaseManager {
           revision,
           epoch,
         );
-        this.rememberUnlockedDatabase(collection);
+        if (!options?.preserveBaseline)
+          this.rememberUnlockedDatabase(collection);
         this.loadedRepresentations.set(
           stored as StorageData,
           structuredClone(stored),
         );
         this.loadedSecurityRevisions.set(stored as StorageData, revision);
-        this.latestLoadedRepresentations.set(
-          collectionId,
-          structuredClone(stored),
-        );
+        if (!options?.preserveBaseline)
+          this.latestLoadedRepresentations.set(
+            collectionId,
+            structuredClone(stored),
+          );
         return stored as StorageData;
       }
     } catch (error) {
@@ -2705,6 +2742,8 @@ export class DatabaseManager {
     options: {
       description?: string;
       data?: StorageData;
+      /** Internal whole-database import ownership; never infer from a connection ID. */
+      sourceDatabaseId?: string;
       confirmDeviceBoundOnly?: boolean;
     } = {},
   ): Promise<ConnectionDatabase> {
@@ -2721,7 +2760,13 @@ export class DatabaseManager {
         created.id,
         target,
         {
-          initializeWithData: options.data,
+          initializeWithData: options.data
+            ? rebindDatabaseQuickActions(
+                options.data,
+                options.sourceDatabaseId,
+                created.id,
+              )
+            : undefined,
           confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
         },
       );
@@ -2849,6 +2894,7 @@ export class DatabaseManager {
         {
           description: parsed?.collection?.description,
           data: importedData,
+          sourceDatabaseId: parsed?.collection?.id,
           confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
         },
       );
@@ -2868,9 +2914,11 @@ export class DatabaseManager {
 
     await this.saveDatabaseData(
       collection.id,
-      {
-        ...importedData,
-      },
+      rebindDatabaseQuickActions(
+        importedData,
+        parsed?.collection?.id,
+        collection.id,
+      ),
       options?.encryptPassword,
     );
 

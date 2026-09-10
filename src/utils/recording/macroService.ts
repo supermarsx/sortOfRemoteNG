@@ -428,14 +428,18 @@ export function webVideoRecordingToBlob(
 export async function replayMacro(
   sessionId: string,
   macro: TerminalMacro,
-  onStep?: (stepIndex: number, step: MacroStep) => void,
+  onStep?: (stepIndex: number, step: MacroStep) => void | Promise<void>,
   abortSignal?: AbortSignal,
 ): Promise<void> {
   for (let i = 0; i < macro.steps.length; i++) {
     if (abortSignal?.aborted) break;
 
     const step = macro.steps[i];
-    onStep?.(i, step);
+    if (onStep) {
+      const checked = onStep(i, step);
+      if (checked) await checked;
+    }
+    if (abortSignal?.aborted) break;
 
     const data = step.sendNewline ? step.command + "\n" : step.command;
     await invoke("send_ssh_input", { sessionId, data });

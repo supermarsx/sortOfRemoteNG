@@ -76,7 +76,7 @@ import {
 import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
 import {
-  managedScriptsStore,
+  nativeManagedScriptsStore as managedScriptsStore,
   resolveManagedScripts,
 } from "../../utils/recording/managedScriptPersistence";
 import {
@@ -533,7 +533,7 @@ export function useWebTerminal(
       } catch (e) {
         if (cancelled) return;
         toast.error(`Failed to load scripts securely: ${String(e)}`);
-        setScripts(getDefaultScripts());
+        setScripts([]);
       }
     };
     void loadScripts();
@@ -2482,7 +2482,7 @@ export function useWebTerminal(
   }, [isSsh]);
 
   const runScript = useCallback(
-    async (script: ManagedScript) => {
+    async (script: ManagedScript, assertReviewed?: () => Promise<void>) => {
       if (
         !isSsh ||
         !sshSessionId.current ||
@@ -2503,6 +2503,8 @@ export function useWebTerminal(
           )
         )
           return;
+        assertCurrent();
+        if (assertReviewed) await assertReviewed();
         assertCurrent();
         script = reviewed;
         const targetSessionId = sshSessionId.current;
@@ -3536,7 +3538,7 @@ export function useWebTerminal(
   }, [macroRecorder]);
 
   const handleReplayMacro = useCallback(
-    async (macro: TerminalMacro) => {
+    async (macro: TerminalMacro, assertReviewed?: () => Promise<void>) => {
       if (!sshSessionId.current || replayAbortRef.current) return;
       let assertCurrent: () => void;
       try {
@@ -3557,6 +3559,8 @@ export function useWebTerminal(
         )
           return;
         assertCurrent();
+        if (assertReviewed) await assertReviewed();
+        assertCurrent();
       } catch {
         toastRef.current.error(
           "The SSH session changed while reviewing this macro. Nothing was replayed.",
@@ -3571,7 +3575,10 @@ export function useWebTerminal(
         await macroService.replayMacro(
           sshSessionId.current,
           reviewed,
-          () => assertCurrent(),
+          () => {
+            assertCurrent();
+            if (assertReviewed) return assertReviewed().then(assertCurrent);
+          },
           controller.signal,
         );
       } catch {

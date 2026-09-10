@@ -1,6 +1,10 @@
+import type { AutomationScope } from "../recording/automationLibrary";
+
 export interface QuickActionReference {
   kind: "script" | "macro";
   id: string;
+  /** Omitted legacy references always mean app-wide, never a database fallback. */
+  scope?: AutomationScope;
 }
 
 export interface SshQuickActionsConfig {

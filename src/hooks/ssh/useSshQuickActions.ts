@@ -8,6 +8,8 @@ import {
   normalizeSessionQuickActions,
   normalizeSshQuickActions,
   MAX_QUICK_ACTION_ITEMS,
+  quickActionReferenceKey as key,
+  quickActionReferenceScope,
 } from "../../utils/connection/sessionQuickActions";
 import {
   getDefaultScripts,
@@ -15,7 +17,7 @@ import {
 } from "../../components/recording/scriptManager/shared";
 import type { TerminalMacro } from "../../types/recording/macroTypes";
 import {
-  managedScriptsStore,
+  nativeManagedScriptsStore as managedScriptsStore,
   resolveManagedScripts,
 } from "../../utils/recording/managedScriptPersistence";
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
@@ -27,16 +29,20 @@ interface Options {
   ready: boolean;
   active?: boolean;
   captureSession: () => () => void;
-  runScript: (script: ManagedScript) => Promise<void>;
-  replayMacro: (macro: TerminalMacro) => Promise<void>;
+  runScript: (
+    script: ManagedScript,
+    assertReviewed?: () => Promise<void>,
+  ) => Promise<void>;
+  replayMacro: (
+    macro: TerminalMacro,
+    assertReviewed?: () => Promise<void>,
+  ) => Promise<void>;
 }
 export interface SshQuickActionItem extends QuickActionReference {
   name: string;
   description: string;
   missing: boolean;
 }
-const key = (reference: QuickActionReference) =>
-  `${reference.kind}:${reference.id}`;
 
 /** Identifier-only connection favorites; library bodies remain in their protected stores. */
 export function useSshQuickActions(options: Options) {
@@ -130,6 +136,57 @@ export function useSshQuickActions(options: Options) {
   const hasConnection = context.state.connections.some(
     (item) => item.id === options.session.connectionId,
   );
+  const readDatabase = useCallback(
+    async (databaseId: string) => {
+      assertOwner();
+      const api = current.current.context.automationLibrary;
+      const scope = api?.scope;
+      if (
+        !api ||
+        !scope ||
+        scope.databaseId !== databaseId ||
+        databaseId !== ownerId
+      )
+        throw new Error(
+          "Open and unlock this favorite's exact owning database. No app-wide substitute was used.",
+        );
+      const capturedScope = { ...scope };
+      const stored = await api.read(capturedScope);
+      assertOwner();
+      const latestScope = current.current.context.automationLibrary?.scope;
+      if (
+        !latestScope ||
+        latestScope.databaseId !== capturedScope.databaseId ||
+        latestScope.generation !== capturedScope.generation
+      )
+        throw new Error("Database library access changed. Reload favorites.");
+      return stored;
+    },
+    [assertOwner, ownerId],
+  );
+  const resolveAction = useCallback(
+    async (reference: QuickActionReference) => {
+      const scope = quickActionReferenceScope(reference);
+      if (scope.kind === "database") {
+        const stored = await readDatabase(scope.databaseId);
+        return reference.kind === "script"
+          ? [
+              ...stored.terminalScripts.customScripts,
+              ...stored.terminalScripts.modifiedDefaults,
+            ].find((item) => item.id === reference.id)
+          : stored.terminalMacros.find((item) => item.id === reference.id);
+      }
+      return reference.kind === "script"
+        ? resolveManagedScripts(
+            getDefaultScripts(),
+            (await managedScriptsStore.load()).value,
+          ).find((item) => item.id === reference.id)
+        : (await macroService.loadMacros()).find(
+            (item) => item.id === reference.id,
+          );
+    },
+    [readDatabase],
+  );
   const refresh = useCallback(async () => {
     void hasConnection;
     const captured = ++generation.current;
@@ -142,9 +199,12 @@ export function useSshQuickActions(options: Options) {
     setError(null);
     try {
       const { target } = assertOwner();
-      const [scripts, macros] = await Promise.all([
+      const [scripts, macros, database] = await Promise.all([
         managedScriptsStore.load(),
         macroService.loadMacros(),
+        current.current.context.automationLibrary?.scope?.databaseId === ownerId
+          ? readDatabase(ownerId!)
+          : Promise.resolve(null),
       ]);
       if (captured !== generation.current) return;
       target.assertAccessible?.();
@@ -167,6 +227,30 @@ export function useSshQuickActions(options: Options) {
           missing: false,
         })),
       ];
+      if (database) {
+        const scope = { kind: "database" as const, databaseId: ownerId! };
+        items.push(
+          ...[
+            ...database.terminalScripts.customScripts,
+            ...database.terminalScripts.modifiedDefaults,
+          ].map((item) => ({
+            kind: "script" as const,
+            id: item.id,
+            name: item.name,
+            description: item.description,
+            missing: false,
+            scope,
+          })),
+          ...database.terminalMacros.map((item) => ({
+            kind: "macro" as const,
+            id: item.id,
+            name: item.name,
+            description: item.description ?? "",
+            missing: false,
+            scope,
+          })),
+        );
+      }
       setLibrary(items);
     } catch (failure) {
       if (captured !== generation.current) return;
@@ -179,7 +263,14 @@ export function useSshQuickActions(options: Options) {
     } finally {
       if (captured === generation.current) setLoading(false);
     }
-  }, [assertOwner, enabled, options.active, hasConnection]);
+  }, [
+    assertOwner,
+    enabled,
+    options.active,
+    hasConnection,
+    ownerId,
+    readDatabase,
+  ]);
 
   useEffect(() => {
     void accessEpoch;
@@ -200,7 +291,12 @@ export function useSshQuickActions(options: Options) {
       invalidate();
       window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
     };
-  }, [accessEpoch, refresh]);
+  }, [
+    accessEpoch,
+    refresh,
+    context.automationLibrary?.changeRevision,
+    context.automationLibrary?.scope?.generation,
+  ]);
 
   const mutate = useCallback(
     async (
@@ -264,7 +360,14 @@ export function useSshQuickActions(options: Options) {
           );
         if (!library.some((item) => key(item) === key(reference)))
           throw new Error("Library entry is unavailable. Reload the library.");
-        return [...references, { kind: reference.kind, id: reference.id }];
+        return [
+          ...references,
+          {
+            kind: reference.kind,
+            id: reference.id,
+            ...(reference.scope ? { scope: reference.scope } : {}),
+          },
+        ];
       }),
     [library, mutate],
   );
@@ -306,29 +409,44 @@ export function useSshQuickActions(options: Options) {
         )
           throw new Error("This favorite is no longer configured.");
         const assertCurrentSession = current.current.options.captureSession();
-        if (reference.kind === "script") {
-          const stored = await managedScriptsStore.load();
-          const script = resolveManagedScripts(
-            getDefaultScripts(),
-            stored.value,
-          ).find((item) => item.id === reference.id);
-          target.assertAccessible?.();
-          assertOwner();
-          if (captured !== generation.current || !script)
-            throw new Error("Script or database changed. Reload favorites.");
-          assertCurrentSession();
-          await current.current.options.runScript(script);
-        } else {
-          const macro = (await macroService.loadMacros()).find(
-            (item) => item.id === reference.id,
+        const payload = await resolveAction(reference);
+        if (!payload)
+          throw new Error(
+            "This exact library entry was removed or is unavailable. No substitute was used.",
           );
+        const reviewed = JSON.stringify(payload);
+        const assertCurrent = () => {
           target.assertAccessible?.();
-          assertOwner();
-          if (captured !== generation.current || !macro)
-            throw new Error("Macro or database changed. Reload favorites.");
+          const latest = assertOwner().connection;
+          if (
+            captured !== generation.current ||
+            !normalizeSshQuickActions(latest.sshQuickActions).items.some(
+              (item) => key(item) === key(reference),
+            )
+          )
+            throw new Error("Favorite or database changed. Reload favorites.");
           assertCurrentSession();
-          await current.current.options.replayMacro(macro);
-        }
+        };
+        const assertReviewed = async () => {
+          assertCurrent();
+          const latest = await resolveAction(reference);
+          assertCurrent();
+          if (!latest || JSON.stringify(latest) !== reviewed)
+            throw new Error(
+              "The reviewed library entry changed. Cancelled without substituting or retrying commands.",
+            );
+        };
+        assertCurrent();
+        if (reference.kind === "script")
+          await current.current.options.runScript(
+            payload as ManagedScript,
+            assertReviewed,
+          );
+        else
+          await current.current.options.replayMacro(
+            payload as TerminalMacro,
+            assertReviewed,
+          );
       } catch (failure) {
         setError(
           failure instanceof Error
@@ -340,7 +458,7 @@ export function useSshQuickActions(options: Options) {
         setBusy(false);
       }
     },
-    [assertOwner],
+    [assertOwner, resolveAction],
   );
 
   const favorites = useMemo(() => {

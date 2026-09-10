@@ -12,6 +12,24 @@ import { ConnectionSession } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { SessionFullscreenProvider } from "../../src/contexts/SessionFullscreenProvider";
 import { getStoredIdentity } from "../../src/utils/auth/trustStore";
+import { defaultScripts } from "../../src/data/defaultScripts";
+import type { PersistedManagedScripts } from "../../src/utils/recording/managedScriptPersistence";
+
+const scriptLibrary = vi.hoisted(() => ({
+  value: null as PersistedManagedScripts | null,
+}));
+vi.mock(
+  "../../src/utils/recording/managedScriptPersistence",
+  async (original) => ({
+    ...(await original<
+      typeof import("../../src/utils/recording/managedScriptPersistence")
+    >()),
+    nativeManagedScriptsStore: {
+      key: "fixture-managed-scripts",
+      load: async () => ({ value: scriptLibrary.value, sanitized: false }),
+    },
+  }),
+);
 
 const trustBoundary = vi.hoisted(() => {
   type Identity = { fingerprint: string; [key: string]: unknown };
@@ -270,6 +288,7 @@ const renderWithProviders = (session: ConnectionSession) => {
 
 describe("WebTerminal", () => {
   beforeEach(() => {
+    scriptLibrary.value = null;
     vi.clearAllMocks();
     mockDispatch.mockClear();
     hostKeyPromptListener = undefined;
@@ -690,6 +709,7 @@ describe("WebTerminal", () => {
 
       await waitFor(() => {
         expect(hostKeyPromptListener).toBeDefined();
+        expect(resolveConnect).toBeTypeOf("function");
       });
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith(
@@ -782,6 +802,7 @@ describe("WebTerminal", () => {
         expect(hostKeyPromptListener).toBeDefined();
       });
 
+      await waitFor(() => expect(rejectConnect).toBeTypeOf("function"));
       act(() => {
         promptListener = hostKeyPromptListener!({
           payload: {
@@ -1099,6 +1120,13 @@ describe("WebTerminal", () => {
     const SCRIPTS_STORAGE_KEY = "managedScripts";
 
     beforeEach(() => {
+      // These selector fixtures represent an explicitly imported saved catalog,
+      // not automatic defaults on a fresh installation.
+      scriptLibrary.value = {
+        customScripts: [],
+        modifiedDefaults: structuredClone(defaultScripts),
+        deletedDefaultIds: [],
+      };
       localStorage.clear();
     });
 
@@ -1260,13 +1288,17 @@ describe("WebTerminal", () => {
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
-        // Linux scripts should show penguin emoji
-        const penguins = screen.getAllByText("🐧");
-        expect(penguins.length).toBeGreaterThan(0);
-
-        // Windows scripts should show windows emoji
-        const windows = screen.getAllByText("🪟");
-        expect(windows.length).toBeGreaterThan(0);
+        // Platform metadata uses the real scalable catalog glyphs.
+        expect(
+          screen
+            .getAllByTitle("Linux")
+            .some((node) => node.querySelector("svg")),
+        ).toBe(true);
+        expect(
+          screen
+            .getAllByTitle("Windows")
+            .some((node) => node.querySelector("svg")),
+        ).toBe(true);
       });
     });
 

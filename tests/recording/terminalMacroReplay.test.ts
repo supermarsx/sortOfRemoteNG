@@ -23,6 +23,40 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("terminal macro cancellation", () => {
+  it("awaits a persisted library guard before dispatch and rechecks cancellation after it", async () => {
+    const controller = new AbortController();
+    let complete!: () => void;
+    const guard = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const running = replayMacro("exact-actor", macro, guard, controller.signal);
+    expect(native).not.toHaveBeenCalled();
+    controller.abort();
+    complete();
+    await running;
+    expect(native).not.toHaveBeenCalled();
+    expect(guard).toHaveBeenCalledOnce();
+  });
+  it("stops when the persisted reviewed item changes between steps", async () => {
+    const guard = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Library changed"));
+    await expect(
+      replayMacro(
+        "exact-actor",
+        {
+          ...macro,
+          steps: macro.steps.map((step) => ({ ...step, delayMs: 0 })),
+        },
+        guard,
+      ),
+    ).rejects.toThrow("Library changed");
+    expect(native).toHaveBeenCalledOnce();
+  });
   it("does not wait an hour when cancellation happens during pending native input", async () => {
     let finish!: () => void;
     native.mockImplementationOnce(

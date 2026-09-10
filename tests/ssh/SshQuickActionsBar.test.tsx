@@ -34,6 +34,36 @@ const actions = (): ReturnType<typeof useSshQuickActions> => ({
   refresh: vi.fn(),
 });
 describe("SSH favorites bar", () => {
+  it("renders distinct same-ID scope choices and dispatches the exact clicked reference", () => {
+    const model = actions();
+    const scoped = {
+      ...item,
+      scope: { kind: "database" as const, databaseId: "owner" },
+    };
+    model.favorites = [item, scoped];
+    model.visibleFavorites = model.favorites;
+    render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    const choices = screen.getAllByRole("button", {
+      name: "Run script Inspect",
+    });
+    expect(choices).toHaveLength(2);
+    expect(choices[0]).toHaveAttribute(
+      "title",
+      expect.stringContaining("App-wide"),
+    );
+    expect(choices[1]).toHaveAttribute(
+      "title",
+      expect.stringContaining("Database"),
+    );
+    fireEvent.click(choices[1]);
+    expect(model.run).toHaveBeenCalledWith(scoped);
+  });
   it("styles manager navigation consistently and keeps only the header close with Escape support", async () => {
     const model = actions();
     render(

@@ -11,6 +11,7 @@ import {
 import { resolveRuntimeNetworkPath } from "../../utils/network/resolveRuntimeNetworkPath";
 import type { SessionVpnType } from "../../utils/network/vpnProviderCatalog";
 import * as macroService from "../../utils/recording/macroService";
+import { defaultScripts } from "../../data/defaultScripts";
 
 const mocks = vi.hoisted(() => {
   class MockTerminal {
@@ -266,14 +267,14 @@ vi.mock("../../utils/recording/macroService", () => ({
   replayMacro: vi.fn(async () => undefined),
 }));
 vi.mock("../../utils/recording/managedScriptPersistence", () => ({
-  managedScriptsStore: {
+  nativeManagedScriptsStore: {
     key: "managed-scripts-test",
     load: () => mocks.loadManagedScripts(),
   },
   resolveManagedScripts: (
-    defaults: unknown[],
+    _defaults: unknown[],
     persisted: unknown[] | undefined,
-  ) => persisted ?? defaults,
+  ) => persisted ?? [],
 }));
 vi.mock("../../types/settings/settings", async (importOriginal) => {
   const actual =
@@ -424,6 +425,49 @@ afterEach(() => {
 });
 
 describe("useWebTerminal SSH link security", () => {
+  it("never populates bundled scripts on a secure library read failure", async () => {
+    const catalog = await import("../../components/recording/ScriptManager");
+    const templates = vi
+      .spyOn(catalog, "getDefaultScripts")
+      .mockReturnValue(defaultScripts);
+    mocks.loadManagedScripts.mockRejectedValueOnce(
+      new Error("Fixture storage unavailable"),
+    );
+    let model: WebTerminalMgr | null = null;
+    function Harness() {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled());
+    expect(model!.scriptsByCategory).toEqual({});
+    templates.mockRestore();
+  });
+  it("checks reviewed persisted script after confirmation before sending SSH input", async () => {
+    let model: WebTerminalMgr | null = null;
+    function Harness() {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const guard = vi
+      .fn()
+      .mockRejectedValue(new Error("Reviewed library item changed"));
+    await act(() =>
+      model!.runScript(
+        { ...defaultScripts[0], script: "printf fixture" },
+        guard,
+      ),
+    );
+    expect(guard).toHaveBeenCalledOnce();
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) =>
+          command === "send_ssh_input" || command === "execute_script",
+      ),
+    ).toEqual([]);
+  });
   beforeEach(() => SettingsManager.resetInstance());
   afterEach(() => {
     SettingsManager.resetInstance();

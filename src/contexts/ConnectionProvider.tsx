@@ -1349,6 +1349,13 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         assertAutomationScope(expectedScope);
         await flushPendingSave();
         assertAutomationScope(expectedScope);
+        const target = activeDatabaseTargetRef.current;
+        if (!target?.verifyCurrent)
+          throw new Error(
+            "Database content verification is unavailable. Reopen the updated desktop app before using this library.",
+          );
+        await target.verifyCurrent();
+        assertAutomationScope(expectedScope);
         return normalizeDatabaseAutomationLibrary(
           loadedStorageRef.current?.automationLibrary,
         );

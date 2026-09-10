@@ -5,6 +5,7 @@ import {
   type SessionQuickActionsSettings,
   type SshQuickActionsConfig,
 } from "../../types/connection/sessionQuickActions";
+import type { AutomationScope } from "../../types/recording/automationLibrary";
 
 export const MAX_QUICK_ACTION_ITEMS = 64;
 export const MAX_QUICK_ACTION_ID_LENGTH = 128;
@@ -13,6 +14,47 @@ function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid session quick-action configuration.");
   return value as Record<string, unknown>;
+}
+
+export function quickActionReferenceScope(
+  reference: Pick<QuickActionReference, "scope">,
+): AutomationScope {
+  if (reference.scope === undefined) return { kind: "app" };
+  const scope = record(reference.scope);
+  if (scope.kind === "app" && Object.keys(scope).length === 1)
+    return { kind: "app" };
+  if (
+    scope.kind === "database" &&
+    Object.keys(scope).length === 2 &&
+    typeof scope.databaseId === "string" &&
+    scope.databaseId.trim() &&
+    scope.databaseId.length <= 128 &&
+    !Array.from(scope.databaseId).some(
+      (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+    )
+  )
+    return { kind: "database", databaseId: scope.databaseId };
+  throw new Error("Invalid quick-action library scope.");
+}
+
+export function quickActionReferenceKey(
+  reference: QuickActionReference,
+): string {
+  const scope = quickActionReferenceScope(reference);
+  return JSON.stringify([
+    scope.kind,
+    scope.kind === "database" ? scope.databaseId : "",
+    reference.kind,
+    reference.id,
+  ]);
+}
+
+export function quickActionScopeLabel(
+  reference: Pick<QuickActionReference, "scope">,
+): string {
+  return quickActionReferenceScope(reference).kind === "app"
+    ? "App-wide"
+    : "Database";
 }
 
 export function normalizeQuickActionReferences(
@@ -32,13 +74,21 @@ export function normalizeQuickActionReferences(
       Array.from(ref.id).some(
         (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
       ) ||
-      Object.keys(ref).some((key) => key !== "kind" && key !== "id")
+      Object.keys(ref).some((key) => !["kind", "id", "scope"].includes(key))
     )
       throw new Error(
         "Invalid quick-action reference; store a script or macro ID only.",
       );
-    const key = `${ref.kind}:${ref.id}`;
-    if (!seen.has(key)) result.push({ kind: ref.kind, id: ref.id });
+    const scope = quickActionReferenceScope(
+      ref as unknown as QuickActionReference,
+    );
+    const normalized: QuickActionReference = {
+      kind: ref.kind,
+      id: ref.id,
+      ...(scope.kind === "database" ? { scope } : {}),
+    };
+    const key = quickActionReferenceKey(normalized);
+    if (!seen.has(key)) result.push(normalized);
     seen.add(key);
   }
   return result;

@@ -6,6 +6,7 @@ import { useConnections } from "../../src/contexts/useConnections";
 import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
 import type { StorageData } from "../../src/utils/storage/storage";
 import type { DatabaseDataTarget } from "../../src/utils/connection/databaseManager";
+import { useSshQuickActions } from "../../src/hooks/ssh/useSshQuickActions";
 
 const state = vi.hoisted(() => ({
   currentId: "db-a",
@@ -31,6 +32,24 @@ vi.mock("../../src/utils/tauri/invoke", () => ({
 }));
 vi.mock("../../src/utils/storage/connectionNotesVault", () => ({
   activateConnectionNotes: vi.fn(),
+}));
+vi.mock("../../src/contexts/SettingsContext", () => ({
+  useSettings: () => ({ settings: {} }),
+}));
+vi.mock(
+  "../../src/utils/recording/managedScriptPersistence",
+  async (original) => ({
+    ...(await original<
+      typeof import("../../src/utils/recording/managedScriptPersistence")
+    >()),
+    nativeManagedScriptsStore: {
+      key: "fixture-scripts",
+      load: async () => ({ value: null }),
+    },
+  }),
+);
+vi.mock("../../src/utils/recording/macroService", () => ({
+  loadMacros: async () => [],
 }));
 const initial = (): StorageData => ({
   connections: [
@@ -107,14 +126,27 @@ beforeEach(() => {
     },
     captureCurrentDatabaseDataTarget: (): DatabaseDataTarget => {
       const id = state.currentId;
+      let baseline: StorageData | null = null;
       return {
         databaseId: id,
         assertAccessible: () => {
           if (state.locked || state.currentId !== id)
             throw new Error("Access changed");
         },
-        load: async () => structuredClone(state.saved),
-        save: (data) => state.save(data),
+        load: async () => {
+          baseline = structuredClone(state.saved);
+          return structuredClone(state.saved);
+        },
+        save: async (data) => {
+          await state.save(data);
+          baseline = structuredClone(data);
+        },
+        verifyCurrent: async () => {
+          if (JSON.stringify(state.saved) !== JSON.stringify(baseline))
+            throw new Error(
+              "Database contents changed in another window. Reload and review the library.",
+            );
+        },
       };
     },
   };
@@ -132,6 +164,69 @@ async function mount() {
 }
 
 describe("owning database automation persistence", () => {
+  it("real Provider durable edits refresh scoped SSH favorites and external deletion cannot execute the cached macro", async () => {
+    const ref = {
+      kind: "macro" as const,
+      id: "fixture",
+      scope: { kind: "database" as const, databaseId: "db-a" },
+    };
+    state.saved!.connections[0].sshQuickActions = { version: 1, items: [ref] };
+    const replay = vi.fn(async (_macro, check) => {
+      await check();
+    });
+    const hook = renderHook(
+      () => {
+        const context = useConnections();
+        const actions = useSshQuickActions({
+          session: {
+            id: "session",
+            connectionId: "host",
+            ownerDatabaseId: "db-a",
+            protocol: "ssh",
+            hostname: "fixture.invalid",
+            name: "Fixture",
+            status: "connected",
+            startTime: new Date(0),
+          },
+          ready: true,
+          captureSession: () => () => {},
+          runScript: vi.fn(),
+          replayMacro: replay,
+        });
+        return { context, actions };
+      },
+      { wrapper },
+    );
+    await act(() => hook.result.current.context.loadData("db-a"));
+    await waitFor(() =>
+      expect(hook.result.current.actions.loading).toBe(false),
+    );
+    expect(hook.result.current.actions.favorites[0].missing).toBe(true);
+    const api = hook.result.current.context.automationLibrary!;
+    await act(async () => {
+      await api.compareAndSwap(
+        api.scope!,
+        await api.read(api.scope!),
+        proposed(),
+      );
+    });
+    await waitFor(() =>
+      expect(hook.result.current.actions.favorites[0].name).toBe(
+        "Private macro",
+      ),
+    );
+    await act(() => hook.result.current.actions.run(ref));
+    expect(replay).toHaveBeenCalledOnce();
+    state.saved = {
+      ...state.saved!,
+      automationLibrary: { ...emptyDatabaseAutomationLibrary(), revision: 2 },
+    };
+    await act(() => hook.result.current.actions.run(ref));
+    expect(replay).toHaveBeenCalledOnce();
+    expect(hook.result.current.actions.error).toContain("another window");
+    expect(state.save).toHaveBeenCalledOnce();
+    hook.unmount();
+  });
   it("reads legacy absence as empty and returns only after complete durable save", async () => {
     const { result } = await mount(),
       api = result.current.automationLibrary!,

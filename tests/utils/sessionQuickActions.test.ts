@@ -5,11 +5,51 @@ import {
   normalizeSessionQuickActions,
   normalizeSshQuickActions,
   resolveHttpAutomationPermissions,
+  quickActionReferenceKey,
 } from "../../src/utils/connection/sessionQuickActions";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../src/types/connection/sessionQuickActions";
 
 describe("session quick-action references and consent", () => {
+  it("qualifies IDs by exact scope while legacy and explicit app are identical", () => {
+    const refs = normalizeQuickActionReferences([
+      { kind: "script", id: "same" },
+      { kind: "script", id: "same", scope: { kind: "app" } },
+      {
+        kind: "script",
+        id: "same",
+        scope: { kind: "database", databaseId: "a" },
+      },
+      {
+        kind: "script",
+        id: "same",
+        scope: { kind: "database", databaseId: "b" },
+      },
+      {
+        kind: "macro",
+        id: "same",
+        scope: { kind: "database", databaseId: "a" },
+      },
+    ]);
+    expect(refs).toHaveLength(4);
+    expect(new Set(refs.map(quickActionReferenceKey)).size).toBe(4);
+    expect(refs[0]).toEqual({ kind: "script", id: "same" });
+    expect(
+      normalizeQuickActionReferences(JSON.parse(JSON.stringify(refs))),
+    ).toEqual(refs);
+  });
+  it.each([
+    null,
+    {},
+    { kind: "database" },
+    { kind: "database", databaseId: "" },
+    { kind: "database", databaseId: "x", unexpected: true },
+    { kind: "app", databaseId: "x" },
+  ])("refuses malformed explicit scope %j", (scope) => {
+    expect(() =>
+      normalizeQuickActionReferences([{ kind: "script", id: "a", scope }]),
+    ).toThrow();
+  });
   it("does not grant any website capability from global defaults alone", () => {
     expect(resolveHttpAutomationPermissions(undefined, undefined)).toEqual({
       showActionBar: true,

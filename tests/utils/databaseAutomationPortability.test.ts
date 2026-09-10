@@ -5,6 +5,9 @@ import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
 import type { StorageData } from "../../src/utils/storage/storage";
+import type { Connection } from "../../src/types/connection/connection";
+import { emptyRecycleBin } from "../../src/utils/connection/recycleBin";
+import { encryptWithPassword } from "../../src/utils/crypto/webCryptoAes";
 vi.mock("../../src/utils/tauri/invoke", () => ({
   getInvoke: async () => null,
 }));
@@ -40,6 +43,122 @@ afterEach(() => {
   DatabaseManager.resetInstance();
 });
 describe("database automation portability and content CAS", () => {
+  it.each([false, true])(
+    "verification detects another window's edit without advancing either writer baseline (encrypted=%s)",
+    async (encrypted) => {
+      const password = encrypted ? "synthetic-fixture-password" : undefined;
+      const db = await manager.createDatabase(
+        "Verify",
+        undefined,
+        encrypted,
+        password,
+      );
+      await manager.selectDatabase(db.id, password);
+      const first = manager.captureCurrentDatabaseDataTarget()!;
+      const original = (await first.load())!;
+      await first.verifyCurrent!();
+      const changed = { ...original, automationLibrary: library() };
+      // Synthetic second-window commit, without refreshing this manager's cache.
+      await IndexedDbService.setItemStrict(
+        `mremote-database-${db.id}`,
+        password
+          ? await encryptWithPassword(JSON.stringify(changed), password)
+          : changed,
+      );
+      await expect(first.verifyCurrent!()).rejects.toThrow("another window");
+      await expect(first.save(original)).rejects.toThrow("contents changed");
+      await expect(
+        manager.saveDatabaseData(db.id, original, password),
+      ).rejects.toThrow("contents changed");
+      expect(
+        (await manager.loadDatabaseData(db.id, password))?.automationLibrary,
+      ).toEqual(library());
+    },
+  );
+  it("whole database imports and clones rebind only their own favorites including archived connections", async () => {
+    const db = await manager.createDatabase("References");
+    const refs = [
+      { kind: "macro" as const, id: "fixture" },
+      {
+        kind: "macro" as const,
+        id: "fixture",
+        scope: { kind: "database" as const, databaseId: db.id },
+      },
+      {
+        kind: "macro" as const,
+        id: "fixture",
+        scope: { kind: "database" as const, databaseId: "foreign-db" },
+      },
+    ];
+    const connection: Connection = {
+      id: "host",
+      name: "Host",
+      protocol: "ssh",
+      hostname: "fixture.invalid",
+      port: 22,
+      isGroup: false,
+      createdAt: "2026-09-10",
+      updatedAt: "2026-09-10",
+      sshQuickActions: { version: 1, items: refs },
+      httpAutomation: {
+        version: 1,
+        items: refs,
+        interactionMacrosEnabled: false,
+        scriptInjectionEnabled: false,
+        forceDark: false,
+      },
+    };
+    const data: StorageData = {
+      connections: [connection],
+      settings: {},
+      timestamp: 1,
+      automationLibrary: library(),
+      recycleBin: {
+        ...emptyRecycleBin(),
+        policy: { mode: "forever" },
+        entries: [
+          {
+            id: "archived",
+            batchId: "batch",
+            deletedAt: 1,
+            connection: { ...connection, id: "archived-host" },
+          },
+        ],
+      },
+    };
+    await manager.saveDatabaseData(db.id, data);
+    const exported = await manager.readExportableDatabaseSnapshot(db.id, true, {
+      includeTrust: false,
+    });
+    const imported = await manager.importDatabase(JSON.stringify(exported), {
+      includeTrust: false,
+    });
+    const cloned = await manager.duplicateDatabase(db.id, {
+      includeTrust: false,
+    });
+    for (const destination of [imported, cloned]) {
+      const stored = (await manager.loadDatabaseData(destination.id))!;
+      for (const row of [
+        ...stored.connections,
+        ...stored.recycleBin!.entries.map((entry) => entry.connection),
+      ]) {
+        for (const config of [row.sshQuickActions!, row.httpAutomation!]) {
+          expect(config.items[0]).toEqual(refs[0]);
+          expect(config.items[1].scope).toEqual({
+            kind: "database",
+            databaseId: destination.id,
+          });
+          expect(config.items[2]).toEqual(refs[2]);
+        }
+      }
+      expect(stored.automationLibrary).toEqual(library());
+    }
+    expect(
+      (await manager.loadDatabaseData(db.id))!.connections[0].sshQuickActions!
+        .items,
+    ).toEqual(refs);
+    expect(exported.connections[0].sshQuickActions!.items).toEqual(refs);
+  });
   it.each([false, true])(
     "rejects stale window overwrite for encrypted=%s and retains scope payload",
     async (encrypted) => {

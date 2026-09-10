@@ -5,6 +5,8 @@ import type { QuickActionReference } from "../../types/connection/sessionQuickAc
 import {
   normalizeHttpAutomation,
   normalizeSshQuickActions,
+  quickActionReferenceKey,
+  quickActionScopeLabel,
 } from "../../utils/connection/sessionQuickActions";
 import { Checkbox } from "../ui/forms";
 
@@ -191,7 +193,7 @@ export function SessionQuickActionsSection({
             <ol className="space-y-2">
               {items.map((item, index) => (
                 <li
-                  key={`${item.kind}:${item.id}`}
+                  key={quickActionReferenceKey(item)}
                   className="flex items-center gap-2 text-sm"
                 >
                   <span className="min-w-0 flex-1 break-all">
@@ -199,7 +201,7 @@ export function SessionQuickActionsSection({
                       className="block truncate"
                       title={`${item.kind} ID: ${item.id}`}
                     >
-                      {item.kind} ID: {item.id}
+                      {quickActionScopeLabel(item)} · {item.kind} ID: {item.id}
                     </span>
                     <span className="text-xs text-[var(--color-textMuted)]">
                       Library name unavailable here. Manage contents in the

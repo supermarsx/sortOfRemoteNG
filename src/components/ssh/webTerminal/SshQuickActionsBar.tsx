@@ -17,6 +17,10 @@ import Modal, {
   ModalHeader,
 } from "../../ui/overlays/Modal";
 import type { useSshQuickActions } from "../../../hooks/ssh/useSshQuickActions";
+import {
+  quickActionReferenceKey,
+  quickActionScopeLabel,
+} from "../../../utils/connection/sessionQuickActions";
 
 const ScriptManager = lazy(() =>
   import("../../recording/ScriptManager").then((module) => ({
@@ -82,10 +86,10 @@ export default function SshQuickActionsBar({
             )}
             {actions.visibleFavorites.map((favorite) => (
               <button
-                key={`${favorite.kind}:${favorite.id}`}
+                key={quickActionReferenceKey(favorite)}
                 type="button"
                 className="app-bar-button flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs"
-                title={`${favorite.name} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
+                title={`${favorite.name} · ${quickActionScopeLabel(favorite)} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
                 aria-label={`Run ${favorite.kind} ${favorite.name}`}
                 disabled={!actions.canRun || favorite.missing || replaying}
                 onClick={() => {
@@ -190,13 +194,13 @@ export default function SshQuickActionsBar({
             <div className="space-y-1" aria-label="Manage favorite order">
               {actions.favorites.map((favorite, index) => (
                 <div
-                  key={`${favorite.kind}:${favorite.id}`}
+                  key={quickActionReferenceKey(favorite)}
                   className="flex items-center gap-2 rounded border border-[var(--color-border)] p-2 text-sm"
                 >
                   <span className="min-w-0 flex-1 truncate">
                     {favorite.name}{" "}
                     <span className="text-xs text-[var(--color-textMuted)]">
-                      ({favorite.kind})
+                      ({quickActionScopeLabel(favorite)} · {favorite.kind})
                     </span>
                   </span>
                   <button
@@ -253,7 +257,7 @@ export default function SshQuickActionsBar({
               ) : (
                 actions.available.map((item) => (
                   <button
-                    key={`${item.kind}:${item.id}`}
+                    key={quickActionReferenceKey(item)}
                     type="button"
                     disabled={actions.busy || !!actions.unavailable}
                     className="app-bar-button flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm"
@@ -265,7 +269,7 @@ export default function SshQuickActionsBar({
                     <Plus size={12} />
                     <span className="min-w-0 flex-1 truncate">{item.name}</span>
                     <span className="text-xs text-[var(--color-textMuted)]">
-                      {item.kind}
+                      {quickActionScopeLabel(item)} · {item.kind}
                     </span>
                   </button>
                 ))
