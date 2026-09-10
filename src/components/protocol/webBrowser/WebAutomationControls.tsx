@@ -27,6 +27,7 @@ import {
   ModalHeader,
 } from "../../ui/overlays/Modal";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
+import { MenuSurface } from "../../ui/overlays/MenuSurface";
 
 type Automation = ReturnType<typeof useWebAutomation>;
 function newScript(): BrowserScript {
@@ -103,15 +104,16 @@ function AutomationLibrary({
   onRecord: () => void;
 }) {
   const [draft, setDraft] = useState<WebAutomationItem | null>(() =>
-      automation.steps.length
+      automation.steps.length && !automation.libraryKind
         ? automation.recordedMacro("New website macro")
         : null,
     ),
     [base, setBase] = useState<WebAutomationItem | undefined>();
   const [query, setQuery] = useState(""),
     [deleting, setDeleting] = useState<WebAutomationItem | null>(null);
+  const [kind, setKind] = useState(automation.libraryKind ?? "all");
   const [capturedDraft, setCapturedDraft] = useState(
-    automation.steps.length > 0,
+    automation.steps.length > 0 && !automation.libraryKind,
   );
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(base);
@@ -128,10 +130,12 @@ function AutomationLibrary({
       setCapturedDraft(false);
     });
   };
-  const list = automation.allItems.filter((item) =>
-    `${item.name} ${item.description} ${item.kind}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const list = automation.allItems.filter(
+    (item) =>
+      (kind === "all" || item.kind === kind) &&
+      `${item.name} ${item.description} ${item.kind}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
   const save = async () => {
     if (!draft) return;
@@ -186,6 +190,33 @@ function AutomationLibrary({
           ) : (
             <div className="grid md:grid-cols-[210px_minmax(0,1fr)] gap-4">
               <div className="space-y-2 min-w-0">
+                <label className="block text-xs">
+                  Item type
+                  <select
+                    className="sor-form-select-sm mt-1 block w-full"
+                    value={kind}
+                    disabled={automation.busy}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      guardDraft(() => {
+                        setKind(value);
+                        setDraft(null);
+                        setBase(undefined);
+                        setCapturedDraft(false);
+                      });
+                    }}
+                  >
+                    <option value="all">Scripts &amp; macros</option>
+                    <option value="script">Scripts</option>
+                    <option value="macro">Macros</option>
+                  </select>
+                </label>
+                {automation.libraryKind && (
+                  <p className="text-xs text-[var(--color-textSecondary)]">
+                    Select a saved {automation.libraryKind}, then Add to
+                    favorites. Assignment does not run it or enable permissions.
+                  </p>
+                )}
                 <label htmlFor={`${ids}-search`} className="block text-xs">
                   Search library
                 </label>
@@ -459,7 +490,7 @@ function AutomationLibrary({
                       size={14}
                       fill={isFavorite(base) ? "currentColor" : "none"}
                     />
-                    {isFavorite(base) ? "Remove favorite" : "Favorite"}
+                    {isFavorite(base) ? "Remove favorite" : "Add to favorites"}
                   </button>
                   <button
                     className="sor-btn sor-btn-danger"
@@ -529,36 +560,149 @@ function AutomationLibrary({
 
 export function WebAutomationFavoriteChips({
   automation,
+  onContextMenuOpen,
+  otherMenuOpen = false,
 }: {
   automation: Automation;
+  onContextMenuOpen?: () => void;
+  otherMenuOpen?: boolean;
 }) {
+  const [menu, setMenu] = useState<{
+    key: string;
+    scope: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const canManage =
+    automation.libraryReady &&
+    !automation.busy &&
+    !automation.recording &&
+    !automation.recordingPending;
+  useEffect(() => {
+    if (otherMenuOpen || !canManage) setMenu(null);
+  }, [otherMenuOpen, canManage]);
+  const selected =
+    menu?.scope === automation.recordingScopeKey
+      ? automation.favorites.find(
+          (item) => quickActionReferenceKey(item) === menu.key,
+        )
+      : undefined;
+  const canRun = (item: WebAutomationItem) =>
+    canManage &&
+    automation.pageReady &&
+    (item.kind === "script"
+      ? automation.permissions?.scriptInjectionEnabled
+      : automation.permissions?.interactionMacrosEnabled);
+  const openMenu = (item: WebAutomationItem, x: number, y: number) => {
+    if (!canManage) return;
+    onContextMenuOpen?.();
+    setMenu({
+      key: quickActionReferenceKey(item),
+      scope: automation.recordingScopeKey,
+      x,
+      y,
+    });
+  };
+  const actOnMenu = (action: (item: WebAutomationItem) => void) => {
+    setMenu(null);
+    if (canManage && selected) action(selected);
+  };
   if (!automation.permissions?.showActionBar) return null;
   return (
     <>
       {automation.favorites.map((item) => (
-        <button
+        <span
           key={quickActionReferenceKey(item)}
-          className="sor-option-chip shrink-0 text-xs max-w-40"
-          title={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name} · ${quickActionScopeLabel(item)}`}
-          disabled={
-            !automation.pageReady ||
-            automation.busy ||
-            automation.recording ||
-            automation.recordingPending ||
-            !(item.kind === "script"
-              ? automation.permissions?.scriptInjectionEnabled
-              : automation.permissions?.interactionMacrosEnabled)
+          className="inline-flex shrink-0"
+          tabIndex={canManage && !canRun(item) ? 0 : undefined}
+          aria-label={
+            !canRun(item) ? `Manage favorite ${item.name}` : undefined
           }
-          onClick={() => automation.requestRun(item)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openMenu(item, event.clientX, event.clientY);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.key === "ContextMenu" ||
+              (event.shiftKey && event.key === "F10")
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              openMenu(item, rect.left, rect.bottom);
+            }
+          }}
         >
-          {item.kind === "script" ? (
-            <Code2 size={12} className="shrink-0" />
-          ) : (
-            <Play size={12} className="shrink-0" />
-          )}
-          <span className="truncate">{item.name}</span>
-        </button>
+          <button
+            className="sor-option-chip shrink-0 text-xs max-w-40"
+            title={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name} · ${quickActionScopeLabel(item)}`}
+            disabled={!canRun(item)}
+            style={!canRun(item) ? { pointerEvents: "none" } : undefined}
+            onClick={() => automation.requestRun(item)}
+          >
+            {item.kind === "script" ? (
+              <Code2 size={12} className="shrink-0" />
+            ) : (
+              <Play size={12} className="shrink-0" />
+            )}
+            <span className="truncate">{item.name}</span>
+          </button>
+        </span>
       ))}
+      {menu && selected && canManage && (
+        <MenuSurface
+          isOpen
+          onClose={() => setMenu(null)}
+          position={menu}
+          className="min-w-[190px] rounded-lg py-1"
+          dataTestId="web-automation-favorite-menu"
+        >
+          <button
+            role="menuitem"
+            className="sor-menu-item text-xs"
+            disabled={!canRun(selected)}
+            onClick={() =>
+              actOnMenu((item) => {
+                if (canRun(item)) automation.requestRun(item);
+              })
+            }
+          >
+            <Play size={12} />
+            {selected.kind === "script" ? "Run script" : "Replay macro"}
+          </button>
+          <button
+            role="menuitem"
+            className="sor-menu-item text-xs"
+            onClick={() =>
+              actOnMenu((item) => automation.openLibrary(item.kind))
+            }
+          >
+            <Star size={12} />
+            Assign {selected.kind}
+          </button>
+          <button
+            role="menuitem"
+            className="sor-menu-item text-xs"
+            onClick={() => actOnMenu(() => automation.openLibrary())}
+          >
+            <Library size={12} />
+            Manage scripts &amp; macros
+          </button>
+          <div className="sor-menu-divider" />
+          <button
+            role="menuitem"
+            className="sor-menu-item text-xs"
+            onClick={() =>
+              actOnMenu((item) => void automation.favorite(item, true))
+            }
+          >
+            <Trash2 size={12} />
+            Remove favorite
+          </button>
+        </MenuSurface>
+      )}
     </>
   );
 }
@@ -626,7 +770,13 @@ export function WebAutomationControls({
               className="sor-icon-btn-sm shrink-0 min-w-7 h-7"
               title="Website macros & JavaScript library"
               aria-label="Website macros & JavaScript library"
-              onClick={() => automation.setOpen(true)}
+              onClick={() => automation.openLibrary()}
+              disabled={
+                !automation.libraryReady ||
+                automation.busy ||
+                automation.recording ||
+                automation.recordingPending
+              }
             >
               <Library size={14} className="shrink-0" />
             </button>

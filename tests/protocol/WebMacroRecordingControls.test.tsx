@@ -1,7 +1,10 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { WebAutomationControls } from "../../src/components/protocol/webBrowser/WebAutomationControls";
+import {
+  WebAutomationControls,
+  WebAutomationFavoriteChips,
+} from "../../src/components/protocol/webBrowser/WebAutomationControls";
 import type { useWebAutomation } from "../../src/hooks/protocol/useWebAutomation";
 import type { BrowserScript } from "../../src/types/recording/webAutomation";
 
@@ -32,6 +35,8 @@ function model(overrides: Partial<Automation> = {}): Automation {
     favorites: [],
     open: false,
     setOpen: vi.fn(),
+    openLibrary: vi.fn(),
+    libraryKind: undefined,
     busy: false,
     saving: false,
     recording: false,
@@ -77,6 +82,41 @@ const captured = () => [
 ];
 
 describe("visible website macro recording facilities", () => {
+  it("dismisses favorite menus when bookmark menus open, and refuses unavailable management", () => {
+    const actions = model({ favorites: [script] });
+    const opened = vi.fn();
+    const view = render(
+      <WebAutomationFavoriteChips
+        automation={actions}
+        onContextMenuOpen={opened}
+      />,
+    );
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "Saved script" }).parentElement!,
+    );
+    expect(opened).toHaveBeenCalledOnce();
+    expect(
+      screen.getByTestId("web-automation-favorite-menu"),
+    ).toBeInTheDocument();
+    view.rerender(
+      <WebAutomationFavoriteChips automation={actions} otherMenuOpen />,
+    );
+    expect(
+      screen.queryByTestId("web-automation-favorite-menu"),
+    ).not.toBeInTheDocument();
+    view.rerender(
+      <WebAutomationFavoriteChips
+        automation={{ ...actions, libraryReady: false }}
+      />,
+    );
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "Saved script" }).parentElement!,
+    );
+    expect(
+      screen.queryByTestId("web-automation-favorite-menu"),
+    ).not.toBeInTheDocument();
+    expect(actions.openLibrary).not.toHaveBeenCalled();
+  });
   it("defaults new items to app storage and requires explicit database destination selection", async () => {
     const actions = model({
       open: true,

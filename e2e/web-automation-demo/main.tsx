@@ -70,6 +70,9 @@ const scripts = [
 export function Demo() {
   const view = new URL(location.href).searchParams.get("view") ?? "library";
   const [open, setOpen] = useState(["library", "macro"].includes(view));
+  const [libraryKind, setLibraryKind] = useState<
+    "script" | "macro" | undefined
+  >();
   const [enabled, setEnabled] = useState(view !== "setup");
   const [recording, setRecording] = useState(
     ["recording", "capture-review", "discard"].includes(view),
@@ -102,6 +105,11 @@ export function Demo() {
     favorites: [macro, scripts[0]],
     open,
     setOpen,
+    libraryKind,
+    openLibrary: (kind) => {
+      setLibraryKind(kind);
+      setOpen(true);
+    },
     busy: false,
     saving: false,
     recording,

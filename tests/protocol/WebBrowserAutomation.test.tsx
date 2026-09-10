@@ -288,11 +288,13 @@ describe("real WebBrowser iframe and website automation integration", () => {
       false,
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Run on current page" }),
+      await screen.findByRole("button", { name: "Run on current page" }),
     );
-    const request = post.mock.calls.find(
-      ([data]) => data.action === "script",
-    )![0];
+    const request = await waitFor(() => {
+      const call = post.mock.calls.find(([data]) => data.action === "script");
+      expect(call).toBeDefined();
+      return call![0];
+    });
     emit("proxy_web_automation", { ...request, status: "ok" });
     await waitFor(() =>
       expect(
@@ -313,11 +315,13 @@ describe("real WebBrowser iframe and website automation integration", () => {
     await waitFor(() => expect(chip).toBeEnabled());
     fireEvent.click(chip);
     fireEvent.click(
-      screen.getByRole("button", { name: "Run on current page" }),
+      await screen.findByRole("button", { name: "Run on current page" }),
     );
-    const request = post.mock.calls.find(
-      ([data]) => data.action === "script",
-    )![0];
+    const request = await waitFor(() => {
+      const call = post.mock.calls.find(([data]) => data.action === "script");
+      expect(call).toBeDefined();
+      return call![0];
+    });
     emit("proxy_navigation_start");
     await waitFor(() =>
       expect(

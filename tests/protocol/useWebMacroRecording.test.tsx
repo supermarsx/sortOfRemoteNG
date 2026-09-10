@@ -465,6 +465,26 @@ describe("durable, explicit HTTP/HTTPS macro recording consent", () => {
 });
 
 describe("recording acknowledgement, draft and discard lifecycle", () => {
+  it("does not reopen review when an acknowledged stop is superseded before its continuation", async () => {
+    enableConfig();
+    await mount();
+    let start!: Promise<boolean>, stop!: Promise<void>;
+    act(() => {
+      start = api.startRecording();
+    });
+    reply(requests("recordStart")[0]);
+    await act(async () => start);
+    act(() => {
+      stop = api.stopRecording();
+    });
+    act(() => {
+      reply(requests("recordStop")[0]);
+      api.discardRecording();
+    });
+    await act(async () => stop);
+    expect(api.open).toBe(false);
+    expect(api.recording).toBe(false);
+  });
   it("serializes starting/stopping and preserves capture until review or explicit discard", async () => {
     enableConfig();
     await mount();

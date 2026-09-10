@@ -3,7 +3,11 @@ import { Star, ChevronRight, FolderOpen } from "lucide-react";
 import { HttpBookmarkItem } from "../../../types/connection/connection";
 import type { WebBrowserMgr } from "./types";
 import { PopoverSurface } from "../../ui/overlays/PopoverSurface";
-import { OptionEmptyState, OptionItemButton, OptionList } from "../../ui/display/OptionList";
+import {
+  OptionEmptyState,
+  OptionItemButton,
+  OptionList,
+} from "../../ui/display/OptionList";
 
 const FolderChip: React.FC<{
   mgr: WebBrowserMgr;
@@ -13,26 +17,73 @@ const FolderChip: React.FC<{
 }> = ({ mgr, bm, idx, baseUrl }) => {
   if (!bm.isFolder) return null;
   const isOpen = mgr.openFolders.has(idx);
+  const openItemMenu = (x: number, y: number, childIdx?: number) => {
+    mgr.setBmBarContextMenu(null);
+    mgr.setOpenFolders(new Set());
+    mgr.setBmContextMenu({
+      x,
+      y,
+      idx,
+      ...(childIdx === undefined ? {} : { folderPath: [childIdx] }),
+    });
+  };
+  const itemKeyDown = (
+    e: React.KeyboardEvent<HTMLElement>,
+    childIdx?: number,
+  ) => {
+    if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    openItemMenu(rect.left, rect.bottom, childIdx);
+  };
+  if (mgr.editingBmIdx === idx) {
+    return (
+      <input
+        ref={mgr.editBmRef}
+        type="text"
+        aria-label="Folder name"
+        value={mgr.editBmName}
+        onChange={(e) => mgr.setEditBmName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            mgr.handleRenameBookmark(idx, mgr.editBmName);
+            mgr.setEditingBmIdx(null);
+          } else if (e.key === "Escape") {
+            mgr.setEditingBmIdx(null);
+          }
+        }}
+        onBlur={() => {
+          mgr.handleRenameBookmark(idx, mgr.editBmName);
+          mgr.setEditingBmIdx(null);
+        }}
+        className="text-xs px-2 py-0.5 rounded bg-[var(--color-background)] border border-[var(--color-primary)] text-[var(--color-text)] w-28 focus:outline-none"
+      />
+    );
+  }
   return (
     <div className="relative flex-shrink-0">
       <button
         ref={(node) => {
           mgr.folderButtonRefs.current[idx] = node;
         }}
-        onClick={() =>
+        aria-expanded={isOpen}
+        onClick={() => {
+          mgr.setBmBarContextMenu(null);
+          mgr.setBmContextMenu(null);
           mgr.setOpenFolders((prev) => {
             const next = new Set(prev);
             if (next.has(idx)) next.delete(idx);
             else next.add(idx);
             return next;
-          })
-        }
+          });
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          mgr.setBmBarContextMenu(null);
-          mgr.setBmContextMenu({ x: e.clientX, y: e.clientY, idx });
+          openItemMenu(e.clientX, e.clientY);
         }}
+        onKeyDown={(e) => itemKeyDown(e)}
         draggable
         onDragStart={mgr.handleDragStart(idx)}
         onDragOver={mgr.handleDragOver(idx)}
@@ -77,14 +128,9 @@ const FolderChip: React.FC<{
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    mgr.setBmBarContextMenu(null);
-                    mgr.setBmContextMenu({
-                      x: e.clientX,
-                      y: e.clientY,
-                      idx,
-                      folderPath: [cIdx],
-                    });
+                    openItemMenu(e.clientX, e.clientY, cIdx);
                   }}
+                  onKeyDown={(e) => itemKeyDown(e, cIdx)}
                   compact
                   selected={isActive}
                   className="whitespace-nowrap text-xs"

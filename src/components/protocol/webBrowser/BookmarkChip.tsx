@@ -18,6 +18,7 @@ const BookmarkChip: React.FC<{
       <input
         ref={mgr.editBmRef}
         type="text"
+        aria-label="Bookmark name"
         value={mgr.editBmName}
         onChange={(e) => mgr.setEditBmName(e.target.value)}
         onKeyDown={(e) => {
@@ -51,7 +52,17 @@ const BookmarkChip: React.FC<{
         e.preventDefault();
         e.stopPropagation();
         mgr.setBmBarContextMenu(null);
+        mgr.setOpenFolders(new Set());
         mgr.setBmContextMenu({ x: e.clientX, y: e.clientY, idx });
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        mgr.setBmBarContextMenu(null);
+        mgr.setOpenFolders(new Set());
+        mgr.setBmContextMenu({ x: rect.left, y: rect.bottom, idx });
       }}
       className={`text-xs px-2 py-0.5 rounded hover:bg-[var(--color-surfaceHover)] transition-colors whitespace-nowrap flex-shrink-0 flex items-center gap-1 ${
         mgr.dragOverIdx === idx ? "ring-1 ring-[var(--color-primary)]" : ""

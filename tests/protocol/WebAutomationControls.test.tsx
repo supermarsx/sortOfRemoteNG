@@ -209,6 +209,116 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("mounted website automation controls and ownership", () => {
+  it("opens assignment filtered by kind without running, saving or changing permissions", async () => {
+    const macro = {
+      kind: "macro" as const,
+      id: "macro",
+      name: "Demo macro",
+      description: "",
+      steps: [{ kind: "click" as const, selector: "button" }],
+      createdAt: script.createdAt,
+      updatedAt: script.updatedAt,
+    };
+    boundary.load.mockResolvedValue({ value: { ...library, macros: [macro] } });
+    await mount();
+    act(() => current.openLibrary("macro"));
+    expect(screen.getByLabelText("Item type")).toHaveValue("macro");
+    expect(
+      screen.getByRole("button", { name: /Macro · Demo macro/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /JS · Demo script/ }),
+    ).not.toBeInTheDocument();
+    expect(boundary.update).not.toHaveBeenCalled();
+    expect(boundary.save).not.toHaveBeenCalled();
+    expect(sent("script")).toHaveLength(0);
+    expect(sent("step")).toHaveLength(0);
+  });
+  it("manages disabled favorite chips without bubbling and removes only the reference", async () => {
+    connection.httpAutomation!.scriptInjectionEnabled = false;
+    await mount();
+    const chip = screen.getByRole("button", { name: "Demo script" });
+    expect(chip).toBeDisabled();
+    const bubble = vi.fn();
+    document.body.addEventListener("contextmenu", bubble);
+    fireEvent.contextMenu(chip.parentElement!, { clientX: 15, clientY: 20 });
+    expect(bubble).not.toHaveBeenCalled();
+    document.body.removeEventListener("contextmenu", bubble);
+    expect(screen.getByRole("menuitem", { name: "Run script" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove favorite" }));
+    await waitFor(() => expect(boundary.update).toHaveBeenCalledOnce());
+    expect(boundary.update.mock.calls[0][0].httpAutomation.items).toEqual([]);
+    expect(boundary.remove).not.toHaveBeenCalled();
+    expect(boundary.save).not.toHaveBeenCalled();
+    expect(sent("script")).toHaveLength(0);
+  });
+  it("closes favorite menus on revocation and rejects captured opening callbacks", async () => {
+    await mount();
+    const oldOpen = current.openLibrary;
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Demo script" }), {
+      clientX: 5,
+      clientY: 5,
+    });
+    expect(
+      screen.getByTestId("web-automation-favorite-menu"),
+    ).toBeInTheDocument();
+    boundary.accessible = false;
+    act(() => boundary.listener!({ status: "suspended" }));
+    expect(
+      screen.queryByTestId("web-automation-favorite-menu"),
+    ).not.toBeInTheDocument();
+    act(() => oldOpen("script"));
+    expect(current.open).toBe(false);
+    expect(boundary.update).not.toHaveBeenCalled();
+  });
+  it("opens script assignment from the keyboard menu without executing it", async () => {
+    await mount();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Demo script" }), {
+      key: "F10",
+      shiftKey: true,
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Assign script" }));
+    expect(screen.getByLabelText("Item type")).toHaveValue("script");
+    expect(
+      screen.queryByTestId("web-automation-favorite-menu"),
+    ).not.toBeInTheDocument();
+    expect(current.pendingRun).toBeNull();
+    expect(boundary.update).not.toHaveBeenCalled();
+  });
+  it("never re-adds a favorite removed by another update while its menu was open", async () => {
+    const view = await mount();
+    const removeOnly = current.favorite;
+    connection = {
+      ...connection,
+      httpAutomation: { ...connection.httpAutomation!, items: [] },
+    };
+    view.rerender(<Fixture />);
+    await act(async () => removeOnly(script, true));
+    expect(boundary.update).not.toHaveBeenCalled();
+    expect(current.favorites).toEqual([]);
+  });
+  it("uses the existing confirmation for context-menu run and blocks management while busy", async () => {
+    await mount();
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Demo script" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Run script" }));
+    await screen.findByRole("dialog", { name: "Review website action" });
+    expect(sent("script")).toHaveLength(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run on current page" }),
+    );
+    await waitFor(() => expect(current.busy).toBe(true));
+    act(() => current.openLibrary("script"));
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "Demo script" }).parentElement!,
+    );
+    expect(current.open).toBe(false);
+    expect(
+      screen.queryByTestId("web-automation-favorite-menu"),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(sent("script")).toHaveLength(1));
+    acknowledge(sent("script")[0]);
+    await waitFor(() => expect(current.busy).toBe(false));
+  });
   it("requires explicit confirmation for a favorite and guards rapid duplicate execution", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Demo script" }));

@@ -119,6 +119,9 @@ export function useWebAutomation(options: Options) {
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [recording, setRecording] = useState(false);
+  const [libraryKind, setLibraryKind] = useState<
+    "script" | "macro" | undefined
+  >();
   const [steps, setSteps] = useState<WebInteractionStep[]>([]);
   const stepsRef = useRef<WebInteractionStep[]>([]);
   const setRecordedSteps = useCallback((next: WebInteractionStep[]) => {
@@ -705,8 +708,10 @@ export function useWebAutomation(options: Options) {
       if (
         operation.current === stoppedOperation &&
         recordingAttempt.current === attempt
-      )
+      ) {
+        setLibraryKind(undefined);
         setOpen(true);
+      }
     } catch (failure) {
       if (
         mounted.current &&
@@ -1021,7 +1026,10 @@ export function useWebAutomation(options: Options) {
       if (mounted.current) setBusy(false);
     }
   };
-  const favorite = async (item: ScopedWebAutomationItem) => {
+  const favorite = async (
+    item: ScopedWebAutomationItem,
+    removeOnly = false,
+  ) => {
     const current = latest.current.connection;
     if (
       !current ||
@@ -1051,6 +1059,7 @@ export function useWebAutomation(options: Options) {
       const has = config.items.some(
         (ref) => quickActionReferenceKey(ref) === key,
       );
+      if (removeOnly && !has) return;
       const items = has
         ? config.items.filter((ref) => quickActionReferenceKey(ref) !== key)
         : [
@@ -1127,6 +1136,28 @@ export function useWebAutomation(options: Options) {
       updatedAt: date,
     };
   };
+  const managementReady =
+    !revoked.current &&
+    ((libraryReady && libraryScope === accessKey) ||
+      (databaseLibrary?.access === accessKey &&
+        databaseLibrary.scope === databaseScopeKey));
+  const managementEpoch = epoch.current;
+  const openLibrary = (kind?: "script" | "macro") => {
+    if (
+      !managementReady ||
+      busyRef.current ||
+      recordingTransition.current ||
+      recordingRef.current
+    )
+      return;
+    try {
+      assertAccess(managementEpoch);
+      setLibraryKind(kind);
+      setOpen(true);
+    } catch (failure) {
+      setError(message(failure));
+    }
+  };
   return {
     permissions: permissions.value,
     error:
@@ -1151,6 +1182,8 @@ export function useWebAutomation(options: Options) {
     favorites,
     open,
     setOpen,
+    openLibrary,
+    libraryKind,
     busy,
     saving: savingRef.current,
     recording,
