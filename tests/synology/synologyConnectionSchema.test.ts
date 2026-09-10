@@ -7,7 +7,10 @@ import {
 } from "../../src/types/protocols/synology";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import { normalizeImportedProtocol } from "../../src/utils/connection/normalizeImportedProtocol";
-import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
+import {
+  getHttpApplicationProfile,
+  normalizeHttpApplicationSettings,
+} from "../../src/utils/connection/httpApplicationProfiles";
 import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
 import {
   getRuntimeProtocolUnavailableMessage,
@@ -69,10 +72,31 @@ describe("saved Synology schema and access modes", () => {
     ).toThrow(/trust/);
     expect(() => assertSynologyNativeRoute({})).not.toThrow();
   });
-  it("keeps DSM website login manual and native capability explicitly dual-gated", () => {
-    expect(getHttpApplicationProfile("synology-dsm")?.capability).toBe(
-      "manual",
-    );
+  it("defaults DSM website login to manual, requires explicit reviewed form opt-in, and keeps native capability dual-gated", () => {
+    expect(getHttpApplicationProfile("synology-dsm")).toMatchObject({
+      capability: "known-form",
+      loginModes: ["manual", "form"],
+      loginFlow: "synology",
+      requiresHttps: true,
+    });
+    const defaults = normalizeHttpApplicationSettings({
+      version: 1,
+      id: "synology-dsm",
+    })!;
+    expect(defaults.loginMode).toBe("manual");
+    expect(
+      resolveHttpApplicationLogin({
+        protocol: "https",
+        httpApplication: defaults,
+        username: "user",
+        password: "secret",
+        httpAutoLogin: true,
+      }),
+    ).toMatchObject({
+      autoLogin: false,
+      credentials: null,
+      upstreamAuthMode: "none",
+    });
     expect(
       resolveHttpApplicationLogin({
         protocol: "https",
@@ -89,6 +113,19 @@ describe("saved Synology schema and access modes", () => {
       autoLogin: false,
       credentials: null,
       upstreamAuthMode: "none",
+    });
+    expect(
+      resolveHttpApplicationLogin({
+        protocol: "https",
+        httpApplication: { ...defaults, loginMode: "form" },
+        username: "user",
+        password: "secret",
+      }),
+    ).toMatchObject({
+      autoLogin: true,
+      credentials: { username: "user", password: "secret" },
+      upstreamAuthMode: "synology-form",
+      loginFlow: "synology",
     });
     expect(
       getProtocolSubtabs({ protocol: "synology" }).map((tab) => tab.id),
