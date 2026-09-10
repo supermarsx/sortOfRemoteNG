@@ -1,5 +1,7 @@
 //! Actual protected Axum proxy route regressions; all endpoints and credentials
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
+#[path = "http_quickconnect_tests.rs"]
+mod quickconnect_tests;
 #[path = "http_redirect_tests.rs"]
 mod redirect_tests;
 
@@ -466,7 +468,11 @@ async fn redirect_origin_is_mandatory_even_without_optional_policies() {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        assert!(response.text().await.unwrap().contains("cross_origin_redirect"));
+        assert!(response
+            .text()
+            .await
+            .unwrap()
+            .contains("cross_origin_redirect"));
     }
     assert_eq!(foreign_calls.load(Ordering::Relaxed), 0);
     foreign.abort();
@@ -793,7 +799,7 @@ async fn actual_proxy_decodes_gzip_documents_assets_and_preserves_raw_query_and_
         async move {
             captured.lock().unwrap().push((request.uri().to_string(), request.headers().clone()));
             let (content_type, body) = match request.uri().path() {
-                "/app.js" => ("application/javascript", format!("const endpoint='{origin}/api';")),
+                "/app.js" => ("application/javascript", format!("const endpoint=new URL('{origin}/api');const base=new URL('{origin}');const foreign='{origin}.attacker.invalid/api';")),
                 "/app.css" => ("text/css", format!("body{{background:url({origin}/logo.png)}}")),
                 _ => ("text/html; charset=utf-8", format!("<!doctype html><html><head><script src='{origin}/app.js'></script></head><body><form><input name='usernamefld'><input type='password' name='passwordfld'><button>Sign in</button></form></body></html>")),
             };
@@ -829,15 +835,27 @@ async fn actual_proxy_decodes_gzip_documents_assets_and_preserves_raw_query_and_
         let length = response.content_length().unwrap();
         let body = response.text().await.unwrap();
         assert_eq!(length, body.len() as u64);
-        assert!(!body.contains(&target_origin));
         if path.starts_with("/?") {
+            assert!(!body.contains(&target_origin));
             assert!(body.contains("<form>"));
             assert!(body.contains("proxy_dom_ready"));
             assert!(body.contains("synthetic-proxy-session"));
-            assert!(body.find("proxy_dom_ready").unwrap() < body.find("src='/app.js'").unwrap());
+            assert!(
+                body.find("proxy_dom_ready").unwrap()
+                    < body
+                        .find(&format!("src='{}/app.js'", proxy.state.proxy_origin))
+                        .unwrap()
+            );
             assert!(!body.contains("__sorng_autologin.fetchCredsAndRun"));
         } else {
             assert!(!body.contains("proxy_dom_ready"));
+            if path == "/app.js" {
+                assert!(body.contains(&format!("new URL('{}/api')", proxy.state.proxy_origin)));
+                assert!(body.contains(&format!("new URL('{}')", proxy.state.proxy_origin)));
+                assert!(body.contains(&format!("'{target_origin}.attacker.invalid/api'")));
+            } else {
+                assert!(body.contains(&format!("url({}/logo.png)", proxy.state.proxy_origin)));
+            }
         }
     }
     let seen = seen.lock().unwrap();

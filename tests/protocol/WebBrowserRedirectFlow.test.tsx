@@ -290,6 +290,130 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it.each(["valid", "missing", "replaced"] as const)(
+    "discovers a %s native receipt after a pathful page ignores the redacted origin-root failure URL",
+    async (receiptState) => {
+      h.connections[0].httpApplication = {
+        version: 1,
+        id: "joomla",
+        loginMode: "manual",
+        loginPath: "/portal/",
+      };
+      const view = await mounted();
+      const iframe = view.container.querySelector("iframe")!;
+      const frameUrl = new URL(iframe.src);
+      expect(frameUrl.pathname).toBe("/portal/");
+      const navigationToken = frameUrl.searchParams.get(
+        "__sorng_navigation_v1",
+      );
+      frameUrl.searchParams.delete("__sorng_navigation_v1");
+      const currentDocument = {
+        version: 1,
+        sessionId: "proxy-1",
+        documentToken: "d".repeat(32),
+        documentSequence: 1,
+        navigationToken,
+        url: frameUrl.toString(),
+      };
+      // Establish the real current document before the portal's subsequent
+      // reserved redirect response. Its bridge redacts paths/query to '/'.
+      for (const type of ["proxy_document_start", "proxy_dom_ready"]) {
+        act(() =>
+          window.dispatchEvent(
+            new MessageEvent("message", {
+              source: iframe.contentWindow,
+              origin: frameUrl.origin,
+              data: { ...currentDocument, type },
+            }),
+          ),
+        );
+      }
+      expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
+      const readsBefore = h.invoke.mock.calls.filter(
+        ([name]) => name === "review_proxy_redirect",
+      ).length;
+      if (receiptState !== "missing") {
+        const receipt = redirect(
+          iframe,
+          "https://relay.example.test/admin/",
+          false,
+        );
+        receipts.set("proxy-1", {
+          ...receipt,
+          navigationToken: null,
+          documentSequence: 2,
+        });
+      }
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: frameUrl.origin,
+            data: {
+              type: "sorng_proxy_failure",
+              version: 1,
+              sessionId: "proxy-1",
+              kind: "redirect_review",
+              status: 403,
+              title: "Redirect needs review",
+              url: `${new URL(proxies[0].target).origin}/`,
+              reason: "Review the destination address.",
+              detail: "No destination query is exposed.",
+            },
+          }),
+        ),
+      );
+      await act(async () => {});
+      expect(
+        screen.queryByRole("region", { name: "Redirect review" }),
+      ).toBeNull();
+      expect(screen.queryByTestId("web-navigation-error-screen")).toBeNull();
+      expect(
+        h.invoke.mock.calls.filter(
+          ([name]) => name === "review_proxy_redirect",
+        ),
+      ).toHaveLength(readsBefore);
+      document.removeEventListener("load", holdFrameLoad, true);
+      fireEvent.load(iframe);
+      await waitFor(() =>
+        expect(
+          h.invoke.mock.calls.filter(
+            ([name]) => name === "review_proxy_redirect",
+          ).length,
+        ).toBeGreaterThan(readsBefore),
+      );
+      await act(async () => {});
+      if (receiptState === "missing") {
+        expect(
+          screen.queryByRole("region", { name: "Redirect review" }),
+        ).toBeNull();
+        expect(screen.queryByTestId("web-navigation-error-screen")).toBeNull();
+        expect(iframe).not.toHaveAttribute("inert");
+      } else {
+        const accept = await screen.findByRole("button", {
+          name: "Continue in this tab",
+        });
+        expect(proxies).toHaveLength(1);
+        if (receiptState === "replaced") receipts.delete("proxy-1");
+        fireEvent.click(accept);
+        if (receiptState === "valid") {
+          await waitFor(() => expect(proxies).toHaveLength(2));
+          expect(proxies[1].target).toBe("https://relay.example.test/");
+          expect(
+            getRuntimeWebNavigation(h.sessions[0].connectionId)?.initialUrl,
+          ).toBe("https://relay.example.test/admin/");
+          return;
+        }
+        await screen.findByText(/redirect expired or access changed/i);
+      }
+      expect(proxies).toHaveLength(1);
+      expect(
+        h.invoke.mock.calls.filter(
+          ([name]) => name === "stop_basic_auth_proxy",
+        ),
+      ).toHaveLength(0);
+    },
+  );
   it.each([undefined, false, true])(
     "automatically continues two trusted HTTPS hops with legacy autoContinue=%s and no source credentials",
     async (autoContinue) => {

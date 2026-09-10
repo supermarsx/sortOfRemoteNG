@@ -23,6 +23,8 @@ mod proxy_response;
 #[cfg(test)]
 #[path = "http_response_tests.rs"]
 mod proxy_response_tests;
+#[path = "http_quickconnect.rs"]
+mod quickconnect;
 #[cfg(test)]
 #[path = "http_request_log_tests.rs"]
 mod request_log_tests;
@@ -1443,6 +1445,19 @@ pub async fn axum_proxy_handler(
         0
     };
 
+    if req.uri().path() == quickconnect::PATH {
+        // A versioned vendor-script handoff is a local review request, never
+        // an upstream fetch or proxy-log entry containing a session URL.
+        return quickconnect::handle(
+            &state,
+            &method,
+            req.headers(),
+            path_and_query.split_once('?').map(|(_, query)| query),
+            document_sequence,
+            navigation_token,
+        );
+    }
+
     let full_url = format!(
         "{}{}",
         state.target_url.trim_end_matches('/'),
@@ -1790,11 +1805,24 @@ pub async fn axum_proxy_handler(
                 }
             }
 
-            // Rewrite absolute target URLs in text responses so that
-            // sub-resources resolve through the local proxy.
+            // Preserve absolute URL semantics while routing matching-origin
+            // resources through the protected proxy. Vendor fixes are strictly
+            // versioned, not a global URL/Location override.
             let mut final_body = if is_rewritable && !state.target_origin.is_empty() {
                 let text = String::from_utf8_lossy(&raw_bytes);
-                text.replace(&state.target_origin, "").into_bytes()
+                let text = proxy_response::rewrite_target_origin(
+                    &text,
+                    &state.target_origin,
+                    &state.proxy_origin,
+                );
+                // Apply the versioned adapter last: its deliberately bound
+                // upstream discovery origin must not be rewritten to loopback.
+                proxy_response::repair_quickconnect_redirect(
+                    &text,
+                    &request_url,
+                    content_type.as_deref(),
+                )
+                .into_bytes()
             } else {
                 raw_bytes
             };

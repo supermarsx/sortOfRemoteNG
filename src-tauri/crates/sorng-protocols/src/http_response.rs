@@ -8,6 +8,103 @@ pub(super) const MAX_EDITABLE_BODY_BYTES: usize = 32 * 1024 * 1024;
 pub(super) const ACCEPT_ENCODING: &str = "gzip, deflate";
 const NAVIGATION_MARKER: &str = "__sorng_navigation_v1";
 
+/// Keep absolute URLs absolute: app scripts commonly pass these strings to
+/// URL() without a base. Removing the origin breaks those scripts. Never turn
+/// a different authority with a matching prefix into a local proxy address.
+pub(super) fn rewrite_target_origin(text: &str, target: &str, proxy: &str) -> String {
+    if target.is_empty() || proxy.is_empty() {
+        return text.to_string();
+    }
+    let mut output = String::with_capacity(text.len());
+    let mut copied = 0;
+    for (start, _) in text.match_indices(target) {
+        let end = start + target.len();
+        let boundary = text[end..].chars().next();
+        if boundary.is_some_and(|c| {
+            !matches!(
+                c,
+                '/' | '?' | '#' | '\'' | '"' | '`' | '<' | '>' | ')' | ']' | '}' | ';' | ','
+            ) && !c.is_ascii_whitespace()
+        }) {
+            continue;
+        }
+        output.push_str(&text[copied..start]);
+        output.push_str(proxy);
+        copied = end;
+    }
+    output.push_str(&text[copied..]);
+    output
+}
+
+// Versioned compatibility fix for Synology's published QuickConnect client:
+// https://quickconnect.to/connect_lib.da3fae9c5d057ef58d3a.bundle.js
+// Its redirect() appends location.port to location.host (which includes port),
+// yielding an invalid double-port URL on our ephemeral loopback authority.
+const QUICKCONNECT_REDIRECT_HEAD: &str = r#"key:"redirect",value:function(t){var e=t.protocol,n=void 0===e?window.location.protocol:e,r=t.ip,o=void 0===r?window.location.host:r,u=t.port,f=void 0===u?window.location.port:u"#;
+const QUICKCONNECT_REDIRECT_DEFAULTS: &str = r#"key:"redirect",value:function(t){var __sorng_qc_origin=new URL(__SORNG_QUICKCONNECT_SOURCE_ORIGIN__),e=t.protocol,n=void 0===e?__sorng_qc_origin.protocol:e,r=t.ip,o=void 0===r?__sorng_qc_origin.hostname:r,u=t.port,f=void 0===u?__sorng_qc_origin.port:u"#;
+const QUICKCONNECT_SOURCE_URL: &str = "i=new URL(window.location.href),u=function()";
+const QUICKCONNECT_SOURCE_PROJECTION: &str = r#"i=(function(){var u=new URL(__SORNG_QUICKCONNECT_SOURCE_ORIGIN__);u.pathname=window.location.pathname;u.search=window.location.search.slice(1).split('&').filter(function(v){return v.split('=')[0]!=='__sorng_navigation_v1';}).join('&');u.hash=window.location.hash;return u;})(),u=function()"#;
+const QUICKCONNECT_ASSIGN: &str = "window.location.assign(P),this.refreshLoadingImage()";
+const QUICKCONNECT_RETRY_ASSIGN: &str = "window.location.href=n}}]),t}();e.default=u}";
+
+pub(super) fn repair_quickconnect_redirect(
+    text: &str,
+    request_url: &str,
+    content_type: Option<&str>,
+) -> String {
+    let javascript = content_type
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "application/javascript" | "text/javascript"
+            )
+        });
+    let Ok(url) = reqwest::Url::parse(request_url) else {
+        return text.to_string();
+    };
+    let known_host = url.host_str().is_some_and(|host| {
+        ["quickconnect.to", "quickconnect.cn"]
+            .iter()
+            .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
+    });
+    if !javascript
+        || !known_host
+        || !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/connect_lib.da3fae9c5d057ef58d3a.bundle.js"
+        || text.matches(QUICKCONNECT_REDIRECT_HEAD).count() != 1
+        || text.matches(QUICKCONNECT_SOURCE_URL).count() != 1
+        || text.matches(QUICKCONNECT_ASSIGN).count() != 1
+        || text.matches(QUICKCONNECT_RETRY_ASSIGN).count() != 1
+    {
+        return text.to_string();
+    }
+    let source_origin = serde_json::to_string(&url.origin().ascii_serialization()).unwrap();
+    // QuickConnect reads this cached URL to discover the NAS alias/service.
+    // Keep the real window Location unchanged, and preserve the page's path,
+    // query and hash rather than substituting the script asset's URL.
+    let projection = QUICKCONNECT_SOURCE_PROJECTION
+        .replace("__SORNG_QUICKCONNECT_SOURCE_ORIGIN__", &source_origin);
+    let defaults = QUICKCONNECT_REDIRECT_DEFAULTS
+        .replace("__SORNG_QUICKCONNECT_SOURCE_ORIGIN__", &source_origin);
+    let navigation = include_str!("quickconnect_navigation_client.js")
+        .replace("__SORNG_QUICKCONNECT_SOURCE_ORIGIN__", &source_origin);
+    text.replacen(QUICKCONNECT_REDIRECT_HEAD, &defaults, 1)
+        .replacen(QUICKCONNECT_SOURCE_URL, &projection, 1)
+        .replacen(
+            QUICKCONNECT_ASSIGN,
+            &format!("window.location.assign((function(){{{navigation};return sorngQuickConnectNavigation(P);}})()),this.refreshLoadingImage()"),
+            1,
+        )
+        .replacen(
+            QUICKCONNECT_RETRY_ASSIGN,
+            &format!("window.location.href=(function(){{{navigation};return sorngQuickConnectNavigation(n);}})()}}}}]),t}}();e.default=u}}"),
+            1,
+        )
+}
+
 /// Content-Type alone does not distinguish a page from jQuery HTML fragments or
 /// pipe-delimited dashboard stats. Explicit non-navigation metadata always wins.
 pub(super) fn is_document_request(headers: &HeaderMap, navigation_token: Option<&str>) -> bool {
@@ -418,6 +515,92 @@ pub(super) fn invalidated_header(name: &str) -> bool {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn absolute_origin_rewrites_preserve_urls_and_foreign_authorities() {
+        let source = "https://nas.example";
+        let proxy = "http://p0123456789abcdef0123456789abcdef.localhost:54362";
+        let body = format!(
+            "const base='{source}';const url=new URL('{source}/api?x=1#part');<a href=\"{source}/\">open</a>body{{background:url({source}/a.png)}}"
+        );
+        let rewritten = rewrite_target_origin(&body, source, proxy);
+        assert_eq!(rewritten, body.replace(source, proxy));
+        let endpoint = rewritten
+            .split("new URL('")
+            .nth(1)
+            .unwrap()
+            .split('\'')
+            .next()
+            .unwrap();
+        let parsed = reqwest::Url::parse(endpoint).unwrap();
+        assert_eq!(parsed.origin().ascii_serialization(), proxy);
+        assert_eq!(parsed.path(), "/api");
+        assert_eq!(parsed.query(), Some("x=1"));
+        for foreign in [
+            format!("{source}.attacker.example/api"),
+            format!("{source}:8443/api"),
+            format!("{source}@attacker.example/api"),
+            format!("{source}%2eattacker.example/api"),
+            format!("{source}suffix/api"),
+        ] {
+            assert_eq!(rewrite_target_origin(&foreign, source, proxy), foreign);
+        }
+        assert_eq!(rewrite_target_origin(&body, "", proxy), body);
+    }
+
+    #[test]
+    fn quickconnect_double_port_repair_is_asset_host_and_source_bounded() {
+        let asset = "/connect_lib.da3fae9c5d057ef58d3a.bundle.js";
+        let text = format!("before({QUICKCONNECT_REDIRECT_HEAD},l=t.path;{QUICKCONNECT_ASSIGN};after);var {QUICKCONNECT_SOURCE_URL}{{}};{QUICKCONNECT_RETRY_ASSIGN}");
+        for host in [
+            "quickconnect.to",
+            "nas.fr3.quickconnect.to",
+            "nas.quickconnect.cn",
+        ] {
+            let result = repair_quickconnect_redirect(
+                &text,
+                &format!("https://{host}{asset}"),
+                Some("application/javascript; charset=utf-8"),
+            );
+            assert!(result.contains("__sorng_qc_origin.hostname:r"));
+            assert!(result.contains(&format!("new URL(\"https://{host}\")")));
+            assert!(result.contains("/__sortofremoteng_quickconnect_redirect_v1"));
+            assert!(!result.contains(QUICKCONNECT_ASSIGN));
+            assert!(!result.contains(QUICKCONNECT_SOURCE_URL));
+            assert!(!result.contains(QUICKCONNECT_RETRY_ASSIGN));
+        }
+        for (url, content_type) in [
+            (
+                format!("https://quickconnect.to.attacker.example{asset}"),
+                "application/javascript",
+            ),
+            (
+                format!("https://notquickconnect.to{asset}"),
+                "application/javascript",
+            ),
+            (
+                "https://quickconnect.to/different.bundle.js".into(),
+                "application/javascript",
+            ),
+            (format!("https://quickconnect.to{asset}"), "text/html"),
+        ] {
+            assert_eq!(
+                repair_quickconnect_redirect(&text, &url, Some(content_type)),
+                text
+            );
+        }
+        let url = format!("https://quickconnect.to{asset}");
+        let duplicate = text.repeat(2);
+        assert_eq!(
+            repair_quickconnect_redirect(&duplicate, &url, Some("text/javascript")),
+            duplicate
+        );
+        let changed = text.replace("u=t.port", "u=t.otherPort");
+        assert_eq!(
+            repair_quickconnect_redirect(&changed, &url, Some("text/javascript")),
+            changed
+        );
+    }
 
     #[test]
     fn only_navigation_requests_bootstrap_and_explicit_ajax_always_wins() {

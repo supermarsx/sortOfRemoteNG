@@ -116,6 +116,24 @@ These are typed connection settings, not arbitrary command-line arguments or
 proxy scripts. Certificate verification and credential-origin checks remain
 enforced independently.
 
+### Synology QuickConnect navigation
+
+The supported QuickConnect website client receives the original NAS hostname
+for its address detection, rather than the app's private localhost hostname and
+temporary port. Same-site navigation stays inside the protected proxy. Its
+redirect and retry actions use the same destination review described above;
+they do not automatically send saved credentials to another server.
+
+A local **403** accompanying **Review redirect destination** means the app is
+waiting for that review, not that DSM rejected your password. Certificate checks,
+reviewed HTTP downgrades, and HTTPS-only settings still apply. Discovery requests
+remain subject to your website resource restrictions, and redirects that need
+query tokens may still require a fresh sign-in after review.
+
+This compatibility adapter targets a known QuickConnect client version. After a
+native proxy update, restart the desktop development app and reopen the web tab;
+frontend Fast Refresh alone does not update the running Rust proxy.
+
 ## Clear one website session
 
 Use **Clear session data** in the website toolbar and confirm. This stops that
