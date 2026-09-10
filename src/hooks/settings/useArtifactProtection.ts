@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ToastContext } from "../../contexts/ToastContext";
 import { getInvoke } from "../../utils/tauri/invoke";
 import { generateId } from "../../utils/core/id";
 import {
@@ -24,6 +25,7 @@ async function native() {
 
 /** Explicit native inspection and token-bound transitions; never polls or stores secrets. */
 export function useArtifactProtection(refreshKey?: unknown) {
+  const toast = useContext(ToastContext)?.toast;
   const [status, setStatus] = useState<ArtifactProtectionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -41,7 +43,10 @@ export function useArtifactProtection(refreshKey?: unknown) {
   const generation = useRef(0);
   const request = useRef<string | null>(null);
   const cancelRequested = useRef(false);
-  const progressSubscription = useRef<(() => void) | null>(null);
+  const requestToast = useRef<{
+    id: string;
+    toast: NonNullable<typeof toast>;
+  } | null>(null);
   const releasePreview = useCallback(async (token: string) => {
     try {
       const invoke = await native();
@@ -87,15 +92,12 @@ export function useArtifactProtection(refreshKey?: unknown) {
   }, [releasePreview]);
   useEffect(() => {
     const currentGeneration = generation;
-    const subscription = progressSubscription;
     const pendingPreview = previewRef;
     mounted.current = true;
     void refresh();
     return () => {
       mounted.current = false;
       currentGeneration.current++;
-      subscription.current?.();
-      subscription.current = null;
       if (pendingPreview.current)
         void releasePreview(pendingPreview.current.token);
       pendingPreview.current = null;
@@ -225,14 +227,50 @@ export function useArtifactProtection(refreshKey?: unknown) {
       completed: 0,
       total: planned.totalFiles,
     });
+    const operation =
+      planned.target === "encrypted" ? "Encryption" : "Decryption";
+    const toastId = toast?.loading(`${operation}: preparing inspected files…`);
+    if (toast && toastId) requestToast.current = { id: toastId, toast };
+    let unlisten: (() => void) | undefined;
+    let toastFinished = false;
     let failure: string | null = null;
     let outcome: ArtifactPolicyResult | null = null;
     try {
       const invoke = await native();
       const { listen } = await import("@tauri-apps/api/event");
-      const unlisten = await listen<ArtifactPolicyProgress>(
+      unlisten = await listen<ArtifactPolicyProgress>(
         "encryption:artifact-progress",
         ({ payload }) => {
+          if (
+            toastFinished ||
+            payload.requestId !== requestId ||
+            !["scan", "stage", "commit", "rollback", "complete"].includes(
+              payload.phase,
+            ) ||
+            !Number.isSafeInteger(payload.completed) ||
+            !Number.isSafeInteger(payload.total) ||
+            payload.completed < 0 ||
+            payload.total < payload.completed
+          )
+            return;
+          // Native counters are phase-local: scan/complete count families,
+          // stage counts files within one family, commit/rollback are steps.
+          const count = `${payload.completed} / ${payload.total}`;
+          const phase = {
+            scan: `inspecting ${count} artifact families`,
+            stage: `preparing current artifact group · ${count} files`,
+            commit: "committing current artifact group…",
+            rollback: "rolling back current artifact group…",
+            complete: `verifying result · ${count} artifact families committed`,
+          }[payload.phase];
+          if (toastId)
+            toast?.update(toastId, {
+              message: `${operation}: ${phase}`,
+              progress:
+                payload.phase === "stage"
+                  ? { completed: payload.completed, total: payload.total }
+                  : undefined,
+            });
           if (
             mounted.current &&
             epoch === generation.current &&
@@ -242,10 +280,8 @@ export function useArtifactProtection(refreshKey?: unknown) {
         },
       );
       if (!mounted.current || epoch !== generation.current) {
-        unlisten();
         return null;
       }
-      progressSubscription.current = unlisten;
       outcome = await invoke<ArtifactPolicyResult>(
         "encryption_apply_artifact_policy",
         {
@@ -277,6 +313,42 @@ export function useArtifactProtection(refreshKey?: unknown) {
         throw new Error(
           "The operation returned no verified result. Refresh inspected status before retrying.",
         );
+      const committed = outcome.results.filter(
+        (row) => row.outcome === "committed",
+      ).length;
+      const unchanged = outcome.results.filter(
+        (row) => row.outcome === "unchanged",
+      ).length;
+      const partial = outcome.outcome !== "completed" && committed > 0;
+      const successful =
+        outcome.outcome === "completed" && !outcome.recoveryRequired;
+      if (toastId)
+        toast?.update(toastId, {
+          type: successful
+            ? "success"
+            : outcome.outcome === "failed"
+              ? "error"
+              : "warning",
+          message: successful
+            ? `${operation} completed.`
+            : `${operation} ${outcome.outcome === "cancelled" ? "cancelled" : "not completed"}${partial ? " after partial completion" : ""}.`,
+          progress: undefined,
+          details: [
+            `${committed} artifact families changed; ${unchanged} unchanged.`,
+            ...(outcome.recoveryRequired
+              ? [
+                  "Recovery is required. Review Security settings before retrying.",
+                ]
+              : []),
+            ...(!successful
+              ? [
+                  "Review the inspected artifact results before retrying; some files may already have changed.",
+                ]
+              : []),
+          ],
+          duration: successful ? 6000 : 0,
+        });
+      toastFinished = true;
       if (mounted.current && epoch === generation.current) setResult(outcome);
       else outcome = null;
     } catch (e) {
@@ -284,8 +356,21 @@ export function useArtifactProtection(refreshKey?: unknown) {
       failure = errorText(e);
     } finally {
       void releasePreview(planned.token);
-      progressSubscription.current?.();
-      progressSubscription.current = null;
+      unlisten?.();
+      if (!toastFinished && toastId)
+        toast?.update(toastId, {
+          type: failure ? "error" : "warning",
+          message: failure
+            ? `${operation} returned no verified completion.`
+            : `${operation} was not started because the settings view changed.`,
+          progress: undefined,
+          details: failure
+            ? ["Review Security settings and inspected status before retrying."]
+            : undefined,
+          duration: failure ? 0 : 6000,
+        });
+      toastFinished = true;
+      if (requestToast.current?.id === toastId) requestToast.current = null;
       request.current = null;
       if (mounted.current) {
         await refresh();
@@ -312,6 +397,12 @@ export function useArtifactProtection(refreshKey?: unknown) {
     try {
       const invoke = await native();
       await invoke("encryption_cancel_artifact_policy", { requestId });
+      if (request.current === requestId && requestToast.current) {
+        const active = requestToast.current;
+        active.toast.update(active.id, {
+          message: "Cancellation requested; waiting for a safe stopping point…",
+        });
+      }
     } catch (e) {
       if (mounted.current) {
         setError(errorText(e));

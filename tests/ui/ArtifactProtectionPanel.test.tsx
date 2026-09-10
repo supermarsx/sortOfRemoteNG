@@ -627,7 +627,7 @@ describe("ArtifactProtectionPanel", () => {
     expect(native.unlisten).toHaveBeenCalledOnce();
   });
 
-  it("disables cancellation at commit and immediately releases the progress listener on unmount", async () => {
+  it("disables cancellation at commit and releases the operation listener only after settlement", async () => {
     const onChanged = vi.fn();
     const view = render(<ArtifactProtectionPanel onChanged={onChanged} />);
     await ready();
@@ -649,7 +649,7 @@ describe("ArtifactProtectionPanel", () => {
     fireEvent.click(cancel);
     expect(calls("encryption_cancel_artifact_policy")).toHaveLength(0);
     view.unmount();
-    expect(native.unlisten).toHaveBeenCalledOnce();
+    expect(native.unlisten).not.toHaveBeenCalled();
     await act(async () =>
       pending.resolve({
         requestId,
