@@ -255,6 +255,7 @@ function BoundSynologySession({
   const [capabilities, setCapabilities] = useState<RuntimeCapabilities | null>(
     null,
   );
+  const initialAttemptStarted = useRef(false);
   useEffect(() => {
     let disposed = false;
     void loadRuntimeCapabilities().then((caps) => {
@@ -262,15 +263,21 @@ function BoundSynologySession({
       const error = getRuntimeProtocolUnavailableMessage("synology", caps);
       setCapabilities(caps);
       setCapabilityError(error);
-      setCapabilityReady(true);
-      if (!error && !issue) void runtime.current.connect();
     });
     return () => {
       disposed = true;
     };
-    // Initial connection only; no automatic retries after auth or network failures.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (!capabilities || initialAttemptStarted.current) return;
+    initialAttemptStarted.current = true;
+    // Connect only from the render following capability validation. Strict Mode
+    // replays mount cleanup, which revokes the connection hook's old handlers;
+    // calling one directly from the initial promise would silently do nothing.
+    // This remains a single initial attempt, never an automatic auth retry.
+    if (!capabilityError && !issue) void runtime.current.connect();
+    setCapabilityReady(true);
+  }, [capabilities, capabilityError, issue]);
   if (issue)
     return (
       <div

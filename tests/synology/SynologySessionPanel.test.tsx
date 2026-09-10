@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   access: (_event: unknown) => {},
   current: () => {},
   capabilities: vi.fn(),
+  realContent: false,
 }));
 let connections: Connection[] = [];
 let availability: DatabaseAvailability;
@@ -73,23 +74,35 @@ vi.mock(
     loadRuntimeCapabilities: mocks.capabilities,
   }),
 );
-vi.mock("../../src/components/synology/SynologyPanel", () => ({
-  SynologySessionContent: ({
-    connection,
-  }: {
-    connection: ReturnType<
-      typeof import("../../src/hooks/synology/useSynologyFileConnection").useSynologyFileConnection
-    >;
-  }) => (
-    <section aria-label={connection.instanceId}>
-      <span>{connection.host}</span>
-      <span>{connection.connectionStatus}</span>
-      <button onClick={() => void connection.disconnect()}>
-        Disconnect {connection.instanceId}
-      </button>
-    </section>
-  ),
-}));
+vi.mock(
+  "../../src/components/synology/SynologyPanel",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../src/components/synology/SynologyPanel")
+      >();
+    return {
+      SynologySessionContent: ({
+        connection,
+      }: {
+        connection: ReturnType<
+          typeof import("../../src/hooks/synology/useSynologyFileConnection").useSynologyFileConnection
+        >;
+      }) =>
+        mocks.realContent ? (
+          <actual.SynologySessionContent connection={connection} />
+        ) : (
+          <section aria-label={connection.instanceId}>
+            <span>{connection.host}</span>
+            <span>{connection.connectionStatus}</span>
+            <button onClick={() => void connection.disconnect()}>
+              Disconnect {connection.instanceId}
+            </button>
+          </section>
+        ),
+    };
+  },
+);
 
 const saved = (id: string): Connection => ({
   id,
@@ -118,6 +131,7 @@ beforeEach(() => {
   mocks.dispatch.mockClear();
   mocks.owner = "db-a";
   mocks.allowed = true;
+  mocks.realContent = false;
   connections = [saved("one"), saved("two")];
   availability = { status: "ready", databaseId: "db-a", generation: 1 };
   mocks.capabilities.mockResolvedValue({
@@ -138,6 +152,116 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("saved Synology session ownership", () => {
+  it("starts the initial saved sign-in after Strict Mode effect replay without requiring Retry", async () => {
+    mocks.realContent = true;
+    let resolveLogin!: (result: unknown) => void;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "syn_fs_connect")
+        return new Promise((resolve) => {
+          resolveLogin = resolve;
+        });
+      if (command === "syn_fs_list")
+        return Promise.resolve({ files: [], total: 0, offset: 0 });
+      if (command === "syn_fs_session_health")
+        return Promise.resolve({
+          status: "connected",
+          lastVerifiedAt: "2026-09-10T12:00:00Z",
+          consecutiveFailures: 0,
+          message: null,
+        });
+      return Promise.resolve(undefined);
+    });
+    render(
+      <React.StrictMode>
+        <SynologySessionPanel session={session("one")} />
+      </React.StrictMode>,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Connecting to NAS…" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("The NAS session is disconnected."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+    expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+      "syn_fs_connect",
+    ]);
+    await act(async () =>
+      resolveLogin({
+        status: "connected",
+        sessionId: "receipt-one",
+        message: "ok",
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "syn_fs_list",
+        expect.objectContaining({
+          instanceId: "one",
+          expectedSessionId: "receipt-one",
+        }),
+      ),
+    );
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "syn_fs_connect",
+      ),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByText("The NAS session is disconnected."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("synology-panel")).toBeInTheDocument();
+  });
+  it("preserves actual first-login errors and requires an explicit Retry", async () => {
+    mocks.realContent = true;
+    mocks.invoke.mockRejectedValue(new Error("The NAS refused this sign-in."));
+    render(
+      <React.StrictMode>
+        <SynologySessionPanel session={session("one")} />
+      </React.StrictMode>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The NAS refused this sign-in.",
+    );
+    expect(
+      screen.getByRole("heading", { name: "NAS connection unavailable" }),
+    ).toBeInTheDocument();
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "syn_fs_connect",
+      ),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "syn_fs_connect",
+        ),
+      ).toHaveLength(2),
+    );
+  });
+  it("does not start a saved login if access is revoked during capability discovery", async () => {
+    let resolveCapabilities!: (value: unknown) => void;
+    mocks.capabilities.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCapabilities = resolve;
+      }),
+    );
+    render(
+      <React.StrictMode>
+        <SynologySessionPanel session={session("one")} />
+      </React.StrictMode>,
+    );
+    await act(async () => {
+      mocks.allowed = false;
+      mocks.access({ databaseId: "db-a", status: "suspended" });
+      resolveCapabilities({ source: "native", ops: true, platform: true });
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("owning database");
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
   it("opens the API explorer for HTTP(S) Synology applications using application credentials", async () => {
     connections = [
       {
