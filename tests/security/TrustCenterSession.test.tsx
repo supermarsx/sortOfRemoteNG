@@ -16,6 +16,11 @@ vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: { sessions: fixture.sessions, connections: [] },
     dispatch: fixture.dispatch,
+    databaseAvailability: {
+      status: "ready",
+      databaseId: "fixture-db",
+      generation: 1,
+    },
   }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
@@ -66,7 +71,10 @@ describe("Trust Center tab navigation", () => {
     const openSettings = vi.fn();
     render(
       <ToolTabViewer
-        session={createTrustCenterSession()}
+        session={{
+          ...createTrustCenterSession(),
+          ownerDatabaseId: "fixture-db",
+        }}
         onClose={vi.fn()}
         onOpenSettings={openSettings}
       />,
@@ -98,7 +106,13 @@ describe("Trust Center tab navigation", () => {
   it("renders the dedicated manager without a duplicate tab Close button", async () => {
     const close = vi.fn();
     render(
-      <ToolTabViewer session={createTrustCenterSession()} onClose={close} />,
+      <ToolTabViewer
+        session={{
+          ...createTrustCenterSession(),
+          ownerDatabaseId: "fixture-db",
+        }}
+        onClose={close}
+      />,
     );
     expect(
       await screen.findByRole("region", { name: "Dedicated manager" }),

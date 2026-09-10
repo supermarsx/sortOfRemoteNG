@@ -30,12 +30,15 @@ export interface ToolDescriptor<Key extends ToolKey = ToolKey> {
   key: Key;
   label: string;
   icon: LucideIcon;
+  /** Database tools must never mount against an absent or different owner. */
+  access: "app" | "database";
 }
 
 const defineTool = <Key extends ToolKey>(
   key: Key,
   icon: LucideIcon,
-): ToolDescriptor<Key> => ({ key, label: TOOL_LABELS[key], icon });
+  access: ToolDescriptor["access"] = "database",
+): ToolDescriptor<Key> => ({ key, label: TOOL_LABELS[key], icon, access });
 
 /**
  * Canonical visual identity for every tool session.
@@ -44,7 +47,7 @@ const defineTool = <Key extends ToolKey>(
  * so adding a new `ToolKey` cannot silently fall back to an unrelated wrench.
  */
 export const TOOL_DESCRIPTORS = Object.freeze({
-  performanceMonitor: defineTool("performanceMonitor", BarChart3),
+  performanceMonitor: defineTool("performanceMonitor", BarChart3, "app"),
   actionLog: defineTool("actionLog", ScrollText),
   importExport: defineTool("importExport", ArrowUpDown),
   shortcutManager: defineTool("shortcutManager", Keyboard),
@@ -55,12 +58,12 @@ export const TOOL_DESCRIPTORS = Object.freeze({
   serverStats: defineTool("serverStats", Server),
   opkssh: defineTool("opkssh", Shield),
   mcpServer: defineTool("mcpServer", Server),
-  scriptManager: defineTool("scriptManager", FileCode),
-  macroManager: defineTool("macroManager", ListVideo),
-  recordingManager: defineTool("recordingManager", Disc),
-  windowsBackup: defineTool("windowsBackup", HardDrive),
+  scriptManager: defineTool("scriptManager", FileCode, "app"),
+  macroManager: defineTool("macroManager", ListVideo, "app"),
+  recordingManager: defineTool("recordingManager", Disc, "app"),
+  windowsBackup: defineTool("windowsBackup", HardDrive, "app"),
   diagnostics: defineTool("diagnostics", Activity),
-  settings: defineTool("settings", Settings),
+  settings: defineTool("settings", Settings, "app"),
   rdpSessions: defineTool("rdpSessions", Cpu),
   tagManager: defineTool("tagManager", Tag),
   tabGroupManager: defineTool("tabGroupManager", Layers),
@@ -73,7 +76,7 @@ export const TOOL_DESCRIPTORS = Object.freeze({
   tunnelChainEditor: defineTool("tunnelChainEditor", Waypoints),
   tunnelProfileEditor: defineTool("tunnelProfileEditor", Route),
   bulkEditor: defineTool("bulkEditor", Pencil),
-  database: defineTool("database", Database),
+  database: defineTool("database", Database, "app"),
 } satisfies { [Key in ToolKey]: ToolDescriptor<Key> });
 
 export const getToolDescriptor = (key: ToolKey): ToolDescriptor =>

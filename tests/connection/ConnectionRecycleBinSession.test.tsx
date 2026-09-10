@@ -17,6 +17,11 @@ vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: { sessions: fixture.sessions, connections: [] },
     dispatch: fixture.dispatch,
+    databaseAvailability: {
+      status: fixture.databaseId ? "ready" : "none",
+      databaseId: fixture.databaseId ?? undefined,
+      generation: 1,
+    },
     recycleBin: {
       snapshot: fixture.databaseId
         ? { scope: { databaseId: fixture.databaseId } }

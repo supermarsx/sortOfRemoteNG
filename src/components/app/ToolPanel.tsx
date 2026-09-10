@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components, react/only-export-components */
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
+import { LockKeyhole } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useTranslation } from "react-i18next";
 import { ConnectionSession } from "../../types/connection/connection";
@@ -16,9 +17,12 @@ import {
   TRUST_CENTER_PROTOCOL,
   ICON_EXPLORER_PROTOCOL,
   CONNECTION_RECYCLE_BIN_PROTOCOL,
+  createToolSession,
 } from "./toolSession";
 import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
+import { getToolDescriptor } from "./toolDescriptors";
+import EmptyState from "../ui/display/EmptyState";
 
 const PerformanceMonitor = dynamic(
   () =>
@@ -229,11 +233,55 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   settingsInitialTabNonce,
 }) => {
   const { t } = useTranslation();
-  const { state } = useConnections();
+  const { state, dispatch, databaseAvailability } = useConnections();
   const { settings } = useSettings();
   const { isActive } = useSessionRenderActivity();
   const toolKey = getToolKeyFromProtocol(session.protocol);
   const openTrustCenter = useTrustCenterSession(onActivateSession, session);
+  const databaseDependent =
+    (toolKey !== null && getToolDescriptor(toolKey).access === "database") ||
+    session.protocol === TRUST_CENTER_PROTOCOL ||
+    session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL;
+  const explicitOwner =
+    session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL
+      ? session.connectionRecycleBin?.databaseId
+      : session.ownerDatabaseId;
+  // A tool opened before any database exists may bind exactly once. Existing
+  // owner metadata wins. Wait for the provider's guarded acknowledgement before
+  // mounting private content; a viewer remount must not forget its first owner.
+  useEffect(() => {
+    if (
+      !databaseDependent ||
+      explicitOwner ||
+      databaseAvailability?.status !== "ready" ||
+      !databaseAvailability.databaseId
+    )
+      return;
+    dispatch?.({
+      type: "BIND_TOOL_DATABASE_OWNER",
+      payload: {
+        sessionId: session.id,
+        databaseId: databaseAvailability.databaseId,
+        generation: databaseAvailability.generation,
+      },
+    });
+  }, [
+    databaseDependent,
+    session.id,
+    explicitOwner,
+    dispatch,
+    databaseAvailability?.status,
+    databaseAvailability?.databaseId,
+    databaseAvailability?.generation,
+  ]);
+  const ownerDatabaseId = explicitOwner;
+  const databaseReady =
+    databaseAvailability?.status === "ready" &&
+    !!ownerDatabaseId &&
+    databaseAvailability.databaseId === ownerDatabaseId;
+  const databaseMountKey = databaseDependent
+    ? `${ownerDatabaseId}:${databaseAvailability?.generation}`
+    : undefined;
 
   const activeRdpBackendIds = useMemo(
     () =>
@@ -243,6 +291,87 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         .filter(Boolean) as string[],
     [state.sessions],
   );
+
+  if (databaseDependent && !databaseReady) {
+    const status = databaseAvailability?.status;
+    const differentOwner =
+      ownerDatabaseId &&
+      databaseAvailability?.databaseId &&
+      ownerDatabaseId !== databaseAvailability.databaseId;
+    const message = differentOwner
+      ? "A different database is open"
+      : status === "suspended"
+        ? "Database locked"
+        : status === "loading"
+          ? "Loading database"
+          : status === "error"
+            ? "Database unavailable"
+            : "Open a database to use this tool";
+    return (
+      <div
+        data-testid="tool-database-gate"
+        role="status"
+        className="flex h-full min-h-0 items-center justify-center overflow-auto p-6"
+      >
+        <EmptyState
+          icon={LockKeyhole}
+          message={message}
+          hint={
+            session.layout?.isDetached && !onDatabaseSelect
+              ? "Return or reattach this tool to the main window, then open or unlock its owning database there. This detached window cannot open databases."
+              : differentOwner
+                ? "This tab belongs to its original database. Reopen that database to continue; this tool will not use another database's connections."
+                : status === "loading"
+                  ? "The tool will become available when its database is ready."
+                  : "Open or unlock the database from Databases. This tab will become available when access is restored."
+          }
+          className="max-w-md text-center"
+        >
+          {onActivateSession && dispatch && onDatabaseSelect ? (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary mt-4"
+              onClick={() => {
+                const windowId = session.layout?.isDetached
+                  ? session.layout.windowId
+                  : undefined;
+                const existing = state.sessions.find(
+                  (candidate) =>
+                    candidate.protocol === "tool:database" &&
+                    !!candidate.layout?.isDetached ===
+                      !!session.layout?.isDetached &&
+                    candidate.layout?.windowId === windowId,
+                );
+                if (existing) {
+                  onActivateSession(existing.id);
+                  return;
+                }
+                const candidate = {
+                  ...createToolSession("database"),
+                  tabGroupId: session.tabGroupId,
+                  ...(session.layout?.isDetached
+                    ? { layout: { ...session.layout } }
+                    : {}),
+                };
+                dispatch({ type: "ADD_SESSION", payload: candidate });
+                onActivateSession(candidate.id);
+              }}
+            >
+              Open Databases
+            </button>
+          ) : onOpenSettings && onDatabaseSelect ? (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary mt-4"
+              onClick={() => onOpenSettings("security")}
+            >
+              Open security settings
+            </button>
+          ) : null}
+        </EmptyState>
+      </div>
+    );
+  }
 
   if (session.protocol === RDP_INTERNALS_PROTOCOL) {
     return <RDPInternalsTab session={session} onClose={onClose} />;
@@ -258,6 +387,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     return (
       <FeatureErrorBoundary title="The recycle bin could not be displayed">
         <ConnectionRecycleBinTab
+          key={databaseMountKey}
           databaseId={session.connectionRecycleBin?.databaseId ?? ""}
         />
       </FeatureErrorBoundary>
@@ -266,6 +396,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   if (session.protocol === TRUST_CENTER_PROTOCOL)
     return (
       <TrustCenterTab
+        key={databaseMountKey}
         onClose={onClose}
         showClose={false}
         onOpenTrustSettings={
@@ -287,7 +418,10 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   // the .tool-tab-embedded class strips the backdrop, makes the outer wrapper
   // fill the tab, and forces the inner dialog to fill it too.
   return (
-    <div className="tool-tab-embedded relative h-full min-h-0 min-w-0 max-w-full overflow-hidden">
+    <div
+      key={databaseMountKey}
+      className="tool-tab-embedded relative h-full min-h-0 min-w-0 max-w-full overflow-hidden"
+    >
       {toolKey === "performanceMonitor" && (
         <PerformanceMonitor isOpen onClose={onClose} />
       )}

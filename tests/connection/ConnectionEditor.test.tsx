@@ -13,6 +13,7 @@ import { ToolTabViewer } from "../../src/components/app/ToolPanel";
 import { scrollConnectionEditorSearchTargetIntoView } from "../../src/components/connection/editor/useConnectionEditorSearch";
 import { Connection, TabGroup } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { ConnectionContext } from "../../src/contexts/ConnectionContextTypes";
 import { useConnections } from "../../src/contexts/useConnections";
 import { invoke } from "@tauri-apps/api/core";
 import { resetIntegrationConfigStoreForTests } from "../../src/hooks/integrations/useIntegrationConfigStore";
@@ -3162,16 +3163,36 @@ describe("ConnectionEditor", () => {
         protocol: "tool:connectionEditor",
         name: "Connection Editor",
         status: "connected",
+        ownerDatabaseId: "fixture-db",
       };
+      // This forwarding test supplies an explicitly ready owning database;
+      // Provider access/binding is exercised by its dedicated lifecycle suite.
+      function ReadyToolFixture() {
+        const context = useConnections();
+        return (
+          <ConnectionContext.Provider
+            value={{
+              ...context,
+              databaseAvailability: {
+                status: "ready",
+                databaseId: "fixture-db",
+                generation: 1,
+              },
+            }}
+          >
+            <ToolTabViewer
+              session={session as never}
+              onClose={vi.fn()}
+              onReconnect={onReconnect}
+            />
+          </ConnectionContext.Provider>
+        );
+      }
 
       render(
         <ConnectionProvider>
           <ConnectionStateProbe initialConnections={[mockConnection]} />
-          <ToolTabViewer
-            session={session as never}
-            onClose={vi.fn()}
-            onReconnect={onReconnect}
-          />
+          <ReadyToolFixture />
         </ConnectionProvider>,
       );
 

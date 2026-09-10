@@ -10,7 +10,14 @@ import {
 } from "../../src/components/app/toolSession";
 
 vi.mock("../../src/contexts/useConnections", () => ({
-  useConnections: () => ({ state: { sessions: [], connections: [] } }),
+  useConnections: () => ({
+    state: { sessions: [], connections: [] },
+    databaseAvailability: {
+      status: "ready",
+      databaseId: "fixture-db",
+      generation: 1,
+    },
+  }),
 }));
 vi.mock("../../src/components/rdp/RDPInternalsTab", () => ({
   RDPInternalsTab: ({ session, onClose }: any) => (
@@ -93,7 +100,10 @@ describe("tool tab background activity", () => {
   it.each(["rdpSessions", "internalProxy"] as const)(
     "propagates visibility to %s without resetting manager state",
     async (tool) => {
-      const session = createToolSession(tool);
+      const session = {
+        ...createToolSession(tool),
+        ownerDatabaseId: "fixture-db",
+      };
       const view = (active: boolean) => (
         <SessionRenderActivityProvider isActive={active}>
           <ToolTabViewer session={session} onClose={vi.fn()} />
