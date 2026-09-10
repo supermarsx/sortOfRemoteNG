@@ -135,3 +135,31 @@ test("static Kafka reaches both command dispatch and its owning startup-state cr
     /#\[cfg\(feature = "kafka"\)\]\s*\{\s*let kafka_state/,
   );
 });
+
+test("SSH scripting compiles exactly one implementation and retains command registration", () => {
+  const commands = read("src-tauri/src/ssh_commands.rs");
+  assert.match(
+    commands,
+    /#\[cfg\(feature = "script-engine"\)\]\s*mod script \{/,
+  );
+  assert.match(
+    commands,
+    /#\[cfg\(not\(feature = "script-engine"\)\)\]\s*mod script_stub \{/,
+  );
+  assert.match(
+    commands,
+    /#\[cfg\(feature = "script-engine"\)\][\s\S]*?mod script_inner \{/,
+  );
+  assert.match(
+    commands,
+    /#\[cfg\(not\(feature = "script-engine"\)\)\][\s\S]*?mod script_stub_inner \{/,
+  );
+  assert.match(
+    read("src-tauri/crates/sorng-ssh/src/script_cmds.rs"),
+    /service\.execute_script\(code, script_type, context\)\.await/,
+  );
+  assert.match(
+    read("src-tauri/crates/sorng-commands-core/src/core_handler.rs"),
+    /ssh_commands::execute_user_script,/,
+  );
+});
