@@ -267,7 +267,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
   it.each([
     null,
     { version: 1, id: "unknown", loginMode: "form" },
-    { version: 1, id: "ilo", loginMode: "digest" },
+    { version: 1, id: "ilo", loginMode: "unknown" },
   ])(
     "blocks malformed imported application before any remote probe or proxy %j",
     async (httpApplication) => {

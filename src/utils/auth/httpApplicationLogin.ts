@@ -44,7 +44,7 @@ export function validateHttpApplicationTarget(
 
 export interface HttpApplicationLogin {
   credentials: { username: string; password: string } | null;
-  upstreamAuthMode?: "none" | "basic";
+  upstreamAuthMode?: "none" | "basic" | "digest" | "header";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
 }
@@ -115,12 +115,28 @@ export function normalizeHttpApplicationSelectors(
 export function resolveHttpApplicationLogin(
   connection: Partial<Connection> | null | undefined,
 ): HttpApplicationLogin {
-  if (connection?.httpApplication === undefined)
+  if (connection?.httpApplication === undefined) {
+    if (connection?.authType === "header")
+      return {
+        credentials: null,
+        upstreamAuthMode: "header",
+        autoLogin: false,
+      };
+    if (connection?.authType === "digest")
+      return {
+        credentials: resolveHttpBasicCredentials({
+          ...connection,
+          authType: "basic",
+        }),
+        upstreamAuthMode: "digest",
+        autoLogin: false,
+      };
     return {
       credentials: resolveHttpBasicCredentials(connection),
       autoLogin: connection?.httpAutoLogin ?? false,
       selectors: connection?.httpAutoLoginSelectors,
     };
+  }
   const settings = normalizeHttpApplicationSettings(
     connection.httpApplication,
   )!;
@@ -139,8 +155,12 @@ export function resolveHttpApplicationLogin(
     throw new Error(
       "Application login requires this connection's saved website credentials. Review Application settings.",
     );
-  if (settings.loginMode === "basic")
-    return { credentials, upstreamAuthMode: "basic", autoLogin: false };
+  if (settings.loginMode === "basic" || settings.loginMode === "digest")
+    return {
+      credentials,
+      upstreamAuthMode: settings.loginMode,
+      autoLogin: false,
+    };
   if (!credentials.username || !credentials.password)
     throw new Error(
       "Automatic form login requires both the website username and password.",

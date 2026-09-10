@@ -2,6 +2,10 @@ import type { BackupConfig } from "../../types/settings/backupSettings";
 import type { Connection } from "../../types/connection/connection";
 import type { GlobalSettings } from "../../types/settings/settings";
 import {
+  isHttpSecretOption,
+  stripHttpOptionSecrets,
+} from "../connection/httpOptionSecrets";
+import {
   isTrustExportDocument,
   type TrustExportDocument,
 } from "./trustPortability";
@@ -79,6 +83,9 @@ function stripFields<T>(
   fieldName?: string,
 ): T | undefined {
   const normalizedFieldName = fieldName ? normalizeFieldName(fieldName) : "";
+  if (predicate("password") && isHttpSecretOption(normalizedFieldName)) {
+    return stripHttpOptionSecrets(normalizedFieldName, value) as T | undefined;
+  }
   if (normalizedFieldName && predicate(normalizedFieldName)) {
     return undefined;
   }

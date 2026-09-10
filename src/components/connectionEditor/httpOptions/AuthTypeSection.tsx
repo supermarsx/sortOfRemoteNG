@@ -7,9 +7,24 @@ const AuthTypeSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
       Authentication Type
     </label>
-    <Select value={mgr.formData.authType ?? "basic"} onChange={(v: string) => mgr.setFormData({ ...mgr.formData, authType: v as any })} options={[{ value: "basic", label: "Basic Authentication" }, { value: "header", label: "Custom Headers" }]} variant="form" />
+    <Select
+      value={mgr.formData.authType ?? "basic"}
+      onChange={(value) => {
+        if (value === "basic" || value === "digest" || value === "header")
+          mgr.setFormData({
+            ...mgr.formData,
+            authType: value,
+            ...(value === "digest" ? { httpAutoLogin: false } : {}),
+          });
+      }}
+      options={[
+        { value: "basic", label: "Basic Authentication" },
+        { value: "digest", label: "Digest Authentication" },
+        { value: "header", label: "Custom Headers" },
+      ]}
+      variant="form"
+    />
   </div>
 );
-
 
 export default AuthTypeSection;

@@ -26,6 +26,7 @@ export interface HttpApplicationProfile {
   hostedLoginUrl?: string;
   /** Safe source-reviewed path for an explicit external-browser handoff. */
   loginPath?: string;
+  loginModes?: readonly HttpApplicationSettings["loginMode"][];
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -78,6 +79,33 @@ const unavailable = (
 
 /** Browser capabilities, not a claim that every native API credential logs into a website. */
 export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
+  {
+    id: "generic-form",
+    label: "Generic login form",
+    category: "custom",
+    capability: "generic-form",
+    loginModes: ["manual", "form"],
+    description:
+      "Explicitly opt into conservative form detection, or supply exact selectors. Advanced form options provide bounded timing, fill-only mode and explicitly configured fields. No HTTP Authorization header is added; identity-provider redirects and unsupported MFA remain interactive.",
+  },
+  {
+    id: "http-basic",
+    label: "HTTP Basic authentication",
+    category: "custom",
+    capability: "http-auth",
+    loginModes: ["manual", "basic"],
+    description:
+      "Explicit HTTP Basic transport authentication to the saved origin. This is not website form login. Use HTTPS: Basic credentials are encoded, not encrypted by the authentication scheme. Credentials never follow an unrelated origin.",
+  },
+  {
+    id: "http-digest",
+    label: "HTTP Digest authentication",
+    category: "custom",
+    capability: "http-auth",
+    loginModes: ["manual", "digest"],
+    description:
+      "Explicit server-challenge Digest transport authentication, not form login. Unsupported challenges fail without falling back to Basic. The saved credential remains bound to this upstream origin; HTTPS is still recommended.",
+  },
   {
     id: "synology-dsm",
     label: "Synology DSM",
@@ -517,9 +545,10 @@ export function getHttpApplicationLoginModes(
 ): HttpApplicationSettings["loginMode"][] {
   if (profile.capability === "none") return [];
   if (profile.capability === "manual") return ["manual"];
+  if (profile.loginModes) return [...profile.loginModes];
   return profile.capability === "http-auth"
-    ? ["manual", "basic"]
-    : ["manual", "form", "basic"];
+    ? ["manual", "basic", "digest"]
+    : ["manual", "form", "basic", "digest"];
 }
 
 /** Allowlisted, bounded metadata only; invalid imports must not fall back to legacy Basic. */
@@ -543,7 +572,10 @@ export function normalizeHttpApplicationSettings(
   const profile = getHttpApplicationProfile(id);
   const loginMode = raw.loginMode === undefined ? "manual" : raw.loginMode;
   const validMode =
-    loginMode === "manual" || loginMode === "basic" || loginMode === "form";
+    loginMode === "manual" ||
+    loginMode === "basic" ||
+    loginMode === "digest" ||
+    loginMode === "form";
   const realmValid =
     raw.realm === undefined ||
     (safeString(raw.realm, 128) && /^[A-Za-z0-9._-]+$/.test(raw.realm));

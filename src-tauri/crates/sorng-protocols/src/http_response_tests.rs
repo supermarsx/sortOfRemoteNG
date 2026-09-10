@@ -30,6 +30,23 @@ async fn proxy_with_mode(
     client: reqwest::Client,
     auth_mode: UpstreamAuthMode,
 ) -> FixtureProxy {
+    proxy_with_policy(
+        target,
+        client,
+        auth_mode,
+        HttpProxyPolicy::default(),
+        HashMap::new(),
+    )
+    .await
+}
+
+async fn proxy_with_policy(
+    target: String,
+    client: reqwest::Client,
+    auth_mode: UpstreamAuthMode,
+    policy: HttpProxyPolicy,
+    custom_headers: HashMap<String, String>,
+) -> FixtureProxy {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let authority = format!("p{TOKEN}.localhost:{port}");
@@ -44,6 +61,8 @@ async fn proxy_with_mode(
         username: Arc::new(std::sync::RwLock::new(String::new())),
         password: Arc::new(std::sync::RwLock::new(String::new())),
         upstream_auth_mode: auth_mode,
+        proxy_policy: policy,
+        custom_headers,
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(
             crate::theme_tokens::ThemeTokens::dark_default(),
@@ -53,6 +72,7 @@ async fn proxy_with_mode(
         auto_login_armed: Arc::new(AtomicBool::new(false)),
         auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
         auto_login_selectors: None,
+        http_form_automation: None,
         client,
         request_count: Arc::new(AtomicU64::new(0)),
         document_sequence: Arc::new(AtomicU64::new(0)),
@@ -81,6 +101,7 @@ async fn proxy_with_mode(
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
         .no_gzip()
         .no_brotli()
         .no_deflate()
@@ -118,6 +139,232 @@ async fn fetch(proxy: &FixtureProxy, path: &str) -> reqwest::Response {
         .send()
         .await
         .unwrap()
+}
+
+#[tokio::test]
+async fn real_digest_negotiation_is_bounded_and_never_sends_basic_or_plaintext() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = captured.clone();
+    let router = axum::Router::new().fallback(move |request: axum::extract::Request| {
+        let log = log.clone();
+        async move {
+            let path = request.uri().path().to_string();
+            let authorization = request.headers().get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+            let mut log = log.lock().unwrap();
+            log.push((path.clone(), request.method().to_string(), authorization.clone()));
+            let count = log.iter().filter(|(p, _, _)| p == &path).count();
+            if authorization.is_empty() || path == "/stale" || path == "/unsupported" {
+                Response::builder().status(401)
+                    .header("WWW-Authenticate", if path == "/unsupported" {
+                        "Digest realm=\"fixture\", nonce=\"one\", algorithm=SHA-512, qop=\"auth-int\"".into()
+                    } else { format!("Digest realm=\"fixture\", nonce=\"nonce-{count}\", algorithm=SHA-256, qop=\"auth\", stale={}", count > 1) })
+                    .body(Body::empty()).unwrap()
+            } else {
+                assert!(authorization.starts_with("Digest "));
+                assert!(authorization.contains("algorithm=SHA-256"));
+                assert!(authorization.contains(&format!("uri=\"{}\"", request.uri())));
+                assert!(!authorization.contains("synthetic-password"));
+                Response::builder().status(200).body(Body::from("authenticated")).unwrap()
+            }
+        }
+    });
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let proxy = proxy_with_mode(
+        format!("http://{address}/"),
+        client(),
+        UpstreamAuthMode::Digest,
+    )
+    .await;
+    *proxy.state.username.write().unwrap() = "synthetic-user".into();
+    *proxy.state.password.write().unwrap() = "synthetic-password".into();
+    let response = client()
+        .post(format!("{}/login?view=1", proxy.base))
+        .header("Host", &proxy.state.proxy_authority)
+        .body("field=synthetic")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    for path in ["/stale", "/unsupported"] {
+        let response = fetch(&proxy, path).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let text = response.text().await.unwrap();
+        assert!(!text.contains("synthetic-password"));
+        assert!(text.contains("Digest"));
+    }
+    let log = captured.lock().unwrap();
+    assert_eq!(log.iter().filter(|(p, _, _)| p == "/login").count(), 2);
+    assert_eq!(log.iter().filter(|(p, _, _)| p == "/stale").count(), 3);
+    assert_eq!(
+        log.iter().filter(|(p, _, _)| p == "/unsupported").count(),
+        1
+    );
+    assert!(log.iter().all(|(_, _, auth)| !auth.starts_with("Basic ")));
+    upstream.abort();
+}
+
+#[tokio::test]
+async fn redirect_origin_is_mandatory_even_without_optional_policies() {
+    let foreign_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let foreign_address = foreign_listener.local_addr().unwrap();
+    let foreign_calls = Arc::new(AtomicU64::new(0));
+    let calls = foreign_calls.clone();
+    let foreign = tokio::spawn(async move {
+        axum::serve(
+            foreign_listener,
+            axum::Router::new().fallback(move || {
+                let calls = calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    "foreign"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    });
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let upstream = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            axum::Router::new().fallback(move |request: axum::extract::Request| async move {
+                if request.uri().path() == "/same" {
+                    Response::builder()
+                        .status(302)
+                        .header("Location", "/ok")
+                        .body(Body::empty())
+                        .unwrap()
+                } else if request.uri().path() == "/foreign" {
+                    Response::builder()
+                        .status(307)
+                        .header("Location", format!("http://{foreign_address}/"))
+                        .body(Body::empty())
+                        .unwrap()
+                } else {
+                    Response::builder().body(Body::from("local")).unwrap()
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    });
+    let proxy = proxy_with_mode(
+        format!("http://{address}/"),
+        client(),
+        UpstreamAuthMode::Basic,
+    )
+    .await;
+    *proxy.state.username.write().unwrap() = "synthetic-user".into();
+    *proxy.state.password.write().unwrap() = "synthetic-secret".into();
+    assert_eq!(fetch(&proxy, "/same").await.status(), StatusCode::OK);
+    for method in [reqwest::Method::GET, reqwest::Method::POST] {
+        let response = client()
+            .request(method, format!("{}/foreign", proxy.base))
+            .header("Host", &proxy.state.proxy_authority)
+            .body("secret-form-body")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(response.text().await.unwrap().contains("approved origin"));
+    }
+    assert_eq!(foreign_calls.load(Ordering::Relaxed), 0);
+    foreign.abort();
+    upstream.abort();
+}
+
+#[tokio::test]
+async fn actual_policy_blocks_bootstrap_and_external_scripts_and_applies_private_request_options() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = captured.clone();
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, axum::Router::new().fallback(move |request: axum::extract::Request| {
+        let log = log.clone(); async move {
+            log.lock().unwrap().push((request.uri().to_string(), request.headers().clone()));
+            Response::builder().header("Content-Type", "text/html")
+                .header("Cache-Control", "public, max-age=3600").header("ETag", "upstream-validator")
+                .body(Body::from("<!doctype html><html><head><script src='/app.js'></script><script>window.app=true;</script></head><body>fixture</body></html>")).unwrap()
+        }
+    })).await.unwrap();
+    });
+    let policy = HttpProxyPolicy {
+        page_scripts: PageScripts::Block,
+        cache_mode: CacheMode::Bypass,
+        same_origin_only: true,
+        query_parameters: vec![proxy_policy::QueryParameter {
+            name: "tenant".into(),
+            value: "synthetic-secret-query".into(),
+        }],
+        ..HttpProxyPolicy::default()
+    };
+    let proxy = proxy_with_policy(
+        format!("http://{address}/"),
+        client(),
+        UpstreamAuthMode::Header,
+        policy,
+        HashMap::from([
+            (
+                "Authorization".into(),
+                "Bearer synthetic-secret-header".into(),
+            ),
+            ("X-Custom".into(), "private-custom".into()),
+        ]),
+    )
+    .await;
+    // Even a stale armed slot must not mint a new page nonce or ship code.
+    proxy.state.auto_login_armed.store(true, Ordering::Relaxed);
+    let response = fetch(&proxy, "/page").await;
+    assert_eq!(response.headers()["Cache-Control"], "no-store");
+    assert!(!response.headers().contains_key("ETag"));
+    let csp = response.headers()["Content-Security-Policy"]
+        .to_str()
+        .unwrap();
+    assert!(csp.contains("script-src 'none'"));
+    assert!(csp.contains("form-action 'self'"));
+    let text = response.text().await.unwrap();
+    assert!(!text.contains("proxy_document_start"));
+    assert!(!text.contains("__sortofremoteng_autologin"));
+    assert!(!text.contains("synthetic-secret"));
+    assert!(proxy.state.auto_login_nonce.read().unwrap().is_none());
+    let blocked = client()
+        .get(format!("{}/app.js", proxy.base))
+        .header("Host", &proxy.state.proxy_authority)
+        .header("Sec-Fetch-Dest", "script")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), StatusCode::FORBIDDEN);
+    let requests = captured.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].0.contains("tenant=synthetic-secret-query"));
+    assert_eq!(
+        requests[0].1["Authorization"],
+        "Bearer synthetic-secret-header"
+    );
+    assert_eq!(requests[0].1["Cache-Control"], "no-cache, no-store");
+    assert!(!requests[0].1.contains_key("If-None-Match"));
+    let logs = proxy.state.global_sessions.lock().unwrap();
+    assert!(logs
+        .request_log
+        .iter()
+        .all(|entry| !entry.url.contains("synthetic-secret")));
+    let recorded = recorded_request_headers(
+        &proxy.state,
+        &[
+            ("X-Custom".into(), "private-custom".into()),
+            ("Accept".into(), "text/html".into()),
+        ],
+    );
+    assert!(!recorded.contains_key("X-Custom"));
+    assert!(recorded.contains_key("Accept"));
+    upstream.abort();
 }
 
 #[tokio::test]

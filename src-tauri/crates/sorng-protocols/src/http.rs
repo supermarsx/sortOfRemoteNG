@@ -16,6 +16,8 @@ use tokio::sync::Mutex;
 mod proxy_transport;
 pub use proxy_transport::fetch_tls_certificate_info;
 
+#[path = "http_proxy_policy.rs"]
+mod proxy_policy;
 #[path = "http_response.rs"]
 mod proxy_response;
 #[cfg(test)]
@@ -29,6 +31,11 @@ mod request_log_tests;
 mod tls_test_fixture;
 #[path = "http_web_automation.rs"]
 mod web_automation;
+pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
+#[path = "http_digest.rs"]
+mod http_digest;
+#[path = "http_upstream.rs"]
+mod upstream;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -465,6 +472,10 @@ pub enum UpstreamAuthMode {
     #[default]
     #[serde(rename = "basic")]
     Basic,
+    #[serde(rename = "digest")]
+    Digest,
+    #[serde(rename = "header")]
+    Header,
     /// Form-only or manual application login: never inject proxy credentials
     /// into Authorization. Opted-in form fill may still consume them once.
     #[serde(rename = "none")]
@@ -478,7 +489,7 @@ pub enum UpstreamAuthMode {
 impl UpstreamAuthMode {
     fn authorization_value(self, username: &str, password: &str) -> Option<String> {
         match self {
-            Self::Basic | Self::None => None,
+            Self::Basic | Self::Digest | Self::Header | Self::None => None,
             Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
                 Some(format!("{username} {password}"))
             }
@@ -491,8 +502,8 @@ impl UpstreamAuthMode {
     /// never expose the first credential field through status DTOs.
     pub fn manager_visible_username(self, username: &str) -> String {
         match self {
-            Self::Basic => username.to_string(),
-            Self::PfSenseV1 | Self::None => String::new(),
+            Self::Basic | Self::Digest => username.to_string(),
+            Self::PfSenseV1 | Self::Header | Self::None => String::new(),
         }
     }
 
@@ -510,17 +521,17 @@ impl UpstreamAuthMode {
                 Some(value) => request.header(reqwest::header::AUTHORIZATION, value),
                 None => request,
             },
-            Self::Basic | Self::None => request,
+            Self::Basic | Self::Digest | Self::Header | Self::None => request,
         }
     }
 
     fn accepts_basic_challenge(self) -> bool {
-        self != Self::None
+        matches!(self, Self::Basic | Self::PfSenseV1)
     }
 }
 
 /// Configuration for the authenticated loopback proxy mediator.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BasicAuthProxyConfig {
     /// The target URL to proxy requests to
     pub target_url: String,
@@ -533,6 +544,10 @@ pub struct BasicAuthProxyConfig {
     /// REST API v1 uses `Authorization: <client-id> <client-secret>`.
     #[serde(default)]
     pub upstream_auth_mode: UpstreamAuthMode,
+    #[serde(default)]
+    pub proxy_policy: Option<HttpProxyPolicy>,
+    #[serde(default)]
+    pub custom_headers: HashMap<String, String>,
     /// Optional app-level HTTP(S) proxy used by the mediator for outbound
     /// requests. Credentials may be embedded in the URL; the value remains in
     /// private session state and is never exposed by proxy status DTOs.
@@ -578,6 +593,20 @@ pub struct BasicAuthProxyConfig {
     /// compatibility.
     #[serde(default)]
     pub http_auto_login_selectors: Option<HttpAutoLoginSelectors>,
+    #[serde(default)]
+    pub http_form_automation: Option<crate::themed_autologin::HttpFormAutomation>,
+}
+
+impl std::fmt::Debug for BasicAuthProxyConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BasicAuthProxyConfig")
+            .field("upstream_auth_mode", &self.upstream_auth_mode)
+            .field("proxy_policy", &self.proxy_policy)
+            .field("custom_header_count", &self.custom_headers.len())
+            .field("http_auto_login", &self.http_auto_login)
+            .finish_non_exhaustive()
+    }
 }
 
 /// CSS-selector overrides for web auto-login form detection (t20).
@@ -732,6 +761,7 @@ mod upstream_auth_mode_tests {
         }))
         .expect("legacy proxy config should deserialize");
         assert_eq!(config.upstream_auth_mode, UpstreamAuthMode::Basic);
+        assert!(!format!("{config:?}").contains("client-secret"));
         assert_eq!(
             config.upstream_auth_mode.manager_visible_username("admin"),
             "admin"
@@ -861,6 +891,8 @@ pub struct ProxySessionEntry {
     pub username: String,
     pub password: String,
     pub upstream_auth_mode: UpstreamAuthMode,
+    pub proxy_policy: HttpProxyPolicy,
+    pub custom_headers: HashMap<String, String>,
     pub upstream_proxy_url: Option<String>,
     pub target_origin: String,
     pub connection_id: String,
@@ -1033,6 +1065,23 @@ where
         .collect()
 }
 
+fn recorded_request_headers(
+    state: &AxumProxyState,
+    headers: &[(String, String)],
+) -> HashMap<String, String> {
+    redact_recording_headers(
+        headers
+            .iter()
+            .filter(|(name, _)| {
+                !state
+                    .custom_headers
+                    .keys()
+                    .any(|configured| configured.eq_ignore_ascii_case(name))
+            })
+            .cloned(),
+    )
+}
+
 #[cfg(test)]
 mod recording_header_redaction_tests {
     use super::*;
@@ -1098,6 +1147,8 @@ pub struct AxumProxyState {
     pub username: Arc<std::sync::RwLock<String>>,
     pub password: Arc<std::sync::RwLock<String>>,
     pub upstream_auth_mode: UpstreamAuthMode,
+    pub proxy_policy: HttpProxyPolicy,
+    pub custom_headers: HashMap<String, String>,
     pub pending_nonce: Arc<std::sync::RwLock<Option<String>>>,
     /// P7: live snapshot of the frontend's `:root --color-*` tokens.
     /// `RwLock` so a new `update_proxy_theme(session_id, tokens)` IPC
@@ -1122,6 +1173,7 @@ pub struct AxumProxyState {
     /// (authoritative when set). Non-secret; passed through to the injected
     /// client so a set-but-unmatched selector means "do not fill".
     pub auto_login_selectors: Option<HttpAutoLoginSelectors>,
+    pub http_form_automation: Option<crate::themed_autologin::HttpFormAutomation>,
     pub client: reqwest::Client,
     /// Request-start ordering for document lifecycle reports (never credentials).
     pub document_sequence: Arc<AtomicU64>,
@@ -1183,6 +1235,7 @@ fn collect_upstream_headers(
                     | "connection"
                     | "proxy-authorization"
                     | "transfer-encoding"
+                    | "content-length"
                     | "accept-encoding"
             )
         {
@@ -1319,6 +1372,21 @@ pub async fn axum_proxy_handler(
     let (path_and_query, navigation_token) = proxy_response::navigation_request(&path_and_query);
     let document_request =
         proxy_response::is_document_request(req.headers(), navigation_token.as_deref());
+    if state.proxy_policy.page_scripts != PageScripts::Allow
+        && req
+            .headers()
+            .get("sec-fetch-dest")
+            .and_then(|value| value.to_str().ok())
+            == Some("script")
+    {
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Cache-Control", "no-store")
+            .body(Body::from(
+                "External scripts are disabled by this connection's proxy policy.",
+            ))
+            .expect("static policy response");
+    }
     // Reserve navigation START order, so a slow prior page never acquires a
     // newer identity merely by finishing last. XHR does not consume a sequence.
     let document_sequence = if document_request {
@@ -1332,6 +1400,8 @@ pub async fn axum_proxy_handler(
         state.target_url.trim_end_matches('/'),
         path_and_query
     );
+    let request_url = full_url.clone();
+    let full_url = state.proxy_policy.redacted_url(&full_url);
 
     let method_str = method.to_string();
 
@@ -1351,13 +1421,32 @@ pub async fn axum_proxy_handler(
         &state.proxy_origin,
         &state.target_origin,
     );
-    if navigation_token.is_some() {
+    if navigation_token.is_some() || state.proxy_policy.cache_mode == CacheMode::Bypass {
         fwd_headers.retain(|(name, _)| {
             !matches!(
                 name.as_str(),
                 "if-none-match" | "if-modified-since" | "if-range" | "range"
             )
         });
+    }
+    for (name, value) in &state.custom_headers {
+        fwd_headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
+        fwd_headers.push((name.clone(), value.clone()));
+    }
+    if state.proxy_policy.cache_mode == CacheMode::Bypass {
+        fwd_headers.retain(|(name, _)| {
+            !matches!(
+                name.to_ascii_lowercase().as_str(),
+                "cache-control"
+                    | "pragma"
+                    | "if-none-match"
+                    | "if-modified-since"
+                    | "if-range"
+                    | "range"
+            )
+        });
+        fwd_headers.push(("cache-control".into(), "no-cache, no-store".into()));
+        fwd_headers.push(("pragma".into(), "no-cache".into()));
     }
 
     // Forward request body.
@@ -1385,57 +1474,28 @@ pub async fn axum_proxy_handler(
             || msg.contains("pool")
     }
 
-    /// Build and send one upstream request.
-    async fn send_upstream(
-        state: &AxumProxyState,
-        method: &reqwest::Method,
-        url: &str,
-        headers: &[(String, String)],
-        body: &[u8],
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        let mut upstream = state.client.request(method.clone(), url);
-        // P3: credentials live behind a RwLock so the themed-auth
-        // POST handler can update them. Read briefly into owned
-        // strings — the lock guard must not be held across the
-        // .send().await below or we'd serialise all upstream
-        // requests for this session through the lock.
-        let (user, pass): (String, String) = {
-            let u = state.username.read().map(|g| g.clone()).unwrap_or_default();
-            let p = state.password.read().map(|g| g.clone()).unwrap_or_default();
-            (u, p)
-        };
-        upstream = state
-            .upstream_auth_mode
-            .apply_credentials(upstream, &user, &pass);
-        for (k, v) in headers {
-            upstream = upstream.header(k.as_str(), v.as_str());
-        }
-        if !body.is_empty() {
-            upstream = upstream.body(body.to_vec());
-        }
-        upstream.send().await
-    }
-
     // Only safe reads may retry. A timed-out login POST may already have been
     // processed upstream; repeating it could submit credentials twice.
     let req_start = std::time::Instant::now();
-    let result = match send_upstream(
+    let result = match upstream::send(
         &state,
         &reqwest_method,
-        &full_url,
+        &request_url,
         &fwd_headers,
         &body_bytes,
     )
     .await
     {
         Ok(resp) => Ok(resp),
-        Err(e) if permits_upstream_retry(&method) && is_retryable(&e) => {
+        Err(upstream::UpstreamError::Transport(e))
+            if permits_upstream_retry(&method) && is_retryable(&e) =>
+        {
             // Brief pause before retry
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            send_upstream(
+            upstream::send(
                 &state,
                 &reqwest_method,
-                &full_url,
+                &request_url,
                 &fwd_headers,
                 &body_bytes,
             )
@@ -1619,9 +1679,7 @@ pub async fn axum_proxy_handler(
                                 method: method_str.clone(),
                                 url: full_url.clone(),
                                 request_headers: if rec_state.record_headers {
-                                    redact_recording_headers(
-                                        fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())),
-                                    )
+                                    recorded_request_headers(&state, &fwd_headers)
                                 } else {
                                     HashMap::new()
                                 },
@@ -1654,9 +1712,7 @@ pub async fn axum_proxy_handler(
                 if let Some(rec_state) = recordings.get_mut(&state.session_id) {
                     let timestamp_ms = rec_state.start_time.elapsed().as_millis() as u64;
                     let req_headers = if rec_state.record_headers {
-                        redact_recording_headers(
-                            fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())),
-                        )
+                        recorded_request_headers(&state, &fwd_headers)
                     } else {
                         HashMap::new()
                     };
@@ -1698,7 +1754,7 @@ pub async fn axum_proxy_handler(
             // Inject navigation reporter into HTML.
             let is_html =
                 document_request && has_body && proxy_response::is_html(content_type.as_deref());
-            if is_html {
+            if is_html && state.proxy_policy.page_scripts != PageScripts::Block {
                 // Subresource requests must never replace the page identity or
                 // consume/mint the page's automatic-login nonce.
                 final_body = proxy_response::remove_known_framebreaker(&String::from_utf8_lossy(
@@ -1754,6 +1810,11 @@ pub async fn axum_proxy_handler(
             for (key, value) in resp_hdrs.iter() {
                 let k = key.as_str().to_lowercase();
                 if (is_rewritable && proxy_response::invalidated_header(&k))
+                    || (state.proxy_policy.cache_mode == CacheMode::Bypass
+                        && matches!(
+                            k.as_str(),
+                            "cache-control" | "expires" | "etag" | "last-modified" | "pragma"
+                        ))
                     || k == "transfer-encoding"
                     || k == "connection"
                     || k == "content-length"
@@ -1774,8 +1835,13 @@ pub async fn axum_proxy_handler(
             if let Some(ct) = &content_type {
                 builder = builder.header("Content-Type", ct.as_str());
             }
-            if is_rewritable {
+            if is_rewritable || state.proxy_policy.cache_mode == CacheMode::Bypass {
                 builder = builder.header("Cache-Control", "no-store");
+            }
+            if is_html {
+                if let Some(policy) = state.proxy_policy.content_security_policy() {
+                    builder = builder.header("Content-Security-Policy", policy);
+                }
             }
             builder = builder.header("Content-Length", final_body.len().to_string());
             builder = builder.header("Access-Control-Allow-Origin", state.proxy_origin.as_str());
@@ -1793,13 +1859,27 @@ pub async fn axum_proxy_handler(
             // 502. Categorize the reqwest error, then render a page
             // whose layout, palette, and iconography match the app's
             // own error views (GenericErrorView / FeatureErrorBoundary).
-            let kind = crate::themed_errors::categorize_reqwest_error(&e);
+            let kind = match &e {
+                upstream::UpstreamError::Transport(error) => {
+                    crate::themed_errors::categorize_reqwest_error(error)
+                }
+                upstream::UpstreamError::Policy(_) => {
+                    crate::themed_errors::ProxyErrorKind::BadRequest
+                }
+                upstream::UpstreamError::Deadline => crate::themed_errors::ProxyErrorKind::Timeout,
+            };
             // Never surface the raw reqwest error here. When an app-level
             // upstream proxy is configured its connector error may contain the
             // proxy authority or embedded credentials. The category and stable
             // hint retain actionable context without copying transport URLs or
             // secrets into themed pages, manager state, recordings, or logs.
-            let err_msg = format!("Upstream request failed ({}): {}", kind.code(), kind.hint());
+            let err_msg = match e {
+                upstream::UpstreamError::Policy(message) => message.to_string(),
+                upstream::UpstreamError::Deadline => "The complete upstream request timed out while negotiating authentication or redirects.".to_string(),
+                upstream::UpstreamError::Transport(_) => {
+                    format!("Upstream request failed ({}): {}", kind.code(), kind.hint())
+                }
+            };
             let themed_status = kind.status().as_u16();
 
             state.request_count.fetch_add(1, Ordering::Relaxed);
@@ -1833,9 +1913,7 @@ pub async fn axum_proxy_handler(
                         method: method_str.clone(),
                         url: full_url.clone(),
                         request_headers: if rec_state.record_headers {
-                            redact_recording_headers(
-                                fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())),
-                            )
+                            recorded_request_headers(&state, &fwd_headers)
                         } else {
                             HashMap::new()
                         },

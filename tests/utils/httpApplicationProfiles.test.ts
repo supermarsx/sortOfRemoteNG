@@ -30,10 +30,10 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(49);
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(52);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(49);
+    ).toBe(52);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -192,7 +192,7 @@ describe("HTTP application profile policy", () => {
     {},
     { version: 2, id: "portainer" },
     { version: 1, id: "unknown" },
-    { version: 1, id: "portainer", loginMode: "digest" },
+    { version: 1, id: "portainer", loginMode: "unknown" },
   ])("fails closed on malformed present profile %j", (value) => {
     expect(normalizeHttpApplicationSettings(value)?.invalid).toBe(true);
     expect(() =>
@@ -278,6 +278,42 @@ describe("HTTP application profile policy", () => {
       resolveHttpApplicationLogin({ ...input, username: "someone@pam" })
         .credentials?.username,
     ).toBe("someone@pam");
+  });
+  it("keeps generic transport modes separate from form automation", () => {
+    for (const mode of ["basic", "digest"] as const) {
+      expect(
+        resolveHttpApplicationLogin({
+          ...connection(),
+          httpApplication: { version: 1, id: `http-${mode}`, loginMode: mode },
+        }),
+      ).toMatchObject({ upstreamAuthMode: mode, autoLogin: false });
+    }
+    expect(
+      resolveHttpApplicationLogin({
+        ...connection(),
+        httpApplication: undefined,
+        authType: "digest",
+        httpAutoLogin: true,
+      }),
+    ).toMatchObject({ upstreamAuthMode: "digest", autoLogin: false });
+    expect(
+      resolveHttpApplicationLogin({
+        ...connection(),
+        httpApplication: undefined,
+        authType: "header",
+        httpAutoLogin: true,
+      }),
+    ).toEqual({
+      credentials: null,
+      upstreamAuthMode: "header",
+      autoLogin: false,
+    });
+    expect(() =>
+      resolveHttpApplicationLogin({
+        ...connection(),
+        httpApplication: { version: 1, id: "http-digest", loginMode: "form" },
+      }),
+    ).toThrow(/invalid/);
   });
   it("keeps one credential pair and never borrows a generic password", () => {
     expect(() =>

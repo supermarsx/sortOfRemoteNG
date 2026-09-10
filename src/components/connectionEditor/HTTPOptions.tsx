@@ -12,6 +12,8 @@ import HeaderModal from "./httpOptions/HeaderModal";
 import ApplicationSection from "./httpOptions/ApplicationSection";
 import SynologyOptions from "./SynologyOptions";
 import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
+import ProxyPolicySection from "./httpOptions/ProxyPolicySection";
+import FormAutomationSection from "./httpOptions/FormAutomationSection";
 
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   formData,
@@ -53,6 +55,8 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
       )}
       {shows("advanced") && (
         <>
+          <ProxyPolicySection mgr={mgr} />
+          <FormAutomationSection mgr={mgr} />
           <SessionQuickActionsSection
             protocol="http"
             view="permissions"

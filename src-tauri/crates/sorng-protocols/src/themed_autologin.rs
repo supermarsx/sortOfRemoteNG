@@ -52,12 +52,83 @@
 
 use axum::body::Body;
 use axum::http::{Response, StatusCode};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::http::{AxumProxyState, HttpAutoLoginSelectors};
 use crate::themed_auth::fresh_nonce;
+
+/// Bounded form options. Literal values are secret-capable and never embedded in HTML.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HttpFormAutomation {
+    pub version: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form_selector: Option<String>,
+    pub fill_delay_ms: u32,
+    pub submit_delay_ms: u32,
+    pub detection_timeout_ms: u32,
+    pub submit: bool,
+    pub fields: Vec<HttpFormField>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HttpFormField {
+    pub selector: String,
+    pub value: String,
+}
+
+impl std::fmt::Debug for HttpFormAutomation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpFormAutomation")
+            .field("version", &self.version)
+            .field("field_count", &self.fields.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl HttpFormAutomation {
+    pub fn validate(&self) -> Result<(), String> {
+        let invalid =
+            || "Invalid advanced form settings; review selectors, timing and fields.".to_string();
+        let valid_selector = |selector: &str| {
+            !selector.trim().is_empty()
+                && selector.encode_utf16().count() <= 512
+                && !selector.chars().any(|c| c <= '\u{1f}' || c == '\u{7f}')
+        };
+        if self.version != 1
+            || self.fill_delay_ms > 30_000
+            || self.submit_delay_ms > 30_000
+            || !(1_000..=60_000).contains(&self.detection_timeout_ms)
+            || self.detection_timeout_ms < self.fill_delay_ms + self.submit_delay_ms
+            || self.fields.len() > 16
+            || self
+                .form_selector
+                .as_deref()
+                .is_some_and(|value| !valid_selector(value))
+        {
+            return Err(invalid());
+        }
+        let mut selectors = std::collections::HashSet::new();
+        let mut bytes = 0usize;
+        for field in &self.fields {
+            if !valid_selector(&field.selector)
+                || !selectors.insert(&field.selector)
+                || field.value.encode_utf16().count() > 4096
+                || field.value.contains('\0')
+            {
+                return Err(invalid());
+            }
+            bytes += field.value.len();
+            if bytes > 16_384 {
+                return Err(invalid());
+            }
+        }
+        Ok(())
+    }
+}
 
 /// JSON body returned to the injected bootstrap by the credential endpoint.
 ///
@@ -70,6 +141,8 @@ pub struct AutoLoginCreds {
     /// Optional per-connection CSS selector overrides (authoritative when set).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selectors: Option<HttpAutoLoginSelectors>,
+    #[serde(rename = "formAutomation", skip_serializing_if = "Option::is_none")]
+    pub form_automation: Option<HttpFormAutomation>,
 }
 
 /// Query string for the credential endpoint: `?nonce=<hex>`.
@@ -98,8 +171,8 @@ pub const AUTOLOGIN_PATH: &str = "/__sortofremoteng_autologin";
 /// The injected HTML carries ONLY the nonce + optional non-secret selectors —
 /// never the secret. e5 owns the full client fill/submit routine asset; the
 /// injected `<script>` defers to `window.__sorng_autologin.fetchCredsAndRun`
-/// when e5's asset is present, and otherwise runs a conservative inline
-/// fill+submit so the seam is functional on its own.
+/// when the full asset is present. Missing assets fail closed, without a weaker
+/// fallback that could bypass form identity or timing checks.
 pub fn build_autologin_injection_from_slots(
     armed: &AtomicBool,
     nonce_slot: &RwLock<Option<String>>,
@@ -157,7 +230,7 @@ pub fn build_autologin_injection(state: &AxumProxyState) -> Option<String> {
 ///   fetch;
 /// - fill + submit exactly once; never re-submit.
 ///
-/// e5 should replace the inline routine below by defining
+/// The separately bundled full client defines
 /// `window.__sorng_autologin.fetchCredsAndRun(nonce, selectors)` (the validated
 /// `autologin-fill.js` routine), which this bootstrap auto-detects and defers
 /// to. No change to this injection wiring is needed.
@@ -167,80 +240,17 @@ fn autologin_client_script(nonce: &str, selectors_json: &str) -> String {
 'use strict';
 var NONCE={nonce:?};
 var SEL={selectors_json};
-function nativeSet(el,v){{
-  try{{
-    var proto=Object.getPrototypeOf(el);
-    var d=Object.getOwnPropertyDescriptor(proto,'value');
-    var od=Object.getOwnPropertyDescriptor(el,'value');
-    if(d&&d.set&&od&&od.set&&d.set!==od.set){{d.set.call(el,v);}}
-    else if(d&&d.set){{d.set.call(el,v);}}
-    else{{el.value=v;}}
-  }}catch(_){{try{{el.value=v;}}catch(__){{}}}}
-}}
-function fill(el,v){{
-  if(!el)return false;
-  try{{el.focus();}}catch(_){{}}
-  nativeSet(el,v);
-  try{{el.dispatchEvent(new Event('input',{{bubbles:true}}));}}catch(_){{}}
-  try{{el.dispatchEvent(new Event('change',{{bubbles:true}}));}}catch(_){{}}
-  return el.value===v;
-}}
-function find(){{
-  var pw=null,user=null;
-  if(SEL&&SEL.password_selector){{
-    pw=document.querySelector(SEL.password_selector);
-    if(!pw)return null;
-  }}else{{
-    var ps=document.querySelectorAll('input[type=password]');
-    for(var i=0;i<ps.length;i++){{if(ps[i].offsetParent!==null){{pw=ps[i];break;}}}}
-  }}
-  if(!pw)return null;
-  if(SEL&&SEL.username_selector){{user=document.querySelector(SEL.username_selector);}}
-  if(!user&&!(SEL&&SEL.username_selector)){{
-    var form=pw.form||document;
-    var cs=form.querySelectorAll('input[type=text],input[type=email],input:not([type])');
-    for(var k=0;k<cs.length;k++){{
-      var c=cs[k];
-      if(c.offsetParent===null)continue;
-      if(c.compareDocumentPosition(pw)&Node.DOCUMENT_POSITION_FOLLOWING){{user=c;}}
-    }}
-  }}
-  return {{pw:pw,user:user,form:pw.form||null}};
-}}
-function submit(t){{
-  var scope=t.form||(t.pw.parentElement||document);
-  var b=scope.querySelector('button[type=submit],input[type=submit]')||scope.querySelector('button:not([type])');
-  if(SEL&&SEL.submit_selector){{var sb=document.querySelector(SEL.submit_selector);if(sb)b=sb;}}
-  if(b){{b.click();return;}}
-  if(t.form){{
-    if(typeof t.form.requestSubmit==='function'){{t.form.requestSubmit();return;}}
-    try{{t.form.submit();}}catch(_){{}}
-  }}
-}}
-function run(creds){{
-  var t=find();
-  if(!t||!t.pw){{report({{ok:false,reason:'no-form'}});return;}}
-  if(t.user)fill(t.user,creds.username);
-  fill(t.pw,creds.password);
-  submit(t);
-  report({{ok:true,reason:'submitted'}});
-}}
 function report(r){{try{{window.parent.postMessage({{type:'proxy_autologin_result',result:r}},'*');}}catch(_){{}} window.__autologin_last=r;}}
 function go(){{
-  /* If e5's full client script is injected, defer to it entirely. */
   if(window.__sorng_autologin&&typeof window.__sorng_autologin.fetchCredsAndRun==='function'){{
-    try{{window.__sorng_autologin.fetchCredsAndRun(NONCE,SEL);return;}}catch(_){{}}
+    try{{window.__sorng_autologin.fetchCredsAndRun(NONCE,SEL);return;}}catch(_){{report({{ok:false,reason:'autologin-client-failed'}});return;}}
   }}
-  fetch('{path}?nonce='+encodeURIComponent(NONCE),{{method:'GET',credentials:'same-origin',cache:'no-store'}})
-    .then(function(r){{return r.ok?r.json():Promise.reject(r.status);}})
-    .then(function(c){{if(c&&c.selectors)SEL=c.selectors;run(c);}})
-    .catch(function(s){{report({{ok:false,reason:'cred-fetch-'+s}});}});
+  report({{ok:false,reason:'autologin-client-unavailable'}});
 }}
 if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',go);}}else{{go();}}
 }})();</script>"#,
         nonce = nonce,
         selectors_json = selectors_json,
-        path = AUTOLOGIN_PATH,
     )
 }
 
@@ -263,6 +273,16 @@ pub async fn autologin_cred_handler(
     axum::extract::State(state): axum::extract::State<Arc<AxumProxyState>>,
     axum::extract::Query(query): axum::extract::Query<AutoLoginQuery>,
 ) -> Response<Body> {
+    if state.proxy_policy.page_scripts == crate::http::PageScripts::Block {
+        return forbidden("automatic form login is disabled by page script policy");
+    }
+    if state
+        .http_form_automation
+        .as_ref()
+        .is_some_and(|options| options.validate().is_err())
+    {
+        return forbidden("invalid advanced form settings");
+    }
     match dispense_credential(
         &state.auto_login_armed,
         &state.auto_login_nonce,
@@ -278,6 +298,7 @@ pub async fn autologin_cred_handler(
                 username,
                 password,
                 selectors: state.auto_login_selectors.clone(),
+                form_automation: state.http_form_automation.clone(),
             };
             // Serialize without touching any request/recording log.
             let json = match serde_json::to_string(&body) {
@@ -492,7 +513,9 @@ mod tests {
             "injected script carries the stashed nonce"
         );
         // The script targets the credential endpoint.
-        assert!(script.contains(AUTOLOGIN_PATH));
+        assert!(script.contains("fetchCredsAndRun"));
+        assert!(script.contains("autologin-client-unavailable"));
+        assert!(!script.contains("fetch("));
     }
 
     #[test]
@@ -504,9 +527,10 @@ mod tests {
         let script = build_autologin_injection_from_slots(&armed, &nonce, &None).expect("armed");
         // Sanity: nothing that looks like a credential value is templated in.
         assert!(!script.contains("password\":\""));
-        // The fetch is same-origin + no-store.
-        assert!(script.contains("credentials:'same-origin'"));
-        assert!(script.contains("cache:'no-store'"));
+        // Only the full guarded asset may fetch credentials, same-origin/no-store.
+        let client = include_str!("autologin_client.js");
+        assert!(client.contains("credentials: \"same-origin\""));
+        assert!(client.contains("cache: \"no-store\""));
     }
 
     #[test]
@@ -539,7 +563,7 @@ mod tests {
             .split_once("var SEL=")
             .unwrap()
             .1
-            .split_once(";\nfunction nativeSet")
+            .split_once(";\nfunction report")
             .unwrap()
             .0;
         assert!(!json.contains(['<', '>', '&', '\u{2028}', '\u{2029}']));
@@ -571,6 +595,7 @@ mod tests {
             username: "u".into(),
             password: "p".into(),
             selectors: Some(selectors()),
+            form_automation: None,
         };
         let s = serde_json::to_string(&with).unwrap();
         assert!(s.contains("\"username\":\"u\""));
@@ -581,10 +606,88 @@ mod tests {
             username: "u".into(),
             password: "p".into(),
             selectors: None,
+            form_automation: None,
         };
         let s2 = serde_json::to_string(&without).unwrap();
         // `selectors` is skipped entirely when None.
         assert!(!s2.contains("selectors"));
+    }
+
+    fn form_options() -> HttpFormAutomation {
+        HttpFormAutomation {
+            version: 1,
+            form_selector: Some("#login".into()),
+            fill_delay_ms: 100,
+            submit_delay_ms: 200,
+            detection_timeout_ms: 8_000,
+            submit: false,
+            fields: vec![HttpFormField {
+                selector: "#tenant".into(),
+                value: "fixture-secret-field".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn form_options_wire_shape_and_debug_are_safe() {
+        let options = form_options();
+        options.validate().unwrap();
+        let json = serde_json::to_value(&options).unwrap();
+        assert_eq!(json["fillDelayMs"], 100);
+        assert_eq!(json["detectionTimeoutMs"], 8_000);
+        assert!(json.get("fill_delay_ms").is_none());
+        assert!(!format!("{options:?}").contains("fixture-secret-field"));
+        assert!(!format!("{options:?}").contains("#tenant"));
+        let response = AutoLoginCreds {
+            username: "u".into(),
+            password: "p".into(),
+            selectors: None,
+            form_automation: Some(options),
+        };
+        assert_eq!(
+            serde_json::to_value(response).unwrap()["formAutomation"]["submit"],
+            false
+        );
+    }
+
+    #[test]
+    fn form_options_reject_unknown_fields_bounds_and_duplicates() {
+        for patch in [
+            serde_json::json!({"version":2}),
+            serde_json::json!({"unknown":"secret"}),
+            serde_json::json!({"fillDelayMs":30_001}),
+            serde_json::json!({"submitDelayMs":30_001}),
+            serde_json::json!({"detectionTimeoutMs":999}),
+            serde_json::json!({"detectionTimeoutMs":60_001}),
+            serde_json::json!({"fillDelayMs":8_000}),
+            serde_json::json!({"formSelector":"\n"}),
+            serde_json::json!({"fields":[{"selector":"#x","value":"one"},{"selector":"#x","value":"two"}]}),
+            serde_json::json!({"fields":[{"selector":"#x","value":"x".repeat(4097)}]}),
+            serde_json::json!({"fields":[{"selector":"#x","value":"x\0"}]}),
+            serde_json::json!({"fields":[{"selector":"#x","value":"a","unknown":true}]}),
+        ] {
+            let mut raw = serde_json::to_value(form_options()).unwrap();
+            raw.as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            let parsed = serde_json::from_value::<HttpFormAutomation>(raw);
+            assert!(parsed.is_err() || parsed.unwrap().validate().is_err());
+        }
+        let mut options = form_options();
+        options.fields = (0..5)
+            .map(|i| HttpFormField {
+                selector: format!("#x{i}"),
+                value: "é".repeat(2000),
+            })
+            .collect();
+        assert!(options.validate().is_err());
+        options.fields = (0..17)
+            .map(|i| HttpFormField {
+                selector: format!("#x{i}"),
+                value: "a".into(),
+            })
+            .collect();
+        assert!(options.validate().is_err());
     }
 
     /// Log-redaction guarantee: the credential the endpoint dispenses must

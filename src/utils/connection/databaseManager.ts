@@ -22,6 +22,7 @@ import {
 import { getInvoke } from "../tauri/invoke";
 import { databaseProtection } from "./databaseProtection";
 import { normalizeHttpAutoMfa } from "./httpAutoMfa";
+import { stripHttpOptionSecrets } from "./httpOptionSecrets";
 import { validateNewPassword } from "../security/passwordPolicy";
 import { normalizeRecycleBin } from "./recycleBin";
 import { rebindDatabaseQuickActions } from "./rebindDatabaseQuickActions";
@@ -385,6 +386,18 @@ const SECRET_PLACEHOLDER = "***ENCRYPTED***";
 
 function redactConnectionSecrets(connection: Connection): Connection {
   const next = { ...connection } as Connection;
+  if (next.httpProxyPolicy !== undefined) {
+    next.httpProxyPolicy = stripHttpOptionSecrets(
+      "httpproxypolicy",
+      next.httpProxyPolicy,
+    ) as Connection["httpProxyPolicy"];
+  }
+  if (next.httpFormAutomation !== undefined) {
+    next.httpFormAutomation = stripHttpOptionSecrets(
+      "httpformautomation",
+      next.httpFormAutomation,
+    ) as Connection["httpFormAutomation"];
+  }
 
   if (next.password) next.password = SECRET_PLACEHOLDER;
   if (next.basicAuthPassword) next.basicAuthPassword = SECRET_PLACEHOLDER;

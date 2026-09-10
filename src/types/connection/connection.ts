@@ -22,6 +22,8 @@ import type { X2goNativeSavedOptions } from "../protocols/x2goNative";
 import type { NxNativeSavedOptions } from "../protocols/nxNative";
 import type { ConnectionTypeCategory } from "../integrations/registry";
 import type { VoipPhoneSettings } from "../voipPhone";
+import type { HttpProxyPolicy } from "./httpProxyPolicy";
+import type { HttpFormAutomation } from "./httpFormAutomation";
 
 import type {
   MysqlDialectHint,
@@ -75,7 +77,7 @@ export interface HttpAutoLoginSelectors {
 export interface HttpApplicationSettings {
   version: 1;
   id: string;
-  loginMode: "manual" | "form" | "basic";
+  loginMode: "manual" | "form" | "basic" | "digest";
   /** Proxmox account realm; applied only to the volatile login username. */
   realm?: string;
   /** Preserves fail-closed status when imported profile metadata is malformed. */
@@ -244,7 +246,7 @@ export interface Connection
   hostnameOverride?: boolean;
 
   // Authentication
-  authType?: "password" | "key" | "totp" | "basic" | "header";
+  authType?: "password" | "key" | "totp" | "basic" | "digest" | "header";
   privateKey?: string;
   passphrase?: string;
   totpSecret?: string;
@@ -291,6 +293,10 @@ export interface Connection
    */
   httpAutoLoginSelectors?: HttpAutoLoginSelectors;
   httpApplication?: HttpApplicationSettings;
+  /** Typed native proxy restrictions. Parameter values may contain secrets. */
+  httpProxyPolicy?: HttpProxyPolicy;
+  /** Explicit form controls and timing. Extra field values may contain secrets. */
+  httpFormAutomation?: HttpFormAutomation;
   httpAutoMfa?: HttpAutoMfaSettings;
   httpAutomation?: import("./sessionQuickActions").HttpAutomationConfig;
   sshQuickActions?: import("./sessionQuickActions").SshQuickActionsConfig;

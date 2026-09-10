@@ -6,6 +6,14 @@ import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 
 const BrowserDialogs: React.FC<SectionProps> = ({ mgr }) => (
   <>
+    <ConfirmDialog
+      isOpen={mgr.showClearSessionConfirm}
+      title="Clear this website session?"
+      message="This closes the current proxy session, discards its cookies and reopens the saved connection on a fresh protected origin. You may need to sign in again. Other tabs and system-browser data are not erased."
+      confirmText="Clear and reopen"
+      onConfirm={mgr.handleClearSessionData}
+      onCancel={() => mgr.setShowClearSessionConfirm(false)}
+    />
     {mgr.trustPrompt && mgr.certIdentity && (
       <TrustWarningDialog
         type="https"

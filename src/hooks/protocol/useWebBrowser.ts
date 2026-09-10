@@ -41,6 +41,11 @@ import {
   normalizeHttpApplicationSettings,
 } from "../../utils/connection/httpApplicationProfiles";
 import { getHttpApplicationExternalTarget } from "../../utils/auth/httpApplicationExternal";
+import {
+  normalizeHttpProxyPolicy,
+  validateHttpCustomHeaders,
+} from "../../utils/connection/httpProxyPolicy";
+import { normalizeHttpFormAutomation } from "../../utils/connection/httpFormAutomation";
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
@@ -347,6 +352,39 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, [connection]);
   const resolvedCreds = applicationAuth.login?.credentials ?? null;
+  const proxyOptions = useMemo(() => {
+    try {
+      const policy = normalizeHttpProxyPolicy(connection?.httpProxyPolicy);
+      const mode =
+        applicationAuth.login?.upstreamAuthMode ??
+        connection?.authType ??
+        "none";
+      // Application profiles own authentication. Hidden legacy header-auth
+      // credentials must not be revived by choosing a manual/SSO profile.
+      const headers = validateHttpCustomHeaders(
+        connection?.httpApplication === undefined
+          ? connection?.httpHeaders
+          : undefined,
+        mode,
+      );
+      const form = normalizeHttpFormAutomation(connection?.httpFormAutomation);
+      return { policy, headers, form, error: null };
+    } catch {
+      return {
+        policy: null,
+        headers: {},
+        form: undefined,
+        error:
+          "Review Advanced login and internal proxy controls: the saved options or custom headers are invalid.",
+      };
+    }
+  }, [connection, applicationAuth.login?.upstreamAuthMode]);
+  const proxyInputs = JSON.stringify([
+    connection?.httpProxyPolicy,
+    connection?.httpHeaders,
+    connection?.httpFormAutomation,
+  ]);
+  const previousProxyInputs = useRef(proxyInputs);
   const previousApplicationAuth = useRef({
     auth: applicationAuth,
     profile: connection?.httpApplication,
@@ -387,6 +425,9 @@ export function useWebBrowser(session: ConnectionSession) {
   // ── State ───────────────────────────────────────────────────
   const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
   const [inputUrl, setInputUrl] = useState(currentUrl);
+  const [showClearSessionConfirm, setShowClearSessionConfirm] = useState(false);
+  const [clearingSession, setClearingSession] = useState(false);
+  const clearingSessionRef = useRef(false);
   const [isLoading, setIsLoading] = useState(!targetResolution.error);
   const [waitingForTrust, setWaitingForTrust] = useState(
     session.protocol === "https",
@@ -1006,14 +1047,14 @@ export function useWebBrowser(session: ConnectionSession) {
         clearTimeout(loadTimeoutRef.current);
         loadTimeoutRef.current = null;
       }
-      if (applicationAuth.error) {
+      if (applicationAuth.error || proxyOptions.error) {
         applyNavigationFailure(
           localNavigationFailure(
             "invalid_navigation",
             "Application login needs review",
             url || session.hostname,
             "No connection was started with these application settings.",
-            applicationAuth.error,
+            applicationAuth.error ?? proxyOptions.error!,
           ),
         );
         return;
@@ -1040,6 +1081,11 @@ export function useWebBrowser(session: ConnectionSession) {
           );
         }
         validateHttpApplicationTarget(connection, urlObj.toString());
+        if (proxyOptions.policy?.httpsOnly && urlObj.protocol !== "https:") {
+          throw new Error(
+            "This connection requires HTTPS. Change its configured protocol and port; HTTP will not be upgraded silently.",
+          );
+        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Invalid web navigation.";
@@ -1109,6 +1155,9 @@ export function useWebBrowser(session: ConnectionSession) {
                     }
                   : {}),
                 local_port: 0,
+                proxy_policy: proxyOptions.policy,
+                custom_headers: proxyOptions.headers,
+                http_form_automation: proxyOptions.form,
                 // CA/hostname verification and explicit trust are separate.
                 // Always retain the accepted HTTPS fingerprint: disabling CA
                 // verification must not erase the user's certificate pin.
@@ -1134,7 +1183,9 @@ export function useWebBrowser(session: ConnectionSession) {
                 // the snake_case `BasicAuthProxyConfig` keys the proxy
                 // expects (mirrors basicAuthUsername→username,
                 // httpVerifySsl→verify_ssl above). See t20-e2 contract.
-                http_auto_login: applicationAuth.login?.autoLogin ?? false,
+                http_auto_login:
+                  proxyOptions.policy?.pageScripts !== "block" &&
+                  (applicationAuth.login?.autoLogin ?? false),
                 http_auto_login_selectors: applicationAuth.login?.selectors
                   ? {
                       username_selector:
@@ -1226,6 +1277,7 @@ export function useWebBrowser(session: ConnectionSession) {
       hasAuth,
       resolvedCreds,
       applicationAuth,
+      proxyOptions,
       connection,
       targetResolution,
       stopProxy,
@@ -1251,16 +1303,14 @@ export function useWebBrowser(session: ConnectionSession) {
   // connection metadata updates must not interrupt a working page.
   useEffect(() => {
     const previous = previousApplicationAuth.current;
+    const previousInputs = previousProxyInputs.current;
+    previousProxyInputs.current = proxyInputs;
     previousApplicationAuth.current = {
       auth: applicationAuth,
       profile: connection?.httpApplication,
     };
     if (
-      previous.profile === undefined &&
-      connection?.httpApplication === undefined
-    )
-      return;
-    if (
+      previousInputs === proxyInputs &&
       previous.profile?.id === connection?.httpApplication?.id &&
       previous.auth.error === applicationAuth.error &&
       sameHttpApplicationLogin(previous.auth.login, applicationAuth.login)
@@ -1284,6 +1334,7 @@ export function useWebBrowser(session: ConnectionSession) {
     );
   }, [
     applicationAuth,
+    proxyInputs,
     connection?.httpApplication,
     stopProxy,
     applyNavigationFailure,
@@ -1765,6 +1816,55 @@ export function useWebBrowser(session: ConnectionSession) {
     if (!proxyAlive) void handleRestartProxy();
     else void navigateToUrl(currentUrl, false);
   }, [currentUrl, navigateToUrl, proxyAlive, handleRestartProxy]);
+
+  const handleClearSessionData = useCallback(async () => {
+    if (clearingSessionRef.current) return;
+    clearingSessionRef.current = true;
+    setClearingSession(true);
+    setShowClearSessionConfirm(false);
+    const gen = ++navGenRef.current;
+    const sid = proxySessionIdRef.current;
+    pendingFrameRef.current = null;
+    currentDocumentRef.current = null;
+    trustResolveRef.current?.(false);
+    trustResolveRef.current = null;
+    setTrustPrompt(null);
+    clearWebBrowserFrame(iframeRef.current);
+    try {
+      if (sid) await invoke("stop_basic_auth_proxy", { sessionId: sid });
+      if (!mountedRef.current || gen !== navGenRef.current) return;
+      proxySessionIdRef.current = "";
+      proxyUrlRef.current = "";
+      toast.info(
+        "Previous session discarded. Opening a fresh session; other tabs and browser data are unchanged.",
+      );
+      await navigateToUrl(targetResolution.url, false);
+    } catch {
+      if (mountedRef.current && gen === navGenRef.current) {
+        applyNavigationFailure(
+          localNavigationFailure(
+            "proxy_start_failed",
+            "Unable to clear session data",
+            currentUrl,
+            "The proxy could not confirm that this session was stopped.",
+            "Retry clearing this session before opening a new one.",
+          ),
+        );
+        toast.error(
+          "Session data could not be cleared. No fresh session was opened.",
+        );
+      }
+    } finally {
+      clearingSessionRef.current = false;
+      if (mountedRef.current) setClearingSession(false);
+    }
+  }, [
+    applyNavigationFailure,
+    currentUrl,
+    navigateToUrl,
+    targetResolution.url,
+    toast,
+  ]);
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
@@ -2288,7 +2388,13 @@ export function useWebBrowser(session: ConnectionSession) {
     scopeKey: recycleBin?.snapshot
       ? `${recycleBin.snapshot.scope.databaseId}:${recycleBin.snapshot.scope.generation}`
       : "",
-    blocked: waitingForTrust || !!trustPrompt || !!loadError,
+    blocked:
+      waitingForTrust ||
+      !!trustPrompt ||
+      !!loadError ||
+      proxyOptions.policy?.pageScripts === "block" ||
+      !!proxyOptions.error ||
+      clearingSession,
     navigationKey: `${session.id}:${currentUrl}:${isLoading}`,
     iframe: iframeRef,
     getDocument: getAutomationDocument,
@@ -2302,7 +2408,13 @@ export function useWebBrowser(session: ConnectionSession) {
     availability: databaseAvailability,
     settingsReady: settingsReady === true,
     blocked:
-      waitingForTrust || !!trustPrompt || !!loadError || !!sslVerifyDisabled,
+      waitingForTrust ||
+      !!trustPrompt ||
+      !!loadError ||
+      !!sslVerifyDisabled ||
+      proxyOptions.policy?.pageScripts === "block" ||
+      !!proxyOptions.error ||
+      clearingSession,
     currentUrl,
     navigationKey: `${session.id}:${currentUrl}:${isLoading}`,
     iframe: iframeRef,
@@ -2310,6 +2422,10 @@ export function useWebBrowser(session: ConnectionSession) {
   });
 
   return {
+    showClearSessionConfirm,
+    setShowClearSessionConfirm,
+    clearingSession,
+    handleClearSessionData,
     automation,
     autoMfa,
     // Context

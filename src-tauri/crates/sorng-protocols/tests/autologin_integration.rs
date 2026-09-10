@@ -83,7 +83,10 @@ fn armed_page_serves_asset_before_bootstrap() {
     let bootstrap_at = html
         .find("fetchCredsAndRun(NONCE")
         .expect("served HTML must include the e3 bootstrap deferral call");
-    assert!(html.contains(AUTOLOGIN_PATH), "bootstrap targets the credential endpoint");
+    assert!(
+        html.contains("fetchCredsAndRun"),
+        "bootstrap delegates only to the full guarded asset"
+    );
 
     // ORDERING: the asset must come strictly before the bootstrap so
     // `window.__sorng_autologin.fetchCredsAndRun` is defined when the bootstrap
@@ -99,7 +102,10 @@ fn armed_page_serves_asset_before_bootstrap() {
 
     // The nav reporter still leads (existing behaviour preserved).
     let nav_at = html.find(NAV_SCRIPT).expect("nav script present");
-    assert!(nav_at < asset_at, "nav reporter precedes the auto-login scripts");
+    assert!(
+        nav_at < asset_at,
+        "nav reporter precedes the auto-login scripts"
+    );
 }
 
 /// The asset embedded into the served page is byte-for-byte the e5 asset (the
@@ -114,7 +120,10 @@ fn served_asset_is_the_full_e5_routine() {
         html.contains(AUTOLOGIN_CLIENT_JS),
         "served HTML embeds the full e5 client routine verbatim"
     );
-    assert!(html.contains("__full"), "asset marks itself complete for deferral");
+    assert!(
+        html.contains("__full"),
+        "asset marks itself complete for deferral"
+    );
 }
 
 /// (2) A NON-armed page serves NEITHER the asset NOR the bootstrap — auto-login
@@ -123,14 +132,31 @@ fn served_asset_is_the_full_e5_routine() {
 fn disarmed_page_serves_no_autologin_material() {
     let armed = AtomicBool::new(false);
     let nonce = RwLock::new(None);
-    let html = serve_injected(&armed, &nonce, &Some(selectors()), "<html><body>x</body></html>");
+    let html = serve_injected(
+        &armed,
+        &nonce,
+        &Some(selectors()),
+        "<html><body>x</body></html>",
+    );
 
-    assert!(!html.contains("window.__sorng_autologin"), "no asset on a disarmed page");
-    assert!(!html.contains(AUTOLOGIN_PATH), "no bootstrap/endpoint reference on a disarmed page");
-    assert!(!html.contains("fetchCredsAndRun"), "no deferral call on a disarmed page");
+    assert!(
+        !html.contains("window.__sorng_autologin"),
+        "no asset on a disarmed page"
+    );
+    assert!(
+        !html.contains(AUTOLOGIN_PATH),
+        "no bootstrap/endpoint reference on a disarmed page"
+    );
+    assert!(
+        !html.contains("fetchCredsAndRun"),
+        "no deferral call on a disarmed page"
+    );
     // The nav reporter (always-on) is still injected, and no nonce was minted.
     assert!(html.contains(NAV_SCRIPT));
-    assert!(nonce.read().unwrap().is_none(), "disarmed => no nonce minted");
+    assert!(
+        nonce.read().unwrap().is_none(),
+        "disarmed => no nonce minted"
+    );
 }
 
 /// (3) The credential never appears in the served HTML — only a per-page nonce
@@ -150,9 +176,16 @@ fn served_html_carries_no_credential_only_a_nonce() {
     );
 
     // A fresh 32-hex nonce was minted into the slot AND embedded in the page.
-    let minted = nonce_slot.read().unwrap().clone().expect("armed => nonce minted");
+    let minted = nonce_slot
+        .read()
+        .unwrap()
+        .clone()
+        .expect("armed => nonce minted");
     assert_eq!(minted.len(), 32, "fresh_nonce is 32 hex chars");
-    assert!(html.contains(&minted), "served HTML carries the per-page nonce");
+    assert!(
+        html.contains(&minted),
+        "served HTML carries the per-page nonce"
+    );
 
     // Non-secret selectors ride along (so the client can apply authoritative
     // overrides) — selectors are not credentials.
@@ -160,13 +193,16 @@ fn served_html_carries_no_credential_only_a_nonce() {
 
     // No credential value is anywhere in the served HTML. The builder never even
     // receives the secret, so nothing resembling a hardcoded cred can leak.
-    assert!(!html.contains("\"password\":\""), "no JSON credential literal in HTML");
     assert!(
-        html.contains("credentials:'same-origin'") || html.contains("credentials: 'same-origin'"),
+        !html.contains("\"password\":\""),
+        "no JSON credential literal in HTML"
+    );
+    assert!(
+        include_str!("../src/autologin_client.js").contains("credentials: \"same-origin\""),
         "credential is fetched same-origin, not embedded"
     );
     assert!(
-        html.contains("cache:'no-store'") || html.contains("cache: 'no-store'"),
+        include_str!("../src/autologin_client.js").contains("cache: \"no-store\""),
         "credential fetch is no-store"
     );
 }
@@ -202,6 +238,7 @@ fn endpoint_creds_shape_matches_what_the_served_bootstrap_expects() {
         username: "admin".into(),
         password: "s3cret".into(),
         selectors: Some(selectors()),
+        form_automation: None,
     };
     let json = serde_json::to_string(&with).unwrap();
     assert!(json.contains("\"username\":\"admin\""));
@@ -214,7 +251,11 @@ fn endpoint_creds_shape_matches_what_the_served_bootstrap_expects() {
         username: "admin".into(),
         password: "s3cret".into(),
         selectors: None,
+        form_automation: None,
     };
     let json2 = serde_json::to_string(&without).unwrap();
-    assert!(!json2.contains("selectors"), "selectors omitted when none configured");
+    assert!(
+        !json2.contains("selectors"),
+        "selectors omitted when none configured"
+    );
 }

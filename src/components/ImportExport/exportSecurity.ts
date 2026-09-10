@@ -1,3 +1,8 @@
+import {
+  isHttpSecretOption,
+  stripHttpOptionSecrets,
+} from "../../utils/connection/httpOptionSecrets";
+
 type JsonLikeRecord = Record<string, unknown>;
 
 const EXPLICIT_SECRET_FIELD_NAMES = new Set([
@@ -102,6 +107,14 @@ const containsExportSecretsInternal = (
   value: unknown,
   fieldName?: string,
 ): boolean => {
+  if (fieldName && isHttpSecretOption(normalizeFieldName(fieldName))) {
+    return (
+      JSON.stringify(value) !==
+      JSON.stringify(
+        stripHttpOptionSecrets(normalizeFieldName(fieldName), value),
+      )
+    );
+  }
   if (fieldName && isSecretFieldName(fieldName) && hasSecretValue(value)) {
     return true;
   }
@@ -121,6 +134,10 @@ const stripExportSecretsInternal = <T>(
   value: T,
   fieldName?: string,
 ): T | undefined => {
+  if (fieldName && isHttpSecretOption(normalizeFieldName(fieldName))) {
+    return stripHttpOptionSecrets(normalizeFieldName(fieldName), value) as
+      T | undefined;
+  }
   if (fieldName && isSecretFieldName(fieldName) && hasSecretValue(value)) {
     return undefined;
   }

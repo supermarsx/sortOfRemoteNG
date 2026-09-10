@@ -11,6 +11,10 @@ import { migrateRloginSettings } from "../../utils/rlogin/rloginSettings";
 import { normalizeHttpApplicationSettings } from "../../utils/connection/httpApplicationProfiles";
 import { normalizeHttpApplicationSelectors } from "../../utils/auth/httpApplicationLogin";
 import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
+import {
+  isHttpSecretOption,
+  stripHttpOptionSecrets,
+} from "../../utils/connection/httpOptionSecrets";
 
 export const ADVANCED_PROTOCOL_PORTABILITY_VERSION = 1 as const;
 
@@ -213,6 +217,9 @@ const sanitizeValue = <T>(
   fieldName?: string,
 ): T | undefined => {
   const normalizedField = fieldName ? normalizeFieldName(fieldName) : "";
+  if (secretMode !== "preserve" && isHttpSecretOption(normalizedField)) {
+    return stripHttpOptionSecrets(normalizedField, value) as T | undefined;
+  }
   if (normalizedField && RUNTIME_FIELD_NAMES.has(normalizedField)) {
     return undefined;
   }

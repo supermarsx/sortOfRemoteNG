@@ -22,6 +22,7 @@ const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
   form: "Automatic form login — explicitly opt in",
   basic: "HTTP Basic authentication",
+  digest: "HTTP Digest authentication",
 } as const;
 const SELECTOR_EXAMPLES = {
   usernameSelector: 'input[name="username"]',

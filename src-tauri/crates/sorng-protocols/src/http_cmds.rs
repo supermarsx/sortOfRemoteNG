@@ -93,7 +93,8 @@ fn proxy_client_builder(
         .pool_idle_timeout(std::time::Duration::from_secs(20))
         .pool_max_idle_per_host(4)
         .tcp_keepalive(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::limited(10))
+        // The request mediator validates every redirect BEFORE resending.
+        .redirect(reqwest::redirect::Policy::none())
         .min_tls_version(resolve_min_tls_version(min_tls))
         .cookie_store(true);
 
@@ -419,6 +420,15 @@ pub async fn start_basic_auth_proxy(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
     let validated_target = validate_proxy_target_url(&config.target_url)?;
+    let proxy_policy = config.proxy_policy.clone().unwrap_or_default();
+    proxy_policy.validate(&validated_target)?;
+    if let Some(options) = &config.http_form_automation {
+        options.validate()?;
+    }
+    validate_custom_headers(
+        &config.custom_headers,
+        config.upstream_auth_mode == UpstreamAuthMode::Header,
+    )?;
     if config.upstream_auth_mode == crate::http::UpstreamAuthMode::PfSenseV1
         && (config.username.is_empty() || config.password.is_empty())
     {
@@ -479,6 +489,8 @@ pub async fn start_basic_auth_proxy(
         username: Arc::new(std::sync::RwLock::new(config.username.clone())),
         password: Arc::new(std::sync::RwLock::new(config.password.clone())),
         upstream_auth_mode: config.upstream_auth_mode,
+        proxy_policy: proxy_policy.clone(),
+        custom_headers: config.custom_headers.clone(),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(theme_tokens)),
         target_origin: target_origin.clone(),
@@ -486,9 +498,12 @@ pub async fn start_basic_auth_proxy(
         proxy_origin: protected_endpoint.origin.clone(),
         // t20: arm web auto-login for this session per the connection's opt-in
         // flag. Separate nonce slot from themed-auth's `pending_nonce`.
-        auto_login_armed: Arc::new(AtomicBool::new(config.http_auto_login)),
+        auto_login_armed: Arc::new(AtomicBool::new(
+            config.http_auto_login && proxy_policy.page_scripts != PageScripts::Block,
+        )),
         auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
         auto_login_selectors: config.http_auto_login_selectors.clone(),
+        http_form_automation: config.http_form_automation.clone(),
         client,
         request_count: request_count.clone(),
         document_sequence: Arc::new(AtomicU64::new(0)),
@@ -550,6 +565,8 @@ pub async fn start_basic_auth_proxy(
                 username: config.username.clone(),
                 password: config.password.clone(),
                 upstream_auth_mode: config.upstream_auth_mode,
+                proxy_policy,
+                custom_headers: config.custom_headers.clone(),
                 upstream_proxy_url,
                 target_origin,
                 connection_id,
@@ -771,6 +788,8 @@ pub async fn restart_proxy_session(
         username,
         password,
         upstream_auth_mode,
+        proxy_policy,
+        custom_headers,
         upstream_proxy_url,
         target_origin,
         connection_id,
@@ -788,6 +807,8 @@ pub async fn restart_proxy_session(
             entry.username.clone(),
             entry.password.clone(),
             entry.upstream_auth_mode,
+            entry.proxy_policy.clone(),
+            entry.custom_headers.clone(),
             entry.upstream_proxy_url.clone(),
             entry.target_origin.clone(),
             entry.connection_id.clone(),
@@ -837,6 +858,8 @@ pub async fn restart_proxy_session(
         username: Arc::new(std::sync::RwLock::new(username.clone())),
         password: Arc::new(std::sync::RwLock::new(password.clone())),
         upstream_auth_mode,
+        proxy_policy: proxy_policy.clone(),
+        custom_headers: custom_headers.clone(),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         // P7: a restart reuses whichever theme was active at the
         // start of the original session — the frontend will push
@@ -856,6 +879,7 @@ pub async fn restart_proxy_session(
         auto_login_armed: Arc::new(AtomicBool::new(false)),
         auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
         auto_login_selectors: None,
+        http_form_automation: None,
         client,
         request_count: request_count.clone(),
         document_sequence: Arc::new(AtomicU64::new(0)),
@@ -910,6 +934,8 @@ pub async fn restart_proxy_session(
                 username,
                 password,
                 upstream_auth_mode,
+                proxy_policy,
+                custom_headers,
                 upstream_proxy_url,
                 target_origin,
                 connection_id,

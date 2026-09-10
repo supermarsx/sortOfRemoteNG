@@ -16,6 +16,7 @@ import {
   ClipboardCopy,
   X,
   ChevronDown,
+  Eraser,
 } from "lucide-react";
 import WebTotpPanel from "./WebTotpPanel";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
@@ -116,6 +117,16 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           type="button"
         >
           {mgr.isLoading ? <X size={16} /> : <RotateCcw size={16} />}
+        </button>
+        <button
+          type="button"
+          className="sor-icon-btn-sm"
+          title="Clear session data"
+          aria-label="Clear session data"
+          disabled={mgr.clearingSession}
+          onClick={() => mgr.setShowClearSessionConfirm(true)}
+        >
+          <Eraser size={16} />
         </button>
       </div>
       <MenuSurface

@@ -135,6 +135,98 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(iframe.src).toContain(proxy.proxy_url);
     return { ...hook, iframe };
   }
+  it("forwards typed proxy controls and header authentication without putting parameters in the frame URL", async () => {
+    mocks.credentialOverrides = {
+      authType: "header",
+      httpHeaders: { Authorization: "Bearer synthetic-only" },
+      httpProxyPolicy: {
+        version: 1,
+        pageScripts: "inline-only",
+        httpsOnly: true,
+        sameOriginOnly: true,
+        cacheMode: "bypass",
+        queryParameters: [{ name: "tenant", value: "synthetic-private" }],
+      },
+    };
+    const { iframe } = await loadingFixture();
+    const config = mocks.invoke.mock.calls.find(
+      ([name]) => name === "start_basic_auth_proxy",
+    )?.[1].config;
+    expect(config.proxy_policy).toEqual(
+      mocks.credentialOverrides.httpProxyPolicy,
+    );
+    expect(config.custom_headers).toEqual({
+      Authorization: "Bearer synthetic-only",
+    });
+    expect(iframe.src).not.toContain("synthetic-private");
+  });
+  it("refuses malformed proxy controls before certificate inspection or startup", async () => {
+    mocks.credentialOverrides = { httpProxyPolicy: { version: 9 } };
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(result.current.navigationFailure?.kind).toBe("invalid_navigation"),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+  it("finishes a script-blocked page on iframe load without requiring a script readiness message", async () => {
+    mocks.credentialOverrides = {
+      httpProxyPolicy: {
+        version: 1,
+        pageScripts: "block",
+        httpsOnly: false,
+        sameOriginOnly: false,
+        cacheMode: "normal",
+        queryParameters: [],
+      },
+    };
+    const { result } = await loadingFixture();
+    const config = mocks.invoke.mock.calls.find(
+      ([name]) => name === "start_basic_auth_proxy",
+    )?.[1].config;
+    expect(config.http_auto_login).toBe(false);
+    act(() => result.current.handleIframeLoad());
+    expect(result.current.isLoading).toBe(false);
+    await act(async () => {
+      vi.advanceTimersByTime(31000);
+    });
+    expect(result.current.navigationFailure).toBeNull();
+  });
+  it("clears only its proxy and obtains a fresh session after the explicit action", async () => {
+    const { result } = await loadingFixture();
+    await act(async () => {
+      await result.current.handleClearSessionData();
+    });
+    const names = mocks.invoke.mock.calls.map(([name]) => name);
+    const stop = names.indexOf("stop_basic_auth_proxy");
+    expect(mocks.invoke.mock.calls[stop][1]).toEqual({
+      sessionId: "proxy-fixture",
+    });
+    expect(names.lastIndexOf("start_basic_auth_proxy")).toBeGreaterThan(stop);
+    expect(result.current.clearingSession).toBe(false);
+  });
+  it("does not create another session when discarding the previous one fails", async () => {
+    const { result } = await loadingFixture();
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "stop_basic_auth_proxy")
+        throw new Error("synthetic stop failure");
+      if (command === "get_tls_certificate_info") return cert;
+      if (command === "start_basic_auth_proxy") return proxy;
+    });
+    const before = mocks.invoke.mock.calls.filter(
+      ([name]) => name === "start_basic_auth_proxy",
+    ).length;
+    await act(async () => {
+      await result.current.handleClearSessionData();
+    });
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([name]) => name === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(before);
+    expect(result.current.navigationFailure?.title).toBe(
+      "Unable to clear session data",
+    );
+  });
   it.each([
     { protocol: "http" as const, hostname: "dash.cloudflare.com", port: 443 },
     {

@@ -12023,6 +12023,7 @@ dependencies = [
  "futures-util",
  "hex",
  "log",
+ "md-5 0.10.6",
  "rand 0.8.8",
  "regex",
  "reqwest 0.12.28",
