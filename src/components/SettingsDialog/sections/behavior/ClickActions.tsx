@@ -12,9 +12,6 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
       icon={<MousePointer2 className="w-4 h-4 text-primary" />}
       title="Click Actions"
     />
-    <p className="text-xs text-[var(--color-textMuted)]">
-      Control what mouse clicks do in the connection tree, tabs, and elsewhere.
-    </p>
     <Card>
       <Toggle
         checked={s.singleClickConnect}
