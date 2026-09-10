@@ -10,6 +10,7 @@ import { useEffect } from "react";
 import { ConnectionEditor } from "../../src/components/connection/ConnectionEditor";
 import { toPersistableIntegrationSettings } from "../../src/hooks/connection/useConnectionEditor";
 import { ToolTabViewer } from "../../src/components/app/ToolPanel";
+import { createToolSession } from "../../src/components/app/toolSession";
 import { scrollConnectionEditorSearchTargetIntoView } from "../../src/components/connection/editor/useConnectionEditorSearch";
 import { Connection, TabGroup } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
@@ -3184,6 +3185,66 @@ describe("ConnectionEditor", () => {
       expect(screen.getByRole("button", { name: "Connect" })).toBe(
         screen.getByTestId("editor-connect"),
       );
+    });
+
+    it("ToolTabViewer forwards new-editor folder metadata without creating an endpoint", async () => {
+      const folder: Connection = {
+        ...mockConnection,
+        id: "new-draft-parent",
+        name: "Draft parent",
+        isGroup: true,
+        password: "parent-secret",
+      };
+      const session = {
+        ...createToolSession("connectionEditor", {
+          initialParentId: folder.id,
+        }),
+        ownerDatabaseId: "fixture-db",
+      };
+      function ReadyToolFixture() {
+        const context = useConnections();
+        if (!context.state.connections.some((item) => item.id === folder.id))
+          return null;
+        return (
+          <ConnectionContext.Provider
+            value={{
+              ...context,
+              databaseAvailability: {
+                status: "ready",
+                databaseId: "fixture-db",
+                generation: 1,
+              },
+            }}
+          >
+            <ToolTabViewer session={session} onClose={vi.fn()} />
+          </ConnectionContext.Provider>
+        );
+      }
+      const observe = vi.fn();
+      render(
+        <ConnectionProvider>
+          <ConnectionStateProbe
+            initialConnections={[folder]}
+            onConnections={observe}
+          />
+          <ReadyToolFixture />
+        </ConnectionProvider>,
+      );
+      const parentPicker = await screen.findByRole("combobox", {
+        name: "Parent Folder",
+      });
+      await waitFor(() => expect(parentPicker).toHaveValue("Draft parent"));
+      expect(observe.mock.calls[observe.mock.calls.length - 1]?.[0]).toEqual([
+        folder,
+      ]);
+      expect(screen.queryByTestId("editor-connect")).toBeNull();
+      expect(
+        createToolSession("connectionEditor").connectionEditorInitialParentId,
+      ).toBeUndefined();
+      expect(
+        createToolSession("settings", { initialParentId: folder.id })
+          .connectionEditorInitialParentId,
+      ).toBeUndefined();
     });
 
     it("ToolTabViewer forwards its onReconnect down to ConnectionEditor's onConnect", async () => {

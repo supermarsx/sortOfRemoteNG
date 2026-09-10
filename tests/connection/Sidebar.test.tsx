@@ -129,7 +129,7 @@ describe("Sidebar", () => {
       const newButton = screen.getByRole('button', { name: /^connections\.new$/i });
       fireEvent.click(newButton);
 
-      expect(mockProps.onNewConnection).toHaveBeenCalled();
+      expect(mockProps.onNewConnection).toHaveBeenCalledExactlyOnceWith();
     });
   });
 

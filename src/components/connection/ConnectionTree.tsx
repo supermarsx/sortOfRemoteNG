@@ -33,6 +33,7 @@ interface ConnectionTreeProps {
   onConnect: (connection: Connection) => void;
   onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
+  onNewConnection?: (parentId: string) => void;
   onDelete: (connection: Connection) => void;
   onDiagnostics?: (connection: Connection) => void;
   onSessionDetach?: (id: string) => void;
@@ -72,6 +73,7 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect,
   onDisconnect,
   onEdit,
+  onNewConnection,
   onDelete,
   onDiagnostics,
   onSessionDetach,
@@ -311,6 +313,7 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
           onConnect={onConnect}
           onDisconnect={onDisconnect}
           onEdit={onEdit}
+          onNewConnection={onNewConnection}
           onDelete={onDelete}
           onCopyHostname={mgr.handleCopyHostname}
           onRename={mgr.handleRename}

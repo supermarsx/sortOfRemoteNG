@@ -18,6 +18,7 @@ import {
   FileText,
   FolderOpen,
   FolderPlus,
+  Plus,
   HardDrive,
   KeyRound,
   Monitor,
@@ -55,6 +56,7 @@ function TreeItemMenu({
   onConnect,
   onDisconnect,
   onEdit,
+  onNewConnection,
   onDelete,
   onCopyHostname,
   onRename,
@@ -81,6 +83,7 @@ function TreeItemMenu({
   ) => void | string | undefined | Promise<string | undefined>;
   onDisconnect: (c: Connection) => void;
   onEdit: (c: Connection) => void;
+  onNewConnection?: (parentId: string) => void;
   onDelete: (c: Connection) => void;
   onCopyHostname: (c: Connection) => void;
   onRename: (c: Connection) => void;
@@ -233,6 +236,20 @@ function TreeItemMenu({
       dataTestId="connection-tree-item-menu"
       ariaLabel={t("connections.actions", "Connection actions")}
     >
+      {connection.isGroup && onNewConnection && (
+        <button
+          onClick={act(() => {
+            const parent = state.connections.find(
+              (item) => item.id === connection.id,
+            );
+            if (parent?.isGroup === true) onNewConnection(parent.id);
+          })}
+          className="sor-menu-item"
+        >
+          <Plus size={14} className="mr-2" />
+          {t("connections.newConnection", "New connection")}
+        </button>
+      )}
       {connection.isGroup && (
         <button onClick={act(createSubfolder)} className="sor-menu-item">
           <FolderPlus size={14} className="mr-2" />

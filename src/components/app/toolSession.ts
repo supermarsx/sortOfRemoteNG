@@ -140,7 +140,7 @@ export const getToolProtocol = (toolKey: ToolKey): string =>
 
 export const createToolSession = (
   toolKey: ToolKey,
-  opts?: { connectionId?: string; name?: string },
+  opts?: { connectionId?: string; name?: string; initialParentId?: string },
 ): ConnectionSession => ({
   id: generateId(),
   connectionId: opts?.connectionId ?? `tool-${toolKey}`,
@@ -149,4 +149,9 @@ export const createToolSession = (
   startTime: new Date(),
   protocol: getToolProtocol(toolKey),
   hostname: "",
+  ...(toolKey === "connectionEditor" &&
+  !opts?.connectionId &&
+  opts?.initialParentId
+    ? { connectionEditorInitialParentId: opts.initialParentId }
+    : {}),
 });

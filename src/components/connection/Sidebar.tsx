@@ -354,7 +354,7 @@ const SidebarToolbar: React.FC<{
   <div className="px-3 py-2 border-b border-[var(--color-border)]">
     <div className="flex items-center space-x-1">
       <button
-        onClick={onNewConnection}
+        onClick={() => onNewConnection()}
         disabled={noCollection}
         className="p-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-primary"
         title={mgr.t("connections.new")}
@@ -432,7 +432,7 @@ const SidebarToolbar: React.FC<{
 interface SidebarProps {
   sidebarPosition: "left" | "right";
   onToggleSidebarPosition: () => void;
-  onNewConnection: () => void;
+  onNewConnection: (parentId?: string) => void;
   onEditConnection: (connection: Connection) => void;
   onDeleteConnection: (connection: Connection) => void;
   onConnect: (connection: Connection) => void;
@@ -498,6 +498,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             />
 
             <ConnectionTree
+              onNewConnection={onNewConnection}
               onConnect={onConnect}
               onDisconnect={onDisconnect}
               onEdit={onEditConnection}

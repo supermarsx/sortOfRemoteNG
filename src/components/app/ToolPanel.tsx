@@ -525,6 +525,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           )}
         >
           <ConnectionEditor
+            initialParentId={session.connectionEditorInitialParentId}
             connection={state.connections.find(
               (c) => c.id === session.connectionId,
             )}

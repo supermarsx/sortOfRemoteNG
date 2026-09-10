@@ -836,6 +836,7 @@ export function useConnectionEditor(
   connection: Connection | undefined,
   isOpen: boolean,
   onClose: () => void,
+  initialParentId?: string,
 ) {
   const { state, dispatchAndFlush } = useConnections();
   const { settings } = useSettings();
@@ -862,6 +863,8 @@ export function useConnectionEditor(
   const editorIdentityRef = useRef<string | null>(null);
   const incomingConnectionRef = useRef(connection);
   incomingConnectionRef.current = connection;
+  const availableConnectionsRef = useRef(state.connections);
+  availableConnectionsRef.current = state.connections;
   const lastEnqueuedRevisionRef = useRef<number | null>(null);
   const lastEnqueuedSnapshotRef = useRef<string | null>(null);
   // A superseded/failed write may still have reached storage. Only a current,
@@ -1076,7 +1079,11 @@ export function useConnectionEditor(
   );
 
   const isNewConnection = !connection;
-  const editorIdentity = JSON.stringify([connection?.id ?? null, isOpen]);
+  const editorIdentity = JSON.stringify([
+    connection?.id ?? null,
+    isOpen,
+    connection ? null : (initialParentId ?? null),
+  ]);
   const renderedEditorSnapshot = buildEditorSnapshot(formData);
   if (
     editorIdentityRef.current !== editorIdentity ||
@@ -1155,7 +1162,12 @@ export function useConnectionEditor(
       }
     } else {
       clearManagedSshSecrets();
-      const initial = { ...DEFAULT_FORM, cloudProvider: undefined };
+      const parentId = availableConnectionsRef.current.some(
+        (item) => item.id === initialParentId && item.isGroup === true,
+      )
+        ? initialParentId
+        : undefined;
+      const initial = { ...DEFAULT_FORM, cloudProvider: undefined, parentId };
       setFormData(initial);
       originalDataRef.current = buildEditorSnapshot(initial);
       isInitializedRef.current = false;
@@ -1172,6 +1184,7 @@ export function useConnectionEditor(
     buildEditorSnapshot,
     clearManagedSshSecrets,
     editorIdentity,
+    initialParentId,
     hydrateManagedSshSecrets,
     sanitizeSshConnectionOverride,
   ]);
@@ -1582,6 +1595,18 @@ export function useConnectionEditor(
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+      if (
+        !connection &&
+        formData.parentId &&
+        !availableConnectionsRef.current.some(
+          (item) => item.id === formData.parentId && item.isGroup === true,
+        )
+      ) {
+        toast.error(
+          "The selected parent folder is no longer available. Choose a parent folder or Root before saving.",
+        );
+        return;
+      }
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;

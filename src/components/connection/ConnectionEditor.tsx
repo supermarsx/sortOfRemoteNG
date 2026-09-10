@@ -73,6 +73,7 @@ import type { ConnectionEditorSearchFormData } from "./editor/connectionEditorSe
 
 interface ConnectionEditorProps {
   connection?: Connection;
+  initialParentId?: string;
   isOpen: boolean;
   onClose: () => void;
   onConnect?: (connection: Connection) => void;
@@ -1971,11 +1972,12 @@ const EditorTabs: React.FC<{
 
 export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   connection,
+  initialParentId,
   isOpen,
   onClose,
   onConnect,
 }) => {
-  const mgr = useConnectionEditor(connection, isOpen, onClose);
+  const mgr = useConnectionEditor(connection, isOpen, onClose, initialParentId);
   const [activeTab, setActiveTab] = useState<ConnectionEditorTabId>("general");
   const [protocolSubtabsByProtocol, setProtocolSubtabsByProtocol] = useState<
     Partial<Record<string, ConnectionEditorProtocolSubtabId>>

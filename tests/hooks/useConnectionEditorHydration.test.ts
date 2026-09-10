@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
   settings: { autoSaveEnabled: false },
-  state: { connections: [] },
+  state: { connections: [] as Connection[] },
   instances: [],
   createInstance: vi.fn(),
   updateInstance: vi.fn(),
@@ -66,6 +66,26 @@ function deferred() {
   return { promise, resolve };
 }
 type Editor = ReturnType<typeof useConnectionEditor>;
+function submitEvent(): Parameters<Editor["handleSubmit"]>[0] {
+  const target = document.createElement("form");
+  return {
+    nativeEvent: new Event("submit"),
+    currentTarget: target,
+    target,
+    bubbles: true,
+    cancelable: true,
+    defaultPrevented: false,
+    eventPhase: 2,
+    isTrusted: false,
+    preventDefault: vi.fn(),
+    isDefaultPrevented: () => false,
+    stopPropagation: vi.fn(),
+    isPropagationStopped: () => false,
+    persist: vi.fn(),
+    timeStamp: 0,
+    type: "submit",
+  };
+}
 function edit(result: { current: Editor }, hostname: string) {
   act(() => result.current.setFormData((draft) => ({ ...draft, hostname })));
 }
@@ -79,6 +99,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   mocks.settings.autoSaveEnabled = false;
+  mocks.state.connections = [];
   mocks.flush.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -87,6 +108,116 @@ afterEach(() => {
 });
 
 describe("connection editor draft ownership", () => {
+  it("initializes an unsaved draft with only its requested folder and persists only after Save", async () => {
+    const folder = {
+      ...connectionA,
+      id: "target-folder",
+      isGroup: true,
+      password: "synthetic-parent-secret",
+      hostname: "parent-host",
+      icon: "folder-lock",
+    };
+    mocks.state.connections = [folder];
+    mocks.settings.autoSaveEnabled = true;
+    const { result } = renderHook(() =>
+      useConnectionEditor(undefined, true, mocks.close, folder.id),
+    );
+    expect(result.current.formData).toMatchObject({
+      parentId: folder.id,
+      hostname: "",
+      password: "",
+    });
+    expect(result.current.formData.icon).not.toBe(folder.icon);
+    expect(result.current.isNewConnection).toBe(true);
+    await advance(2000);
+    expect(mocks.flush).not.toHaveBeenCalled();
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        name: "New child",
+        hostname: "child.example",
+      })),
+    );
+    await advance(2000);
+    expect(mocks.flush).not.toHaveBeenCalled();
+    await act(async () => result.current.handleSubmit(submitEvent()));
+    expect(mocks.flush).toHaveBeenCalledTimes(1);
+    expect(mocks.flush.mock.calls[0][0]).toMatchObject({
+      type: "ADD_CONNECTION",
+      payload: {
+        name: "New child",
+        hostname: "child.example",
+        parentId: folder.id,
+      },
+    });
+    expect(JSON.stringify(mocks.flush.mock.calls[0][0])).not.toContain(
+      "synthetic-parent-secret",
+    );
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps root creation and existing edits unchanged and never selects a non-folder as initial parent", () => {
+    mocks.state.connections = [connectionA];
+    const root = renderHook(() =>
+      useConnectionEditor(undefined, true, mocks.close),
+    );
+    expect(root.result.current.formData.parentId).toBeUndefined();
+    const invalid = renderHook(() =>
+      useConnectionEditor(undefined, true, mocks.close, connectionA.id),
+    );
+    expect(invalid.result.current.formData.parentId).toBeUndefined();
+    const missing = renderHook(() =>
+      useConnectionEditor(undefined, true, mocks.close, "missing-folder"),
+    );
+    expect(missing.result.current.formData.parentId).toBeUndefined();
+    const existing = renderHook(() =>
+      useConnectionEditor(
+        { ...connectionB, parentId: "original-parent" },
+        true,
+        mocks.close,
+        "ignored-target",
+      ),
+    );
+    expect(existing.result.current.formData.parentId).toBe("original-parent");
+    expect(mocks.flush).not.toHaveBeenCalled();
+  });
+
+  it.each(["deleted", "no longer a folder"])(
+    "preserves a new draft and refuses saving when its parent is %s",
+    async (change) => {
+      const folder = { ...connectionA, id: "target-folder", isGroup: true };
+      mocks.state.connections = [folder];
+      const { result, rerender } = renderHook(() =>
+        useConnectionEditor(undefined, true, mocks.close, folder.id),
+      );
+      edit(result, "unsaved.example");
+      mocks.state.connections = [{ ...folder, name: "Renamed folder" }];
+      rerender();
+      expect(result.current.formData.hostname).toBe("unsaved.example");
+      mocks.state.connections =
+        change === "deleted" ? [] : [{ ...folder, isGroup: false }];
+      rerender();
+      await act(async () => result.current.handleSubmit(submitEvent()));
+      expect(mocks.flush).not.toHaveBeenCalled();
+      expect(mocks.close).not.toHaveBeenCalled();
+      expect(mocks.toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("parent folder is no longer available"),
+      );
+      expect(result.current.formData.parentId).toBe(folder.id);
+      act(() =>
+        result.current.setFormData((draft) => ({
+          ...draft,
+          parentId: undefined,
+        })),
+      );
+      await act(async () => result.current.handleSubmit(submitEvent()));
+      expect(mocks.flush).toHaveBeenCalledTimes(1);
+      expect(mocks.flush.mock.calls[0][0].payload.parentId).toBeUndefined();
+      expect(mocks.flush.mock.calls[0][0].payload.hostname).toBe(
+        "unsaved.example",
+      );
+    },
+  );
   it("preserves a newer edit during a slow save and an optimistic same-ID echo", async () => {
     const flush = deferred();
     mocks.flush.mockImplementationOnce(() => flush.promise);

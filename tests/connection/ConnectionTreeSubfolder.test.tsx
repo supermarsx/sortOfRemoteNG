@@ -78,7 +78,11 @@ const seeds: Connection[] = [
   },
 ];
 
-function TreeFixture() {
+function TreeFixture({
+  onNewConnection,
+}: {
+  onNewConnection?: (parentId: string) => void;
+}) {
   const { state, dispatch } = useConnections();
   React.useEffect(() => {
     dispatch({ type: "SET_CONNECTIONS", payload: seeds });
@@ -87,6 +91,7 @@ function TreeFixture() {
   return (
     <>
       <ConnectionTree
+        onNewConnection={onNewConnection}
         onConnect={() => {}}
         onDisconnect={() => {}}
         onEdit={() => {}}
@@ -98,11 +103,11 @@ function TreeFixture() {
     </>
   );
 }
-async function mounted() {
+async function mounted(onNewConnection?: (parentId: string) => void) {
   const view = render(
     <ToastProvider>
       <ConnectionProvider>
-        <TreeFixture />
+        <TreeFixture onNewConnection={onNewConnection} />
       </ConnectionProvider>
     </ToastProvider>,
   );
@@ -120,6 +125,19 @@ async function createChild() {
 }
 
 describe("folder New subfolder context action", () => {
+  it("opens a new connection draft for the clicked folder without persisting or copying anything", async () => {
+    const onNewConnection = vi.fn();
+    await mounted(onNewConnection);
+    fireEvent.contextMenu(screen.getByText("Target folder"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New connection" }),
+    );
+    expect(onNewConnection).toHaveBeenCalledExactlyOnceWith("target");
+    expect(current()).toEqual(seeds);
+    expect(screen.queryByTestId("connection-tree-item-menu")).toBeNull();
+    fireEvent.contextMenu(screen.getByText("Saved endpoint"));
+    expect(screen.queryByRole("button", { name: "New connection" })).toBeNull();
+  });
   it("creates an empty child of the clicked folder, expands that parent, and uses the existing rename flow", async () => {
     await mounted();
     const dialog = await createChild();

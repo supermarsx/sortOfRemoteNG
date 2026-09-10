@@ -861,9 +861,17 @@ const AppContent: React.FC = () => {
   const storageViewsBlocked = globallyLocked || databaseAccess.blocked;
 
   /** Open the connection editor to create a new connection. */
-  const handleNewConnection = (): void => {
+  const handleNewConnection = (parentId?: string): void => {
+    if (
+      parentId !== undefined &&
+      !state.connections.some(
+        (item) => item.id === parentId && item.isGroup === true,
+      )
+    )
+      return;
     const session = createToolSession("connectionEditor", {
       name: "New Connection",
+      initialParentId: parentId,
     });
     dispatch({ type: "ADD_SESSION", payload: session });
     requestAnimationFrame(() => setActiveSessionId(session.id));
@@ -1929,7 +1937,7 @@ const AppContent: React.FC = () => {
                     <div className="flex space-x-4 relative z-10">
                       {databaseManager.getCurrentDatabase() ? (
                         <button
-                          onClick={handleNewConnection}
+                          onClick={() => handleNewConnection()}
                           className="sor-btn sor-btn-primary flex items-center space-x-2"
                         >
                           <Plus size={16} />

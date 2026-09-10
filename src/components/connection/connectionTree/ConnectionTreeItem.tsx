@@ -50,6 +50,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
   onConnect,
   onDisconnect,
   onEdit,
+  onNewConnection,
   onDelete,
   onCopyHostname,
   onRename,
@@ -418,6 +419,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
             onWindowsTool={onWindowsTool}
             onConnectAll={onConnectAll}
             onConnectAllRecursive={onConnectAllRecursive}
+            onNewConnection={onNewConnection}
           />
         )}
         {showMultiMenu && (
