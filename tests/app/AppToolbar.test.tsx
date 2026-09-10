@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { AppToolbar } from "../../src/components/app/AppToolbar";
 import { TOOL_DESCRIPTORS } from "../../src/components/app/toolDescriptors";
 import { TOOL_LABELS } from "../../src/components/app/toolSession";
@@ -95,6 +95,116 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("keeps only Quick Connect, Databases and Settings on the left, grouping every other action on the right", () => {
+    const props = makeProps({
+      openIconExplorer: vi.fn(),
+      databaseManager: { getCurrentDatabase: () => ({ id: "db" }) },
+    });
+    Object.assign(props.appSettings, {
+      showScriptManagerIcon: true,
+      showMacroManagerIcon: true,
+      showSecurityIcon: true,
+      showPerformanceMonitorIcon: true,
+      showBackupStatusIcon: true,
+    });
+    render(<AppToolbar {...props} />);
+    const left = screen.getByTestId("toolbar-actions-left");
+    const right = screen.getByTestId("toolbar-actions-right");
+    expect(
+      within(left)
+        .getAllByRole("group")
+        .map((el) => el.getAttribute("aria-label")),
+    ).toEqual(["Quick access"]);
+    expect(within(left).getAllByRole("button")).toEqual([
+      screen.getByTestId("toolbar-quick-connect"),
+      screen.getByTestId("toolbar-collection"),
+      screen.getByTestId("toolbar-settings"),
+    ]);
+    expect(
+      within(right)
+        .getAllByRole("group")
+        .map((el) => el.getAttribute("aria-label")),
+    ).toEqual([
+      "Connections",
+      "Tools",
+      "Management",
+      "Display",
+      "Diagnostics",
+      "Security",
+      "Sync and backup",
+    ]);
+    expect(right).toContainElement(screen.getByTitle("Script Manager"));
+    expect(right).toContainElement(screen.getByTitle("Macro Manager"));
+    for (const button of [
+      screen.getByRole("button", { name: "Trust Center" }),
+      screen.getByRole("button", { name: "Icon Explorer" }),
+      screen.getByTitle("Tab Group Manager"),
+    ])
+      expect(right).toContainElement(button);
+    const settings = within(
+      screen.getByRole("group", { name: "Security" }),
+    ).getAllByRole("button");
+    expect(settings.map((el) => el.getAttribute("title"))).toEqual([
+      "Security",
+    ]);
+    fireEvent.click(screen.getByTitle("Tab Group Manager"));
+    expect(props.setShowTabGroupManager).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByTitle("Security"));
+    expect(props.openSettings).toHaveBeenCalledWith("security");
+    const nativeBar = screen.getByTestId("toolbar");
+    for (const id of ["window-minimize", "window-maximize", "window-close"])
+      expect(nativeBar).toContainElement(screen.getByTestId(id));
+    expect(screen.getByTestId("toolbar-actions")).not.toContainElement(
+      screen.getByTestId("window-close"),
+    );
+  });
+
+  it("allows app-wide script and macro libraries without a database while preserving other database guards", () => {
+    const props = makeProps();
+    Object.assign(props.appSettings, {
+      showScriptManagerIcon: true,
+      showMacroManagerIcon: true,
+      showWolIcon: true,
+    });
+    render(<AppToolbar {...props} />);
+    for (const name of ["Script Manager", "Macro Manager"]) {
+      expect(screen.getByTitle(name)).toBeEnabled();
+      fireEvent.click(screen.getByTitle(name));
+    }
+    expect(props.setShowScriptManager).toHaveBeenCalledWith(true);
+    expect(props.setShowMacroManager).toHaveBeenCalledWith(true);
+    for (const name of [
+      "Wake-on-LAN",
+      "Import / Export",
+      "Session Manager",
+      "Tag Manager",
+      "Tab Group Manager",
+    ])
+      expect(screen.getByTitle(name)).toBeDisabled();
+  });
+
+  it("omits disabled optional actions and empty groups without leaving separator-only surfaces", () => {
+    const props = makeProps({ openIconExplorer: vi.fn() });
+    Object.assign(props.appSettings, {
+      showSettingsIcon: false,
+      showIconExplorerIcon: false,
+      showTrustCenterIcon: false,
+    });
+    render(<AppToolbar {...props} />);
+    for (const name of [
+      "Tools",
+      "Display",
+      "Diagnostics",
+      "Security",
+      "Sync and backup",
+    ])
+      expect(screen.queryByRole("group", { name })).toBeNull();
+    for (const name of ["Icon Explorer", "Trust Center"])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.queryByTitle("Script Manager")).toBeNull();
+    expect(screen.queryByTitle("Macro Manager")).toBeNull();
+    expect(screen.queryByTitle("Settings")).toBeNull();
+  });
   it("opens the autonomous Icon Explorer even without an active database", () => {
     const openIconExplorer = vi.fn();
     const props = makeProps({ openIconExplorer });

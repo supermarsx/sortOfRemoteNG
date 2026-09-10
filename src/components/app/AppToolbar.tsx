@@ -32,6 +32,23 @@ import { buildBackupPayload } from "../../utils/services/backupPayload";
 import { TOOL_DESCRIPTORS } from "./toolDescriptors";
 import type { ToolKey } from "./toolSession";
 
+const ToolbarGroup: React.FC<{ label: string; children: React.ReactNode }> = ({
+  label,
+  children,
+}) => {
+  const actions = React.Children.toArray(children);
+  if (!actions.length) return null;
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex shrink-0 items-center gap-1 border-[var(--color-border)] [&:not(:first-child)]:border-l [&:not(:first-child)]:pl-2"
+    >
+      {actions}
+    </div>
+  );
+};
+
 const ToolGlyph: React.FC<{ tool: ToolKey; size?: number }> = ({
   tool,
   size = 14,
@@ -223,291 +240,277 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
         className="h-9 app-bar-secondary border-b flex items-center justify-between px-3 select-none relative z-20"
         data-tauri-drag-region
       >
-        <div className="flex items-center space-x-1">
-          {appSettings.showQuickConnectIcon && (
-            <button
-              onClick={() => setShowQuickConnect(true)}
-              className="app-bar-button p-2"
-              title={t("connections.quickConnect")}
-              data-testid="toolbar-quick-connect"
-            >
-              <Zap size={14} />
-            </button>
-          )}
-          {appSettings.showCollectionSwitcherIcon && (
-            <button
-              onClick={() => setShowDatabasePanel(true)}
-              className="app-bar-button p-2"
-              title={t("toolbar.switchCollection", "Collections")}
-              data-testid="toolbar-collection"
-            >
-              <Database size={14} />
-            </button>
-          )}
-          {appSettings.showImportExportIcon && (
-            <button
-              onClick={openImportExport}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("toolbar.importExport", "Import / Export")}
-              data-testid="toolbar-import-export"
-            >
-              <ToolGlyph tool="importExport" />
-            </button>
-          )}
-          {appSettings.showSettingsIcon && (
-            <button
-              onClick={() => openSettings()}
-              className="app-bar-button p-2"
-              title={t("toolbar.settings", "Settings")}
-              data-testid="toolbar-settings"
-            >
-              <ToolGlyph tool="settings" />
-            </button>
-          )}
-          {openIconExplorer && (appSettings.showIconExplorerIcon ?? true) && (
-            <button
-              type="button"
-              onClick={openIconExplorer}
-              className="app-bar-button p-2"
-              aria-label="Icon Explorer"
-              data-tooltip="Icon Explorer"
-              data-testid="toolbar-icon-explorer"
-            >
-              <LayoutGrid size={14} />
-            </button>
-          )}
-          {(appSettings.showTrustCenterIcon ?? true) && (
-            <button
-              type="button"
-              onClick={openTrustCenter}
-              className="app-bar-button p-2"
-              aria-label={t("settingsLayout.trustCenter", "Trust Center")}
-              data-tooltip={t("settingsLayout.trustCenter", "Trust Center")}
-              data-testid="toolbar-trust-center"
-            >
-              <Fingerprint size={14} aria-hidden="true" />
-            </button>
-          )}
-          <button
-            onClick={() => setShowTagManager(true)}
-            disabled={noCollection}
-            className="app-bar-button p-2"
-            title={t("toolbar.tagManager", "Tag Manager")}
-          >
-            <ToolGlyph tool="tagManager" />
-          </button>
-          <button
-            onClick={() => setShowTabGroupManager(true)}
-            disabled={noCollection}
-            className="app-bar-button p-2"
-            title={t("toolbar.tabGroupManager", "Tab Group Manager")}
-          >
-            <ToolGlyph tool="tabGroupManager" />
-          </button>
+        <div
+          data-testid="toolbar-actions-left"
+          className="flex items-center gap-2"
+        >
+          <ToolbarGroup label="Quick access">
+            {appSettings.showQuickConnectIcon && (
+              <button
+                onClick={() => setShowQuickConnect(true)}
+                className="app-bar-button p-2"
+                title={t("connections.quickConnect")}
+                data-testid="toolbar-quick-connect"
+              >
+                <Zap size={14} />
+              </button>
+            )}
+            {appSettings.showCollectionSwitcherIcon && (
+              <button
+                onClick={() => setShowDatabasePanel(true)}
+                className="app-bar-button p-2"
+                title={t("toolbar.switchCollection", "Collections")}
+                data-testid="toolbar-collection"
+              >
+                <Database size={14} />
+              </button>
+            )}
+            {appSettings.showSettingsIcon && (
+              <button
+                onClick={() => openSettings()}
+                className="app-bar-button p-2"
+                title={t("toolbar.settings", "Settings")}
+                data-testid="toolbar-settings"
+              >
+                <ToolGlyph tool="settings" />
+              </button>
+            )}
+          </ToolbarGroup>
         </div>
-
-        <div className="flex items-center space-x-1">
-          {appSettings.showRdpSessionsIcon && (
+        <div
+          data-testid="toolbar-actions-right"
+          className="ml-auto flex items-center gap-2 pl-4"
+        >
+          <ToolbarGroup label="Connections">
+            {appSettings.showImportExportIcon && (
+              <button
+                onClick={openImportExport}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("toolbar.importExport", "Import / Export")}
+                data-testid="toolbar-import-export"
+              >
+                <ToolGlyph tool="importExport" />
+              </button>
+            )}
+            {appSettings.showRdpSessionsIcon && (
+              <button
+                onClick={() => setRdpPanelOpen(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("toolbar.sessionManager", "Session Manager")}
+              >
+                <ToolGlyph tool="rdpSessions" />
+              </button>
+            )}
+            {appSettings.showProxyMenuIcon && (
+              <button
+                onClick={() => setShowProxyMenu(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("toolbar.proxyVpn", "Proxy & VPN")}
+              >
+                <ToolGlyph tool="proxyChain" />
+              </button>
+            )}
+            {appSettings.showOpksshIcon && (
+              <button
+                onClick={() => setShowOpkssh(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("opkssh.title", "opkssh")}
+              >
+                <ToolGlyph tool="opkssh" />
+              </button>
+            )}
+          </ToolbarGroup>
+          <ToolbarGroup label="Tools">
+            {appSettings.showWolIcon && (
+              <button
+                onClick={() => setShowWol(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("toolbar.wakeOnLan", "Wake-on-LAN")}
+              >
+                <ToolGlyph tool="wol" />
+              </button>
+            )}
+            {appSettings.showBulkSSHIcon && (
+              <button
+                onClick={() => setShowBulkSSH(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("bulkSsh.title", "Bulk SSH")}
+              >
+                <ToolGlyph tool="bulkSsh" />
+              </button>
+            )}
+            {appSettings.showServerStatsIcon && (
+              <button
+                onClick={() => setShowServerStats(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("serverStats.title", "Server Stats")}
+              >
+                <ToolGlyph tool="serverStats" />
+              </button>
+            )}
+            {appSettings.showMcpServerIcon && (
+              <button
+                onClick={() => setShowMcpServer(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("mcpServer.title", "MCP Server")}
+              >
+                <ToolGlyph tool="mcpServer" />
+              </button>
+            )}
+            {appSettings.showScriptManagerIcon && (
+              <button
+                onClick={() => setShowScriptManager(true)}
+                className="app-bar-button p-2"
+                title={t("scriptManager.title", "Script Manager")}
+              >
+                <ToolGlyph tool="scriptManager" />
+              </button>
+            )}
+            {appSettings.showMacroManagerIcon && (
+              <button
+                onClick={() => setShowMacroManager(true)}
+                className="app-bar-button p-2"
+                title={t("toolbar.macroManager", "Macro Manager")}
+              >
+                <ToolGlyph tool="macroManager" />
+              </button>
+            )}
+            {appSettings.showRecordingManagerIcon && (
+              <button
+                onClick={() => setShowRecordingManager(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("toolbar.recordingManager", "Recording Manager")}
+              >
+                <ToolGlyph tool="recordingManager" />
+              </button>
+            )}
+          </ToolbarGroup>
+          <ToolbarGroup label="Management">
+            {appSettings.showShortcutManagerIcon && (
+              <button
+                onClick={() => setShowShortcutManager(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("toolbar.shortcutManager", "Shortcut Manager")}
+              >
+                <ToolGlyph tool="shortcutManager" />
+              </button>
+            )}
             <button
-              onClick={() => setRdpPanelOpen(true)}
+              onClick={() => setShowTagManager(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t("toolbar.sessionManager", "Session Manager")}
+              title={t("toolbar.tagManager", "Tag Manager")}
             >
-              <ToolGlyph tool="rdpSessions" />
+              <ToolGlyph tool="tagManager" />
             </button>
-          )}
-          {appSettings.showProxyMenuIcon && (
             <button
-              onClick={() => setShowProxyMenu(true)}
+              onClick={() => setShowTabGroupManager(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t("toolbar.proxyVpn", "Proxy & VPN")}
+              title={t("toolbar.tabGroupManager", "Tab Group Manager")}
             >
-              <ToolGlyph tool="proxyChain" />
+              <ToolGlyph tool="tabGroupManager" />
             </button>
-          )}
-          {appSettings.showShortcutManagerIcon && (
-            <button
-              onClick={() => setShowShortcutManager(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("toolbar.shortcutManager", "Shortcut Manager")}
-            >
-              <ToolGlyph tool="shortcutManager" />
-            </button>
-          )}
-          {appSettings.showWolIcon && (
-            <button
-              onClick={() => setShowWol(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("toolbar.wakeOnLan", "Wake-on-LAN")}
-            >
-              <ToolGlyph tool="wol" />
-            </button>
-          )}
-          {appSettings.showBulkSSHIcon && (
-            <button
-              onClick={() => setShowBulkSSH(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("bulkSsh.title", "Bulk SSH")}
-            >
-              <ToolGlyph tool="bulkSsh" />
-            </button>
-          )}
-          {appSettings.showServerStatsIcon && (
-            <button
-              onClick={() => setShowServerStats(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("serverStats.title", "Server Stats")}
-            >
-              <ToolGlyph tool="serverStats" />
-            </button>
-          )}
-          {appSettings.showOpksshIcon && (
-            <button
-              onClick={() => setShowOpkssh(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("opkssh.title", "opkssh")}
-            >
-              <ToolGlyph tool="opkssh" />
-            </button>
-          )}
-          {appSettings.showMcpServerIcon && (
-            <button
-              onClick={() => setShowMcpServer(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("mcpServer.title", "MCP Server")}
-            >
-              <ToolGlyph tool="mcpServer" />
-            </button>
-          )}
-          {appSettings.showScriptManagerIcon && (
-            <button
-              onClick={() => setShowScriptManager(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("scriptManager.title", "Script Manager")}
-            >
-              <ToolGlyph tool="scriptManager" />
-            </button>
-          )}
-          {appSettings.showMacroManagerIcon && (
-            <button
-              onClick={() => setShowMacroManager(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("toolbar.macroManager", "Macro Manager")}
-            >
-              <ToolGlyph tool="macroManager" />
-            </button>
-          )}
-          {appSettings.showRecordingManagerIcon && (
-            <button
-              onClick={() => setShowRecordingManager(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("toolbar.recordingManager", "Recording Manager")}
-            >
-              <ToolGlyph tool="recordingManager" />
-            </button>
-          )}
-          {appSettings.showPerformanceMonitorIcon && (
-            <button
-              onClick={() => setShowPerformanceMonitor(true)}
-              className="app-bar-button p-2"
-              title={t("toolbar.performanceMonitor", "Performance Monitor")}
-            >
-              <ToolGlyph tool="performanceMonitor" />
-            </button>
-          )}
-          {appSettings.showActionLogIcon && (
-            <button
-              onClick={() => setShowActionLog(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("toolbar.actionLog", "Action Log")}
-            >
-              <ToolGlyph tool="actionLog" />
-            </button>
-          )}
-          {appSettings.showErrorLogBar && (
-            <button
-              onClick={() => setShowErrorLog(!showErrorLog)}
-              className={`app-bar-button p-2 ${showErrorLog ? "text-error" : ""}`}
-              title={t("toolbar.toggleErrorLog", "Toggle Error Log")}
-            >
-              <Bug size={14} />
-            </button>
-          )}
-          {appSettings.showDevtoolsIcon && (
-            <button
-              onClick={handleOpenDevtools}
-              className="app-bar-button p-2"
-              title={t("toolbar.devConsole", "Open dev console")}
-            >
-              <Terminal size={14} />
-            </button>
-          )}
-          {appSettings.showDebugPanelIcon && (
-            <button
-              onClick={() => setShowDebugPanel(true)}
-              className="app-bar-button p-2"
-              title={t("toolbar.debugPanel", "Debug Panel")}
-            >
-              <FlaskConical size={14} />
-            </button>
-          )}
-          {appSettings.showSecurityIcon && (
-            <button
-              onClick={() => openSettings("security")}
-              className="app-bar-button p-2"
-              title={t("toolbar.security", "Security")}
-            >
-              <Shield size={14} />
-            </button>
-          )}
-          {appSettings.showBackupStatusIcon && (
-            <BackupStatusPopup
-              onBackupNow={async () => {
-                const data = buildBackupPayload(
-                  {
-                    connections,
-                    settings: appSettings,
-                    timestamp: Date.now(),
-                  },
-                  appSettings.backup,
-                );
-                await invoke("backup_update_config", {
-                  config: appSettings.backup,
-                });
-                await invoke("backup_run_now", {
-                  backupType: "manual",
-                  data,
-                });
-              }}
-              onOpenSettings={openSettings}
-            />
-          )}
-          {appSettings.showCloudSyncStatusIcon && (
-            <CloudSyncStatusPopup
-              cloudSyncConfig={appSettings.cloudSync}
-              onSyncNow={performCloudSync}
-              onOpenSettings={openSettings}
-            />
-          )}
-          {appSettings.showSyncBackupStatusIcon && (
-            <SyncBackupStatusBar
-              cloudSyncConfig={appSettings.cloudSync}
-              onSyncNow={performCloudSync}
-              onBackupNow={async () => {
-                try {
+            {(appSettings.showTrustCenterIcon ?? true) && (
+              <button
+                type="button"
+                onClick={openTrustCenter}
+                className="app-bar-button p-2"
+                aria-label={t("settingsLayout.trustCenter", "Trust Center")}
+                data-tooltip={t("settingsLayout.trustCenter", "Trust Center")}
+                data-testid="toolbar-trust-center"
+              >
+                <Fingerprint size={14} aria-hidden="true" />
+              </button>
+            )}
+          </ToolbarGroup>
+          <ToolbarGroup label="Display">
+            {openIconExplorer && (appSettings.showIconExplorerIcon ?? true) && (
+              <button
+                type="button"
+                onClick={openIconExplorer}
+                className="app-bar-button p-2"
+                aria-label="Icon Explorer"
+                data-tooltip="Icon Explorer"
+                data-testid="toolbar-icon-explorer"
+              >
+                <LayoutGrid size={14} />
+              </button>
+            )}
+          </ToolbarGroup>
+          <ToolbarGroup label="Diagnostics">
+            {appSettings.showPerformanceMonitorIcon && (
+              <button
+                onClick={() => setShowPerformanceMonitor(true)}
+                className="app-bar-button p-2"
+                title={t("toolbar.performanceMonitor", "Performance Monitor")}
+              >
+                <ToolGlyph tool="performanceMonitor" />
+              </button>
+            )}
+            {appSettings.showActionLogIcon && (
+              <button
+                onClick={() => setShowActionLog(true)}
+                disabled={noCollection}
+                className="app-bar-button p-2"
+                title={t("toolbar.actionLog", "Action Log")}
+              >
+                <ToolGlyph tool="actionLog" />
+              </button>
+            )}
+            {appSettings.showErrorLogBar && (
+              <button
+                onClick={() => setShowErrorLog(!showErrorLog)}
+                className={`app-bar-button p-2 ${showErrorLog ? "text-error" : ""}`}
+                title={t("toolbar.toggleErrorLog", "Toggle Error Log")}
+              >
+                <Bug size={14} />
+              </button>
+            )}
+            {appSettings.showDevtoolsIcon && (
+              <button
+                onClick={handleOpenDevtools}
+                className="app-bar-button p-2"
+                title={t("toolbar.devConsole", "Open dev console")}
+              >
+                <Terminal size={14} />
+              </button>
+            )}
+            {appSettings.showDebugPanelIcon && (
+              <button
+                onClick={() => setShowDebugPanel(true)}
+                className="app-bar-button p-2"
+                title={t("toolbar.debugPanel", "Debug Panel")}
+              >
+                <FlaskConical size={14} />
+              </button>
+            )}
+          </ToolbarGroup>
+          <ToolbarGroup label="Security">
+            {appSettings.showSecurityIcon && (
+              <button
+                onClick={() => openSettings("security")}
+                className="app-bar-button p-2"
+                title={t("toolbar.security", "Security")}
+              >
+                <Shield size={14} />
+              </button>
+            )}
+          </ToolbarGroup>
+          <ToolbarGroup label="Sync and backup">
+            {appSettings.showBackupStatusIcon && (
+              <BackupStatusPopup
+                onBackupNow={async () => {
                   const data = buildBackupPayload(
                     {
                       connections,
@@ -523,13 +526,46 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                     backupType: "manual",
                     data,
                   });
-                } catch (error) {
-                  console.error("Backup failed:", error);
-                }
-              }}
-              onOpenSettings={openSettings}
-            />
-          )}
+                }}
+                onOpenSettings={openSettings}
+              />
+            )}
+            {appSettings.showCloudSyncStatusIcon && (
+              <CloudSyncStatusPopup
+                cloudSyncConfig={appSettings.cloudSync}
+                onSyncNow={performCloudSync}
+                onOpenSettings={openSettings}
+              />
+            )}
+            {appSettings.showSyncBackupStatusIcon && (
+              <SyncBackupStatusBar
+                cloudSyncConfig={appSettings.cloudSync}
+                onSyncNow={performCloudSync}
+                onBackupNow={async () => {
+                  try {
+                    const data = buildBackupPayload(
+                      {
+                        connections,
+                        settings: appSettings,
+                        timestamp: Date.now(),
+                      },
+                      appSettings.backup,
+                    );
+                    await invoke("backup_update_config", {
+                      config: appSettings.backup,
+                    });
+                    await invoke("backup_run_now", {
+                      backupType: "manual",
+                      data,
+                    });
+                  } catch (error) {
+                    console.error("Backup failed:", error);
+                  }
+                }}
+                onOpenSettings={openSettings}
+              />
+            )}
+          </ToolbarGroup>
         </div>
       </div>
     </>
