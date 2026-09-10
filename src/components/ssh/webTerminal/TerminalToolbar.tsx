@@ -76,8 +76,16 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
           <button
             onClick={mgr.handleReconnect}
             className="app-bar-button p-2"
-            data-tooltip="Reconnect"
-            aria-label="Reconnect"
+            data-tooltip={
+              mgr.sshFailure?.kind === "trust_unavailable"
+                ? "Retry trust verification"
+                : "Reconnect"
+            }
+            aria-label={
+              mgr.sshFailure?.kind === "trust_unavailable"
+                ? "Retry trust verification"
+                : "Reconnect"
+            }
             data-testid="terminal-reconnect"
             disabled={
               mgr.status === "connecting" || mgr.status === "reconnecting"

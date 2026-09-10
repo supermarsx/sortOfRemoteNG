@@ -8,6 +8,7 @@ export type SshFailureKind =
   | "connection_refused"
   | "timeout"
   | "host_key"
+  | "trust_unavailable"
   | "key_exchange"
   | "command"
   | "certificate"
@@ -24,7 +25,118 @@ export interface SshFailureClassification {
   recoverable: boolean;
 }
 
+export type SshTrustUnavailableReason =
+  | "transition"
+  | "locked"
+  | "database_required"
+  | "recovery_required"
+  | "unavailable";
+export interface SshTrustRecovery {
+  reason: SshTrustUnavailableReason;
+  summary: string;
+  steps: string[];
+}
+
+const TRUST_RECOVERY: Record<
+  SshTrustUnavailableReason,
+  Omit<SshTrustRecovery, "reason">
+> = {
+  transition: {
+    summary:
+      "Trust Center is unavailable while encryption storage is being updated.",
+    steps: [
+      "Wait for the encryption or storage operation to finish.",
+      "Choose Retry trust verification to start one new SSH attempt.",
+      "Host-key verification remains required; no server key was accepted.",
+    ],
+  },
+  locked: {
+    summary: "Trust Center is unavailable because encrypted storage is locked.",
+    steps: [
+      "Open Settings > Security and unlock encrypted storage.",
+      "Open or unlock this connection's owning database.",
+      "Choose Retry trust verification. Do not disable host-key verification.",
+    ],
+  },
+  database_required: {
+    summary:
+      "Trust Center is unavailable because no trust database is open or unlocked.",
+    steps: [
+      "Open or unlock this connection's owning database.",
+      "Wait for the database to finish loading.",
+      "Choose Retry trust verification. A different database must not supply this connection's trust decisions.",
+    ],
+  },
+  recovery_required: {
+    summary:
+      "Trust Center is unavailable because storage recovery is required.",
+    steps: [
+      "Open Settings > Security and complete the indicated recovery.",
+      "Do not reset storage or delete host-key records to dismiss this error.",
+      "After recovery, open the owning database and choose Retry trust verification.",
+    ],
+  },
+  unavailable: {
+    summary:
+      "Trust Center is unavailable. Host-key verification remains blocked.",
+    steps: [
+      "Check Settings > Security and confirm the owning database is open and unlocked.",
+      "Retry trust verification after storage recovers; if this persists, restart the updated desktop app.",
+      "Do not reset storage, remove trust records, or disable verification to work around this error.",
+    ],
+  },
+};
+
+/** Handles the native marker and the old error wording without showing raw storage errors. */
+export function getSshTrustRecovery(message: string): SshTrustRecovery | null {
+  const lower = message.toLowerCase();
+  const marker =
+    /ssh_trust_unavailable\[(transition|locked|database_required|recovery_required|unavailable)\]/.exec(
+      lower,
+    );
+  if (!marker && !lower.includes("trust center is unavailable")) return null;
+  let reason = marker?.[1] as SshTrustUnavailableReason | undefined;
+  if (!reason) {
+    if (
+      lower.includes("encryption storage transition in progress") ||
+      lower.includes("encryption storage is being updated")
+    )
+      reason = "transition";
+    else if (
+      lower.includes("requires recovery") ||
+      lower.includes("recovery required") ||
+      lower.includes("storage recovery is required")
+    )
+      reason = "recovery_required";
+    else if (
+      lower.includes("encryption is locked") ||
+      lower.includes("encryption state is locked") ||
+      lower.includes("encrypted storage is locked") ||
+      lower.includes("unlock the master key")
+    )
+      reason = "locked";
+    else if (
+      lower.includes("no active trust database") ||
+      lower.includes("no trust database is open")
+    )
+      reason = "database_required";
+    else reason = "unavailable";
+  }
+  return {
+    reason,
+    ...TRUST_RECOVERY[reason],
+    steps: [...TRUST_RECOVERY[reason].steps],
+  };
+}
+
 export function classifySshFailure(message: string): SshFailureClassification {
+  const trust = getSshTrustRecovery(message);
+  if (trust)
+    return {
+      kind: "trust_unavailable",
+      friendly: trust.summary,
+      recoverable: false,
+    };
   const lower = message.toLowerCase();
   if (
     lower.includes("unable to exchange encryption keys") ||
@@ -162,6 +274,7 @@ const FAILURE_STEP_NAMES: Record<SshFailureKind, string> = {
   connection_refused: "TCP Connect",
   timeout: "TCP Connect",
   host_key: "Host Key",
+  trust_unavailable: "Trust Center",
   key_exchange: "Key Exchange",
   command: "Command",
   certificate: "Host Key",

@@ -17,7 +17,10 @@ import {
 } from "lucide-react";
 import type { ProtocolDiagnosticReport } from "../../../types/monitoring/diagnostics";
 import { redactSecrets } from "../../../utils/errors/redact";
-import { reconcileSshDiagnosticReport } from "../../../utils/ssh/sshFailure";
+import {
+  getSshTrustRecovery,
+  reconcileSshDiagnosticReport,
+} from "../../../utils/ssh/sshFailure";
 import type { SshFailureKind } from "../../../hooks/ssh/useWebTerminal";
 import type { WebTerminalMgr } from "./types";
 
@@ -26,6 +29,7 @@ const FAILURE_LABELS: Record<SshFailureKind, string> = {
   connection_refused: "Connection refused",
   timeout: "Connection timeout",
   host_key: "Host key verification",
+  trust_unavailable: "Trust Center unavailable",
   key_exchange: "Key exchange",
   command: "Remote command",
   certificate: "Certificate validation",
@@ -57,6 +61,11 @@ const TROUBLESHOOTING: Record<SshFailureKind, string[]> = {
     "Verify the server fingerprint through a trusted channel.",
     "If the host was rebuilt, approve the new key only after verification.",
     "Remove a stale stored identity only when the key change is expected.",
+  ],
+  trust_unavailable: [
+    "Check whether storage is busy, locked, or waiting for recovery.",
+    "Restore access to the Trust Center, then retry trust verification.",
+    "Host-key verification remains required; no trust decision was bypassed.",
   ],
   key_exchange: [
     "Compare the configured key-exchange, cipher, MAC, and host-key algorithms with those enabled on the server.",
@@ -123,6 +132,12 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
   const port = mgr.connection?.port || 22;
   const kind = failure?.kind ?? "unknown";
   const retrying = mgr.status === "reconnecting";
+  const trustUnavailable = kind === "trust_unavailable";
+  const trustRecovery = trustUnavailable
+    ? getSshTrustRecovery(
+        failure?.technicalDetails || mgr.error || failure?.summary || "",
+      )
+    : null;
 
   const secrets = useMemo(
     () =>
@@ -184,7 +199,7 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
   };
 
   const runDiagnostics = async () => {
-    if (!mgr.connection) return;
+    if (!mgr.connection || trustUnavailable) return;
     setDiagnosticsRunning(true);
     setDiagnosticError("");
     setDiagnostics(null);
@@ -251,7 +266,11 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold">
-              {retrying ? "Restoring SSH session" : "SSH connection failed"}
+              {retrying
+                ? "Restoring SSH session"
+                : trustUnavailable
+                  ? "Trust Center unavailable"
+                  : "SSH connection failed"}
             </h2>
             <p className="mt-0.5 truncate text-[13px] text-[var(--color-textSecondary)]">
               {mgr.session.hostname}:{port}
@@ -279,7 +298,10 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
               />
               <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold">
-                  {failure?.summary || mgr.error || "Connection unavailable"}
+                  {trustRecovery?.summary ||
+                    failure?.summary ||
+                    mgr.error ||
+                    "Connection unavailable"}
                 </h3>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--color-textSecondary)]">
                   The session tab and its previous terminal output are being
@@ -311,12 +333,23 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
               className="sor-btn sor-btn-primary"
             >
               <RefreshCw size={13} />
-              {retrying ? "Retry now" : "Reconnect"}
+              {retrying
+                ? "Retry now"
+                : trustUnavailable
+                  ? "Retry trust verification"
+                  : "Reconnect"}
             </button>
             <button
               type="button"
               onClick={runDiagnostics}
-              disabled={diagnosticsRunning || !mgr.connection}
+              disabled={
+                diagnosticsRunning || !mgr.connection || trustUnavailable
+              }
+              title={
+                trustUnavailable
+                  ? "Restore Trust Center access and retry verification before running credentialed diagnostics."
+                  : undefined
+              }
               className="sor-btn sor-btn-accent"
             >
               {diagnosticsRunning ? (
@@ -345,19 +378,21 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
               What to check
             </h3>
             <ol className="space-y-2">
-              {TROUBLESHOOTING[kind].map((step, index) => (
-                <li
-                  key={step}
-                  className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-3 text-[13px]"
-                >
-                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
-                    {index + 1}
-                  </span>
-                  <span className="leading-relaxed text-[var(--color-textSecondary)]">
-                    {step}
-                  </span>
-                </li>
-              ))}
+              {(trustRecovery?.steps ?? TROUBLESHOOTING[kind]).map(
+                (step, index) => (
+                  <li
+                    key={step}
+                    className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-3 text-[13px]"
+                  >
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
+                      {index + 1}
+                    </span>
+                    <span className="leading-relaxed text-[var(--color-textSecondary)]">
+                      {step}
+                    </span>
+                  </li>
+                ),
+              )}
             </ol>
           </section>
 
@@ -377,9 +412,9 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
                 </span>
               </div>
               <div>
-                {diagnostics.steps.map((step) => (
+                {diagnostics.steps.map((step, index) => (
                   <details
-                    key={`${step.name}-${step.durationMs}`}
+                    key={`${index}-${step.name}`}
                     className="border-b border-[var(--color-border)] last:border-b-0"
                   >
                     <summary className="flex cursor-pointer list-none items-center gap-2.5 px-4 py-2.5 text-xs">

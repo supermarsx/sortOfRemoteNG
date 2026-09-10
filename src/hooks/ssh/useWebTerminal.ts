@@ -3042,15 +3042,18 @@ export function useWebTerminal(
               : "The SSH transport closed unexpectedly."),
         );
         const classification = classifySshError(technicalDetails);
+        const trustUnavailable = classification.kind === "trust_unavailable";
         const recoverable =
-          payload.recoverable ??
-          (payload.reason !== "requested" &&
-            (classification.recoverable ||
-              payload.reason === "remote_eof" ||
-              payload.reason === "transport_error" ||
-              payload.reason === undefined));
-        const summary =
-          payload.reason === "remote_eof"
+          !trustUnavailable &&
+          (payload.recoverable ??
+            (payload.reason !== "requested" &&
+              (classification.recoverable ||
+                payload.reason === "remote_eof" ||
+                payload.reason === "transport_error" ||
+                payload.reason === undefined)));
+        const summary = trustUnavailable
+          ? classification.friendly
+          : payload.reason === "remote_eof"
             ? "SSH server closed the connection"
             : payload.reason === "transport_error" ||
                 classification.kind === "transport"
@@ -3058,9 +3061,10 @@ export function useWebTerminal(
               : classification.friendly;
         const reconnectPolicy = getReconnectPolicy();
         const failure: SshConnectionFailure = {
-          kind:
-            payload.reason === "remote_eof" ||
-            payload.reason === "transport_error"
+          kind: trustUnavailable
+            ? "trust_unavailable"
+            : payload.reason === "remote_eof" ||
+                payload.reason === "transport_error"
               ? "transport"
               : classification.kind,
           summary,

@@ -1032,6 +1032,94 @@ describe("useWebTerminal input lifecycle", () => {
     await waitFor(() => expect(model?.status).toBe("connected"));
   });
 
+  it("blocks trust-storage failures without an auto-loop and retries once after explicit recovery", async () => {
+    mocks.settingsContext.settings = {
+      autoReconnectOnDisconnect: true,
+      autoReconnectDelaySecs: 1,
+    };
+    let attempts = 0;
+    let finishRetry!: (actor: string) => void;
+    const retry = new Promise<string>((resolve) => {
+      finishRetry = resolve;
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") {
+        attempts++;
+        return attempts === 1
+          ? Promise.reject(
+              new Error(
+                "SSH_TRUST_UNAVAILABLE[transition]: Trust Center is unavailable",
+              ),
+            )
+          : retry;
+      }
+      if (command === "start_shell") return Promise.resolve("recovered-shell");
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("error"));
+    expect(model!.sshFailure).toMatchObject({
+      kind: "trust_unavailable",
+      recoverable: false,
+      retryScheduled: false,
+    });
+    expect(model!.error).toMatch(/encryption storage is being updated/);
+    expect(attempts).toBe(1);
+    let reconnect!: Promise<void>;
+    act(() => {
+      reconnect = model!.handleReconnect();
+      void model!.handleReconnect();
+    });
+    await waitFor(() => expect(attempts).toBe(2));
+    expect(model!.status).toBe("reconnecting");
+    await act(async () => {
+      finishRetry("recovered-actor");
+      await reconnect;
+    });
+    expect(model!.status).toBe("connected");
+    expect(model!.error).toBe("");
+    expect(attempts).toBe(2);
+  });
+
+  it("does not let a recoverable shell-close flag turn Trust Center unavailability into automatic retries", async () => {
+    mocks.settingsContext.settings = {
+      autoReconnectOnDisconnect: true,
+      autoReconnectDelaySecs: 1,
+    };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() =>
+      expect(mocks.listeners.has("ssh-shell-closed")).toBe(true),
+    );
+    act(() => {
+      emitTauriEvent("ssh-shell-closed", {
+        session_id: "backend-ssh-1",
+        reason: "transport_error",
+        recoverable: true,
+        message: "SSH_TRUST_UNAVAILABLE[locked]: Trust Center is unavailable",
+      });
+    });
+    await waitFor(() => expect(model?.status).toBe("error"));
+    await waitFor(() => expect(model?.sshFailure?.retryScheduled).toBe(false));
+    expect(model!.sshFailure).toMatchObject({
+      kind: "trust_unavailable",
+      recoverable: false,
+    });
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "connect_ssh"),
+    ).toHaveLength(1);
+  });
+
   it("clears the transient reconnect error after every successful current-actor reconnect", async () => {
     let actor = 0;
     mocks.invoke.mockImplementation(async (command: string) => {

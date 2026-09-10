@@ -540,12 +540,31 @@ pub(crate) mod host_key_trust {
             .map_err(|error| unavailable_error(host, &error))
     }
 
-    /// A trust-store failure is a verification failure, phrased so the user
-    /// knows the fix is "open a database", not "retry the connection".
+    /// Keep trust unavailability distinct from a changed server key. This is
+    /// still fail-closed; only an explicit retry performs verification again.
+    /// Never include arbitrary storage errors (paths or damaged contents).
     pub(crate) fn unavailable_error(host: &str, error: &str) -> String {
+        let lower = error.to_ascii_lowercase();
+        let (reason, recovery) = if lower.contains("encryption storage transition in progress") {
+            ("transition", "Encryption storage is being updated. Wait for the operation to finish, then retry trust verification.")
+        } else if lower.contains("requires recovery") || lower.contains("recovery required") {
+            ("recovery_required", "Storage recovery is required. Open Settings > Security and complete recovery before retrying. Do not reset or delete trust records.")
+        } else if lower.contains("encryption is locked")
+            || lower.contains("encryption state is locked")
+            || lower.contains("unlock the master key")
+            || lower.contains("native storage is locked")
+        {
+            ("locked", "Encrypted storage is locked. Unlock it in Settings > Security, open or unlock the owning database, then retry trust verification.")
+        } else if lower.contains("no active trust database") {
+            (
+                "database_required",
+                "Open or unlock the owning database, then retry trust verification.",
+            )
+        } else {
+            ("unavailable", "Check Settings > Security and the owning database. Retry after storage recovers; if this persists, restart the updated desktop app. Do not reset or delete trust records.")
+        };
         format!(
-            "Host key verification failed for {host}: the Trust Center is unavailable ({error}). \
-             Open a database so host-key decisions can be recorded."
+            "SSH_TRUST_UNAVAILABLE[{reason}]: Host key verification stopped for {host}: the Trust Center is unavailable. {recovery} No server key was accepted."
         )
     }
 }
@@ -11572,6 +11591,48 @@ mod tests {
         let record_error =
             host_key_trust::record("locked.example.test", 22, &info, true).unwrap_err();
         assert!(record_error.contains("Trust Center is unavailable"));
+        assert!(record_error.contains("SSH_TRUST_UNAVAILABLE[database_required]"));
+    }
+
+    #[test]
+    fn host_key_trust_unavailability_has_safe_actionable_categories() {
+        for (source, reason, guidance) in [
+            (
+                "encryption storage transition in progress; retry after it completes",
+                "transition",
+                "Wait for the operation",
+            ),
+            (
+                "master encryption is locked; artifact writes are blocked",
+                "locked",
+                "Unlock it",
+            ),
+            (
+                "no active trust database; open or unlock a database first",
+                "database_required",
+                "Open or unlock the owning database",
+            ),
+            (
+                "artifact transition requires recovery; writes are blocked",
+                "recovery_required",
+                "complete recovery",
+            ),
+            (
+                "parse C:/private/path secret=not-for-ui",
+                "unavailable",
+                "Check Settings > Security",
+            ),
+        ] {
+            let message = host_key_trust::unavailable_error("fixture.invalid", source);
+            assert!(message.contains(&format!("SSH_TRUST_UNAVAILABLE[{reason}]")));
+            assert!(message.contains(guidance));
+            assert!(message.contains("No server key was accepted"));
+            assert!(!message.contains("private/path"));
+            assert!(!message.contains("not-for-ui"));
+            if reason == "transition" {
+                assert!(!message.contains("Open a database"));
+            }
+        }
     }
 
     #[test]
