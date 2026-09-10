@@ -11,11 +11,22 @@ import type {
  * process, is never persisted, and is cleared when its session closes.
  */
 const runtimeConnections = new Map<string, Connection>();
+/** Reference-only, renderer-local provenance. Never serialize onto a session. */
+export interface TrustedRedirectSource {
+  databaseId: string;
+  savedConnectionId: string;
+  originalOrigin: string;
+  /** The original lease, not a freshly acquired lease on a later redirect hop. */
+  assertOwner: () => void;
+  /** Compare a freshly resolved saved source without exposing its credentials. */
+  assertIdentity: (connection: Connection) => void;
+}
 export interface RuntimeWebNavigation {
   initialUrl: string;
   redirectHops: number;
   /** Checked by canonical launch after asynchronous capability/confirmation work. */
   assertCurrent: () => void;
+  trustedRedirectSource?: TrustedRedirectSource;
 }
 const webNavigation = new Map<string, RuntimeWebNavigation>();
 

@@ -128,6 +128,12 @@ describe("embedded web failure recovery screen", () => {
         cancel: vi.fn(),
         redirectStep: 2,
         maxRedirectHops: 5,
+        trustedDestination: false,
+        canRememberDestination: false,
+        rememberUnavailableReason: "Save this connection first.",
+        rememberingDestination: false,
+        rememberDestination: vi.fn(async () => {}),
+        trustNotice: "",
         authentication: {
           configured: false,
           available: false,
@@ -174,6 +180,12 @@ describe("embedded web failure recovery screen", () => {
         },
         redirectStep: 1,
         maxRedirectHops: 5,
+        trustedDestination: false,
+        canRememberDestination: false,
+        rememberUnavailableReason: "Save this connection first.",
+        rememberingDestination: false,
+        rememberDestination: vi.fn(async () => {}),
+        trustNotice: "",
       },
     });
     const { container } = render(<ContentArea mgr={mgr} />);

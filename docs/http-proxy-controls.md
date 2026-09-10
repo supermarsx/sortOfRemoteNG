@@ -75,6 +75,36 @@ they are not silently replaced with less restrictive settings.
   omitted from credential-free exports. The remote server still receives them.
   Up to 16 parameters are supported; reserved internal names are refused.
 
+### Remember a redirect destination
+
+Enable **Allow reviewed cross-origin redirects** to review a website's change of
+address inside its tab. For Synology DSM website connections this switch is also
+available in **Application**. Each chain is limited to five handoffs.
+
+The inline review shows the complete destination and its exact **Destination
+origin** (scheme, hostname and port). **Trust destination** saves that origin for
+the original saved connection in its currently open, unlocked owning database.
+It is a separate action: it does not continue the redirect or send credentials.
+Unsaved or inaccessible connections explain why remembering is unavailable;
+failed persistence does not mark an origin trusted. You can manage or remove
+origins under **Advanced → Trusted redirect destinations**. Wildcards and paths
+are not origin grants; trusting one port or subdomain does not trust another.
+
+**Automatically continue to trusted HTTPS destinations** is off by default.
+When explicitly enabled, only an exact trusted HTTPS destination can continue
+automatically, signed out in the same tab, and only when saved-login forwarding
+is not configured. Each handoff still requires a current native redirect receipt
+and a fresh certificate trust check. HTTP destinations and HTTPS-to-HTTP
+downgrades always require manual review; **Require HTTPS upstream** remains
+stronger than redirect settings. Remembering an origin does not grant certificate
+trust, enable login forwarding, or transfer cookies, form bodies, custom headers,
+MFA secrets, or scripts. Portal redirects that depend on stripped query parameters
+may still need manual sign-in or the original website in your system browser.
+
+If the source proxy is no longer available, use **Reload source page** in the
+inline review to request a fresh redirect. **Back to page** remains available
+without approving or following any destination.
+
 These are typed connection settings, not arbitrary command-line arguments or
 proxy scripts. Certificate verification and credential-origin checks remain
 enforced independently.

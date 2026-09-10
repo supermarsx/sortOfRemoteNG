@@ -30,6 +30,7 @@ import {
 } from "../security/vaultPortability";
 import { normalizeRecycleBin } from "./recycleBin";
 import { rebindDatabaseQuickActions } from "./rebindDatabaseQuickActions";
+import { stripHttpTrustedRedirectDestinations } from "../protocol/httpTrustedRedirectDestinations";
 import {
   stripExportSecrets,
   containsExportSecrets,
@@ -1791,9 +1792,11 @@ export class DatabaseManager {
         isEncrypted: collection.isEncrypted,
         exportDate: new Date().toISOString(),
       },
-      connections: includePasswords
-        ? data.connections
-        : data.connections.map(redactConnectionSecrets),
+      connections: data.connections.map((connection) =>
+        stripHttpTrustedRedirectDestinations(
+          includePasswords ? connection : redactConnectionSecrets(connection),
+        ),
+      ),
       settings: data.settings ?? {},
       tabGroups: data.tabGroups ?? [],
       colorTags: data.colorTags ?? {},
@@ -1804,9 +1807,11 @@ export class DatabaseManager {
               ...normalizeRecycleBin(data.recycleBin),
               entries: data.recycleBin.entries.map((entry) => ({
                 ...entry,
-                connection: includePasswords
-                  ? entry.connection
-                  : this.redactArchivedConnection(entry.connection),
+                connection: stripHttpTrustedRedirectDestinations(
+                  includePasswords
+                    ? entry.connection
+                    : this.redactArchivedConnection(entry.connection),
+                ),
               })),
             },
           }
@@ -2614,7 +2619,10 @@ export class DatabaseManager {
       collectionId,
       {
         ...data,
-        connections: [...(data.connections ?? []), ...connections],
+        connections: [
+          ...(data.connections ?? []),
+          ...connections.map(stripHttpTrustedRedirectDestinations),
+        ],
         settings: data.settings ?? {},
         timestamp: Date.now(),
         tabGroups: data.tabGroups ?? [],
@@ -2920,7 +2928,7 @@ export class DatabaseManager {
     }
 
     const connections = (parsed?.connections ?? []).map((conn: any) => ({
-      ...conn,
+      ...stripHttpTrustedRedirectDestinations(conn),
       password: conn.password === "***ENCRYPTED***" ? undefined : conn.password,
       basicAuthPassword:
         conn.basicAuthPassword === "***ENCRYPTED***"

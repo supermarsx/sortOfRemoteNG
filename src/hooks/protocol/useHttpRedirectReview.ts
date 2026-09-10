@@ -6,6 +6,7 @@ import type {
 } from "../../types/connection/connection";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
+import type { useHttpRedirectTrust } from "./useHttpRedirectTrust";
 import {
   getRuntimeWebNavigation,
   registerRuntimeConnection,
@@ -15,6 +16,7 @@ import { OPEN_RUNTIME_CONNECTION_EVENT } from "../session/useRuntimeConnectionLa
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import {
   authenticatedRedirectConnection,
+  normalizeRedirectAuthentication,
   redirectAuthenticationAvailability,
 } from "../../utils/protocol/httpRedirectAuthentication";
 import {
@@ -36,12 +38,18 @@ interface Options {
   stopSource: (sessionId: string) => Promise<void>;
   /** Replace only the tab's ephemeral target, never the saved connection. */
   continueInTab?: (connection: Connection) => void;
+  trust?: ReturnType<typeof useHttpRedirectTrust>;
 }
+type TrustInspection = Awaited<
+  ReturnType<NonNullable<Options["trust"]>["inspect"]>
+>;
 interface Pending {
   review: HttpRedirectReview;
   assertCurrent: () => void;
   assertLaunchCurrent: () => void;
   signature: string;
+  assertTransportCurrent: () => void;
+  trust: TrustInspection | null;
 }
 export const MAX_HTTP_REDIRECT_HANDOFFS = 5;
 
@@ -62,13 +70,29 @@ export function useHttpRedirectReview(options: Options) {
     options.sourceOrigin,
     options.route,
     options.enabled,
+    options.trust?.revision,
   ]);
-  const latest = useRef({ options, signature });
-  latest.current = { options, signature };
+  // Saving an explicitly reviewed origin changes only the local consent list.
+  // The save adapter separately fences that exact delta and its durable result.
+  const transportSignature = stableJsonStringify([
+    connectionIdentity && {
+      ...connectionIdentity,
+      httpTrustedRedirectDestinations: undefined,
+    },
+    options.accessKey,
+    options.sourceOrigin,
+    options.route,
+    options.enabled,
+  ]);
+  const latest = useRef({ options, signature, transportSignature });
+  latest.current = { options, signature, transportSignature };
   const live = useRef(true);
   const pending = useRef<Pending | null>(null);
   const action = useRef(0);
   const accepting = useRef(false);
+  const remembering = useRef(false);
+  const manuallyRememberedReceipt = useRef<string | null>(null);
+  const rememberReplayGuard = useRef<(() => void) | null>(null);
   const offering = useRef<{
     key: string;
     reportError: boolean;
@@ -78,6 +102,9 @@ export function useHttpRedirectReview(options: Options) {
   const [review, setReview] = useState<HttpRedirectReview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [trustNotice, setTrustNotice] = useState("");
+  const [rememberingDestination, setRememberingDestination] = useState(false);
+  const [rememberVersion, setRememberVersion] = useState(0);
   useEffect(() => {
     live.current = true;
     return () => {
@@ -117,7 +144,12 @@ export function useHttpRedirectReview(options: Options) {
         );
       return;
     }
-    if (pending.current?.review.sessionId === id || accepting.current) return;
+    if (
+      pending.current?.review.sessionId === id ||
+      accepting.current ||
+      remembering.current
+    )
+      return;
     if (userInitiated) dismissedReceipt.current = null;
     const requestKey = JSON.stringify([
       current.signature,
@@ -139,11 +171,11 @@ export function useHttpRedirectReview(options: Options) {
     const token = ++action.current;
     try {
       const assertOwner = captureSessionDatabaseAccess(captured.session);
-      const assertCurrent = () => {
+      const assertTransportCurrent = () => {
         assertOwner();
         if (
           !live.current ||
-          latest.current.signature !== current.signature ||
+          latest.current.transportSignature !== current.transportSignature ||
           captured.generation() !== generation ||
           captured.proxySessionId() !== id ||
           captured.navigationToken() !== navigationToken ||
@@ -151,6 +183,13 @@ export function useHttpRedirectReview(options: Options) {
         )
           throw new Error(
             "Redirect review expired. Reopen the owning database and retry the navigation.",
+          );
+      };
+      const assertCurrent = () => {
+        assertTransportCurrent();
+        if (latest.current.signature !== current.signature)
+          throw new Error(
+            "Redirect settings changed. Review the destination again.",
           );
       };
       const assertLaunchCurrent = () => {
@@ -198,11 +237,29 @@ export function useHttpRedirectReview(options: Options) {
         );
         return;
       }
+      if (receipt.receiptId !== manuallyRememberedReceipt.current)
+        setTrustNotice("");
+      let trust: TrustInspection | null = null;
+      if (captured.trust) {
+        try {
+          trust = await captured.trust.inspect(receipt, assertCurrent);
+          trust.assertCurrent();
+        } catch {
+          trust = null;
+          setTrustNotice(
+            "Saved redirect destinations could not be verified. Open and unlock the owning database, then retry. You can still review this one-time destination; it has not been trusted automatically.",
+          );
+        }
+      }
+      assertCurrent();
+      if (token !== action.current) return;
       pending.current = {
         review: receipt,
         assertCurrent,
         assertLaunchCurrent,
         signature: current.signature,
+        assertTransportCurrent,
+        trust,
       };
       setError("");
       setReview(receipt);
@@ -216,21 +273,43 @@ export function useHttpRedirectReview(options: Options) {
     }
   };
   const cancel = () => {
-    if (accepting.current) return;
+    if (accepting.current || remembering.current) return;
     dismissedReceipt.current = pending.current?.review.receiptId ?? null;
+    rememberReplayGuard.current = null;
     ++action.current;
     pending.current = null;
     setReview(null);
     setBusy(false);
     setError("");
+    setTrustNotice("");
+  };
+  const canAutomaticallyContinue = (
+    captured: Options,
+    current: Pending,
+  ): boolean => {
+    try {
+      return !!(
+        current.trust?.trusted &&
+        current.trust.autoContinue &&
+        current.review.receiptId !== manuallyRememberedReceipt.current &&
+        captured.continueInTab &&
+        current.review.destinationUrl.startsWith("https:") &&
+        normalizeRedirectAuthentication(
+          captured.connection?.httpRedirectAuthentication,
+        ).mode === "none"
+      );
+    } catch {
+      return false;
+    }
   };
   const accept = async (
     destination: "current" | "anonymous" = "anonymous",
     carrySavedLogin = false,
     insecureApproved = false,
+    automatic = false,
   ) => {
     const receipt = pending.current;
-    if (!receipt || accepting.current) return;
+    if (!receipt || accepting.current || remembering.current) return;
     accepting.current = true;
     const token = ++action.current;
     const captured = latest.current.options;
@@ -251,6 +330,23 @@ export function useHttpRedirectReview(options: Options) {
       )
         throw new Error();
       receipt.assertCurrent();
+      if (automatic) {
+        if (
+          !captured.trust ||
+          destination !== "current" ||
+          carrySavedLogin ||
+          insecureApproved
+        )
+          throw new Error();
+        // Read persisted consent again immediately before consuming the receipt.
+        // An optimistic editor update or failed flush is never authorization.
+        receipt.trust = await captured.trust.inspect(
+          receipt.review,
+          receipt.assertCurrent,
+        );
+        receipt.trust.assertCurrent();
+        if (!canAutomaticallyContinue(captured, receipt)) throw new Error();
+      }
       if (
         captured.proxySessionId() !== receipt.review.sessionId ||
         !captured.connection
@@ -266,6 +362,7 @@ export function useHttpRedirectReview(options: Options) {
         captured.connection.httpProxyPolicy,
       );
       receipt.assertCurrent();
+      if (automatic) receipt.trust?.assertCurrent();
       if (
         token !== action.current ||
         !consumed ||
@@ -281,18 +378,28 @@ export function useHttpRedirectReview(options: Options) {
             insecureApproved,
           )
         : anonymousRedirectConnection(captured.connection, consumed);
+      const assertLaunchCurrent = () => {
+        receipt.assertLaunchCurrent();
+        // The expected source stop invalidates receipt transport, not the
+        // original database lease or the persisted destination permission.
+        if (automatic) {
+          if (!receipt.trust?.assertLaunchCurrent) throw new Error();
+          receipt.trust.assertLaunchCurrent();
+        }
+      };
       await captured.stopSource(receipt.review.sessionId);
-      receipt.assertLaunchCurrent();
+      assertLaunchCurrent();
       if (token !== action.current) return;
       registerRuntimeConnection(connection, {
         initialUrl: consumed.destinationUrl,
         redirectHops:
           (getRuntimeWebNavigation(captured.connection.id)?.redirectHops ?? 0) +
           1,
-        assertCurrent: receipt.assertLaunchCurrent,
+        assertCurrent: assertLaunchCurrent,
+        trustedRedirectSource: receipt.trust?.provenance ?? undefined,
       });
       try {
-        receipt.assertLaunchCurrent();
+        assertLaunchCurrent();
         if (destination === "current") captured.continueInTab!(connection);
         else
           window.dispatchEvent(
@@ -306,6 +413,7 @@ export function useHttpRedirectReview(options: Options) {
       }
       pending.current = null;
       setReview(null);
+      rememberReplayGuard.current = null;
     } catch {
       if (live.current && token === action.current)
         setError(
@@ -316,6 +424,89 @@ export function useHttpRedirectReview(options: Options) {
       if (live.current && token === action.current) setBusy(false);
     }
   };
+  const rememberDestination = async () => {
+    const current = pending.current;
+    const captured = latest.current.options;
+    if (
+      !current ||
+      !captured.trust?.canRemember ||
+      accepting.current ||
+      remembering.current
+    )
+      return;
+    remembering.current = true;
+    setRememberingDestination(true);
+    setTrustNotice("");
+    try {
+      current.assertCurrent();
+      // Only the still-current native receipt can be saved, never page text.
+      const verified = parseHttpRedirectReview(
+        await invoke<unknown>("review_proxy_redirect", {
+          sessionId: current.review.sessionId,
+          receiptId: null,
+        }),
+        current.review.sessionId,
+        captured.sourceOrigin,
+        captured.connection?.httpProxyPolicy,
+      );
+      current.assertCurrent();
+      if (
+        !verified ||
+        stableJsonStringify(verified) !== stableJsonStringify(current.review)
+      )
+        throw new Error();
+      // Trust is a separate action. Even an existing automatic preference must
+      // not turn this click into navigation; it applies on future receipts.
+      manuallyRememberedReceipt.current = current.review.receiptId;
+      await captured.trust.remember(
+        current.review,
+        current.assertTransportCurrent,
+      );
+      current.assertTransportCurrent();
+      setTrustNotice(
+        "Destination saved for the original connection. Certificate checks and login permissions are unchanged.",
+      );
+    } catch {
+      if (live.current)
+        setTrustNotice(
+          "The destination could not be saved and verified. Check the owning database and its save status, then try again. No automatic trust was granted.",
+        );
+    } finally {
+      remembering.current = false;
+      if (live.current) {
+        setRememberingDestination(false);
+        pending.current = null;
+        setReview(null);
+        // Wait for the persisted connection/revision render, then obtain a new
+        // current native receipt instead of continuing with pre-save authority.
+        rememberReplayGuard.current = current.assertTransportCurrent;
+        setRememberVersion((version) => version + 1);
+      }
+    }
+  };
+  const actionsRef = useRef({ offer, accept });
+  actionsRef.current = { offer, accept };
+  useEffect(() => {
+    if (rememberVersion > 0 && rememberReplayGuard.current) {
+      try {
+        rememberReplayGuard.current();
+        void actionsRef.current.offer(true);
+      } catch {
+        // Navigation/owner changes cancel the save's recovery; do not overlay
+        // an unrelated new page with the old receipt's unavailable error.
+        rememberReplayGuard.current = null;
+      }
+    }
+  }, [rememberVersion, signature]);
+  useEffect(() => {
+    const current = pending.current;
+    if (
+      current &&
+      current.signature === signature &&
+      canAutomaticallyContinue(latest.current.options, current)
+    )
+      void actionsRef.current.accept("current", false, false, true);
+  }, [review, signature]);
   return {
     redirectStep: Math.min(
       (getRuntimeWebNavigation(options.connection?.id ?? "")?.redirectHops ??
@@ -328,8 +519,18 @@ export function useHttpRedirectReview(options: Options) {
       review,
     ),
     review: review && pending.current?.signature === signature ? review : null,
-    busy,
+    busy: busy || rememberingDestination,
     error,
+    trustNotice,
+    trustedDestination:
+      pending.current?.signature === signature &&
+      pending.current.trust?.trusted === true,
+    canRememberDestination: options.trust?.canRemember === true,
+    rememberUnavailableReason:
+      options.trust?.unavailableReason ??
+      "Save this connection in an open database first.",
+    rememberingDestination,
+    rememberDestination,
     offer,
     cancel,
     accept,

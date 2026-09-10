@@ -18,15 +18,25 @@ type ReviewManager = Pick<
       ReturnType<typeof useHttpRedirectReview>,
       "authentication" | "redirectStep" | "maxRedirectHops"
     >
-  >;
+  > & {
+    trustedDestination?: boolean;
+    canRememberDestination?: boolean;
+    rememberUnavailableReason?: string;
+    rememberingDestination?: boolean;
+    rememberDestination?: () => Promise<void>;
+    trustNotice?: string;
+  };
 
 /** Redirect review belongs to the browser viewport, never a global modal. */
 export default function RedirectReviewPanel({
   manager,
+  onReload,
 }: {
   manager: ReviewManager;
+  onReload?: () => void;
 }) {
   const { review, busy, error, authentication } = manager;
+  const acting = busy || manager.rememberingDestination === true;
   const [choice, setChoice] = useState<{
     receiptId: string;
     carry: boolean;
@@ -49,6 +59,25 @@ export default function RedirectReviewPanel({
   if (!review && !error) return null;
   const insecure = review?.destinationUrl.startsWith("http:") === true;
   const downgrade = insecure && review?.sourceOrigin.startsWith("https:");
+  let destinationOrigin: string | null = null;
+  try {
+    if (review) {
+      const destination = new URL(review.destinationUrl);
+      if (
+        ["http:", "https:"].includes(destination.protocol) &&
+        !destination.username &&
+        !destination.password
+      )
+        destinationOrigin = destination.origin;
+    }
+  } catch {
+    // The hook validates receipts. A malformed presentation fixture must never
+    // display a plausible trusted origin or enable the persistence action.
+  }
+  const canRemember =
+    !!destinationOrigin &&
+    manager.canRememberDestination === true &&
+    typeof manager.rememberDestination === "function";
   return (
     <section
       role="region"
@@ -113,6 +142,58 @@ export default function RedirectReviewPanel({
                 </dd>
               </div>
             </dl>
+            {destinationOrigin && (
+              <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-xs font-medium text-[var(--color-textSecondary)]">
+                      Destination origin
+                    </p>
+                    <p dir="ltr" className="break-all font-mono text-xs">
+                      {destinationOrigin}
+                    </p>
+                  </div>
+                  {manager.trustedDestination === true ? (
+                    <span className="flex items-center gap-1.5 text-xs text-[var(--color-textSecondary)]">
+                      <ShieldCheck size={15} aria-hidden="true" />
+                      Trusted for this saved connection
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="sor-btn sor-btn-secondary"
+                      disabled={acting || !canRemember}
+                      onClick={() => void manager.rememberDestination?.()}
+                    >
+                      {manager.rememberingDestination
+                        ? "Saving destination…"
+                        : "Trust destination"}
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs leading-relaxed text-[var(--color-textSecondary)]">
+                  Trust is saved for the original connection in its owning
+                  database. This action does not continue the redirect, approve
+                  its certificate, or send saved login details. Automatic
+                  continuation is a separate Advanced option and is off by
+                  default.
+                </p>
+                {!manager.trustedDestination && !canRemember && (
+                  <p className="text-xs leading-relaxed text-[var(--color-textSecondary)]">
+                    {manager.rememberUnavailableReason ||
+                      "Save the original connection and open its owning database to remember a destination."}
+                  </p>
+                )}
+              </div>
+            )}
+            {manager.trustNotice && (
+              <p
+                role="status"
+                className="rounded-lg border border-[var(--color-border)] p-3 text-xs leading-relaxed text-[var(--color-textSecondary)]"
+              >
+                {manager.trustNotice}
+              </p>
+            )}
             {insecure && (
               <div className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm">
                 <TriangleAlert
@@ -173,7 +254,7 @@ export default function RedirectReviewPanel({
                   variant="form"
                   label="Use saved login when continuing in this tab"
                   checked={carry}
-                  disabled={busy || !authentication.available}
+                  disabled={acting || !authentication.available}
                   onChange={(value) =>
                     change({ carry: value, insecureApproved: false })
                   }
@@ -188,7 +269,7 @@ export default function RedirectReviewPanel({
                   <CheckboxField
                     variant="form"
                     checked={insecureApproved}
-                    disabled={busy}
+                    disabled={acting}
                     onChange={(value) => change({ insecureApproved: value })}
                     label="I approve sending this saved login over unencrypted HTTP"
                     aria-label="I approve sending this saved login over unencrypted HTTP"
@@ -216,28 +297,43 @@ export default function RedirectReviewPanel({
         <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-[var(--color-border)] pt-5">
           <button
             className="sor-btn sor-btn-secondary"
-            disabled={busy}
+            disabled={acting}
             onClick={manager.cancel}
           >
             {review ? "Stay here" : "Back to page"}
           </button>
+          {error && onReload && (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary"
+              disabled={acting}
+              onClick={() => {
+                manager.cancel();
+                onReload();
+              }}
+            >
+              Reload source page
+            </button>
+          )}
           {review && (
             <>
               <button
                 className="sor-btn sor-btn-secondary"
-                disabled={busy}
+                disabled={acting}
                 onClick={() => void manager.accept("anonymous")}
               >
                 Open anonymous tab
               </button>
               <button
                 className="sor-btn sor-btn-primary"
-                disabled={busy || (carry && insecure && !insecureApproved)}
+                disabled={acting || (carry && insecure && !insecureApproved)}
                 onClick={() =>
                   void manager.accept("current", carry, insecureApproved)
                 }
               >
-                {busy ? "Opening…" : "Continue in this tab"}
+                {busy && !manager.rememberingDestination
+                  ? "Opening…"
+                  : "Continue in this tab"}
               </button>
             </>
           )}

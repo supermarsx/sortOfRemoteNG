@@ -1,5 +1,6 @@
 import type { Connection } from "../../types/connection/connection";
 import type { StorageData } from "../storage/storage";
+import { stripHttpTrustedRedirectDestinations } from "../protocol/httpTrustedRedirectDestinations";
 import { rebindDatabaseDocuments } from "../documents/documentRefs";
 import type { QuickActionReference } from "../../types/connection/sessionQuickActions";
 import {
@@ -14,6 +15,25 @@ export function rebindDatabaseQuickActions(
   sourceDatabaseId: unknown,
   destinationDatabaseId: string,
 ): StorageData {
+  // This helper is only used for a new database copy/import. Consent is local
+  // even when the source has no database ID and library rebinding is skipped.
+  data = {
+    ...data,
+    connections: data.connections.map(stripHttpTrustedRedirectDestinations),
+    ...(data.recycleBin
+      ? {
+          recycleBin: {
+            ...data.recycleBin,
+            entries: data.recycleBin.entries.map((entry) => ({
+              ...entry,
+              connection: stripHttpTrustedRedirectDestinations(
+                entry.connection,
+              ),
+            })),
+          },
+        }
+      : {}),
+  };
   if (
     typeof sourceDatabaseId !== "string" ||
     !sourceDatabaseId ||

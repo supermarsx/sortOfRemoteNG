@@ -81,7 +81,10 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
       />
       {reviewing && (
         <div className="absolute inset-0 z-20">
-          <RedirectReviewPanel manager={mgr.redirectReview} />
+          <RedirectReviewPanel
+            manager={mgr.redirectReview}
+            onReload={mgr.handleRefresh}
+          />
         </div>
       )}
       {mgr.loadError && !reviewing && (

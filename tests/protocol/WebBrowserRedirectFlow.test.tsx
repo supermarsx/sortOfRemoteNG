@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { flushSync } from "react-dom";
 import {
   act,
   cleanup,
@@ -25,7 +26,13 @@ const h = vi.hoisted(() => ({
   invoke: vi.fn(),
   dispatch: vi.fn(),
   verify: vi.fn(),
+  readCurrent: vi.fn(),
+  flushPendingSave: vi.fn(),
+  dispatchAndFlush: vi.fn(),
   connections: [] as Connection[],
+  persistedConnections: [] as Connection[],
+  failSave: false,
+  failSaveAfterDispatch: false,
   sessions: [] as ConnectionSession[],
   settingsReady: true,
   locked: false,
@@ -46,6 +53,8 @@ vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: { connections: h.connections, sessions: h.sessions },
     dispatch: h.dispatch,
+    dispatchAndFlush: h.dispatchAndFlush,
+    flushPendingSave: h.flushPendingSave,
     databaseAvailability: {
       status: "ready",
       databaseId: "owned",
@@ -90,7 +99,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
         assertAccessible: () => {
           if (h.locked) throw new Error("locked");
         },
-        readCurrent: async () => ({ connections: h.connections }),
+        readCurrent: h.readCurrent,
       }),
     }),
   },
@@ -119,10 +128,19 @@ const initialSession = (): ConnectionSession => ({
 });
 function Harness() {
   const [session, setSession] = useState(initialSession);
+  const [, setRevision] = useState(0);
   h.sessions = [session];
   h.dispatch.mockImplementation(
-    (action: { type: string; payload: ConnectionSession }) => {
-      if (action.type === "UPDATE_SESSION") setSession(action.payload);
+    (action: { type: string; payload: ConnectionSession | Connection }) => {
+      if (action.type === "UPDATE_SESSION")
+        setSession(action.payload as ConnectionSession);
+      if (action.type === "UPDATE_CONNECTION") {
+        const row = action.payload as Connection;
+        h.connections = h.connections.map((current) =>
+          current.id === row.id ? row : current,
+        );
+        setRevision((value) => value + 1);
+      }
     },
   );
   return <WebBrowser key={session.connectionId} session={session} />;
@@ -133,6 +151,8 @@ beforeEach(() => {
   proxies.length = 0;
   h.settingsReady = true;
   h.locked = false;
+  h.failSave = false;
+  h.failSaveAfterDispatch = false;
   h.dispatch.mockReset();
   h.connections = [
     {
@@ -151,6 +171,20 @@ beforeEach(() => {
       },
     },
   ];
+  h.persistedConnections = structuredClone(h.connections);
+  h.readCurrent.mockReset().mockImplementation(async () => ({
+    connections: structuredClone(h.persistedConnections),
+  }));
+  h.flushPendingSave.mockReset().mockImplementation(async () => {
+    if (h.failSave) throw new Error("Synthetic save refused");
+    h.persistedConnections = structuredClone(h.connections);
+  });
+  h.dispatchAndFlush.mockReset().mockImplementation(async (action) => {
+    flushSync(() => h.dispatch(action));
+    if (h.failSave || h.failSaveAfterDispatch)
+      throw new Error("Synthetic save refused");
+    h.persistedConnections = structuredClone(h.connections);
+  });
   h.verify.mockReset().mockResolvedValue({ status: "trusted" });
   h.invoke
     .mockReset()
@@ -191,6 +225,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 async function mounted() {
+  h.persistedConnections = structuredClone(h.connections);
   const view = render(<Harness />);
   await waitFor(() =>
     expect(
@@ -252,6 +287,179 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it("automatically continues two trusted HTTPS hops using the original persisted list and no source credentials", async () => {
+    h.connections[0] = {
+      ...h.connections[0],
+      basicAuthUsername: "private-user",
+      basicAuthPassword: "private-password",
+      httpTrustedRedirectDestinations: {
+        version: 1,
+        autoContinue: true,
+        origins: [
+          "https://relay-1.example.test",
+          "https://relay-2.example.test",
+        ],
+      },
+    };
+    const view = await mounted();
+    for (let hop = 1; hop <= 2; hop++) {
+      redirect(
+        view.container.querySelector("iframe")!,
+        `https://relay-${hop}.example.test/admin/`,
+      );
+      await waitFor(() =>
+        expect(
+          proxies,
+          `${view.container.textContent} / reads=${h.readCurrent.mock.calls.length} / ${h.invoke.mock.calls.map(([name, args]) => `${name}${args?.receiptId ? ":consume" : ""}`).join(",")}`,
+        ).toHaveLength(hop + 1),
+      );
+      await waitFor(() =>
+        expect(view.container.querySelector("iframe")?.src).toContain(
+          proxies[hop].proxy_url,
+        ),
+      );
+      const target = resolveRuntimeConnection([], h.sessions[0].connectionId)!;
+      expect(target).not.toHaveProperty("basicAuthUsername");
+      expect(target).not.toHaveProperty("basicAuthPassword");
+      expect(target).not.toHaveProperty("password");
+      expect(target).not.toHaveProperty("httpTrustedRedirectDestinations");
+      expect(
+        getRuntimeWebNavigation(target.id)?.trustedRedirectSource
+          ?.savedConnectionId,
+      ).toBe("saved-nas");
+      expect(getRuntimeWebNavigation(target.id)?.redirectHops).toBe(hop);
+      expect(h.sessions[0]).toMatchObject({
+        id: "web-tab",
+        ownerDatabaseId: "owned",
+      });
+    }
+    const destinationStarts = h.invoke.mock.calls
+      .filter(([name]) => name === "start_basic_auth_proxy")
+      .slice(1);
+    for (const [, args] of destinationStarts) {
+      expect(JSON.stringify(args)).not.toContain("private-user");
+      expect(JSON.stringify(args)).not.toContain("private-password");
+      expect(args.config).toMatchObject({ username: "", password: "" });
+    }
+    expect(h.readCurrent.mock.calls.length).toBeGreaterThanOrEqual(4);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([name]) => name === "get_tls_certificate_info",
+      ),
+    ).toHaveLength(3);
+    expect(h.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(h.persistedConnections).toHaveLength(1);
+  });
+  it("does not auto-continue using an optimistic unsaved trusted list", async () => {
+    const view = await mounted();
+    h.connections = [
+      {
+        ...h.connections[0],
+        httpTrustedRedirectDestinations: {
+          version: 1,
+          autoContinue: true,
+          origins: ["https://relay.example.test"],
+        },
+      },
+    ];
+    view.rerender(<Harness />);
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://relay.example.test/",
+    );
+    await screen.findByRole("button", { name: "Continue in this tab" });
+    await act(async () => {});
+    expect(h.readCurrent).toHaveBeenCalled();
+    expect(proxies).toHaveLength(1);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([name, args]) => name === "review_proxy_redirect" && args.receiptId,
+      ),
+    ).toHaveLength(0);
+    expect(h.persistedConnections[0]).not.toHaveProperty(
+      "httpTrustedRedirectDestinations",
+    );
+  });
+  it("never authorizes a remembered destination when its optimistic save fails", async () => {
+    h.connections[0].httpTrustedRedirectDestinations = {
+      version: 1,
+      autoContinue: true,
+      origins: [],
+    };
+    const view = await mounted();
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://relay.example.test/",
+    );
+    const remember = await screen.findByRole("button", {
+      name: "Trust destination",
+    });
+    h.failSaveAfterDispatch = true;
+    fireEvent.click(remember);
+    await screen.findByText(/destination could not be saved and verified/i);
+    expect(h.connections[0].httpTrustedRedirectDestinations?.origins).toEqual([
+      "https://relay.example.test",
+    ]);
+    expect(
+      h.persistedConnections[0].httpTrustedRedirectDestinations?.origins,
+    ).toEqual([]);
+    expect(proxies).toHaveLength(1);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([name, args]) => name === "review_proxy_redirect" && args.receiptId,
+      ),
+    ).toHaveLength(0);
+    expect(screen.queryByText("Trusted for this saved connection")).toBeNull();
+  });
+  it("remembers a second-hop destination on the original saved connection, not its anonymous runtime record", async () => {
+    const view = await mounted();
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://relay-1.example.test/",
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Continue in this tab" }),
+    );
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    await waitFor(() =>
+      expect(view.container.querySelector("iframe")?.src).toContain(
+        proxies[1].proxy_url,
+      ),
+    );
+    const runtimeId = h.sessions[0].connectionId;
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://relay-2.example.test/admin/",
+    );
+    const remember = await screen.findByRole("button", {
+      name: "Trust destination",
+    });
+    expect(remember).toBeEnabled();
+    fireEvent.click(remember);
+    await waitFor(() =>
+      expect(h.persistedConnections[0].httpTrustedRedirectDestinations).toEqual(
+        {
+          version: 1,
+          origins: ["https://relay-2.example.test"],
+          autoContinue: false,
+        },
+      ),
+    );
+    expect(h.dispatchAndFlush).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_CONNECTION",
+        payload: expect.objectContaining({ id: "saved-nas" }),
+      }),
+    );
+    expect(h.persistedConnections).toHaveLength(1);
+    expect(resolveRuntimeConnection([], runtimeId)).not.toHaveProperty(
+      "httpTrustedRedirectDestinations",
+    );
+    expect(proxies).toHaveLength(2);
+    expect(
+      await screen.findByText("Trusted for this saved connection"),
+    ).toBeVisible();
+  });
   it.each(["manual", "form"] as const)(
     "does not stop a %s login proxy after an equivalent native-storage round trip",
     async (loginMode) => {

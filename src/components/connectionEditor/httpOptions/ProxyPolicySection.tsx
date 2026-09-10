@@ -8,6 +8,7 @@ import {
 import { normalizeHttpProxyPolicy } from "../../../utils/connection/httpProxyPolicy";
 import type { Mgr } from "./types";
 import RedirectAuthenticationOptions from "./RedirectAuthenticationOptions";
+import TrustedRedirectDestinationsSection from "./TrustedRedirectDestinationsSection";
 
 /** Draft-only editor. Native validation is repeated before opening a proxy. */
 export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
@@ -152,6 +153,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
         variant="form"
       />
       <RedirectAuthenticationOptions mgr={mgr} />
+      <TrustedRedirectDestinationsSection mgr={mgr} />
       <div className="space-y-2">
         <h4 className="text-sm font-medium">Extra upstream query parameters</h4>
         <p className="text-xs text-[var(--color-textMuted)]">

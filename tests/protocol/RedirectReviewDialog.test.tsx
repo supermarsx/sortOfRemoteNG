@@ -2,6 +2,8 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import RedirectReviewDialog from "../../src/components/protocol/webBrowser/RedirectReviewPanel";
+import ContentArea from "../../src/components/protocol/webBrowser/ContentArea";
+import type { WebBrowserMgr } from "../../src/hooks/protocol/useWebBrowser";
 const review = {
   receiptId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
   sessionId: "s",
@@ -12,6 +14,167 @@ const review = {
   removedQuery: false,
 };
 describe("redirect review decision", () => {
+  it("remembers only the exact displayed origin through a separate explicit action", () => {
+    const manager = {
+      review,
+      busy: false,
+      error: "",
+      accept: vi.fn(),
+      cancel: vi.fn(),
+      offer: vi.fn(),
+      trustedDestination: false,
+      canRememberDestination: true,
+      rememberDestination: vi.fn(async () => {}),
+    };
+    const view = render(<RedirectReviewDialog manager={manager} />);
+    expect(screen.getByText("Destination origin")).toBeVisible();
+    expect(screen.getByText("https://target.invalid")).toHaveAttribute(
+      "dir",
+      "ltr",
+    );
+    expect(screen.getByText(/does not continue the redirect/)).toBeVisible();
+    expect(manager.rememberDestination).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Trust destination" }));
+    expect(manager.rememberDestination).toHaveBeenCalledOnce();
+    expect(manager.accept).not.toHaveBeenCalled();
+    expect(manager.cancel).not.toHaveBeenCalled();
+    // Only the manager's durable-save result changes the trusted badge.
+    expect(screen.queryByText("Trusted for this saved connection")).toBeNull();
+    view.rerender(
+      <RedirectReviewDialog
+        manager={{
+          ...manager,
+          trustedDestination: true,
+          trustNotice: "Destination saved.",
+        }}
+      />,
+    );
+    expect(screen.getByText("Trusted for this saved connection")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Trust destination" }),
+    ).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Destination saved.");
+    expect(manager.accept).not.toHaveBeenCalled();
+  });
+  it("explains unavailable persistence without disabling manual continuation", () => {
+    const remember = vi.fn(async () => {});
+    render(
+      <RedirectReviewDialog
+        manager={{
+          review,
+          busy: false,
+          error: "",
+          accept: vi.fn(),
+          cancel: vi.fn(),
+          offer: vi.fn(),
+          trustedDestination: false,
+          canRememberDestination: false,
+          rememberDestination: remember,
+          rememberUnavailableReason:
+            "Save this connection in its owning database first.",
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Trust destination" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Save this connection in its owning database first."),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Continue in this tab" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Trust destination" }));
+    expect(remember).not.toHaveBeenCalled();
+  });
+  it("prevents competing decisions while saving a destination", () => {
+    render(
+      <RedirectReviewDialog
+        manager={{
+          review,
+          busy: true,
+          error: "",
+          accept: vi.fn(),
+          cancel: vi.fn(),
+          offer: vi.fn(),
+          canRememberDestination: true,
+          rememberingDestination: true,
+          rememberDestination: vi.fn(async () => {}),
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Saving destination…" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Continue in this tab" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Open anonymous tab" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Stay here" })).toBeDisabled();
+  });
+  it("keeps failed trust persistence informational and never marks the destination saved", () => {
+    render(
+      <RedirectReviewDialog
+        manager={{
+          review,
+          busy: false,
+          error: "",
+          accept: vi.fn(),
+          cancel: vi.fn(),
+          offer: vi.fn(),
+          canRememberDestination: true,
+          trustedDestination: false,
+          rememberDestination: vi.fn(async () => {}),
+          trustNotice:
+            "The destination could not be saved. You can still review it manually.",
+        }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("could not be saved");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Trusted for this saved connection")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Continue in this tab" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Trust destination" }),
+    ).toBeEnabled();
+  });
+  it("wires source reload from the real viewport and cancels the old review before reloading", () => {
+    const reload = vi.fn(),
+      cancel = vi.fn(),
+      accept = vi.fn();
+    const manager = {
+      review: null,
+      busy: false,
+      error: "The source proxy is no longer available.",
+      accept,
+      cancel,
+      offer: vi.fn(),
+    };
+    const mgr = {
+      redirectReview: manager,
+      handleRefresh: reload,
+      loadError: manager.error,
+      proxyAlive: false,
+      isLoading: false,
+      session: { name: "NAS website" },
+    } as unknown as WebBrowserMgr;
+    render(<ContentArea mgr={mgr} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reload source page" }));
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(reload).toHaveBeenCalledOnce();
+    expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(
+      reload.mock.invocationCallOrder[0],
+    );
+    expect(accept).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back to page" }));
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it("shows which handoff in a reverse-proxy chain is being reviewed without automatic acceptance", () => {
     const accept = vi.fn();
     render(

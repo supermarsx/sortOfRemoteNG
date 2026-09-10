@@ -28,6 +28,7 @@ import {
   withoutConnectionLocalCredentials,
 } from "../../utils/security/runtimeCredentialVault";
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
+import { useHttpRedirectTrust } from "./useHttpRedirectTrust";
 import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
@@ -1162,7 +1163,9 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, []);
 
+  const redirectTrust = useHttpRedirectTrust(session, connection);
   const redirectReview = useHttpRedirectReview({
+    trust: redirectTrust,
     connection: noncredentialConnection,
     session,
     sourceOrigin: targetResolution.url

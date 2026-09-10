@@ -128,7 +128,7 @@ Under **Protocol → Advanced → Internal proxy controls**, **Allow reviewed cr
 
 **Allow reviewed HTTPS-to-HTTP downgrades** is a separate, default-off security exception for temporary HTTP handoffs. It requires the first checkbox and is overridden by **Require HTTPS upstream**. The page clearly identifies **HTTPS to unencrypted HTTP** and requires an explicit click. HTTP has no TLS: information subsequently entered there can be observed or modified in transit. Prefer correcting the reverse proxy or opening its secure final address instead. No Synology/QuickConnect hostname gets an automatic exception.
 
-HTTP-to-HTTP can also be reviewed, with an unencrypted-connection warning. HTTP-to-HTTPS and HTTPS-to-HTTPS destinations undergo a fresh certificate inspection and normal trust approval. Each hop requires its own review, with a limit of five handoffs. This includes temporary HTTP destinations that redirect back to HTTPS; saved opt-ins do not approve a destination automatically.
+HTTP-to-HTTP can also be reviewed, with an unencrypted-connection warning. HTTP-to-HTTPS and HTTPS-to-HTTPS destinations undergo a fresh certificate inspection and normal trust approval. By default each hop requires its own review, with a limit of five handoffs. This includes temporary HTTP destinations that redirect back to HTTPS; enabling the redirect flags alone does not approve a destination automatically.
 
 Accepting consumes a short-lived, single-use receipt and stops the source proxy. Cancel leaves the source usable. By default both choices start signed out. Existing transport routing is retained; the temporary destination is not saved as a connection. Opening or closing databases, changing navigation/settings, or changing the network route invalidates a pending review.
 
@@ -139,6 +139,14 @@ Forwarding that login to HTTP additionally requires **Allow saved login to be se
 Browser cookies, social login sessions, passkeys, authentication headers, secret query parameters, POST bodies, MFA seeds, scripts and favorites are not transferred. Form login may sign in again. Query-based SSO and some portal handoffs may require manual sign-in; this is not shared-cookie SSO support.
 
 Both review flags survive saved-connection export/import; credential-free exports still remove secret query values. Missing flags in older records mean off, and malformed non-boolean flags are refused.
+
+### Trusted redirect destinations
+
+Under **Protocol → Advanced → Trusted redirect destinations**, add or remove exact origins for this saved connection, such as `https://nas.example:5001`. The list accepts at most 32 unique HTTP(S) origins. Scheme and port must match; paths, query parameters, fragments, credentials, wildcards and subdomain matching are not allowed.
+
+**Automatically continue to trusted HTTPS destinations** is separate and off by default. Remembering an address alone keeps the review step. Automatic continuation applies only to anonymous HTTPS handoffs with the reviewed-redirect option enabled; certificate inspection and normal trust checks still apply. HTTP destinations and saved-login forwarding still require explicit approval. The five-hop limit remains in force. This list does not grant TLS certificate trust, permit downgrades, or share cookies or login credentials.
+
+Save the connection to retain edits. Redirect consent belongs to that saved connection in its database: ordinary imports, exports and connection/database copies remove this list and its automatic-continuation setting, even when credentials are included. Existing consent remains on normal saves and reloads of the same database. Imported addresses must be reviewed locally again; this is separate from Trust Center certificate records.
 
 ## Save, export, and compatibility
 

@@ -272,6 +272,7 @@ export interface Connection
   httpVerifySsl?: boolean;
   /** Explicit reviewed handoffs only; browser sessions and hardware keys are never copied. */
   httpRedirectAuthentication?: import("../../utils/protocol/httpRedirectAuthentication").HttpRedirectAuthentication;
+  httpTrustedRedirectDestinations?: import("./httpTrustedRedirectDestinations").HttpTrustedRedirectDestinations;
   httpBookmarks?: HttpBookmarkItem[];
 
   /**

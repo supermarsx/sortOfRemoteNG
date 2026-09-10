@@ -13,6 +13,7 @@ import {
 import { normalizePowerShellRemotingSettings } from "../powershell/normalizePowerShellRemoting";
 import { normalizeRloginSettings } from "../rlogin/rloginSettings";
 import { normalizeHttpApplicationSettings } from "./httpApplicationProfiles";
+import { normalizeHttpTrustedRedirectDestinations } from "../protocol/httpTrustedRedirectDestinations";
 import {
   normalizeHttpAutomation,
   normalizeSshQuickActions,
@@ -77,6 +78,12 @@ export function normalizeAdvancedProtocolConnection(
           ? "mongodb"
           : sourceProtocol || input.protocol);
   const next: AdvancedProtocolConnectionInput = { ...input, protocol };
+  if (input.httpTrustedRedirectDestinations !== undefined) {
+    next.httpTrustedRedirectDestinations =
+      normalizeHttpTrustedRedirectDestinations(
+        input.httpTrustedRedirectDestinations,
+      );
+  }
   // Optional automation must not make the rest of a database inaccessible.
   // Preserve malformed data for explicit editor repair; runtime validators
   // still reject it and cannot infer permission from a partial configuration.
