@@ -72,6 +72,31 @@ pub struct FileTransferOutcome {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileShareLink {
+    pub id: String,
+    pub path: String,
+    pub url: String,
+    #[serde(alias = "date_expired", skip_serializing_if = "Option::is_none")]
+    pub date_expired: Option<String>,
+    #[serde(alias = "has_password", skip_serializing_if = "Option::is_none")]
+    pub has_password: Option<bool>,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileShareList {
+    pub links: Vec<FileShareLink>,
+    pub offset: u64,
+    pub total: u64,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraSnapshot {
+    pub mime_type: &'static str,
+    pub data_base64: String,
+}
 impl FileTransferOutcome {
     pub fn cancelled() -> Self {
         Self {
@@ -86,6 +111,7 @@ pub(crate) struct FileSession {
     id: String,
     tasks: HashMap<String, FileTask>,
     active: Arc<AtomicBool>,
+    cancelled: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Clone)]
@@ -137,6 +163,35 @@ pub fn validate_name(name: &str) -> SynologyResult<()> {
     }
     Ok(())
 }
+pub(crate) fn camera_snapshot(bytes: Vec<u8>) -> SynologyResult<CameraSnapshot> {
+    use base64::Engine;
+    if bytes.len() > 3 * 1024 * 1024 {
+        return Err(SynologyError::parse(
+            "NAS snapshot exceeds the 3 MiB preview limit",
+        ));
+    }
+    let mime_type = if bytes.starts_with(&[0x89, b'P', b'N', b'G', 13, 10, 26, 10]) {
+        "image/png"
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        "image/jpeg"
+    } else {
+        return Err(SynologyError::parse(
+            "NAS snapshot is not a supported PNG or JPEG image",
+        ));
+    };
+    Ok(CameraSnapshot {
+        mime_type,
+        data_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+    })
+}
+fn validate_share_id(id: &str) -> SynologyResult<()> {
+    if id.is_empty() || id.len() > 1024 || id.chars().any(|c| c.is_control() || c == ',') {
+        return Err(SynologyError::parse(
+            "Select a valid sharing link identifier",
+        ));
+    }
+    Ok(())
+}
 fn validate_page(offset: u64, limit: u64) -> SynologyResult<()> {
     if !(1..=500).contains(&limit) || offset > 10_000_000 {
         return Err(SynologyError::parse(
@@ -147,7 +202,25 @@ fn validate_page(offset: u64, limit: u64) -> SynologyResult<()> {
 }
 
 impl SynologyService {
+    pub(crate) fn fs_install_lease(
+        &mut self,
+        active: Arc<AtomicBool>,
+        cancelled: Arc<tokio::sync::Notify>,
+    ) {
+        if let Some(session) = &mut self.file_session {
+            session.active = active;
+            session.cancelled = cancelled;
+        }
+    }
     pub async fn fs_connect(&mut self, config: SynologyConfig) -> SynologyResult<FileStationLogin> {
+        self.fs_connect_cancellable(config, &AtomicBool::new(true))
+            .await
+    }
+    pub(crate) async fn fs_connect_cancellable(
+        &mut self,
+        config: SynologyConfig,
+        active: &AtomicBool,
+    ) -> SynologyResult<FileStationLogin> {
         if config.username.is_empty()
             || config.username.len() > 256
             || config.password.is_empty()
@@ -163,23 +236,46 @@ impl SynologyService {
         let mut client = SynoClient::new(&config)?;
         drop(config);
         client.discover_apis().await?;
+        if !active.load(Ordering::Acquire) {
+            return Err(SynologyError::session_expired(
+                "Synology connection attempt was cancelled",
+            ));
+        }
         match AuthManager::login_file_station(&mut client).await {
             Ok(()) => {},
             Err(error) => return match error.kind {
-                SynologyErrorKind::ApiError(403) => Ok(FileStationLogin::OtpRequired { message: "Enter the current verification code from your authenticator.".into() }),
+                SynologyErrorKind::ApiError(403 | 406) => Ok(FileStationLogin::OtpRequired { message: "Enter the current verification code from your authenticator.".into() }),
                 SynologyErrorKind::ApiError(404) => Ok(FileStationLogin::OtpInvalid { message: "The verification code was not accepted. Enter a new current code.".into() }),
-                SynologyErrorKind::ApiError(406 | 449) => Ok(FileStationLogin::UnsupportedMfa { message: "This NAS requires an authentication setup or approval that this API login cannot complete. Use DSM in your browser; Secure SignIn push and WebAuthn are not supported here.".into() }),
+                SynologyErrorKind::ApiError(449) => Ok(FileStationLogin::UnsupportedMfa { message: "This NAS requires an authentication setup or approval that this API login cannot complete. Use DSM in your browser; Secure SignIn push and WebAuthn are not supported here.".into() }),
+                SynologyErrorKind::ApiError(407) => Err(SynologyError::auth("This client IP is blocked by the NAS. Review DSM security settings before retrying.")),
+                SynologyErrorKind::ApiError(408 | 409) => Err(SynologyError::auth("The NAS password has expired. Change it in DSM, then reconnect.")),
+                SynologyErrorKind::ApiError(410) => Err(SynologyError::auth("DSM requires a password change. Complete it in your browser, then reconnect.")),
                 SynologyErrorKind::ApiError(400) => Err(SynologyError::auth("NAS rejected the username or password")),
                 _ => Err(error),
             },
+        }
+        if !active.load(Ordering::Acquire) {
+            let _ = tokio::time::timeout(Duration::from_secs(2), AuthManager::logout(&mut client))
+                .await;
+            return Err(SynologyError::session_expired(
+                "Synology connection attempt was cancelled",
+            ));
         }
         // Do not replace a usable session with a login that lacks File Station.
         if let Err(error) = client
             .file_call("SYNO.FileStation.Info", 2, "get", &[])
             .await
         {
-            let _ = AuthManager::logout(&mut client).await;
+            let _ = tokio::time::timeout(Duration::from_secs(2), AuthManager::logout(&mut client))
+                .await;
             return Err(error);
+        }
+        if !active.load(Ordering::Acquire) {
+            let _ = tokio::time::timeout(Duration::from_secs(2), AuthManager::logout(&mut client))
+                .await;
+            return Err(SynologyError::session_expired(
+                "Synology connection attempt was cancelled",
+            ));
         }
         self.fs_cleanup().await;
         if let Some(old) = self.client.as_mut() {
@@ -192,6 +288,7 @@ impl SynologyService {
             id: session_id.clone(),
             tasks: HashMap::new(),
             active: Arc::new(AtomicBool::new(true)),
+            cancelled: Arc::new(tokio::sync::Notify::new()),
         });
         Ok(FileStationLogin::Connected {
             session_id,
@@ -228,6 +325,7 @@ impl SynologyService {
     pub(crate) async fn fs_cleanup(&mut self) {
         if let Some(session) = self.file_session.take() {
             session.active.store(false, Ordering::Release);
+            session.cancelled.notify_waiters();
             if let Some(client) = &self.client {
                 let _ = tokio::time::timeout(Duration::from_secs(3), async {
                     for task in session.tasks.into_values() {
@@ -282,6 +380,185 @@ impl SynologyService {
             value["files"] = shares;
         }
         serde_json::from_value(value).map_err(Into::into)
+    }
+    pub async fn fs_create_share_link(
+        &self,
+        expected: &str,
+        path: &str,
+        password: Option<&str>,
+        expire_date: Option<&str>,
+    ) -> SynologyResult<FileShareLink> {
+        let client = self.fs_client(expected)?;
+        validate_remote_path(path)?;
+        if password
+            .is_some_and(|value| value.chars().count() > 16 || value.chars().any(char::is_control))
+        {
+            return Err(SynologyError::parse(
+                "Sharing password must contain at most 16 characters, without control characters",
+            ));
+        }
+        if let Some(date) = expire_date {
+            if date.len() != 10
+                || chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                    .map(|parsed| parsed.format("%Y-%m-%d").to_string() != date)
+                    .unwrap_or(true)
+            {
+                return Err(SynologyError::parse(
+                    "Sharing expiry must be a valid YYYY-MM-DD date",
+                ));
+            }
+        }
+        if client.best_version("SYNO.FileStation.Sharing", 3) != Some(3) {
+            return Err(SynologyError::api_not_found(
+                "This NAS does not provide File Station sharing API version 3",
+            ));
+        }
+        let mut params = vec![("path", json!(path))];
+        if let Some(password) = password.filter(|value| !value.is_empty()) {
+            params.push(("password", json!(password)));
+        }
+        if let Some(date) = expire_date {
+            params.push(("date_expired", json!(date)));
+        }
+        let value = client
+            .file_call("SYNO.FileStation.Sharing", 3, "create", &params)
+            .await?;
+        let link = value
+            .get("links")
+            .and_then(Value::as_array)
+            .filter(|links| links.len() == 1)
+            .and_then(|links| links.first())
+            .ok_or_else(|| SynologyError::parse("NAS did not return one sharing link"))?;
+        if let Some(error) = link.get("error") {
+            if error.as_i64() != Some(0) && !error.is_null() {
+                return Err(SynologyError::api(
+                    400,
+                    "NAS refused this sharing link. Check permissions and sharing policy.",
+                ));
+            }
+        }
+        let id = link
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty() && v.len() <= 1024 && !v.chars().any(char::is_control))
+            .ok_or_else(|| {
+                SynologyError::parse("NAS returned an invalid sharing link identifier")
+            })?;
+        let url = link
+            .get("url")
+            .and_then(Value::as_str)
+            .filter(|v| v.len() <= 4096 && !v.chars().any(char::is_control))
+            .ok_or_else(|| SynologyError::parse("NAS returned an invalid sharing URL"))?;
+        let parsed = url::Url::parse(url)?;
+        if !["http", "https"].contains(&parsed.scheme())
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.host_str().is_none()
+        {
+            return Err(SynologyError::parse(
+                "NAS returned an unsupported sharing URL",
+            ));
+        }
+        Ok(FileShareLink {
+            id: id.into(),
+            path: path.into(),
+            url: url.into(),
+            date_expired: expire_date.map(str::to_string),
+            has_password: Some(password.is_some_and(|value| !value.is_empty())),
+        })
+    }
+    pub async fn fs_list_share_links(
+        &self,
+        expected: &str,
+        offset: u64,
+        limit: u64,
+    ) -> SynologyResult<FileShareList> {
+        let client = self.fs_client(expected)?;
+        validate_page(offset, limit)?;
+        let response = client
+            .file_call(
+                "SYNO.FileStation.Sharing",
+                3,
+                "list",
+                &[("offset", json!(offset)), ("limit", json!(limit))],
+            )
+            .await?;
+        let result: FileShareList = serde_json::from_value(response)?;
+        if result.links.len() > limit as usize {
+            return Err(SynologyError::parse("NAS returned too many sharing links"));
+        }
+        for link in &result.links {
+            validate_share_id(&link.id)?;
+            validate_remote_path(&link.path)?;
+            if link.url.len() > 4096 || link.url.chars().any(char::is_control) {
+                return Err(SynologyError::parse("NAS returned an invalid sharing URL"));
+            }
+            let url = url::Url::parse(&link.url)?;
+            if !["http", "https"].contains(&url.scheme())
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.host_str().is_none()
+            {
+                return Err(SynologyError::parse(
+                    "NAS returned an unsupported sharing URL",
+                ));
+            }
+        }
+        Ok(result)
+    }
+    pub async fn fs_delete_share_links(
+        &self,
+        expected: &str,
+        ids: &[String],
+    ) -> SynologyResult<()> {
+        let client = self.fs_client(expected)?;
+        if ids.is_empty() || ids.len() > 100 {
+            return Err(SynologyError::parse(
+                "Select between 1 and 100 sharing links",
+            ));
+        }
+        for id in ids {
+            validate_share_id(id)?;
+        }
+        let value = client
+            .file_call(
+                "SYNO.FileStation.Sharing",
+                3,
+                "delete",
+                &[("id", json!(ids.join(",")))],
+            )
+            .await?;
+        if value.is_null()
+            || value.as_object().is_some_and(|v| v.is_empty())
+            || value.as_array().is_some_and(|v| v.is_empty())
+        {
+            Ok(())
+        } else {
+            Err(SynologyError::parse("NAS did not confirm revoking every sharing link. Refresh the list before retrying."))
+        }
+    }
+    pub async fn fs_camera_snapshot(
+        &self,
+        expected: &str,
+        cam_id: &str,
+    ) -> SynologyResult<CameraSnapshot> {
+        let client = self.fs_client(expected)?;
+        if cam_id.is_empty() || cam_id.len() > 64 || !cam_id.bytes().all(|c| c.is_ascii_digit()) {
+            return Err(SynologyError::parse("Select one valid camera"));
+        }
+        let version = client
+            .best_version("SYNO.SurveillanceStation.Camera", 9)
+            .ok_or_else(|| SynologyError::api_not_found("Surveillance Station is unavailable"))?;
+        let bytes = client
+            .raw_download_bounded(
+                "SYNO.SurveillanceStation.Camera",
+                version,
+                "GetSnapshot",
+                &[("cameraId", cam_id)],
+                3 * 1024 * 1024,
+            )
+            .await?;
+        camera_snapshot(bytes)
     }
     pub async fn fs_create_folder(
         &self,
@@ -495,7 +772,17 @@ impl SynologyService {
             .ok_or_else(|| SynologyError::session_expired("File Station session ended"))?
             .active
             .clone();
-        Ok(super::file_transfer::FileTransferContext { client, active })
+        let cancelled = self
+            .file_session
+            .as_ref()
+            .ok_or_else(|| SynologyError::session_expired("File Station session ended"))?
+            .cancelled
+            .clone();
+        Ok(super::file_transfer::FileTransferContext {
+            client,
+            active,
+            cancelled,
+        })
     }
 }
 

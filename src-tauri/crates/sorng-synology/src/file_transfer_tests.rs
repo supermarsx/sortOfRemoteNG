@@ -52,6 +52,7 @@ fn context(port: u16) -> FileTransferContext {
     FileTransferContext {
         client,
         active: Arc::new(AtomicBool::new(true)),
+        cancelled: Arc::new(tokio::sync::Notify::new()),
     }
 }
 
@@ -92,6 +93,52 @@ async fn peer(response: Vec<u8>) -> (u16, tokio::task::JoinHandle<Vec<u8>>) {
         request
     });
     (port, task)
+}
+
+#[tokio::test]
+async fn revoked_stalled_download_cancels_send_and_body_waits_without_publishing_files() {
+    for send_headers in [false, true] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let ready = entered.clone();
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut data = [0u8; 8192];
+            let _ = socket.read(&mut data).await.unwrap();
+            if send_headers {
+                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=fixture.bin\r\nContent-Length: 100\r\n\r\nfirst").await.unwrap();
+            }
+            ready.notify_one();
+            std::future::pending::<()>().await;
+        });
+        let context = context(port);
+        let active = context.active.clone();
+        let cancelled = context.cancelled.clone();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("fixture.bin");
+        let selected = destination.clone();
+        let transfer = tokio::spawn(async move {
+            context
+                .download_selected("/share/fixture.bin", &selected)
+                .await
+        });
+        entered.notified().await;
+        active.store(false, Ordering::Release);
+        cancelled.notify_waiters();
+        let error = tokio::time::timeout(Duration::from_secs(1), transfer)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(
+            error.kind,
+            crate::error::SynologyErrorKind::SessionExpired
+        ));
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        peer.abort();
+    }
 }
 fn response(body: &[u8], attachment: bool) -> Vec<u8> {
     let header = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{}Connection: close\r\n\r\n", body.len(), if attachment { "Content-Disposition: attachment; filename=fixture.json\r\n" } else { "" });
@@ -178,11 +225,17 @@ async fn existing_destination_and_api_errors_never_replace_user_files() {
         false,
     ))
     .await;
-    let error = context(port)
+    let transfer = context(port);
+    let error = transfer
         .download_selected("/share/file", &directory.path().join("new.json"))
         .await
         .unwrap_err();
     assert!(!error.to_string().contains("private-password"));
+    assert!(matches!(
+        error.kind,
+        crate::error::SynologyErrorKind::SessionExpired
+    ));
+    assert!(!transfer.active.load(Ordering::Acquire));
     peer.await.unwrap();
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
 }
@@ -220,6 +273,49 @@ async fn legacy_download_still_sends_sid_and_accepts_json_attachments() {
     let form = String::from_utf8_lossy(form);
     assert!(form.contains("_sid=private-fixture-sid"));
     assert!(form.contains("SynoToken=private-fixture-token"));
+}
+
+#[tokio::test]
+async fn snapshot_transport_is_bounded_and_preview_accepts_only_image_signatures() {
+    use base64::Engine;
+    for data in [
+        vec![0x89, b'P', b'N', b'G', 13, 10, 26, 10, 0],
+        vec![0xff, 0xd8, 0xff, 0],
+    ] {
+        let (port, server) = peer(response(&data, true)).await;
+        let bytes = context(port)
+            .client
+            .raw_download_bounded(
+                "SYNO.FileStation.Download",
+                2,
+                "download",
+                &[],
+                3 * 1024 * 1024,
+            )
+            .await
+            .unwrap();
+        let preview = crate::scoped_files::camera_snapshot(bytes).unwrap();
+        assert!(preview.mime_type == "image/png" || preview.mime_type == "image/jpeg");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(preview.data_base64)
+                .unwrap(),
+            data
+        );
+        assert_private_post(&server.await.unwrap());
+    }
+    assert!(
+        crate::scoped_files::camera_snapshot(b"<script>not an image</script>".to_vec()).is_err()
+    );
+    assert!(crate::scoped_files::camera_snapshot(vec![0xff; 3 * 1024 * 1024 + 1]).is_err());
+    // Exercise the actual streaming read cap with a small synthetic limit.
+    let (port, server) = peer(response(&[0xff; 65], true)).await;
+    assert!(context(port)
+        .client
+        .raw_download_bounded("SYNO.FileStation.Download", 2, "download", &[], 64)
+        .await
+        .is_err());
+    server.await.unwrap();
 }
 
 #[tokio::test]

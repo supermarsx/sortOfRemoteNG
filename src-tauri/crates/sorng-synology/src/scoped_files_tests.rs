@@ -34,6 +34,12 @@ impl Drop for Nas {
 }
 impl Nas {
     async fn start(responses: Vec<Value>) -> Self {
+        Self::start_paused(responses, None).await
+    }
+    async fn start_paused(
+        responses: Vec<Value>,
+        pause: Option<(usize, Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let requests = Arc::new(Mutex::new(Vec::new()));
@@ -87,6 +93,12 @@ impl Nas {
                         .into_owned()
                         .collect();
                 log.lock().unwrap().push(Request { target, fields });
+                if let Some((number, entered, release)) = &pause {
+                    if log.lock().unwrap().len() == *number {
+                        entered.notify_one();
+                        release.notified().await;
+                    }
+                }
                 let body = responses
                     .pop_front()
                     .unwrap_or_else(|| json!({"success":false,"error":{"code":999}}))
@@ -132,6 +144,10 @@ fn discovery(json_parameters: bool) -> Value {
         ("SYNO.FileStation.CopyMove", 3),
         ("SYNO.FileStation.Delete", 2),
         ("SYNO.FileStation.Search", 2),
+        ("SYNO.FileStation.Sharing", 3),
+        ("SYNO.DownloadStation.Task", 3),
+        ("SYNO.Core.ISCSI.LUN", 1),
+        ("SYNO.Core.ISCSI.Target", 1),
     ] {
         let mut entry = json!({"path":"entry.cgi","minVersion":1,"maxVersion":maximum});
         if json_parameters {
@@ -164,6 +180,11 @@ fn method(request: &Request) -> String {
         .map(|(_, value)| value.into_owned())
         .unwrap_or_default()
 }
+
+#[path = "instances_tests.rs"]
+mod instances_tests;
+#[path = "wire_contract_tests.rs"]
+mod wire_contract_tests;
 
 #[tokio::test]
 async fn credentials_are_post_only_and_never_enroll_devices_for_plain_and_json_apis() {
@@ -224,7 +245,7 @@ async fn otp_challenges_are_typed_single_attempts_and_keep_existing_session() {
     for (code, status) in [
         (403, "otp_required"),
         (404, "otp_invalid"),
-        (406, "unsupported_mfa"),
+        (406, "otp_required"),
         (449, "unsupported_mfa"),
     ] {
         let mut responses = login_responses(false);

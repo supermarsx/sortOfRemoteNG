@@ -60,6 +60,7 @@ impl SynoClient {
         let base_url = parsed.as_str().trim_end_matches('/').to_string();
 
         let http = Client::builder()
+            .no_proxy()
             .timeout(Duration::from_secs(config.timeout_secs.clamp(1, 300)))
             .redirect(reqwest::redirect::Policy::none())
             .cookie_store(true)
@@ -339,6 +340,17 @@ impl SynoClient {
         method: &str,
         params: &[(&str, &str)],
     ) -> SynologyResult<Vec<u8>> {
+        self.raw_download_bounded(api, version, method, params, 32 * 1024 * 1024)
+            .await
+    }
+    pub(crate) async fn raw_download_bounded(
+        &self,
+        api: &str,
+        version: u32,
+        method: &str,
+        params: &[(&str, &str)],
+        limit: usize,
+    ) -> SynologyResult<Vec<u8>> {
         let mut resp = self
             .form_request(api, version, method, params)?
             .send()
@@ -367,9 +379,9 @@ impl SynoClient {
 
         let mut bytes = Vec::new();
         while let Some(chunk) = resp.chunk().await? {
-            if bytes.len().saturating_add(chunk.len()) > 32 * 1024 * 1024 {
+            if bytes.len().saturating_add(chunk.len()) > limit {
                 return Err(SynologyError::parse(
-                    "Legacy download exceeds 32 MiB; use File Station's streaming Download action",
+                    "NAS response exceeds this action's size limit; use File Station's streaming Download for large files",
                 ));
             }
             bytes.extend_from_slice(&chunk);

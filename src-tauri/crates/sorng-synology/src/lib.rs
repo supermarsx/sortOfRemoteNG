@@ -1,19 +1,20 @@
 //! # SortOfRemote NG – Synology NAS Management
 //!
 //! Comprehensive Synology DiskStation Manager (DSM) management via the
-//! SYNO.API REST interface.  Supports **DSM 6.x** and **DSM 7.x**.
+//! SYNO.API REST interface. API discovery determines available DSM capabilities;
+//! optional administrator APIs still depend on NAS firmware and permissions.
 //!
 //! ## API Architecture
 //!
 //! All Synology APIs follow a unified CGI gateway pattern:
 //!
 //! ```text
-//! GET/POST https://{host}:{port}/webapi/{cgi_path}?api={API}&version={N}&method={M}&_sid={SID}
+//! POST https://{host}:{port}/webapi/{cgi_path}?api={API}&version={N}&method={M}
 //! ```
 //!
-//! The client auto-discovers available APIs, their CGI paths, and version
-//! ranges via `SYNO.API.Info` at connect time, ensuring forward and
-//! backward compatibility.
+//! Credentials and session tokens are POST fields, never URL query parameters.
+//! The client discovers available APIs, paths, and versions via `SYNO.API.Info`.
+//! Named instances require an exact receipt and never fall back to another NAS.
 //!
 //! ## Modules
 //!
@@ -50,6 +51,7 @@ pub mod error;
 pub mod file_station;
 pub mod file_transfer;
 pub mod hardware;
+pub mod instances;
 pub mod logs;
 pub mod network;
 pub mod notifications;

@@ -144,33 +144,41 @@ impl SynologyError {
                 SynologyErrorKind::FileOperationError,
                 format!("{context}: File upload failed"),
             ),
-            109..=111 => Self::busy(format!("{context}: System busy (code {code})")),
-            115 | 160 => Self::new(
+            109..=111 | 117 | 118 => Self::busy(format!(
+                "{context}: Network unstable or system busy (code {code})"
+            )),
+            115 => Self::permission(format!("{context}: File upload is not permitted")),
+            160 => Self::new(
                 SynologyErrorKind::IpBlocked,
                 format!("{context}: IP blocked (code {code})"),
             ),
-            117 => Self::new(
-                SynologyErrorKind::FileOperationError,
-                format!("{context}: File/folder locked"),
-            ),
-            119 => Self::new(
-                SynologyErrorKind::TokenMismatch,
-                format!("{context}: SynoToken mismatch"),
-            ),
-            150 => Self::busy(format!("{context}: Operation timed out")),
+            119 => Self::session_expired(format!("{context}: Invalid session")),
+            150 => Self::session_expired(format!("{context}: Session source IP changed")),
             // Auth-specific
-            400 => Self::auth(format!("{context}: Invalid credentials")),
-            401 => Self::auth(format!("{context}: Account disabled")),
-            402 => Self::permission(format!("{context}: Permission denied")),
-            403 => Self::two_factor(format!("{context}: 2FA code required")),
-            404 => Self::auth(format!("{context}: Invalid 2FA code")),
-            406 => Self::two_factor(format!("{context}: 2FA enforcement required")),
-            407 => Self::new(
+            400 if context == "SYNO.API.Auth" => {
+                Self::auth(format!("{context}: Invalid credentials"))
+            }
+            401 if context == "SYNO.API.Auth" => Self::auth(format!("{context}: Account disabled")),
+            402 if context == "SYNO.API.Auth" => {
+                Self::permission(format!("{context}: Permission denied"))
+            }
+            403 if context == "SYNO.API.Auth" => {
+                Self::two_factor(format!("{context}: 2FA code required"))
+            }
+            404 if context == "SYNO.API.Auth" => Self::auth(format!("{context}: Invalid 2FA code")),
+            406 if context == "SYNO.API.Auth" => {
+                Self::two_factor(format!("{context}: 2FA enforcement required"))
+            }
+            407 if context == "SYNO.API.Auth" => Self::new(
                 SynologyErrorKind::IpBlocked,
                 format!("{context}: IP blocked by auto-block"),
             ),
-            408..=410 => Self::auth(format!("{context}: Password expired (code {code})")),
-            449 => Self::approve_signin(format!("{context}: Approve sign-in required")),
+            408..=410 if context == "SYNO.API.Auth" => {
+                Self::auth(format!("{context}: Password expired (code {code})"))
+            }
+            449 if context == "SYNO.API.Auth" => {
+                Self::approve_signin(format!("{context}: Approve sign-in required"))
+            }
             _ => Self::api(code, format!("{context}: DSM error code {code}")),
         }
     }
@@ -210,3 +218,12 @@ impl From<url::ParseError> for SynologyError {
 
 /// Convenience type alias.
 pub type SynologyResult<T> = Result<T, SynologyError>;
+
+pub fn command_error(error: SynologyError) -> String {
+    if matches!(error.kind, SynologyErrorKind::SessionExpired) {
+        "SYNOLOGY_SESSION_EXPIRED: This Synology session ended. Connect again before continuing."
+            .into()
+    } else {
+        error.to_string()
+    }
+}

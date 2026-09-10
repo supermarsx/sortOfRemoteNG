@@ -26,3 +26,6 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
 sorng-bmc-common = { path = "../sorng-bmc-common" }
+
+[dev-dependencies]
+tauri = { workspace = true, features = ["test"] }

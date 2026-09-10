@@ -26,9 +26,8 @@ use crate::users::UsersManager;
 use crate::virtualization::VirtualizationManager;
 
 use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub type SynologyServiceState = Arc<Mutex<SynologyService>>;
+pub type SynologyServiceState = Arc<crate::instances::SynologyInstances>;
+pub use crate::error::command_error as synology_command_error;
 
 pub struct SynologyService {
     pub(crate) client: Option<SynoClient>,

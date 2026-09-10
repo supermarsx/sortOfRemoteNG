@@ -45,8 +45,7 @@ pub(super) fn register(app: &mut tauri::App<tauri::Wry>) {
     app.manage(lenovo);
     let supermicro: SmcServiceState = Arc::new(Mutex::new(supermicro::service::SmcService::new()));
     app.manage(supermicro);
-    let synology: SynologyServiceState =
-        Arc::new(Mutex::new(synology::service::SynologyService::new()));
+    let synology: SynologyServiceState = Arc::new(synology::instances::SynologyInstances::new());
     app.manage(synology);
     app.manage(MeshCentralService::new());
     app.manage(MremotengService::new());

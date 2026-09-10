@@ -33,6 +33,9 @@ mod voip_phone_commands;
 
 mod infra_handler;
 
+#[cfg(test)]
+mod synology_dispatch_tests;
+
 pub fn is_command(command: &str) -> bool {
     infra_handler::is_command(command)
 }

@@ -19,6 +19,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub struct FileTransferContext {
     pub(crate) client: SynoClient,
     pub(crate) active: Arc<AtomicBool>,
+    pub(crate) cancelled: Arc<tokio::sync::Notify>,
 }
 fn io_error(_: std::io::Error) -> SynologyError {
     SynologyError::connection(
@@ -26,6 +27,26 @@ fn io_error(_: std::io::Error) -> SynologyError {
     )
 }
 impl FileTransferContext {
+    fn api_error(&self, code: i32, message: &str) -> SynologyError {
+        if matches!(code, 106 | 107 | 119 | 150) {
+            self.active.store(false, Ordering::Release);
+            self.cancelled.notify_waiters();
+            SynologyError::session_expired("NAS session expired during the transfer; connect again and inspect the destination before retrying")
+        } else {
+            SynologyError::api(code, message)
+        }
+    }
+    async fn while_active<F: std::future::Future>(&self, future: F) -> SynologyResult<F::Output> {
+        let cancelled = self.cancelled.notified();
+        tokio::pin!(cancelled);
+        cancelled.as_mut().enable();
+        self.assert_active()?;
+        tokio::select! {
+            biased;
+            _=&mut cancelled => Err(SynologyError::session_expired("File transfer cancelled because its Synology session ended")),
+            value=future => {self.assert_active()?;Ok(value)}
+        }
+    }
     fn assert_active(&self) -> SynologyResult<()> {
         if self.active.load(Ordering::Acquire) {
             Ok(())
@@ -105,18 +126,19 @@ impl FileTransferContext {
         }
         // Synology requires the binary file to be the LAST multipart field.
         form = form.part("file", part);
-        let response = self
+        let request = self
             .client
             .http_client()
             .post(url)
             .timeout(Duration::from_secs(24 * 60 * 60))
             .multipart(form)
-            .send()
-            .await?;
-        let result: SynoResponse<serde_json::Value> = SynoClient::read_json(response).await?;
+            .send();
+        let response = self.while_active(request).await??;
+        let result: SynoResponse<serde_json::Value> =
+            self.while_active(SynoClient::read_json(response)).await??;
         self.assert_active()?;
         if !result.success {
-            return Err(SynologyError::api(
+            return Err(self.api_error(
                 result.error.map(|e| e.code).unwrap_or(100),
                 "NAS rejected the upload; refresh before retrying",
             ));
@@ -166,7 +188,7 @@ impl FileTransferContext {
         } else {
             "download"
         };
-        let mut response = self
+        let request = self
             .client
             .form_request(
                 "SYNO.FileStation.Download",
@@ -175,8 +197,8 @@ impl FileTransferContext {
                 &[("path", &encoded_path), ("mode", mode)],
             )?
             .timeout(Duration::from_secs(24 * 60 * 60))
-            .send()
-            .await?;
+            .send();
+        let mut response = self.while_active(request).await??;
         if !response.status().is_success() {
             return Err(SynologyError::connection(format!(
                 "NAS download failed (HTTP {})",
@@ -191,8 +213,9 @@ impl FileTransferContext {
         if !attachment {
             // mode=download promises attachment. Never save an API error/login
             // page as the requested file; valid JSON attachments are ordinary data.
-            let result: SynoResponse<serde_json::Value> = SynoClient::read_json(response).await?;
-            return Err(SynologyError::api(
+            let result: SynoResponse<serde_json::Value> =
+                self.while_active(SynoClient::read_json(response)).await??;
+            return Err(self.api_error(
                 result.error.map(|e| e.code).unwrap_or(100),
                 "NAS did not return a downloadable attachment",
             ));
@@ -201,7 +224,7 @@ impl FileTransferContext {
         let temporary = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
         let mut output = tokio::fs::File::from_std(temporary.reopen().map_err(io_error)?);
         let mut bytes = 0u64;
-        while let Some(chunk) = response.chunk().await? {
+        while let Some(chunk) = self.while_active(response.chunk()).await?? {
             self.assert_active()?;
             output.write_all(&chunk).await.map_err(io_error)?;
             bytes = bytes
@@ -244,6 +267,7 @@ mod tests {
             })
             .unwrap(),
             active: Arc::new(AtomicBool::new(false)),
+            cancelled: Arc::new(tokio::sync::Notify::new()),
         };
         let temporary = tempfile::tempdir().unwrap();
         let target = temporary.path().join("untouched.txt");
