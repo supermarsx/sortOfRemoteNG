@@ -20,6 +20,7 @@ import {
 import {
   assertManagedScriptsAreSecretFree,
   resolveManagedScripts,
+  buildManagedScriptsSnapshot,
 } from "../../src/utils/recording/managedScriptPersistence";
 
 beforeEach(() => {
@@ -32,6 +33,28 @@ beforeEach(() => {
   });
 });
 describe("reviewed default script catalog", () => {
+  it("starts empty and explicitly imported originals survive save/reload without materializing siblings", async () => {
+    expect(resolveManagedScripts(defaultScripts, null)).toEqual([]);
+    expect(
+      resolveManagedScripts(defaultScripts, {
+        customScripts: [],
+        modifiedDefaults: [],
+        deletedDefaultIds: [],
+      }),
+    ).toEqual([]);
+    const result = await applyDefaultScriptSelection(
+      ["default-1"],
+      null,
+      false,
+    );
+    const saved = buildManagedScriptsSnapshot(
+      resolveManagedScripts(defaultScripts, result.value),
+      defaultScripts,
+    );
+    expect(
+      resolveManagedScripts(defaultScripts, JSON.parse(JSON.stringify(saved))),
+    ).toEqual([defaultScripts[0]]);
+  });
   it("ships 32 stable credential-free templates without force-installing the 24 additions", () => {
     expect(defaultScripts).toHaveLength(8);
     expect(optionalScriptTemplates).toHaveLength(24);
@@ -92,7 +115,10 @@ describe("reviewed default script catalog", () => {
       true,
     );
     expect(result.value.deletedDefaultIds).toEqual(["default-3"]);
-    expect(result.value.modifiedDefaults).toEqual([]);
+    expect(result.value.modifiedDefaults).toEqual([
+      defaultScripts[0],
+      defaultScripts[1],
+    ]);
     expect(
       resolveManagedScripts(defaultScripts, result.value).find(
         (item) => item.id === "default-1",

@@ -143,19 +143,18 @@ export const assertManagedScriptsAreSecretFree = (
 };
 
 export const resolveManagedScripts = (
-  defaults: ManagedScript[],
+  _defaults: ManagedScript[],
   persisted: PersistedManagedScripts | null,
 ): ManagedScript[] => {
-  if (!persisted) return defaults;
-  const activeDefaults = defaults
-    .filter((script) => !persisted.deletedDefaultIds.includes(script.id))
-    .map(
-      (script) =>
-        persisted.modifiedDefaults.find(
-          (modified) => modified.id === script.id,
-        ) ?? script,
-    );
-  return [...activeDefaults, ...persisted.customScripts];
+  // Bundled templates are Browse sources, not installed user library entries.
+  // Keep explicitly saved imports/edits and legacy tombstones without seeding.
+  if (!persisted) return [];
+  return [
+    ...persisted.modifiedDefaults.filter(
+      (script) => !persisted.deletedDefaultIds.includes(script.id),
+    ),
+    ...persisted.customScripts,
+  ];
 };
 
 export const buildManagedScriptsSnapshot = (

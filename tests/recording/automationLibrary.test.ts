@@ -20,6 +20,7 @@ import {
 } from "../../src/utils/recording/webAutomationLibrary";
 import { deleteMacro, saveMacro } from "../../src/utils/recording/macroService";
 import { TERMINAL_MACROS_STORE_KEY } from "../../src/utils/recording/terminalMacroPersistence";
+import { defaultScripts } from "../../src/data/defaultScripts";
 
 const bridge = vi.hoisted(() => ({
   available: true,
@@ -155,13 +156,13 @@ describe("scoped reviewed automation libraries", () => {
     ).toBe("DB copy");
     expect(fixture.get().revision).toBe(1);
   });
-  it("retains app defaults but an imported unknown default-prefixed ID remains custom", async () => {
+  it("starts app scripts empty and only explicit imports install bundled or other templates", async () => {
     const api = createAutomationLibraryApi();
     const initial = await api.read({ kind: "app" }, "terminal-script");
-    expect(initial.entries.length).toBeGreaterThan(0);
+    expect(initial.entries).toEqual([]);
     const entry: AutomationEntry<"terminal-script"> = {
       family: "terminal-script",
-      payload: { ...initial.entries[0].payload, id: "default-remote-fixture" },
+      payload: { ...defaultScripts[0], id: "default-remote-fixture" },
     };
     const result = await api.apply(initial, [{ operation: "put", entry }]);
     expect(
@@ -171,6 +172,23 @@ describe("scoped reviewed automation libraries", () => {
       JSON.parse(bridge.raw.get("recording.managed-scripts")!).customScripts[0]
         .id,
     ).toBe(entry.payload.id);
+    const explicit = await api.apply(result, [
+      {
+        operation: "put",
+        entry: { family: "terminal-script", payload: defaultScripts[0] },
+      },
+    ]);
+    expect(explicit.entries.map((item) => item.payload.id)).toEqual(
+      expect.arrayContaining([entry.payload.id, defaultScripts[0].id]),
+    );
+    expect(
+      (
+        await createAutomationLibraryApi().read(
+          { kind: "app" },
+          "terminal-script",
+        )
+      ).entries,
+    ).toEqual(explicit.entries);
   });
   it("refuses missing/wrong/revoked DB ownership without reading app storage", async () => {
     const fixture = databaseFixture(),

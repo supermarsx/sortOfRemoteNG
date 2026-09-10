@@ -46,10 +46,12 @@ export async function applyDefaultScriptSelection(
         "Review replacement of the selected modified defaults before restoring.",
       );
     return {
+      ...base,
       customScripts: [...base.customScripts, ...copies],
-      modifiedDefaults: base.modifiedDefaults.filter(
-        (item) => !restore.has(item.id),
-      ),
+      modifiedDefaults: [
+        ...base.modifiedDefaults.filter((item) => !restore.has(item.id)),
+        ...templates.filter((item) => builtInIds.has(item.id)),
+      ],
       deletedDefaultIds: base.deletedDefaultIds.filter(
         (id) => !restore.has(id),
       ),
