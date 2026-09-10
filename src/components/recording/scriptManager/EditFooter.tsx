@@ -1,4 +1,3 @@
-
 import { useTranslation } from "react-i18next";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
 import { Save } from "lucide-react";
@@ -10,15 +9,20 @@ function EditFooter({ mgr }: { mgr: ScriptManagerMgr }) {
         onClick={mgr.handleCancelEdit}
         className="sor-btn sor-btn-secondary"
       >
-        {t('common.cancel', 'Cancel')}
+        {t("common.cancel", "Cancel")}
       </button>
       <button
         onClick={mgr.handleSaveScript}
-        disabled={!mgr.editName.trim() || !mgr.editScript.trim()}
+        disabled={
+          mgr.busy ||
+          !mgr.ready ||
+          !mgr.editName.trim() ||
+          !mgr.editScript.trim()
+        }
         className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
       >
         <Save size={14} />
-        {t('common.save', 'Save')}
+        {t("common.save", "Save")}
       </button>
     </div>
   );

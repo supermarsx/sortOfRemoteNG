@@ -30,6 +30,7 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
       {/* Category filter */}
       <div className="relative">
         <Select
+          label="Script category"
           value={mgr.categoryFilter}
           onChange={(v: string) => mgr.setCategoryFilter(v)}
           options={[
@@ -46,6 +47,7 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
       {/* Language filter */}
       <div className="relative">
         <Select
+          label="Script language"
           value={mgr.languageFilter}
           onChange={(v: string) =>
             mgr.setLanguageFilter(v as ScriptLanguage | "")
@@ -68,6 +70,7 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
       {/* OS Tag filter */}
       <div className="relative">
         <Select
+          label="Script platform"
           value={mgr.osTagFilter}
           onChange={(v: string) => mgr.setOsTagFilter(v as OSTag | "")}
           options={[
@@ -86,7 +89,11 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
       </div>
 
       {/* New script button */}
-      <button onClick={mgr.handleNewScript} className="sor-btn sor-btn-primary">
+      <button
+        disabled={!mgr.ready || mgr.busy}
+        onClick={mgr.handleNewScript}
+        className="sor-btn sor-btn-primary"
+      >
         <Plus size={14} />
         {t("scriptManager.newScript", "New Script")}
       </button>

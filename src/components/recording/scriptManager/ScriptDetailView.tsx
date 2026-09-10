@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { languageLabels, OS_TAG_LABELS } from "./shared";
 import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
+import AutomationSourceBadge from "./AutomationSourceBadge";
+import { scriptOrigin } from "./scriptOrigins";
 import HighlightedCode from "../../ui/display/HighlightedCode";
 import { useTranslation } from "react-i18next";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
@@ -76,6 +78,15 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
               <h3 className="text-xl font-semibold text-[var(--color-text)]">
                 {script.name}
               </h3>
+              <AutomationSourceBadge
+                source={scriptOrigin(
+                  script,
+                  mgr.snapshot?.entries.find(
+                    (entry) => entry.payload.id === script.id,
+                  )?.provenance,
+                )}
+                size={14}
+              />
             </div>
             {script.description && (
               <p className="text-sm text-[var(--color-textSecondary)] mt-1">
@@ -89,11 +100,6 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
               <span className="text-xs px-2 py-1 bg-primary/20 text-primary dark:text-primary rounded">
                 {languageLabels[script.language]}
               </span>
-              {script.id.startsWith("default-") && (
-                <span className="text-xs px-2 py-1 bg-[var(--color-secondary)]/20 text-[var(--color-textSecondary)] rounded">
-                  Default
-                </span>
-              )}
             </div>
             {script.osTags && script.osTags.length > 0 && (
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">

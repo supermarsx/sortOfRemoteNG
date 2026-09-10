@@ -12,12 +12,19 @@ function ScriptList({ mgr }: { mgr: ScriptManagerMgr }) {
         {mgr.filteredScripts.length === 0 ? (
           <EmptyState
             icon={FileCode}
-            message={t('scriptManager.noScripts', 'No scripts found')}
+            message={
+              !mgr.scripts.length
+                ? t(
+                    "scriptManager.emptyExplicitLibrary",
+                    "No scripts in this library. Import templates from Browse scripts or create one.",
+                  )
+                : t("scriptManager.noScripts", "No scripts found")
+            }
             className="p-8"
           />
         ) : (
           <div className="p-2 space-y-1">
-            {mgr.filteredScripts.map(script => (
+            {mgr.filteredScripts.map((script) => (
               <ScriptListItem key={script.id} script={script} mgr={mgr} />
             ))}
           </div>

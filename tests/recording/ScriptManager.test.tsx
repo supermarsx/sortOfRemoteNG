@@ -7,11 +7,76 @@ import {
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ScriptManager } from "../../src/components/recording/ScriptManager";
+import { defaultScripts } from "../../src/data/defaultScripts";
+import type {
+  AutomationLibrarySnapshot,
+  AutomationLibraryChange,
+} from "../../src/types/recording/automationLibrary";
 
 const managedScriptsStoreMocks = vi.hoisted(() => ({
   load: vi.fn(),
   save: vi.fn(),
 }));
+
+// Manager tests use an isolated in-memory scoped API boundary. Existing localStorage
+// data below is a fixture transport only, never the production persistence backend.
+vi.mock("../../src/hooks/recording/useAutomationLibraryApi", async () => {
+  const { defaultScripts } = await import("../../src/data/defaultScripts");
+  const { resolveManagedScripts, buildManagedScriptsSnapshot } =
+    await vi.importActual<
+      typeof import("../../src/utils/recording/managedScriptPersistence")
+    >("../../src/utils/recording/managedScriptPersistence");
+  return {
+    useAutomationLibraryApi: () => ({
+      ready: true,
+      settingsReady: true,
+      accessEpoch: 1,
+      databaseScope: null,
+      databaseRevision: 0,
+      diagnostic: null,
+      retry: vi.fn(),
+      api: {
+        read: async (scope: { kind: "app" }, family: "terminal-script") => {
+          const result = await managedScriptsStoreMocks.load();
+          const payloads = resolveManagedScripts(
+            defaultScripts,
+            result.value,
+          ).map((script) => ({
+            ...script,
+            osTags: script.osTags ?? ["agnostic"],
+          }));
+          return {
+            scope,
+            family,
+            receipt: "fixture-read",
+            entries: payloads.map((payload) => ({ family, payload })),
+          };
+        },
+        apply: async (
+          snapshot: AutomationLibrarySnapshot<"terminal-script">,
+          changes: AutomationLibraryChange<"terminal-script">[],
+        ) => {
+          const values = new Map(
+            snapshot.entries.map((entry) => [entry.payload.id, entry]),
+          );
+          for (const change of changes) {
+            if (change.operation === "put")
+              values.set(change.entry.payload.id, change.entry);
+            else values.delete(change.expected.payload.id);
+          }
+          const entries = [...values.values()];
+          await managedScriptsStoreMocks.save(
+            buildManagedScriptsSnapshot(
+              entries.map((entry) => entry.payload),
+              defaultScripts,
+            ),
+          );
+          return { ...snapshot, receipt: "fixture-saved", entries };
+        },
+      },
+    }),
+  };
+});
 
 const toastContextMocks = vi.hoisted(() => ({
   toast: {
@@ -129,6 +194,7 @@ const defaultProps = {
 const renderComponent = async (props = {}) => {
   const result = render(<ScriptManager {...defaultProps} {...props} />);
 
+  if ((props as { isOpen?: boolean }).isOpen === false) return result;
   await waitFor(() => {
     expect(managedScriptsStoreMocks.load).toHaveBeenCalledTimes(1);
   });
@@ -158,6 +224,32 @@ describe("ScriptManager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    // Most legacy editor tests explicitly start with an imported library.
+    localStorage.setItem(
+      "managedScripts",
+      JSON.stringify({
+        customScripts: [],
+        modifiedDefaults: defaultScripts,
+        deletedDefaultIds: [],
+      }),
+    );
+    managedScriptsStoreMocks.load.mockImplementation(async () => {
+      const raw = localStorage.getItem("managedScripts");
+      const parsed = raw ? JSON.parse(raw) : null;
+      return {
+        value: Array.isArray(parsed)
+          ? {
+              customScripts: parsed,
+              modifiedDefaults: [],
+              deletedDefaultIds: [],
+            }
+          : parsed,
+        sanitized: false,
+      };
+    });
+    managedScriptsStoreMocks.save.mockImplementation(async (value: unknown) => {
+      localStorage.setItem("managedScripts", JSON.stringify(value));
+    });
     // Mock clipboard API
     Object.assign(navigator, {
       clipboard: {
@@ -171,6 +263,15 @@ describe("ScriptManager", () => {
   });
 
   describe("Basic Rendering", () => {
+    it("starts empty without saved scripts and offers explicit Browse import", async () => {
+      localStorage.clear();
+      await renderComponent();
+      expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/No scripts in this library. Import templates/),
+      ).toBeInTheDocument();
+      expect(managedScriptsStoreMocks.save).not.toHaveBeenCalled();
+    });
     it("should not render when isOpen is false", async () => {
       await renderComponent({ isOpen: false });
       expect(
@@ -223,7 +324,9 @@ describe("ScriptManager", () => {
 
     it("should filter by category", async () => {
       await renderComponent();
-      const categorySelect = screen.getAllByRole("combobox")[0];
+      const categorySelect = screen.getByRole("combobox", {
+        name: "Script category",
+      });
 
       fireEvent.click(categorySelect);
       // Use role="option" to target the dropdown option specifically
@@ -368,6 +471,7 @@ describe("ScriptManager", () => {
 
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
+      fireEvent.click(screen.getByTestId("confirm-yes"));
 
       await waitFor(() => {
         expect(
@@ -430,6 +534,7 @@ describe("ScriptManager", () => {
 
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
+      fireEvent.click(screen.getByTestId("confirm-yes"));
 
       await waitFor(() => {
         expect(screen.queryByText("Script To Delete")).not.toBeInTheDocument();
@@ -674,6 +779,7 @@ describe("ScriptManager", () => {
 
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
+      fireEvent.click(screen.getByTestId("confirm-yes"));
 
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
@@ -690,8 +796,9 @@ describe("ScriptManager", () => {
   describe("Categories", () => {
     it("should list available categories in filter", async () => {
       await renderComponent();
-      const categorySelects = screen.getAllByRole("combobox");
-      const categorySelect = categorySelects[0]; // First combobox is category filter
+      const categorySelect = screen.getByRole("combobox", {
+        name: "Script category",
+      });
 
       // Check options exist - use getAllByText since categories appear elsewhere
       expect(screen.getByText("All Categories")).toBeInTheDocument();
@@ -755,8 +862,8 @@ describe("ScriptManager", () => {
 
       // default-1 is System Info (Linux) - should not be shown
       expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
-      // Other default scripts should still be there
-      expect(screen.getByText("Disk Usage (Linux)")).toBeInTheDocument();
+      // Tombstones never install the other, unimported catalog templates.
+      expect(screen.queryByText("Disk Usage (Linux)")).not.toBeInTheDocument();
     });
 
     it("should persist deleted default script IDs to localStorage", async () => {
@@ -768,6 +875,7 @@ describe("ScriptManager", () => {
 
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
+      fireEvent.click(screen.getByTestId("confirm-yes"));
 
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
@@ -822,9 +930,9 @@ describe("ScriptManager", () => {
 
       await renderComponent();
 
-      // Should show both old custom script and all defaults
+      // Preserve saved legacy content without injecting bundled templates.
       expect(screen.getByText("Old Format Script")).toBeInTheDocument();
-      expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+      expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
     });
   });
 
@@ -840,7 +948,9 @@ describe("ScriptManager", () => {
     it("should filter scripts by OS tag", async () => {
       await renderComponent();
       // Find the OS tag filter (third combobox)
-      const osTagSelect = screen.getAllByRole("combobox")[2];
+      const osTagSelect = screen.getByRole("combobox", {
+        name: "Script platform",
+      });
 
       fireEvent.click(osTagSelect);
       fireEvent.mouseDown(screen.getByText("Windows"));
@@ -1022,7 +1132,9 @@ describe("ScriptManager", () => {
       await renderComponent();
 
       // Filter by cisco-ios
-      const osTagSelect = screen.getAllByRole("combobox")[2];
+      const osTagSelect = screen.getByRole("combobox", {
+        name: "Script platform",
+      });
       fireEvent.click(osTagSelect);
       fireEvent.mouseDown(screen.getByText("Cisco IOS"));
 

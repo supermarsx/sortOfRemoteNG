@@ -1,5 +1,7 @@
 import { ManagedScript, languageLabels, OS_TAG_LABELS } from "./shared";
 import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
+import AutomationSourceBadge from "./AutomationSourceBadge";
+import { scriptOrigin } from "./scriptOrigins";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
 
 function ScriptListItem({
@@ -25,11 +27,14 @@ function ScriptListItem({
             <span className="text-sm font-medium text-[var(--color-text)] truncate">
               {script.name}
             </span>
-            {script.id.startsWith("default-") && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-secondary)]/20 text-[var(--color-textSecondary)] rounded uppercase tracking-wide flex-shrink-0">
-                Default
-              </span>
-            )}
+            <AutomationSourceBadge
+              source={scriptOrigin(
+                script,
+                mgr.snapshot?.entries.find(
+                  (entry) => entry.payload.id === script.id,
+                )?.provenance,
+              )}
+            />
           </div>
           {script.description && (
             <p className="text-xs text-[var(--color-textSecondary)] truncate mt-0.5">

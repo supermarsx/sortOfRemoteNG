@@ -1,11 +1,16 @@
 /* eslint-disable react-refresh/only-export-components, react/only-export-components */
-import React, { lazy, Suspense, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useScriptManager } from "../../hooks/recording/useScriptManager";
 import FilterToolbar from "./scriptManager/FilterToolbar";
 import ScriptList from "./scriptManager/ScriptList";
 import DetailPane from "./scriptManager/DetailPane";
 import WebsiteUserScriptsPanel from "./scriptManager/WebsiteUserScriptsPanel";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
+import type { WebsiteUserScriptsLibraryBinding } from "../../hooks/recording/useWebsiteUserScripts";
+import type { AutomationFamily } from "../../types/recording/automationLibrary";
+const RepositoryCatalogPanel = lazy(
+  () => import("./scriptManager/RepositoryCatalogPanel"),
+);
 const DefaultScriptCatalog = lazy(() =>
   import("./scriptManager/DefaultScriptCatalog").then((module) => ({
     default: module.DefaultScriptCatalog,
@@ -36,31 +41,65 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
   isOpen,
   onClose,
 }) => {
-  const mgr = useScriptManager(onClose);
+  const mgr = useScriptManager(onClose, isOpen);
   const [view, setView] = useState<"terminal" | "website" | "browse">(
     "terminal",
   );
   const [catalogBusy, setCatalogBusy] = useState(false);
+  const [catalogSource, setCatalogSource] = useState<"bundled" | "repository">(
+    "bundled",
+  );
+  const [catalogFamily, setCatalogFamily] =
+    useState<AutomationFamily>("terminal-script");
   const [websiteDirty, setWebsiteDirty] = useState(false);
   const [websiteBusy, setWebsiteBusy] = useState(false);
-  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  const [pendingLeave, setPendingLeave] = useState<{
+    key: string;
+    id: string;
+    action: () => void;
+  } | null>(null);
+  const leaveRef = useRef<typeof pendingLeave>(null);
+  const latestKey = useRef(mgr.accessKey);
+  latestKey.current = mgr.accessKey;
+  const clearLeave = () => {
+    leaveRef.current = null;
+    setPendingLeave(null);
+  };
+  useEffect(() => {
+    clearLeave();
+    setWebsiteDirty(false);
+    setWebsiteBusy(false);
+    setCatalogBusy(false);
+  }, [mgr.accessKey]);
   const requestLeave = (action: () => void) => {
     if (
       (view === "terminal" && mgr.isEditing) ||
       (view === "website" && websiteDirty)
-    )
-      setPendingLeave(() => action);
-    else action();
+    ) {
+      const next = { key: mgr.accessKey, id: crypto.randomUUID(), action };
+      leaveRef.current = next;
+      setPendingLeave(next);
+    } else action();
   };
   const switchView = (next: typeof view) => {
-    if (next === view || websiteBusy || catalogBusy) return;
+    if (next === view || websiteBusy || catalogBusy || mgr.busy) return;
     requestLeave(() => {
-      mgr.handleCancelEdit();
+      mgr.discardEdit();
       setView(next);
     });
   };
 
   if (!isOpen) return null;
+  const library: WebsiteUserScriptsLibraryBinding = {
+    api: mgr.api,
+    scope: mgr.scope,
+    accessKey: mgr.accessKey,
+    enabled: mgr.available,
+    settingsReady: Boolean(mgr.settingsReady),
+    diagnostic: mgr.diagnostic,
+    retry: mgr.retry,
+    databaseRevision: mgr.databaseRevision,
+  };
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
@@ -73,7 +112,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
           type="button"
           role="tab"
           aria-selected={view === "terminal"}
-          disabled={websiteBusy || catalogBusy}
+          disabled={websiteBusy || catalogBusy || mgr.busy}
           className={`sor-tab-trigger ${view === "terminal" ? "sor-tab-trigger-active" : ""}`}
           onClick={() => switchView("terminal")}
         >
@@ -83,7 +122,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
           type="button"
           role="tab"
           aria-selected={view === "website"}
-          disabled={websiteBusy || catalogBusy}
+          disabled={websiteBusy || catalogBusy || mgr.busy}
           className={`sor-tab-trigger ${view === "website" ? "sor-tab-trigger-active" : ""}`}
           onClick={() => switchView("website")}
         >
@@ -93,54 +132,209 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
           type="button"
           role="tab"
           aria-selected={view === "browse"}
-          disabled={websiteBusy || catalogBusy}
+          disabled={websiteBusy || catalogBusy || mgr.busy}
           className={`sor-tab-trigger ${view === "browse" ? "sor-tab-trigger-active" : ""}`}
           onClick={() => switchView("browse")}
         >
           Browse scripts
         </button>
       </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--color-border)] px-4 py-2 text-xs">
+        <label className="flex items-center gap-2">
+          Library scope
+          <select
+            aria-label="Script library scope"
+            className="sor-form-input max-w-xs"
+            style={{ width: "auto" }}
+            disabled={websiteBusy || catalogBusy || mgr.busy}
+            value={mgr.scope.kind === "app" ? "app" : mgr.scope.databaseId}
+            onChange={(event) => {
+              const value = event.target.value;
+              requestLeave(() => {
+                mgr.discardEdit();
+                mgr.changeScope(
+                  value === "app"
+                    ? { kind: "app" }
+                    : { kind: "database", databaseId: value },
+                );
+              });
+            }}
+          >
+            <option value="app">App-wide</option>
+            {mgr.databaseScope && (
+              <option value={mgr.databaseScope.databaseId}>
+                Current database
+              </option>
+            )}
+            {mgr.scope.kind === "database" &&
+              mgr.databaseScope?.databaseId !== mgr.scope.databaseId && (
+                <option value={mgr.scope.databaseId}>
+                  Owning database (unavailable)
+                </option>
+              )}
+          </select>
+        </label>
+        <span className="min-w-0 break-all text-[var(--color-textSecondary)]">
+          {mgr.scope.kind === "app"
+            ? "Shared across connections; separate from the current database."
+            : `Database: ${mgr.scope.databaseId}. No app-wide fallback.`}
+        </span>
+        {view === "terminal" && (
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary ml-auto"
+            disabled={!mgr.available || mgr.busy || mgr.loading}
+            onClick={() => void mgr.refresh()}
+          >
+            Reload library
+          </button>
+        )}
+      </div>
+      {view !== "website" && (!mgr.available || mgr.storageError) && (
+        <div role="alert" className="shrink-0 px-4 py-3 text-sm text-warning">
+          {mgr.storageError ??
+            mgr.diagnostic?.message ??
+            (!mgr.settingsReady
+              ? "Waiting for app settings to initialize."
+              : mgr.scope.kind === "database"
+                ? "Open and unlock this library's owning database, or explicitly select App-wide."
+                : "Checking the desktop library access listener. An open database is not required.")}
+          {mgr.diagnostic?.retryable && (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary ml-2"
+              onClick={mgr.retry}
+            >
+              Retry library access
+            </button>
+          )}
+        </div>
+      )}
       {view === "website" ? (
         <WebsiteUserScriptsPanel
+          key={mgr.accessKey}
+          library={library}
           onDirtyChange={setWebsiteDirty}
           onBusyChange={setWebsiteBusy}
         />
       ) : view === "browse" ? (
-        <Suspense
-          fallback={
-            <p role="status" className="p-4">
-              Loading bundled scripts…
-            </p>
-          }
-        >
-          <DefaultScriptCatalog
-            onApplied={mgr.handleCatalogApplied}
-            onBusyChange={setCatalogBusy}
-          />
-        </Suspense>
+        <>
+          <div
+            className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] p-3"
+            role="tablist"
+            aria-label="Script catalog source"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={catalogSource === "bundled"}
+              className={`sor-tab-trigger ${catalogSource === "bundled" ? "sor-tab-trigger-active" : ""}`}
+              disabled={catalogBusy}
+              onClick={() => setCatalogSource("bundled")}
+            >
+              Bundled scripts
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={catalogSource === "repository"}
+              className={`sor-tab-trigger ${catalogSource === "repository" ? "sor-tab-trigger-active" : ""}`}
+              disabled={catalogBusy}
+              onClick={() => setCatalogSource("repository")}
+            >
+              Repositories / packages
+            </button>
+            {catalogSource === "repository" && (
+              <label className="flex items-center gap-2 text-xs">
+                Script kind
+                <select
+                  style={{ width: "auto" }}
+                  className="sor-form-input"
+                  disabled={catalogBusy}
+                  value={catalogFamily}
+                  onChange={(event) =>
+                    setCatalogFamily(event.target.value as AutomationFamily)
+                  }
+                >
+                  <option value="terminal-script">Terminal scripts</option>
+                  <option value="website-script">Website userscripts</option>
+                </select>
+              </label>
+            )}
+          </div>
+          <Suspense
+            fallback={
+              <p role="status" className="p-4">
+                Loading bundled scripts…
+              </p>
+            }
+          >
+            {catalogSource === "bundled" ? (
+              <DefaultScriptCatalog
+                key={mgr.accessKey}
+                library={library}
+                onApplied={mgr.handleCatalogApplied}
+                onBusyChange={setCatalogBusy}
+              />
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <RepositoryCatalogPanel
+                  key={`${mgr.accessKey}:${catalogFamily}`}
+                  api={mgr.api}
+                  scope={mgr.scope}
+                  family={catalogFamily}
+                  accessKey={mgr.accessKey}
+                  enabled={mgr.available}
+                  onApplied={mgr.handleCatalogApplied}
+                  onBusyChange={setCatalogBusy}
+                />
+              </div>
+            )}
+          </Suspense>
+        </>
       ) : (
         <>
           <FilterToolbar mgr={mgr} />
-          <div className="flex-1 flex overflow-hidden">
+          <fieldset
+            disabled={mgr.busy || !mgr.ready}
+            className="flex-1 flex min-h-0 overflow-hidden border-0 p-0"
+          >
+            <legend className="sr-only">Terminal script library</legend>
             <ScriptList mgr={mgr} />
             <DetailPane mgr={mgr} />
-          </div>
+          </fieldset>
         </>
       )}
       <ConfirmDialog
-        isOpen={pendingLeave !== null}
+        isOpen={pendingLeave !== null && pendingLeave.key === mgr.accessKey}
         title="Discard script draft?"
         message="This unsaved draft will be discarded. Your saved library will not change."
         confirmText="Discard draft"
         cancelText="Keep editing"
         variant="warning"
         confirmOnEnter={false}
-        onCancel={() => setPendingLeave(null)}
+        onCancel={clearLeave}
         onConfirm={() => {
-          const action = pendingLeave;
-          setPendingLeave(null);
-          action?.();
+          const current = pendingLeave;
+          if (
+            !current ||
+            leaveRef.current?.id !== current.id ||
+            latestKey.current !== current.key
+          )
+            return;
+          clearLeave();
+          current.action();
         }}
+      />
+      <ConfirmDialog
+        isOpen={!!mgr.review}
+        title={mgr.review?.title}
+        message={mgr.review?.message ?? ""}
+        confirmText={mgr.review?.destructive ? "Delete" : "Discard draft"}
+        variant={mgr.review?.destructive ? "danger" : "warning"}
+        confirmOnEnter={false}
+        onConfirm={mgr.confirmReview}
+        onCancel={mgr.cancelReview}
       />
     </div>
   );

@@ -201,11 +201,16 @@ describe("ScriptDetailView", () => {
       expect(codeEl).toHaveAttribute("data-language", "bash");
     });
 
-    it("should show Default badge for default scripts", () => {
+    it("does not grant a verified badge from a default-looking ID", () => {
       const script = makeScript({ id: "default-sysinfo" });
       render(<ScriptDetailView mgr={makeMgr(script) as any} />);
 
-      expect(screen.getByText("Default")).toBeInTheDocument();
+      expect(
+        screen.getByRole("img", { name: "Custom or edited content" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("img", { name: "Verified app template" }),
+      ).not.toBeInTheDocument();
     });
 
     it("should not show Default badge for custom scripts", () => {

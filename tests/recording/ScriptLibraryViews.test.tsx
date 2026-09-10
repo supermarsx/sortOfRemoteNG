@@ -52,6 +52,7 @@ vi.mock("../../src/hooks/recording/useWebsiteUserScripts", () => ({
     busy: h.busy,
     error: null,
     epoch: 1,
+    scope: { kind: "app" },
     save: h.save,
     remove: h.remove,
     reload: vi.fn(),
@@ -61,6 +62,28 @@ vi.mock("../../src/hooks/recording/useScriptManager", () => ({
   useScriptManager: () => ({
     isEditing: h.editing,
     handleCancelEdit: h.cancelEdit,
+    discardEdit: h.cancelEdit,
+    scope: { kind: "app" },
+    databaseScope: null,
+    accessKey: "app:fixture",
+    available: true,
+    ready: true,
+    settingsReady: true,
+    diagnostic: null,
+    retry: vi.fn(),
+    databaseRevision: 0,
+    api: {
+      read: vi.fn().mockResolvedValue({
+        scope: { kind: "app" },
+        family: "terminal-script",
+        receipt: "fixture",
+        entries: [],
+      }),
+      apply: vi.fn(),
+    },
+    refresh: vi.fn(),
+    changeScope: vi.fn(),
+    handleCatalogApplied: vi.fn(),
   }),
 }));
 vi.mock("../../src/components/recording/scriptManager/FilterToolbar", () => ({

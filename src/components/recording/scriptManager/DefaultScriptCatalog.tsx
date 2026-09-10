@@ -5,13 +5,21 @@ import {
   BUNDLED_SCRIPT_CONTEXT_LABELS,
 } from "../../../data/bundledScriptCatalog";
 import { defaultScripts } from "../../../data/defaultScripts";
+import { defaultScriptCatalog } from "../../../data/defaultScriptCatalog";
 import {
   managedScriptsStore,
+  buildManagedScriptsSnapshot,
   type PersistedManagedScripts,
 } from "../../../utils/recording/managedScriptPersistence";
 import { applyDefaultScriptSelection } from "../../../utils/recording/defaultScriptCatalog";
 import { OS_TAG_LABELS, languageLabels, type OSTag } from "./shared";
 import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
+import AutomationSourceBadge from "./AutomationSourceBadge";
+import type {
+  AutomationLibrarySnapshot,
+  AutomationLibraryChange,
+} from "../../../types/recording/automationLibrary";
+import type { WebsiteUserScriptsLibraryBinding } from "../../../hooks/recording/useWebsiteUserScripts";
 
 const PAGE_SIZE = 50;
 const categories = [
@@ -23,13 +31,23 @@ const originalIds = new Set(defaultScripts.map((entry) => entry.id));
 export function DefaultScriptCatalog({
   onApplied,
   onBusyChange,
+  library,
 }: {
   onApplied: (value: PersistedManagedScripts) => void;
   onBusyChange?: (busy: boolean) => void;
+  library?: Pick<
+    WebsiteUserScriptsLibraryBinding,
+    "api" | "scope" | "accessKey" | "enabled"
+  >;
 }) {
   const [snapshot, setSnapshot] = useState<{
     value: PersistedManagedScripts | null;
   } | null>(null);
+  const [scopedSnapshot, setScopedSnapshot] =
+    useState<AutomationLibrarySnapshot<"terminal-script"> | null>(null);
+  const latestLibrary = useRef(library);
+  latestLibrary.current = library;
+  const alive = useRef(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -51,13 +69,31 @@ export function DefaultScriptCatalog({
   }, [busy, onBusyChange]);
   useEffect(() => {
     let live = true;
+    alive.current = true;
     setSnapshot(null);
+    setScopedSnapshot(null);
     setError(null);
     setOverwrite(false);
-    void managedScriptsStore
-      .load()
+    setSelected(new Set());
+    const read = async () => {
+      if (library) {
+        if (!library.enabled) throw new Error("Library access unavailable");
+        const result = await library.api.read(library.scope, "terminal-script");
+        if (
+          live &&
+          latestLibrary.current?.accessKey === library.accessKey &&
+          latestLibrary.current.enabled
+        ) {
+          setScopedSnapshot(result);
+          setSnapshot({ value: null });
+        }
+        return null;
+      }
+      return managedScriptsStore.load();
+    };
+    void read()
       .then((result) => {
-        if (live) setSnapshot({ value: result.value });
+        if (live && result) setSnapshot({ value: result.value });
       })
       .catch(() => {
         if (live)
@@ -67,8 +103,11 @@ export function DefaultScriptCatalog({
       });
     return () => {
       live = false;
+      alive.current = false;
     };
-  }, [reload]);
+    // Binding ownership is identified by accessKey, not its render object identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reload, library?.accessKey, library?.enabled]);
   const filtered = useMemo(
     () =>
       bundledScriptCatalog.filter(
@@ -102,9 +141,19 @@ export function DefaultScriptCatalog({
   const preview = bundledScriptCatalog.find(
     (entry) => entry.key === previewKey,
   )!;
-  const replacements = [...selected].filter((id) =>
-    snapshot?.value?.modifiedDefaults.some((entry) => entry.id === id),
-  );
+  const replacements = [...selected].filter((id) => {
+    if (!library)
+      return snapshot?.value?.modifiedDefaults.some((entry) => entry.id === id);
+    const existing = scopedSnapshot?.entries.find(
+      (entry) => entry.payload.id === id,
+    );
+    const shipped = bundledScriptCatalog.find(
+      (entry) => entry.source === "managed" && entry.payload.id === id,
+    )?.payload;
+    return (
+      existing && JSON.stringify(existing.payload) !== JSON.stringify(shipped)
+    );
+  });
   const toggle = (id: string) => {
     setOverwrite(false);
     setSelected((previous) => {
@@ -273,6 +322,7 @@ export function DefaultScriptCatalog({
                     <ScriptMetadataIcon language={entry.language} />
                     <span className="min-w-0 break-words">
                       {entry.payload.name}
+                      <AutomationSourceBadge source="app-provided" />
                     </span>
                   </span>
                   <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
@@ -280,7 +330,7 @@ export function DefaultScriptCatalog({
                     {entry.source === "bulk"
                       ? "Bulk SSH · Preview / copy"
                       : originalIds.has(entry.payload.id)
-                        ? "Original default"
+                        ? "Bundled template"
                         : "Import custom copy"}
                   </span>
                   <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-textMuted)]">
@@ -329,7 +379,10 @@ export function DefaultScriptCatalog({
           className="min-w-0 space-y-3 overflow-auto p-4"
           aria-label="Script preview"
         >
-          <h3 className="font-semibold">{preview.payload.name}</h3>
+          <h3 className="flex items-center gap-2 font-semibold">
+            {preview.payload.name}
+            <AutomationSourceBadge source="app-provided" />
+          </h3>
           <p className="text-sm">{preview.payload.description}</p>
           <p className="text-xs text-[var(--color-textMuted)]">
             {BUNDLED_SCRIPT_CONTEXT_LABELS[preview.context]} ·{" "}
@@ -408,42 +461,106 @@ export function DefaultScriptCatalog({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-[var(--color-textMuted)]">
             Only selected Script Manager templates are imported. Original
-            default IDs are preserved.
+            catalog IDs are preserved. Nothing is added automatically.
           </span>
           <button
             type="button"
             className="sor-btn sor-btn-primary"
             disabled={
               !snapshot ||
+              (library && !library.enabled) ||
               busy ||
               !selected.size ||
               (replacements.length > 0 && !overwrite)
             }
             onClick={async () => {
               if (!snapshot || busyRef.current) return;
+              if (
+                library &&
+                (!library.enabled ||
+                  !scopedSnapshot ||
+                  latestLibrary.current?.accessKey !== library.accessKey ||
+                  !latestLibrary.current.enabled)
+              )
+                return;
               busyRef.current = true;
               setBusy(true);
               setError(null);
               setNotice(null);
               try {
-                const result = await applyDefaultScriptSelection(
-                  [...selected],
-                  snapshot.value,
-                  overwrite,
-                );
+                let result: { value: PersistedManagedScripts };
+                if (library && scopedSnapshot) {
+                  if (replacements.length && !overwrite) return;
+                  const changes: AutomationLibraryChange<"terminal-script">[] =
+                    [];
+                  for (const id of selected) {
+                    const shipped = defaultScriptCatalog.find(
+                      (entry) => entry.id === id,
+                    );
+                    if (!shipped) throw new Error("Invalid template selection");
+                    const expected = scopedSnapshot.entries.find(
+                      (entry) => entry.payload.id === id,
+                    );
+                    if (
+                      expected &&
+                      JSON.stringify(expected.payload) ===
+                        JSON.stringify(shipped)
+                    )
+                      continue;
+                    changes.push({
+                      operation: "put",
+                      entry: {
+                        family: "terminal-script",
+                        payload: shipped,
+                        ...(expected?.provenance
+                          ? { provenance: expected.provenance }
+                          : {}),
+                      },
+                      ...(expected ? { expected } : {}),
+                    });
+                  }
+                  const committed = changes.length
+                    ? await library.api.apply(scopedSnapshot, changes)
+                    : scopedSnapshot;
+                  if (
+                    !alive.current ||
+                    latestLibrary.current?.accessKey !== library.accessKey ||
+                    !latestLibrary.current.enabled
+                  )
+                    return;
+                  setScopedSnapshot(committed);
+                  result = {
+                    value: buildManagedScriptsSnapshot(
+                      committed.entries.map((entry) => entry.payload),
+                      defaultScripts,
+                    ),
+                  };
+                } else
+                  result = await applyDefaultScriptSelection(
+                    [...selected],
+                    snapshot.value,
+                    overwrite,
+                  );
+                if (!alive.current) return;
                 setSnapshot({ value: result.value });
                 setSelected(new Set());
                 setOverwrite(false);
                 onApplied(result.value);
                 setNotice("Selected templates imported. Nothing was executed.");
               } catch {
+                if (
+                  !alive.current ||
+                  (library &&
+                    latestLibrary.current?.accessKey !== library.accessKey)
+                )
+                  return;
                 setSnapshot(null);
                 setError(
                   "Import was not confirmed. Reload the library and review your selection before retrying.",
                 );
               } finally {
                 busyRef.current = false;
-                setBusy(false);
+                if (alive.current) setBusy(false);
               }
             }}
           >
