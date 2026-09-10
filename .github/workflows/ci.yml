@@ -443,10 +443,8 @@ jobs:
 
   # ── t8-e19 + t8-e21: wrapped OPKSSH contract + optional staging gate ──
   # Phase E is proceeding under the relaxed dylink recommendation. This
-  # lane verifies both the default CLI-fallback contract and the explicit
-  # metadata-wrapper build gate, then exercises the staging helper in both
-  # disabled and enabled modes so Tauri resource-copy truth stays aligned
-  # with the optional bundle contract.
+  # lane verifies both the CLI fallback and vendor C ABI contracts, then
+  # stages a real embedded runtime by default. Only explicit --disable opts out.
   rust-opkssh-targeted:
     name: OPKSSH targeted (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -501,6 +499,17 @@ jobs:
         run: |
           rustc -vV
           rustup show active-toolchain
+      - name: Provision native GNU OPKSSH bridge toolchain
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw "Could not install the native GNU bridge toolchain." }
+          $gccTarget = & gcc -dumpmachine
+          if ($LASTEXITCODE -ne 0 -or $gccTarget.Trim() -ne 'x86_64-w64-mingw32') {
+            throw "The Windows runner must provide native MinGW gcc for the embedded Go bridge."
+          }
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -515,7 +524,7 @@ jobs:
         with:
           node-version-file: ".node-version"
           package-manager-cache: false
-      - name: verify OPKSSH vendor staging defaults to disabled cleanup
+      - name: Verify explicit OPKSSH vendor staging opt-out
         run: node ../scripts/stage-opkssh-vendor.mjs --disable
       - name: stage OPKSSH vendor artifact into the Tauri resource tree
         run: node ../scripts/stage-opkssh-vendor.mjs --enable

@@ -26,7 +26,10 @@ const OVERLAY_WORKDIR: &str = "opkssh-overlay-source";
 
 const OVERLAY_FILES: &[(&str, &str)] = &[
     ("libopkssh_cabi.go", OPKSSH_CABI_GO),
-    ("commands/embedded_login.go", OPKSSH_COMMANDS_EMBEDDED_LOGIN_GO),
+    (
+        "commands/embedded_login.go",
+        OPKSSH_COMMANDS_EMBEDDED_LOGIN_GO,
+    ),
     ("commands/login.go", OPKSSH_COMMANDS_LOGIN_GO),
     ("libopkssh/config.go", OPKSSH_LIB_CONFIG_GO),
     ("libopkssh/host.go", OPKSSH_LIB_HOST_GO),
@@ -75,7 +78,7 @@ fn main() {
         // the app dlopens at runtime. Previously this branch returned in total
         // silence, which is how a metadata-only DLL shipped unnoticed - so
         // report whether that staged artifact is actually present and real.
-        report_staged_bridge_health();
+        report_staged_bridge_health(target.as_deref());
         emit_stub_runtime_metadata();
         return;
     }
@@ -85,9 +88,18 @@ fn main() {
         return;
     };
 
-    println!("cargo:rerun-if-changed={}", checkout_path.join("go.mod").display());
-    println!("cargo:rerun-if-changed={}", checkout_path.join("commands").display());
-    println!("cargo:rerun-if-changed={}", checkout_path.join("libopkssh").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        checkout_path.join("go.mod").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        checkout_path.join("commands").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        checkout_path.join("libopkssh").display()
+    );
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
     let build_checkout = match prepare_checkout_for_build(&checkout_path, &out_dir) {
@@ -126,7 +138,9 @@ fn main() {
     {
         Ok(output) => output,
         Err(error) => {
-            emit_stub_runtime(&format!("failed to invoke Go toolchain for OPKSSH bridge: {error}"));
+            emit_stub_runtime(&format!(
+                "failed to invoke Go toolchain for OPKSSH bridge: {error}"
+            ));
             return;
         }
     };
@@ -225,13 +239,23 @@ fn host_and_target_share_platform(host: Option<&str>, target: Option<&str>) -> b
 /// On MSVC the linked wrapper is intentionally metadata-only, so the only thing
 /// that can carry the embedded runtime is the staged windows-gnu DLL. Check it
 /// and complain loudly if it is missing or is itself a metadata-only build.
-fn report_staged_bridge_health() {
+fn report_staged_bridge_health(target: Option<&str>) {
+    let (platform, machine) = match target {
+        Some(value) if value.starts_with("aarch64-") => ("windows-arm64", 0xaa64_u16),
+        Some(value) if value.starts_with("x86_64-") => ("windows-amd64", 0x8664_u16),
+        _ => {
+            warn_bridge_unavailable(
+                "unsupported Windows architecture; supply a matching verified bridge",
+            );
+            return;
+        }
+    };
     let artifact = PathBuf::from(
         env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set for build scripts"),
     )
     .join("bundle")
     .join("opkssh")
-    .join("windows-amd64")
+    .join(platform)
     .join("sorng_opkssh_vendor.dll");
 
     println!("cargo:rerun-if-changed={}", artifact.display());
@@ -258,6 +282,15 @@ fn report_staged_bridge_health() {
                     "staged vendor DLL at {} is a metadata-only build (no embedded Go runtime)",
                     artifact.display()
                 ));
+            } else if !staged_pe_matches_machine(&bytes, machine)
+                || ![b"runtime.goexit".as_slice(), b"golang.org", b"go1."]
+                    .iter()
+                    .all(|marker| bytes.windows(marker.len()).any(|part| part == *marker))
+            {
+                warn_bridge_unavailable(&format!(
+                    "staged vendor DLL at {} is not a matching {platform} embedded runtime; run the verified staging command",
+                    artifact.display()
+                ));
             }
         }
         Err(error) => {
@@ -267,6 +300,26 @@ fn report_staged_bridge_health() {
             );
         }
     }
+}
+
+fn staged_pe_matches_machine(bytes: &[u8], expected: u16) -> bool {
+    if bytes.get(..2) != Some(b"MZ") {
+        return false;
+    }
+    let Some(offset) = bytes
+        .get(60..64)
+        .and_then(|v| v.try_into().ok())
+        .map(u32::from_le_bytes)
+    else {
+        return false;
+    };
+    let offset = offset as usize;
+    bytes.get(offset..offset.saturating_add(4)) == Some(b"PE\0\0")
+        && bytes
+            .get(offset.saturating_add(4)..offset.saturating_add(6))
+            .and_then(|v| v.try_into().ok())
+            .map(u16::from_le_bytes)
+            == Some(expected)
 }
 
 /// Repository root, derived from this crate's manifest directory
@@ -354,7 +407,7 @@ fn prepare_checkout_for_build(checkout_path: &Path, out_dir: &Path) -> Result<Pa
     }
 
     println!(
-        "cargo:warning=Applying repo-owned OPKSSH bridge overlay for openpubkey/opkssh@{PINNED_UPSTREAM_REV}"
+        "Applying repo-owned OPKSSH bridge overlay for openpubkey/opkssh@{PINNED_UPSTREAM_REV}"
     );
 
     Ok(work_dir)
@@ -362,7 +415,10 @@ fn prepare_checkout_for_build(checkout_path: &Path, out_dir: &Path) -> Result<Pa
 
 fn checkout_requires_overlay(checkout_path: &Path) -> bool {
     !checkout_path.join("libopkssh_cabi.go").is_file()
-        || !checkout_path.join("commands").join("embedded_login.go").is_file()
+        || !checkout_path
+            .join("commands")
+            .join("embedded_login.go")
+            .is_file()
         || !checkout_path.join("libopkssh").join("login.go").is_file()
 }
 
@@ -475,6 +531,8 @@ fn go_arch() -> String {
 fn ensure_static_unwinder(out_dir: &Path) {
     if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows"
         || env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default() != "gnu"
+        // LLVM-MinGW uses its own static unwind runtime, not GCC's libgcc_s.
+        || env::var("TARGET").unwrap_or_default().ends_with("gnullvm")
     {
         return;
     }
@@ -531,14 +589,7 @@ fn emit_platform_link_libs() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "windows" {
         for library in [
-            "advapi32",
-            "bcrypt",
-            "crypt32",
-            "iphlpapi",
-            "netapi32",
-            "secur32",
-            "userenv",
-            "ws2_32",
+            "advapi32", "bcrypt", "crypt32", "iphlpapi", "netapi32", "secur32", "userenv", "ws2_32",
         ] {
             println!("cargo:rustc-link-lib={library}");
         }

@@ -15,6 +15,7 @@ import {
   resolveDevPort,
   DEFAULT_PORT,
 } from "./dev-port.mjs";
+import { stageVendorArtifact } from "./stage-opkssh-vendor.mjs";
 
 const require = createRequire(import.meta.url);
 const tauriConfigPath = fileURLToPath(
@@ -84,6 +85,24 @@ export function buildTauriLaunchPlan({
   };
 }
 
+export function prepareTauriDevOpkssh(
+  passthrough,
+  env,
+  log,
+  stage = stageVendorArtifact,
+) {
+  return stage({
+    argv: passthrough.filter(
+      (arg, index) =>
+        arg === "--target" ||
+        passthrough[index - 1] === "--target" ||
+        arg.startsWith("--target="),
+    ),
+    env,
+    log,
+  });
+}
+
 export async function main(passthrough = process.argv.slice(2)) {
   const log = (message) => console.log(`[tauri-dev] ${message}`);
   const preferred = parseDevPort(
@@ -108,8 +127,9 @@ export async function main(passthrough = process.argv.slice(2)) {
     "Cargo defaults include all supported features; reduced builds require --no-default-features. Native services still require their documented drivers/tools.",
   );
   log(
-    "OPKSSH wrapper is included by default. Embedded login needs the existing staged bridge; otherwise the supported CLI must be installed. Development preserves staged artifacts.",
+    "Checking the embedded OPKSSH runtime before native launch; explicit CLI-only opt-out uses SORNG_OPKSSH_VENDOR_DISABLE_BRIDGE=1.",
   );
+  prepareTauriDevOpkssh(passthrough, plan.env, log);
 
   const tauriBin = require.resolve("@tauri-apps/cli/tauri.js");
   const child = spawn(process.execPath, [tauriBin, ...plan.tauriArgs], {

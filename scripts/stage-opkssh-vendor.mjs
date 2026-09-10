@@ -1,345 +1,254 @@
 #!/usr/bin/env node
-
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyOpksshVendorArtifact } from "./opkssh-vendor-artifact.mjs";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "..");
-const manifestPath = path.join(
-  repoRoot,
-  "src-tauri",
-  "crates",
-  "sorng-opkssh-vendor",
-  "Cargo.toml",
-);
-const bundleRoot = path.join(
-  repoRoot,
-  "src-tauri",
-  "crates",
-  "sorng-opkssh-vendor",
-  "bundle",
-  "opkssh",
-);
-const targetNames = new Set(["sorng-opkssh-vendor", "sorng_opkssh_vendor"]);
-const userArgs = process.argv.slice(2);
-const bundleGateEnv = "SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE";
-const goBinaryEnv = "SORNG_OPKSSH_VENDOR_GO";
-
-function candidateGoBinaries() {
-  const candidates = [];
-
-  if (process.env[goBinaryEnv]) {
-    candidates.push(process.env[goBinaryEnv]);
+const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+const gate = "SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE";
+const enabled = (value) =>
+  ["1", "true", "yes", "on", "enable", "enabled"].includes(
+    value?.trim().toLowerCase(),
+  );
+const disabled = (value) =>
+  ["0", "false", "no", "off", "disable", "disabled"].includes(
+    value?.trim().toLowerCase(),
+  );
+function argumentValue(argv, key) {
+  const inline = argv.find((arg) => arg.startsWith(`${key}=`));
+  if (inline) {
+    const value = inline.slice(key.length + 1);
+    if (!value) throw new Error(`${key} requires a value`);
+    return value;
   }
-
-  if (process.platform === "win32") {
-    candidates.push(
-      "C:/Users/Mariana/scoop/apps/go/current/bin/go.exe",
-      "C:/Users/Mariana/scoop/shims/go.exe",
-    );
-  }
-
-  return candidates.filter(Boolean);
+  const index = argv.indexOf(key);
+  if (index >= 0 && (!argv[index + 1] || argv[index + 1].startsWith("--")))
+    throw new Error(`${key} requires a value`);
+  return index >= 0 ? argv[index + 1] : undefined;
 }
 
-function resolveGoBinary() {
-  for (const candidate of candidateGoBinaries()) {
-    const resolved = path.isAbsolute(candidate)
-      ? candidate
-      : path.resolve(repoRoot, candidate);
-    if (existsSync(resolved)) {
-      return resolved;
-    }
-  }
-
-  return null;
-}
-
-function pathEnvKey(env) {
-  return Object.keys(env).find((key) => key.toLowerCase() === "path") || "PATH";
-}
-
-function cargoBuildEnv() {
-  const env = { ...process.env };
-  const goBinary = resolveGoBinary();
-  if (!goBinary) {
-    return env;
-  }
-
-  const goDir = path.dirname(goBinary);
-  const pathKey = pathEnvKey(env);
-  const currentPath = env[pathKey] || "";
-  const pathEntries = currentPath.split(path.delimiter).filter(Boolean);
-  if (!pathEntries.includes(goDir)) {
-    env[pathKey] = [goDir, ...pathEntries].join(path.delimiter);
-  }
-  env[goBinaryEnv] = goBinary;
-  return env;
-}
-
-function hasFlag(flag) {
-  return userArgs.includes(flag);
-}
-
-function cargoUserArgs() {
-  return userArgs.filter((arg) => arg !== "--enable" && arg !== "--disable");
-}
-
-function readArgValue(flag) {
-  const index = userArgs.indexOf(flag);
-  if (index === -1 || index === userArgs.length - 1) {
-    return null;
-  }
-
-  return userArgs[index + 1];
-}
-
-function hostTargetSpec() {
-  let osKey;
-  if (process.platform === "win32") {
-    osKey = "windows";
-  } else if (process.platform === "darwin") {
-    osKey = "macos";
-  } else if (process.platform === "linux") {
-    osKey = "linux";
-  }
-
-  let archKey;
-  if (process.arch === "arm64") {
-    archKey = "arm64";
-  } else if (process.arch === "x64") {
-    archKey = "amd64";
-  }
-
-  if (!osKey || !archKey) {
+export function opksshTarget(
+  argv = [],
+  env = process.env,
+  platform = process.platform,
+  arch = process.arch,
+) {
+  const triple =
+    argumentValue(argv, "--target") ||
+    env.CARGO_BUILD_TARGET ||
+    env.TAURI_ENV_TARGET_TRIPLE ||
+    env.TARGET;
+  const osKey = triple
+    ? /windows/.test(triple)
+      ? "windows"
+      : /darwin|apple/.test(triple)
+        ? "macos"
+        : /linux/.test(triple)
+          ? "linux"
+          : null
+    : { win32: "windows", darwin: "macos", linux: "linux" }[platform];
+  const archKey = triple
+    ? /^(aarch64|arm64)-/.test(triple)
+      ? "arm64"
+      : /^(x86_64|amd64)-/.test(triple)
+        ? "amd64"
+        : null
+    : { arm64: "arm64", x64: "amd64" }[arch];
+  if (!osKey || !archKey)
     throw new Error(
-      `Unsupported OPKSSH vendor host platform: ${process.platform}-${process.arch}`,
+      `Unsupported OPKSSH target: ${triple || `${platform}-${arch}`}`,
     );
-  }
-
-  return { triple: null, osKey, archKey };
+  return { osKey, archKey, triple };
 }
 
-function normalizeTargetSpec(targetTriple) {
-  if (!targetTriple) {
-    return hostTargetSpec();
-  }
-
-  const triple = targetTriple.toLowerCase();
-  let osKey;
-  if (triple.includes("windows")) {
-    osKey = "windows";
-  } else if (triple.includes("darwin") || triple.includes("apple")) {
-    osKey = "macos";
-  } else if (triple.includes("linux")) {
-    osKey = "linux";
-  }
-
-  let archKey;
-  if (triple.startsWith("aarch64") || triple.startsWith("arm64")) {
-    archKey = "arm64";
-  } else if (triple.startsWith("x86_64") || triple.startsWith("amd64")) {
-    archKey = "amd64";
-  }
-
-  if (!osKey || !archKey) {
-    throw new Error(`Unsupported OPKSSH vendor target triple: ${targetTriple}`);
-  }
-
-  return { triple: targetTriple, osKey, archKey };
-}
-
-function inferTargetTriple() {
-  return (
-    readArgValue("--target") ||
-    process.env.CARGO_BUILD_TARGET ||
-    process.env.TAURI_ENV_TARGET_TRIPLE ||
-    process.env.TARGET ||
-    null
-  );
-}
-
-function artifactNameFor(osKey) {
-  if (osKey === "windows") {
-    return "sorng_opkssh_vendor.dll";
-  }
-  if (osKey === "macos") {
-    return "libsorng_opkssh_vendor.dylib";
-  }
-  return "libsorng_opkssh_vendor.so";
-}
-
-function envFlagEnabled(value) {
-  if (!value) {
+export function opksshStagingEnabled(argv = [], env = process.env) {
+  if (
+    argv.includes("--disable") ||
+    enabled(env.SORNG_OPKSSH_VENDOR_DISABLE_BRIDGE)
+  )
     return false;
-  }
+  if (argv.includes("--enable")) return true;
+  if (disabled(env[gate])) return false;
+  if (env[gate] && !enabled(env[gate]))
+    throw new Error(`${gate} must be a boolean value`);
+  return true;
+}
 
-  return ["1", "true", "yes", "on", "enable", "enabled"].includes(
-    value.trim().toLowerCase(),
+/** Import-safe and injectable for tests: no Cargo, network or file changes on import. */
+export function stageVendorArtifact({
+  argv = process.argv.slice(2),
+  env = process.env,
+  root = repoRoot,
+  platform = process.platform,
+  arch = process.arch,
+  run = spawnSync,
+  log = (message) => process.stdout.write(`${message}\n`),
+} = {}) {
+  const target = opksshTarget(argv, env, platform, arch);
+  const artifact =
+    target.osKey === "windows"
+      ? "sorng_opkssh_vendor.dll"
+      : target.osKey === "macos"
+        ? "libsorng_opkssh_vendor.dylib"
+        : "libsorng_opkssh_vendor.so";
+  const crate = path.join(root, "src-tauri", "crates", "sorng-opkssh-vendor");
+  const bundleRoot = path.join(crate, "bundle", "opkssh");
+  const destination = path.join(
+    bundleRoot,
+    `${target.osKey}-${target.archKey}`,
+    artifact,
   );
-}
-
-function stagingEnabled() {
-  if (hasFlag("--enable")) {
-    return true;
-  }
-
-  if (hasFlag("--disable")) {
-    return false;
-  }
-
-  return envFlagEnabled(process.env[bundleGateEnv]);
-}
-
-function resolveTargetDir() {
-  const targetDirArg = readArgValue("--target-dir");
-  if (targetDirArg) {
-    return path.resolve(repoRoot, targetDirArg);
-  }
-
-  if (process.env.CARGO_TARGET_DIR) {
-    return path.resolve(repoRoot, process.env.CARGO_TARGET_DIR);
-  }
-
-  return path.join(repoRoot, "src-tauri", "target");
-}
-
-function resolveProfileDir() {
-  if (hasFlag("--release")) {
-    return "release";
-  }
-
-  return readArgValue("--profile") || "debug";
-}
-
-function resolveFallbackArtifactPath(targetSpec, expectedArtifactName) {
-  const baseTargetDir = resolveTargetDir();
-  const profileDir = resolveProfileDir();
-
-  if (targetSpec.triple) {
-    return path.join(
-      baseTargetDir,
-      targetSpec.triple,
-      profileDir,
-      expectedArtifactName,
+  if (!opksshStagingEnabled(argv, env)) {
+    // Opt-out removes only this exact target artifact; never other architectures.
+    rmSync(destination, { force: true });
+    mkdirSync(bundleRoot, { recursive: true });
+    log(
+      `OPKSSH embedded runtime explicitly disabled for ${target.osKey}-${target.archKey}; external CLI is required.`,
     );
+    return { disabled: true, destination };
   }
-
-  return path.join(baseTargetDir, profileDir, expectedArtifactName);
-}
-
-function parseArtifactPath(stdout, expectedArtifactName) {
-  let discoveredPath = null;
-
-  for (const line of stdout.split(/\r?\n/)) {
-    if (!line.startsWith("{")) {
-      continue;
-    }
-
+  const verify = (file) => verifyOpksshVendorArtifact(file, target);
+  const prebuilt = env.SORNG_OPKSSH_VENDOR_ARTIFACT;
+  if (!prebuilt && existsSync(destination)) {
     try {
-      const message = JSON.parse(line);
-      if (message.reason !== "compiler-artifact") {
-        continue;
-      }
-
-      if (!targetNames.has(message.target?.name)) {
-        continue;
-      }
-
-      for (const filename of message.filenames || []) {
-        if (path.basename(filename) === expectedArtifactName) {
-          discoveredPath = filename;
-        }
-      }
+      verify(destination);
+      log(`Verified and preserved embedded OPKSSH bridge: ${destination}`);
+      return { reused: true, destination };
     } catch {
-      // Ignore non-JSON diagnostic lines.
+      // Replace a stale metadata wrapper only after its replacement verifies.
     }
   }
-
-  return discoveredPath;
+  const execute = (command, args, options = {}) => {
+    const result = run(command, args, {
+      cwd: root,
+      env,
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 32 * 1024 * 1024,
+      ...options,
+    });
+    if (result.stdout) log(result.stdout.trimEnd());
+    if (result.stderr) log(result.stderr.trimEnd());
+    if (result.error || result.status !== 0)
+      throw new Error(
+        `OPKSSH bridge build failed (${result.error?.message ?? `exit ${result.status}`}); existing staged artifacts were preserved. See docs/opkssh-vendor-bridge.md.`,
+      );
+    return result;
+  };
+  let source;
+  if (prebuilt) {
+    if (!path.isAbsolute(prebuilt))
+      throw new Error(
+        "SORNG_OPKSSH_VENDOR_ARTIFACT must be an absolute path to a matching prebuilt bridge",
+      );
+    source = prebuilt;
+  } else if (target.osKey === "windows") {
+    if (platform !== "win32")
+      throw new Error(
+        `OPKSSH Windows bridges require a native Windows runner or SORNG_OPKSSH_VENDOR_ARTIFACT with a verified ${target.osKey}-${target.archKey} bridge.`,
+      );
+    const bridgeTarget =
+      target.archKey === "arm64"
+        ? "aarch64-pc-windows-gnullvm"
+        : "x86_64-pc-windows-gnu";
+    const cached = path.join(
+      root,
+      "src-tauri",
+      "target-opkssh-gnu",
+      bridgeTarget,
+      "release",
+      artifact,
+    );
+    try {
+      verify(cached);
+      source = cached;
+    } catch {
+      /* Build a missing/invalid real bridge. */
+    }
+    if (!source) {
+      execute(process.execPath, [
+        path.join(root, "scripts", "build-opkssh-vendor-bridge.mjs"),
+        "--target",
+        bridgeTarget,
+        "--skip-stage",
+      ]);
+      source = cached;
+    }
+  } else {
+    const cargoArgs = argv.filter(
+      (arg) => !["--enable", "--disable"].includes(arg),
+    );
+    if (!argumentValue(argv, "--target") && target.triple)
+      cargoArgs.push("--target", target.triple);
+    // Staging never contends with the app watcher's build directory by default.
+    const targetDir =
+      argumentValue(argv, "--target-dir") ||
+      env.CARGO_TARGET_DIR ||
+      path.join(root, ".artifacts", "cargo-opkssh-vendor");
+    if (!argumentValue(argv, "--target-dir"))
+      cargoArgs.push("--target-dir", targetDir);
+    const result = execute("cargo", [
+      "build",
+      "--manifest-path",
+      path.join(crate, "Cargo.toml"),
+      "--message-format=json-render-diagnostics",
+      ...cargoArgs,
+    ]);
+    for (const line of (result.stdout ?? "").split(/\r?\n/)) {
+      try {
+        const message = JSON.parse(line);
+        if (
+          message.reason === "compiler-artifact" &&
+          ["sorng-opkssh-vendor", "sorng_opkssh_vendor"].includes(
+            message.target?.name,
+          )
+        )
+          source =
+            message.filenames?.find(
+              (file) => path.basename(file) === artifact,
+            ) ?? source;
+      } catch {
+        /* Cargo may emit non-JSON progress lines. */
+      }
+    }
+    if (!source)
+      throw new Error(
+        "Cargo did not report the OPKSSH vendor library artifact",
+      );
+  }
+  verify(source);
+  if (path.resolve(source) === path.resolve(destination))
+    return { reused: true, destination };
+  mkdirSync(path.dirname(destination), { recursive: true });
+  const temporary = `${destination}.${process.pid}.staging`;
+  try {
+    copyFileSync(source, temporary);
+    verify(temporary);
+    renameSync(temporary, destination);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+  log(`Verified embedded OPKSSH bridge staged: ${source} -> ${destination}`);
+  return { reused: false, destination };
 }
 
-function scrubStagedArtifacts() {
-  rmSync(bundleRoot, { recursive: true, force: true });
-  mkdirSync(bundleRoot, { recursive: true });
-}
-
-function stageVendorArtifact() {
-  if (!stagingEnabled()) {
-    scrubStagedArtifacts();
-    process.stdout.write(
-      `OPKSSH vendor bundle staging disabled; scrubbed ${bundleRoot}. Set ${bundleGateEnv}=1 or pass --enable to stage the wrapper.\n`,
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  try {
+    stageVendorArtifact();
+  } catch (error) {
+    process.stderr.write(
+      `${error instanceof Error ? error.message : String(error)}\n`,
     );
-    return;
+    process.exitCode = 1;
   }
-
-  const targetSpec = normalizeTargetSpec(inferTargetTriple());
-  const expectedArtifactName = artifactNameFor(targetSpec.osKey);
-  const cargoArgs = [
-    "build",
-    "--manifest-path",
-    manifestPath,
-    "--message-format=json-render-diagnostics",
-    ...cargoUserArgs(),
-  ];
-
-  if (!readArgValue("--target") && targetSpec.triple) {
-    cargoArgs.push("--target", targetSpec.triple);
-  }
-
-  const build = spawnSync("cargo", cargoArgs, {
-    cwd: repoRoot,
-    env: cargoBuildEnv(),
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  });
-
-  if (build.stdout) {
-    process.stdout.write(build.stdout);
-  }
-  if (build.stderr) {
-    process.stderr.write(build.stderr);
-  }
-
-  if (build.status !== 0) {
-    process.exit(build.status ?? 1);
-  }
-
-  const sourceArtifactPath =
-    parseArtifactPath(build.stdout || "", expectedArtifactName) ||
-    resolveFallbackArtifactPath(targetSpec, expectedArtifactName);
-
-  if (!existsSync(sourceArtifactPath)) {
-    throw new Error(
-      `Built OPKSSH vendor artifact was not found at ${sourceArtifactPath}`,
-    );
-  }
-
-  const platformDir = `${targetSpec.osKey}-${targetSpec.archKey}`;
-  const stagedDir = path.join(bundleRoot, platformDir);
-  const stagedArtifactPath = path.join(stagedDir, expectedArtifactName);
-
-  scrubStagedArtifacts();
-  mkdirSync(stagedDir, { recursive: true });
-  copyFileSync(sourceArtifactPath, stagedArtifactPath);
-
-  if (!existsSync(stagedArtifactPath)) {
-    throw new Error(
-      `Failed to stage OPKSSH vendor artifact into ${stagedArtifactPath}`,
-    );
-  }
-
-  process.stdout.write(
-    `Staged ${sourceArtifactPath} -> ${stagedArtifactPath} (${bundleGateEnv}=1)\n`,
-  );
-}
-
-try {
-  stageVendorArtifact();
-} catch (error) {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exit(1);
 }

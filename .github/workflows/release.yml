@@ -527,6 +527,40 @@ jobs:
           go-version: "1.24.12"
           cache-dependency-path: .ci/opkssh-source/go.sum
 
+      - name: Provision x64 GNU OPKSSH bridge toolchain
+        if: matrix.rust_target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw "Could not install the native GNU bridge toolchain." }
+          $gccTarget = & gcc -dumpmachine
+          if ($LASTEXITCODE -ne 0 -or $gccTarget.Trim() -ne 'x86_64-w64-mingw32') {
+            throw "The Windows x64 runner must provide native MinGW gcc for the embedded Go bridge."
+          }
+
+      - name: Provision verified ARM64 LLVM-MinGW OPKSSH bridge toolchain
+        if: matrix.rust_target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          rustup target add aarch64-pc-windows-gnullvm
+          if ($LASTEXITCODE -ne 0) { throw "Could not install the native ARM64 bridge target." }
+          $archiveName = 'llvm-mingw-20260616-ucrt-aarch64.zip'
+          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
+          $expectedHash = '312593669435bd0bfc1a43ac3fba23c8b27e0610bade88b2738e5a01702a99ba'
+          Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/20260616/$archiveName" -OutFile $archivePath
+          if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) {
+            throw "The pinned ARM64 LLVM-MinGW archive failed SHA256 verification."
+          }
+          $extractRoot = Join-Path $env:RUNNER_TEMP 'opkssh-llvm-mingw'
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
+          $compilerBin = Join-Path $extractRoot 'llvm-mingw-20260616-ucrt-aarch64/bin'
+          if (-not (Test-Path -LiteralPath (Join-Path $compilerBin 'aarch64-w64-mingw32-clang.exe'))) {
+            throw "Verified LLVM-MinGW archive is missing its native ARM64 compiler."
+          }
+          $compilerBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Cache Cargo build
         if: matrix.platform != 'linux'
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
