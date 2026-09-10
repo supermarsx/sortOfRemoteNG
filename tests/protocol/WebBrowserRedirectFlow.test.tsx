@@ -122,7 +122,7 @@ const initialSession = (): ConnectionSession => ({
   connectionId: h.connections[0].id,
   name: "NAS website",
   hostname: "quickconnect.example.test",
-  protocol: "https",
+  protocol: h.connections[0].protocol,
   ownerDatabaseId: "owned",
   status: "connected",
   startTime: new Date(),
@@ -290,69 +290,119 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
-  it("automatically continues two trusted HTTPS hops using the original persisted list and no source credentials", async () => {
-    h.connections[0] = {
-      ...h.connections[0],
-      basicAuthUsername: "private-user",
-      basicAuthPassword: "private-password",
-      httpTrustedRedirectDestinations: {
-        version: 1,
-        autoContinue: true,
-        origins: [
-          "https://relay-1.example.test",
-          "https://relay-2.example.test",
-        ],
-      },
-    };
-    const view = await mounted();
-    for (let hop = 1; hop <= 2; hop++) {
+  it.each([undefined, false, true])(
+    "automatically continues two trusted HTTPS hops with legacy autoContinue=%s and no source credentials",
+    async (autoContinue) => {
+      h.connections[0] = {
+        ...h.connections[0],
+        basicAuthUsername: "private-user",
+        basicAuthPassword: "private-password",
+        httpTrustedRedirectDestinations: {
+          version: 1,
+          ...(autoContinue === undefined ? {} : { autoContinue }),
+          origins: [
+            "https://relay-1.example.test",
+            "https://relay-2.example.test",
+          ],
+        },
+      };
+      const view = await mounted();
+      for (let hop = 1; hop <= 2; hop++) {
+        redirect(
+          view.container.querySelector("iframe")!,
+          `https://relay-${hop}.example.test/admin/`,
+        );
+        await waitFor(() =>
+          expect(
+            proxies,
+            `${view.container.textContent} / reads=${h.readCurrent.mock.calls.length} / ${h.invoke.mock.calls.map(([name, args]) => `${name}${args?.receiptId ? ":consume" : ""}`).join(",")}`,
+          ).toHaveLength(hop + 1),
+        );
+        await waitFor(() =>
+          expect(view.container.querySelector("iframe")?.src).toContain(
+            proxies[hop].proxy_url,
+          ),
+        );
+        const target = resolveRuntimeConnection(
+          [],
+          h.sessions[0].connectionId,
+        )!;
+        expect(target).not.toHaveProperty("basicAuthUsername");
+        expect(target).not.toHaveProperty("basicAuthPassword");
+        expect(target).not.toHaveProperty("password");
+        expect(target).not.toHaveProperty("httpTrustedRedirectDestinations");
+        expect(
+          getRuntimeWebNavigation(target.id)?.trustedRedirectSource
+            ?.savedConnectionId,
+        ).toBe("saved-nas");
+        expect(getRuntimeWebNavigation(target.id)?.redirectHops).toBe(hop);
+        expect(h.sessions[0]).toMatchObject({
+          id: "web-tab",
+          ownerDatabaseId: "owned",
+        });
+      }
+      const destinationStarts = h.invoke.mock.calls
+        .filter(([name]) => name === "start_basic_auth_proxy")
+        .slice(1);
+      for (const [, args] of destinationStarts) {
+        expect(JSON.stringify(args)).not.toContain("private-user");
+        expect(JSON.stringify(args)).not.toContain("private-password");
+        expect(args.config).toMatchObject({ username: "", password: "" });
+      }
+      expect(h.readCurrent.mock.calls.length).toBeGreaterThanOrEqual(4);
+      expect(
+        h.invoke.mock.calls.filter(
+          ([name]) => name === "get_tls_certificate_info",
+        ),
+      ).toHaveLength(3);
+      expect(h.dispatchAndFlush).not.toHaveBeenCalled();
+      expect(h.persistedConnections).toHaveLength(1);
+    },
+  );
+  it.each(["http", "https"] as const)(
+    "automatically opens a trusted HTTP destination from %s only with the existing policy",
+    async (protocol) => {
+      h.connections[0] = {
+        ...h.connections[0],
+        protocol,
+        port: protocol === "https" ? 443 : 80,
+        httpApplication: { version: 1, id: "custom", loginMode: "manual" },
+        basicAuthUsername: "private-user",
+        basicAuthPassword: "private-password",
+        httpProxyPolicy: {
+          ...DEFAULT_HTTP_PROXY_POLICY,
+          allowCrossOriginRedirects: true,
+          allowHttpDowngradeRedirects: true,
+        },
+        httpTrustedRedirectDestinations: {
+          version: 1,
+          origins: ["http://relay.example.test"],
+          autoContinue: false,
+        },
+      };
+      const view = await mounted();
       redirect(
         view.container.querySelector("iframe")!,
-        `https://relay-${hop}.example.test/admin/`,
+        "http://relay.example.test/admin/",
       );
-      await waitFor(() =>
-        expect(
-          proxies,
-          `${view.container.textContent} / reads=${h.readCurrent.mock.calls.length} / ${h.invoke.mock.calls.map(([name, args]) => `${name}${args?.receiptId ? ":consume" : ""}`).join(",")}`,
-        ).toHaveLength(hop + 1),
-      );
+      await waitFor(() => expect(proxies).toHaveLength(2));
       await waitFor(() =>
         expect(view.container.querySelector("iframe")?.src).toContain(
-          proxies[hop].proxy_url,
+          proxies[1].proxy_url,
         ),
       );
+      expect(proxies[1].target).toContain("http://relay.example.test");
       const target = resolveRuntimeConnection([], h.sessions[0].connectionId)!;
-      expect(target).not.toHaveProperty("basicAuthUsername");
+      expect(target.protocol).toBe("http");
       expect(target).not.toHaveProperty("basicAuthPassword");
-      expect(target).not.toHaveProperty("password");
-      expect(target).not.toHaveProperty("httpTrustedRedirectDestinations");
-      expect(
-        getRuntimeWebNavigation(target.id)?.trustedRedirectSource
-          ?.savedConnectionId,
-      ).toBe("saved-nas");
-      expect(getRuntimeWebNavigation(target.id)?.redirectHops).toBe(hop);
-      expect(h.sessions[0]).toMatchObject({
-        id: "web-tab",
-        ownerDatabaseId: "owned",
-      });
-    }
-    const destinationStarts = h.invoke.mock.calls
-      .filter(([name]) => name === "start_basic_auth_proxy")
-      .slice(1);
-    for (const [, args] of destinationStarts) {
-      expect(JSON.stringify(args)).not.toContain("private-user");
-      expect(JSON.stringify(args)).not.toContain("private-password");
-      expect(args.config).toMatchObject({ username: "", password: "" });
-    }
-    expect(h.readCurrent.mock.calls.length).toBeGreaterThanOrEqual(4);
-    expect(
-      h.invoke.mock.calls.filter(
-        ([name]) => name === "get_tls_certificate_info",
-      ),
-    ).toHaveLength(3);
-    expect(h.dispatchAndFlush).not.toHaveBeenCalled();
-    expect(h.persistedConnections).toHaveLength(1);
-  });
+      const starts = h.invoke.mock.calls.filter(
+        ([name]) => name === "start_basic_auth_proxy",
+      );
+      expect(JSON.stringify(starts[1][1])).not.toContain("private-");
+      expect(starts[1][1].config).toMatchObject({ username: "", password: "" });
+      expect(h.dispatchAndFlush).not.toHaveBeenCalled();
+    },
+  );
   it("does not auto-continue using an optimistic unsaved trusted list", async () => {
     const view = await mounted();
     h.connections = [
@@ -444,7 +494,6 @@ describe("actual website redirect review integration", () => {
         {
           version: 1,
           origins: ["https://relay-2.example.test"],
-          autoContinue: false,
         },
       ),
     );

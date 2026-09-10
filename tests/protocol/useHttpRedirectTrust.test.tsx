@@ -62,11 +62,11 @@ const review: HttpRedirectReview = {
 };
 const grant = (
   origins = ["https://destination.invalid"],
-  autoContinue = true,
+  autoContinue?: boolean,
 ) => ({
   version: 1 as const,
   origins,
-  autoContinue,
+  ...(autoContinue === undefined ? {} : { autoContinue }),
 });
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -142,12 +142,33 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("database-owned trusted HTTP redirect preferences", () => {
+  it("matches hydrated creation timestamps without dropping creation identity or invalid distinctions", () => {
+    const original = httpRedirectTrustIdentity(source);
+    for (const createdAt of [
+      "2026-09-10T00:00:00.000Z",
+      "2026-09-10T01:00:00+01:00",
+      new Date("2026-09-10"),
+    ]) {
+      expect(
+        httpRedirectTrustIdentity({ ...source, createdAt } as Connection),
+      ).toBe(original);
+    }
+    const distinct = [
+      "2026-09-11",
+      "invalid-creation-one",
+      "invalid-creation-two",
+      undefined,
+      null,
+    ].map((createdAt) =>
+      httpRedirectTrustIdentity({ ...source, createdAt } as Connection),
+    );
+    expect(new Set([original, ...distinct]).size).toBe(distinct.length + 1);
+  });
   it("establishes reference-only original provenance even with no trusted destinations", async () => {
     const view = fixture();
     const result = await view.result.current.inspect(review, vi.fn());
     expect(result).toMatchObject({
       trusted: false,
-      autoContinue: false,
       provenance: {
         databaseId: "db-a",
         savedConnectionId: source.id,
@@ -162,34 +183,35 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     expect(view.context.dispatchAndFlush).not.toHaveBeenCalled();
   });
 
-  it("requires exact persisted membership and the independent persisted automatic setting", async () => {
-    const view = fixture({
-      ...source,
-      httpTrustedRedirectDestinations: grant(),
-    });
-    expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
-      trusted: true,
-      autoContinue: true,
-    });
-    expect(
-      await view.result.current.inspect(
-        { ...review, destinationUrl: "https://other.invalid/" },
-        vi.fn(),
-      ),
-    ).toMatchObject({ trusted: false });
-    view.persisted.connections[0].httpTrustedRedirectDestinations = grant(
-      undefined,
-      false,
-    );
-    view.context.state.connections[0] = {
-      ...source,
-      httpTrustedRedirectDestinations: grant(undefined, false),
-    };
-    expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
-      trusted: true,
-      autoContinue: false,
-    });
-  });
+  it.each([undefined, false, true])(
+    "requires exact persisted membership and ignores legacy automatic setting %s",
+    async (autoContinue) => {
+      const view = fixture({
+        ...source,
+        httpTrustedRedirectDestinations: grant(undefined, autoContinue),
+      });
+      expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
+        trusted: true,
+      });
+      expect(
+        await view.result.current.inspect(
+          { ...review, destinationUrl: "https://other.invalid/" },
+          vi.fn(),
+        ),
+      ).toMatchObject({ trusted: false });
+      view.persisted.connections[0].httpTrustedRedirectDestinations = grant(
+        undefined,
+        false,
+      );
+      view.context.state.connections[0] = {
+        ...source,
+        httpTrustedRedirectDestinations: grant(undefined, false),
+      };
+      expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
+        trusted: true,
+      });
+    },
+  );
 
   it("does not approve optimistic additions or pending revocations that disagree with durable storage", async () => {
     const view = fixture({
@@ -202,7 +224,6 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     );
     expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
       trusted: false,
-      autoContinue: false,
     });
     view.persisted.connections[0].httpTrustedRedirectDestinations = grant();
     view.context.state.connections[0] = {
@@ -211,7 +232,6 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     };
     expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
       trusted: false,
-      autoContinue: false,
     });
   });
 
@@ -275,7 +295,7 @@ describe("database-owned trusted HTTP redirect preferences", () => {
   );
 
   it.each([false, true])(
-    "flushes, appends only to the original saved source, and verifies both stores (autoContinue=%s)",
+    "flushes, appends only to the original saved source, and discards legacy autoContinue=%s in both stores",
     async (autoContinue) => {
       const view = fixture({
         ...source,
@@ -293,10 +313,10 @@ describe("database-owned trusted HTTP redirect preferences", () => {
         type: "UPDATE_CONNECTION",
         payload: {
           ...source,
-          httpTrustedRedirectDestinations: grant(
-            ["https://existing.invalid", "https://destination.invalid"],
-            autoContinue,
-          ),
+          httpTrustedRedirectDestinations: grant([
+            "https://existing.invalid",
+            "https://destination.invalid",
+          ]),
         },
       });
       expect(view.persisted.connections[0].basicAuthPassword).toBe(
@@ -322,8 +342,8 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     };
     expect(
       view.context.state.connections[0].httpTrustedRedirectDestinations
-        ?.autoContinue,
-    ).toBe(true);
+        ?.origins,
+    ).toEqual(["https://destination.invalid"]);
     expect(inspection.assertLaunchCurrent).toThrow(
       "Trusted redirect preferences are unavailable",
     );
@@ -344,7 +364,6 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     );
     expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
       trusted: false,
-      autoContinue: false,
     });
     expect(
       view.persisted.connections[0].httpTrustedRedirectDestinations,
@@ -490,7 +509,6 @@ describe("database-owned trusted HTTP redirect preferences", () => {
       await later.result.current.inspect(laterReview, vi.fn()),
     ).toMatchObject({
       trusted: true,
-      autoContinue: false,
       provenance: first.provenance,
     });
     await later.result.current.remember(
@@ -524,7 +542,6 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     );
     expect(await view.result.current.inspect(review, vi.fn())).toMatchObject({
       trusted: false,
-      autoContinue: false,
       provenance: null,
     });
     await expect(view.result.current.remember(review, vi.fn())).rejects.toThrow(

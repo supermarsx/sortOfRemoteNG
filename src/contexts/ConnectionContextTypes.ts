@@ -41,6 +41,14 @@ export type ConnectionAction =
   | { type: "SET_CONNECTIONS"; payload: Connection[] }
   | { type: "ADD_CONNECTION"; payload: Connection }
   | { type: "UPDATE_CONNECTION"; payload: Connection }
+  | {
+      type: "UPDATE_HTTP_TRUSTED_REDIRECTS";
+      payload: {
+        databaseId: string;
+        generation: number;
+        changes: readonly import("../utils/security/trustedRedirectManagement").TrustedRedirectChange[];
+      };
+    }
   | { type: "DELETE_CONNECTION"; payload: string }
   | {
       type: "RECYCLE_CONNECTIONS";
@@ -103,6 +111,11 @@ export interface ConnectionContextType {
   saveData: () => Promise<void>;
   flushPendingSave: () => Promise<void>;
   loadData: (expectedDatabaseId?: string) => Promise<boolean>;
+  /** Guarded synchronous Provider state, including updates awaiting a React commit. */
+  getCurrentConnections?: (scope: {
+    databaseId: string;
+    generation: number;
+  }) => readonly Connection[];
   /** Older embedded contexts omit this; database-dependent tools fail closed. */
   databaseAvailability?: DatabaseAvailability;
   /** Absent only in older embedded/test contexts; never fall back to side storage. */

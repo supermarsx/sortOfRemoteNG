@@ -62,12 +62,11 @@ export function normalizeHttpRedirectOrigin(value: unknown): string {
   return url.origin;
 }
 
-/** Missing is empty. Malformed present data must not become trusted. */
+/** Missing is empty. Malformed data fails closed; the obsolete toggle is dropped. */
 export function normalizeHttpTrustedRedirectDestinations(
   value: unknown,
 ): HttpTrustedRedirectDestinations {
-  if (value === undefined)
-    return { version: 1, origins: [], autoContinue: false };
+  if (value === undefined) return { version: 1, origins: [] };
   if (!value || typeof value !== "object" || Array.isArray(value))
     return invalid();
   const prototype = Object.getPrototypeOf(value);
@@ -100,7 +99,6 @@ export function normalizeHttpTrustedRedirectDestinations(
   return {
     version: 1,
     origins,
-    autoContinue: fields.autoContinue?.value ?? false,
   };
 }
 

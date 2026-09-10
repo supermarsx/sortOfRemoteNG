@@ -111,31 +111,50 @@ describe("trusted redirect destinations in Advanced settings", () => {
     expect(draft().httpTrustedRedirectDestinations).toEqual({
       version: 1,
       origins: [],
-      autoContinue: false,
     });
   });
-  it("defaults automatic continuation off and preserves explicit choice across list edits and JSON reload", () => {
-    const view = render(<Editor />);
-    const checkbox = screen.getByRole("checkbox", {
-      name: "Automatically continue to trusted HTTPS destinations",
-    });
-    expect(checkbox).not.toBeChecked();
-    fireEvent.click(checkbox);
-    add("https://nas.example");
-    expect(draft().httpTrustedRedirectDestinations.autoContinue).toBe(true);
-    const saved = draft();
-    view.unmount();
-    render(<Editor seed={JSON.parse(JSON.stringify(saved))} />);
-    expect(
-      screen.getByRole("checkbox", {
-        name: "Automatically continue to trusted HTTPS destinations",
-      }),
-    ).toBeChecked();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove https://nas.example" }),
-    );
-    expect(draft().httpTrustedRedirectDestinations.autoContinue).toBe(true);
-    expect(draft()).not.toHaveProperty("httpProxyPolicy");
-    expect(draft()).not.toHaveProperty("httpRedirectAuthentication");
-  });
+  it.each([false, true])(
+    "has no extra opt-in and drops obsolete autoContinue=%s on list edits",
+    (autoContinue) => {
+      const view = render(
+        <Editor
+          seed={{
+            httpTrustedRedirectDestinations: {
+              version: 1,
+              origins: [],
+              autoContinue,
+            },
+          }}
+        />,
+      );
+      expect(
+        screen.queryByRole("checkbox", { name: /Automatically continue/ }),
+      ).toBeNull();
+      expect(
+        screen.getByText(/Saved destinations skip repeat/),
+      ).toHaveTextContent(
+        "Certificate checks, HTTPS-only and downgrade restrictions still apply",
+      );
+      add("https://nas.example");
+      expect(draft().httpTrustedRedirectDestinations).toEqual({
+        version: 1,
+        origins: ["https://nas.example"],
+      });
+      const saved = draft();
+      view.unmount();
+      render(<Editor seed={JSON.parse(JSON.stringify(saved))} />);
+      expect(
+        screen.queryByRole("checkbox", { name: /Automatically continue/ }),
+      ).toBeNull();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove https://nas.example" }),
+      );
+      expect(draft().httpTrustedRedirectDestinations).toEqual({
+        version: 1,
+        origins: [],
+      });
+      expect(draft()).not.toHaveProperty("httpProxyPolicy");
+      expect(draft()).not.toHaveProperty("httpRedirectAuthentication");
+    },
+  );
 });

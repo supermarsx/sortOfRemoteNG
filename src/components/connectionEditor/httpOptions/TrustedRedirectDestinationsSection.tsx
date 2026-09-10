@@ -1,6 +1,5 @@
 import React, { useId, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { CheckboxField } from "../../ui/forms";
 import {
   MAX_TRUSTED_REDIRECT_DESTINATIONS,
   normalizeHttpRedirectOrigin,
@@ -38,7 +37,6 @@ export default function TrustedRedirectDestinationsSection({
               httpTrustedRedirectDestinations: {
                 version: 1,
                 origins: [],
-                autoContinue: false,
               },
             }))
           }
@@ -77,29 +75,13 @@ export default function TrustedRedirectDestinationsSection({
         <h4 className="text-sm font-medium">Trusted redirect destinations</h4>
         <p className="mt-1 text-xs leading-relaxed text-[var(--color-textSecondary)]">
           Exact addresses for this saved connection only. Scheme and port must
-          match; subdomains are not included. This list does not trust a TLS
-          certificate, enable redirects or HTTP downgrades, or authorize login
-          forwarding. Save the connection to retain changes.
+          match; subdomains are not included. Saved destinations skip repeat
+          destination review with an anonymous handoff in this tab, when the
+          redirect policy permits. Certificate checks, HTTPS-only and downgrade
+          restrictions still apply. Forwarding saved login credentials requires
+          separate approval. Save the connection to retain changes.
         </p>
       </div>
-      <CheckboxField
-        variant="form"
-        label="Automatically continue to trusted HTTPS destinations"
-        aria-label="Automatically continue to trusted HTTPS destinations"
-        checked={destinations.autoContinue === true}
-        onChange={(autoContinue) => {
-          mgr.setFormData((previous) => ({
-            ...previous,
-            httpTrustedRedirectDestinations: {
-              ...normalizeHttpTrustedRedirectDestinations(
-                previous.httpTrustedRedirectDestinations,
-              ),
-              autoContinue,
-            },
-          }));
-        }}
-        description="Off by default. Applies only to anonymous handoffs with normal certificate checks. Login forwarding and HTTP destinations still require manual approval. The reviewed-redirect option must also be enabled."
-      />
       {destinations.origins.length ? (
         <ul
           className="max-h-48 space-y-1 overflow-y-auto"

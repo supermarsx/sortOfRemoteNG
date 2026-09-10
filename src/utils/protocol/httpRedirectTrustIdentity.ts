@@ -50,6 +50,14 @@ export function httpRedirectTrustIdentity(connection: Connection): string {
     "expanded",
   ])
     delete source[key];
+  // The Provider hydrates persisted dates. Compare equivalent instants without
+  // removing creation identity or collapsing missing/invalid legacy values.
+  const createdAt = source.createdAt;
+  if (typeof createdAt === "string" || createdAt instanceof Date) {
+    const timestamp = new Date(createdAt).getTime();
+    if (Number.isFinite(timestamp))
+      source.createdAt = new Date(timestamp).toISOString();
+  }
   source.hostname = httpRedirectConnectionOrigin(connection);
   delete source.port;
   return stableJsonStringify(source);

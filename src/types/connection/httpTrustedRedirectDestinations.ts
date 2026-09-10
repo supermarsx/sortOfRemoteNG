@@ -2,6 +2,6 @@
 export interface HttpTrustedRedirectDestinations {
   version: 1;
   origins: string[];
-  /** Missing is false. Anonymous HTTPS handoffs only, with normal TLS checks. */
+  /** @deprecated Accepted legacy input only; ignored. Trust itself permits repeat handoffs. */
   autoContinue?: boolean;
 }

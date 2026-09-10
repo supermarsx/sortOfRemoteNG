@@ -70,6 +70,7 @@ import {
   formatConnectionDiff,
 } from "../utils/connection/diffConnection";
 import { normalizeAdvancedProtocolConnection } from "../utils/connection/normalizeAdvancedProtocolConnection";
+import { applyTrustedRedirectChanges } from "../utils/security/trustedRedirectManagement";
 import { resolveDefaultTabGroup } from "../utils/session/resolveDefaultTabGroup";
 import {
   mergeLocalSessionUpdate,
@@ -214,6 +215,14 @@ export const connectionReducer = (
         ),
       };
     }
+    case "UPDATE_HTTP_TRUSTED_REDIRECTS":
+      return {
+        ...state,
+        connections: applyTrustedRedirectChanges(
+          state.connections,
+          action.payload.changes,
+        ),
+      };
     case "DELETE_CONNECTION":
     case "RECYCLE_CONNECTIONS": {
       const operation =
@@ -655,10 +664,43 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     }));
   }, []);
 
+  const getCurrentConnections = useCallback(
+    (scope: {
+      databaseId: string;
+      generation: number;
+    }): readonly Connection[] => {
+      const available = databaseAvailabilityRef.current;
+      const target = activeDatabaseTargetRef.current;
+      if (
+        !hasLoadedRef.current ||
+        available.status !== "ready" ||
+        available.databaseId !== scope.databaseId ||
+        available.generation !== scope.generation ||
+        databaseManager.getCurrentDatabase()?.id !== scope.databaseId ||
+        target?.databaseId !== scope.databaseId ||
+        !target.assertAccessible
+      )
+        throw new Error(
+          "Open and unlock the original database before changing trusted redirect destinations.",
+        );
+      target.assertAccessible();
+      const access = databaseManager.getDatabaseAccessState?.(scope.databaseId);
+      if (access && access.status !== "ready")
+        throw new Error(
+          "Open and unlock the original database before changing trusted redirect destinations.",
+        );
+      return stateRef.current.connections;
+    },
+    [databaseManager],
+  );
+
   // Wrap dispatch to add action logging.
   // Logging is wrapped in try-catch so a logging failure never blocks state updates.
   const dispatch = useCallback(
     (action: ConnectionAction) => {
+      if (action.type === "UPDATE_HTTP_TRUSTED_REDIRECTS") {
+        getCurrentConnections(action.payload);
+      }
       if (action.type === "BIND_TOOL_DATABASE_OWNER") {
         const available = databaseAvailabilityRef.current;
         if (
@@ -845,7 +887,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       baseDispatch(action);
     },
-    [databaseManager, markPersistenceDirty, settingsManager],
+    [
+      databaseManager,
+      getCurrentConnections,
+      markPersistenceDirty,
+      settingsManager,
+    ],
   );
 
   // Use refs so saveData has a stable identity and doesn't cause effect re-runs
@@ -2067,6 +2114,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       saveData,
       flushPendingSave,
       loadData,
+      getCurrentConnections,
       recycleBin,
       automationLibrary,
       documents,
@@ -2081,6 +2129,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       saveData,
       flushPendingSave,
       loadData,
+      getCurrentConnections,
       recycleBin,
       automationLibrary,
       documents,

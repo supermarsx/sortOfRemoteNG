@@ -78,6 +78,7 @@ export default function RedirectReviewPanel({
     !!destinationOrigin &&
     manager.canRememberDestination === true &&
     typeof manager.rememberDestination === "function";
+  const trusted = manager.trustedDestination === true;
   return (
     <section
       role="region"
@@ -94,12 +95,20 @@ export default function RedirectReviewPanel({
           <div className="space-y-1">
             <h1 className="text-xl font-semibold">
               {review
-                ? "Review redirect destination"
+                ? trusted
+                  ? authentication?.configured
+                    ? "Review sign-in options"
+                    : "Destination trusted"
+                  : "Review redirect destination"
                 : "Redirect review unavailable"}
             </h1>
             <p className="text-sm leading-relaxed text-[var(--color-textSecondary)]">
               {review
-                ? "This website wants to send you to a different address. Check the destination before continuing."
+                ? trusted
+                  ? authentication?.configured
+                    ? "This destination is already trusted. Choose whether to use your saved login; destination trust does not grant permission to send credentials."
+                    : "This destination is saved. Choose how to continue this handoff; future redirects to this exact origin will not need another destination review."
+                  : "This website wants to send you to a different address. Check the destination before continuing."
                 : "No destination was opened. Return to the page and retry the navigation."}
             </p>
           </div>
@@ -114,7 +123,8 @@ export default function RedirectReviewPanel({
                 >
                   Redirect {manager.redirectStep} of {manager.maxRedirectHops}{" "}
                   maximum. Reverse proxies can redirect through several
-                  addresses; review each destination before continuing.
+                  addresses; only untrusted destinations need another address
+                  review. Sign-in permissions are checked separately.
                 </p>
               )}
             <dl className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-sm">
@@ -174,9 +184,9 @@ export default function RedirectReviewPanel({
                 <p className="text-xs leading-relaxed text-[var(--color-textSecondary)]">
                   Trust is saved for the original connection in its owning
                   database. This action does not continue the redirect, approve
-                  its certificate, or send saved login details. Automatic
-                  continuation is a separate Advanced option and is off by
-                  default.
+                  its certificate, or send saved login details. Future redirects
+                  to this exact origin skip the destination review. Manage saved
+                  destinations in Trust Center → Redirect destinations.
                 </p>
                 {!manager.trustedDestination && !canRemember && (
                   <p className="text-xs leading-relaxed text-[var(--color-textSecondary)]">
@@ -258,7 +268,7 @@ export default function RedirectReviewPanel({
                   onChange={(value) =>
                     change({ carry: value, insecureApproved: false })
                   }
-                  description="Only the configured username/password or application form login is carried forward. Each additional redirect still needs review; this stops after five handoffs."
+                  description="Only the configured username/password or application form login is carried forward. Sending credentials still needs approval, even for a trusted destination; this stops after five handoffs."
                 />
                 {!authentication.available && (
                   <p className="text-xs text-[var(--color-textSecondary)]">

@@ -290,10 +290,11 @@ export function useHttpRedirectReview(options: Options) {
     try {
       return !!(
         current.trust?.trusted &&
-        current.trust.autoContinue &&
         current.review.receiptId !== manuallyRememberedReceipt.current &&
         captured.continueInTab &&
-        current.review.destinationUrl.startsWith("https:") &&
+        captured.enabled &&
+        captured.connection?.httpProxyPolicy?.allowCrossOriginRedirects ===
+          true &&
         normalizeRedirectAuthentication(
           captured.connection?.httpRedirectAuthentication,
         ).mode === "none"
@@ -455,8 +456,8 @@ export function useHttpRedirectReview(options: Options) {
         stableJsonStringify(verified) !== stableJsonStringify(current.review)
       )
         throw new Error();
-      // Trust is a separate action. Even an existing automatic preference must
-      // not turn this click into navigation; it applies on future receipts.
+      // Trust is a separate action. Saving must not turn this click into
+      // navigation; the destination is skipped only on future receipts.
       manuallyRememberedReceipt.current = current.review.receiptId;
       await captured.trust.remember(
         current.review,

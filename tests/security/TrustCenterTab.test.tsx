@@ -102,6 +102,36 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: fixture.open,
   save: fixture.save,
 }));
+vi.mock("../../src/hooks/security/useTrustedRedirectDestinations", () => ({
+  useTrustedRedirectDestinations: () => ({
+    rows: [
+      {
+        id: "redirect",
+        connectionId: "connection-1",
+        connectionName: "Production gateway",
+        sourceOrigin: "https://gateway",
+        origin: "https://relay.example",
+      },
+    ],
+    connections: [
+      {
+        id: "connection-1",
+        name: "Production gateway",
+        sourceOrigin: "https://gateway",
+      },
+    ],
+    available: true,
+    databaseId: "db-a",
+    scopeKey: "db-a:1",
+    loading: false,
+    busy: false,
+    error: null,
+    notice: null,
+    refresh: vi.fn().mockResolvedValue(undefined),
+    add: vi.fn().mockResolvedValue(undefined),
+    forget: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 vi.mock("@tauri-apps/plugin-fs", () => ({
   readTextFile: fixture.read,
   writeTextFile: fixture.write,
@@ -214,6 +244,35 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("dedicated Trust Center", () => {
+  it("keeps redirect management independent of a certificate backend failure and shares one close action", async () => {
+    fixture.hydrate.mockRejectedValue(
+      new Error("Certificate backend unavailable"),
+    );
+    const close = vi.fn();
+    render(<TrustCenterTab onClose={close} />);
+    await screen.findByRole("alert");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Redirect destinations" }),
+    );
+    expect(screen.getByRole("table")).toHaveTextContent(
+      "https://relay.example",
+    );
+    expect(screen.queryByText("Certificate backend unavailable")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Review add" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Close Trust Center" }),
+    ).toHaveLength(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Certificates & host keys" }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Certificate backend unavailable",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close Trust Center" }));
+    expect(close).toHaveBeenCalledOnce();
+  });
   it("moves a reviewed connection identity to database-wide scope through one captured manager call", async () => {
     await mount();
     fireEvent.click(

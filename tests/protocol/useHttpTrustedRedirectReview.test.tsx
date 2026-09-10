@@ -14,6 +14,7 @@ import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyP
 import {
   clearRuntimeConnectionsForTests,
   getRuntimeWebNavigation,
+  registerRuntimeConnection,
   resolveRuntimeConnection,
   type TrustedRedirectSource,
 } from "../../src/utils/session/runtimeConnectionRegistry";
@@ -70,7 +71,6 @@ type Options = Parameters<typeof useHttpRedirectReview>[0];
 function fixture(
   config: {
     trusted?: boolean;
-    autoContinue?: boolean;
     connection?: Connection;
   } = {},
 ) {
@@ -91,7 +91,6 @@ function fixture(
       guard: () => void,
     ): Promise<HttpRedirectTrustInspection> => ({
       trusted: config.trusted ?? true,
-      autoContinue: config.autoContinue ?? false,
       provenance,
       assertCurrent: () => {
         guard();
@@ -167,15 +166,16 @@ describe("persisted trusted redirect continuation", () => {
     expect(view.result.current.error).toBe("");
     expect(view.stopSource).not.toHaveBeenCalled();
   });
-  it("marks persisted trust without continuing when automatic handoffs are off", async () => {
+  it("keeps review visible when no same-tab continuation is available", async () => {
     const view = fixture();
+    view.rerender({ ...view.options, continueInTab: undefined });
     await act(() => view.result.current.offer());
     expect(view.result.current.trustedDestination).toBe(true);
     expect(view.result.current.review).toEqual(receipt);
     expect(view.stopSource).not.toHaveBeenCalled();
   });
   it("automatically consumes a fresh receipt and carries provenance, not secrets", async () => {
-    const view = fixture({ autoContinue: true });
+    const view = fixture();
     await act(() => view.result.current.offer());
     await waitFor(() => expect(view.continueInTab).toHaveBeenCalledOnce());
     expect(view.inspect).toHaveBeenCalledTimes(2);
@@ -196,26 +196,69 @@ describe("persisted trusted redirect continuation", () => {
     expect(getRuntimeWebNavigation(target.id)?.redirectHops).toBe(1);
   });
   it("does not automatically continue to an untrusted origin", async () => {
-    const view = fixture({ trusted: false, autoContinue: true });
+    const view = fixture({ trusted: false });
     await act(() => view.result.current.offer());
     expect(view.result.current.trustedDestination).toBe(false);
     expect(view.stopSource).not.toHaveBeenCalled();
   });
-  it("still reviews trusted plaintext destinations and login forwarding", async () => {
-    h.invoke.mockResolvedValue({
-      ...receipt,
-      destinationUrl: "http://target.invalid/",
+  it("still stops a trusted chain at the five-handoff limit", async () => {
+    registerRuntimeConnection(source, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 5,
+      assertCurrent: vi.fn(),
     });
-    const view = fixture({ autoContinue: true });
+    const view = fixture();
     await act(() => view.result.current.offer());
-    expect(view.result.current.review?.destinationUrl).toBe(
-      "http://target.invalid/",
-    );
+    expect(view.result.current.error).toContain("Five redirect handoffs");
     expect(view.stopSource).not.toHaveBeenCalled();
-    view.unmount();
-    h.invoke.mockResolvedValue(receipt);
+    expect(view.continueInTab).not.toHaveBeenCalled();
+  });
+  it.each(["https", "http"])(
+    "skips trusted %s destination review without forwarding credentials",
+    async (protocol) => {
+      h.invoke.mockResolvedValue({
+        ...receipt,
+        destinationUrl: `${protocol}://target.invalid/`,
+      });
+      const view = fixture();
+      await act(() => view.result.current.offer());
+      await waitFor(() => expect(view.continueInTab).toHaveBeenCalledOnce());
+      expect(view.result.current.review).toBeNull();
+      const target = view.continueInTab.mock.calls[0][0] as Connection;
+      expect(target.protocol).toBe(protocol);
+      expect(JSON.stringify(target)).not.toContain("never-forward-this");
+      expect(target).toMatchObject({
+        httpVerifySsl: true,
+        httpsTrustPolicy: "always-ask",
+        httpAutoLogin: false,
+      });
+    },
+  );
+  it.each(["https-only", "downgrade-disabled", "redirects-disabled"])(
+    "never bypasses %s policy for trusted HTTP destinations",
+    async (restriction) => {
+      h.invoke.mockResolvedValue({
+        ...receipt,
+        destinationUrl: "http://target.invalid/",
+      });
+      const connection = {
+        ...source,
+        httpProxyPolicy: {
+          ...source.httpProxyPolicy!,
+          httpsOnly: restriction === "https-only",
+          allowHttpDowngradeRedirects: restriction !== "downgrade-disabled",
+          allowCrossOriginRedirects: restriction !== "redirects-disabled",
+        },
+      };
+      const view = fixture({ connection });
+      await act(() => view.result.current.offer());
+      expect(view.result.current.review).toBeNull();
+      expect(view.stopSource).not.toHaveBeenCalled();
+      expect(view.continueInTab).not.toHaveBeenCalled();
+    },
+  );
+  it("still requires separate login-forwarding consent for a trusted destination", async () => {
     const authView = fixture({
-      autoContinue: true,
       connection: {
         ...source,
         httpRedirectAuthentication: {
@@ -230,7 +273,7 @@ describe("persisted trusted redirect continuation", () => {
     expect(authView.stopSource).not.toHaveBeenCalled();
   });
   it("allows manual review after a failed persisted-consent read, never auto-trust", async () => {
-    const view = fixture({ autoContinue: true });
+    const view = fixture();
     view.inspect.mockRejectedValue(new Error("storage read failed"));
     await act(() => view.result.current.offer());
     expect(view.result.current.trustNotice).toContain("could not be verified");
@@ -240,14 +283,14 @@ describe("persisted trusted redirect continuation", () => {
     expect(view.continueInTab).toHaveBeenCalledOnce();
   });
   it("drops trust if its returned guard is already revoked", async () => {
-    const view = fixture({ autoContinue: true });
+    const view = fixture();
     view.revoke();
     await act(() => view.result.current.offer());
     expect(view.result.current.trustedDestination).toBe(false);
     expect(view.stopSource).not.toHaveBeenCalled();
   });
   it("rechecks revocation after native receipt consumption", async () => {
-    const view = fixture({ autoContinue: true });
+    const view = fixture();
     h.invoke.mockImplementation(
       async (_command: string, args: { receiptId: string | null }) => {
         if (args.receiptId) view.revoke();
@@ -260,7 +303,7 @@ describe("persisted trusted redirect continuation", () => {
     expect(view.continueInTab).not.toHaveBeenCalled();
   });
   it("rechecks automatic consent after the deferred source stop completes", async () => {
-    const view = fixture({ autoContinue: true });
+    const view = fixture();
     let finishStop!: () => void;
     const stopped = new Promise<void>((resolve) => {
       finishStop = resolve;
@@ -285,7 +328,7 @@ describe("persisted trusted redirect continuation", () => {
     expect(view.continueInTab).not.toHaveBeenCalled();
   });
   it("carries automatic consent into deferred canonical launch checks after source unmount", async () => {
-    const view = fixture({ autoContinue: true });
+    const view = fixture();
     let finishCapabilities!: () => void;
     const capabilities = new Promise<void>((resolve) => {
       finishCapabilities = resolve;
@@ -347,7 +390,6 @@ describe("persisted trusted redirect continuation", () => {
       guard();
       view.inspect.mockImplementation(async (_next, check) => ({
         trusted: true,
-        autoContinue: true,
         provenance: view.provenance,
         assertCurrent: check,
         assertLaunchCurrent: view.provenance.assertOwner,
@@ -375,9 +417,17 @@ describe("persisted trusted redirect continuation", () => {
     expect(
       h.invoke.mock.calls.every(([, args]) => args.receiptId === null),
     ).toBe(true);
+    // Saving this receipt is not acceptance; a later native receipt uses saved trust.
+    act(() => view.result.current.cancel());
+    h.invoke.mockResolvedValue({
+      ...receipt,
+      receiptId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    });
+    await act(() => view.result.current.offer());
+    await waitFor(() => expect(view.continueInTab).toHaveBeenCalledOnce());
   });
   it("keeps failed saves untrusted and leaves one-time choices available", async () => {
-    const view = fixture({ trusted: false, autoContinue: true });
+    const view = fixture({ trusted: false });
     await act(() => view.result.current.offer());
     view.remember.mockRejectedValue(new Error("disk full"));
     await act(() => view.result.current.rememberDestination());

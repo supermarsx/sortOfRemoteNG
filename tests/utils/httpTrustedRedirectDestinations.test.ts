@@ -11,12 +11,23 @@ describe("trusted redirect destination origins", () => {
     expect(normalizeHttpTrustedRedirectDestinations(undefined)).toEqual({
       version: 1,
       origins: [],
-      autoContinue: false,
     });
     expect(
       normalizeAdvancedProtocolConnection({ protocol: "https" }),
     ).not.toHaveProperty("httpTrustedRedirectDestinations");
   });
+  it.each([false, true])(
+    "accepts and ignores legacy autoContinue=%s",
+    (autoContinue) => {
+      expect(
+        normalizeHttpTrustedRedirectDestinations({
+          version: 1,
+          origins: ["https://nas.example"],
+          autoContinue,
+        }),
+      ).toEqual({ version: 1, origins: ["https://nas.example"] });
+    },
+  );
   it.each([
     ["HTTPS://NAS.EXAMPLE:443/", "https://nas.example"],
     ["http://nas.example:80", "http://nas.example"],

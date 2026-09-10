@@ -87,16 +87,23 @@ the original saved connection in its currently open, unlocked owning database.
 It is a separate action: it does not continue the redirect or send credentials.
 Unsaved or inaccessible connections explain why remembering is unavailable;
 failed persistence does not mark an origin trusted. You can manage or remove
-origins under **Advanced → Trusted redirect destinations**. Wildcards and paths
+origins under **Trust Center → Redirect destinations** or the connection's
+**Advanced → Trusted redirect destinations**. Trust Center lets you search and
+filter by saved connection, add an origin, or forget destinations individually
+or in a reviewed selection. Both views use the same per-connection list in the
+open database. Wildcards and paths
 are not origin grants; trusting one port or subdomain does not trust another.
 
-**Automatically continue to trusted HTTPS destinations** is off by default.
-When explicitly enabled, only an exact trusted HTTPS destination can continue
-automatically, signed out in the same tab, and only when saved-login forwarding
-is not configured. Each handoff still requires a current native redirect receipt
-and a fresh certificate trust check. HTTP destinations and HTTPS-to-HTTP
-downgrades always require manual review; **Require HTTPS upstream** remains
-stronger than redirect settings. Remembering an origin does not grant certificate
+Once saved, an exact trusted destination does not ask for another destination
+review: later handoffs continue signed out in the same tab, unless saved-login
+forwarding is configured. There is no separate automatic-continuation switch.
+With login forwarding enabled, **Review sign-in options** asks for credential
+permission, not destination trust. Each handoff still requires a current native
+redirect receipt, and HTTPS still gets a fresh certificate trust check.
+Trusted HTTP origins also skip repeat destination review, but an HTTPS-to-HTTP
+handoff must still be permitted by **Allow reviewed HTTPS-to-HTTP downgrades**;
+**Require HTTPS upstream** remains stronger than redirect trust.
+Remembering an origin does not grant certificate
 trust, enable login forwarding, or transfer cookies, form bodies, custom headers,
 MFA secrets, or scripts. Portal redirects that depend on stripped query parameters
 may still need manual sign-in or the original website in your system browser.

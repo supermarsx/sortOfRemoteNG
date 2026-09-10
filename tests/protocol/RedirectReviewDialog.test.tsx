@@ -14,6 +14,40 @@ const review = {
   removedQuery: false,
 };
 describe("redirect review decision", () => {
+  it("distinguishes credential approval from trusting an already remembered destination", () => {
+    const accept = vi.fn();
+    render(
+      <RedirectReviewDialog
+        manager={{
+          review,
+          busy: false,
+          error: "",
+          accept,
+          cancel: vi.fn(),
+          offer: vi.fn(),
+          trustedDestination: true,
+          authentication: {
+            configured: true,
+            available: true,
+            insecure: false,
+            reason: "",
+          },
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Review sign-in options" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Review redirect destination" }),
+    ).toBeNull();
+    expect(screen.getByText(/already trusted/)).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Trust destination" }),
+    ).toBeNull();
+    expect(screen.getByText(/permission to send credentials/)).toBeVisible();
+    expect(accept).not.toHaveBeenCalled();
+  });
   it("remembers only the exact displayed origin through a separate explicit action", () => {
     const manager = {
       review,

@@ -35,7 +35,6 @@ const FULL =
 
 export interface HttpRedirectTrustInspection {
   trusted: boolean;
-  autoContinue: boolean;
   provenance: TrustedRedirectSource | null;
   assertCurrent: () => void;
   /** After an authorized stop, transport is gone but database authority remains. */
@@ -236,7 +235,6 @@ export function useHttpRedirectTrust(
       if (!verified)
         return {
           trusted: false,
-          autoContinue: false,
           provenance: null,
           assertCurrent,
         };
@@ -263,7 +261,6 @@ export function useHttpRedirectTrust(
           verified.settings.origins.includes(
             new URL(review.destinationUrl).origin,
           ),
-        autoContinue: grantIsSettled && verified.settings.autoContinue === true,
         provenance: verified.provenance,
         assertCurrent: () => checkGrant(verified.check()),
         assertLaunchCurrent: () => {
