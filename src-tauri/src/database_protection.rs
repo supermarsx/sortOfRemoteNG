@@ -819,6 +819,9 @@ async fn change_inner_with_initialization(
         (DatabaseKey::generate(), codec::random_id(), data)
     };
     let managed = target.is_some();
+    if !managed {
+        crate::database_files::reject_unprotected_documents(&data)?;
+    }
     let new_revision = codec::random_id();
     let output = if let Some(target) = target {
         if let Some(old) = &old {

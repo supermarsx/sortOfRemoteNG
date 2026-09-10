@@ -108,6 +108,7 @@ export interface ConnectionContextType {
   /** Absent only in older embedded/test contexts; never fall back to side storage. */
   recycleBin?: ConnectionRecycleBinApi;
   automationLibrary?: import("../types/recording/automationLibrary").DatabaseAutomationApi;
+  documents?: import("../types/documents/document").DatabaseDocumentStore;
 }
 
 export const ConnectionContext = createContext<

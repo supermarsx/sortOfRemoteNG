@@ -38,6 +38,12 @@ import type {
   DatabaseAutomationScope,
 } from "../types/recording/automationLibrary";
 import { normalizeDatabaseAutomationLibrary } from "../utils/recording/automationLibraryValidation";
+import type {
+  DatabaseDocumentStore,
+  DocumentScope,
+} from "../types/documents/document";
+import { normalizeDatabaseDocuments } from "../utils/documents/validation";
+import { verifyDocumentAttachments } from "../utils/documents/documentAttachments";
 import { AutomationLibraryAccessError } from "../utils/recording/automationLibraryAccess";
 import { getInvoke } from "../utils/tauri/invoke";
 import {
@@ -431,6 +437,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const loadedStorageRef = useRef<StorageData | null>(null);
   const automationBusyRef = useRef(false);
   const automationFaultRef = useRef(false);
+  const documentsBusyRef = useRef(false);
+  const documentsFaultRef = useRef(false);
+  const [documentsChangeRevision, setDocumentsChangeRevision] = useState(0);
   const [automationChangeRevision, setAutomationChangeRevision] = useState(0);
   const recycleReviewsRef = useRef(
     new Map<
@@ -556,6 +565,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           recycleBinRef.current = emptyRecycleBin();
           loadedStorageRef.current = null;
           automationFaultRef.current = false;
+          documentsFaultRef.current = false;
           recycleReviewsRef.current.clear();
           stateRef.current = {
             ...stateRef.current,
@@ -849,7 +859,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    if (automationFaultRef.current)
+    if (automationFaultRef.current || documentsFaultRef.current)
       throw new Error(
         "A database library write could not be verified. Reload the database before saving; pending connection edits were retained.",
       );
@@ -1013,6 +1023,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           recycleBinRef.current = recycleBin;
           loadedStorageRef.current = data;
           automationFaultRef.current = false;
+          documentsFaultRef.current = false;
+          setDocumentsChangeRevision((value) => value + 1);
           setAutomationChangeRevision((value) => value + 1);
           recycleReviewsRef.current.clear();
           baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
@@ -1106,7 +1118,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       },
     ): Promise<RecycleBinOutcome> => {
       scope = { ...scope };
-      if (recycleBusyRef.current)
+      if (recycleBusyRef.current || documentsBusyRef.current)
         throw new Error("A Recycle Bin operation is already in progress.");
       assertRecycleScope(scope);
       recycleBusyRef.current = true;
@@ -1210,7 +1222,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       const policy = proposedPolicy
         ? normalizeRecycleBinPolicy(proposedPolicy)
         : undefined;
-      if (recycleBusyRef.current)
+      if (recycleBusyRef.current || documentsBusyRef.current)
         throw new Error("A Recycle Bin operation is already in progress.");
       assertRecycleScope(scope);
       await flushPendingSave();
@@ -1311,7 +1323,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     )
       return;
     const expire = () => {
-      if (recycleBusyRef.current) return;
+      if (recycleBusyRef.current || documentsBusyRef.current) return;
       let scope: RecycleBinScope;
       try {
         scope = captureRecycleScope();
@@ -1471,7 +1483,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           throw new Error(
             "The database library write could not be verified. Reload before applying another edit.",
           );
-        if (automationBusyRef.current)
+        if (automationBusyRef.current || documentsBusyRef.current)
           throw new Error(
             "Another automation library write is pending. Reload before retrying.",
           );
@@ -1542,6 +1554,170 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   ]);
 
   // Debounced auto-save: coalesces rapid connection changes into a single write.
+  const documents = useMemo<DatabaseDocumentStore>(() => {
+    void recycleAccessGeneration;
+    let scope: DocumentScope | null = null;
+    try {
+      if (
+        !recycleLoading &&
+        databaseManager.getCurrentDatabase()?.protectionFormat === "sorng-db"
+      ) {
+        const current = captureRecycleScope();
+        scope = {
+          databaseId: current.databaseId,
+          generation: current.generation,
+        };
+      }
+    } catch {
+      /* No metadata or payload is exposed from a suspended owner. */
+    }
+    const assertScope = (expected: DocumentScope) => {
+      let current;
+      try {
+        current = captureRecycleScope();
+      } catch {
+        throw new Error(
+          "Open and unlock the owning protected database to access documents.",
+        );
+      }
+      if (
+        current.databaseId !== expected.databaseId ||
+        current.generation !== expected.generation
+      )
+        throw new Error(
+          "The owning document database changed. Reload before continuing.",
+        );
+      if (documentsFaultRef.current)
+        throw new Error(
+          "A document write could not be verified. Reload the database before retrying; keep your private draft.",
+        );
+      activeDatabaseTargetRef.current?.assertAccessible?.();
+    };
+    const requireManaged = async (expected: DocumentScope) => {
+      assertScope(expected);
+      if (!(await getInvoke()))
+        throw new Error(
+          "Documents require the native desktop app and a managed protected database. No browser or plaintext fallback was created.",
+        );
+      assertScope(expected);
+      const target = activeDatabaseTargetRef.current;
+      if (!target?.assertAccessible || !target.verifyCurrent)
+        throw new Error(
+          "Reopen the updated protected database before using documents.",
+        );
+      const status = await databaseManager.getDatabaseProtectionStatus(
+        expected.databaseId,
+      );
+      assertScope(expected);
+      const owner = databaseManager.getCurrentDatabase();
+      if (status.kind !== "managed")
+        throw new Error(
+          "Protect the current database with managed protection first (Settings → Security → Current database).",
+        );
+      if (
+        !status.unlocked ||
+        !status.securityRevision ||
+        status.securityRevision !== owner?.securityRevision ||
+        target !== activeDatabaseTargetRef.current
+      )
+        throw new Error(
+          "The managed database lease changed. Unlock and reload before using documents.",
+        );
+      target.assertAccessible();
+      return target;
+    };
+    return {
+      scope,
+      changeRevision: documentsChangeRevision,
+      async read(expectedScope) {
+        const expected = { ...expectedScope };
+        await requireManaged(expected);
+        await flushPendingSave();
+        const target = await requireManaged(expected);
+        await target.verifyCurrent!();
+        assertScope(expected);
+        const result = normalizeDatabaseDocuments(
+          loadedStorageRef.current?.documents,
+        );
+        await verifyDocumentAttachments(result);
+        assertScope(expected);
+        return result;
+      },
+      async compareAndSwap(expectedScope, expectedData, replacement) {
+        const expected = { ...expectedScope };
+        const reviewed = normalizeDatabaseDocuments(expectedData);
+        const proposed = normalizeDatabaseDocuments(replacement);
+        if (proposed.revision !== reviewed.revision + 1)
+          throw new Error("Invalid document revision.");
+        assertScope(expected);
+        if (
+          documentsBusyRef.current ||
+          automationBusyRef.current ||
+          recycleBusyRef.current
+        )
+          throw new Error(
+            "Another private database edit is pending. Wait, reload and review before saving documents.",
+          );
+        documentsBusyRef.current = true;
+        try {
+          await requireManaged(expected);
+          await flushPendingSave();
+          let target = await requireManaged(expected);
+          const current = normalizeDatabaseDocuments(
+            loadedStorageRef.current?.documents,
+          );
+          if (JSON.stringify(current) !== JSON.stringify(reviewed))
+            throw new Error(
+              "Documents changed since this review. Reload before saving.",
+            );
+          await verifyDocumentAttachments(proposed, current);
+          assertScope(expected);
+          target = await requireManaged(expected);
+          // Changes while attachment verification awaited must join the same queue.
+          await flushPendingSave();
+          assertScope(expected);
+          const snapshot = { ...buildStorageSnapshot(), documents: proposed };
+          const write = (async () => {
+            try {
+              await target.save(snapshot);
+              assertScope(expected);
+              loadedStorageRef.current = {
+                ...loadedStorageRef.current!,
+                documents: proposed,
+              };
+              setDocumentsChangeRevision((value) => value + 1);
+            } catch (error) {
+              if (
+                expected.generation === loadGenerationRef.current &&
+                target === activeDatabaseTargetRef.current
+              )
+                documentsFaultRef.current = true;
+              throw error;
+            }
+          })();
+          saveLoopRef.current = write;
+          try {
+            await write;
+          } finally {
+            if (saveLoopRef.current === write) saveLoopRef.current = null;
+          }
+          if (dirtyRevisionRef.current > persistedRevisionRef.current)
+            await flushPendingSave();
+        } finally {
+          documentsBusyRef.current = false;
+        }
+      },
+    };
+  }, [
+    recycleAccessGeneration,
+    recycleLoading,
+    databaseManager,
+    captureRecycleScope,
+    flushPendingSave,
+    buildStorageSnapshot,
+    documentsChangeRevision,
+  ]);
+
   const debouncedSave = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -1607,6 +1783,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       loadData,
       recycleBin,
       automationLibrary,
+      documents,
       databaseAvailability,
     }),
     [
@@ -1619,6 +1796,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       loadData,
       recycleBin,
       automationLibrary,
+      documents,
       databaseAvailability,
     ],
   );

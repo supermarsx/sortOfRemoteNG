@@ -115,6 +115,76 @@ async fn new_password_policy_refuses_before_managed_data_or_vault_mutation() {
 }
 
 #[tokio::test]
+async fn protected_documents_cannot_be_downgraded_to_plaintext() {
+    let _coordinator = sorng_encryption::settings_coordinator::lock().await;
+    let (root, state, data) = fixture().await;
+    let vault = FakeVault::default();
+    let protected = change_inner(
+        root.path(),
+        &state,
+        "main",
+        "db",
+        "r0",
+        data.clone(),
+        None,
+        Some(data.clone()),
+        Some(password_target("aes-256-gcm")),
+        false,
+        false,
+        &vault,
+    )
+    .await
+    .unwrap();
+    let mut private = data.clone();
+    private["documents"] = json!({"version":1,"revision":1,"documents":[],"attachments":[],"people":[{"privateFixture":"SENSITIVE"}],"tickets":[]});
+    save_inner(
+        root.path(),
+        &state,
+        "main",
+        "db",
+        protected.session_id.as_deref().unwrap(),
+        &protected.security_revision,
+        private,
+        Some(data),
+    )
+    .await
+    .unwrap();
+    let before = managed_snapshot(root.path(), &state, "db").await.unwrap();
+    let error = change_inner(
+        root.path(),
+        &state,
+        "main",
+        "db",
+        &protected.security_revision,
+        before.data.clone(),
+        protected.session_id,
+        None,
+        None,
+        true,
+        false,
+        &vault,
+    )
+    .await
+    .err()
+    .expect("protected documents must not become plaintext");
+    assert!(error.contains("protected documents"));
+    assert!(!error.contains("SENSITIVE"));
+    assert_eq!(
+        managed_snapshot(root.path(), &state, "db")
+            .await
+            .unwrap()
+            .data,
+        before.data
+    );
+    for field in ["documents", "attachments", "people", "tickets"] {
+        let mut plain = json!({"documents":{"version":1,"revision":0,"documents":[],"attachments":[],"people":[],"tickets":[]}});
+        assert!(crate::database_files::reject_unprotected_documents(&plain).is_ok());
+        plain["documents"][field] = json!([{"privateFixture":"SENSITIVE"}]);
+        assert!(crate::database_files::reject_unprotected_documents(&plain).is_err());
+    }
+}
+
+#[tokio::test]
 async fn managed_database_content_cas_retains_library_against_stale_or_unreviewed_save() {
     let _coordinator = sorng_encryption::settings_coordinator::lock().await;
     let (root, state, data) = fixture().await;

@@ -42,6 +42,8 @@ export interface StorageData {
   recycleBin?: import("../../types/connection/recycleBin").DatabaseRecycleBin;
   /** Scoped scripts/macros travel only inside this database's protected envelope. */
   automationLibrary?: import("../../types/recording/automationLibrary").DatabaseAutomationLibrary;
+  /** Native managed-database documents; private payloads never enter session snapshots. */
+  documents?: import("../../types/documents/document").DatabaseDocuments;
   /** Color tag palette definitions, keyed by id. */
   colorTags?: Record<string, { name: string; color: string; global?: boolean }>;
 }

@@ -1,5 +1,6 @@
 import type { Connection } from "../../types/connection/connection";
 import type { StorageData } from "../storage/storage";
+import { rebindDatabaseDocuments } from "../documents/documentRefs";
 import type { QuickActionReference } from "../../types/connection/sessionQuickActions";
 import {
   normalizeHttpAutomation,
@@ -55,6 +56,15 @@ export function rebindDatabaseQuickActions(
   };
   return {
     ...data,
+    ...(data.documents
+      ? {
+          documents: rebindDatabaseDocuments(
+            data.documents,
+            sourceDatabaseId,
+            destinationDatabaseId,
+          ),
+        }
+      : {}),
     connections: data.connections.map(connection),
     ...(data.recycleBin
       ? {

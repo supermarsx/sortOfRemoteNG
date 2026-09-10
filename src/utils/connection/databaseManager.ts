@@ -31,6 +31,8 @@ import {
   containsExportSecrets,
 } from "../../components/ImportExport/exportSecurity";
 import { normalizeDatabaseAutomationLibrary } from "../recording/automationLibraryValidation";
+import { normalizeDatabaseDocuments } from "../documents/validation";
+import { verifyDocumentAttachments } from "../documents/documentAttachments";
 import { containsLikelySecretText } from "../storage/appDataJsonStore";
 import type {
   DatabaseAccessState,
@@ -2899,6 +2901,17 @@ export class DatabaseManager {
     if (!collectionName) {
       throw new Error("Collection name missing in import");
     }
+    const documents =
+      parsed?.documents === undefined
+        ? undefined
+        : normalizeDatabaseDocuments(parsed.documents);
+    if (documents) {
+      if (!options?.protectionTarget || !isWebCryptoPayload(content))
+        throw new Error(
+          "Document archives require an encrypted source and a new managed protected database destination. No unprotected document copy was created.",
+        );
+      await verifyDocumentAttachments(documents);
+    }
 
     const connections = (parsed?.connections ?? []).map((conn: any) => ({
       ...conn,
@@ -2920,6 +2933,7 @@ export class DatabaseManager {
               parsed.automationLibrary,
             ),
           }),
+      ...(documents ? { documents } : {}),
       ...(parsed?.recycleBin !== undefined
         ? { recycleBin: normalizeRecycleBin(parsed.recycleBin) }
         : {}),

@@ -837,6 +837,7 @@ pub async fn save_database_data(
         expected_data.as_ref(),
     )?;
     reject_managed_raw_write(row, existing.as_ref().map(|entry| &entry.value), &data)?;
+    reject_unprotected_documents(&data)?;
     validate_data_shape(
         &data,
         row.get("isEncrypted")
@@ -863,6 +864,34 @@ pub(crate) fn assert_database_content_matches(
             "database contents changed or no reviewed baseline is available; reload before saving"
                 .into(),
         );
+    }
+    Ok(())
+}
+
+/// Documents may contain private records and attachments: the initial format
+/// requires managed database protection, never a raw/plaintext save endpoint.
+pub(crate) fn reject_unprotected_documents(data: &serde_json::Value) -> Result<(), String> {
+    let Some(value) = data.get("documents") else {
+        return Ok(());
+    };
+    let empty = value.as_object().is_some_and(|object| {
+        object.len() == 6
+            && object.get("version").and_then(serde_json::Value::as_u64) == Some(1)
+            && object
+                .get("revision")
+                .and_then(serde_json::Value::as_u64)
+                .is_some()
+            && ["documents", "attachments", "people", "tickets"]
+                .iter()
+                .all(|key| {
+                    object
+                        .get(*key)
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(Vec::is_empty)
+                })
+    });
+    if !empty {
+        return Err("This database contains protected documents or private records. Remove them or export a protected archive before removing managed database protection; no plaintext copy was created.".into());
     }
     Ok(())
 }
@@ -920,6 +949,7 @@ pub async fn change_database_security(
             .ok_or("database encryption metadata malformed")?,
     )?;
     validate_data_shape(&data, is_encrypted)?;
+    reject_unprotected_documents(&data)?;
     row["isEncrypted"] = is_encrypted.into();
     row["securityRevision"] = security_revision.into();
     row["updatedAt"] = updated_at.into();
