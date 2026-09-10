@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   owner: "db-a",
   accessible: true,
   settingsReady: true,
+  desktop: true,
   load: vi.fn(),
   save: vi.fn(),
   remove: vi.fn(),
@@ -36,7 +37,7 @@ vi.mock("../../src/hooks/protocol/useWebAutomation", () => ({
   },
 }));
 vi.mock("../../src/utils/tauri/invoke", () => ({
-  getInvoke: async () => vi.fn(),
+  getInvoke: async () => (h.desktop ? vi.fn() : null),
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: h.native }));
 vi.mock("../../src/utils/recording/webAutomationLibrary", () => ({
@@ -65,6 +66,7 @@ beforeEach(() => {
   h.owner = "db-a";
   h.accessible = true;
   h.settingsReady = true;
+  h.desktop = true;
   h.accessListeners.clear();
   h.currentListeners.clear();
   h.manager = {
@@ -107,7 +109,7 @@ describe("protected website userscript manager", () => {
     expect(result.current.scripts).toEqual([]);
     expect(h.save).not.toHaveBeenCalled();
   });
-  it("clears library and rejects captured save after DB suspension and unlock", async () => {
+  it("keeps app-wide library independent of database changes and suspension", async () => {
     const { result } = renderHook(() => useWebsiteUserScripts());
     await waitFor(() => expect(result.current.ready).toBe(true));
     const save = result.current.save;
@@ -118,12 +120,13 @@ describe("protected website userscript manager", () => {
     });
     h.accessible = true;
     await act(async () => {
-      expect(await save(script, script)).toBe(false);
+      expect(await save(script, script)).toBe(true);
     });
-    expect(result.current.scripts).toEqual([]);
-    expect(h.save).not.toHaveBeenCalled();
+    expect(result.current.scripts).toEqual([script]);
+    expect(h.accessListeners.size).toBe(0);
+    expect(h.currentListeners.size).toBe(0);
   });
-  it("ignores a late load from the old owner and clears on global lock", async () => {
+  it("ignores a late load after global lock and permits only explicit fresh retry", async () => {
     let resolve!: (value: unknown) => void;
     h.load.mockReturnValueOnce(
       new Promise((done) => {
@@ -131,18 +134,61 @@ describe("protected website userscript manager", () => {
       }),
     );
     const { result } = renderHook(() => useWebsiteUserScripts());
+    await waitFor(() => expect(h.load).toHaveBeenCalled());
     act(() => {
-      h.owner = "db-b";
-      for (const fn of h.currentListeners) fn();
+      h.native.mock.calls[h.native.mock.calls.length - 1][1]();
     });
     await act(async () => resolve({ value: library }));
     expect(result.current.scripts).toEqual([]);
     expect(result.current.ready).toBe(false);
-    const second = renderHook(() => useWebsiteUserScripts());
-    await waitFor(() => expect(second.result.current.ready).toBe(true));
+    expect(result.current.diagnostic?.code).toBe("locked");
+    await act(async () => result.current.reload());
+    expect(result.current.ready).toBe(true);
+    expect(result.current.scripts).toEqual([script]);
+  });
+  it("loads after normal settings hydration rather than permanently revoking access", async () => {
+    h.settingsReady = false;
+    const { result, rerender } = renderHook(() => useWebsiteUserScripts());
+    expect(result.current.diagnostic?.code).toBe("initializing");
+    expect(h.load).not.toHaveBeenCalled();
+    h.settingsReady = true;
+    rerender();
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.scope).toEqual({ kind: "app" });
+  });
+  it("explains missing desktop bridge even when a database is open", async () => {
+    h.desktop = false;
+    const { result } = renderHook(() => useWebsiteUserScripts());
+    await waitFor(() =>
+      expect(result.current.diagnostic?.code).toBe("desktop-required"),
+    );
+    expect(h.load).not.toHaveBeenCalled();
+    expect(result.current.desktopAvailable).toBe(false);
+  });
+  it.each([
+    ["Conflicting macro library variants require review", "recovery-required"],
+    ["Invalid macro library envelope", "invalid-library"],
+    ["command read_macro_library not found", "backend-unavailable"],
+    ["Unlock encryption to read this macro library", "locked"],
+    ["Cannot read macro library at PRIVATE_SOURCE_PATH", "storage-unavailable"],
+  ])(
+    "classifies %s without exposing raw native data",
+    async (message, code) => {
+      h.load.mockRejectedValueOnce(new Error(message));
+      const { result } = renderHook(() => useWebsiteUserScripts());
+      await waitFor(() => expect(result.current.diagnostic?.code).toBe(code));
+      expect(result.current.error).not.toContain("PRIVATE_SOURCE_PATH");
+      expect(h.save).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects a captured old review even after lock and a successful fresh retry", async () => {
+    const { result } = renderHook(() => useWebsiteUserScripts());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const oldSave = result.current.save;
     act(() => h.native.mock.calls[h.native.mock.calls.length - 1][1]());
-    expect(second.result.current.scripts).toEqual([]);
-    expect(second.result.current.ready).toBe(false);
+    await act(async () => result.current.reload());
+    await act(async () => expect(await oldSave(script, script)).toBe(false));
+    expect(h.save).not.toHaveBeenCalled();
   });
   it("cleans late native listener registration after unmount", async () => {
     let resolve!: (value: () => void) => void;
@@ -159,5 +205,64 @@ describe("protected website userscript manager", () => {
     expect(off).toHaveBeenCalledOnce();
     expect(h.currentListeners.size).toBe(0);
     expect(h.accessListeners.size).toBe(0);
+  });
+  it("keeps the ready editor mounted during a background store refresh", async () => {
+    const { result } = renderHook(() => useWebsiteUserScripts());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    let resolve!: (value: unknown) => void;
+    h.load.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    act(() =>
+      window.dispatchEvent(
+        new CustomEvent("sorng-app-data-store-changed", {
+          detail: { key: "recording.web-automation.v1" },
+        }),
+      ),
+    );
+    await waitFor(() => expect(h.load).toHaveBeenCalledTimes(2));
+    expect(result.current.ready).toBe(true);
+    expect(result.current.scripts).toEqual([script]);
+    await act(async () =>
+      resolve({
+        value: {
+          ...library,
+          scripts: [{ ...script, name: "Concurrent change" }],
+        },
+      }),
+    );
+    expect(result.current.ready).toBe(true);
+    expect(result.current.scripts[0].name).toBe("Concurrent change");
+  });
+  it("recovers hydration during an in-flight write without a stuck busy flag", async () => {
+    const { result, rerender } = renderHook(() => useWebsiteUserScripts());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    let resolve!: (value: typeof library) => void;
+    h.save.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    let saving!: Promise<boolean>;
+    act(() => {
+      saving = result.current.save({ ...script, name: "Changed" }, script);
+    });
+    expect(result.current.busy).toBe(true);
+    h.settingsReady = false;
+    rerender();
+    expect(result.current.busy).toBe(false);
+    h.settingsReady = true;
+    rerender();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      resolve(library);
+      expect(await saving).toBe(false);
+    });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.busy).toBe(false);
   });
 });

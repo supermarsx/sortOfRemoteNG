@@ -1,9 +1,143 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import { useWebsiteUserScripts } from "../../../hooks/recording/useWebsiteUserScripts";
 import type { BrowserScript } from "../../../types/recording/webAutomation";
 import ScriptCodeEditor from "../../ui/editor/ScriptCodeEditor";
 import { MAX_WEB_SCRIPT_BYTES } from "../../../utils/recording/webAutomationLibrary";
+import type { AutomationAccessFailure } from "../../../types/recording/automationLibrary";
+
+const RECOVERY: Record<
+  AutomationAccessFailure,
+  { title: string; steps: string[] }
+> = {
+  initializing: {
+    title: "Waiting for app settings",
+    steps: [
+      "Allow app settings to finish loading. The library will load automatically afterwards.",
+      "No library has been reset or replaced.",
+    ],
+  },
+  "desktop-required": {
+    title: "Desktop app required",
+    steps: [
+      "Open the installed desktop app; this protected library is not available in a browser preview.",
+      "Return to Website userscripts and retry. No plaintext fallback is created.",
+    ],
+  },
+  "backend-unavailable": {
+    title: "Desktop library backend unavailable",
+    steps: [
+      "Finish updating the desktop app, then close and reopen that app when your work is saved.",
+      "Retry this library after restarting. Refreshing only the web interface does not update the native backend.",
+    ],
+  },
+  locked: {
+    title: "App-wide library encryption is locked",
+    steps: [
+      "Open Settings → Security and unlock global app encryption with your configured method.",
+      "Return here and select Retry library. Opening a connection database does not unlock this separate app-wide library.",
+    ],
+  },
+  "recovery-required": {
+    title: "Storage recovery needs review",
+    steps: [
+      "Preserve the existing library and any recovery copies. Do not delete, overwrite or reset them.",
+      "Review the recovery status in Settings → Security before making changes; retry only after recovery has been verified.",
+    ],
+  },
+  "invalid-library": {
+    title: "Library validation failed",
+    steps: [
+      "Preserve the original library or import file, and any export or backup you already have. Do not reset it to an empty library.",
+      "Review its supported format, size and credential-free source, or seek storage recovery help; retry after correcting the cause.",
+    ],
+  },
+  "database-unavailable": {
+    title: "Selected database is unavailable",
+    steps: [
+      "Reopen and unlock the explicitly selected database before accessing its library.",
+      "An app-wide library is separate; do not treat a different open database as the missing library.",
+    ],
+  },
+  "access-changed": {
+    title: "Library access changed",
+    steps: [
+      "Restore the expected app encryption access before continuing.",
+      "Retry and review the current library before making another change.",
+    ],
+  },
+  conflict: {
+    title: "Library changed during the operation",
+    steps: [
+      "Retry to load the current library, then review its entries. A previous write may already have completed.",
+      "Keep your draft and do not repeat an import or replacement blindly.",
+    ],
+  },
+  "storage-unavailable": {
+    title: "Protected storage unavailable",
+    steps: [
+      "Check that the desktop app can access its configured data directory and that app encryption is unlocked.",
+      "Retry after resolving the access problem. Existing library data has not been reset.",
+    ],
+  },
+};
+
+function LibraryRecovery({ mgr }: { mgr: Manager }) {
+  const [retrying, setRetrying] = useState(false);
+  const pending = useRef(false);
+  const code =
+    mgr.diagnostic?.code ??
+    (mgr.settingsReady === false ? "initializing" : null);
+  const guidance = code ? RECOVERY[code] : null;
+  if (!guidance)
+    return mgr.ready ? null : (
+      <p role="status" className="text-sm">
+        Loading the app-wide protected library…
+      </p>
+    );
+  return (
+    <div
+      className="space-y-2 rounded border border-[var(--color-border)] p-3"
+      aria-label="Library recovery guidance"
+    >
+      <p
+        role={code === "initializing" ? "status" : "alert"}
+        className="text-sm font-medium"
+      >
+        {guidance.title}
+      </p>
+      <p className="text-xs text-[var(--color-textMuted)]">
+        Diagnostic: <code>{code}</code>
+      </p>
+      <ol className="list-decimal space-y-1 pl-5 text-sm">
+        {guidance.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      {mgr.diagnostic?.retryable && (
+        <button
+          type="button"
+          className="sor-btn sor-btn-secondary"
+          disabled={mgr.busy || retrying || mgr.settingsReady === false}
+          onClick={async () => {
+            if (pending.current || mgr.busy || mgr.settingsReady === false)
+              return;
+            pending.current = true;
+            setRetrying(true);
+            try {
+              await mgr.reload();
+            } finally {
+              pending.current = false;
+              setRetrying(false);
+            }
+          }}
+        >
+          {retrying ? "Retrying…" : "Retry library"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 type Manager = ReturnType<typeof useWebsiteUserScripts>;
 interface Callbacks {
@@ -333,16 +467,46 @@ export default function WebsiteUserScriptsPanel({
       <div className="border-b border-[var(--color-border)] p-4 space-y-2">
         <h2 className="font-medium">Website userscripts · JavaScript</h2>
         <p className="text-sm">
-          A separate protected library for HTTP/HTTPS favorites. Pin saved
-          scripts from the website action bar; running still requires global
-          availability, explicit per-connection script permission and normal
-          confirmation. Editing here grants none of those permissions.
+          An app-wide protected library for HTTP/HTTPS favorites, independent of
+          the currently open connection database. Pin saved scripts from the
+          website action bar; running still requires global availability,
+          explicit per-connection script permission and normal confirmation.
+          Editing here grants none of those permissions.
         </p>
-        {mgr.error && (
-          <p role="alert" className="text-sm text-error">
-            {mgr.error}
-          </p>
-        )}
+        <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--color-textMuted)]">
+          <div>
+            <dt className="inline font-medium">Scope: </dt>
+            <dd className="inline">App-wide</dd>
+          </div>
+          <div>
+            <dt className="inline font-medium">Settings: </dt>
+            <dd className="inline">
+              {mgr.settingsReady === false
+                ? "Loading"
+                : mgr.settingsReady
+                  ? "Ready"
+                  : "Checking"}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-medium">Desktop bridge: </dt>
+            <dd className="inline">
+              {mgr.desktopAvailable === null ||
+              mgr.desktopAvailable === undefined
+                ? "Checking"
+                : mgr.desktopAvailable
+                  ? "Available"
+                  : "Unavailable"}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-medium">Library: </dt>
+            <dd className="inline">
+              {mgr.ready ? "Ready" : "Unavailable / loading"}
+            </dd>
+          </div>
+        </dl>
+        <LibraryRecovery mgr={mgr} />
       </div>
       {mgr.ready ? (
         <AccessibleScripts
@@ -350,12 +514,7 @@ export default function WebsiteUserScriptsPanel({
           mgr={mgr}
           onDirtyChange={onDirtyChange}
         />
-      ) : (
-        <p className="p-4 text-sm">
-          Website script editing is unavailable until the protected library and
-          its owning database are accessible.
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }
