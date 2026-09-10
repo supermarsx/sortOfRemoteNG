@@ -37,6 +37,8 @@ jobs:
           package-manager-cache: false
       - name: Enforce Node toolchain contract
         run: npm run toolchain:test
+      - name: Verify full-feature native defaults and launchers
+        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs
       - name: Test compatible npm update automation
         run: npm run deps:npm:update:test
       - name: Test Cargo update automation
@@ -385,10 +387,10 @@ jobs:
           --all-targets --no-deps -- -D warnings
 
   # ── Rust workspace check ───────────────────────────────────────────
-  # Kafka is off by default. On Windows we exclude `sorng-kafka` entirely
-  # because the rdkafka-sys cmake build fails under MSYS64 (see
-  # `src-tauri/crates/sorng-kafka/README.md`). On Linux we additionally
-  # run with `--features kafka` to cover the Kafka surface area.
+  # The app defaults include every capability, with source-built Kafka.
+  # Exclude the standalone Kafka package root so its dynamic-linking default
+  # cannot unify with the app's bundled linking mode. Kafka is still checked
+  # through the full app dependency graph on both Linux and Windows/MSVC.
   rust-check-linux:
     runs-on: ubuntu-latest
     defaults:
@@ -404,14 +406,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: cargo check (default features — no Kafka)
+      - name: cargo check (full app defaults, including bundled Kafka)
         run: cargo check --workspace --exclude sorng-kafka
-      # Build librdkafka from source (cmake) via `kafka-static`: the runner's
-      # system librdkafka (apt) is 2.3.0, but rdkafka-sys 4.10 requires 2.12.1,
-      # so the dynamic `kafka` feature's pkg-config version probe fails. Static
-      # is version-independent and matches this step's original intent.
-      - name: cargo check (--features kafka-static — cmake librdkafka build)
-        run: cargo check -p app --features kafka-static
   # MSVC host is REQUIRED on Windows — the GNU host triggers "export ordinal
   # too large" link errors in large crate chains (rdkafka-sys, ironrdp-*,
   # sspi-rs). `windows-latest` runners default to the MSVC host, but we pin
@@ -442,7 +438,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: cargo check (default — Kafka excluded; MSYS64 cmake issue, see crate README)
+      - name: cargo check (full app defaults, including bundled Kafka)
         run: cargo check --workspace --exclude sorng-kafka
 
   # ── t8-e19 + t8-e21: wrapped OPKSSH contract + optional staging gate ──
@@ -513,7 +509,8 @@ jobs:
       - name: cargo test (OPKSSH vendored-wrapper feature contract)
         run: cargo test -p sorng-opkssh --tests --features vendored-wrapper -- --nocapture
       - name: cargo check (app feature forwards OPKSSH vendored wrapper)
-        run: cargo check -p app --features opkssh-vendored-wrapper
+        # Targeted compile contract only; this job does not ship an app binary.
+        run: cargo check -p app --no-default-features --features lean,opkssh-vendored-wrapper
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: ".node-version"
@@ -570,7 +567,8 @@ jobs:
         with:
           workspaces: src-tauri
       - name: cargo check (-p app --features rdp)
-        run: cargo check -p app --features rdp
+        # Targeted compile contract only; full defaults are checked separately.
+        run: cargo check -p app --no-default-features --features lean,rdp
       - name: cargo test (RDP input goldens)
         run: cargo test -p sorng-rdp --lib input::tests
       - name: cargo test (RDP reconnect regression)
@@ -601,12 +599,8 @@ jobs:
       # `kafka-dynamic` = dynamic-link vs `kafka-static` = cmake-build), which
       # collide at the rdkafka-sys layer, plus other "losing-fork" feature
       # combinations the app is not designed to build together. The canonical
-      # shipping set is `--features full` (see release.yml). We check that set
-      # here, substituting `kafka-static` for the default dynamic `kafka` so
-      # librdkafka is built from source via cmake — version-independent and
-      # self-contained on CI (the runner's system librdkafka is too old for the
-      # dynamic version probe). Keep this list in sync with the `full` feature
-      # in src-tauri/Cargo.toml (only `kafka` -> `kafka-static` differs).
+      # shipping set is `--features full` (see release.yml), including bundled
+      # Kafka. Keep this explicit list in sync with `full` in Cargo.toml.
       - name: cargo check (shipping feature set — full, static Kafka)
         run: >-
           cargo check -p app --no-default-features
@@ -633,8 +627,7 @@ jobs:
           workspaces: src-tauri
       # See rust-check-all-features-linux above: `--all-features` is invalid
       # (mutually-exclusive kafka linking modes + losing-fork combos). Lint the
-      # canonical shipping `full` set instead, with `kafka-static` substituted
-      # for the dynamic `kafka` so librdkafka builds from source on CI. `-p app`
+      # canonical shipping `full` set, which builds librdkafka from source. `-p app`
       # still lints every workspace crate app pulls in under `full`. Keep the
       # feature list in sync with `full` in src-tauri/Cargo.toml.
       - name: cargo clippy (shipping feature set — full, static Kafka)

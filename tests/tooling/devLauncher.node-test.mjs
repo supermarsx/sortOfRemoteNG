@@ -13,6 +13,39 @@ import {
   buildDevSecurityOverride,
   buildTauriLaunchPlan,
 } from "../../scripts/tauri-dev.mjs";
+import { routeTauriArguments } from "../../scripts/tauri.mjs";
+
+test("both normal development entrypoints use Cargo's full defaults", () => {
+  assert.deepEqual(routeTauriArguments(["dev"]), { managed: true, args: [] });
+  const plan = buildTauriLaunchPlan({ port: 3042, baseEnv: {} });
+  assert.equal(plan.tauriArgs.includes("--no-default-features"), false);
+  assert.equal(plan.tauriArgs.includes("lean"), false);
+  assert.equal(plan.tauriArgs.includes("--features"), false);
+});
+
+test("explicit lean opt-out and all non-dev commands retain exact arguments", () => {
+  const reduced = ["--features", "lean", "--", "--no-default-features"];
+  const route = routeTauriArguments(["dev", ...reduced]);
+  assert.equal(route.managed, true);
+  const plan = buildTauriLaunchPlan({
+    port: 3042,
+    passthrough: route.args,
+    baseEnv: {},
+  });
+  assert.deepEqual(plan.tauriArgs.slice(-reduced.length), reduced);
+  for (const args of [
+    [
+      "build",
+      "--features",
+      "full-windows-dynamic",
+      "--",
+      "--no-default-features",
+    ],
+    ["--help"],
+    ["info"],
+  ])
+    assert.deepEqual(routeTauriArguments(args), { managed: false, args });
+});
 
 test("standalone browser dev climbs to the first free port", async () => {
   const checked = [];

@@ -84,8 +84,7 @@ export function buildTauriLaunchPlan({
   };
 }
 
-export async function main() {
-  const passthrough = process.argv.slice(2);
+export async function main(passthrough = process.argv.slice(2)) {
   const log = (message) => console.log(`[tauri-dev] ${message}`);
   const preferred = parseDevPort(
     process.env.SORNG_DEV_PORT ?? DEFAULT_PORT,
@@ -105,6 +104,12 @@ export async function main() {
 
   log(`dev server will use port ${plan.port} (${selected.action})`);
   log(`pinning Tauri devUrl and capability origin -> ${plan.devUrl}`);
+  log(
+    "Cargo defaults include all supported features; reduced builds require --no-default-features. Native services still require their documented drivers/tools.",
+  );
+  log(
+    "OPKSSH wrapper is included by default. Embedded login needs the existing staged bridge; otherwise the supported CLI must be installed. Development preserves staged artifacts.",
+  );
 
   const tauriBin = require.resolve("@tauri-apps/cli/tauri.js");
   const child = spawn(process.execPath, [tauriBin, ...plan.tauriArgs], {
