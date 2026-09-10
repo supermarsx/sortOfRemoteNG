@@ -14,6 +14,22 @@ import { ConnectionTree } from "../../src/components/connection/ConnectionTree";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useConnections } from "../../src/contexts/useConnections";
+
+// These component fixtures exercise a deliberately available synthetic database.
+vi.mock("../../src/contexts/useConnections", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/contexts/useConnections")>();
+  return {
+    useConnections: () => ({
+      ...actual.useConnections(),
+      databaseAvailability: {
+        status: "ready",
+        databaseId: "tree-fixture",
+        generation: 1,
+      },
+    }),
+  };
+});
 import { Connection } from "../../src/types/connection/connection";
 import type { ConnectionFilter } from "../../src/types/connection/connection";
 import { FOLDER_ICONS } from "../../src/utils/icons/catalog/folders";

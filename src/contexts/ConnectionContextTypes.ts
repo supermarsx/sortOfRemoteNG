@@ -60,6 +60,10 @@ export type ConnectionAction =
   | { type: "SET_FILTER"; payload: Partial<ConnectionFilter> }
   | { type: "ADD_SESSION"; payload: ConnectionSession }
   | {
+      type: "BIND_TOOL_DATABASE_OWNER";
+      payload: { sessionId: string; databaseId: string; generation: number };
+    }
+  | {
       type: "UPDATE_SESSION";
       payload: Pick<ConnectionSession, "id"> & Partial<ConnectionSession>;
     }
@@ -83,6 +87,14 @@ export interface ConnectionPersistenceState {
   error: string | null;
 }
 
+/** Authoritative current database access, independent of optional tool features. */
+export interface DatabaseAvailability {
+  status: "none" | "loading" | "ready" | "suspended" | "error";
+  databaseId?: string;
+  /** Changes when the loaded owner or its access lease changes. */
+  generation: number;
+}
+
 export interface ConnectionContextType {
   state: ConnectionState;
   dispatch: React.Dispatch<ConnectionAction>;
@@ -91,6 +103,8 @@ export interface ConnectionContextType {
   saveData: () => Promise<void>;
   flushPendingSave: () => Promise<void>;
   loadData: (expectedDatabaseId?: string) => Promise<boolean>;
+  /** Older embedded contexts omit this; database-dependent tools fail closed. */
+  databaseAvailability?: DatabaseAvailability;
   /** Absent only in older embedded/test contexts; never fall back to side storage. */
   recycleBin?: ConnectionRecycleBinApi;
   automationLibrary?: import("../types/recording/automationLibrary").DatabaseAutomationApi;

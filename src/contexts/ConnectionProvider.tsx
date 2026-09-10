@@ -44,6 +44,7 @@ import {
   ConnectionState,
   ConnectionAction,
   ConnectionContext,
+  type DatabaseAvailability,
 } from "./ConnectionContextTypes";
 import { Connection, ConnectionSession } from "../types/connection/connection";
 import {
@@ -333,6 +334,17 @@ export const connectionReducer = (
             : session,
         ),
       };
+    case "BIND_TOOL_DATABASE_OWNER":
+      return {
+        ...state,
+        sessions: state.sessions.map((session) =>
+          session.id === action.payload.sessionId &&
+          session.protocol.startsWith("tool:") &&
+          !session.ownerDatabaseId
+            ? { ...session, ownerDatabaseId: action.payload.databaseId }
+            : session,
+        ),
+      };
     case "REMOVE_SESSION":
       // Drop a session from the list
       return {
@@ -439,6 +451,49 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     data: StorageData;
     target: DatabaseDataTarget;
   } | null>(null);
+  const availabilityGenerationRef = useRef(0);
+  const [databaseAvailability, setDatabaseAvailability] =
+    useState<DatabaseAvailability>(() => {
+      const databaseId = databaseManager.getCurrentDatabase()?.id;
+      return {
+        status: databaseId ? "loading" : "none",
+        databaseId,
+        generation: 0,
+      };
+    });
+  const databaseAvailabilityRef = useRef(databaseAvailability);
+  databaseAvailabilityRef.current = databaseAvailability;
+  const publishDatabaseAvailability = useCallback(
+    (requestedStatus?: "loading" | "error") => {
+      const databaseId = databaseManager.getCurrentDatabase()?.id;
+      let status: DatabaseAvailability["status"] = "none";
+      if (databaseId) {
+        const access = databaseManager.getDatabaseAccessState?.(databaseId);
+        if (access && access.status !== "ready") status = "suspended";
+        else if (requestedStatus) status = requestedStatus;
+        else if (
+          hasLoadedRef.current &&
+          !recycleLoadingRef.current &&
+          activeDatabaseTargetRef.current?.databaseId === databaseId
+        ) {
+          try {
+            activeDatabaseTargetRef.current.assertAccessible?.();
+            status = "ready";
+          } catch {
+            status = "suspended";
+          }
+        } else status = "loading";
+      }
+      const available: DatabaseAvailability = {
+        status,
+        databaseId,
+        generation: ++availabilityGenerationRef.current,
+      };
+      databaseAvailabilityRef.current = available;
+      setDatabaseAvailability(available);
+    },
+    [databaseManager],
+  );
 
   stateRef.current = state;
   connectionsRef.current = state.connections;
@@ -447,20 +502,28 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(
     () =>
       databaseManager.onDatabaseAccessChange?.((access) => {
-        if (access.databaseId !== activeDatabaseTargetRef.current?.databaseId)
+        if (access.databaseId !== databaseManager.getCurrentDatabase()?.id)
           return;
         recycleReviewsRef.current.clear();
         loadGenerationRef.current += 1;
         // Suspension masks the bin and invalidates reviews without discarding the
         // provider's recoverable dirty data. Global close/switch clears it below.
         setRecycleAccessGeneration((generation) => generation + 1);
+        publishDatabaseAvailability();
       }),
-    [databaseManager],
+    [databaseManager, publishDatabaseAvailability],
   );
 
   useEffect(
     () =>
       databaseManager.onCurrentDatabaseChange((change) => {
+        // An unrelated database being created/unlocked is not a new lease for
+        // the current tree or its open tool drafts.
+        if (
+          change.database?.id === databaseAvailabilityRef.current.databaseId &&
+          change.databaseId !== change.database?.id
+        )
+          return;
         const changedOwner =
           !!change.database &&
           !!activeDatabaseTargetRef.current &&
@@ -494,10 +557,14 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             ...stateRef.current,
             connections: [],
             tabGroups: [],
+            selectedConnection: null,
+            selectedConnectionIds: new Set(),
             recycleBinData: recycleBinRef.current,
           };
           baseDispatch({ type: "SET_CONNECTIONS", payload: [] });
           baseDispatch({ type: "SET_TAB_GROUPS", payload: [] });
+          baseDispatch({ type: "CLEAR_SELECTION" });
+          baseDispatch({ type: "SELECT_CONNECTION", payload: null });
           baseDispatch({
             type: "SET_RECYCLE_BIN",
             payload: recycleBinRef.current,
@@ -509,14 +576,17 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
               ? "Database closed before pending changes could be saved. Decrypted pending data was cleared; it was not persisted."
               : null,
           });
+          publishDatabaseAvailability();
           return;
         }
         if (
           change.reason !== "security-change" ||
           !change.database ||
           change.database.id !== activeDatabaseTargetRef.current?.databaseId
-        )
+        ) {
+          publishDatabaseAvailability();
           return;
+        }
         const target = databaseManager.captureCurrentDatabaseDataTarget();
         if (!target || target.databaseId !== change.database.id) return;
         activeDatabaseTargetRef.current = target;
@@ -530,8 +600,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             target,
           };
         }
+        publishDatabaseAvailability();
       }),
-    [databaseManager],
+    [databaseManager, publishDatabaseAvailability],
   );
 
   const markPersistenceDirty = useCallback(() => {
@@ -546,6 +617,28 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // Logging is wrapped in try-catch so a logging failure never blocks state updates.
   const dispatch = useCallback(
     (action: ConnectionAction) => {
+      if (action.type === "BIND_TOOL_DATABASE_OWNER") {
+        const available = databaseAvailabilityRef.current;
+        if (
+          available.status !== "ready" ||
+          available.databaseId !== action.payload.databaseId ||
+          available.generation !== action.payload.generation ||
+          databaseManager.getCurrentDatabase()?.id !==
+            action.payload.databaseId ||
+          activeDatabaseTargetRef.current?.databaseId !==
+            action.payload.databaseId
+        )
+          return;
+        try {
+          activeDatabaseTargetRef.current.assertAccessible?.();
+          const access = databaseManager.getDatabaseAccessState?.(
+            action.payload.databaseId,
+          );
+          if (access && access.status !== "ready") return;
+        } catch {
+          return;
+        }
+      }
       if (action.type === "ADD_SESSION" && !action.payload.ownerDatabaseId) {
         // Capture ownership at creation, not when a lazy viewer later mounts.
         // Window hydration uses SET_SESSIONS and retains the source owner.
@@ -864,6 +957,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       recycleLoadingRef.current = true;
       setRecycleLoading(true);
       recycleReviewsRef.current.clear();
+      publishDatabaseAvailability("loading");
       try {
         // Never replace the rendered rows while their owning database still has
         // a dirty generation. This also covers callers that changed the manager
@@ -934,6 +1028,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           saving: false,
           error: null,
         });
+        publishDatabaseAvailability();
         return true;
       } catch (error) {
         if (
@@ -943,11 +1038,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         ) {
           return false;
         }
+        publishDatabaseAvailability("error");
         console.error("Failed to load data:", error);
         throw error;
       }
     },
-    [databaseManager, flushPendingSave],
+    [databaseManager, flushPendingSave, publishDatabaseAvailability],
   );
 
   const captureRecycleScope = useCallback((): RecycleBinScope => {
@@ -1507,6 +1603,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       loadData,
       recycleBin,
       automationLibrary,
+      databaseAvailability,
     }),
     [
       state,
@@ -1518,6 +1615,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       loadData,
       recycleBin,
       automationLibrary,
+      databaseAvailability,
     ],
   );
 

@@ -9,6 +9,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { Monitor } from "lucide-react";
 import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
+import { useConnections } from "../../contexts/useConnections";
 import type {
   Connection,
   ConnectionSession,
@@ -40,7 +41,34 @@ interface ConnectionTreeProps {
   enableReorder?: boolean;
 }
 
-export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
+export const ConnectionTree: React.FC<ConnectionTreeProps> = (props) => {
+  const { databaseAvailability } = useConnections();
+  if (databaseAvailability?.status !== "ready") {
+    return (
+      <div
+        role="tree"
+        aria-label="Connections"
+        className="select-none p-4 text-sm text-[var(--color-textSecondary)]"
+      >
+        {databaseAvailability?.status === "loading"
+          ? "Loading database…"
+          : databaseAvailability?.status === "error"
+            ? "Database could not be loaded. Retry opening it to view connections."
+            : databaseAvailability?.status === "suspended"
+              ? "Database locked. Unlock it to view connections."
+              : "Open and unlock a database to view connections."}
+      </div>
+    );
+  }
+  return (
+    <AvailableConnectionTree
+      key={`${databaseAvailability.databaseId}:${databaseAvailability.generation}`}
+      {...props}
+    />
+  );
+};
+
+const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect,
   onDisconnect,
   onEdit,
