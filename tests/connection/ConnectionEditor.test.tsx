@@ -4,6 +4,7 @@ import {
   fireEvent,
   waitFor,
   act,
+  within,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useEffect } from "react";
@@ -16,6 +17,7 @@ import { Connection, TabGroup } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ConnectionContext } from "../../src/contexts/ConnectionContextTypes";
 import { useConnections } from "../../src/contexts/useConnections";
+import { SessionRenderActivityContext } from "../../src/contexts/SessionRenderActivityContext";
 import { invoke } from "@tauri-apps/api/core";
 import { resetIntegrationConfigStoreForTests } from "../../src/hooks/integrations/useIntegrationConfigStore";
 
@@ -2698,6 +2700,248 @@ describe("ConnectionEditor", () => {
       expect(saved.integration).not.toHaveProperty("providerSecrets");
       expect(JSON.stringify(saved.integration)).not.toContain("client-secret");
       expect(JSON.stringify(saved.integration)).not.toContain("onprem-secret");
+    });
+  });
+
+  describe("editor-owned Save keyboard shortcut", () => {
+    const pressSave = (target: Element, options: KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent("keydown", {
+        key: "s",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+        ...options,
+      });
+      fireEvent(target, event);
+      return event;
+    };
+
+    it.each(["Control", "Command"] as const)(
+      "saves the edited connection once with %s+S from an input without connecting or closing",
+      async (modifier) => {
+        let latest: Connection[] = [];
+        const onConnect = vi.fn();
+        const onClose = vi.fn();
+        renderWithProviders(
+          { connection: mockConnection, isOpen: true, onClose, onConnect },
+          (connections) => {
+            latest = connections;
+          },
+          [mockConnection],
+        );
+        const input = screen.getByTestId("editor-name");
+        fireEvent.change(input, { target: { value: "Keyboard saved" } });
+        const event = pressSave(input, {
+          ctrlKey: modifier === "Control",
+          metaKey: modifier === "Command",
+        });
+        expect(event.defaultPrevented).toBe(true);
+        await waitFor(() => {
+          expect(latest[0]?.name).toBe("Keyboard saved");
+          expect(toastMocks.success).toHaveBeenCalledWith(
+            '"Keyboard saved" saved',
+          );
+        });
+        expect(toastMocks.success).toHaveBeenCalledTimes(1);
+        expect(onConnect).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+      },
+    );
+
+    it("saves textarea edits through the same normal submit path", async () => {
+      let latest: Connection[] = [];
+      renderWithProviders(
+        { connection: mockConnection, isOpen: true, onClose: vi.fn() },
+        (connections) => {
+          latest = connections;
+        },
+        [mockConnection],
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-notes"));
+      const notes = screen.getByTestId("editor-description");
+      fireEvent.change(notes, {
+        target: { value: "Synthetic keyboard notes" },
+      });
+      expect(pressSave(notes).defaultPrevented).toBe(true);
+      await waitFor(() =>
+        expect(latest[0]?.description).toBe("Synthetic keyboard notes"),
+      );
+      expect(toastMocks.success).toHaveBeenCalledOnce();
+    });
+
+    it("prevents Save Page but retains native required-field validation", async () => {
+      const onClose = vi.fn();
+      renderWithProviders({ isOpen: true, onClose });
+      const input = screen.getByTestId("editor-name") as HTMLInputElement;
+      const submit = vi.fn();
+      screen
+        .getByTestId("connection-editor")
+        .addEventListener("submit", submit);
+      expect(input.validity.valueMissing).toBe(true);
+      expect(pressSave(input).defaultPrevented).toBe(true);
+      await act(async () => {});
+      expect(submit).not.toHaveBeenCalled();
+      expect(toastMocks.success).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("targets only the active mounted editor and leaves an inactive tab untouched", async () => {
+      const hidden: Connection = {
+        ...mockConnection,
+        id: "hidden",
+        name: "Hidden editor",
+      };
+      let latest: Connection[] = [];
+      render(
+        <ConnectionProvider>
+          <ConnectionStateProbe
+            initialConnections={[mockConnection, hidden]}
+            onConnections={(connections) => {
+              latest = connections;
+            }}
+          />
+          <SessionRenderActivityContext.Provider value={{ isActive: true }}>
+            <ConnectionEditor
+              connection={mockConnection}
+              isOpen
+              onClose={vi.fn()}
+            />
+          </SessionRenderActivityContext.Provider>
+          <SessionRenderActivityContext.Provider value={{ isActive: false }}>
+            <ConnectionEditor connection={hidden} isOpen onClose={vi.fn()} />
+          </SessionRenderActivityContext.Provider>
+        </ConnectionProvider>,
+      );
+      const [activeForm, hiddenForm] =
+        screen.getAllByTestId("connection-editor");
+      const hiddenName = within(hiddenForm).getByTestId("editor-name");
+      fireEvent.change(hiddenName, { target: { value: "Do not save hidden" } });
+      expect(pressSave(hiddenName).defaultPrevented).toBe(false);
+      const activeName = within(activeForm).getByTestId("editor-name");
+      fireEvent.change(activeName, { target: { value: "Only active saved" } });
+      pressSave(activeName);
+      await waitFor(() =>
+        expect(latest.find((item) => item.id === mockConnection.id)?.name).toBe(
+          "Only active saved",
+        ),
+      );
+      expect(latest.find((item) => item.id === hidden.id)?.name).toBe(
+        "Hidden editor",
+      );
+      expect(toastMocks.success).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["display", "aria-hidden", "inert"])(
+      "does not save an editor hidden by %s even outside session activity context",
+      async (mode) => {
+        const view = renderWithProviders({
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+        });
+        if (mode === "display") view.container.style.display = "none";
+        else
+          view.container.setAttribute(
+            mode,
+            mode === "aria-hidden" ? "true" : "",
+          );
+        const input = screen.getByTestId("editor-name");
+        fireEvent.change(input, { target: { value: "Hidden pending edit" } });
+        expect(pressSave(input).defaultPrevented).toBe(false);
+        await act(async () => {});
+        expect(toastMocks.success).not.toHaveBeenCalled();
+      },
+    );
+
+    it("leaves a visible dialog in control rather than saving its underlying editor", async () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+      const input = screen.getByTestId("editor-name");
+      fireEvent.change(input, { target: { value: "Dialog pending edit" } });
+      const modal = render(
+        <div role="dialog" aria-modal="true">
+          <input aria-label="Dialog field" />
+        </div>,
+      );
+      expect(
+        pressSave(screen.getByLabelText("Dialog field")).defaultPrevented,
+      ).toBe(false);
+      expect(pressSave(input).defaultPrevented).toBe(false);
+      await act(async () => {});
+      expect(toastMocks.success).not.toHaveBeenCalled();
+      modal.unmount();
+    });
+
+    it("does not reinterpret IME, Save As, Alt-modified, or already handled events", async () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+      const input = screen.getByTestId("editor-name");
+      fireEvent.change(input, {
+        target: { value: "Composition pending edit" },
+      });
+      for (const options of [
+        { isComposing: true },
+        { shiftKey: true },
+        { altKey: true },
+        { ctrlKey: false },
+      ])
+        expect(pressSave(input, options).defaultPrevented).toBe(false);
+      const handled = new KeyboardEvent("keydown", {
+        key: "s",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      handled.preventDefault();
+      fireEvent(input, handled);
+      await act(async () => {});
+      expect(toastMocks.success).not.toHaveBeenCalled();
+    });
+
+    it("does not enqueue duplicate saves from repeated shortcuts while a durable save is pending", async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const invokeMock = vi.mocked(invoke);
+      const original = invokeMock.getMockImplementation()!;
+      let writes = 0;
+      invokeMock.mockImplementation(async (command, args) => {
+        if (command === "compare_and_swap_app_data") {
+          writes += 1;
+          await gate;
+        }
+        return original(command, args);
+      });
+      renderSavedIntegration("netbox");
+      const input = screen.getByTestId("editor-name");
+      fireEvent.change(input, { target: { value: "One pending save" } });
+      expect(pressSave(input, { repeat: true }).defaultPrevented).toBe(true);
+      expect(writes).toBe(0);
+      pressSave(input);
+      await waitFor(() => expect(writes).toBe(1));
+      expect(screen.getByTestId("editor-save")).toBeDisabled();
+      expect(pressSave(input, { repeat: true }).defaultPrevented).toBe(true);
+      expect(pressSave(input).defaultPrevented).toBe(true);
+      expect(toastMocks.success).not.toHaveBeenCalled();
+      await act(async () => {
+        release();
+        await gate;
+      });
+      await waitFor(() =>
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          '"One pending save" saved',
+        ),
+      );
+      expect(writes).toBe(1);
+      expect(toastMocks.success).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("editor-save")).not.toBeDisabled();
     });
   });
 
