@@ -1,14 +1,16 @@
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import type { ConnectionTreeMgr } from "../../../hooks/connection/useConnectionTree";
 import type { Connection } from "../../../types/connection/connection";
-import { Upload, Wifi } from "lucide-react";
+import { FileText, Upload, Wifi } from "lucide-react";
 import { useTranslation } from "react-i18next";
 function PanelContextMenu({
   mgr,
   onOpenImport,
+  onDocuments,
 }: {
   mgr: ConnectionTreeMgr;
   onOpenImport?: () => void;
+  onDocuments?: () => void;
 }) {
   const { t } = useTranslation();
   const open = Boolean(mgr.panelMenuPosition);
@@ -30,6 +32,18 @@ function PanelContextMenu({
         "Connection tree context menu",
       )}
     >
+      {onDocuments && (
+        <button
+          className="sor-menu-item"
+          onClick={() => {
+            onDocuments();
+            mgr.setPanelMenuPosition(null);
+          }}
+        >
+          <FileText size={14} />
+          Documents, people and service desk
+        </button>
+      )}
       {onOpenImport && (
         <button
           onClick={() => {

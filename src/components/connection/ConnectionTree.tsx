@@ -24,6 +24,7 @@ import RenameModal from "./connectionTree/RenameModal";
 import ConnectOptionsModal from "./connectionTree/ConnectOptionsModal";
 import PanelContextMenu from "./connectionTree/PanelContextMenu";
 import { resolveFolderIconColor } from "../../utils/settings/folderIconColor";
+import { useDocumentSession } from "../../hooks/documents/useDocumentSession";
 
 const ROW_HEIGHT = 32;
 const OVERSCAN = 8;
@@ -82,6 +83,7 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
   enableReorder = true,
 }) => {
   const { t } = useTranslation();
+  const openDocuments = useDocumentSession(onActivateSession);
   const mgr = useConnectionTree(onConnect, enableReorder);
   const treeRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -314,6 +316,9 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
           onDisconnect={onDisconnect}
           onEdit={onEdit}
           onNewConnection={onNewConnection}
+          onDocuments={(parentFolderId, create) =>
+            openDocuments({ parentFolderId, create })
+          }
           onDelete={onDelete}
           onCopyHostname={mgr.handleCopyHostname}
           onRename={mgr.handleRename}
@@ -476,7 +481,11 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
         )}
       </div>
 
-      <PanelContextMenu mgr={mgr} onOpenImport={onOpenImport} />
+      <PanelContextMenu
+        mgr={mgr}
+        onOpenImport={onOpenImport}
+        onDocuments={() => openDocuments()}
+      />
       <RenameModal mgr={mgr} />
       <ConnectOptionsModal mgr={mgr} />
     </>

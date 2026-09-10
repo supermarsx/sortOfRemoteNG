@@ -15,6 +15,7 @@ import type { ConnectionDatabase } from "../../src/types/connection/connection";
 import { createElement } from "react";
 import { ToastContext } from "../../src/contexts/ToastContext";
 import type { DatabaseSelectHandler } from "../../src/types/connection/databaseOpening";
+import { registerDocumentDraft } from "../../src/utils/documents/documentDrafts";
 const toast = {
   loading: vi.fn(() => "opening-toast"),
   update: vi.fn(),
@@ -137,6 +138,32 @@ beforeEach(() => {
 });
 
 describe("database opening toast integration", () => {
+  it("keeps unsaved document drafts on a manual database switch or close", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "draft-db" });
+    const unregister = registerDocumentDraft("draft-tab", () => ({
+      databaseId: "draft-db",
+      dirty: true,
+      busy: false,
+      revision: 1,
+    }));
+    try {
+      const select = vi.fn();
+      const close = vi.fn();
+      const { result } = renderSelector(select, close);
+      await act(() => result.current.handleSelectCollection(plain));
+      expect(select).not.toHaveBeenCalled();
+      expect(result.current.error).toMatch(/Save or discard/);
+      await act(() =>
+        result.current.handleCloseCollection(
+          makeCollection({ id: "draft-db" }),
+        ),
+      );
+      expect(close).not.toHaveBeenCalled();
+      expect(mockCloseCurrentDatabase).not.toHaveBeenCalled();
+    } finally {
+      unregister();
+    }
+  });
   it("waits for authoritative App confirmation and does not duplicate a rapid open", async () => {
     const gate = deferred();
     const select = vi.fn<DatabaseSelectHandler>(

@@ -56,6 +56,7 @@ export interface ConnectionTreeItemProps {
   onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onNewConnection?: (parentId: string) => void;
+  onDocuments?: (parentId: string, create: boolean) => void;
   onDelete: (connection: Connection) => void;
   onCopyHostname: (connection: Connection) => void;
   onRename: (connection: Connection) => void;

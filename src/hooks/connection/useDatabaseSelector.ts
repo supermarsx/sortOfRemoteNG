@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { hasPendingDocumentDraft } from "../../utils/documents/documentDrafts";
 import { ConnectionDatabase } from "../../types/connection/connection";
 import {
   defaultExportSecuritySettings,
@@ -135,6 +136,15 @@ export function useDatabaseSelector(
     async (database: ConnectionDatabase, password?: string) => {
       const notify = beginOpening(database, "loading");
       try {
+        const currentOwner = databaseManager.getCurrentDatabase()?.id;
+        if (
+          currentOwner &&
+          currentOwner !== database.id &&
+          hasPendingDocumentDraft(currentOwner)
+        )
+          throw new Error(
+            "Save or discard the changes in Documents before switching databases.",
+          );
         await onDatabaseSelect(database.id, password, notify);
         // Old embedding callbacks may resolve without reporting a real outcome.
         // In that case never turn a swallowed load failure into a success toast.
@@ -144,7 +154,7 @@ export function useDatabaseSelector(
         throw error;
       }
     },
-    [onDatabaseSelect, beginOpening],
+    [onDatabaseSelect, beginOpening, databaseManager],
   );
 
   // Collections
@@ -589,6 +599,17 @@ export function useDatabaseSelector(
 
   const handleSelectCollection = async (collection: ConnectionDatabase) => {
     if (openInFlight.current) return;
+    const currentDocumentOwner = databaseManager.getCurrentDatabase()?.id;
+    if (
+      currentDocumentOwner &&
+      currentDocumentOwner !== collection.id &&
+      hasPendingDocumentDraft(currentDocumentOwner)
+    ) {
+      setError(
+        "Save or discard the changes in Documents before switching databases.",
+      );
+      return;
+    }
     closeCollectionMenu();
     setError("");
     const request = ++managedRequest.current;
@@ -671,6 +692,13 @@ export function useDatabaseSelector(
       const currentId = databaseManager.getCurrentDatabase()?.id;
       const isCurrent = currentId === collection.id;
 
+      if (isCurrent && hasPendingDocumentDraft(collection.id)) {
+        setError(
+          "Save or discard the changes in Documents before closing this database.",
+        );
+        return;
+      }
+
       if (isCurrent) {
         // Flush any pending edits BEFORE detaching the manager. A failed
         // durable write aborts the close so the only in-memory copy remains
@@ -687,6 +715,13 @@ export function useDatabaseSelector(
                 "The collection could not be closed because pending edits were not saved.",
               ),
             ),
+          );
+          return;
+        }
+        // A draft may have changed while the preceding async flush ran.
+        if (hasPendingDocumentDraft(collection.id)) {
+          setError(
+            "Save or discard the changes in Documents before closing this database.",
           );
           return;
         }

@@ -77,6 +77,30 @@ export interface DocumentSpreadsheetSheet {
   name: string;
   rows: number;
   columns: number;
+  filter?: {
+    range: {
+      startRow: number;
+      startColumn: number;
+      endRow: number;
+      endColumn: number;
+    };
+    columns: Array<{
+      column: number;
+      values?: string[];
+      includeBlank?: boolean;
+      conditions?: Array<{
+        operator:
+          | "equal"
+          | "notEqual"
+          | "greaterThan"
+          | "greaterThanOrEqual"
+          | "lessThan"
+          | "lessThanOrEqual";
+        value: string | number;
+      }>;
+      matchAll?: boolean;
+    }>;
+  };
   cells: Record<string, DocumentSpreadsheetCell>;
   merges: Array<{
     startRow: number;

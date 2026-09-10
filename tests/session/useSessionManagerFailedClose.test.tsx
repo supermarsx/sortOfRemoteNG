@@ -150,6 +150,7 @@ vi.mock("../../src/hooks/integrations/IntegrationSessionLifecycle", () => ({
 
 import { useSessionManager } from "../../src/hooks/session/useSessionManager";
 import { registerSynologySession } from "../../src/utils/session/synologySessionLifecycle";
+import { registerDocumentDraft } from "../../src/utils/documents/documentDrafts";
 
 const makeConnection = (
   id: string,
@@ -232,6 +233,34 @@ beforeEach(() => {
 });
 
 describe("handleSessionClose — sessions with no live transport", () => {
+  it("does not silently discard a protected document draft when closing its tool tab", async () => {
+    seed(
+      [],
+      [
+        makeSession("documents-db-a", "tool-documents", {
+          protocol: "tool:documents",
+          status: "connected",
+        }),
+      ],
+    );
+    const unregister = registerDocumentDraft("documents-db-a", () => ({
+      databaseId: "db-a",
+      dirty: true,
+      busy: false,
+      revision: 1,
+    }));
+    try {
+      const { result } = renderHook(() => useSessionManager());
+      expect(
+        await closeOrPending(() =>
+          result.current.handleSessionClose("documents-db-a"),
+        ),
+      ).toBe("pending");
+      expect(removeDispatched("documents-db-a")).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
   it("keeps a NAS instance on cancelled Close and awaits exact cleanup on confirmation", async () => {
     const conn = makeConnection("nas", {
       protocol: "synology",

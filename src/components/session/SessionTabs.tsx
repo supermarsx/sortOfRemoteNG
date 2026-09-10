@@ -43,6 +43,7 @@ import {
   LoaderCircle,
   TriangleAlert,
   Trash2,
+  FileText,
 } from "lucide-react";
 import { LayoutGrid } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
@@ -57,6 +58,7 @@ import {
   CONNECTION_RECYCLE_BIN_PROTOCOL,
 } from "../app/toolSession";
 import { getToolIcon } from "../app/toolDescriptors";
+import { DOCUMENTS_PROTOCOL } from "../../hooks/documents/useDocumentSession";
 import {
   isWinmgmtProtocol,
   getWinmgmtToolId,
@@ -113,6 +115,8 @@ const getSessionIcon = (
   connections: readonly Connection[],
 ) => {
   if (isToolProtocol(session.protocol)) {
+    if (session.protocol === DOCUMENTS_PROTOCOL)
+      return { icon: FileText, key: DOCUMENTS_PROTOCOL };
     if (session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL) {
       return { icon: Trash2, key: CONNECTION_RECYCLE_BIN_PROTOCOL };
     }

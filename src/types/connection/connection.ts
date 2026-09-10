@@ -1713,6 +1713,14 @@ export interface ConnectionSession {
   tabGroupId?: string;
   /** A Recycle Bin tool tab is pinned to one database and never switches it. */
   connectionRecycleBin?: { databaseId: string };
+  /** Private document contents never enter session metadata. */
+  documentsWorkspace?: {
+    databaseId: string;
+    parentFolderId?: string;
+    documentId?: string;
+    create?: boolean;
+    requestId: string;
+  };
   /** New editor draft destination only; never a saved endpoint or inherited credentials. */
   connectionEditorInitialParentId?: string;
   /** Runtime owning database, captured at creation; never inferred on viewer remount. */

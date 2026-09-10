@@ -57,6 +57,7 @@ function TreeItemMenu({
   onDisconnect,
   onEdit,
   onNewConnection,
+  onDocuments,
   onDelete,
   onCopyHostname,
   onRename,
@@ -84,6 +85,7 @@ function TreeItemMenu({
   onDisconnect: (c: Connection) => void;
   onEdit: (c: Connection) => void;
   onNewConnection?: (parentId: string) => void;
+  onDocuments?: (parentId: string, create: boolean) => void;
   onDelete: (c: Connection) => void;
   onCopyHostname: (c: Connection) => void;
   onRename: (c: Connection) => void;
@@ -255,6 +257,24 @@ function TreeItemMenu({
           <FolderPlus size={14} className="mr-2" />
           {t("connections.newSubfolder", "New subfolder")}
         </button>
+      )}
+      {connection.isGroup && onDocuments && (
+        <>
+          <button
+            onClick={act(() => onDocuments(connection.id, true))}
+            className="sor-menu-item"
+          >
+            <FileText size={14} className="mr-2" />
+            New document
+          </button>
+          <button
+            onClick={act(() => onDocuments(connection.id, false))}
+            className="sor-menu-item"
+          >
+            <FolderOpen size={14} className="mr-2" />
+            Browse folder documents
+          </button>
+        </>
       )}
       {connection.isGroup && (
         <button

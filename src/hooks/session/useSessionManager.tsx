@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { getDocumentDraft } from "../../utils/documents/documentDrafts";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import {
@@ -1360,6 +1361,27 @@ export const useSessionManager = () => {
       isToolProtocol(session.protocol) ||
       isWinmgmtProtocol(session.protocol)
     ) {
+      const documentDraft = getDocumentDraft(sessionId);
+      if (documentDraft?.busy) {
+        await showAlert(
+          "A document operation is still running. Wait for it to finish before closing this tab.",
+        );
+        return false;
+      }
+      if (documentDraft?.dirty) {
+        if (
+          !(await showConfirm(
+            "Discard unsaved document and service-desk changes and close this tab?",
+          ))
+        )
+          return false;
+        const latestDraft = getDocumentDraft(sessionId);
+        if (
+          latestDraft?.busy ||
+          (latestDraft && latestDraft.revision !== documentDraft.revision)
+        )
+          return false;
+      }
       if (!isCurrentCloseAttempt(attempt)) return false;
       markSessionEnding(sessionId);
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });

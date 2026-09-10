@@ -58,6 +58,13 @@ function id(value: unknown): asserts value is string {
   )
     throw invalid("document identifier");
 }
+function sheetId(value: unknown): asserts value is string {
+  if (
+    typeof value !== "string" ||
+    !/^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,127}$/.test(value)
+  )
+    throw invalid("spreadsheet sheet identifier");
+}
 function integer(
   value: unknown,
   min: number,
@@ -110,7 +117,7 @@ export function validateDocumentReference(
   choice(ref.kind, ["document", "connection", "person", "ticket", "cell"]);
   if (ref.kind === "cell") {
     id(ref.blockId);
-    id(ref.sheetId);
+    sheetId(ref.sheetId);
     address(ref.address);
   } else if (["blockId", "sheetId", "address"].some((key) => key in ref))
     throw invalid();
@@ -377,6 +384,7 @@ function workbook(value: unknown, cellBudget: { count: number }): void {
         "rowMetadata",
         "columnMetadata",
         "freeze",
+        "filter",
       ],
       [
         "id",
@@ -389,10 +397,52 @@ function workbook(value: unknown, cellBudget: { count: number }): void {
         "columnMetadata",
       ],
     );
-    id(sheet.id);
+    sheetId(sheet.id);
     text(sheet.name, 64, false);
     integer(sheet.rows, 1, DOCUMENT_LIMITS.rows);
     integer(sheet.columns, 1, DOCUMENT_LIMITS.columns);
+    if (sheet.filter !== undefined) {
+      const filter = record(sheet.filter, ["range", "columns"]);
+      const range = record(filter.range, [
+        "startRow",
+        "startColumn",
+        "endRow",
+        "endColumn",
+      ]);
+      integer(range.startRow, 0, sheet.rows - 1);
+      integer(range.endRow, range.startRow, sheet.rows - 1);
+      integer(range.startColumn, 0, sheet.columns - 1);
+      integer(range.endColumn, range.startColumn, sheet.columns - 1);
+      const columns = list(filter.columns, sheet.columns);
+      unique(columns, (item) => (item as Record<string, unknown>)?.column);
+      for (const entry of columns) {
+        const column = record(
+          entry,
+          ["column", "values", "includeBlank", "conditions", "matchAll"],
+          ["column"],
+        );
+        integer(column.column, range.startColumn, range.endColumn);
+        if (column.values !== undefined)
+          for (const value of list(column.values, 1000)) text(value, 4096);
+        if (column.includeBlank !== undefined) bool(column.includeBlank);
+        if (column.matchAll !== undefined) bool(column.matchAll);
+        if (column.conditions !== undefined)
+          for (const item of list(column.conditions, 2)) {
+            const condition = record(item, ["operator", "value"]);
+            choice(condition.operator, [
+              "equal",
+              "notEqual",
+              "greaterThan",
+              "greaterThanOrEqual",
+              "lessThan",
+              "lessThanOrEqual",
+            ]);
+            if (typeof condition.value === "number") {
+              if (!Number.isFinite(condition.value)) throw invalid();
+            } else text(condition.value, 4096);
+          }
+      }
+    }
     for (const [key, value] of Object.entries(
       dictionary(sheet.cells, DOCUMENT_LIMITS.cells),
     )) {

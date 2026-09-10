@@ -1,0 +1,146 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  color: var(--color-text);
+}
+.block {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  padding: 0.875rem;
+  min-width: 0;
+}
+.toolbar {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.625rem;
+}
+.toolbar button {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+.toolbar button[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.toolbar label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 0.75rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+.help {
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+  margin-top: 0.5rem;
+}
+.rich :global(.tiptap) {
+  min-height: 10rem;
+  max-height: 40rem;
+  overflow: auto;
+  outline: none;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  overflow-wrap: anywhere;
+}
+.rich :global(.tiptap:focus) {
+  border-color: var(--color-primary);
+}
+.rich :global(.tiptap h1) {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+.rich :global(.tiptap h2) {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+.rich :global(.tiptap h3) {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.rich :global(.tiptap p) {
+  margin: 0.4rem 0;
+}
+.rich :global(.tiptap ul) {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.rich :global(.tiptap ol) {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.rich :global(.tiptap blockquote) {
+  border-left: 3px solid var(--color-border);
+  margin: 0.5rem;
+  padding-left: 1rem;
+}
+.rich :global(.tiptap pre) {
+  padding: 0.75rem;
+  background: var(--color-background);
+  white-space: pre-wrap;
+}
+.rich :global(.tiptap a),
+.rich :global(.document-reference) {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.preview {
+  overflow: auto;
+  max-height: 40rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+}
+.preview img,
+.preview canvas {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.preview svg {
+  max-width: 100%;
+  height: auto;
+}
+.preview svg text,
+.preview svg tspan {
+  fill: var(--color-text);
+}
+.preview svg rect,
+.preview svg circle,
+.preview svg ellipse,
+.preview svg polygon {
+  fill: var(--color-surface);
+  stroke: var(--color-textSecondary);
+}
+.preview svg path,
+.preview svg line,
+.preview svg polyline {
+  stroke: var(--color-textSecondary);
+}
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

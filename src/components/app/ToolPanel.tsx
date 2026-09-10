@@ -23,6 +23,12 @@ import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSessio
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { getToolDescriptor } from "./toolDescriptors";
 import EmptyState from "../ui/display/EmptyState";
+import { DOCUMENTS_PROTOCOL } from "../../hooks/documents/useDocumentSession";
+
+const DocumentsWorkspace = dynamic(
+  () => import("../documents/DocumentsWorkspace"),
+  { ssr: false },
+);
 
 const PerformanceMonitor = dynamic(
   () =>
@@ -241,11 +247,14 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   const databaseDependent =
     (toolKey !== null && getToolDescriptor(toolKey).access === "database") ||
     session.protocol === TRUST_CENTER_PROTOCOL ||
+    session.protocol === DOCUMENTS_PROTOCOL ||
     session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL;
   const explicitOwner =
-    session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL
-      ? session.connectionRecycleBin?.databaseId
-      : session.ownerDatabaseId;
+    session.protocol === DOCUMENTS_PROTOCOL
+      ? session.documentsWorkspace?.databaseId
+      : session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL
+        ? session.connectionRecycleBin?.databaseId
+        : session.ownerDatabaseId;
   // A tool opened before any database exists may bind exactly once. Existing
   // owner metadata wins. Wait for the provider's guarded acknowledgement before
   // mounting private content; a viewer remount must not forget its first owner.
@@ -389,6 +398,21 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         <ConnectionRecycleBinTab
           key={databaseMountKey}
           databaseId={session.connectionRecycleBin?.databaseId ?? ""}
+        />
+      </FeatureErrorBoundary>
+    );
+  }
+  if (session.protocol === DOCUMENTS_PROTOCOL && session.documentsWorkspace) {
+    return (
+      <FeatureErrorBoundary title="The document workspace could not be displayed">
+        <DocumentsWorkspace
+          key={databaseMountKey}
+          sessionId={session.id}
+          request={session.documentsWorkspace}
+          onOpenConnection={onReconnect}
+          onOpenSecurity={
+            onOpenSettings ? () => onOpenSettings("security") : undefined
+          }
         />
       </FeatureErrorBoundary>
     );
