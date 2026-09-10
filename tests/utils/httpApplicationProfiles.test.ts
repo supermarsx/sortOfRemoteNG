@@ -30,10 +30,10 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(43);
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(49);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(43);
+    ).toBe(49);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -50,6 +50,9 @@ describe("HTTP application profile policy", () => {
       "tacticalrmm",
       "meshcentral",
       "guacamole",
+      "github",
+      "gitea",
+      "brevo",
       "wordpress",
       "joomla",
       "drupal",

@@ -23,6 +23,12 @@ const forms = {
     '<div id="loginpanel"><form method="post"><input type="hidden" name="action" value="login"><input id="username" name="username"><input id="password" name="password" type="password"><input id="loginButton" type="submit"></form></div>',
   guacamole:
     '<form class="login-form"><input name="username"><input name="password" type="password"><input class="login" name="login" type="submit"></form>',
+  github:
+    '<form action="/session" method="post"><input id="login_field" name="login"><input id="password" name="password" type="password"><input name="commit" type="submit"></form>',
+  gitea:
+    '<form action="/user/login" method="post"><input id="user_name" name="user_name"><input id="password" name="password" type="password"><button class="ui primary">Login</button></form>',
+  brevo:
+    '<form><input id="email" name="email"><input id="password" name="password" type="password"><button id="eyeIcon" type="button">Show</button><button data-testid="submit-button" type="button">Login</button></form>',
 };
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/autologin_client.js",
@@ -72,6 +78,11 @@ describe("reviewed HTTP application login forms", () => {
         });
       const submit = vi.fn((event: Event) => event.preventDefault());
       document.addEventListener("submit", submit);
+      const spaLogin = vi.fn();
+      if (id === "brevo")
+        document
+          .querySelector('[data-testid="submit-button"]')!
+          .addEventListener("click", spaLogin);
       const credentials = {
         username: "fixture-user@example.test",
         password: "fixture-password",
@@ -82,7 +93,10 @@ describe("reviewed HTTP application login forms", () => {
         submit: profile.selectors!.submitSelector,
       });
       expect(result).toMatchObject({ ok: true, reason: "submitted" });
-      expect(submit).toHaveBeenCalledOnce();
+      if (id === "brevo") {
+        expect(spaLogin).toHaveBeenCalledOnce();
+        expect(submit).not.toHaveBeenCalled();
+      } else expect(submit).toHaveBeenCalledOnce();
       expect(
         (
           document.querySelector(
@@ -192,5 +206,18 @@ describe("reviewed HTTP application login forms", () => {
     expect(document.querySelector(challenge.codeSelector)).not.toBeNull();
     document.querySelector(".totp-enroll")!.classList.remove("ng-hide");
     expect(document.querySelector(challenge.codeSelector)).toBeNull();
+  });
+  it("Gitea TOTP excludes scratch recovery codes and account enrollment", () => {
+    const challenge = getHttpApplicationProfile("gitea")!.totpChallenges![0];
+    document.body.innerHTML =
+      '<form action="/user/two_factor" method="post"><input id="passcode" name="passcode" autocomplete="one-time-code"><button class="ui primary">Verify</button></form>';
+    expect(document.querySelector(challenge.codeSelector)).not.toBeNull();
+    for (const action of [
+      "/user/two_factor/scratch",
+      "/user/settings/security/two_factor/enroll",
+    ]) {
+      document.querySelector("form")!.setAttribute("action", action);
+      expect(document.querySelector(challenge.codeSelector)).toBeNull();
+    }
   });
 });

@@ -40,8 +40,8 @@ For security keys, Windows Hello, external SSO, or incompatible challenges, sele
 Tactical RMM, WordPress, Joomla Administrator, Drupal, Payload CMS, MeshCentral,
 and Apache Guacamole have source-reviewed password-form presets. Automatic
 authenticator codes require a separate explicit, saved HTTPS-origin opt-in and
-support only the reviewed Tactical, WordPress Two-Factor plugin and Guacamole
-TOTP-extension challenges. Other providers remain manual. See the
+support only the reviewed Tactical, WordPress Two-Factor plugin, Guacamole
+TOTP-extension and Gitea local-account challenges. Other providers remain manual. See the
 [website login and 2FA guide]({{ '/http-application-logins/' | relative_url }})
 for setup, exact scope, source references, and proxy/true-origin limitations.
 

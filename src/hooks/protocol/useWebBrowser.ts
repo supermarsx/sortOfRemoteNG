@@ -37,9 +37,10 @@ import {
   validateHttpApplicationTarget,
 } from "../../utils/auth/httpApplicationLogin";
 import {
-  CLOUDFLARE_DASHBOARD_URL,
+  getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
 } from "../../utils/connection/httpApplicationProfiles";
+import { getHttpApplicationExternalTarget } from "../../utils/auth/httpApplicationExternal";
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
@@ -293,6 +294,16 @@ export function useWebBrowser(session: ConnectionSession) {
 
       const target = new URL(`${protocol}://${authority.hostname}/`);
       target.port = port === defaultPort ? "" : String(port);
+      const profileSettings = normalizeHttpApplicationSettings(
+        connection?.httpApplication,
+      );
+      const profile =
+        profileSettings && !profileSettings.invalid
+          ? getHttpApplicationProfile(profileSettings.id)
+          : undefined;
+      if (profile?.hostedLoginUrl)
+        target.pathname = new URL(profile.hostedLoginUrl).pathname;
+      else if (profile?.loginPath) target.pathname = profile.loginPath;
       if (
         target.username ||
         target.password ||
@@ -315,7 +326,12 @@ export function useWebBrowser(session: ConnectionSession) {
         url: "",
       };
     }
-  }, [connection?.port, session.hostname, session.protocol]);
+  }, [
+    connection?.port,
+    connection?.httpApplication,
+    session.hostname,
+    session.protocol,
+  ]);
   const normalizedHostname = targetResolution.hostname;
 
   // ── Derived auth ────────────────────────────────────────────
@@ -342,6 +358,12 @@ export function useWebBrowser(session: ConnectionSession) {
   );
   const isCloudflareDashboard =
     selectedApplication?.id === "cloudflare" && !selectedApplication.invalid;
+  const applicationExternalTarget = getHttpApplicationExternalTarget(
+    connection,
+    targetResolution.url,
+  );
+  const applicationExternalTargetRef = useRef(applicationExternalTarget?.url);
+  applicationExternalTargetRef.current = applicationExternalTarget?.url;
   const [openingApplicationExternal, setOpeningApplicationExternal] =
     useState(false);
   const openingApplicationExternalRef = useRef(false);
@@ -1793,22 +1815,28 @@ export function useWebBrowser(session: ConnectionSession) {
     });
   }, [currentUrl]);
   const handleOpenApplicationExternal = useCallback(async () => {
-    if (!isCloudflareDashboard || openingApplicationExternalRef.current) return;
+    const externalUrl = applicationExternalTarget?.url;
+    if (
+      !externalUrl ||
+      applicationExternalTargetRef.current !== externalUrl ||
+      openingApplicationExternalRef.current
+    )
+      return;
     openingApplicationExternalRef.current = true;
     setOpeningApplicationExternal(true);
     try {
-      // Fixed public origin only: no proxy URL, saved credentials, current URL
-      // query, or SSO callback is copied into the external browser.
-      await invoke("open_url_external", { url: CLOUDFLARE_DASHBOARD_URL });
+      // Validated saved HTTPS origin and static profile path only. Never copy
+      // the current page's query/callback, proxy URL, or saved credentials.
+      await invoke("open_url_external", { url: externalUrl });
     } catch {
       toast.error(
-        "Could not open the system browser. Open https://dash.cloudflare.com/ manually.",
+        "Could not open the system browser. Open the saved website's HTTPS address manually.",
       );
     } finally {
       openingApplicationExternalRef.current = false;
       setOpeningApplicationExternal(false);
     }
-  }, [isCloudflareDashboard, toast]);
+  }, [applicationExternalTarget?.url, toast]);
 
   const runDeepDiagnostics = useCallback(async () => {
     const diagnosticUrl = navigationFailure?.url || currentUrl;
@@ -2322,6 +2350,7 @@ export function useWebBrowser(session: ConnectionSession) {
     handleOpenInNewTab,
     handleOpenExternal,
     isCloudflareDashboard,
+    applicationExternalTarget,
     openingApplicationExternal,
     handleOpenApplicationExternal,
     runDeepDiagnostics,

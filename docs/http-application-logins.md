@@ -88,3 +88,37 @@ Opening it is always explicit, not a background launch.
 
 Sources were reviewed in September 2026. Branch-linked upstream sources may change;
 the tests capture the specific controls reviewed, not their entire implementations.
+
+## Git, CI, hosted business login and Microsoft portals
+
+| Application                       | Password stage                                                                           | Second factor and compatibility                                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub                            | Reviewed public `github.com/login` form; preset pins `https://github.com:443`            | Interactive TOTP, SMS, GitHub Mobile, SSO or passkey; GitHub Enterprise requires a separate custom profile                       |
+| Gitea                             | Reviewed v1.27.3 `/user/login` form                                                      | Optional linked TOTP at `/user/two_factor`; scratch codes, enrollment, subpath/custom forms and external providers remain manual |
+| Brevo                             | Reviewed public `login.brevo.com` email/password controls; preset pins that HTTPS origin | Authenticator/SMS and Google/Apple/SAML remain manual; separate application origins may require the system browser               |
+| Drone CI                          | Interactive configured Git-provider OAuth                                                | No universal Drone password form; provider MFA and cross-origin callbacks may need the system browser                            |
+| Exchange Admin Center / ECP       | Interactive on-premises `/ecp/`                                                          | Server-dependent forms, Windows authentication, ADFS or publishing MFA; not the Exchange Online portal                           |
+| Windows RemoteApp / RD Web Access | Interactive `/RDWeb/` entry                                                              | Legacy portal, HTML5 client, gateway and Entra preauthentication differ; this does not configure or launch a native RemoteApp    |
+
+GitHub and Brevo selection does not overwrite the current address. Their explicit
+**Use login address** action sets the reviewed hosted authority without changing
+certificate settings or saved secrets. The initial page uses the preset's static
+login path; proxy transport still binds only the configured origin.
+
+For every valid HTTPS website, the sign-in notice offers an explicit system-browser
+action. It derives a destination from the saved HTTPS authority and a static
+profile path, never the current page's query, fragment, token or SSO callback.
+Mismatched session/saved authorities and malformed metadata disable this handoff.
+YubiKey WebAuthn, passkeys and Windows Hello use the actual website origin in that
+browser, not hardware-key emulation through the proxy. The app does not transfer
+private keys, saved passwords, cookies, or a completed browser session back to the
+embedded tab. Review the separate-network-route warning before using this action.
+
+Additional reviewed sources:
+
+- [GitHub public login](https://github.com/login) and [supported two-factor methods](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa/configuring-two-factor-authentication)
+- [Gitea v1.27.3 password template](https://github.com/go-gitea/gitea/blob/v1.27.3/templates/user/auth/signin_inner.tmpl), [TOTP template](https://github.com/go-gitea/gitea/blob/v1.27.3/templates/user/auth/twofa.tmpl), [external authentication](https://docs.gitea.com/next/administration/authentication/)
+- [Brevo public login](https://login.brevo.com/) and [authenticator/SMS two-factor instructions](https://help.brevo.com/hc/en-us/articles/360021203440-Secure-your-account-with-Two-Factor-Authentication-2FA)
+- [Drone Git-provider OAuth configuration](https://docs.drone.io/server/provider/github/)
+- [Exchange ECP authentication settings](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/set-ecpvirtualdirectory?view=exchange-ps)
+- [RD Web Access](https://learn.microsoft.com/en-us/troubleshoot/windows-server/remote/remote-desktop-web-access-troubleshooting), [Entra preauthentication for Remote Desktop Services](https://learn.microsoft.com/en-us/entra/identity/app-proxy/application-proxy-integrate-with-remote-desktop-services)

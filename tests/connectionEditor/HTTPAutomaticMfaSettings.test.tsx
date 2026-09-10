@@ -55,6 +55,33 @@ const enable = () =>
   });
 
 describe("explicit linked website authenticator consent", () => {
+  it.each([
+    ["GitHub", "github", "github.com"],
+    ["Brevo", "brevo", "login.brevo.com"],
+  ])(
+    "%s requires a separate explicit hosted-address action",
+    (label, id, hostname) => {
+      render(<Fixture />);
+      choose("Website application", label);
+      expect(draft().hostname).toBe(initial.hostname);
+      expect(draft().httpApplication).toMatchObject({
+        id,
+        loginMode: "manual",
+      });
+      expect(draft().httpAutoMfa?.enabled).toBe(false);
+      fireEvent.click(
+        screen.getByRole("button", { name: `Use ${label} login address` }),
+      );
+      expect(draft()).toMatchObject({
+        protocol: "https",
+        hostname,
+        port: 443,
+        httpVerifySsl: true,
+        password: initial.password,
+      });
+      expect(draft().httpAutoMfa?.enabled).toBe(false);
+    },
+  );
   it("never chooses the first authenticator or enables automatically; stores only a stable reference and HTTPS pin", () => {
     render(<Fixture />);
     expect(enable()).toBeDisabled();

@@ -4,7 +4,6 @@ import type {
 } from "../../types/connection/connection";
 import {
   getHttpApplicationProfile,
-  CLOUDFLARE_DASHBOARD_URL,
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "./httpCredentials";
@@ -17,13 +16,16 @@ export function validateHttpApplicationTarget(
   const profileId = normalizeHttpApplicationSettings(
     connection?.httpApplication,
   )?.id;
-  if (profileId !== "cloudflare" && profileId !== "tacticalrmm") return;
+  const hostedLoginUrl = profileId
+    ? getHttpApplicationProfile(profileId)?.hostedLoginUrl
+    : undefined;
+  if (!hostedLoginUrl && profileId !== "tacticalrmm") return;
   let valid = false;
   try {
     const target = new URL(targetUrl);
     valid =
-      (profileId === "cloudflare"
-        ? target.origin === new URL(CLOUDFLARE_DASHBOARD_URL).origin
+      (hostedLoginUrl
+        ? target.origin === new URL(hostedLoginUrl).origin
         : target.protocol === "https:") &&
       !target.username &&
       !target.password;
@@ -34,7 +36,9 @@ export function validateHttpApplicationTarget(
     throw new Error(
       profileId === "cloudflare"
         ? "Cloudflare Dashboard requires HTTPS at dash.cloudflare.com on port 443. Use the dashboard address in Application settings, or choose Generic website for another host."
-        : "Tactical RMM requires an HTTPS dashboard address. Review the connection protocol and address; API keys and MeshCentral credentials cannot sign into this dashboard.",
+        : hostedLoginUrl
+          ? `${getHttpApplicationProfile(profileId!)!.label} requires HTTPS at ${new URL(hostedLoginUrl).hostname} on port 443. Use the hosted login address in Application settings, or choose a custom profile for another host.`
+          : "Tactical RMM requires an HTTPS dashboard address. Review the connection protocol and address; API keys and MeshCentral credentials cannot sign into this dashboard.",
     );
 }
 

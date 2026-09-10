@@ -219,6 +219,47 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
               </p>
             </div>
           )}
+          {profile.hostedLoginUrl && profile.id !== "cloudflare" && (
+            <div className="max-w-2xl space-y-2 rounded border border-[var(--color-border)] p-3">
+              <p className="text-sm">
+                Hosted login address:{" "}
+                <span className="font-mono break-all">
+                  {profile.hostedLoginUrl}
+                </span>
+                . This preset requires that HTTPS origin. Selection has not
+                changed your address or certificate policy.
+              </p>
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary"
+                disabled={settings?.invalid}
+                onClick={() =>
+                  mgr.setFormData((previous) => {
+                    if (
+                      previous.httpApplication?.id !== profile.id ||
+                      !profile.hostedLoginUrl
+                    )
+                      return previous;
+                    const url = new URL(profile.hostedLoginUrl);
+                    return {
+                      ...previous,
+                      protocol: "https",
+                      hostname: url.hostname,
+                      port: 443,
+                      httpAutoMfa: { version: 1, enabled: false },
+                    };
+                  })
+                }
+              >
+                Use {profile.label} login address
+              </button>
+              <p className="text-xs text-[var(--color-textMuted)]">
+                Hosted redirects, MFA, SSO and security keys may need the
+                session's system-browser action. That browser uses separate
+                cookies and its own network/TLS settings.
+              </p>
+            </div>
+          )}
           {profile.capability !== "none" && (
             <div className="max-w-md">
               <label

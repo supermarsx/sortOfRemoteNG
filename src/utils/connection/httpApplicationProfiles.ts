@@ -22,6 +22,10 @@ export interface HttpApplicationProfile {
   usernameLabel?: string;
   selectors?: Readonly<HttpAutoLoginSelectors>;
   totpChallenges?: readonly HttpApplicationTotpChallenge[];
+  /** Fixed public hosted login, never inferred from a page-supplied redirect. */
+  hostedLoginUrl?: string;
+  /** Safe source-reviewed path for an explicit external-browser handoff. */
+  loginPath?: string;
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -132,6 +136,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     label: "Cloudflare Dashboard",
     category: "networking",
     capability: "manual",
+    hostedLoginUrl: CLOUDFLARE_DASHBOARD_URL,
     description:
       "Hosted HTTPS dashboard with interactive sign-in and two-factor authentication. No saved password, API token, or automatic form login is supplied. Use the system browser for SSO, security keys, or unsupported embedded-browser challenges.",
   },
@@ -140,6 +145,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     label: "Tactical RMM",
     category: "management",
     capability: "known-form",
+    loginPath: "/login",
     // amidaware/tacticalrmm-web v0.101.64: LoginView.vue + routes.js.
     // Quasar forwards autocomplete to its native inputs. Scope submit to the
     // primary form; the separate OTP dialog must never receive the password.
@@ -208,6 +214,95 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     ],
     description:
       "Reviewed Guacamole 1.6 username/password login, normally at /guacamole/. Optional automatic codes target only the installed TOTP extension's already-enrolled challenge. Enrollment, Duo, SAML, OpenID Connect and custom authentication extensions remain interactive; remote desktop credentials are not Guacamole website credentials.",
+  },
+  {
+    id: "github",
+    label: "GitHub",
+    category: "management",
+    capability: "known-form",
+    hostedLoginUrl: "https://github.com/login",
+    // Public unauthenticated github.com/login HTML reviewed September 2026.
+    selectors: {
+      usernameSelector:
+        'form[action="/session"] input#login_field[name="login"]',
+      passwordSelector:
+        'form[action="/session"] input#password[name="password"][type="password"]',
+      submitSelector:
+        'form[action="/session"] input[name="commit"][type="submit"]',
+    },
+    description:
+      "Reviewed GitHub.com username/email and password form. This hosted preset requires https://github.com on port 443; choose a separate custom profile for GitHub Enterprise. Authenticator, SMS, GitHub Mobile, SSO, passkey and YubiKey challenges remain interactive. Personal access tokens and SSH keys are not website passwords.",
+  },
+  {
+    id: "gitea",
+    label: "Gitea",
+    category: "management",
+    capability: "known-form",
+    loginPath: "/user/login",
+    // go-gitea/gitea v1.27.3 signin_inner.tmpl and twofa.tmpl.
+    selectors: {
+      usernameSelector:
+        'form[action$="/user/login"] input#user_name[name="user_name"]',
+      passwordSelector:
+        'form[action$="/user/login"] input#password[name="password"][type="password"]',
+      submitSelector: 'form[action$="/user/login"] button.ui.primary',
+    },
+    totpChallenges: [
+      {
+        id: "gitea-totp",
+        label: "Gitea local-account authenticator",
+        codeSelector:
+          'form[action$="/user/two_factor"] input#passcode[name="passcode"][autocomplete="one-time-code"]',
+        submitSelector: 'form[action$="/user/two_factor"] button.ui.primary',
+        paths: ["/user/two_factor"],
+        submission: "post",
+      },
+    ],
+    description:
+      "Reviewed Gitea 1.27.3 local password form and separate TOTP challenge. OAuth/OIDC providers, passkeys, SSO, CAPTCHA and custom subpath challenges remain interactive. API access tokens and Git/SSH credentials do not create a website session.",
+  },
+  {
+    id: "drone-ci",
+    label: "Drone CI",
+    category: "management",
+    capability: "manual",
+    description:
+      "Interactive sign-in through the configured Git provider's OAuth flow. Drone has no universal local username/password form; runner RPC secrets and API tokens are not browser credentials. Use the system browser for cross-origin callbacks, provider MFA or security keys.",
+  },
+  {
+    id: "exchange-ecp",
+    label: "Exchange Admin Center / ECP",
+    category: "mailStorage",
+    capability: "manual",
+    loginPath: "/ecp/",
+    description:
+      "Interactive on-premises Exchange administration, normally /ecp/. Forms, Windows-integrated, ADFS and MFA behavior depend on the server and publishing setup; no guessed login form or token conversion is attempted. Exchange Online uses a different hosted admin portal. Security keys and external identity providers require their true browser origin.",
+  },
+  {
+    id: "brevo",
+    label: "Brevo",
+    category: "business",
+    capability: "known-form",
+    hostedLoginUrl: "https://login.brevo.com/",
+    usernameLabel: "Email",
+    // Public login.brevo.com HTML reviewed September 2026; avoid hashed CSS.
+    selectors: {
+      usernameSelector: 'form input#email[name="email"]',
+      passwordSelector: 'form input#password[name="password"][type="password"]',
+      submitSelector:
+        'form:has(input#email):has(input#password) button[data-testid="submit-button"][type="button"]',
+    },
+    description:
+      "Reviewed hosted email/password controls at https://login.brevo.com. Authenticator/SMS codes and Google, Apple or SAML sign-in remain interactive; API/SMTP keys are not website passwords. App redirects and separate service origins may require the system browser. This preset does not claim automatic Brevo MFA.",
+  },
+  {
+    id: "rdweb",
+    label: "Windows RemoteApp / RD Web Access",
+    category: "virtualization",
+    capability: "manual",
+    loginPath: "/RDWeb/",
+    description:
+      "Interactive RD Web Access portal. Legacy RDWeb, HTML5 web client, RD Gateway and Microsoft Entra preauthentication have different login/MFA flows; no universal form is guessed. Portal sign-in does not configure or launch a native RemoteApp session. Use the system browser for passkeys, security keys, external identity providers or unsupported portal launches.",
   },
   {
     id: "wordpress",

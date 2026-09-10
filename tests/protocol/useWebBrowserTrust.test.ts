@@ -264,6 +264,63 @@ describe("HTTPS certificate and native trust stages", () => {
       url: "https://dash.cloudflare.com/",
     });
   });
+  it.each([
+    ["github", "GitHub", "github.com", "/login"],
+    ["brevo", "Brevo", "login.brevo.com", "/"],
+    ["gitea", "Gitea", "git.example.test", "/user/login"],
+  ])(
+    "%s starts at the reviewed entry path and explicitly hands off only the original HTTPS address",
+    async (id, label, hostname, path) => {
+      mocks.credentialOverrides = {
+        hostname,
+        httpApplication: { version: 1, id, loginMode: "manual" },
+      };
+      const { result, rerender } = renderHook(() =>
+        useWebBrowser({ ...session, hostname }),
+      );
+      await waitFor(() =>
+        expect(
+          mocks.invoke.mock.calls.some(
+            ([name]) => name === "start_basic_auth_proxy",
+          ),
+        ).toBe(true),
+      );
+      const config = mocks.invoke.mock.calls.find(
+        ([name]) => name === "start_basic_auth_proxy",
+      )![1].config;
+      expect(config.target_url).toBe(`https://${hostname}/`);
+      expect(result.current.currentUrl).toBe(`https://${hostname}${path}`);
+      expect(
+        mocks.invoke.mock.calls.some(([name]) => name === "open_url_external"),
+      ).toBe(false);
+      render(
+        React.createElement(ApplicationSignInNotice, { mgr: result.current }),
+      );
+      expect(
+        screen.getByText(/YubiKey and other WebAuthn security keys/),
+      ).toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole("button", { name: `Open ${label} in system browser` }),
+      );
+      await waitFor(() =>
+        expect(mocks.invoke).toHaveBeenCalledWith("open_url_external", {
+          url: `https://${hostname}${path}`,
+        }),
+      );
+      const oldAction = result.current.handleOpenApplicationExternal;
+      mocks.credentialOverrides = {
+        ...mocks.credentialOverrides,
+        hostname: "changed.example.test",
+      };
+      rerender();
+      await act(async () => oldAction());
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([name]) => name === "open_url_external",
+        ),
+      ).toHaveLength(1);
+    },
+  );
   it("never shows the loading screen for a page that finishes inside 200ms", async () => {
     const { result } = await loadingFixture();
     expect(result.current.isLoading).toBe(true);
