@@ -1,10 +1,6 @@
-import {
-  ScriptLanguage,
-  OS_TAG_LABELS,
-  OSTag,
-  OS_TAG_ICONS,
-  languageLabels,
-} from "./shared";
+import { ScriptLanguage, OS_TAG_LABELS, OSTag, languageLabels } from "./shared";
+import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
+import { scriptLanguageIcon } from "./scriptMetadataIcons";
 import ScriptCodeEditor from "../../ui/editor/ScriptCodeEditor";
 import { useTranslation } from "react-i18next";
 import { detectLanguage } from "../../../utils/recording/scriptSyntax";
@@ -48,11 +44,11 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
               value={mgr.editLanguage}
               onChange={(v: string) => mgr.setEditLanguage(v as ScriptLanguage)}
               options={[
-                { value: "auto", label: "🔍 Auto Detect" },
-                { value: "bash", label: "🐚 Bash" },
-                { value: "sh", label: "📜 Shell (sh)" },
-                { value: "powershell", label: "⚡ PowerShell" },
-                { value: "batch", label: "🪟 Batch (cmd)" },
+                ...Object.entries(languageLabels).map(([value, label]) => ({
+                  value,
+                  label,
+                  icon: scriptLanguageIcon(value),
+                })),
               ]}
               className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary"
             />
@@ -94,7 +90,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
                     : "bg-[var(--color-surfaceHover)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]"
                 }`}
               >
-                <span>{OS_TAG_ICONS[tag]}</span>
+                <ScriptMetadataIcon platform={tag} size={14} />
                 <span>{OS_TAG_LABELS[tag]}</span>
               </button>
             ))}

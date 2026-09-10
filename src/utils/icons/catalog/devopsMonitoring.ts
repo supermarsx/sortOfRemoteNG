@@ -52,6 +52,8 @@ import { defineIcon } from "./types";
 import { LLM_VARIANT_ICONS } from "./llmVariants";
 import { DEVELOPER_TOOL_ICONS } from "./developerToolIcons";
 
+import { SCRIPT_LANGUAGE_ICONS } from "./scriptLanguages";
+
 export const DEVOPS_MONITORING_ICONS = [
   defineIcon("activity", "Activity", "devops-monitoring", Activity, [
     "prometheus",
@@ -420,4 +422,5 @@ export const DEVOPS_MONITORING_ICONS = [
   ]),
   ...LLM_VARIANT_ICONS,
   ...DEVELOPER_TOOL_ICONS,
+  ...SCRIPT_LANGUAGE_ICONS,
 ] as const;

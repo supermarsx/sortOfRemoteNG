@@ -1,4 +1,5 @@
-import { ScriptLanguage, OSTag } from "./shared";
+import { ScriptLanguage, OSTag, OS_TAG_LABELS, languageLabels } from "./shared";
+import { platformIcon, scriptLanguageIcon } from "./scriptMetadataIcons";
 import { useTranslation } from "react-i18next";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
 import { Plus, Search } from "lucide-react";
@@ -54,10 +55,11 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
               value: "",
               label: t("scriptManager.allLanguages", "All Languages"),
             },
-            { value: "bash", label: "Bash" },
-            { value: "sh", label: "Shell (sh)" },
-            { value: "powershell", label: "PowerShell" },
-            { value: "batch", label: "Batch (cmd)" },
+            ...Object.entries(languageLabels).map(([value, label]) => ({
+              value,
+              label,
+              icon: scriptLanguageIcon(value),
+            })),
           ]}
           className="appearance-none pl-3 pr-8 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
         />
@@ -73,12 +75,11 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
               value: "",
               label: t("scriptManager.allPlatforms", "All Platforms"),
             },
-            { value: "windows", label: "🪟 Windows" },
-            { value: "linux", label: "🐧 Linux" },
-            { value: "macos", label: "🍎 macOS" },
-            { value: "agnostic", label: "🌐 Agnostic" },
-            { value: "multiplatform", label: "🔀 Multi-Platform" },
-            { value: "cisco-ios", label: "🔌 Cisco IOS" },
+            ...Object.entries(OS_TAG_LABELS).map(([value, label]) => ({
+              value,
+              label,
+              icon: platformIcon(value as OSTag),
+            })),
           ]}
           className="appearance-none pl-3 pr-8 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
         />

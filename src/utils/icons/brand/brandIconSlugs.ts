@@ -24,6 +24,11 @@
  * `synology` serves both the brand and NAS entries).
  */
 export const BRAND_ICON_SLUGS = [
+  // Pure language marks for script libraries (not execution capabilities).
+  "gnubash",
+  "javascript",
+  "python",
+  "perl",
   // Operating systems
   "alpinelinux",
   "almalinux",

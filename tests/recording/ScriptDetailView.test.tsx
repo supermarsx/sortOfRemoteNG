@@ -626,6 +626,37 @@ describe("ScriptDetailView", () => {
   // ── Language-to-interpreter in component ────────────────────────
 
   describe("Language interpreter mapping in component", () => {
+    it.each(["batch", "auto", "terminal-input"])(
+      "refuses %s instead of silently running Bash",
+      (language) => {
+        mockSessions.push({
+          id: "s1",
+          connectionId: "c1",
+          name: "Server",
+          hostname: "s.com",
+          protocol: "ssh",
+          status: "connected",
+          backendSessionId: "b1",
+          startTime: new Date(),
+        });
+        render(
+          <ScriptDetailView
+            mgr={
+              makeMgr(
+                makeScript({ language: language as ScriptLanguage }),
+              ) as any
+            }
+          />,
+        );
+        const button = screen.getByTitle(/Choose an explicit Bash/);
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+        expect(mockRun.start).not.toHaveBeenCalled();
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "never sent to Bash automatically",
+        );
+      },
+    );
     function setupAndRun(language: ScriptLanguage) {
       mockSessions.push({
         id: "s1",

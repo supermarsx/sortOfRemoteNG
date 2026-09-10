@@ -1,4 +1,9 @@
-import { OS_TAG_ICONS, OS_TAG_LABELS } from "../../recording/scriptManager/shared";
+import { OS_TAG_LABELS } from "../../recording/scriptManager/shared";
+import { ScriptMetadataIcon } from "../../recording/scriptManager/ScriptMetadataIcon";
+import {
+  platformIcon,
+  scriptLanguageIcon,
+} from "../../recording/scriptManager/scriptMetadataIcons";
 import type { OSTag } from "../../recording/scriptManager/shared";
 import { WebTerminalMgr } from "./types";
 import Modal from "../../ui/overlays/Modal";
@@ -49,9 +54,44 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
             <Filter size={12} />
             <span className="text-xs font-medium">Filters:</span>
           </div>
-          <Select value={mgr.scriptCategoryFilter} onChange={(v: string) => mgr.setScriptCategoryFilter(v)} options={[{ value: 'all', label: 'All Categories' }, ...mgr.uniqueCategories.map((cat) => ({ value: cat, label: cat }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer" />
-          <Select value={mgr.scriptLanguageFilter} onChange={(v: string) => mgr.setScriptLanguageFilter(v)} options={[{ value: 'all', label: 'All Languages' }, ...mgr.uniqueLanguages.map((lang) => ({ value: lang, label: lang }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer" />
-          <Select value={mgr.scriptOsTagFilter} onChange={(v: string) => mgr.setScriptOsTagFilter(v)} options={[{ value: 'all', label: 'All Platforms' }, ...mgr.uniqueOsTags.map((tag) => ({ value: tag, label: `${OS_TAG_ICONS[tag as OSTag]} ${OS_TAG_LABELS[tag as OSTag]}` }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer" />
+          <Select
+            value={mgr.scriptCategoryFilter}
+            onChange={(v: string) => mgr.setScriptCategoryFilter(v)}
+            options={[
+              { value: "all", label: "All Categories" },
+              ...mgr.uniqueCategories.map((cat) => ({
+                value: cat,
+                label: cat,
+              })),
+            ]}
+            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer"
+          />
+          <Select
+            value={mgr.scriptLanguageFilter}
+            onChange={(v: string) => mgr.setScriptLanguageFilter(v)}
+            options={[
+              { value: "all", label: "All Languages" },
+              ...mgr.uniqueLanguages.map((lang) => ({
+                value: lang,
+                label: lang,
+                icon: scriptLanguageIcon(lang),
+              })),
+            ]}
+            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer"
+          />
+          <Select
+            value={mgr.scriptOsTagFilter}
+            onChange={(v: string) => mgr.setScriptOsTagFilter(v)}
+            options={[
+              { value: "all", label: "All Platforms" },
+              ...mgr.uniqueOsTags.map((tag) => ({
+                value: tag,
+                label: OS_TAG_LABELS[tag as OSTag] ?? tag,
+                icon: platformIcon(tag as OSTag),
+              })),
+            ]}
+            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer"
+          />
           {(mgr.scriptCategoryFilter !== "all" ||
             mgr.scriptLanguageFilter !== "all" ||
             mgr.scriptOsTagFilter !== "all") && (
@@ -77,59 +117,64 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
               <p className="text-xs mt-1">Add scripts in the Script Manager</p>
             </div>
           ) : (
-            Object.entries(mgr.scriptsByCategory).map(([category, categoryScripts]) => (
-              <div key={category} className="mb-3">
-                <div className="text-xs font-semibold text-[var(--color-textMuted)] uppercase tracking-wider px-2 py-1">
-                  {category}
-                </div>
-                <div className="space-y-1">
-                  {categoryScripts.map((script) => (
-                    <button
-                      key={script.id}
-                      onClick={() => mgr.runScript(script)}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--color-surfaceHover)] transition-colors group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-[var(--color-text)] truncate">
-                              {script.name}
-                            </span>
-                            {script.osTags && script.osTags.length > 0 && (
-                              <div className="flex items-center gap-0.5 flex-shrink-0">
-                                {script.osTags.slice(0, 2).map((tag) => (
-                                  <span
-                                    key={tag}
-                                    className="text-[10px]"
-                                    title={OS_TAG_LABELS[tag]}
-                                  >
-                                    {OS_TAG_ICONS[tag]}
-                                  </span>
-                                ))}
-                                {script.osTags.length > 2 && (
-                                  <span className="text-[10px] text-[var(--color-textMuted)]">
-                                    +{script.osTags.length - 2}
-                                  </span>
-                                )}
+            Object.entries(mgr.scriptsByCategory).map(
+              ([category, categoryScripts]) => (
+                <div key={category} className="mb-3">
+                  <div className="text-xs font-semibold text-[var(--color-textMuted)] uppercase tracking-wider px-2 py-1">
+                    {category}
+                  </div>
+                  <div className="space-y-1">
+                    {categoryScripts.map((script) => (
+                      <button
+                        key={script.id}
+                        onClick={() => mgr.runScript(script)}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--color-surfaceHover)] transition-colors group"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-[var(--color-text)] truncate">
+                                {script.name}
+                              </span>
+                              {script.osTags && script.osTags.length > 0 && (
+                                <div className="flex items-center gap-0.5 flex-shrink-0">
+                                  {script.osTags.slice(0, 2).map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="text-[10px]"
+                                      title={OS_TAG_LABELS[tag]}
+                                    >
+                                      <ScriptMetadataIcon
+                                        platform={tag}
+                                        size={12}
+                                      />
+                                    </span>
+                                  ))}
+                                  {script.osTags.length > 2 && (
+                                    <span className="text-[10px] text-[var(--color-textMuted)]">
+                                      +{script.osTags.length - 2}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            {script.description && (
+                              <div className="text-xs text-[var(--color-textMuted)] truncate">
+                                {script.description}
                               </div>
                             )}
                           </div>
-                          {script.description && (
-                            <div className="text-xs text-[var(--color-textMuted)] truncate">
-                              {script.description}
-                            </div>
-                          )}
+                          <Play
+                            size={14}
+                            className="text-success opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0"
+                          />
                         </div>
-                        <Play
-                          size={14}
-                          className="text-success opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0"
-                        />
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))
+              ),
+            )
           )}
         </div>
       </div>

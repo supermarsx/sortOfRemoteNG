@@ -1,10 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
-import {
-  languageIcons,
-  languageLabels,
-  OS_TAG_ICONS,
-  OS_TAG_LABELS,
-} from "./shared";
+import { languageLabels, OS_TAG_LABELS } from "./shared";
+import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
 import HighlightedCode from "../../ui/display/HighlightedCode";
 import { useTranslation } from "react-i18next";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
@@ -31,6 +27,12 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
   const run = useScriptRun();
   const { status: runStatus, start: startRun, reset: resetRun } = run;
   const running = runStatus === "running";
+  const interpreter = ["bash", "sh", "powershell"].includes(script.language)
+    ? script.language
+    : null;
+  const executionUnavailable = !interpreter
+    ? "Choose an explicit Bash, sh or PowerShell interpreter before running here. Batch and device CLI commands must use their matching terminal workflow; they are never sent to Bash automatically."
+    : null;
 
   // Get active SSH sessions that can run scripts
   const activeSshSessions = useMemo(
@@ -47,15 +49,8 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
   const handleRunOnSession = useCallback(
     async (backendSessionId: string) => {
       setShowRunMenu(false);
-      if (runStatus === "running") return;
+      if (runStatus === "running" || !interpreter) return;
       resetRun();
-
-      const interpreter =
-        script.language === "powershell"
-          ? "powershell"
-          : script.language === "sh"
-            ? "sh"
-            : "bash";
 
       const lines = script.script
         .split("\n")
@@ -68,7 +63,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
         // The hook already surfaces the rejection as status "failed" + error.
       }
     },
-    [script, runStatus, startRun, resetRun],
+    [script, interpreter, runStatus, startRun, resetRun],
   );
 
   return (
@@ -77,7 +72,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
         <div className="flex items-start justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">{languageIcons[script.language]}</span>
+              <ScriptMetadataIcon language={script.language} size={24} />
               <h3 className="text-xl font-semibold text-[var(--color-text)]">
                 {script.name}
               </h3>
@@ -107,7 +102,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
                     key={tag}
                     className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-primary/10 text-primary dark:text-primary rounded-full"
                   >
-                    <span>{OS_TAG_ICONS[tag]}</span>
+                    <ScriptMetadataIcon platform={tag} size={14} />
                     <span>{OS_TAG_LABELS[tag]}</span>
                   </span>
                 ))}
@@ -125,15 +120,18 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
                     setShowRunMenu(!showRunMenu);
                   }
                 }}
-                disabled={activeSshSessions.length === 0 || running}
+                disabled={
+                  activeSshSessions.length === 0 || running || !interpreter
+                }
                 className="sor-icon-btn text-success disabled:opacity-40 disabled:cursor-not-allowed"
                 title={
-                  activeSshSessions.length === 0
+                  executionUnavailable ??
+                  (activeSshSessions.length === 0
                     ? t(
                         "scriptManager.noActiveSessions",
                         "No active SSH sessions",
                       )
-                    : t("scriptManager.runOnSsh", "Run on SSH")
+                    : t("scriptManager.runOnSsh", "Run on SSH"))
                 }
               >
                 {running ? (
@@ -143,7 +141,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
                 )}
                 {activeSshSessions.length > 1 && <ChevronDown size={10} />}
               </button>
-              {showRunMenu && activeSshSessions.length > 1 && (
+              {showRunMenu && interpreter && activeSshSessions.length > 1 && (
                 <div className="absolute right-0 top-full mt-1 z-50 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg min-w-[200px] py-1">
                   <div className="px-3 py-1.5 text-xs font-medium text-[var(--color-textMuted)] uppercase">
                     Run on session
@@ -195,6 +193,11 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
           </div>
         </div>
 
+        {executionUnavailable && (
+          <p role="status" className="mb-3 text-xs text-warning">
+            {executionUnavailable}
+          </p>
+        )}
         <div className="p-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg overflow-x-auto">
           <HighlightedCode code={script.script} language={script.language} />
         </div>

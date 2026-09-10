@@ -1,12 +1,16 @@
 /* eslint-disable react-refresh/only-export-components, react/only-export-components */
-import React, { useState } from "react";
+import React, { lazy, Suspense, useState } from "react";
 import { useScriptManager } from "../../hooks/recording/useScriptManager";
 import FilterToolbar from "./scriptManager/FilterToolbar";
 import ScriptList from "./scriptManager/ScriptList";
 import DetailPane from "./scriptManager/DetailPane";
-import { DefaultScriptCatalog } from "./scriptManager/DefaultScriptCatalog";
 import WebsiteUserScriptsPanel from "./scriptManager/WebsiteUserScriptsPanel";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
+const DefaultScriptCatalog = lazy(() =>
+  import("./scriptManager/DefaultScriptCatalog").then((module) => ({
+    default: module.DefaultScriptCatalog,
+  })),
+);
 
 // Re-export shared types and constants for backward compatibility
 export type {
@@ -33,8 +37,10 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
   onClose,
 }) => {
   const mgr = useScriptManager(onClose);
-  const [view, setView] = useState<"terminal" | "website">("terminal");
-  const [catalog, setCatalog] = useState(false);
+  const [view, setView] = useState<"terminal" | "website" | "browse">(
+    "terminal",
+  );
+  const [catalogBusy, setCatalogBusy] = useState(false);
   const [websiteDirty, setWebsiteDirty] = useState(false);
   const [websiteBusy, setWebsiteBusy] = useState(false);
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
@@ -47,7 +53,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
     else action();
   };
   const switchView = (next: typeof view) => {
-    if (next === view) return;
+    if (next === view || websiteBusy || catalogBusy) return;
     requestLeave(() => {
       mgr.handleCancelEdit();
       setView(next);
@@ -67,8 +73,8 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
           type="button"
           role="tab"
           aria-selected={view === "terminal"}
-          disabled={websiteBusy}
-          className="sor-btn sor-btn-secondary"
+          disabled={websiteBusy || catalogBusy}
+          className={`sor-tab-trigger ${view === "terminal" ? "sor-tab-trigger-active" : ""}`}
           onClick={() => switchView("terminal")}
         >
           Terminal scripts
@@ -77,32 +83,41 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
           type="button"
           role="tab"
           aria-selected={view === "website"}
-          disabled={websiteBusy}
-          className="sor-btn sor-btn-secondary"
+          disabled={websiteBusy || catalogBusy}
+          className={`sor-tab-trigger ${view === "website" ? "sor-tab-trigger-active" : ""}`}
           onClick={() => switchView("website")}
         >
           Website userscripts
         </button>
-        {view === "terminal" && (
-          <button
-            type="button"
-            className="sor-btn sor-btn-secondary ml-auto"
-            onClick={() =>
-              requestLeave(() => {
-                mgr.handleCancelEdit();
-                setCatalog(true);
-              })
-            }
-          >
-            Browse default scripts
-          </button>
-        )}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "browse"}
+          disabled={websiteBusy || catalogBusy}
+          className={`sor-tab-trigger ${view === "browse" ? "sor-tab-trigger-active" : ""}`}
+          onClick={() => switchView("browse")}
+        >
+          Browse scripts
+        </button>
       </div>
       {view === "website" ? (
         <WebsiteUserScriptsPanel
           onDirtyChange={setWebsiteDirty}
           onBusyChange={setWebsiteBusy}
         />
+      ) : view === "browse" ? (
+        <Suspense
+          fallback={
+            <p role="status" className="p-4">
+              Loading bundled scripts…
+            </p>
+          }
+        >
+          <DefaultScriptCatalog
+            onApplied={mgr.handleCatalogApplied}
+            onBusyChange={setCatalogBusy}
+          />
+        </Suspense>
       ) : (
         <>
           <FilterToolbar mgr={mgr} />
@@ -111,12 +126,6 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
             <DetailPane mgr={mgr} />
           </div>
         </>
-      )}
-      {catalog && (
-        <DefaultScriptCatalog
-          onClose={() => setCatalog(false)}
-          onApplied={mgr.handleCatalogApplied}
-        />
       )}
       <ConfirmDialog
         isOpen={pendingLeave !== null}

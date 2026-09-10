@@ -843,7 +843,7 @@ describe("ScriptManager", () => {
       const osTagSelect = screen.getAllByRole("combobox")[2];
 
       fireEvent.click(osTagSelect);
-      fireEvent.mouseDown(screen.getByText("🪟 Windows"));
+      fireEvent.mouseDown(screen.getByText("Windows"));
 
       // Should show Windows scripts
       expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
@@ -853,13 +853,14 @@ describe("ScriptManager", () => {
 
     it("should display OS tag icons in script list items", async () => {
       await renderComponent();
-      // Linux scripts should show penguin emoji
-      const linuxEmojis = screen.getAllByText("🐧");
-      expect(linuxEmojis.length).toBeGreaterThan(0);
-
-      // Windows scripts should show windows emoji
-      const windowsEmojis = screen.getAllByText("🪟");
-      expect(windowsEmojis.length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByTitle("Linux")[0].querySelector("svg"),
+      ).not.toBeNull();
+      expect(
+        screen.getAllByTitle("Windows")[0].querySelector("svg"),
+      ).not.toBeNull();
+      expect(screen.queryByText("🐧")).not.toBeInTheDocument();
+      expect(screen.queryByText("🪟")).not.toBeInTheDocument();
     });
 
     it("should display OS tags in script detail view", async () => {
@@ -1023,7 +1024,7 @@ describe("ScriptManager", () => {
       // Filter by cisco-ios
       const osTagSelect = screen.getAllByRole("combobox")[2];
       fireEvent.click(osTagSelect);
-      fireEvent.mouseDown(screen.getByText("🔌 Cisco IOS"));
+      fireEvent.mouseDown(screen.getByText("Cisco IOS"));
 
       expect(screen.getByText("Cisco Config Script")).toBeInTheDocument();
       expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();

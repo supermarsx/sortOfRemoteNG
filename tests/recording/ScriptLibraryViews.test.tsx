@@ -1,6 +1,12 @@
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { BrowserScript } from "../../src/types/recording/webAutomation";
 vi.mock("../../src/components/ui/editor/ScriptCodeEditor", () => ({
   default: ({
@@ -29,6 +35,8 @@ const h = vi.hoisted(() => ({
   remove: vi.fn(),
   ready: true,
   busy: false,
+  editing: false,
+  cancelEdit: vi.fn(),
   scripts: [] as BrowserScript[],
 }));
 vi.mock("../../src/utils/recording/managedScriptPersistence", () => ({
@@ -50,7 +58,10 @@ vi.mock("../../src/hooks/recording/useWebsiteUserScripts", () => ({
   }),
 }));
 vi.mock("../../src/hooks/recording/useScriptManager", () => ({
-  useScriptManager: () => ({ isEditing: false, handleCancelEdit: vi.fn() }),
+  useScriptManager: () => ({
+    isEditing: h.editing,
+    handleCancelEdit: h.cancelEdit,
+  }),
 }));
 vi.mock("../../src/components/recording/scriptManager/FilterToolbar", () => ({
   default: () => null,
@@ -78,6 +89,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.ready = true;
   h.busy = false;
+  h.editing = false;
   h.scripts = [item];
   h.save.mockImplementation(async (item: BrowserScript) => {
     h.scripts = [item];
@@ -90,18 +102,75 @@ beforeEach(() => {
   });
 });
 describe("default script catalog UI", () => {
+  it("retains the terminal draft until explicitly discarded when entering Browse", async () => {
+    h.editing = true;
+    render(<ScriptManager isOpen onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Browse scripts" }));
+    expect(screen.getByText("Discard script draft?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(h.cancelEdit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Browse scripts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
+    await screen.findByText(/191 bundled entries/);
+    expect(h.cancelEdit).toHaveBeenCalledOnce();
+    expect(screen.getByRole("tab", { name: "Browse scripts" })).toHaveClass(
+      "sor-tab-trigger-active",
+    );
+  });
+  it("opens Browse scripts as an embedded subtab, not a modal", async () => {
+    render(<ScriptManager isOpen onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Browse scripts" }));
+    await screen.findByText(/191 bundled entries/);
+    expect(screen.getByRole("tab", { name: "Browse scripts" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /close.*catalog|cancel/i }),
+    ).not.toBeInTheDocument();
+  });
+  it("bounds rendered rows and provides device CLI preview without import or execution", async () => {
+    const { container } = render(<DefaultScriptCatalog onApplied={vi.fn()} />);
+    await act(async () => undefined);
+    expect(container.querySelectorAll("[data-catalog-key]")).toHaveLength(50);
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Page 2 of 4")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Browse script platform"), {
+      target: { value: "arista-eos" },
+    });
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+    expect(screen.getByText(/77 matching/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Arista EOS — Version and Inventory/,
+      }),
+    );
+    expect(
+      screen.getByText(/Literal terminal input, not a Bash program/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/cannot be imported as an interpreter script/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Import / restore 0 selected" }),
+    ).toBeDisabled();
+    expect(h.apply).not.toHaveBeenCalled();
+  });
   it("filters catalog by platform/category and previews without importing", async () => {
-    render(<DefaultScriptCatalog onClose={vi.fn()} onApplied={vi.fn()} />);
-    expect(screen.getByLabelText("Default script platform")).toHaveStyle({
+    render(<DefaultScriptCatalog onApplied={vi.fn()} />);
+    await act(async () => undefined);
+    expect(screen.getByLabelText("Browse script platform")).toHaveStyle({
       width: "auto",
     });
-    expect(screen.getByLabelText("Default script category")).toHaveStyle({
+    expect(screen.getByLabelText("Browse script category")).toHaveStyle({
       width: "auto",
     });
-    fireEvent.change(screen.getByLabelText("Default script platform"), {
+    fireEvent.change(screen.getByLabelText("Browse script platform"), {
       target: { value: "windows" },
     });
-    fireEvent.change(screen.getByLabelText("Default script category"), {
+    fireEvent.change(screen.getByLabelText("Browse script category"), {
       target: { value: "Packages / Windows" },
     });
     expect(
@@ -115,7 +184,7 @@ describe("default script catalog UI", () => {
       }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Installed Windows packages (winget)"));
-    expect(screen.getByText("winget").closest("pre")).toHaveTextContent(
+    expect(screen.getByText("winget list").closest("pre")).toHaveTextContent(
       "winget list",
     );
     expect(h.apply).not.toHaveBeenCalled();
@@ -128,7 +197,7 @@ describe("default script catalog UI", () => {
     };
     h.load.mockResolvedValue({ value });
     const onApplied = vi.fn();
-    render(<DefaultScriptCatalog onClose={vi.fn()} onApplied={onApplied} />);
+    render(<DefaultScriptCatalog onApplied={onApplied} />);
     fireEvent.click(
       screen.getByRole("checkbox", {
         name: `Select ${defaultScripts[0].name}`,
@@ -151,7 +220,7 @@ describe("default script catalog UI", () => {
   });
   it("never treats failed storage load as an empty writable library", async () => {
     h.load.mockRejectedValueOnce(new Error("locked"));
-    render(<DefaultScriptCatalog onClose={vi.fn()} onApplied={vi.fn()} />);
+    render(<DefaultScriptCatalog onApplied={vi.fn()} />);
     await screen.findByRole("alert");
     fireEvent.click(
       screen.getByRole("checkbox", {
