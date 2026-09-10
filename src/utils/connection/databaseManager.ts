@@ -24,6 +24,10 @@ import { databaseProtection } from "./databaseProtection";
 import { normalizeHttpAutoMfa } from "./httpAutoMfa";
 import { stripHttpOptionSecrets } from "./httpOptionSecrets";
 import { validateNewPassword } from "../security/passwordPolicy";
+import {
+  assertNoVaultImport,
+  assertPortableCredentialSources,
+} from "../security/vaultPortability";
 import { normalizeRecycleBin } from "./recycleBin";
 import { rebindDatabaseQuickActions } from "./rebindDatabaseQuickActions";
 import {
@@ -2594,6 +2598,7 @@ export class DatabaseManager {
       includeTrust?: boolean;
     },
   ): Promise<void> {
+    assertPortableCredentialSources(connections);
     const collection = await this.getDatabase(collectionId);
     if (!collection) {
       throw new DatabaseNotFoundError();
@@ -2897,6 +2902,7 @@ export class DatabaseManager {
       parsed = JSON.parse(decrypted);
     }
 
+    assertNoVaultImport(parsed);
     const collectionName = options?.collectionName || parsed?.collection?.name;
     if (!collectionName) {
       throw new Error("Collection name missing in import");

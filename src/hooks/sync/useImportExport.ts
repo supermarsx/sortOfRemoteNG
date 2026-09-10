@@ -11,6 +11,11 @@ import {
   type DatabaseExportSnapshot,
 } from "../../utils/connection/databaseManager";
 import { SettingsManager } from "../../utils/settings/settingsManager";
+import {
+  assertNoVaultImport,
+  assertPortableCredentialSources,
+  VaultPortabilityError,
+} from "../../utils/security/vaultPortability";
 import { getInvoke } from "../../utils/tauri/invoke";
 import {
   applyTrustDocument,
@@ -3608,6 +3613,7 @@ ${tableRows}
       if (detectedFormat === "json") {
         try {
           const parsed = JSON.parse(processedContent);
+          assertNoVaultImport(parsed);
           const legacySidecars =
             parsed && typeof parsed.sidecars === "object"
               ? parsed.sidecars
@@ -3641,7 +3647,8 @@ ${tableRows}
             mergeTrustDocuments(
               trustCandidates.filter(isTrustExportDocument),
             ) ?? undefined;
-        } catch {
+        } catch (error) {
+          if (error instanceof VaultPortabilityError) throw error;
           // Not a JSON file or no VPN data -- ignore
         }
       }
@@ -4020,6 +4027,15 @@ ${tableRows}
             connection,
             conflictStatus: "none" as const,
           }));
+      try {
+        assertPortableCredentialSources(
+          selectedItems.map((item) => item.connection),
+        );
+      } catch (error) {
+        if (!(error instanceof VaultPortabilityError)) throw error;
+        toast.error(error.message);
+        return;
+      }
       const hasSshTunnelPreviewRows = Boolean(
         importResult.previewItems?.some((item) => item.kind === "sshTunnel"),
       );
@@ -4472,6 +4488,7 @@ ${tableRows}
           includedFolderIds: sourceSelectedFolderIds,
         });
       });
+      assertPortableCredentialSources(filtered);
       const sidecarClone = await cloneSidecarsForConnections(
         filtered,
         cloneInclusion,
@@ -4627,6 +4644,10 @@ ${tableRows}
         toast.error(`Clone partially failed: ${errors.join("; ")}`);
       }
       return result;
+    } catch (error) {
+      if (!(error instanceof VaultPortabilityError)) throw error;
+      toast.error(error.message);
+      return null;
     } finally {
       setIsCloning(false);
     }

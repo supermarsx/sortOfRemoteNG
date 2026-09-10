@@ -467,6 +467,39 @@ describe("native managed database sessions", () => {
     ).toBe(false);
   });
   it("creates only empty plaintext before direct protected destination initialization", async () => {
+    const copiedData: typeof lease.data = {
+      ...data,
+      credentialVault: {
+        version: 1,
+        revision: 1,
+        entries: [
+          {
+            id: "preserved-vault-id",
+            name: "Credential",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            facets: { password: "fixture-secret" },
+          },
+        ],
+      },
+      connections: [
+        {
+          id: "vault-connection",
+          name: "Host",
+          protocol: "ssh",
+          hostname: "fixture.test",
+          port: 22,
+          isGroup: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          credentialSource: {
+            kind: "vault",
+            credentialId: "preserved-vault-id",
+          },
+        },
+      ],
+    };
+    lease.data = copiedData;
     const manager = DatabaseManager.getInstance();
     await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");
     const sourceId = rows[0].id;
@@ -498,8 +531,54 @@ describe("native managed database sessions", () => {
     )![1];
     expect(change.databaseId).not.toBe(sourceId);
     expect(change.initializeEmptyDestination).toBe(true);
-    expect(change.legacyVerifiedData).toEqual(data);
+    expect(change.legacyVerifiedData).toEqual(copiedData);
     expect(change.target.keepSlotIds).toEqual([]);
     expect(manager.getCurrentDatabase()).toBeNull();
   });
+  it("vault portability refuses append before any database access or write", async () => {
+    const manager = DatabaseManager.getInstance();
+    bridge.invoke.mockClear();
+    await expect(
+      manager.appendConnectionsToDatabase(rows[0].id, [
+        {
+          credentialSource: {
+            kind: "vault",
+            credentialId: "same-id-other-owner",
+          },
+          password: "ignored-local-secret",
+        },
+      ] as never),
+    ).rejects.toThrow("duplicate the entire protected database");
+    expect(bridge.invoke).not.toHaveBeenCalled();
+  });
+  it.each([
+    { credentialVault: { version: 1, entries: [] } },
+    {
+      connections: [
+        {
+          credentialSource: {
+            kind: "vault",
+            credentialId: "same-id-other-owner",
+          },
+        },
+      ],
+    },
+    {
+      recycleBin: {
+        entries: [{ connection: { credentialSource: { kind: "vault" } } }],
+      },
+    },
+  ])(
+    "vault portability refuses native import before creating a database: %j",
+    async (payload) => {
+      const manager = DatabaseManager.getInstance();
+      bridge.invoke.mockClear();
+      await expect(
+        manager.importDatabase(
+          JSON.stringify({ collection: { name: "Imported" }, ...payload }),
+        ),
+      ).rejects.toThrow("duplicate the entire protected database");
+      expect(bridge.invoke).not.toHaveBeenCalled();
+    },
+  );
 });

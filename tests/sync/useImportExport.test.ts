@@ -408,6 +408,115 @@ beforeEach(() => {
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe("useImportExport", () => {
+  it.each([false, true])(
+    "vault portability blocks import before stripping credentials or writing sidecars (include=%s)",
+    async (includeCredentials) => {
+      mockImportConnections.mockResolvedValueOnce([
+        {
+          ...mockConnections[0],
+          credentialSource: { kind: "vault", credentialId: "private-vault-id" },
+        },
+      ]);
+      const { result } = renderImportExport();
+      await act(async () => {
+        await result.current.handleFileSelect({
+          target: { files: [new File(["{}"], "source.json")] },
+        } as unknown as React.ChangeEvent<HTMLInputElement>);
+      });
+      act(() => result.current.updateImportOptions({ includeCredentials }));
+      await act(async () => {
+        await result.current.confirmImport();
+      });
+      expect(mockToast.error).toHaveBeenCalledWith(
+        expect.stringContaining("duplicate the entire protected database"),
+      );
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+      expect(mockCreateOpenVPN).not.toHaveBeenCalled();
+      expect(mockCreateTunnelChain).not.toHaveBeenCalled();
+      expect(JSON.stringify(mockToast.error.mock.calls)).not.toContain(
+        "private-vault-id",
+      );
+    },
+  );
+
+  it("vault portability rejects declared native JSON vault data instead of dropping it", async () => {
+    const { result } = renderImportExport();
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: {
+          files: [
+            new File(
+              [JSON.stringify({ credentialVault: {}, connections: [] })],
+              "source.json",
+            ),
+          ],
+        },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    expect(result.current.importResult?.success).toBe(false);
+    expect(result.current.importResult?.errors).toEqual([
+      expect.stringContaining("duplicate the entire protected database"),
+    ]);
+    expect(mockImportConnections).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "vault portability blocks cross-database clones before any sidecar or connection write (include=%s)",
+    async (includeCredentials) => {
+      mockGetExportableDatabases.mockResolvedValue(
+        ["col-1", "col-2", "col-3"].map((id) => ({
+          id,
+          name: id,
+          isEncrypted: true,
+          isCurrent: id === "col-1",
+          isUnlocked: true,
+          isExportable: true,
+        })),
+      );
+      mockReadExportableSnapshot.mockImplementation(
+        async (databaseId: string) => ({
+          collection: { id: databaseId, name: databaseId, isEncrypted: true },
+          connections: [
+            {
+              ...mockConnections[0],
+              credentialSource: {
+                kind: "vault",
+                credentialId: "same-id-different-owner",
+              },
+            },
+          ],
+          settings: {},
+          tabGroups: [],
+          colorTags: {},
+        }),
+      );
+      const { result } = renderImportExport({ initialTab: "clone" });
+      await waitFor(() =>
+        expect(result.current.cloneDatabaseOptions).toHaveLength(3),
+      );
+      act(() => {
+        result.current.setCloneSourceMode("selected");
+        result.current.setSelectedCloneSourceDatabaseIds(["col-2"]);
+        result.current.setCloneTargetDatabaseIds(["col-3"]);
+        result.current.setCloneIncludeCredentials(includeCredentials);
+      });
+      await act(async () => {
+        expect(await result.current.handleClone()).toBeNull();
+      });
+      expect(mockToast.error).toHaveBeenCalledWith(
+        expect.stringContaining("duplicate the entire protected database"),
+      );
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+      expect(mockCreateProfile).not.toHaveBeenCalled();
+      expect(mockCreateChain).not.toHaveBeenCalled();
+      expect(mockCreateOpenVPN).not.toHaveBeenCalled();
+      expect(mockCreateTunnelChain).not.toHaveBeenCalled();
+      expect(result.current.isCloning).toBe(false);
+    },
+  );
   // ── Initial state ────────────────────────────────────────────
 
   it("returns default export state", () => {
@@ -1991,11 +2100,11 @@ describe("useImportExport", () => {
       class MockFileReader {
         result: string | ArrayBuffer | null = null;
         onload:
-          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
-          | null = null;
+          ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null =
+          null;
         onerror:
-          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
-          | null = null;
+          ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null =
+          null;
 
         readAsText() {
           this.result = '{"connections":[]}';
@@ -4156,11 +4265,11 @@ describe("useImportExport", () => {
       class MockFileReader {
         result: string | ArrayBuffer | null = null;
         onload:
-          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
-          | null = null;
+          ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null =
+          null;
         onerror:
-          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
-          | null = null;
+          ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null =
+          null;
 
         readAsText() {
           this.onerror?.call(
@@ -4202,11 +4311,11 @@ describe("useImportExport", () => {
       class MockFileReader {
         result: string | ArrayBuffer | null = null;
         onload:
-          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
-          | null = null;
+          ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null =
+          null;
         onerror:
-          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
-          | null = null;
+          ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null =
+          null;
 
         readAsText() {
           throw "plain reader failure";
