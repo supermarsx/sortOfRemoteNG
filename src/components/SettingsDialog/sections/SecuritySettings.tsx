@@ -16,6 +16,7 @@ import TOTPDefaultsSection from "./security/TOTPDefaultsSection";
 import type { SecuritySettingsProps } from "./security/types";
 import CurrentDatabaseSecuritySection from "./security/CurrentDatabaseSecuritySection";
 import ConnectionRecycleBinSection from "./security/ConnectionRecycleBinSection";
+import YubiKeySecuritySection from "./security/YubiKeySecuritySection";
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
@@ -56,6 +57,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         mgr={mgr}
       />
       <SSHKeyGenSection mgr={mgr} />
+      <YubiKeySecuritySection />
       <CollectionKeyGenSection mgr={mgr} />
       <CredSSPSection settings={settings} updateSettings={updateSettings} />
       <PasswordRevealSection

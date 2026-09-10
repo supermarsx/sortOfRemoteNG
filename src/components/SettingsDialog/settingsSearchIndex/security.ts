@@ -37,6 +37,24 @@ const CREDSSP_TAGS = [
 
 export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "hardwareKeyManagement",
+    label: "YubiKey and hardware security keys",
+    description:
+      "Manage YubiKey devices, PIV certificates, FIDO2 credentials and hardware-held OATH authenticator codes.",
+    tags: [
+      "yubikey",
+      "security key",
+      "hardware",
+      "piv",
+      "fido2",
+      "oath",
+      "totp",
+    ],
+    synonyms: ["ykman", "smart card", "passkey", "usb key"],
+    section: "security",
+    sectionLabel: "Security",
+  },
+  {
     key: "currentDatabaseRecycleBin",
     label: "Current database recycle bin",
     description:
