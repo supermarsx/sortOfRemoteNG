@@ -4,6 +4,7 @@ import { Modal, ModalBody, ModalFooter } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { ManagedDatabaseUnlockForm } from "./ManagedDatabaseUnlockForm";
 import type { DatabaseProtectionStatus } from "../../types/encryption/databaseProtection";
+import type { DatabaseOpenObserver } from "../../types/connection/databaseOpening";
 
 /** Explicit database authentication, not the global master-key/privacy gate. */
 export function DatabaseUnlockDialog({
@@ -75,12 +76,14 @@ export function ManagedDatabaseUnlockDialog({
   status,
   onClose,
   onUnlockComplete,
+  onUnlockProgress,
 }: {
   databaseId: string;
   databaseName: string;
   status: DatabaseProtectionStatus;
   onClose: () => void;
   onUnlockComplete?: () => void | Promise<void>;
+  onUnlockProgress?: DatabaseOpenObserver;
 }) {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -104,6 +107,7 @@ export function ManagedDatabaseUnlockDialog({
           setBusy(value);
         }}
         onUnlockComplete={onUnlockComplete}
+        onUnlockProgress={onUnlockProgress}
       />
     </DatabaseUnlockDialog>
   );

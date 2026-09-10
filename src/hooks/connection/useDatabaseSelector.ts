@@ -13,6 +13,12 @@ import { useConnections } from "../../contexts/useConnections";
 import { useTranslation } from "react-i18next";
 import { useDatabaseBulkActions } from "./useDatabaseBulkActions";
 import type { DatabaseProtectionStatus } from "../../types/encryption/databaseProtection";
+import type {
+  DatabaseOpenStage,
+  DatabaseSelectHandler,
+} from "../../types/connection/databaseOpening";
+import { useDatabaseOpenNotification } from "./useDatabaseOpenNotification";
+import { isDatabaseOpenCancellation } from "../../utils/connection/databaseOpening";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -106,10 +112,7 @@ function getActionError(error: unknown, fallbackMessage: string): string {
 
 export function useDatabaseSelector(
   isOpen: boolean,
-  onDatabaseSelect: (
-    collectionId: string,
-    password?: string,
-  ) => Promise<void> | void,
+  onDatabaseSelect: DatabaseSelectHandler,
   /**
    * Called when the user closes the currently-open database via the
    * row's close button. Lets the host clear connection state, drop
@@ -123,6 +126,26 @@ export function useDatabaseSelector(
   const databaseManager = DatabaseManager.getInstance();
   const { saveData, flushPendingSave } = useConnections();
   const { t } = useTranslation();
+  const {
+    begin: beginOpening,
+    cancel: cancelOpening,
+    update: updateOpening,
+  } = useDatabaseOpenNotification();
+  const openDatabase = useCallback(
+    async (database: ConnectionDatabase, password?: string) => {
+      const notify = beginOpening(database, "loading");
+      try {
+        await onDatabaseSelect(database.id, password, notify);
+        // Old embedding callbacks may resolve without reporting a real outcome.
+        // In that case never turn a swallowed load failure into a success toast.
+        notify("unconfirmed");
+      } catch (error) {
+        notify(isDatabaseOpenCancellation(error) ? "cancelled" : "failed");
+        throw error;
+      }
+    },
+    [onDatabaseSelect, beginOpening],
+  );
 
   // Collections
   const [collections, setCollections] = useState<ConnectionDatabase[]>([]);
@@ -133,6 +156,7 @@ export function useDatabaseSelector(
     database: ConnectionDatabase;
     status: DatabaseProtectionStatus;
     openAfterUnlock: boolean;
+    request: number;
   } | null>(null);
   const managedRequest = useRef(0);
   useEffect(() => {
@@ -145,16 +169,17 @@ export function useDatabaseSelector(
     };
   }, [isOpen]);
   const closeManagedUnlock = () => {
+    if (managedUnlock?.openAfterUnlock) cancelOpening();
     managedRequest.current += 1;
     setManagedUnlock(null);
   };
   const finishManagedUnlock = async () => {
     const pending = managedUnlock;
-    if (!pending) return;
+    if (!pending || pending.request !== managedRequest.current) return;
     const request = managedRequest.current;
     if (!databaseManager.isDatabaseUnlocked(pending.database.id))
       throw new Error("Database access is no longer unlocked.");
-    if (pending.openAfterUnlock) await onDatabaseSelect(pending.database.id);
+    if (pending.openAfterUnlock) await openDatabase(pending.database);
     if (request === managedRequest.current) setManagedUnlock(null);
     await loadDatabases();
   };
@@ -259,11 +284,12 @@ export function useDatabaseSelector(
   }, [highlightedCollectionId]);
 
   const closePasswordDialog = useCallback(() => {
+    cancelOpening();
     setShowPasswordDialog(false);
     setSelectedCollection(null);
     setPassword("");
     setPasswordDialogMode("unlock");
-  }, []);
+  }, [cancelOpening]);
 
   const openCollectionMenu = useCallback(
     (
@@ -318,9 +344,7 @@ export function useDatabaseSelector(
       setShowCreateForm(false);
       setNewCollection(EMPTY_NEW_COLLECTION);
       setError("");
-      await Promise.resolve(
-        onDatabaseSelect(collection.id, newCollection.password || undefined),
-      );
+      await openDatabase(collection, newCollection.password || undefined);
     } catch (error) {
       setError(
         getActionError(
@@ -564,14 +588,20 @@ export function useDatabaseSelector(
   // ─── Collection Selection ──────────────────────────────────────
 
   const handleSelectCollection = async (collection: ConnectionDatabase) => {
+    if (openInFlight.current) return;
     closeCollectionMenu();
     setError("");
+    const request = ++managedRequest.current;
+    setManagedUnlock(null);
+    const notify = beginOpening(
+      collection,
+      collection.isEncrypted ? "waiting-unlock" : "loading",
+    );
 
     if (
       collection.protectionFormat === "sorng-db" &&
       !databaseManager.isDatabaseUnlocked(collection.id)
     ) {
-      const request = ++managedRequest.current;
       try {
         const status = await databaseManager.getDatabaseProtectionStatus(
           collection.id,
@@ -581,8 +611,10 @@ export function useDatabaseSelector(
             database: collection,
             status,
             openAfterUnlock: true,
+            request,
           });
       } catch (error) {
+        notify(isDatabaseOpenCancellation(error) ? "cancelled" : "failed");
         if (request === managedRequest.current)
           setError(
             getActionError(error, "Unable to inspect database unlock methods."),
@@ -617,7 +649,7 @@ export function useDatabaseSelector(
       fromId: isSwitch ? currentId : undefined,
     });
     try {
-      await Promise.resolve(onDatabaseSelect(collection.id));
+      await openDatabase(collection);
     } finally {
       setLoadingCollection(null);
       openInFlight.current = false;
@@ -682,6 +714,10 @@ export function useDatabaseSelector(
     if (!selectedCollection) return;
     if (openInFlight.current) return;
     openInFlight.current = true;
+    const notify =
+      passwordDialogMode === "unlock"
+        ? beginOpening(selectedCollection, "unlocking")
+        : undefined;
 
     setIsWorking(true);
     try {
@@ -709,16 +745,19 @@ export function useDatabaseSelector(
             : undefined,
       });
       await databaseManager.loadDatabaseData(selectedCollection.id, password);
-      await Promise.resolve(onDatabaseSelect(selectedCollection.id, password));
+      await openDatabase(selectedCollection, password);
       closePasswordDialog();
       setError("");
     } catch (error) {
+      notify?.(isDatabaseOpenCancellation(error) ? "cancelled" : "failed");
       setError(
-        getCollectionActionError(
-          error,
-          t("databaseCenter.collections.errors.accessFailed"),
-          t("databaseCenter.collections.errors.invalidPassword"),
-        ),
+        isDatabaseOpenCancellation(error)
+          ? ""
+          : getCollectionActionError(
+              error,
+              t("databaseCenter.collections.errors.accessFailed"),
+              t("databaseCenter.collections.errors.invalidPassword"),
+            ),
       );
     } finally {
       setIsWorking(false);
@@ -796,6 +835,7 @@ export function useDatabaseSelector(
             database: collection,
             status,
             openAfterUnlock: false,
+            request,
           });
       } catch (error) {
         if (request === managedRequest.current)
@@ -1069,6 +1109,15 @@ export function useDatabaseSelector(
     setShowImportForm,
     showPasswordDialog,
     managedUnlock,
+    onManagedUnlockProgress: (stage: DatabaseOpenStage) => {
+      if (
+        managedUnlock?.openAfterUnlock &&
+        managedUnlock.request === managedRequest.current
+      ) {
+        if (stage === "unlocking") beginOpening(managedUnlock.database, stage);
+        else updateOpening(managedUnlock.database.id, stage);
+      }
+    },
     closeManagedUnlock,
     finishManagedUnlock,
     closePasswordDialog,

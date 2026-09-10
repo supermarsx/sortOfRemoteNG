@@ -50,6 +50,9 @@ import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { collectConnectionSubtreeIds } from "./utils/connection/recycleBin";
 import { ToastProvider } from "./contexts/ToastContext";
+import type { DatabaseOpenObserver } from "./types/connection/databaseOpening";
+import { isDatabaseOpenCancellation } from "./utils/connection/databaseOpening";
+import { useDatabaseOpenNotification } from "./hooks/connection/useDatabaseOpenNotification";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { SessionFullscreenProvider } from "./contexts/SessionFullscreenProvider";
 import { useSessionFullscreenController } from "./hooks/session/useSessionFullscreen";
@@ -114,6 +117,7 @@ const TRAY_QUIT_REQUESTED_EVENT = "tray-quit-requested";
  * managing global application state.
  */
 const AppContent: React.FC = () => {
+  const { begin: beginDatabaseOpening } = useDatabaseOpenNotification();
   const { t } = useTranslation();
   const { state, dispatch, loadData, saveData, flushPendingSave, recycleBin } =
     useConnections();
@@ -701,14 +705,29 @@ const AppContent: React.FC = () => {
    * @param password - Optional password for encrypted collections.
    */
   const handleDatabaseSelect = useCallback(
-    async (collectionId: string, password?: string): Promise<void> => {
+    async (
+      collectionId: string,
+      password?: string,
+      onProgress?: DatabaseOpenObserver,
+    ): Promise<void> => {
+      const report =
+        onProgress ??
+        beginDatabaseOpening(
+          { id: collectionId, name: "selected database" },
+          "loading",
+        );
+      report("loading");
       try {
         // A collection hand-off is fail-closed: the outgoing rendered rows
         // must be durable before DatabaseManager advances its current target.
         await flushPendingSave();
         await databaseManager.selectDatabase(collectionId, password);
         const loaded = await loadData(collectionId);
-        if (!loaded) return;
+        if (!loaded) {
+          report("cancelled");
+          return;
+        }
+        report("success");
         setShowDatabasePanel(false);
         toolShowSetters.current.database(false);
         settingsManager.logAction(
@@ -730,6 +749,9 @@ const AppContent: React.FC = () => {
           );
         }
       } catch (error) {
+        const cancelled = isDatabaseOpenCancellation(error);
+        report(cancelled ? "cancelled" : "failed");
+        if (cancelled) return;
         console.error("Failed to select collection:", error);
         if (error instanceof DatabaseNotFoundError) {
           showAlert(
@@ -760,6 +782,7 @@ const AppContent: React.FC = () => {
       settingsManager,
       showAlert,
       t,
+      beginDatabaseOpening,
     ],
   );
 

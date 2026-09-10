@@ -12,6 +12,18 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useDatabaseSelector } from "../../src/hooks/connection/useDatabaseSelector";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
+import { createElement } from "react";
+import { ToastContext } from "../../src/contexts/ToastContext";
+import type { DatabaseSelectHandler } from "../../src/types/connection/databaseOpening";
+const toast = {
+  loading: vi.fn(() => "opening-toast"),
+  update: vi.fn(),
+  remove: vi.fn(),
+  info: vi.fn(() => "info"),
+  error: vi.fn(() => "error"),
+  success: vi.fn(() => "success"),
+  warning: vi.fn(() => "warning"),
+};
 
 const mockGetCurrentDatabase = vi.fn<() => { id: string } | null>(() => null);
 const mockGetAllDatabases = vi.fn(async () => [] as ConnectionDatabase[]);
@@ -101,11 +113,19 @@ function deferred<T = void>() {
 }
 
 function renderSelector(
-  onDatabaseSelect: (id: string, password?: string) => Promise<void> | void,
+  onDatabaseSelect: DatabaseSelectHandler,
   onDatabaseClose?: () => Promise<void> | void,
 ) {
-  return renderHook(() =>
-    useDatabaseSelector(false, onDatabaseSelect, onDatabaseClose),
+  return renderHook(
+    () => useDatabaseSelector(false, onDatabaseSelect, onDatabaseClose),
+    {
+      wrapper: ({ children }) =>
+        createElement(
+          ToastContext.Provider,
+          { value: { toast, removeAll: vi.fn() } },
+          children,
+        ),
+    },
   );
 }
 
@@ -114,6 +134,124 @@ beforeEach(() => {
   mockGetCurrentDatabase.mockReturnValue(null);
   mockIsDatabaseUnlocked.mockReturnValue(false);
   mockFlushPendingSave.mockResolvedValue(undefined);
+});
+
+describe("database opening toast integration", () => {
+  it("waits for authoritative App confirmation and does not duplicate a rapid open", async () => {
+    const gate = deferred();
+    const select = vi.fn<DatabaseSelectHandler>(
+      async (_id, _password, progress) => {
+        progress?.("loading");
+        await gate.promise;
+        progress?.("success");
+      },
+    );
+    const { result } = renderSelector(select);
+    let opened!: Promise<void>;
+    act(() => {
+      opened = result.current.handleSelectCollection(plain);
+      void result.current.handleSelectCollection(plain);
+    });
+    expect(toast.loading).toHaveBeenCalledOnce();
+    expect(select).toHaveBeenCalledOnce();
+    expect(
+      toast.update.mock.calls.some(([, patch]) => patch.type === "success"),
+    ).toBe(false);
+    await act(async () => {
+      gate.resolve();
+      await opened;
+    });
+    expect(toast.update).toHaveBeenLastCalledWith(
+      "opening-toast",
+      expect.objectContaining({ type: "success" }),
+    );
+  });
+  it("does not claim a swallowed App failure or cancelled load succeeded", async () => {
+    for (const stage of ["failed", "cancelled"] as const) {
+      const view = renderSelector((_id, _password, progress) => {
+        progress?.(stage);
+      });
+      await act(() => view.result.current.handleSelectCollection(plain));
+      expect(toast.update).toHaveBeenLastCalledWith(
+        "opening-toast",
+        expect.objectContaining({
+          type: stage === "failed" ? "error" : "info",
+        }),
+      );
+      view.unmount();
+    }
+    expect(
+      toast.update.mock.calls.some(([, patch]) => patch.type === "success"),
+    ).toBe(false);
+  });
+  it("keeps legacy decryption pending on the same toast and cancellation informational", async () => {
+    const decrypt = deferred<object>();
+    mockLoadDatabaseData.mockImplementationOnce(() => decrypt.promise);
+    const view = renderSelector((_id, _password, progress) => {
+      progress?.("success");
+    });
+    await act(() => view.result.current.handleSelectCollection(encrypted));
+    act(() => view.result.current.setPassword("synthetic-password"));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.handlePasswordSubmit();
+    });
+    expect(toast.loading).toHaveBeenCalledOnce();
+    expect(toast.update).toHaveBeenLastCalledWith(
+      "opening-toast",
+      expect.objectContaining({
+        type: "loading",
+        message: "Unlocking “Vault”…",
+      }),
+    );
+    await act(async () => {
+      decrypt.resolve({});
+      await pending;
+    });
+    expect(toast.update).toHaveBeenLastCalledWith(
+      "opening-toast",
+      expect.objectContaining({ type: "success" }),
+    );
+    expect(JSON.stringify(toast.update.mock.calls)).not.toContain(
+      "synthetic-password",
+    );
+    await act(() => view.result.current.handleSelectCollection(encrypted));
+    act(() => view.result.current.closePasswordDialog());
+    expect(toast.update).toHaveBeenLastCalledWith(
+      "opening-toast",
+      expect.objectContaining({
+        type: "info",
+        message: expect.stringContaining("cancelled"),
+      }),
+    );
+  });
+  it("includes managed unlock before actual load and handles retry after vault cancellation", async () => {
+    const managed = makeCollection({
+      id: "managed",
+      name: "Managed",
+      isEncrypted: true,
+      protectionFormat: "sorng-db",
+    });
+    const view = renderSelector((_id, _password, progress) => {
+      progress?.("success");
+    });
+    await act(() => view.result.current.handleSelectCollection(managed));
+    act(() => view.result.current.onManagedUnlockProgress("unlocking"));
+    expect(toast.loading).toHaveBeenCalledOnce();
+    act(() => view.result.current.onManagedUnlockProgress("cancelled"));
+    expect(toast.update).toHaveBeenLastCalledWith(
+      "opening-toast",
+      expect.objectContaining({ type: "info" }),
+    );
+    act(() => view.result.current.onManagedUnlockProgress("unlocking"));
+    mockIsDatabaseUnlocked.mockReturnValue(true);
+    await act(() => view.result.current.finishManagedUnlock());
+    expect(toast.loading).toHaveBeenCalledTimes(2);
+    expect(toast.update).toHaveBeenLastCalledWith(
+      "opening-toast",
+      expect.objectContaining({ type: "success" }),
+    );
+  });
 });
 
 describe("useDatabaseSelector — fail-closed close", () => {
@@ -135,7 +273,11 @@ describe("useDatabaseSelector — fail-closed close", () => {
     await act(async () => {
       await result.current.finishManagedUnlock();
     });
-    expect(select).toHaveBeenCalledWith("managed");
+    expect(select).toHaveBeenCalledWith(
+      "managed",
+      undefined,
+      expect.any(Function),
+    );
   });
   it("unlocks a managed export source without selecting it", async () => {
     const select = vi.fn();
@@ -198,7 +340,11 @@ describe("useDatabaseSelector — loadingCollection", () => {
     });
 
     expect(result.current.loadingCollection).toBeNull();
-    expect(onDatabaseSelect).toHaveBeenCalledWith("plain");
+    expect(onDatabaseSelect).toHaveBeenCalledWith(
+      "plain",
+      undefined,
+      expect.any(Function),
+    );
   });
 
   it("clears loadingCollection when onDatabaseSelect rejects", async () => {
@@ -437,7 +583,11 @@ describe("useDatabaseSelector — handlePasswordSubmit", () => {
 
     expect(result.current.loadingCollection).toBeNull();
     expect(result.current.isWorking).toBe(false);
-    expect(onDatabaseSelect).toHaveBeenCalledWith("enc", "hunter2");
+    expect(onDatabaseSelect).toHaveBeenCalledWith(
+      "enc",
+      "hunter2",
+      expect.any(Function),
+    );
   });
 
   // Unlocking an encrypted database while another one is open is functionally

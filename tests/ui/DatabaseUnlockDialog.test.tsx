@@ -110,6 +110,7 @@ describe("database authentication popup", () => {
     expect(completed).toHaveBeenCalledOnce();
   });
   it("offers vault use only after explicit selection and keeps an auth failure in the popup", async () => {
+    const progress = vi.fn();
     fixture.unlock.mockRejectedValueOnce(new Error("Vault access unavailable"));
     render(
       <ManagedDatabaseUnlockDialog
@@ -117,6 +118,7 @@ describe("database authentication popup", () => {
         databaseName="Work database"
         status={status}
         onClose={vi.fn()}
+        onUnlockProgress={progress}
       />,
     );
     fireEvent.change(screen.getByLabelText("Database unlock method"), {
@@ -126,6 +128,7 @@ describe("database authentication popup", () => {
     expect(screen.queryByLabelText("Database password")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
     await screen.findByText("Vault access unavailable");
+    expect(progress.mock.calls).toEqual([["unlocking"], ["failed"]]);
     expect(fixture.unlock).toHaveBeenCalledWith("work", "vault", undefined, {
       isCurrent: expect.any(Function),
     });

@@ -8,6 +8,8 @@ import {
 import { LockKeyhole } from "lucide-react";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import type { DatabaseProtectionStatus } from "../../types/encryption/databaseProtection";
+import type { DatabaseOpenObserver } from "../../types/connection/databaseOpening";
+import { isDatabaseOpenCancellation } from "../../utils/connection/databaseOpening";
 
 export function ManagedDatabaseUnlockForm({
   databaseId,
@@ -15,12 +17,14 @@ export function ManagedDatabaseUnlockForm({
   disabled = false,
   onUnlockComplete,
   onBusyChange,
+  onUnlockProgress,
 }: {
   databaseId: string;
   status: DatabaseProtectionStatus;
   disabled?: boolean;
   onUnlockComplete?: () => void | Promise<void>;
   onBusyChange?: (busy: boolean) => void;
+  onUnlockProgress?: DatabaseOpenObserver;
 }) {
   const manager = DatabaseManager.getInstance();
   const [slotId, setSlotId] = useState(
@@ -72,6 +76,7 @@ export function ManagedDatabaseUnlockForm({
     const suppliedPassword =
       selected.type === "password" ? password : undefined;
     inFlight.current = true;
+    onUnlockProgress?.("unlocking");
     onBusyChange?.(true);
     setBusy(true);
     setError(null);
@@ -95,8 +100,17 @@ export function ManagedDatabaseUnlockForm({
       )
         await current.current.onUnlockComplete?.();
     } catch (failure) {
+      onUnlockProgress?.(
+        isDatabaseOpenCancellation(failure) ? "cancelled" : "failed",
+      );
       if (mounted.current && current.current.scope === expected)
-        setError(failure instanceof Error ? failure.message : String(failure));
+        setError(
+          isDatabaseOpenCancellation(failure)
+            ? null
+            : failure instanceof Error
+              ? failure.message
+              : String(failure),
+        );
     } finally {
       inFlight.current = false;
       onBusyChange?.(false);

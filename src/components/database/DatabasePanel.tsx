@@ -2,6 +2,7 @@ import React from "react";
 import { useDatabaseSelector } from "../../hooks/connection/useDatabaseSelector";
 import DatabaseList from "./list/DatabaseList";
 import { ManagedDatabaseUnlockDialog } from "../encryption/DatabaseUnlockDialog";
+import type { DatabaseSelectHandler } from "../../types/connection/databaseOpening";
 
 interface DatabasePanelProps {
   /** Tool-panel close handler (closes the tab). */
@@ -11,10 +12,7 @@ interface DatabasePanelProps {
    * itself; it just hands the id (and optional password) back to the App,
    * which decides what to do next.
    */
-  onDatabaseSelect?: (
-    databaseId: string,
-    password?: string,
-  ) => Promise<void> | void;
+  onDatabaseSelect?: DatabaseSelectHandler;
   /**
    * Called when the user closes the currently-open database from the
    * row toolbar. Lets the App clear connection state, drop the
@@ -54,6 +52,7 @@ export const DatabasePanel: React.FC<DatabasePanelProps> = ({
             databaseName={mgr.managedUnlock.database.name}
             status={mgr.managedUnlock.status}
             onUnlockComplete={mgr.finishManagedUnlock}
+            onUnlockProgress={mgr.onManagedUnlockProgress}
             onClose={mgr.closeManagedUnlock}
           />
         )}
