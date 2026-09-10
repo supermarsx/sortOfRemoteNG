@@ -1,5 +1,6 @@
 import { createLucideIcon } from "lucide-react";
 import { amcrest, brother, dahua, hanwha } from "./refinedApplianceBrandIcons";
+import { damewarePublisher } from "./retracedProviderBrandIcons";
 export { amcrest, brother, dahua, hanwha } from "./refinedApplianceBrandIcons";
 
 /**
@@ -329,15 +330,8 @@ export const draytekBadge = createLucideIcon("DrayTekCompactBadge", [
   ],
 ]);
 
-export const dameware = createLucideIcon("DamewareIdentifier", [
-  [
-    "path",
-    {
-      d: "M2 5v14h3a7 7 0 0 0 0-14H2ZM12 5l2 14 3-9 3 9 2-14",
-      key: "dameware-dw",
-    },
-  ],
-]);
+// Stable compatibility name; publisher branding, not a separate Dameware mark.
+export const dameware = damewarePublisher;
 
 // Publisher vector: conteudos.meo.pt/Style Library/consumo/images/logo-meo.svg.
 // The three bars are transparent knockouts instead of a fixed white fill.

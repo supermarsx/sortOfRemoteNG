@@ -123,16 +123,7 @@ describe("hosting, registrar and ISP expansion", () => {
       expect(getConnectionIconDefinition(alias)).toBeUndefined();
   });
   it("discloses fallback artwork instead of publishing it as official branding", () => {
-    for (const key of [
-      "dns-pt",
-      "ptisp",
-      "ptservidor",
-      "webtuga",
-      "time4vps",
-      "network-solutions",
-      "cogent",
-      "hostgator",
-    ]) {
+    for (const key of ["dns-pt", "time4vps", "network-solutions", "cogent"]) {
       const entry = getConnectionIconDefinition(key)!;
       expect(entry.description).toContain("app-authored");
       expect(entry.description).toContain("not an official logo");

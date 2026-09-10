@@ -7,26 +7,9 @@ import { createLucideIcon } from "lucide-react";
 const identifier = (name: string, d: string) =>
   createLucideIcon(name, [["path", { d, key: "identifier" }]]);
 
-export const hostgatorIdentifier = identifier(
-  "HostGatorIdentifier",
-  "M2 4v16M9 4v16M2 12h7M22 5h-4a5 5 0 0 0-5 5v5a5 5 0 0 0 5 5h4v-7h-4",
-);
-
 export const dnsptIdentifier = identifier(
   "DnsPtIdentifier",
   "M2 19h.01M6 19V5h4a4 4 0 0 1 0 8H6M15 5h8M19 5v14",
-);
-export const ptispIdentifier = identifier(
-  "PtispIdentifier",
-  "M3 20V4h4a4 4 0 0 1 0 8H3M14 4h7M17.5 4v16M14 20h7",
-);
-export const ptservidorIdentifier = identifier(
-  "PtServidorIdentifier",
-  "M2 18V4h4a3 3 0 0 1 0 6H2M21 4h-6a3 3 0 0 0 0 6h3a3 3 0 0 1 0 6h-6M2 21h20M6 18v3M18 18v3",
-);
-export const webtugaIdentifier = identifier(
-  "WebtugaIdentifier",
-  "m2 5 3 14 3-9 3 9 3-14M16 5h7M19.5 5v14",
 );
 export const time4vpsIdentifier = identifier(
   "Time4VpsIdentifier",

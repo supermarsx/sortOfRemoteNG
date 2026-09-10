@@ -5,6 +5,10 @@ import { putty } from "./puttyBrandIcon";
 import { noip } from "./noipBrandIcon";
 import { vscode } from "./developerPublisherBrandIcons";
 import {
+  RETRACED_PROVIDER_BRAND_ICONS,
+  type RetracedProviderBrandIconName,
+} from "./retracedProviderBrandIcons";
+import {
   DASHBOARD_BRAND_ICONS,
   type DashboardBrandIconName,
 } from "./dashboardBrandIcons";
@@ -73,6 +77,7 @@ export * from "./hostingHistoricalBrandIcons";
 export * from "./telecomPublisherBrandIcons";
 export * from "./hostingIdentifierIcons";
 export * from "./dashboardBrandIcons";
+export * from "./retracedProviderBrandIcons";
 
 /** Every brand mark this app ships, vendored and hand-authored alike. */
 export type BrandIconName =
@@ -80,6 +85,7 @@ export type BrandIconName =
   | "noip"
   | "vscode"
   | DashboardBrandIconName
+  | RetracedProviderBrandIconName
   | BrandIconSlug
   | HandAuthoredBrandIconName
   | HistoricalBrandIconName
@@ -100,6 +106,7 @@ export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
   noip,
   vscode,
   ...DASHBOARD_BRAND_ICONS,
+  ...RETRACED_PROVIDER_BRAND_ICONS,
   ...GENERATED_BRAND_ICONS,
   ...HAND_AUTHORED_BRAND_ICONS,
   ...HISTORICAL_BRAND_ICONS,

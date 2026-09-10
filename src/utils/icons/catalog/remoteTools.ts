@@ -242,6 +242,6 @@ export const REMOTE_TOOL_ICONS = [
       "remote control",
       "mini remote control",
     ],
-    "Dameware connection icon with an app-authored DW identifier; not an official Dameware logo.",
+    "Dameware identified by its SolarWinds publisher swoosh, traced from the official product site's header. Not a separate Dameware product logo.",
   ),
 ] as const;

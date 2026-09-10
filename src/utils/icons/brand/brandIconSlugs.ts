@@ -263,6 +263,7 @@ export const BRAND_ICON_SLUGS = [
   "googlesearchconsole",
   "youtube",
   "icloud",
+  "mcdonalds",
 ] as const;
 
 /** A slug known to be vendored into `generatedBrandIcons.ts`. */

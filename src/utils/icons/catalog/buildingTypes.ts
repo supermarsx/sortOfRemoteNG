@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { defineIcon } from "./types";
+import { mcdonalds } from "../brand";
 
 const Supermarket = createLucideIcon("SupermarketBuilding", [
   [
@@ -77,6 +78,38 @@ const GarageBuilding = createLucideIcon("GarageBuilding", [
 
 /** Physical premises, distinct from the company-industry marker collection. */
 export const BUILDING_TYPE_ICONS = [
+  defineIcon(
+    "storefront",
+    "Storefront",
+    "business-shapes",
+    Store,
+    [
+      "storefront",
+      "store front",
+      "shopfront",
+      "shop front",
+      "retail",
+      "shop",
+      "store",
+      "loja",
+    ],
+    "Generic shop facade; not a brand or Citrix StoreFront service.",
+  ),
+  defineIcon(
+    "mcdonalds",
+    "McDonald's",
+    "business-shapes",
+    mcdonalds,
+    [
+      "mcdonalds",
+      "mcdonald's",
+      "mcdonald",
+      "golden arches",
+      "restaurant",
+      "fast food",
+    ],
+    "McDonald's Golden Arches from the pinned Simple Icons collection, without a background tile.",
+  ),
   defineIcon("warehouse", "Warehouse", "business-shapes", Warehouse, [
     "warehouse",
     "warehouse building",
