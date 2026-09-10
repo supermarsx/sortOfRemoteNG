@@ -8,6 +8,7 @@ import { PROXMOX_AUTO_LOGIN_SELECTORS } from "../../components/integrations/prox
 import { PFSENSE_AUTO_LOGIN_SELECTORS } from "../../components/integrations/pfsense/webUiLaunch";
 import { SELF_HOSTED_VAULT_PROFILES } from "./selfHostedVaultProfiles";
 import { HOSTED_DASHBOARD_PROFILES } from "./hostedDashboardProfiles";
+import { ANALYTICS_CMS_PROFILES } from "./analyticsCmsProfiles";
 
 export interface HttpApplicationProfile {
   id: string;
@@ -85,6 +86,7 @@ const unavailable = (
 export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   ...SELF_HOSTED_VAULT_PROFILES,
   ...HOSTED_DASHBOARD_PROFILES,
+  ...ANALYTICS_CMS_PROFILES,
   {
     id: "generic-form",
     label: "Generic login form",

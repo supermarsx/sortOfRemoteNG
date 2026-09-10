@@ -76,7 +76,11 @@ describe("actual injected auto-login client lifecycle", () => {
   it("retains the private copy for delayed SPA forms, then submits once and clears the transport object", async () => {
     const pending = client.fetchCredsAndRun("fixture-nonce", selectors);
     await flush();
-    expect(response).toEqual({ username: null, password: null });
+    expect(response).toEqual({
+      username: null,
+      password: null,
+      continuation: null,
+    });
     const submit = form();
     await vi.advanceTimersByTimeAsync(200);
     expect(await pending).toMatchObject({ ok: true, reason: "submitted" });
@@ -261,7 +265,11 @@ describe("actual injected auto-login client lifecycle", () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => malformed });
     const submit = form();
     await client.fetchCredsAndRun("fixture", selectors);
-    expect(malformed).toEqual({ username: null, password: null });
+    expect(malformed).toEqual({
+      username: null,
+      password: null,
+      continuation: null,
+    });
     expect(
       (dom.window as unknown as { __autologin_last: Result }).__autologin_last,
     ).toEqual({ ok: false, reason: "invalid-credential-response" });

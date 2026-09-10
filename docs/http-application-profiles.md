@@ -41,6 +41,41 @@ Sign in on the website and enter its authenticator or email-code prompt yourself
 
 For security keys, Windows Hello, external SSO, or incompatible challenges, select **Open Cloudflare in system browser** in the session. This explicit action opens only the fixed public HTTPS dashboard address, with no saved credentials, proxy URL, or current-page query attached. The system browser uses separate cookies and its own network route and TLS policy, outside this app's proxy and Trust Center. Signing in there does not authenticate the embedded tab. Embedded/custom browsers have limited Cloudflare challenge support, so this preset does not promise a successful embedded login. See [supported browsers](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/).
 
+## Analytics, CMS and database administration
+
+The following six presets start in **Manual browsing** and require HTTPS. The
+configured host remains authoritative; selecting a brand does not redirect to a
+hosted service, select a database server, or enable credentials. Login paths are
+suggestions for the original-origin browser action, not a promise that every
+subdirectory installation uses the same path.
+
+| Preset              | Reviewed sign-in support                                                                         | Interactive steps and limitations                                                                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Matomo              | Optional account/password form; `/index.php?module=Login`. Reset-password controls are excluded. | Website credentials, not `token_auth`. MFA, SSO and CAPTCHA remain interactive.                                                                                                       |
+| Plausible Analytics | Optional email/password form at `/login` on your chosen host.                                    | Authenticator/recovery-code and SSO screens remain interactive; API keys are not website passwords.                                                                                   |
+| Odoo                | Optional password form at `/web/login`; excludes the debug superuser button.                     | Choose the intended database/account first. Hidden account-picker forms are not filled. Authenticator challenges, SSO and CAPTCHA remain interactive.                                 |
+| Ghost Admin         | Manual staff sign-in at `/ghost/#/signin`.                                                       | The current Ember form uses a JavaScript action; the guarded client refuses it. This is not member Portal or Admin API authentication.                                                |
+| Strapi Admin        | Manual administrator sign-in at `/admin/auth/login`.                                             | The reviewed SPA declares a non-POST form method; the client does not relax its credential-submission guard. Admin URL customization, SSO and MFA remain interactive.                 |
+| phpMyAdmin          | Optional cookie-authentication form at the installation's `index.php`.                           | Review the selected database server before enabling automatic login. The preset never changes it. HTTP-auth/signon, CAPTCHA, authenticator and security-key steps remain interactive. |
+
+Use the existing **2FA Codes** panel for manual copying when an authenticator is
+configured. These six profiles do not add automatic OTP challenge selectors.
+Unsupported embeddings, passkeys and identity-provider flows may require the
+original-origin system browser; that browser's sign-in does not sign the embedded
+proxy session in automatically. Subdirectory deployments may require an explicit
+connection path. No API endpoint is called to bypass the website's login flow.
+
+Reviewed upstream sources: [Matomo login template](https://github.com/matomo-org/matomo/blob/5.x-dev/plugins/Login/templates/login.twig),
+[Plausible login](https://github.com/plausible/analytics/blob/master/lib/plausible_web/templates/auth/login_form.html.heex)
+and [2FA verification](https://github.com/plausible/analytics/blob/master/lib/plausible_web/templates/auth/verify_2fa.html.heex),
+[Odoo 19 login](https://github.com/odoo/odoo/blob/19.0/addons/web/views/webclient_templates.xml)
+and [authenticator form](https://github.com/odoo/odoo/blob/19.0/addons/auth_totp/views/templates.xml),
+[Ghost current staff sign-in](https://github.com/TryGhost/Ghost/blob/main/apps/ember-admin/app/templates/signin.hbs),
+[Strapi administrator login](https://github.com/strapi/strapi/blob/main/packages/core/admin/admin/src/pages/Auth/components/Login.tsx),
+[phpMyAdmin 5.2 login](https://github.com/phpmyadmin/phpmyadmin/blob/QA_5_2/templates/login/form.twig)
+and [2FA documentation](https://docs.phpmyadmin.net/en/latest/two_factor.html).
+Source review and isolated DOM regressions are not live-deployment certification.
+
 ## Form overrides and safety
 
 Tactical RMM, WordPress, Joomla Administrator, Drupal, Payload CMS, MeshCentral,
