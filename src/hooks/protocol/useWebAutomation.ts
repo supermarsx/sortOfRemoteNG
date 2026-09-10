@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
+import type { AutomationScope } from "../../types/recording/automationLibrary";
 import type { Connection } from "../../types/connection/connection";
 import type { GlobalSettings } from "../../types/settings/settings";
 import type {
@@ -12,11 +14,14 @@ import {
   normalizeHttpAutomation,
   normalizeSessionQuickActions,
   resolveHttpAutomationPermissions,
+  quickActionReferenceKey,
+  quickActionReferenceScope,
 } from "../../utils/connection/sessionQuickActions";
 import {
   deleteWebAutomationItem,
   EMPTY_WEB_AUTOMATION_LIBRARY,
   normalizeWebAutomationItem,
+  normalizeWebAutomationLibrary,
   saveWebAutomationItem,
   WEB_AUTOMATION_STORE_KEY,
   webAutomationStore,
@@ -41,6 +46,13 @@ interface Options {
   iframe: React.RefObject<HTMLIFrameElement | null>;
   getDocument: () => WebAutomationDocument | null;
   updateConnection: (connection: Connection) => Promise<void>;
+}
+export type ScopedWebAutomationItem = WebAutomationItem & {
+  scope?: AutomationScope;
+};
+function payloadOf(item: ScopedWebAutomationItem): WebAutomationItem {
+  const { scope: _scope, ...payload } = item;
+  return normalizeWebAutomationItem(payload);
 }
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Website action failed.";
@@ -78,6 +90,12 @@ export function captureWebAutomationAccess(
 }
 
 export function useWebAutomation(options: Options) {
+  const context = useContext(ConnectionContext);
+  const databaseScopeKey = JSON.stringify(
+    context?.automationLibrary?.scope ?? null,
+  );
+  const database = useRef(context?.automationLibrary);
+  database.current = context?.automationLibrary;
   const latest = useRef(options);
   latest.current = options;
   const mounted = useRef(true),
@@ -89,6 +107,14 @@ export function useWebAutomation(options: Options) {
   );
   const [libraryReady, setLibraryReady] = useState(false),
     [error, setError] = useState<string | null>(null);
+  const [databaseLibrary, setDatabaseLibrary] = useState<{
+    access: string;
+    scope: string;
+    items: ScopedWebAutomationItem[];
+  } | null>(null);
+  const [databaseLibraryError, setDatabaseLibraryError] = useState<
+    string | null
+  >(null);
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [recording, setRecording] = useState(false);
@@ -101,7 +127,9 @@ export function useWebAutomation(options: Options) {
   const [recordingPending, setRecordingPending] = useState(false);
   const recordingTransition = useRef<"starting" | "stopping" | null>(null);
   const recordingAttempt = useRef(0);
-  const [pendingRun, setPendingRun] = useState<WebAutomationItem | null>(null);
+  const [pendingRun, setPendingRun] = useState<ScopedWebAutomationItem | null>(
+    null,
+  );
   const [valuePrompt, setValuePrompt] = useState<{
     index: number;
     resolve: (value: string | null) => void;
@@ -114,6 +142,7 @@ export function useWebAutomation(options: Options) {
   const savingRef = useRef(false);
   const [libraryScope, setLibraryScope] = useState("");
   const readGeneration = useRef(0);
+  const databaseReadGeneration = useRef(0);
   // Access revocation changes the operation epoch, but Provider can retain an
   // optimistic dirty connection. Its failed-save receipt therefore survives
   // lock/reload and is cleared only by a verified retry for this exact owner.
@@ -183,7 +212,7 @@ export function useWebAutomation(options: Options) {
       if (!savingRef.current) setBusy(false);
     }
   }, [bridge]);
-  const accessKey = `${options.ownerDatabaseId ?? ""}:${options.scopeKey}:${options.settingsReady}`;
+  const accessKey = `${options.ownerDatabaseId ?? ""}:${options.scopeKey}:${options.settingsReady}:${databaseScopeKey}`;
   const previousAccess = useRef(accessKey);
   if (previousAccess.current !== accessKey) {
     previousAccess.current = accessKey;
@@ -238,12 +267,119 @@ export function useWebAutomation(options: Options) {
     }
   }, [assertAccess]);
 
+  const readDatabase = useCallback(
+    async (scope: AutomationScope, captured: number) => {
+      assertAccess(captured);
+      const api = database.current,
+        receipt = api?.scope;
+      if (
+        scope.kind !== "database" ||
+        scope.databaseId !== latest.current.ownerDatabaseId ||
+        !api ||
+        !receipt ||
+        receipt.databaseId !== scope.databaseId
+      )
+        throw new Error(
+          "The exact owning database library is unavailable; no app-wide fallback was used.",
+        );
+      const expected = { ...receipt };
+      const value = await api.read(expected);
+      assertAccess(captured);
+      if (JSON.stringify(database.current?.scope) !== JSON.stringify(expected))
+        throw new Error(
+          "Database library access changed. Reload before continuing.",
+        );
+      return { api, expected, value };
+    },
+    [assertAccess],
+  );
+  const reloadDatabase = useCallback(async () => {
+    const read = ++databaseReadGeneration.current,
+      captured = epoch.current,
+      scope = database.current?.scope;
+    if (!scope || scope.databaseId !== latest.current.ownerDatabaseId) {
+      setDatabaseLibrary(null);
+      setDatabaseLibraryError(null);
+      return;
+    }
+    try {
+      const result = await readDatabase(
+        { kind: "database", databaseId: scope.databaseId },
+        captured,
+      );
+      if (read !== databaseReadGeneration.current) return;
+      setDatabaseLibrary({
+        access: previousAccess.current,
+        scope: JSON.stringify(result.expected),
+        items: [
+          ...result.value.website.macros,
+          ...result.value.website.scripts,
+        ].map((item) => ({
+          ...item,
+          scope: { kind: "database", databaseId: scope.databaseId },
+        })),
+      });
+      setDatabaseLibraryError(null);
+    } catch (failure) {
+      if (
+        mounted.current &&
+        epoch.current === captured &&
+        read === databaseReadGeneration.current
+      ) {
+        setDatabaseLibrary(null);
+        setDatabaseLibraryError(message(failure));
+      }
+    }
+  }, [readDatabase]);
+  useEffect(() => {
+    if (options.settingsReady && options.scopeKey) void reloadDatabase();
+    else setDatabaseLibrary(null);
+  }, [
+    accessKey,
+    options.settingsReady,
+    options.scopeKey,
+    databaseScopeKey,
+    context?.automationLibrary?.changeRevision,
+    reloadDatabase,
+  ]);
+
+  const resolveItem = async (
+    item: ScopedWebAutomationItem,
+    captured: number,
+  ) => {
+    assertAccess(captured);
+    const checkOwner = captureWebAutomationAccess(
+      latest.current.ownerDatabaseId,
+    );
+    const scope = quickActionReferenceScope(item);
+    const current =
+      scope.kind === "app"
+        ? ((await webAutomationStore.load()).value ??
+          EMPTY_WEB_AUTOMATION_LIBRARY)
+        : (await readDatabase(scope, captured)).value.website;
+    assertAccess(captured);
+    checkOwner();
+    const saved = [...current.macros, ...current.scripts].find(
+      (entry) => entry.kind === item.kind && entry.id === item.id,
+    );
+    if (
+      !saved ||
+      JSON.stringify(normalizeWebAutomationItem(saved)) !==
+        JSON.stringify(payloadOf(item))
+    )
+      throw new Error(
+        "The selected website item changed or was deleted. Reload and review its exact library source before running.",
+      );
+    return normalizeWebAutomationItem(saved);
+  };
+
   useEffect(() => {
     if (!options.settingsReady || !options.scopeKey) {
       cancel();
       bridge.cancel(true);
       setOpen(false);
       setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
+      setDatabaseLibrary(null);
       setLibraryReady(false);
       setRecordedSteps([]);
       return;
@@ -277,6 +413,7 @@ export function useWebAutomation(options: Options) {
       setOpen(false);
       setLibraryReady(false);
       setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
+      setDatabaseLibrary(null);
       setRecordedSteps([]);
     };
     const offDatabase = onDatabaseAccessChange((event) => {
@@ -310,7 +447,7 @@ export function useWebAutomation(options: Options) {
     };
   }, [bridge, cancel, reload, setRecordedSteps]);
 
-  const executionKey = `${options.navigationKey}:${options.blocked}:${options.scopeKey}:${JSON.stringify(permissions.value)}`;
+  const executionKey = `${options.navigationKey}:${options.blocked}:${accessKey}:${JSON.stringify(permissions.value)}`;
   useEffect(() => {
     cancel();
     bridge.cancel(true);
@@ -373,7 +510,14 @@ export function useWebAutomation(options: Options) {
   const recordingUnavailableReason = (() => {
     const problem = recordingConfigurationProblem();
     if (problem) return problem;
-    if (!libraryReady || libraryScope !== accessKey || revoked.current)
+    if (
+      (!(libraryReady && libraryScope === accessKey) &&
+        !(
+          databaseLibrary?.access === accessKey &&
+          databaseLibrary.scope === databaseScopeKey
+        )) ||
+      revoked.current
+    )
       return "The native website macro library is unavailable. Unlock its storage and reload the library.";
     if (options.blocked || !options.getDocument())
       return "Wait for the current page to become ready and complete any certificate review.";
@@ -468,8 +612,11 @@ export function useWebAutomation(options: Options) {
       recordingRef.current ||
       recordingTransition.current ||
       !permissionsRef.current.value?.interactionMacrosEnabled ||
-      !libraryReady ||
-      libraryScope !== accessKey
+      (!(libraryReady && libraryScope === accessKey) &&
+        !(
+          databaseLibrary?.access === accessKey &&
+          databaseLibrary.scope === databaseScopeKey
+        ))
     )
       return false;
     if (stepsRef.current.length) {
@@ -580,7 +727,7 @@ export function useWebAutomation(options: Options) {
     setRecordedSteps([]);
   };
 
-  const execute = async (item: WebAutomationItem) => {
+  const execute = async (item: ScopedWebAutomationItem) => {
     if (busyRef.current || recordingRef.current || recordingTransition.current)
       return;
     setPendingRun(null);
@@ -599,7 +746,7 @@ export function useWebAutomation(options: Options) {
     }
     let validated: WebAutomationItem;
     try {
-      validated = normalizeWebAutomationItem(item);
+      validated = payloadOf(item);
     } catch (failure) {
       setError(message(failure));
       return;
@@ -638,11 +785,15 @@ export function useWebAutomation(options: Options) {
         latest.current.ownerDatabaseId,
       );
       check();
+      validated = await resolveItem(item, captured);
+      check();
       if (validated.kind === "script")
         await bridge.request("script", { code: validated.code });
       else
         for (let index = 0; index < validated.steps.length; index++) {
           checkOwner();
+          check();
+          await resolveItem(item, captured);
           check();
           const step = validated.steps[index];
           let value: string | null = null;
@@ -658,6 +809,8 @@ export function useWebAutomation(options: Options) {
               );
             check();
             checkOwner();
+            await resolveItem(item, captured);
+            check();
           }
           await bridge.request("step", {
             step,
@@ -679,20 +832,36 @@ export function useWebAutomation(options: Options) {
       }
     }
   };
-  const requestRun = (item: WebAutomationItem) => {
+  const requestRun = async (item: ScopedWebAutomationItem) => {
     if (busyRef.current || recordingRef.current || recordingTransition.current)
       return;
+    const captured = epoch.current,
+      requestedOperation = ++operation.current;
+    try {
+      await resolveItem(item, captured);
+      assertAccess(captured);
+      if (
+        requestedOperation !== operation.current ||
+        busyRef.current ||
+        recordingRef.current
+      )
+        return;
+    } catch (failure) {
+      if (mounted.current && epoch.current === captured)
+        setError(message(failure));
+      return;
+    }
     if (
       (item.kind === "script"
         ? permissionsRef.current.value?.confirmBeforeScriptRun
         : options.settings.macros?.confirmBeforeReplay) !== false
     )
-      setPendingRun(item);
+      setPendingRun(structuredClone(item));
     else void execute(item);
   };
   const save = async (
-    item: WebAutomationItem,
-    expected?: WebAutomationItem,
+    item: ScopedWebAutomationItem,
+    expected?: ScopedWebAutomationItem,
   ) => {
     if (busyRef.current || recordingRef.current || recordingTransition.current)
       return false;
@@ -706,10 +875,62 @@ export function useWebAutomation(options: Options) {
       const checkOwner = captureWebAutomationAccess(
         latest.current.ownerDatabaseId,
       );
-      const result = await saveWebAutomationItem(item, expected, () => {
+      const scope = quickActionReferenceScope(item);
+      if (
+        expected &&
+        quickActionReferenceKey(item) !== quickActionReferenceKey(expected)
+      )
+        throw new Error(
+          "A library edit cannot change its owning scope or identifier.",
+        );
+      if (scope.kind === "database") {
+        const {
+          api,
+          expected: receipt,
+          value,
+        } = await readDatabase(scope, captured);
+        const payload = payloadOf(item),
+          prior = expected ? payloadOf(expected) : undefined;
+        const collection =
+          payload.kind === "script"
+            ? value.website.scripts
+            : value.website.macros;
+        const found = collection.find((entry) => entry.id === payload.id);
+        if (
+          JSON.stringify(
+            found ? normalizeWebAutomationItem(found) : undefined,
+          ) !== JSON.stringify(prior)
+        )
+          throw new Error("The database item changed. Reload before saving.");
+        const website = normalizeWebAutomationLibrary({
+          ...value.website,
+          [payload.kind === "script" ? "scripts" : "macros"]: [
+            ...collection.filter((entry) => entry.id !== payload.id),
+            payload,
+          ],
+        });
+        checkOwner();
+        assertAccess(captured);
+        await api.compareAndSwap(receipt, value, {
+          ...value,
+          revision: value.revision + 1,
+          website,
+        });
         assertAccess(captured);
         checkOwner();
-      });
+        await reloadDatabase();
+        return true;
+      }
+      const result = await saveWebAutomationItem(
+        payloadOf(item),
+        expected ? payloadOf(expected) : undefined,
+        () => {
+          assertAccess(captured);
+          checkOwner();
+        },
+      );
+      assertAccess(captured);
+      checkOwner();
       setLibrary(result);
       return true;
     } catch (failure) {
@@ -722,7 +943,7 @@ export function useWebAutomation(options: Options) {
       if (mounted.current) setBusy(false);
     }
   };
-  const remove = async (expected: WebAutomationItem) => {
+  const remove = async (expected: ScopedWebAutomationItem) => {
     if (busyRef.current || recordingRef.current || recordingTransition.current)
       return false;
     const captured = epoch.current;
@@ -735,10 +956,51 @@ export function useWebAutomation(options: Options) {
       const checkOwner = captureWebAutomationAccess(
         latest.current.ownerDatabaseId,
       );
-      const result = await deleteWebAutomationItem(expected, () => {
+      const scope = quickActionReferenceScope(expected);
+      if (scope.kind === "database") {
+        const {
+          api,
+          expected: receipt,
+          value,
+        } = await readDatabase(scope, captured);
+        const payload = payloadOf(expected),
+          field = payload.kind === "script" ? "scripts" : "macros";
+        const found = value.website[field].find(
+          (entry) => entry.id === payload.id,
+        );
+        if (
+          JSON.stringify(
+            found ? normalizeWebAutomationItem(found) : undefined,
+          ) !== JSON.stringify(payload)
+        )
+          throw new Error("The database item changed. Reload before deleting.");
+        const website = normalizeWebAutomationLibrary({
+          ...value.website,
+          [field]: value.website[field].filter(
+            (entry) => entry.id !== payload.id,
+          ),
+        });
+        const provenance = { ...value.provenance };
+        delete provenance[`website-${payload.kind}:${payload.id}`];
+        checkOwner();
+        assertAccess(captured);
+        await api.compareAndSwap(receipt, value, {
+          ...value,
+          revision: value.revision + 1,
+          website,
+          provenance,
+        });
+        assertAccess(captured);
+        checkOwner();
+        await reloadDatabase();
+        return true;
+      }
+      const result = await deleteWebAutomationItem(payloadOf(expected), () => {
         assertAccess(captured);
         checkOwner();
       });
+      assertAccess(captured);
+      checkOwner();
       setLibrary(result);
       return true;
     } catch (failure) {
@@ -751,12 +1013,15 @@ export function useWebAutomation(options: Options) {
       if (mounted.current) setBusy(false);
     }
   };
-  const favorite = async (item: WebAutomationItem) => {
+  const favorite = async (item: ScopedWebAutomationItem) => {
     const current = latest.current.connection;
     if (
       !current ||
-      !libraryReady ||
-      libraryScope !== accessKey ||
+      (!(libraryReady && libraryScope === accessKey) &&
+        !(
+          databaseLibrary?.access === accessKey &&
+          databaseLibrary.scope === databaseScopeKey
+        )) ||
       revoked.current ||
       busyRef.current ||
       recordingRef.current ||
@@ -773,14 +1038,22 @@ export function useWebAutomation(options: Options) {
         latest.current.ownerDatabaseId,
       );
       const config = normalizeHttpAutomation(current.httpAutomation);
+      const key = quickActionReferenceKey(item),
+        scope = quickActionReferenceScope(item);
       const has = config.items.some(
-        (ref) => ref.kind === item.kind && ref.id === item.id,
+        (ref) => quickActionReferenceKey(ref) === key,
       );
       const items = has
-        ? config.items.filter(
-            (ref) => ref.kind !== item.kind || ref.id !== item.id,
-          )
-        : [...config.items, { kind: item.kind, id: item.id }];
+        ? config.items.filter((ref) => quickActionReferenceKey(ref) !== key)
+        : [
+            ...config.items,
+            {
+              kind: item.kind,
+              id: item.id,
+              ...(scope.kind === "database" ? { scope } : {}),
+            },
+          ];
+      if (!has) await resolveItem(item, captured);
       if (items.length > 64)
         throw new Error("Use at most 64 website favorites.");
       checkOwner();
@@ -809,14 +1082,23 @@ export function useWebAutomation(options: Options) {
     libraryScope === accessKey && libraryReady
       ? library
       : EMPTY_WEB_AUTOMATION_LIBRARY;
-  const allItems = [...visibleLibrary.macros, ...visibleLibrary.scripts];
+  const allItems: ScopedWebAutomationItem[] = [
+    ...visibleLibrary.macros,
+    ...visibleLibrary.scripts,
+    ...(databaseLibrary?.access === accessKey &&
+    databaseLibrary.scope === databaseScopeKey &&
+    !revoked.current
+      ? databaseLibrary.items
+      : []),
+  ];
   const favorites = (() => {
     try {
       return normalizeHttpAutomation(
         options.connection?.httpAutomation,
       ).items.flatMap((ref) => {
         const item = allItems.find(
-          (candidate) => candidate.kind === ref.kind && candidate.id === ref.id,
+          (candidate) =>
+            quickActionReferenceKey(candidate) === quickActionReferenceKey(ref),
         );
         return item ? [item] : [];
       });
@@ -839,8 +1121,23 @@ export function useWebAutomation(options: Options) {
   };
   return {
     permissions: permissions.value,
-    error: permissions.error ?? currentConsentFailure() ?? error,
-    libraryReady: libraryReady && libraryScope === accessKey,
+    error:
+      permissions.error ??
+      currentConsentFailure() ??
+      error ??
+      databaseLibraryError,
+    libraryReady:
+      (libraryReady && libraryScope === accessKey) ||
+      (databaseLibrary?.access === accessKey &&
+        databaseLibrary.scope === databaseScopeKey &&
+        !revoked.current),
+    availableDatabaseScope:
+      databaseLibrary?.access === accessKey &&
+      databaseLibrary.scope === databaseScopeKey &&
+      !revoked.current &&
+      context?.automationLibrary?.scope?.databaseId === options.ownerDatabaseId
+        ? { kind: "database" as const, databaseId: options.ownerDatabaseId! }
+        : null,
     library: visibleLibrary,
     allItems,
     favorites,
@@ -863,7 +1160,10 @@ export function useWebAutomation(options: Options) {
     setPendingRun,
     execute,
     cancel,
-    reload,
+    reload: async () => {
+      await reload();
+      await reloadDatabase();
+    },
     save,
     remove,
     favorite,

@@ -213,13 +213,13 @@ describe("mounted website automation controls and ownership", () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Demo script" }));
     expect(
-      screen.getByRole("dialog", { name: "Review website action" }),
+      await screen.findByRole("dialog", { name: "Review website action" }),
     ).toBeInTheDocument();
     expect(sent("script")).toHaveLength(0);
     const run = screen.getByRole("button", { name: "Run on current page" });
     fireEvent.click(run);
     fireEvent.click(run);
-    expect(sent("script")).toHaveLength(1);
+    await waitFor(() => expect(sent("script")).toHaveLength(1));
     acknowledge(sent("script")[0]);
     await waitFor(() => expect(current.busy).toBe(false));
   });

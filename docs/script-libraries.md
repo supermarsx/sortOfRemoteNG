@@ -7,6 +7,8 @@ permalink: /scripts/libraries/
 
 Script Manager separates **Terminal scripts** from **Website userscripts**. Creating, importing, restoring, or editing a script never runs it.
 
+Both Script Manager and Macro Manager offer explicit app-wide and database destinations. App entries remain in their existing protected app libraries; database entries travel inside that database's existing encrypted/plain protection boundary. Switching destinations does not copy entries or redirect failed writes. Macro Manager keeps terminal command/delay sequences and website value-free interaction steps as their original distinct formats, with separate Browse/import/export families. No sequence is converted into a script.
+
 ## Editing and checking source
 
 The local CodeMirror editor provides syntax highlighting, line numbers, search, undo, bracket matching, and snippets. JavaScript has automatic local parser diagnostics, local-variable completion, and an explicit local Prettier Format action. Formatting changes only the draft; it never saves or runs it.
@@ -21,7 +23,9 @@ PowerShell checks conservatively reject `using`, `requires`, `configuration`, `d
 
 The embedded **Browse scripts** subtab includes 191 app-shipped entries: 32 Script Manager diagnostic templates and 159 Bulk SSH commands. Filter by source, category, platform, or text and inspect source; results are paged in groups of 50. Bulk entries are preview/copy-only and direct you to Bulk SSH Commander. Vendor CLI commands are not mislabeled as Bash imports.
 
-The original eight Script Manager defaults retain their saved IDs. The 24 additional system, service, storage, network, and package-inventory templates are catalog-only: select and import them explicitly to create independent custom copies. They are not automatically added to existing libraries.
+Compact source icons provide tooltips and accessible labels instead of large badges. **Verified app template** means the content matches the trusted local catalog, not that execution is safe. Third-party/imported content remains **Third-party source** even when its publisher claims to be official or its bytes resemble a bundled template. Edited/custom content is identified separately.
+
+Fresh Script Manager libraries are empty. All 32 bundled templates are Browse-only until you explicitly select and import them; none of the original eight are automatically inserted or restored on load. Previously saved/imported templates retain their IDs and edits. Additional system, service, storage, network, and package-inventory templates import as independent custom copies.
 
 Restoring an original default keeps its ID. Replacing a saved default version requires explicit review. Only selected defaults are restored; other custom scripts, modified defaults, and deleted-default markers remain unchanged. A concurrent library change or unavailable storage refuses the import rather than overwriting an unreviewed library.
 
@@ -36,6 +40,8 @@ Writes preserve native script IDs, reviewed provenance, and unrelated macro fami
 Website scripts are JavaScript records, not terminal commands or interaction macros. Editing preserves their IDs, so existing connection favorites continue referencing them. Duplication creates a new ID. Deletion is reviewed and leaves existing favorite references unresolved; remove those references in the connection editor's Favorites section if no longer needed. Interaction macros in the same protected library are preserved.
 
 Source is limited to 64 KiB and must not contain literal credentials. The manager never executes scripts. To use a saved script, refresh/reopen the HTTP/HTTPS action library if necessary and pin it there. Running still requires global script availability, explicit per-connection JavaScript permission, the current page/session access checks, and the configured confirmation.
+
+Website favorites retain the exact app/database scope, kind and ID. Identical IDs from different libraries stay distinct; an unavailable database reference never runs the app-wide item of the same name or ID. Save and review drafts before running. Saved source is resolved again before confirmation, after confirmation, and before each macro step (including after a field-value prompt). A changed/deleted source, navigation or revoked owner access stops execution without replaying completed steps. New scripts and recorded macros default to app-wide storage; choose the current owning database explicitly in **Saved item destination** when available.
 
 This is page JavaScript, not a browser-extension userscript engine. Metadata such as `@grant`, `@require`, and automatic URL matching does not provide privileges or automatic execution.
 

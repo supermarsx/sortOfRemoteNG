@@ -26,6 +26,7 @@ function model(overrides: Partial<Automation> = {}): Automation {
     },
     error: null,
     libraryReady: true,
+    availableDatabaseScope: null,
     library: { version: 1, scripts: [script], macros: [] },
     allItems: [script],
     favorites: [],
@@ -76,6 +77,28 @@ const captured = () => [
 ];
 
 describe("visible website macro recording facilities", () => {
+  it("defaults new items to app storage and requires explicit database destination selection", async () => {
+    const actions = model({
+      open: true,
+      availableDatabaseScope: { kind: "database", databaseId: "database-a" },
+    });
+    render(<WebAutomationControls automation={actions} />);
+    click("New JavaScript");
+    expect(screen.getByLabelText("Saved item destination")).toHaveValue("app");
+    expect(
+      screen.getByRole("button", { name: "Run JavaScript" }),
+    ).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Saved item destination"), {
+      target: { value: "database" },
+    });
+    click("Save script");
+    await waitFor(() => expect(actions.save).toHaveBeenCalledOnce());
+    expect(vi.mocked(actions.save).mock.calls[0][0]).toMatchObject({
+      kind: "script",
+      scope: { kind: "database", databaseId: "database-a" },
+    });
+    expect(actions.execute).not.toHaveBeenCalled();
+  });
   it("requires explicit consent and a separate manual Record click; enabling never starts or runs", async () => {
     const actions = model({ canEnableMacroRecording: true });
     actions.permissions!.interactionMacrosEnabled = false;
@@ -181,12 +204,12 @@ describe("visible website macro recording facilities", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
       target: { value: "Important draft" },
     });
-    click("JS · Saved script");
+    click("JS · Saved script · App-wide");
     click("Cancel");
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue(
       "Important draft",
     );
-    click("JS · Saved script");
+    click("JS · Saved script · App-wide");
     click("Leave draft");
     click("Save script");
     await waitFor(() => expect(actions.save).toHaveBeenCalledOnce());

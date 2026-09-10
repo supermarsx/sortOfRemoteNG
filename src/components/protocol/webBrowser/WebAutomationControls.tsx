@@ -9,11 +9,16 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
-import type { useWebAutomation } from "../../../hooks/protocol/useWebAutomation";
 import type {
-  BrowserScript,
-  WebAutomationItem,
-} from "../../../types/recording/webAutomation";
+  useWebAutomation,
+  ScopedWebAutomationItem as WebAutomationItem,
+} from "../../../hooks/protocol/useWebAutomation";
+import type { BrowserScript } from "../../../types/recording/webAutomation";
+import {
+  quickActionReferenceKey,
+  quickActionScopeLabel,
+  quickActionReferenceScope,
+} from "../../../utils/connection/sessionQuickActions";
 import { MAX_WEB_SCRIPT_BYTES } from "../../../utils/recording/webAutomationLibrary";
 import {
   Modal,
@@ -140,7 +145,7 @@ function AutomationLibrary({
   };
   const isFavorite = (item: WebAutomationItem) =>
     automation.favorites.some(
-      (ref) => ref.kind === item.kind && ref.id === item.id,
+      (ref) => quickActionReferenceKey(ref) === quickActionReferenceKey(item),
     );
   return (
     <>
@@ -157,7 +162,8 @@ function AutomationLibrary({
           <p className="text-xs text-[var(--color-textSecondary)]">
             Separate from HAR/video recordings and terminal macros. Record
             clicks and field locations without typed values. Saved items use the
-            desktop Macros artifact policy; favorites store IDs only.
+            app-wide Macros policy or their owning database encryption.
+            Favorites retain a scope-qualified ID, never a copy of the source.
           </p>
           {automation.error && (
             <p role="alert" className="text-error text-sm break-words">
@@ -245,14 +251,18 @@ function AutomationLibrary({
                 <div className="max-h-64 overflow-y-auto space-y-1">
                   {list.map((item) => (
                     <button
-                      key={item.id}
-                      className={`w-full text-left text-sm rounded px-2 py-1.5 truncate ${draft?.id === item.id ? "bg-primary/15 text-primary" : "hover:bg-[var(--color-surfaceHover)]"}`}
-                      title={`${item.name} — ${item.kind}`}
+                      key={quickActionReferenceKey(item)}
+                      aria-label={`${item.kind === "macro" ? "Macro" : "JS"} · ${item.name} · ${quickActionScopeLabel(item)}`}
+                      className={`w-full text-left text-sm rounded px-2 py-1.5 truncate ${draft && quickActionReferenceKey(draft) === quickActionReferenceKey(item) ? "bg-primary/15 text-primary" : "hover:bg-[var(--color-surfaceHover)]"}`}
+                      title={`${item.name} — ${item.kind} — ${quickActionScopeLabel(item)}`}
                       disabled={automation.busy}
                       onClick={() => select(item)}
                     >
                       {item.kind === "macro" ? "Macro · " : "JS · "}
                       {item.name}
+                      <span className="ml-1 text-[var(--color-textMuted)]">
+                        · {quickActionScopeLabel(item)}
+                      </span>
                     </button>
                   ))}
                   {!list.length && (
@@ -264,6 +274,35 @@ function AutomationLibrary({
               </div>
               {draft ? (
                 <div className="space-y-3 min-w-0">
+                  <label className="block text-xs">
+                    Saved item destination
+                    <select
+                      className="sor-form-select-sm mt-1 block"
+                      aria-label="Saved item destination"
+                      value={quickActionReferenceScope(draft).kind}
+                      disabled={automation.busy || !!base}
+                      onChange={(event) => {
+                        if (event.target.value === "database") {
+                          if (automation.availableDatabaseScope)
+                            setDraft({
+                              ...draft,
+                              scope: automation.availableDatabaseScope,
+                            });
+                        } else {
+                          const { scope: _scope, ...payload } = draft;
+                          setDraft(payload);
+                        }
+                      }}
+                    >
+                      <option value="app">App-wide library</option>
+                      <option
+                        value="database"
+                        disabled={!automation.availableDatabaseScope}
+                      >
+                        Current owning database
+                      </option>
+                    </select>
+                  </label>
                   <label htmlFor={`${ids}-name`} className="block text-xs">
                     Name
                   </label>
@@ -365,12 +404,19 @@ function AutomationLibrary({
                 className="sor-btn sor-btn-secondary"
                 disabled={
                   automation.busy ||
+                  dirty ||
+                  !base ||
                   !automation.pageReady ||
                   (draft.kind === "script"
                     ? !automation.permissions?.scriptInjectionEnabled
                     : !automation.permissions?.interactionMacrosEnabled)
                 }
                 onClick={() => automation.requestRun(draft)}
+                title={
+                  dirty || !base
+                    ? "Save and review this item before running it."
+                    : undefined
+                }
               >
                 <Play size={14} />
                 {draft.kind === "script" ? "Run JavaScript" : "Replay macro"}
@@ -464,9 +510,9 @@ export function WebAutomationFavoriteChips({
     <>
       {automation.favorites.map((item) => (
         <button
-          key={`${item.kind}:${item.id}`}
+          key={quickActionReferenceKey(item)}
           className="sor-option-chip shrink-0 text-xs max-w-40"
-          title={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name}`}
+          title={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name} · ${quickActionScopeLabel(item)}`}
           disabled={
             !automation.pageReady ||
             automation.busy ||
@@ -710,6 +756,10 @@ export function WebAutomationControls({
           <ModalBody className="p-6 space-y-3 min-h-0 overflow-y-auto">
             <p className="text-sm font-medium break-words">
               {automation.pendingRun.name}
+            </p>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Source: {quickActionScopeLabel(automation.pendingRun)}. The saved
+              source is checked again before execution.
             </p>
             <p className="text-sm text-warning">
               This acts on the current page, including any signed-in session,

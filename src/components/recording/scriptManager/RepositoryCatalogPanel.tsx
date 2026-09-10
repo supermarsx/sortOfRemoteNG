@@ -12,6 +12,7 @@ import type {
 import { useAutomationCatalog } from "../../../hooks/recording/useAutomationCatalog";
 import ScriptCodeEditor from "../../ui/editor/ScriptCodeEditor";
 import { detectLanguage } from "../../../utils/recording/scriptSyntax";
+import AutomationSourceBadge from "./AutomationSourceBadge";
 
 export interface RepositoryCatalogPanelProps {
   api: AutomationLibraryApi;
@@ -234,15 +235,12 @@ export default function RepositoryCatalogPanel(
       )}
       {mgr.document && (
         <div className="sor-settings-card min-w-0">
-          <h4 className="font-medium break-words">
-            {mgr.document.manifest.name}
-          </h4>
-          <p className="text-xs text-warning">
-            {mgr.document.source.kind === "remote"
-              ? "Third-party repository source"
-              : "Imported JSON source"}{" "}
-            · Publisher identity unverified · Not an app-shipped catalog
-          </p>
+          <div className="flex items-center gap-2">
+            <h4 className="min-w-0 font-medium break-words">
+              {mgr.document.manifest.name}
+            </h4>
+            <AutomationSourceBadge source="external" />
+          </div>
           {mgr.document.manifest.publisher && (
             <p className="text-sm break-words">
               Publisher claim: {mgr.document.manifest.publisher.name}

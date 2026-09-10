@@ -104,8 +104,17 @@ describe("repository catalog review UI", () => {
     expect(screen.getByText(/No hand-written manifest/)).toBeInTheDocument();
     await refresh();
     expect(
-      screen.getByText(/Publisher identity unverified/),
+      screen.getByRole("img", { name: "Third-party source" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Third-party source" }),
+    ).toHaveAttribute(
+      "data-tooltip",
+      expect.stringContaining("not independently verified"),
+    );
+    expect(
+      screen.queryByRole("img", { name: "Verified app template" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText("Publisher claim: Claimed publisher"),
     ).toBeInTheDocument();
