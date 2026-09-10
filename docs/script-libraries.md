@@ -23,6 +23,8 @@ PowerShell checks conservatively reject `using`, `requires`, `configuration`, `d
 
 The embedded **Browse scripts** subtab includes 191 app-shipped entries: 32 Script Manager diagnostic templates and 159 Bulk SSH commands. Filter by source, category, platform, or text and inspect source; results are paged in groups of 50. Bulk entries are preview/copy-only and direct you to Bulk SSH Commander. Vendor CLI commands are not mislabeled as Bash imports.
 
+Platform filters are searchable, including specific distributions such as Ubuntu, CentOS, Debian, RHEL and Alpine, BSD systems, and network operating systems such as Junos, RouterOS and FortiOS. Script and macro editors also search their platform tags; these are user-assigned metadata, not proof of compatibility, and existing bundled templates are not automatically retagged.
+
 Compact source icons provide tooltips and accessible labels instead of large badges. **Verified app template** means the content matches the trusted local catalog, not that execution is safe. Third-party/imported content remains **Third-party source** even when its publisher claims to be official or its bytes resemble a bundled template. Edited/custom content is identified separately.
 
 Fresh Script Manager libraries are empty. All 32 bundled templates are Browse-only until you explicitly select and import them; none of the original eight are automatically inserted or restored on load. Previously saved/imported templates retain their IDs and edits. Additional system, service, storage, network, and package-inventory templates import as independent custom copies.

@@ -71,6 +71,8 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
       <div className="relative">
         <Select
           label="Script platform"
+          searchable
+          searchPlaceholder="Search platforms…"
           value={mgr.osTagFilter}
           onChange={(v: string) => mgr.setOsTagFilter(v as OSTag | "")}
           options={[

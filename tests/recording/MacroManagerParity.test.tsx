@@ -116,6 +116,35 @@ beforeEach(() => {
 });
 const mount = () => render(<MacroManager isOpen onClose={vi.fn()} />);
 describe("Macro Manager parity", () => {
+  it("searches platform filters and preserves user-assigned distro tags in the macro editor", async () => {
+    const entry = {
+      ...structuredClone(terminal),
+      provenance: { platforms: ["ubuntu"] },
+    };
+    h.read.mockImplementation(async (scope, family) => ({
+      scope,
+      family,
+      receipt: "platform-review",
+      entries: [entry],
+    }));
+    mount();
+    await screen.findByRole("button", { name: /Saved sequence/ });
+    fireEvent.click(screen.getByRole("combobox", { name: "Macro platform" }));
+    fireEvent.change(screen.getByPlaceholderText("Search platforms…"), {
+      target: { value: "Ubuntu" },
+    });
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Ubuntu" }));
+    fireEvent.click(screen.getByRole("button", { name: /Saved sequence/ }));
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search platform tags" }),
+      { target: { value: "CentOS" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "CentOS / CentOS Stream" }),
+    );
+    expect(screen.getByText(/2 selected/)).toBeInTheDocument();
+    expect(h.apply).not.toHaveBeenCalled();
+  });
   it("renders scoped searchable macros with vector platform tags and compact filters", async () => {
     mount();
     await screen.findByRole("button", { name: /Saved sequence/ });

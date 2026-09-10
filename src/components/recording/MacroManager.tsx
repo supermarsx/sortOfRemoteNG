@@ -20,6 +20,9 @@ import { WebsiteMacroEditor } from "./WebsiteMacroEditor";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { OS_TAG_LABELS, type OSTag } from "./scriptManager/shared";
 import { ScriptMetadataIcon } from "./scriptManager/ScriptMetadataIcon";
+import PlatformTagPicker from "./scriptManager/PlatformTagPicker";
+import { platformIcon } from "./scriptManager/scriptMetadataIcons";
+import { Select } from "../ui/forms";
 import { bundledMacroCatalog } from "../../data/bundledMacroCatalog";
 import { formatDuration } from "../../utils/core/formatters";
 
@@ -73,19 +76,21 @@ function MacroLibrary({ mgr }: { mgr: Mgr }) {
         </label>
         <label className="flex items-center gap-2 text-xs">
           Platform
-          <select
-            className="sor-form-input w-auto max-w-48"
-            style={{ width: "auto" }}
+          <Select
+            label="Macro platform"
             value={mgr.platform}
-            onChange={(event) => mgr.setPlatform(event.target.value)}
-          >
-            <option value="">All platforms</option>
-            {platforms.map((value) => (
-              <option key={value} value={value}>
-                {OS_TAG_LABELS[value as OSTag] ?? value}
-              </option>
-            ))}
-          </select>
+            onChange={mgr.setPlatform}
+            searchable
+            searchPlaceholder="Search platforms…"
+            options={[
+              { value: "", label: "All platforms" },
+              ...platforms.map((value) => ({
+                value,
+                label: OS_TAG_LABELS[value as OSTag] ?? value,
+                icon: platformIcon(value as OSTag),
+              })),
+            ]}
+          />
         </label>
         <label className="flex items-center gap-2 text-xs">
           Sort
@@ -241,33 +246,21 @@ function MacroLibrary({ mgr }: { mgr: Mgr }) {
                   User-assigned metadata, not a compatibility or execution
                   guarantee.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(OS_TAG_LABELS).map(([value, label]) => (
-                    <button
-                      type="button"
-                      key={value}
-                      aria-pressed={
-                        entry.provenance?.platforms?.includes(value) ?? false
-                      }
-                      className={`sor-btn sor-btn-secondary text-xs ${entry.provenance?.platforms?.includes(value) ? "border-primary bg-primary/15" : ""}`}
-                      onClick={() => {
-                        const previous = entry.provenance?.platforms ?? [];
-                        mgr.editEntry({
-                          ...entry,
-                          provenance: {
-                            ...entry.provenance,
-                            platforms: previous.includes(value)
-                              ? previous.filter((item) => item !== value)
-                              : [...previous, value],
-                          },
-                        });
-                      }}
-                    >
-                      <ScriptMetadataIcon platform={value as OSTag} size={14} />
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <PlatformTagPicker
+                  value={entry.provenance?.platforms ?? []}
+                  onToggle={(value) => {
+                    const previous = entry.provenance?.platforms ?? [];
+                    mgr.editEntry({
+                      ...entry,
+                      provenance: {
+                        ...entry.provenance,
+                        platforms: previous.includes(value)
+                          ? previous.filter((item) => item !== value)
+                          : [...previous, value],
+                      },
+                    });
+                  }}
+                />
               </fieldset>
               {entry.family === "terminal-macro" ? (
                 <MacroEditor

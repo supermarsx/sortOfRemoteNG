@@ -159,9 +159,11 @@ describe("default script catalog UI", () => {
     expect(container.querySelectorAll("[data-catalog-key]")).toHaveLength(50);
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     expect(screen.getByText("Page 2 of 4")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Browse script platform"), {
-      target: { value: "arista-eos" },
+    fireEvent.click(screen.getByLabelText("Browse script platform"));
+    fireEvent.change(screen.getByPlaceholderText("Search platforms…"), {
+      target: { value: "arista" },
     });
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Arista EOS" }));
     expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
     expect(screen.getByText(/77 matching/)).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -184,15 +186,14 @@ describe("default script catalog UI", () => {
   it("filters catalog by platform/category and previews without importing", async () => {
     render(<DefaultScriptCatalog onApplied={vi.fn()} />);
     await act(async () => undefined);
-    expect(screen.getByLabelText("Browse script platform")).toHaveStyle({
-      width: "auto",
-    });
+    expect(screen.getByLabelText("Browse script platform")).toHaveClass(
+      "max-w-56",
+    );
     expect(screen.getByLabelText("Browse script category")).toHaveStyle({
       width: "auto",
     });
-    fireEvent.change(screen.getByLabelText("Browse script platform"), {
-      target: { value: "windows" },
-    });
+    fireEvent.click(screen.getByLabelText("Browse script platform"));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Windows" }));
     fireEvent.change(screen.getByLabelText("Browse script category"), {
       target: { value: "Packages / Windows" },
     });

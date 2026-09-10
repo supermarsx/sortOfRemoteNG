@@ -13,6 +13,8 @@ import {
 } from "../../../utils/recording/managedScriptPersistence";
 import { applyDefaultScriptSelection } from "../../../utils/recording/defaultScriptCatalog";
 import { OS_TAG_LABELS, languageLabels, type OSTag } from "./shared";
+import { Select } from "../../ui/forms";
+import { platformIcon } from "./scriptMetadataIcons";
 import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
 import AutomationSourceBadge from "./AutomationSourceBadge";
 import type {
@@ -179,22 +181,42 @@ export function DefaultScriptCatalog({
   ) => (
     <label className="flex flex-col gap-1 text-xs text-[var(--color-textMuted)]">
       {label}
-      <select
-        aria-label={`Browse script ${label.toLowerCase()}`}
-        className="sor-form-input max-w-56"
-        style={{ width: "auto" }}
-        value={value}
-        onChange={(event) => update(event.target.value)}
-      >
-        <option value="">
-          All {label === "Category" ? "categories" : `${label.toLowerCase()}s`}
-        </option>
-        {options.map(([key, text]) => (
-          <option key={key} value={key}>
-            {text}
+      {label === "Platform" ? (
+        <Select
+          label="Browse script platform"
+          value={value}
+          onChange={update}
+          searchable
+          searchPlaceholder="Search platforms…"
+          className="max-w-56"
+          options={[
+            { value: "", label: "All platforms" },
+            ...options.map(([key, text]) => ({
+              value: key,
+              label: text,
+              icon: platformIcon(key as OSTag),
+            })),
+          ]}
+        />
+      ) : (
+        <select
+          aria-label={`Browse script ${label.toLowerCase()}`}
+          className="sor-form-input max-w-56"
+          style={{ width: "auto" }}
+          value={value}
+          onChange={(event) => update(event.target.value)}
+        >
+          <option value="">
+            All{" "}
+            {label === "Category" ? "categories" : `${label.toLowerCase()}s`}
           </option>
-        ))}
-      </select>
+          {options.map(([key, text]) => (
+            <option key={key} value={key}>
+              {text}
+            </option>
+          ))}
+        </select>
+      )}
     </label>
   );
   return (

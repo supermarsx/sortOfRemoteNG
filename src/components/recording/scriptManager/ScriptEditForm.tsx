@@ -1,5 +1,5 @@
-import { ScriptLanguage, OS_TAG_LABELS, OSTag, languageLabels } from "./shared";
-import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
+import { ScriptLanguage, languageLabels } from "./shared";
+import PlatformTagPicker from "./PlatformTagPicker";
 import { scriptLanguageIcon } from "./scriptMetadataIcons";
 import ScriptCodeEditor from "../../ui/editor/ScriptCodeEditor";
 import { useTranslation } from "react-i18next";
@@ -78,29 +78,10 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
           <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
             {t("scriptManager.osTags", "Platform Tags")}
           </label>
-          <div className="flex flex-wrap gap-2">
-            {(Object.keys(OS_TAG_LABELS) as OSTag[]).map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => mgr.toggleOsTag(tag)}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full border transition-colors ${
-                  mgr.editOsTags.includes(tag)
-                    ? "bg-primary/20 border-accent/50 text-primary dark:text-primary"
-                    : "bg-[var(--color-surfaceHover)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]"
-                }`}
-              >
-                <ScriptMetadataIcon platform={tag} size={14} />
-                <span>{OS_TAG_LABELS[tag]}</span>
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-            {t(
-              "scriptManager.osTagsHint",
-              "Select the platforms this script is compatible with",
-            )}
-          </p>
+          <PlatformTagPicker
+            value={mgr.editOsTags}
+            onToggle={mgr.toggleOsTag}
+          />
         </div>
 
         {/* Description */}

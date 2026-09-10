@@ -10,7 +10,27 @@ export type OSTag =
   | "arista-eos"
   | "hpe-comware"
   | "aruba-cx"
-  | "android";
+  | "android"
+  | SpecificOSTag;
+type SpecificOSTag =
+  | "debian"
+  | "ubuntu"
+  | "centos"
+  | "fedora"
+  | "rhel"
+  | "rocky-linux"
+  | "almalinux"
+  | "opensuse"
+  | "alpine"
+  | "arch-linux"
+  | "freebsd"
+  | "openbsd"
+  | "pfsense"
+  | "opnsense"
+  | "openwrt"
+  | "junos"
+  | "routeros"
+  | "fortios";
 
 export interface ManagedScript {
   id: string;
@@ -37,6 +57,24 @@ export const OS_TAG_LABELS: Record<OSTag, string> = {
   "hpe-comware": "HPE Comware",
   "aruba-cx": "HPE Aruba CX",
   android: "Android / Termux",
+  debian: "Debian",
+  ubuntu: "Ubuntu",
+  centos: "CentOS / CentOS Stream",
+  fedora: "Fedora",
+  rhel: "RHEL (Red Hat Enterprise Linux)",
+  "rocky-linux": "Rocky Linux",
+  almalinux: "AlmaLinux",
+  opensuse: "openSUSE",
+  alpine: "Alpine Linux",
+  "arch-linux": "Arch Linux",
+  freebsd: "FreeBSD",
+  openbsd: "OpenBSD",
+  pfsense: "pfSense",
+  opnsense: "OPNsense",
+  openwrt: "OpenWrt",
+  junos: "Juniper Junos",
+  routeros: "MikroTik RouterOS",
+  fortios: "Fortinet FortiOS",
 };
 
 export const OS_TAG_ICONS: Record<OSTag, string> = {
@@ -50,6 +88,24 @@ export const OS_TAG_ICONS: Record<OSTag, string> = {
   "hpe-comware": "hpe",
   "aruba-cx": "hpe",
   android: "android",
+  debian: "debian",
+  ubuntu: "ubuntu",
+  centos: "centos",
+  fedora: "fedora",
+  rhel: "redhat",
+  "rocky-linux": "rocky-linux",
+  almalinux: "almalinux",
+  opensuse: "opensuse",
+  alpine: "linux",
+  "arch-linux": "linux",
+  freebsd: "freebsd",
+  openbsd: "server",
+  pfsense: "pfsense",
+  opnsense: "opnsense",
+  openwrt: "router",
+  junos: "juniper",
+  routeros: "mikrotik",
+  fortios: "fortinet",
 };
 
 export const SCRIPTS_STORAGE_KEY = "managedScripts";

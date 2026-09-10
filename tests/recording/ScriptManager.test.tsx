@@ -1152,7 +1152,7 @@ describe("ScriptManager", () => {
 
       expect(
         screen.getByText(
-          /Select the platforms this script is compatible with/i,
+          /User-assigned metadata, not a compatibility or execution guarantee/i,
         ),
       ).toBeInTheDocument();
     });
