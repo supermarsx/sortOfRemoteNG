@@ -27,6 +27,7 @@ import {
 } from "../../utils/runtime/runtimeCapabilities";
 import { SynologySessionContent } from "./SynologyPanel";
 import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
+import SynologyInitializationStatus from "./synologyPanel/SynologyInitializationStatus";
 
 const unavailable =
   "Open and unlock this session's owning database, then reopen the Synology connection.";
@@ -291,11 +292,11 @@ function BoundSynologySession({
     return <RuntimeUnavailable capabilities={capabilities} onClose={onClose} />;
   if (!capabilityReady)
     return (
-      <div role="status" className="p-4 text-sm">
-        Checking Synology runtime availability…
+      <div className="flex flex-1 min-h-0 items-center justify-center overflow-auto p-6">
+        <SynologyInitializationStatus phase="capabilities" />
       </div>
     );
-  return <SynologySessionContent connection={connection} />;
+  return <SynologySessionContent connection={connection} runtimeVerified />;
 }
 
 export default function SynologySessionPanel({

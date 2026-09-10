@@ -1,66 +1,69 @@
 import React, { useId } from "react";
-import {
-  LogIn,
-  Loader2,
-  ShieldCheck,
-  AlertCircle,
-  RefreshCw,
-} from "lucide-react";
+import { LogIn, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
 import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import type { SubProps } from "./types";
+import SynologyInitializationStatus from "./SynologyInitializationStatus";
 
 const inputClass =
   "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-3 py-2 text-sm text-[var(--color-text)]";
-const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
+const ConnectionForm: React.FC<
+  SubProps & { runtimeVerified?: boolean; isActive?: boolean }
+> = ({ mgr, runtimeVerified = false, isActive = true }) => {
   const id = useId();
   const connecting = mgr.connectionStatus === "connecting";
   const disabled = connecting || !!mgr.challenge;
   return (
     <>
-      {mgr.targetLocked ? (
+      {mgr.targetLocked && connecting && !mgr.challenge ? (
+        <div className="flex flex-1 min-h-0 items-center justify-center overflow-auto p-6">
+          <SynologyInitializationStatus
+            isActive={isActive}
+            phase="signin"
+            completed={[
+              ...(runtimeVerified ? ["Desktop capabilities verified"] : []),
+            ]}
+            onCancel={mgr.cancelChallenge}
+          />
+        </div>
+      ) : mgr.targetLocked ? (
         <div className="flex flex-1 min-h-0 items-center justify-center overflow-auto p-6">
           <section
             className="w-full max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6"
             role={mgr.connectionError ? "alert" : "status"}
           >
             <div className="flex items-center gap-3">
-              {connecting ? (
-                <Loader2 className="animate-spin text-primary" size={24} />
-              ) : (
-                <AlertCircle className="text-warning" size={24} />
-              )}
+              <AlertCircle className="text-warning" size={24} />
               <div>
                 <p className="text-xs text-[var(--color-textSecondary)]">
                   Synology NAS API
                 </p>
                 <h2 className="text-lg font-semibold">
-                  {connecting
-                    ? "Connecting to NAS…"
-                    : mgr.challenge
-                      ? "Authentication requires your attention"
-                      : "NAS connection unavailable"}
+                  {mgr.challenge
+                    ? "Authentication requires your attention"
+                    : "NAS connection unavailable"}
                 </h2>
               </div>
             </div>
             <p className="break-words text-sm text-[var(--color-textSecondary)]">
               {mgr.connectionError ??
-                (connecting
-                  ? "Contacting the NAS using this connection's settings."
-                  : (mgr.challenge?.message ??
-                    "The NAS session is disconnected."))}
+                mgr.challenge?.message ??
+                "The NAS session is disconnected."}
+              {mgr.connectionError && (
+                <span className="mt-2 block text-xs">
+                  No automatic sign-in retry was made.
+                </span>
+              )}
             </p>
             <div className="flex justify-end">
               <button
                 type="button"
                 className="sor-btn sor-btn-secondary"
                 disabled={!!mgr.challenge}
-                onClick={() =>
-                  connecting ? mgr.cancelChallenge() : void mgr.connect()
-                }
+                onClick={() => void mgr.connect()}
               >
-                {!connecting && <RefreshCw size={14} />}
-                {connecting ? "Cancel connection" : "Retry"}
+                <RefreshCw size={14} />
+                Retry
               </button>
             </div>
           </section>
@@ -75,7 +78,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             }}
           >
             <div className="mb-6 text-center">
-              <LogIn className="mx-auto mb-3 h-8 w-8 text-teal-500" />
+              <LogIn className="mx-auto mb-3 h-8 w-8 text-[var(--color-primary)]" />
               <h2 className="text-xl font-semibold">Connect to Synology NAS</h2>
               <p className="mt-1 text-sm text-[var(--color-textSecondary)]">
                 Use File Station and supported NAS administration tools with
@@ -176,21 +179,16 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
                 !mgr.password
               }
             >
-              {connecting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogIn className="h-4 w-4" />
-              )}
+              <LogIn className="h-4 w-4" />
               {connecting ? "Connecting…" : "Connect"}
             </button>
             {connecting && !mgr.challenge && (
-              <button
-                type="button"
-                className="sor-btn sor-btn-secondary w-full justify-center"
-                onClick={mgr.cancelChallenge}
-              >
-                Cancel connection
-              </button>
+              <SynologyInitializationStatus
+                isActive={isActive}
+                phase="signin"
+                onCancel={mgr.cancelChallenge}
+                compact
+              />
             )}
             <p className="text-xs text-[var(--color-textSecondary)]">
               Credentials are used for this session, not saved by this form. API
@@ -215,6 +213,14 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
         />
         <ModalBody className="min-h-0 overflow-y-auto space-y-4 p-5">
           <p className="text-sm break-words">{mgr.challenge?.message}</p>
+          {connecting && (
+            <SynologyInitializationStatus
+              isActive={isActive}
+              phase="verification"
+              completed={["DSM requested a one-time code"]}
+              compact
+            />
+          )}
           {mgr.challenge?.status === "unsupported_mfa" ? (
             <p className="text-sm text-[var(--color-textSecondary)]">
               This NAS login requires a method the File Station API cannot

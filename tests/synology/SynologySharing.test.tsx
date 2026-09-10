@@ -14,6 +14,9 @@ import { SynologySessionContent } from "../../src/components/synology/SynologyPa
 import type { useSynologyFileConnection } from "../../src/hooks/synology/useSynologyFileConnection";
 import { useSynologyFileSharing } from "../../src/hooks/synology/useSynologyFileSharing";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../src/components/ui/display/loadingElement", () => ({
+  LoadingElement: () => <span data-testid="configured-app-loader" />,
+}));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback ?? key,
@@ -131,7 +134,9 @@ describe("File Station metadata and sharing", () => {
   });
   it("loads bounded link pages and revokes only reviewed ID", async () => {
     render(<SynologySessionContent connection={c} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sharing links" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Sharing links" }),
+    );
     const dialog = screen.getByRole("dialog", { name: "File sharing links" });
     await within(dialog).findByText(link.url);
     fireEvent.click(
@@ -173,7 +178,9 @@ describe("File Station metadata and sharing", () => {
         : native(cmd, args as Record<string, unknown>),
     );
     render(<SynologySessionContent connection={c} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sharing links" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Sharing links" }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Revoke sharing link" }),

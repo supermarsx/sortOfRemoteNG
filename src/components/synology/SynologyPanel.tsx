@@ -29,13 +29,16 @@ import {
   NotificationsView,
 } from "./synologyPanel/SecondaryViews";
 import { AlertCircle } from "lucide-react";
+import SynologyInitializationStatus from "./synologyPanel/SynologyInitializationStatus";
 
 export function SynologySessionContent({
   connection,
   isActive = true,
+  runtimeVerified = false,
 }: {
   connection: ReturnType<typeof useSynologyFileConnection>;
   isActive?: boolean;
+  runtimeVerified?: boolean;
 }) {
   const { t } = useTranslation();
   const mgr = useSynologyManager(isActive, connection);
@@ -48,6 +51,22 @@ export function SynologySessionContent({
       case "storage":
         return <StorageView mgr={mgr} />;
       case "fileStation":
+        if (!mgr.fileStation.fileList && !mgr.fileStation.error)
+          return (
+            <div className="min-h-0 overflow-auto p-4">
+              <SynologyInitializationStatus
+                isActive={isActive}
+                phase={
+                  mgr.fileStation.currentPath === "/" ? "shares" : "folder"
+                }
+                completed={[
+                  ...(runtimeVerified ? ["Desktop capabilities verified"] : []),
+                  "DSM API session established",
+                ]}
+                compact
+              />
+            </div>
+          );
         return <FileStationView mgr={mgr} />;
       case "shares":
         return <SharesView mgr={mgr} />;
@@ -88,7 +107,11 @@ export function SynologySessionContent({
       data-testid="synology-panel"
     >
       {mgr.connectionStatus !== "connected" ? (
-        <ConnectionForm mgr={mgr} />
+        <ConnectionForm
+          mgr={mgr}
+          runtimeVerified={runtimeVerified}
+          isActive={isActive}
+        />
       ) : (
         <div className="flex flex-1 min-h-0 min-w-0">
           <Sidebar mgr={mgr} />

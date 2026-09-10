@@ -3,6 +3,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ConnectionForm from "../../src/components/synology/synologyPanel/ConnectionForm";
 import type { Mgr } from "../../src/components/synology/synologyPanel/types";
+vi.mock("../../src/components/ui/display/loadingElement", () => ({
+  LoadingElement: () => <span data-testid="configured-app-loader" />,
+}));
 afterEach(cleanup);
 const manager = (overrides: Partial<Mgr> = {}) =>
   ({
@@ -39,7 +42,9 @@ describe("saved NAS status page", () => {
       connectionError: null,
     });
     render(<ConnectionForm mgr={mgr} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Connecting to NAS");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Contacting DSM and signing in",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Cancel connection" }));
     expect(mgr.cancelChallenge).toHaveBeenCalledOnce();
   });
@@ -62,5 +67,35 @@ describe("saved NAS status page", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("One-time code")).toBeInTheDocument();
     expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+  });
+  it("shows code verification as one pending request inside the explicit challenge dialog", () => {
+    render(
+      <ConnectionForm
+        mgr={manager({
+          connectionStatus: "connecting",
+          connectionError: null,
+          challenge: {
+            status: "otp_required",
+            message: "Enter your authenticator code.",
+          },
+        })}
+        runtimeVerified
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Verifying the one-time code…" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("DSM requested a one-time code"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId("configured-app-loader")).toHaveLength(1);
+    expect(
+      screen.queryByText("DSM API session established"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("One-time code")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Verifying…" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Cancel sign-in" }),
+    ).toBeEnabled();
   });
 });

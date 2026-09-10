@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
 let connections: Connection[] = [];
 let availability: DatabaseAvailability;
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("../../src/components/ui/display/loadingElement", () => ({
+  LoadingElement: () => <span data-testid="configured-app-loader" />,
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (_name: string, fn: () => void) => {
     mocks.lock = fn;
@@ -84,13 +87,18 @@ vi.mock(
     return {
       SynologySessionContent: ({
         connection,
+        runtimeVerified,
       }: {
         connection: ReturnType<
           typeof import("../../src/hooks/synology/useSynologyFileConnection").useSynologyFileConnection
         >;
+        runtimeVerified?: boolean;
       }) =>
         mocks.realContent ? (
-          <actual.SynologySessionContent connection={connection} />
+          <actual.SynologySessionContent
+            connection={connection}
+            runtimeVerified={runtimeVerified}
+          />
         ) : (
           <section aria-label={connection.instanceId}>
             <span>{connection.host}</span>
@@ -155,13 +163,23 @@ describe("saved Synology session ownership", () => {
   it("starts the initial saved sign-in after Strict Mode effect replay without requiring Retry", async () => {
     mocks.realContent = true;
     let resolveLogin!: (result: unknown) => void;
+    let resolveShares!: (result: unknown) => void;
+    let resolveCapabilities!: (result: unknown) => void;
+    mocks.capabilities.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCapabilities = resolve;
+        }),
+    );
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "syn_fs_connect")
         return new Promise((resolve) => {
           resolveLogin = resolve;
         });
       if (command === "syn_fs_list")
-        return Promise.resolve({ files: [], total: 0, offset: 0 });
+        return new Promise((resolve) => {
+          resolveShares = resolve;
+        });
       if (command === "syn_fs_session_health")
         return Promise.resolve({
           status: "connected",
@@ -177,8 +195,24 @@ describe("saved Synology session ownership", () => {
       </React.StrictMode>,
     );
     expect(
-      await screen.findByRole("heading", { name: "Connecting to NAS…" }),
+      screen.getByRole("heading", { name: "Checking desktop capabilities…" }),
     ).toBeInTheDocument();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    await act(async () =>
+      resolveCapabilities({ source: "native", ops: true, platform: true }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: "Contacting DSM and signing in…",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Desktop capabilities verified"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("DSM API session established"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(
       screen.queryByText("The NAS session is disconnected."),
     ).not.toBeInTheDocument();
@@ -205,6 +239,18 @@ describe("saved Synology session ownership", () => {
       ),
     );
     expect(
+      screen.getByRole("heading", { name: "Loading shared folders…" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("DSM API session established")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("synology-file-station"),
+    ).not.toBeInTheDocument();
+    await act(async () => resolveShares({ files: [], total: 0, offset: 0 }));
+    expect(screen.getByTestId("synology-file-station")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Current stage elapsed time"),
+    ).not.toBeInTheDocument();
+    expect(
       mocks.invoke.mock.calls.filter(
         ([command]) => command === "syn_fs_connect",
       ),
@@ -229,6 +275,9 @@ describe("saved Synology session ownership", () => {
       screen.getByRole("heading", { name: "NAS connection unavailable" }),
     ).toBeInTheDocument();
     expect(
+      screen.queryByLabelText("Current stage elapsed time"),
+    ).not.toBeInTheDocument();
+    expect(
       mocks.invoke.mock.calls.filter(
         ([command]) => command === "syn_fs_connect",
       ),
@@ -241,6 +290,76 @@ describe("saved Synology session ownership", () => {
         ),
       ).toHaveLength(2),
     );
+  });
+  it("cancels from the status panel and releases late authentication without opening the workspace", async () => {
+    mocks.realContent = true;
+    let resolveLogin!: (result: unknown) => void;
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "syn_fs_connect"
+        ? new Promise((resolve) => {
+            resolveLogin = resolve;
+          })
+        : Promise.resolve(true),
+    );
+    render(<SynologySessionPanel session={session("one")} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Cancel connection" }),
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "syn_fs_cancel_connect",
+      expect.objectContaining({
+        instanceId: "one",
+        requestId: expect.any(String),
+      }),
+    );
+    expect(
+      screen.queryByLabelText("Current stage elapsed time"),
+    ).not.toBeInTheDocument();
+    await act(async () =>
+      resolveLogin({
+        status: "connected",
+        sessionId: "late-receipt",
+        message: "ok",
+      }),
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: "one",
+      expectedSessionId: "late-receipt",
+    });
+    expect(
+      mocks.invoke.mock.calls.some(([command]) => command === "syn_fs_list"),
+    ).toBe(false);
+    expect(
+      screen.queryByText("DSM API session established"),
+    ).not.toBeInTheDocument();
+  });
+  it("shows the actual initial share-read error instead of leaving initialization running", async () => {
+    mocks.realContent = true;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "syn_fs_connect")
+        return { status: "connected", sessionId: "receipt-one", message: "ok" };
+      if (command === "syn_fs_list")
+        throw new Error("File Station permission denied for this account");
+      if (command === "syn_fs_session_health")
+        return {
+          status: "connected",
+          lastVerifiedAt: "",
+          consecutiveFailures: 0,
+          message: null,
+        };
+      return undefined;
+    });
+    render(<SynologySessionPanel session={session("one")} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "File Station permission denied for this account",
+    );
+    expect(screen.getByRole("button", { name: "Refresh files" })).toBeEnabled();
+    expect(
+      screen.queryByLabelText("Current stage elapsed time"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("synthetic-private-password"),
+    ).not.toBeInTheDocument();
   });
   it("does not start a saved login if access is revoked during capability discovery", async () => {
     let resolveCapabilities!: (value: unknown) => void;
@@ -384,7 +503,7 @@ describe("saved Synology session ownership", () => {
     );
     render(<SynologySessionPanel session={session("one")} />);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "runtime availability",
+      "Checking desktop capabilities",
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(mocks.invoke).not.toHaveBeenCalled();

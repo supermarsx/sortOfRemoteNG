@@ -52,7 +52,7 @@ function TaskProgress({ fs }: { fs: Explorer }) {
         aria-label="NAS file task progress"
         value={percent}
         max={100}
-        className="h-2 min-w-0 flex-1 accent-teal-500"
+        className="h-2 min-w-0 flex-1 accent-[var(--color-primary)]"
       />
       <span>{percent}%</span>
     </div>
@@ -217,7 +217,7 @@ export function FileStationExplorer({
       <div className="shrink-0 space-y-3 border-b border-[var(--color-border)] p-4">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="mr-auto flex items-center gap-2 font-semibold">
-            <Folder className="h-4 w-4 text-teal-500" />
+            <Folder className="h-4 w-4 text-[var(--color-primary)]" />
             File Station
           </h3>
           <button
@@ -244,7 +244,12 @@ export function FileStationExplorer({
           >
             <ArrowLeft className="h-3 w-3" />
           </button>
-          <button disabled={fs.busy} onClick={() => fs.navigateToFolder("/")}>
+          <button
+            className="sor-accent-choice rounded px-1.5 py-1"
+            aria-current={root ? "page" : undefined}
+            disabled={fs.busy}
+            onClick={() => fs.navigateToFolder("/")}
+          >
             Shared folders
           </button>
           {parts.map((part, index) => (
@@ -252,7 +257,8 @@ export function FileStationExplorer({
               <span aria-hidden>/</span>
               <button
                 disabled={fs.busy}
-                className="break-all"
+                className="sor-accent-choice rounded px-1.5 py-1 break-all"
+                aria-current={index === parts.length - 1 ? "page" : undefined}
                 onClick={() =>
                   fs.navigateToFolder(`/${parts.slice(0, index + 1).join("/")}`)
                 }
@@ -463,12 +469,26 @@ export function FileStationExplorer({
         {!fs.review && <TaskProgress fs={fs} />}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[520px] text-xs">
+        <table
+          aria-label="File Station files"
+          className="w-full min-w-[520px] text-xs"
+        >
+          <colgroup>
+            <col style={{ width: "2.75rem" }} />
+            <col />
+            <col />
+            <col />
+            <col />
+          </colgroup>
           <thead className="sticky top-0 bg-[var(--color-surface)] text-left text-[var(--color-textSecondary)]">
             <tr>
-              <th className="p-3">
+              <th
+                className="p-3 whitespace-nowrap"
+                style={{ width: "2.75rem", maxWidth: "2.75rem" }}
+              >
                 <input
                   type="checkbox"
+                  className="m-0 h-4 w-4"
                   aria-label="Select this page"
                   checked={
                     items.length > 0 &&
@@ -490,11 +510,16 @@ export function FileStationExplorer({
             {items.map((item) => (
               <tr
                 key={item.path}
-                className="border-t border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]"
+                aria-selected={selected.has(item.path)}
+                className="sor-accent-choice border-t border-[var(--color-border)]"
               >
-                <td className="p-3">
+                <td
+                  className="p-3 whitespace-nowrap"
+                  style={{ width: "2.75rem", maxWidth: "2.75rem" }}
+                >
                   <input
                     type="checkbox"
+                    className="m-0 h-4 w-4"
                     aria-label={`Select ${item.name}`}
                     checked={selected.has(item.path)}
                     onChange={() => fs.toggleSelection(item.path)}
@@ -510,7 +535,7 @@ export function FileStationExplorer({
                     )}
                     {item.isdir ? (
                       <button
-                        className="break-all text-left text-teal-400 hover:underline"
+                        className="sor-accent-choice rounded px-1 py-0.5 break-all text-left hover:underline"
                         disabled={fs.busy}
                         onClick={() => fs.navigateToFolder(item.path)}
                       >

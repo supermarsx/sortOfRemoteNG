@@ -22,6 +22,9 @@ import { SessionRenderActivityContext } from "../../src/contexts/SessionRenderAc
 import { readFileSync } from "node:fs";
 import { ADMIN_READS } from "../../src/hooks/synology/synologyAdminData";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../src/components/ui/display/loadingElement", () => ({
+  LoadingElement: () => <span data-testid="configured-app-loader" />,
+}));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback ?? key,

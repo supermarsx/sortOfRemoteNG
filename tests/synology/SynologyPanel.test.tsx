@@ -11,6 +11,9 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { SynologyPanel } from "../../src/components/synology/SynologyPanel";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../src/components/ui/display/loadingElement", () => ({
+  LoadingElement: () => <span data-testid="configured-app-loader" />,
+}));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback || key,
@@ -255,6 +258,50 @@ describe("SynologyPanel mounted native File Station workflow", () => {
         }),
       ),
     );
+  });
+  it("uses compact selection cells and the shared themed NAS navigation states", async () => {
+    render(<SynologyPanel isOpen onClose={() => {}} />);
+    await openFolder();
+    const table = screen.getByRole("table", { name: "File Station files" });
+    expect(table.querySelector("colgroup col")).toHaveStyle({
+      width: "2.75rem",
+    });
+    const selectPage = within(table).getByLabelText("Select this page");
+    expect(selectPage.closest("th")).toHaveStyle({
+      width: "2.75rem",
+      maxWidth: "2.75rem",
+    });
+    const item = within(table).getByLabelText("Select notes.txt");
+    expect(item.closest("td")).toHaveStyle({
+      width: "2.75rem",
+      maxWidth: "2.75rem",
+    });
+    expect(item).toHaveClass("h-4", "w-4");
+    fireEvent.click(item);
+    expect(item).toBeChecked();
+    expect(item.closest("tr")).toHaveAttribute("aria-selected", "true");
+    expect(item.closest("tr")).toHaveClass("sor-accent-choice");
+    fireEvent.click(selectPage);
+    expect(within(table).getByLabelText("Select docs")).toBeChecked();
+    fireEvent.click(selectPage);
+    expect(item).not.toBeChecked();
+    const sections = screen.getByRole("navigation", { name: "NAS sections" });
+    const filesTab = within(sections).getByTestId("synology-tab-fileStation");
+    expect(filesTab).toHaveClass("sor-accent-choice");
+    expect(filesTab).toHaveAttribute("aria-current", "page");
+    expect(sections.innerHTML).not.toMatch(/(?:bg|text|border)-teal/);
+    const breadcrumbs = screen.getByRole("navigation", {
+      name: "File Station folders",
+    });
+    expect(
+      within(breadcrumbs).getByRole("button", { name: "public" }),
+    ).toHaveAttribute("aria-current", "page");
+    fireEvent.click(within(sections).getByTestId("synology-tab-dashboard"));
+    expect(filesTab).not.toHaveAttribute("aria-current");
+    expect(
+      within(sections).getByTestId("synology-tab-dashboard"),
+    ).toHaveAttribute("aria-current", "page");
+    await screen.findByText("DS920+");
   });
   it("creates a folder only after explicit styled dialog confirmation", async () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);

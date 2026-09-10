@@ -58,18 +58,17 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
   return (
     <div className="w-36 md:w-48 shrink-0 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-surfaceHover)]">
       {/* Tabs */}
-      <nav className="flex-1 overflow-y-auto py-2">
+      <nav
+        aria-label="NAS sections"
+        className="flex-1 overflow-y-auto space-y-1 p-2"
+      >
         {TABS.map(({ key, icon: Icon, label }) => (
           <button
             key={key}
             onClick={() => mgr.changeTab(key)}
             data-testid={`synology-tab-${key}`}
             aria-current={mgr.activeTab === key ? "page" : undefined}
-            className={`w-full flex items-center gap-2 px-4 py-2 text-xs transition-colors ${
-              mgr.activeTab === key
-                ? "bg-teal-500/15 text-teal-400 font-medium border-r-2 border-teal-500"
-                : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
-            }`}
+            className={`sor-accent-choice w-full flex items-center gap-2 rounded-md px-2 py-2 text-left text-xs ${mgr.activeTab === key ? "font-medium" : ""}`}
           >
             <Icon className="w-3.5 h-3.5 shrink-0" />
             <span className="truncate">{t(label, key)}</span>

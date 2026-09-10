@@ -71,6 +71,31 @@ root HTTP(S) URLs. An explicit URL uses its own scheme and port (80/443 when
 omitted). A plain host uses the configured port. URLs with credentials, query
 strings or application paths cannot be used as API server addresses.
 
+### Initialization status
+
+Opening a saved API tab shows the app's configured loading element alongside
+the current observed stage and elapsed time for that stage:
+
+1. **Checking desktop capabilities** verifies native API availability before
+   sending NAS credentials.
+2. **Contacting DSM and signing in** waits for one native request. Network
+   connection, DSM discovery and authentication are not reported as separate
+   backend events, so the app does not invent sub-stages or a percentage.
+3. **Loading shared folders** starts only after an API session is established.
+   Other administration data loads when its section is opened.
+
+A requested one-time code remains an explicit dialog; its verification request
+has its own status. Completed-stage labels only describe observed results.
+Elapsed-time updates and the loader pause while the tab or app is hidden, and
+stop when the request finishes or the view closes. Cancel connection keeps the
+existing cancellation and late-session cleanup protections. An actual sign-in
+or shared-folder error replaces loading with the error and an explicit retry
+action; no password, OTP or file operation is automatically replayed.
+
+The NAS sections, folder navigation and selected file rows follow the app's
+outlined accent styling. The file selection column stays compact while the
+remaining columns retain horizontal scrolling on narrow views.
+
 ## Keeping an API session active
 
 The desktop keeps each open API session alive with an authenticated, read-only
