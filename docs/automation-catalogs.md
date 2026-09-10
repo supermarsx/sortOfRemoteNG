@@ -17,6 +17,31 @@ Browse scripts and Browse macros can read public Git-hosted JSON indexes or loca
 
 The exported package is already a valid catalog index; no hand-authored manifest or separate publishing service is needed. No default external feed is configured. Ref paths may use a branch, tag, or pinned commit as supported by the publisher's raw-file endpoint. Pinned commits provide a stable reference; branches can change between manual refreshes.
 
+## Create a source-based script or macro repository
+
+The app repository also includes a dependency-free Node.js 24 authoring tool. It creates a **new or empty directory only**, with editable source files, a local descriptor, a copied standalone tool, README, and a read-only-permission GitHub Actions validation/build workflow:
+
+```sh
+npm run automation:repo -- scaffold ../my-scripts --kind scripts
+npm run automation:repo -- scaffold ../my-macros --kind macros
+npm run automation:repo -- scaffold ../my-automation --kind mixed
+```
+
+`scripts` includes terminal shell/PowerShell and website JavaScript/TypeScript examples; `macros` includes terminal command/delay steps and value-free website interaction steps. `mixed` includes all four native families. These are synthetic examples, not audited scripts or a working macro for an arbitrary website. Scaffolding does not initialize Git, access a network, install dependencies, run source, or publish anything.
+
+Edit `catalog.project.json` and its `sources/` files. Each descriptor declares its stable ID, family, name, description, relative source path, platform tags, and creation/update timestamps. Terminal scripts explicitly select `sh`, `bash`, `powershell`, or `batch` with a matching `.sh`/`.bash`, `.ps1`, or `.bat`/`.cmd` extension. Website `.js` and `.ts` files retain their language and original source. Macro `.json` files are arrays of the existing native steps, never scripts to be converted or executed. The local descriptor is an authoring format only; the output remains the existing `sorng-automation-index` version 1.
+
+From the generated repository:
+
+```sh
+node tooling/automation-repository.mjs check .
+node tooling/automation-repository.mjs build . --out automation-index.json
+```
+
+`check` validates without writing. `build` creates a **new output file** and refuses overwrites; choose a new relative filename for a revision, or explicitly remove an obsolete generated index yourself after review. Paths must remain inside the repository, with no traversal, symlinks or directory junctions. Input files are bounded and decoded as strict UTF-8. Validation rejects unknown descriptor fields, malformed steps, likely literal credentials and mismatched languages; it does not execute or type-check source and is not a security audit. The app performs its own validation again on import and before permitted execution.
+
+The generated CI workflow validates descriptors and builds into ignored `.catalog-build/`, with no dependency installation or source execution. Review the output before manually committing/uploading the chosen JSON to a public host, then use its raw HTTPS URL in Browse. No automatic publishing or publisher verification is provided. Website fill steps must never include saved input values; use the app's recorder to capture the actual reviewed public-form layout.
+
 ## Review and import
 
 Refresh changes only the displayed source. Inspect the source text or native macro steps, description, platform labels, and provenance, then select entries and review the destination. Each entry requires an explicit choice:

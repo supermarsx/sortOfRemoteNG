@@ -17,6 +17,8 @@
     "about:js-deps:generate": "node ./scripts/sync-js-deps.mjs --write",
     "about:js-deps:check": "node ./scripts/sync-js-deps.mjs --check",
     "about:js-deps:test": "node --test ./tests/tooling/jsDependencyCatalog.node-test.mjs",
+    "automation:repo": "node ./scripts/automation-repository.mjs",
+    "automation:repo:test": "vitest run tests/tooling/automationRepository.test.ts",
     "icons:brand:generate": "node ./scripts/sync-brand-icons.mjs --write",
     "icons:brand:check": "node ./scripts/sync-brand-icons.mjs --check",
     "icons:brand:test": "node --test ./tests/tooling/brandIconCatalog.node-test.mjs",
