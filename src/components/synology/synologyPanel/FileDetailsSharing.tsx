@@ -21,7 +21,10 @@ const fileMode = (value: unknown) =>
     ? `0o${value.toString(8)}`
     : "—";
 
-function ShareReview({ mgr }: SubProps) {
+function ShareReview({
+  mgr,
+  listingPending,
+}: SubProps & { listingPending: boolean }) {
   const id = useId(),
     [password, setPassword] = useState(""),
     [expiry, setExpiry] = useState("");
@@ -32,6 +35,7 @@ function ShareReview({ mgr }: SubProps) {
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
+        if (listingPending) return;
         void s.confirm(password, expiry).then((ok) => {
           if (ok) setPassword("");
         });
@@ -55,7 +59,7 @@ function ShareReview({ mgr }: SubProps) {
               className="sor-form-input"
               maxLength={16}
               autoComplete="new-password"
-              disabled={s.busy}
+              disabled={s.busy || listingPending}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -66,7 +70,7 @@ function ShareReview({ mgr }: SubProps) {
               id={`${id}-expiry`}
               type="date"
               className="sor-form-input"
-              disabled={s.busy}
+              disabled={s.busy || listingPending}
               value={expiry}
               onChange={(e) => setExpiry(e.target.value)}
             />
@@ -82,7 +86,10 @@ function ShareReview({ mgr }: SubProps) {
         >
           Cancel review
         </button>
-        <button className="sor-btn sor-btn-danger" disabled={s.busy}>
+        <button
+          className="sor-btn sor-btn-danger"
+          disabled={s.busy || listingPending}
+        >
           {s.busy
             ? "Working…"
             : review.kind === "create"
@@ -93,7 +100,10 @@ function ShareReview({ mgr }: SubProps) {
     </form>
   );
 }
-export default function FileDetailsSharing({ mgr }: SubProps) {
+export default function FileDetailsSharing({
+  mgr,
+  listingPending = false,
+}: SubProps & { listingPending?: boolean }) {
   const [details, setDetails] = useState(false),
     fs = mgr.fileStation,
     s = mgr.sharing;
@@ -104,7 +114,7 @@ export default function FileDetailsSharing({ mgr }: SubProps) {
     <>
       <button
         className="sor-btn-secondary-sm"
-        disabled={fs.busy || !items.length}
+        disabled={fs.busy || listingPending || !items.length}
         onClick={() => setDetails(true)}
       >
         <Info className="h-4 w-4" />
@@ -112,7 +122,7 @@ export default function FileDetailsSharing({ mgr }: SubProps) {
       </button>
       <button
         className="sor-btn-secondary-sm"
-        disabled={fs.busy || items.length !== 1}
+        disabled={fs.busy || listingPending || items.length !== 1}
         onClick={() => s.requestCreate(items[0].path)}
       >
         <Share2 className="h-4 w-4" />
@@ -194,6 +204,7 @@ export default function FileDetailsSharing({ mgr }: SubProps) {
                     : s.review.link.id)
                 }
                 mgr={mgr}
+                listingPending={listingPending}
               />
             ) : (
               <>
@@ -225,7 +236,7 @@ export default function FileDetailsSharing({ mgr }: SubProps) {
                   actions={(row) => (
                     <button
                       className="sor-btn-danger-sm"
-                      disabled={s.busy}
+                      disabled={s.busy || listingPending}
                       onClick={() => {
                         const link = s.data?.links.find(
                           (item) => item.id === row.id,

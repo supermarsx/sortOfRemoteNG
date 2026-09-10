@@ -59,6 +59,8 @@ export function useSynologyFileStation(
   const [sortBy, setSortBy] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
   const [fileList, setFileList] = useState<FileListResult | null>(null);
+  const [listOwner, setListOwner] = useState<string | null>(null);
+  const [settledReadKey, setSettledReadKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [fileSearch, setFileSearch] = useState("");
   const [review, setReview] = useState<FileStationReview | null>(null);
@@ -139,11 +141,35 @@ export function useSynologyFileStation(
     `${instanceId}:${sessionId}:${active}:${effectivePath}`,
   );
   const scopeKey = `${instanceId}:${sessionId}:${active}:${effectivePath}`;
+  const readKey = JSON.stringify([
+    scopeKey,
+    effectivePage,
+    sortBy,
+    sortDirection,
+  ]);
+  const currentReadKey = useRef(readKey);
+  if (currentReadKey.current !== readKey) {
+    currentReadKey.current = readKey;
+    readVersion.current++;
+  }
+  const listingPending =
+    !!sessionId && active && (loading || settledReadKey !== readKey);
+  const listingPendingRef = useRef(listingPending);
+  listingPendingRef.current = listingPending;
+  const visibleList = listOwner === scopeKey ? fileList : null;
+  const visibleSelected = listOwner === scopeKey ? selected : [];
   if (previousScope.current !== scopeKey) {
     previousScope.current = scopeKey;
     generation.current++;
     readVersion.current++;
   }
+  const canActOnListing = () =>
+    !busyRef.current &&
+    !listingPendingRef.current &&
+    previousScope.current === scopeKey &&
+    currentReadKey.current === readKey &&
+    listOwner === scopeKey &&
+    fileList !== null;
   const capture = useCallback((): Scope => {
     const current = latest.current;
     current.assertSessionAccess?.();
@@ -200,13 +226,20 @@ export function useSynologyFileStation(
     const current = latest.current;
     if (!current.sessionId || !current.active || busyRef.current) return;
     let scope: Scope;
+    const requestedKey = currentReadKey.current;
     try {
       scope = capture();
     } catch (failure) {
-      if (alive.current) setError(explain(failure));
+      if (alive.current) {
+        setError(explain(failure));
+        setSettledReadKey(requestedKey);
+        setLoading(false);
+        listingPendingRef.current = false;
+      }
       return;
     }
     const read = ++readVersion.current;
+    listingPendingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -244,13 +277,20 @@ export function useSynologyFileStation(
       check(scope);
       if (read === readVersion.current) {
         setFileList(data);
+        setListOwner(
+          `${scope.instanceId}:${scope.sessionId}:true:${scope.path}`,
+        );
         setSelected([]);
       }
     } catch (failure) {
       if (alive.current && read === readVersion.current)
         setError(explain(failure));
     } finally {
-      if (alive.current && read === readVersion.current) setLoading(false);
+      if (alive.current && read === readVersion.current) {
+        listingPendingRef.current = false;
+        setSettledReadKey(requestedKey);
+        setLoading(false);
+      }
     }
   }, [capture, check, invoke]);
   const cancelTask = useCallback(async () => {
@@ -337,7 +377,7 @@ export function useSynologyFileStation(
     action: (scope: Scope, runId: number) => Promise<void>,
     refreshAfter = true,
   ) => {
-    if (busyRef.current) return;
+    if (!canActOnListing()) return;
     let scope: Scope;
     try {
       scope = capture();
@@ -441,6 +481,9 @@ export function useSynologyFileStation(
       if (status.finished) {
         if (kind === "search") {
           setFileList(status.files ?? { files: [], total: 0, offset: 0 });
+          setListOwner(
+            `${scope.instanceId}:${scope.sessionId}:true:${scope.path}`,
+          );
           setPage(0);
         } else {
           taskRef.current = null;
@@ -462,7 +505,7 @@ export function useSynologyFileStation(
     }
   };
   const requestReview = (kind: FileStationReview["kind"]) => {
-    if (busyRef.current) return;
+    if (!canActOnListing()) return;
     try {
       const scope = capture();
       const items = (fileList?.files ?? []).filter((item) =>
@@ -582,7 +625,7 @@ export function useSynologyFileStation(
         );
     });
   const toggleSelection = (path: string) => {
-    if (!busyRef.current)
+    if (canActOnListing())
       setSelected((previous) =>
         previous.includes(path)
           ? previous.filter((value) => value !== path)
@@ -592,7 +635,7 @@ export function useSynologyFileStation(
   return {
     currentPath: effectivePath,
     navigateToFolder,
-    fileList,
+    fileList: visibleList,
     page: effectivePage,
     setPage,
     pageSize: PAGE_SIZE,
@@ -603,18 +646,20 @@ export function useSynologyFileStation(
     fileSearch,
     setFileSearch,
     searchFiles,
-    selected,
+    selected: visibleSelected,
     toggleSelection,
-    selectPage: () =>
-      setSelected((fileList?.files ?? []).map((item) => item.path)),
+    selectPage: () => {
+      if (canActOnListing())
+        setSelected((visibleList?.files ?? []).map((item) => item.path));
+    },
     clearSelection: () => setSelected([]),
-    loading,
+    loading: listingPending,
     busy,
-    error,
+    error: settledReadKey === readKey ? error : null,
     message,
     clearError: () => setError(null),
     refresh,
-    review,
+    review: review?.scope.generation === generation.current ? review : null,
     requestReview,
     confirmReview,
     cancelReview: () => {

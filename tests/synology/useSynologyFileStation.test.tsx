@@ -120,9 +120,12 @@ describe("File Station session and operation lifecycle", () => {
       ).toBe(false);
     },
   );
-  it("mutation invalidates pending list without stranding loading or hiding its own failure", async () => {
+  it("preserves same-folder rows but fences mutations, transfers and selection during pending refresh", async () => {
     const { result } = await setup();
     const oldList = deferred<FileListResult>();
+    act(() => result.current.toggleSelection("/public/notes.txt"));
+    act(() => result.current.requestReview("create"));
+    const retainedConfirmation = result.current.confirmReview;
     vi.mocked(invoke).mockImplementation((command) =>
       command === "syn_fs_list"
         ? oldList.promise
@@ -134,14 +137,93 @@ describe("File Station session and operation lifecycle", () => {
       void result.current.refresh();
     });
     expect(result.current.loading).toBe(true);
-    act(() => result.current.requestReview("create"));
-    await act(() => result.current.confirmReview("new-folder"));
-    expect(result.current.loading).toBe(false);
-    expect(result.current.error).toBe("Permission denied");
-    expect(result.current.review).not.toBeNull();
-    await act(async () => oldList.resolve({ files: [], total: 0, offset: 0 }));
-    expect(result.current.error).toBe("Permission denied");
     expect(result.current.fileList).toEqual(files);
+    act(() => result.current.toggleSelection("/public/docs"));
+    act(() => result.current.selectPage());
+    expect(result.current.selected).toEqual(["/public/notes.txt"]);
+    act(() => result.current.requestReview("create"));
+    await act(() => retainedConfirmation("new-folder"));
+    await act(() => result.current.upload());
+    await act(() => result.current.download());
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.every(([command]) => command === "syn_fs_list"),
+    ).toBe(true);
+    expect(result.current.loading).toBe(true);
+    await act(async () => oldList.reject(new Error("Refresh failed")));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBe("Refresh failed");
+    expect(result.current.fileList).toEqual(files);
+  });
+  it("masks old folder rows, selection and review during render, before reset effects", async () => {
+    const snapshots: Array<{
+      path: string;
+      list: FileListResult | null;
+      selected: string[];
+      loading: boolean;
+      review: unknown;
+    }> = [];
+    const hook = renderHook(() => {
+      const result = useSynologyFileStation("instance-a", "receipt-a", true);
+      snapshots.push({
+        path: result.currentPath,
+        list: result.fileList,
+        selected: result.selected,
+        loading: result.loading,
+        review: result.review,
+      });
+      return result;
+    });
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    act(() => hook.result.current.navigateToFolder("/public"));
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    act(() => hook.result.current.toggleSelection("/public/notes.txt"));
+    act(() => hook.result.current.requestReview("delete"));
+    const staleDownload = hook.result.current.download;
+    const next = deferred<FileListResult>();
+    vi.mocked(invoke).mockImplementation(() => next.promise);
+    act(() => hook.result.current.navigateToFolder("/other"));
+    for (const snapshot of snapshots.filter(
+      (entry) => entry.path === "/other",
+    )) {
+      expect(snapshot).toMatchObject({
+        list: null,
+        selected: [],
+        loading: true,
+        review: null,
+      });
+    }
+    await act(async () => next.resolve({ files: [], total: 0, offset: 0 }));
+    expect(hook.result.current.loading).toBe(false);
+    await act(() => staleDownload());
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "syn_fs_download"),
+    ).toBe(false);
+  });
+  it("allows navigation to supersede a pending read and never publishes its late result", async () => {
+    const { result } = await setup();
+    const old = deferred<FileListResult>(),
+      next = deferred<FileListResult>();
+    vi.mocked(invoke).mockImplementation((command, args) =>
+      command !== "syn_fs_list"
+        ? Promise.resolve()
+        : (args as { folderPath: string }).folderPath === "/next"
+          ? next.promise
+          : old.promise,
+    );
+    act(() => {
+      void result.current.refresh();
+    });
+    act(() => result.current.navigateToFolder("/next"));
+    expect(result.current.fileList).toBeNull();
+    await act(async () => next.resolve({ files: [], total: 0, offset: 0 }));
+    await act(async () => old.resolve(files));
+    expect(result.current.currentPath).toBe("/next");
+    expect(result.current.fileList?.files).toEqual([]);
+    expect(result.current.loading).toBe(false);
   });
   it.each(["copy", "move", "delete"] as const)(
     "waits for %s task completion, with no silent overwrite/skip",

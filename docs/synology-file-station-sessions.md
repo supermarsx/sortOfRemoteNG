@@ -84,6 +84,12 @@ the current observed stage and elapsed time for that stage:
 3. **Loading shared folders** starts only after an API session is established.
    Other administration data loads when its section is opened.
 
+Folder loading stays inside the file list: the toolbar, breadcrumbs, table
+headers and footer remain visible. A new folder shows placeholder rows until
+its response arrives, never the previous folder's files. Refreshing the same
+folder keeps its existing rows read-only while the request is pending. Folder
+navigation remains available; selection and file changes wait for the listing.
+
 A requested one-time code remains an explicit dialog; its verification request
 has its own status. Completed-stage labels only describe observed results.
 Elapsed-time updates and the loader pause while the tab or app is hidden, and

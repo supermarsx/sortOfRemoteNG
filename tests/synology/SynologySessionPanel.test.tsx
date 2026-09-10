@@ -241,12 +241,19 @@ describe("saved Synology session ownership", () => {
     expect(
       screen.getByRole("heading", { name: "Loading shared folders…" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("DSM API session established")).toBeInTheDocument();
+    const explorer = screen.getByTestId("synology-file-station");
+    const fileTable = screen.getByRole("table", { name: "File Station files" });
+    expect(fileTable).toHaveAttribute("aria-busy", "true");
     expect(
-      screen.queryByTestId("synology-file-station"),
-    ).not.toBeInTheDocument();
+      screen.getByRole("navigation", { name: "File Station folders" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId("file-list-skeleton")).toHaveLength(4);
     await act(async () => resolveShares({ files: [], total: 0, offset: 0 }));
-    expect(screen.getByTestId("synology-file-station")).toBeInTheDocument();
+    expect(screen.getByTestId("synology-file-station")).toBe(explorer);
+    expect(screen.getByRole("table", { name: "File Station files" })).toBe(
+      fileTable,
+    );
+    expect(fileTable).toHaveAttribute("aria-busy", "false");
     expect(
       screen.queryByLabelText("Current stage elapsed time"),
     ).not.toBeInTheDocument();

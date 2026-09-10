@@ -29,7 +29,6 @@ import {
   NotificationsView,
 } from "./synologyPanel/SecondaryViews";
 import { AlertCircle } from "lucide-react";
-import SynologyInitializationStatus from "./synologyPanel/SynologyInitializationStatus";
 
 export function SynologySessionContent({
   connection,
@@ -51,23 +50,7 @@ export function SynologySessionContent({
       case "storage":
         return <StorageView mgr={mgr} />;
       case "fileStation":
-        if (!mgr.fileStation.fileList && !mgr.fileStation.error)
-          return (
-            <div className="min-h-0 overflow-auto p-4">
-              <SynologyInitializationStatus
-                isActive={isActive}
-                phase={
-                  mgr.fileStation.currentPath === "/" ? "shares" : "folder"
-                }
-                completed={[
-                  ...(runtimeVerified ? ["Desktop capabilities verified"] : []),
-                  "DSM API session established",
-                ]}
-                compact
-              />
-            </div>
-          );
-        return <FileStationView mgr={mgr} />;
+        return <FileStationView mgr={mgr} isActive={isActive} />;
       case "shares":
         return <SharesView mgr={mgr} />;
       case "network":

@@ -18,6 +18,7 @@ import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import type { SubProps } from "./types";
 import FileDetailsSharing from "./FileDetailsSharing";
+import FileStationLoadingState from "./FileStationLoadingState";
 import type {
   FileStationReview,
   useSynologyFileStation,
@@ -177,7 +178,12 @@ function ActionReview({
               ? "sor-btn sor-btn-danger"
               : "sor-btn sor-btn-primary"
           }
-          disabled={fs.busy || (review.kind !== "delete" && !value.trim())}
+          disabled={
+            fs.busy ||
+            fs.loading ||
+            !fs.fileList ||
+            (review.kind !== "delete" && !value.trim())
+          }
           onClick={() => void fs.confirmReview(value)}
         >
           {fs.busy ? "Working…" : labels[review.kind]}
@@ -190,9 +196,11 @@ function ActionReview({
 export function FileStationExplorer({
   fs,
   mgr,
+  isActive = true,
 }: {
   fs: Explorer;
   mgr: SubProps["mgr"];
+  isActive?: boolean;
 }) {
   const id = useId();
   const [pathDraft, setPathDraft] = useState(fs.currentPath);
@@ -202,6 +210,8 @@ export function FileStationExplorer({
     setPathDraft(fs.currentPath);
   }
   const items = fs.fileList?.files ?? [];
+  const listingPending = fs.loading || (!fs.fileList && !fs.error);
+  const actionsBlocked = fs.busy || listingPending || !fs.fileList;
   const selected = new Set(fs.selected);
   const root = fs.currentPath === "/";
   const parts = fs.currentPath.split("/").filter(Boolean);
@@ -222,7 +232,7 @@ export function FileStationExplorer({
           </h3>
           <button
             className="sor-btn-secondary-sm"
-            disabled={fs.loading || fs.busy}
+            disabled={listingPending || fs.busy}
             onClick={() => void fs.refresh()}
             title="Reload this NAS folder"
           >
@@ -308,14 +318,14 @@ export function FileStationExplorer({
                   placeholder="Name or pattern"
                   value={fs.fileSearch}
                   onChange={(e) => fs.setFileSearch(e.target.value)}
-                  disabled={fs.busy || root}
+                  disabled={actionsBlocked || root}
                   maxLength={255}
                 />
               </div>
             </label>
             <button
               className="sor-btn sor-btn-secondary"
-              disabled={fs.busy || root}
+              disabled={actionsBlocked || root}
             >
               Search
             </button>
@@ -326,7 +336,9 @@ export function FileStationExplorer({
               id={`${id}-sort`}
               className={`${field} mt-1 block w-auto`}
               value={fs.sortBy}
-              disabled={fs.busy || fs.task?.operation === "search"}
+              disabled={
+                fs.busy || listingPending || fs.task?.operation === "search"
+              }
               onChange={(e) => {
                 fs.setPage(0);
                 fs.setSortBy(e.target.value);
@@ -344,7 +356,9 @@ export function FileStationExplorer({
               id={`${id}-direction`}
               className={`${field} mt-1 block w-auto`}
               value={fs.sortDirection}
-              disabled={fs.busy || fs.task?.operation === "search"}
+              disabled={
+                fs.busy || listingPending || fs.task?.operation === "search"
+              }
               onChange={(e) => {
                 fs.setPage(0);
                 fs.setSortDirection(e.target.value);
@@ -359,10 +373,11 @@ export function FileStationExplorer({
           <FileDetailsSharing
             key={`${mgr.instanceId}:${mgr.sessionId}:${fs.currentPath}`}
             mgr={mgr}
+            listingPending={listingPending || !fs.fileList}
           />
           <button
             className="sor-btn-secondary-sm"
-            disabled={fs.busy || root}
+            disabled={actionsBlocked || root}
             onClick={() => fs.requestReview("create")}
           >
             <FolderPlus className="h-4 w-4" />
@@ -370,7 +385,7 @@ export function FileStationExplorer({
           </button>
           <button
             className="sor-btn-secondary-sm"
-            disabled={fs.busy || root}
+            disabled={actionsBlocked || root}
             onClick={() => void fs.upload()}
             title="Choose a local file in the native Open dialog"
           >
@@ -379,7 +394,7 @@ export function FileStationExplorer({
           </button>
           <button
             className="sor-btn-secondary-sm"
-            disabled={fs.busy || !downloadReady}
+            disabled={actionsBlocked || !downloadReady}
             onClick={() => void fs.download()}
             title="Save one selected file to a NEW filename; existing local files are never overwritten"
           >
@@ -388,7 +403,7 @@ export function FileStationExplorer({
           </button>
           <button
             className="sor-btn-secondary-sm"
-            disabled={fs.busy || root || fs.selected.length !== 1}
+            disabled={actionsBlocked || root || fs.selected.length !== 1}
             onClick={() => fs.requestReview("rename")}
           >
             <Pencil className="h-4 w-4" />
@@ -396,7 +411,7 @@ export function FileStationExplorer({
           </button>
           <button
             className="sor-btn-secondary-sm"
-            disabled={fs.busy || root || !selected.size}
+            disabled={actionsBlocked || root || !selected.size}
             onClick={() => fs.requestReview("copy")}
           >
             <Copy className="h-4 w-4" />
@@ -404,7 +419,7 @@ export function FileStationExplorer({
           </button>
           <button
             className="sor-btn-secondary-sm"
-            disabled={fs.busy || root || !selected.size}
+            disabled={actionsBlocked || root || !selected.size}
             onClick={() => fs.requestReview("move")}
           >
             <Move className="h-4 w-4" />
@@ -412,7 +427,7 @@ export function FileStationExplorer({
           </button>
           <button
             className="sor-btn-secondary-sm text-error"
-            disabled={fs.busy || root || !selected.size}
+            disabled={actionsBlocked || root || !selected.size}
             onClick={() => fs.requestReview("delete")}
           >
             <Trash2 className="h-4 w-4" />
@@ -444,7 +459,7 @@ export function FileStationExplorer({
             {fs.message}
           </p>
         )}
-        {(fs.loading || fs.busy || (fs.task && !fs.task.finished)) && (
+        {(fs.busy || (fs.task && !fs.task.finished)) && (
           <div className="flex items-center gap-2 text-sm" role="status">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>
@@ -452,9 +467,7 @@ export function FileStationExplorer({
                 ? fs.task
                   ? `NAS ${fs.task.operation} in progress`
                   : "Waiting for the native dialog or NAS…"
-                : fs.loading
-                  ? "Loading files…"
-                  : "Task still needs cancellation"}
+                : "Task still needs cancellation"}
             </span>
             {fs.task && !fs.task.finished && (
               <button
@@ -469,8 +482,17 @@ export function FileStationExplorer({
         {!fs.review && <TaskProgress fs={fs} />}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
+        {listingPending && (
+          <FileStationLoadingState
+            key={`${mgr.instanceId}:${mgr.sessionId}:${fs.currentPath}:${fs.page}:${fs.sortBy}:${fs.sortDirection}`}
+            root={root}
+            refreshing={!!fs.fileList}
+            isActive={isActive}
+          />
+        )}
         <table
           aria-label="File Station files"
+          aria-busy={listingPending}
           className="w-full min-w-[520px] text-xs"
         >
           <colgroup>
@@ -494,7 +516,7 @@ export function FileStationExplorer({
                     items.length > 0 &&
                     items.every((item) => selected.has(item.path))
                   }
-                  disabled={fs.busy || !items.length || root}
+                  disabled={actionsBlocked || !items.length || root}
                   onChange={(event) =>
                     event.target.checked ? fs.selectPage() : fs.clearSelection()
                   }
@@ -507,6 +529,30 @@ export function FileStationExplorer({
             </tr>
           </thead>
           <tbody>
+            {listingPending &&
+              !items.length &&
+              Array.from({ length: 4 }, (_, index) => (
+                <tr
+                  key={`loading-${index}`}
+                  aria-hidden="true"
+                  data-testid="file-list-skeleton"
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td
+                    className="p-3"
+                    style={{ width: "2.75rem", maxWidth: "2.75rem" }}
+                  >
+                    <span className="block h-4 w-4 rounded bg-[var(--color-surfaceHover)]" />
+                  </td>
+                  {["w-36", "w-16", "w-16", "w-28"].map((width, cell) => (
+                    <td key={cell} className="p-3">
+                      <span
+                        className={`block h-3 max-w-full rounded bg-[var(--color-surfaceHover)] ${width}`}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
             {items.map((item) => (
               <tr
                 key={item.path}
@@ -523,7 +569,7 @@ export function FileStationExplorer({
                     aria-label={`Select ${item.name}`}
                     checked={selected.has(item.path)}
                     onChange={() => fs.toggleSelection(item.path)}
-                    disabled={fs.busy || root}
+                    disabled={actionsBlocked || root}
                   />
                 </td>
                 <td className="p-3">
@@ -536,7 +582,7 @@ export function FileStationExplorer({
                     {item.isdir ? (
                       <button
                         className="sor-accent-choice rounded px-1 py-0.5 break-all text-left hover:underline"
-                        disabled={fs.busy}
+                        disabled={actionsBlocked}
                         onClick={() => fs.navigateToFolder(item.path)}
                       >
                         {item.name}
@@ -563,7 +609,7 @@ export function FileStationExplorer({
             ))}
           </tbody>
         </table>
-        {!items.length && !fs.loading && (
+        {!items.length && !listingPending && (
           <p className="p-10 text-center text-sm text-[var(--color-textSecondary)]">
             {fs.error
               ? "Files could not be loaded. Correct the error and refresh."
@@ -577,14 +623,16 @@ export function FileStationExplorer({
       </div>
       <div className="shrink-0 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] p-3 text-xs">
         <span>
-          {total} items · {selected.size} selected
+          {listingPending && !fs.fileList
+            ? "Loading items…"
+            : `${total} items · ${selected.size} selected`}
         </span>
         <span className="ml-auto">
           Page {fs.page + 1} of {Math.max(1, Math.ceil(total / fs.pageSize))}
         </span>
         <button
           className="sor-btn-secondary-sm"
-          disabled={!fs.page || fs.busy || fs.loading}
+          disabled={!fs.page || fs.busy || listingPending}
           onClick={() => fs.setPage(fs.page - 1)}
         >
           Previous
@@ -592,7 +640,7 @@ export function FileStationExplorer({
         <button
           className="sor-btn-secondary-sm"
           disabled={
-            (fs.page + 1) * fs.pageSize >= total || fs.busy || fs.loading
+            (fs.page + 1) * fs.pageSize >= total || fs.busy || listingPending
           }
           onClick={() => fs.setPage(fs.page + 1)}
         >
@@ -605,7 +653,10 @@ export function FileStationExplorer({
     </div>
   );
 }
-const FileStationView: React.FC<SubProps> = ({ mgr }) => (
-  <FileStationExplorer fs={mgr.fileStation} mgr={mgr} />
+const FileStationView: React.FC<SubProps & { isActive?: boolean }> = ({
+  mgr,
+  isActive = true,
+}) => (
+  <FileStationExplorer fs={mgr.fileStation} mgr={mgr} isActive={isActive} />
 );
 export default FileStationView;
