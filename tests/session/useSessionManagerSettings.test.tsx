@@ -161,6 +161,41 @@ describe("useSessionManager settings effects", () => {
     }
   });
 
+  it.each(["native", "website"] as const)(
+    "routes the Synology %s view without advertising a new protocol",
+    async (accessMode) => {
+      const connection = makeConnection({
+        protocol: "https",
+        hostname: "nas.example.test",
+        port: 5001,
+        httpApplication: {
+          version: 1,
+          id: "synology-dsm",
+          loginMode: "manual",
+        },
+        synologySettings: { version: 1, useHttps: true, accessMode },
+      });
+      const { result } = renderHook(() => useSessionManager());
+      await act(async () => {
+        await result.current.handleConnect(connection);
+      });
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "ADD_SESSION",
+          payload: expect.objectContaining({
+            connectionId: connection.id,
+            protocol: accessMode === "native" ? "synology" : "https",
+          }),
+        }),
+      );
+      expect(connection.protocol).toBe("https");
+      expect(connectionMocks.invoke).not.toHaveBeenCalledWith(
+        "syn_fs_connect",
+        expect.anything(),
+      );
+    },
+  );
+
   it("keeps registered runtimes available and fails closed for unknown protocols", () => {
     expect(getUnsupportedDirectSessionMessage("spice")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("xdmcp")).toBeNull();

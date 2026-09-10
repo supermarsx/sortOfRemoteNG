@@ -67,6 +67,24 @@ pub struct SynologyError {
 }
 
 impl SynologyError {
+    /// Safe explanations for common File Station failures. Never include the
+    /// NAS's nested error details, which can contain private paths or tokens.
+    /// Keep the numeric kind for the scoped login challenge dispatcher.
+    pub fn file_station(code: i32) -> Self {
+        let detail = match code {
+            105 => "The account's API session lacks permission. Check the account's File Station application permissions in DSM.",
+            106 => "The NAS API session timed out. Reconnect before continuing; inspect the destination before retrying a change.",
+            107 => "The NAS ended this API session after another login. Reconnect before continuing; failed operations were not replayed.",
+            119 => "The NAS rejected the API session ID (SID not found or invalid). Reconnect to File Station. If this happens immediately after sign-in, verify that login and API requests reach the same DSM server. This code alone does not indicate a wrong password or a certificate failure.",
+            150 => "The request source IP differs from the login IP. Check your network route, then reconnect; failed operations were not replayed.",
+            _ => return Self::api(code, format!("File Station request failed (DSM code {code})")),
+        };
+        Self::api(
+            code,
+            format!("File Station request failed (DSM code {code}). {detail}"),
+        )
+    }
+
     pub fn new(kind: SynologyErrorKind, msg: impl Into<String>) -> Self {
         Self {
             kind,
@@ -220,7 +238,12 @@ impl From<url::ParseError> for SynologyError {
 pub type SynologyResult<T> = Result<T, SynologyError>;
 
 pub fn command_error(error: SynologyError) -> String {
-    if matches!(error.kind, SynologyErrorKind::SessionExpired) {
+    if let SynologyErrorKind::ApiError(code @ (106 | 107 | 119 | 150)) = error.kind {
+        format!(
+            "SYNOLOGY_SESSION_EXPIRED: {}",
+            SynologyError::file_station(code)
+        )
+    } else if matches!(error.kind, SynologyErrorKind::SessionExpired) {
         "SYNOLOGY_SESSION_EXPIRED: This Synology session ended. Connect again before continuing."
             .into()
     } else {

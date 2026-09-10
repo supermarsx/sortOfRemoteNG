@@ -47,6 +47,15 @@ pub async fn syn_fs_disconnect(
 }
 
 #[tauri::command]
+pub fn syn_fs_session_health(
+    state: State<'_, SynologyServiceState>,
+    instance_id: String,
+    expected_session_id: String,
+) -> Result<sorng_synology::instances::FileSessionHealth, String> {
+    state.session_health(&instance_id, &expected_session_id)
+}
+
+#[tauri::command]
 #[allow(clippy::too_many_arguments)] // Existing IPC fields plus mandatory scope.
 pub async fn syn_fs_list(
     state: State<'_, SynologyServiceState>,

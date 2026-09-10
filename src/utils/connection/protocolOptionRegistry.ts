@@ -21,6 +21,29 @@ export const PROTOCOL_CATEGORY_ORDER: readonly ConnectionTypeCategory[] = [
   "business-app",
 ];
 
+/** Picker taxonomy, not a runtime gate. Native management tools retain their
+ * routes and saved records; browser applications are configured under HTTP(S). */
+const MANAGEMENT_IDENTITIES = new Set([
+  "gcp",
+  "azure",
+  "ibm-csp",
+  "digital-ocean",
+  "heroku",
+  "scaleway",
+  "linode",
+  "ovhcloud",
+  "voip-phone",
+  "synology",
+]);
+export function isProtocolPickerConnectionType(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return (
+    !MANAGEMENT_IDENTITIES.has(normalized) &&
+    (!normalized.startsWith("integration:") ||
+      normalized === "integration:mssql")
+  );
+}
+
 export const getRuntimeProtocolOptions = <
   T extends { value: string; category: ConnectionTypeCategory },
 >(
@@ -29,7 +52,9 @@ export const getRuntimeProtocolOptions = <
   capabilities: RuntimeCapabilities,
 ): T[] =>
   filterProtocolOptionsByRuntimeCapabilities(
-    [...builtInOptions, ...integrationOptions],
+    [...builtInOptions, ...integrationOptions].filter((option) =>
+      isProtocolPickerConnectionType(option.value),
+    ),
     capabilities,
   );
 

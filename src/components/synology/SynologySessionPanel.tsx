@@ -9,6 +9,7 @@ import type {
 import {
   normalizeSynologySettings,
   assertSynologyNativeRoute,
+  isSynologyFileConnection,
 } from "../../types/protocols/synology";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import {
@@ -25,6 +26,7 @@ import {
   type RuntimeCapabilities,
 } from "../../utils/runtime/runtimeCapabilities";
 import { SynologySessionContent } from "./SynologyPanel";
+import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 
 const unavailable =
   "Open and unlock this session's owning database, then reopen the Synology connection.";
@@ -166,14 +168,21 @@ function BoundSynologySession({
     issue = error instanceof Error ? error.message : unavailable;
   }
   const settings = normalizeSynologySettings(saved.synologySettings);
+  const credentials = resolveHttpBasicCredentials({
+    ...saved,
+    authType: "basic",
+  });
   const connection = useSynologyFileConnection(!issue, {
     instanceId: session.id,
     initialConfig: {
       host: saved.hostname,
       port: saved.port,
-      username: saved.username ?? "",
-      password: saved.password ?? "",
-      useHttps: settings.useHttps,
+      username: credentials?.username ?? "",
+      password: credentials?.password ?? "",
+      useHttps:
+        saved.protocol === "synology"
+          ? settings.useHttps
+          : saved.protocol === "https",
     },
     assertCurrent: access ?? undefined,
   });
@@ -254,8 +263,7 @@ function BoundSynologySession({
       setCapabilities(caps);
       setCapabilityError(error);
       setCapabilityReady(true);
-      if (!error && !issue && saved.username && saved.password)
-        void runtime.current.connect();
+      if (!error && !issue) void runtime.current.connect();
     });
     return () => {
       disposed = true;
@@ -295,7 +303,7 @@ export default function SynologySessionPanel({
     (entry) =>
       entry.id === session.connectionId &&
       !entry.isGroup &&
-      entry.protocol === "synology",
+      isSynologyFileConnection(entry),
   );
   if (
     !session.ownerDatabaseId ||

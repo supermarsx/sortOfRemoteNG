@@ -7,6 +7,7 @@ import type {
   SynologyFileAuthResult,
   SynologyFileLogin,
 } from "../../types/hardware/synologyFileStation";
+import { normalizeSynologyEndpoint } from "../../utils/connection/synologyEndpoint";
 
 export interface SynologyFileConnectionOptions {
   /** One identity for this mounted tab; never a connection id shared by tabs. */
@@ -20,6 +21,13 @@ const challengeMessages = {
   unsupported_mfa:
     "This authentication method requires the DSM website. Browser sign-in does not authorize the native API.",
 };
+
+export interface SynologySessionHealth {
+  status: "connected" | "degraded" | "authentication-required";
+  lastVerifiedAt: string;
+  consecutiveFailures: number;
+  message: string | null;
+}
 
 export function useSynologyFileConnection(
   isOpen: boolean,
@@ -49,6 +57,8 @@ export function useSynologyFileConnection(
     "disconnected" | "connecting" | "connected" | "error"
   >("disconnected");
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [sessionHealth, setSessionHealth] =
+    useState<SynologySessionHealth | null>(null);
   const [challenge, setChallenge] = useState<Exclude<
     SynologyFileAuthResult,
     { status: "connected" }
@@ -90,6 +100,7 @@ export function useSynologyFileConnection(
       setChallenge(null);
       setConnectionStatus("disconnected");
       setConnectionError(null);
+      setSessionHealth(null);
     }
   }, [cancelPending]);
   const disconnect = useCallback(async () => {
@@ -128,6 +139,89 @@ export function useSynologyFileConnection(
   useEffect(() => {
     if (!isOpen) void disconnect().catch(() => undefined);
   }, [isOpen, disconnect]);
+
+  useEffect(() => {
+    if (!sessionId || !isOpen) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const captured = generation.current;
+    const valid = () =>
+      !disposed &&
+      alive.current &&
+      generation.current === captured &&
+      receipt.current === sessionId;
+    const check = async () => {
+      try {
+        assertSessionAccess();
+      } catch {
+        if (valid()) void disconnect().catch(() => undefined);
+        return;
+      }
+      try {
+        // Reads redacted native health; the native timer, not this renderer
+        // poll, keeps DSM alive even when WebView timers are throttled.
+        const health = await invoke<SynologySessionHealth>(
+          "syn_fs_session_health",
+          { instanceId, expectedSessionId: sessionId },
+        );
+        if (!valid()) return;
+        assertSessionAccess();
+        if (
+          !health ||
+          !["connected", "degraded", "authentication-required"].includes(
+            health.status,
+          )
+        )
+          throw new Error("Invalid native session health response");
+        if (health.status === "authentication-required") {
+          receipt.current = null;
+          reset();
+          setSessionId(null);
+          setConnectionError(
+            health.message?.replace(/^SYNOLOGY_SESSION_EXPIRED: /, "") ||
+              "The NAS ended this API session. Reconnect; no file operation was retried.",
+          );
+          void release(sessionId).catch(() => undefined);
+          return;
+        }
+        setSessionHealth(health);
+      } catch (error) {
+        if (!valid()) return;
+        if (
+          toSafeManagementError(error).startsWith("SYNOLOGY_SESSION_EXPIRED: ")
+        ) {
+          receipt.current = null;
+          reset();
+          setSessionId(null);
+          setConnectionError(
+            "This File Station session ended. Reconnect; no file operation was retried.",
+          );
+          return;
+        }
+        setSessionHealth((previous) => ({
+          status: "degraded",
+          lastVerifiedAt: previous?.lastVerifiedAt ?? "",
+          consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
+          message:
+            "Session health is temporarily unavailable. Check the desktop connection; authentication has not been retried.",
+        }));
+      }
+      if (valid()) timer = setTimeout(() => void check(), 15_000);
+    };
+    void check();
+    return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [
+    sessionId,
+    isOpen,
+    instanceId,
+    assertSessionAccess,
+    disconnect,
+    reset,
+    release,
+  ]);
 
   const attempt = async (config: SynologyFileLogin, otp?: string) => {
     if (
@@ -251,20 +345,51 @@ export function useSynologyFileConnection(
       );
       return;
     }
+    const login = options.initialConfig ?? {
+      host,
+      port,
+      username,
+      password,
+      useHttps,
+    };
     if (
       !host.trim() ||
-      !username.trim() ||
-      !password ||
+      !login.username.trim() ||
+      !login.password ||
       !Number.isInteger(port) ||
       port < 1 ||
       port > 65535
     ) {
       setConnectionError(
-        "Enter the NAS host, valid port, username, and password.",
+        target
+          ? "This connection has a missing NAS address, invalid port or missing credentials."
+          : "Enter the NAS host, valid port, username, and password.",
       );
+      setConnectionStatus("error");
       return;
     }
-    const config = { host: host.trim(), port, username, password, useHttps };
+    let endpoint;
+    try {
+      endpoint = normalizeSynologyEndpoint(host, port, useHttps);
+      // A standalone URL can choose its transport, but a saved connection's
+      // explicit transport is an authorization boundary. Never downgrade HTTPS
+      // (or silently change the target) because its hostname contains a URL.
+      if (target && endpoint.useHttps !== target.useHttps)
+        throw new Error(
+          "The NAS address URL conflicts with this saved connection's HTTP/HTTPS transport. Use Edit Connection to make them consistent before signing in.",
+        );
+    } catch (error) {
+      setConnectionError(
+        error instanceof Error ? error.message : "The NAS address is invalid.",
+      );
+      setConnectionStatus("error");
+      return;
+    }
+    const config = {
+      ...endpoint,
+      username: login.username,
+      password: login.password,
+    };
     pendingCredentials.current = config;
     await attempt(config);
   };
@@ -280,14 +405,16 @@ export function useSynologyFileConnection(
       return;
     await attempt(config, otpCode.trim());
   };
-  const notifySessionExpired = (expectedSessionId: string) => {
+  const notifySessionExpired = (expectedSessionId: string, reason?: string) => {
     if (receipt.current !== expectedSessionId) return;
     receipt.current = null;
     reset();
     setSessionId(null);
     setConnectionError(
-      "The NAS session expired. Sign in again; no file operation was retried.",
+      reason?.replace(/^SYNOLOGY_SESSION_EXPIRED: /, "") ||
+        "The NAS session expired. Sign in again; no file operation was retried.",
     );
+    void release(expectedSessionId).catch(() => undefined);
   };
   return {
     instanceId,
@@ -308,6 +435,7 @@ export function useSynologyFileConnection(
     sessionId,
     connectionStatus,
     connectionError,
+    sessionHealth,
     challenge,
     connect,
     disconnect,

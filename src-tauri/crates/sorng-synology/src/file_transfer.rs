@@ -126,13 +126,16 @@ impl FileTransferContext {
         }
         // Synology requires the binary file to be the LAST multipart field.
         form = form.part("file", part);
-        let request = self
+        let mut request = self
             .client
             .http_client()
             .post(url)
             .timeout(Duration::from_secs(24 * 60 * 60))
-            .multipart(form)
-            .send();
+            .multipart(form);
+        if let Some(token) = &self.client.syno_token {
+            request = request.header("X-SYNO-TOKEN", token);
+        }
+        let request = request.send();
         let response = self.while_active(request).await??;
         let result: SynoResponse<serde_json::Value> =
             self.while_active(SynoClient::read_json(response)).await??;

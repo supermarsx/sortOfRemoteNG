@@ -25,6 +25,82 @@ const setup = () => {
 beforeEach(() => vi.mocked(invoke).mockReset());
 afterEach(cleanup);
 describe("scoped Synology sign-in", () => {
+  it.each<[string, boolean]>([
+    ["http://nas.example.test/", true],
+    ["https://nas.example.test/", false],
+  ])(
+    "refuses saved transport conflict %s / HTTPS=%s before releasing credentials",
+    async (host, useHttps) => {
+      const { result } = renderHook(() =>
+        useSynologyFileConnection(true, {
+          initialConfig: {
+            host,
+            port: 5001,
+            username: "fixture-user",
+            password: "fixture-password",
+            useHttps,
+          },
+        }),
+      );
+      await act(() => result.current.connect());
+      expect(invoke).not.toHaveBeenCalled();
+      expect(result.current.connectionStatus).toBe("error");
+      expect(result.current.sessionId).toBeNull();
+      expect(result.current.connectionError).toContain("URL conflicts");
+      expect(result.current.connectionError).toContain("Edit Connection");
+    },
+  );
+
+  it("retains explicit URL transport selection for the standalone form", async () => {
+    vi.mocked(invoke).mockResolvedValue({ status: "otp_required" });
+    const { result } = setup();
+    act(() => result.current.setHost("http://nas.example.test/"));
+    await act(() => result.current.connect());
+    expect(invoke).toHaveBeenCalledWith(
+      "syn_fs_connect",
+      expect.objectContaining({
+        host: "nas.example.test",
+        port: 80,
+        useHttps: false,
+      }),
+    );
+  });
+
+  it("normalizes a saved subdomain URL and retries with its saved credentials, not an inline form", async () => {
+    vi.mocked(invoke)
+      .mockRejectedValueOnce(Error("NAS unreachable"))
+      .mockResolvedValueOnce({
+        status: "connected",
+        sessionId: "receipt-retry",
+      });
+    const { result } = renderHook(() =>
+      useSynologyFileConnection(true, {
+        initialConfig: {
+          host: "https://nas.office.example.test:5443/",
+          port: 5001,
+          username: "fixture-user",
+          password: "fixture-password",
+          useHttps: true,
+        },
+      }),
+    );
+    await act(() => result.current.connect());
+    expect(result.current.connectionStatus).toBe("error");
+    expect(result.current.password).toBe("");
+    await act(() => result.current.connect());
+    expect(result.current.connectionStatus).toBe("connected");
+    expect(invoke).toHaveBeenNthCalledWith(
+      2,
+      "syn_fs_connect",
+      expect.objectContaining({
+        host: "nas.office.example.test",
+        port: 5443,
+        username: "fixture-user",
+        password: "fixture-password",
+        useHttps: true,
+      }),
+    );
+  });
   it.each([
     null,
     { status: "__proto__" },
@@ -188,7 +264,12 @@ describe("scoped Synology sign-in", () => {
     });
     const { result } = setup();
     await act(() => result.current.connect());
-    expect(invoke).toHaveBeenCalledExactlyOnceWith("syn_fs_connect", {
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(([name]) => name === "syn_fs_connect"),
+    ).toHaveLength(1);
+    expect(invoke).toHaveBeenCalledWith("syn_fs_connect", {
       host: "nas.example.test",
       port: 5001,
       username: "alice",
@@ -223,7 +304,8 @@ describe("scoped Synology sign-in", () => {
     expect(result.current.otpCode).toBe("");
     act(() => result.current.setOtpCode("234567"));
     await act(() => result.current.submitOtp());
-    expect(invoke).toHaveBeenLastCalledWith(
+    expect(invoke).toHaveBeenNthCalledWith(
+      3,
       "syn_fs_connect",
       expect.objectContaining({
         password: "private-password",

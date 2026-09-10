@@ -3,6 +3,7 @@ import {
   getRuntimeProtocolOptions,
   getUnavailableCurrentProtocolOption,
   PROTOCOL_CATEGORY_ORDER,
+  isProtocolPickerConnectionType,
 } from "../../src/utils/connection/protocolOptionRegistry";
 import {
   UNAVAILABLE_RUNTIME_CAPABILITIES,
@@ -57,10 +58,6 @@ describe("runtime protocol option registry", () => {
     expect(options).toEqual([
       { value: "ssh", category: "console" },
       { value: "serial", category: "console" },
-      {
-        value: "integration:keepass",
-        category: "vault",
-      },
     ]);
     expect(PROTOCOL_CATEGORY_ORDER.indexOf("console")).toBeLessThan(
       PROTOCOL_CATEGORY_ORDER.indexOf("networking"),
@@ -108,7 +105,7 @@ describe("runtime protocol option registry", () => {
         getRuntimeProtocolOptions([], registered, capabilities).map(
           ({ value }) => value,
         ),
-      ).toEqual(["integration:keepass"]);
+      ).toEqual([]);
     }
     const full: RuntimeCapabilities = {
       ...leanCapabilities,
@@ -118,12 +115,38 @@ describe("runtime protocol option registry", () => {
       collab: true,
       mssql: true,
     };
-    expect(getRuntimeProtocolOptions([], registered, full)).toEqual(registered);
+    expect(getRuntimeProtocolOptions([], registered, full)).toEqual(
+      registered.filter(({ value }) => value === "integration:mssql"),
+    );
     expect(
       getRuntimeProtocolOptions([], registered, {
         ...leanCapabilities,
         mssql: true,
       }).map(({ value }) => value),
-    ).toEqual(["integration:mssql", "integration:keepass"]);
+    ).toEqual(["integration:mssql"]);
+  });
+  it("keeps website and provider management names out of protocol selections without deleting registry entries", () => {
+    for (const value of [
+      "integration:portainer",
+      "integration:nginxProxyMgr",
+      "integration:proxmox",
+      "azure",
+      "ovhcloud",
+      "voip-phone",
+      "synology",
+    ])
+      expect(isProtocolPickerConnectionType(value)).toBe(false);
+    for (const value of [
+      "ssh",
+      "rdp",
+      "http",
+      "https",
+      "integration:mssql",
+      "ilo",
+    ])
+      expect(isProtocolPickerConnectionType(value)).toBe(true);
+    expect(integrationRegistry.some(({ key }) => key === "portainer")).toBe(
+      true,
+    );
   });
 });

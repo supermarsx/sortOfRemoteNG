@@ -138,6 +138,57 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("saved Synology session ownership", () => {
+  it("opens the API explorer for HTTP(S) Synology applications using application credentials", async () => {
+    connections = [
+      {
+        ...saved("one"),
+        protocol: "https",
+        hostname: "https://nas.office.example.test:5443/",
+        httpApplication: {
+          version: 1,
+          id: "synology-dsm",
+          loginMode: "manual",
+        },
+        synologySettings: { version: 1, useHttps: true, accessMode: "native" },
+        basicAuthUsername: "application-user",
+        basicAuthPassword: "application-secret",
+        httpsTrustPolicy: "strict",
+      },
+    ];
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "syn_fs_connect",
+        expect.objectContaining({
+          host: "nas.office.example.test",
+          port: 5443,
+          useHttps: true,
+          username: "application-user",
+          password: "application-secret",
+        }),
+      ),
+    );
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      "application-secret",
+    );
+  });
+  it("never opens the native API for a browser-view connection", () => {
+    connections = [
+      {
+        ...saved("one"),
+        protocol: "https",
+        httpApplication: {
+          version: 1,
+          id: "synology-dsm",
+          loginMode: "manual",
+        },
+        synologySettings: { version: 1, useHttps: true, accessMode: "website" },
+      },
+    ];
+    render(<SynologySessionPanel session={session("one")} />);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
   it.each([
     { ops: false, platform: true },
     { ops: true, platform: false },

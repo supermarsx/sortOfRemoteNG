@@ -50,7 +50,7 @@ export function useSynologyFileStation(
   instanceId: string,
   sessionId: string | null,
   active: boolean,
-  onSessionExpired?: (expectedSessionId: string) => void,
+  onSessionExpired?: (expectedSessionId: string, reason?: string) => void,
   assertSessionAccess?: () => void,
 ) {
   const [currentPath, setCurrentPath] = useState("/");
@@ -107,7 +107,10 @@ export function useSynologyFileStation(
           args.expectedSessionId === latest.current.sessionId &&
           toSafeManagementError(error).startsWith("SYNOLOGY_SESSION_EXPIRED: ")
         )
-          latest.current.onSessionExpired?.(String(args.expectedSessionId));
+          latest.current.onSessionExpired?.(
+            String(args.expectedSessionId),
+            toSafeManagementError(error),
+          );
         throw error;
       }
     },

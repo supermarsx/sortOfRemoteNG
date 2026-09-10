@@ -20,6 +20,7 @@ import { useConnections } from "../../src/contexts/useConnections";
 import { SessionRenderActivityContext } from "../../src/contexts/SessionRenderActivityContext";
 import { invoke } from "@tauri-apps/api/core";
 import { resetIntegrationConfigStoreForTests } from "../../src/hooks/integrations/useIntegrationConfigStore";
+import { resetRuntimeCapabilitiesCacheForTests } from "../../src/utils/runtime/runtimeCapabilities";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -97,6 +98,13 @@ const mockIntegrationRegistry = vi.hoisted(() => [
     key: "mail",
     label: "Mail Server",
     category: "mail-server",
+    icon: () => null,
+    importPanel: async () => ({ default: () => null }),
+  },
+  {
+    key: "mssql",
+    label: "Microsoft SQL Server",
+    category: "database",
     icon: () => null,
     importPanel: async () => ({ default: () => null }),
   },
@@ -282,6 +290,33 @@ const renderWithProviders = (
   );
 };
 
+/** Retired picker entries remain editable when they already exist in a database. */
+const renderSavedIntegration = (
+  key: "netbox" | "pfsense" | "exchange",
+  onConnections?: (connections: Connection[]) => void,
+  onClose = vi.fn(),
+) => {
+  const connection: Connection = {
+    ...mockConnection,
+    id: `saved-${key}`,
+    name: `Saved ${key}`,
+    protocol: `integration:${key}`,
+    hostname: "service.example.test",
+    port: 443,
+    username: "",
+    password: "",
+    integration: { descriptorKey: key },
+  };
+  return {
+    ...renderWithProviders(
+      { connection, isOpen: true, onClose },
+      onConnections,
+      [connection],
+    ),
+    onClose,
+  };
+};
+
 describe("ConnectionEditor", () => {
   it("never keeps nested secret-shaped provider fields in saved integration settings", () => {
     const saved = toPersistableIntegrationSettings({
@@ -324,6 +359,7 @@ describe("ConnectionEditor", () => {
           mysql: true,
           postgresql: true,
           mongodb: true,
+          mssql: true,
           platform: true,
         };
       }
@@ -521,7 +557,7 @@ describe("ConnectionEditor", () => {
       });
       expect(searchInput).toHaveAttribute(
         "placeholder",
-        "Search protocols and integrations…",
+        "Search protocols and connection types…",
       );
       expect(
         screen.getByRole("listbox", { name: "Available protocols" }),
@@ -559,39 +595,63 @@ describe("ConnectionEditor", () => {
   });
 
   describe("New Connection", () => {
-    it("offers saved Synology File Station with manual DSM website switching and preserves the target", async () => {
-      renderWithProviders({ isOpen: true, onClose: vi.fn() });
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      await screen.findByRole("option", { name: /^Synology File Station/i });
-      fireEvent.click(
-        screen.getByRole("option", { name: /^Synology File Station/i }),
+    it("edits a saved legacy Synology File Station target without offering a new protocol entry", async () => {
+      const connection: Connection = {
+        ...mockConnection,
+        protocol: "synology",
+        hostname: "nas.example.test",
+        port: 5001,
+        synologySettings: { version: 1, useHttps: true },
+      };
+      const onClose = vi.fn();
+      let latestConnections: Connection[] = [];
+      renderWithProviders(
+        { connection, isOpen: true, onClose },
+        (connections) => {
+          latestConnections = connections;
+        },
+        [connection],
       );
-      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
-        "Synology File Station",
-      );
-      expect(screen.getByTestId("editor-port")).toHaveValue(5001);
-      fireEvent.change(screen.getByTestId("editor-hostname"), {
-        target: { value: "nas.example.test" },
-      });
-      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
-      fireEvent.click(
-        screen.getByRole("combobox", { name: "Synology access mode" }),
-      );
-      fireEvent.mouseDown(
-        screen.getByRole("option", {
-          name: "DSM website (interactive sign-in)",
-        }),
-      );
-      fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
       expect(screen.getByTestId("editor-protocol")).toHaveTextContent("HTTPS");
+      expect(screen.getByTestId("editor-port")).toHaveValue(5001);
       expect(screen.getByTestId("editor-hostname")).toHaveValue(
         "nas.example.test",
       );
-      expect(screen.getByTestId("editor-port")).toHaveValue(5001);
-      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      fireEvent.click(screen.getByTestId("editor-protocol"));
       expect(
-        screen.getByRole("tab", { name: "Application" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("option", { name: /Synology/i }),
+      ).not.toBeInTheDocument();
+      fireEvent.keyDown(
+        screen.getByRole("combobox", { name: "Search protocols" }),
+        { key: "Escape" },
+      );
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "Legacy NAS renamed" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() =>
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          '"Legacy NAS renamed" saved',
+        ),
+      );
+      await waitFor(() =>
+        expect(latestConnections[0]?.name).toBe("Legacy NAS renamed"),
+      );
+      expect(onClose).not.toHaveBeenCalled();
+      expect(latestConnections).toHaveLength(1);
+      expect(latestConnections[0]).toMatchObject({
+        id: connection.id,
+        name: "Legacy NAS renamed",
+        protocol: "https",
+        hostname: "nas.example.test",
+        port: 5001,
+        synologySettings: { version: 1, useHttps: true, accessMode: "native" },
+        httpApplication: {
+          version: 1,
+          id: "synology-dsm",
+          loginMode: "manual",
+        },
+      });
     });
     it("should initialize with default values for new connection", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
@@ -708,7 +768,7 @@ describe("ConnectionEditor", () => {
       await waitFor(() => expect(protocolToggle).toHaveFocus());
     });
 
-    it("should filter reachable protocol, cloud runtime, and integration labels", async () => {
+    it("filters real connection types without offering cloud or web integration categories", async () => {
       await act(async () => {
         renderWithProviders({ isOpen: true, onClose: vi.fn() });
       });
@@ -727,42 +787,26 @@ describe("ConnectionEditor", () => {
 
       await searchFor("NetBox");
       expect(
-        screen.getByRole("option", { name: /NetBox/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("group", { name: "Networking" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("option", { name: /NetBox/i }),
+      ).not.toBeInTheDocument();
       expect(
         screen.queryByRole("group", { name: "Cloud Platforms" }),
       ).not.toBeInTheDocument();
 
       await searchFor("digital-ocean");
       expect(
-        screen.getByRole("option", { name: /DigitalOcean/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("group", { name: "Cloud Platforms" }),
-      ).toBeInTheDocument();
-
-      // A category search term surfaces every option filed under it and only
-      // renders that category's group.
-      await searchFor("networking");
-      expect(
-        screen.getByRole("group", { name: "Networking" }),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByRole("group", { name: "Databases" }),
+        screen.queryByRole("option", { name: /DigitalOcean/i }),
       ).not.toBeInTheDocument();
-
-      // Promoted t57 cloud protocols are selectable and searchable by their
-      // category.
+      expect(
+        screen.queryByRole("group", { name: "Cloud Platforms" }),
+      ).not.toBeInTheDocument();
       await searchFor("cloud platforms");
       expect(
-        screen.getByRole("group", { name: "Cloud Platforms" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("group", { name: "Cloud Platforms" }),
+      ).not.toBeInTheDocument();
       expect(
-        screen.getByRole("option", { name: /Google Cloud/i }),
-      ).toBeInTheDocument();
+        screen.queryByRole("option", { name: /Google Cloud/i }),
+      ).not.toBeInTheDocument();
 
       await searchFor("postgres");
       expect(
@@ -773,7 +817,7 @@ describe("ConnectionEditor", () => {
       ).toBeInTheDocument();
     });
 
-    it("keeps an imported routed cloud identity selectable", async () => {
+    it("preserves an imported cloud identity and settings without adding it to the new picker", async () => {
       renderWithProviders({
         connection: {
           ...mockConnection,
@@ -797,8 +841,8 @@ describe("ConnectionEditor", () => {
         { target: { value: "gcp" } },
       );
       expect(
-        screen.getByRole("option", { name: /Google Cloud/i }),
-      ).toBeInTheDocument();
+        screen.queryByRole("option", { name: /Google Cloud/i }),
+      ).not.toBeInTheDocument();
 
       fireEvent.keyDown(
         screen.getByRole("combobox", { name: "Search protocols" }),
@@ -1891,11 +1935,8 @@ describe("ConnectionEditor", () => {
       });
     });
 
-    it("should expose integration registry entries as protocol options", () => {
-      renderWithProviders({ isOpen: true, onClose: vi.fn() });
-
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /NetBox/i }));
+    it("keeps saved integration registry settings editable outside the new protocol picker", () => {
+      renderSavedIntegration("netbox");
 
       expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/NetBox/);
       expect(
@@ -1924,10 +1965,7 @@ describe("ConnectionEditor", () => {
     });
 
     it("exposes independently combinable pfSense API and WebGUI settings", () => {
-      renderWithProviders({ isOpen: true, onClose: vi.fn() });
-
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /pfSense/i }));
+      renderSavedIntegration("pfsense");
 
       expect(screen.getByTestId("editor-pfsense-api-enabled")).toBeChecked();
       expect(screen.getByTestId("editor-pfsense-web-enabled")).toBeChecked();
@@ -1953,15 +1991,13 @@ describe("ConnectionEditor", () => {
 
     it("persists pfSense modes as metadata and all credentials as named vault references", async () => {
       let latestConnections: Connection[] = [];
-      renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {
+      const { onClose } = renderSavedIntegration("pfsense", (connections) => {
         latestConnections = connections;
       });
 
       fireEvent.change(screen.getByTestId("editor-name"), {
         target: { value: "Edge firewall" },
       });
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /pfSense/i }));
       fireEvent.change(screen.getByTestId("editor-hostname"), {
         target: { value: "fw.example.test" },
       });
@@ -1977,9 +2013,19 @@ describe("ConnectionEditor", () => {
       fireEvent.change(screen.getByTestId("editor-pfsense-web-password"), {
         target: { value: "web-password" },
       });
-      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-      await waitFor(() => expect(latestConnections).toHaveLength(1));
+      await waitFor(() =>
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          '"Edge firewall" saved',
+        ),
+      );
+      await waitFor(() =>
+        expect(latestConnections[0]?.name).toBe("Edge firewall"),
+      );
+      expect(onClose).not.toHaveBeenCalled();
+      expect(latestConnections).toHaveLength(1);
+      expect(latestConnections[0].name).toBe("Edge firewall");
       const saved = latestConnections[0];
       expect(saved.protocol).toBe("integration:pfsense");
       expect(saved.integration).toEqual(
@@ -2043,15 +2089,13 @@ describe("ConnectionEditor", () => {
           updatedAt: "2026-08-31T00:00:00.000Z",
         },
       ]);
-      renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {
+      const { onClose } = renderSavedIntegration("netbox", (connections) => {
         latestConnections = connections;
       });
 
       fireEvent.change(screen.getByTestId("editor-name"), {
         target: { value: "Existing NetBox connection" },
       });
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /NetBox/i }));
       const instanceSelector = screen.getByTestId(
         "editor-integration-instance-id",
       );
@@ -2081,8 +2125,18 @@ describe("ConnectionEditor", () => {
           .mock.calls.filter(([command]) => command === "vault_store_secret"),
       ).toHaveLength(0);
 
-      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
-      await waitFor(() => expect(latestConnections).toHaveLength(1));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() =>
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          '"Existing NetBox connection" saved',
+        ),
+      );
+      await waitFor(() =>
+        expect(latestConnections[0]?.name).toBe("Existing NetBox connection"),
+      );
+      expect(onClose).not.toHaveBeenCalled();
+      expect(latestConnections).toHaveLength(1);
+      expect(latestConnections[0].name).toBe("Existing NetBox connection");
 
       expect(
         vi
@@ -2124,15 +2178,13 @@ describe("ConnectionEditor", () => {
           updatedAt: "2026-08-31T00:00:00.000Z",
         },
       ]);
-      renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {
+      const { onClose } = renderSavedIntegration("pfsense", (connections) => {
         latestConnections = connections;
       });
 
       fireEvent.change(screen.getByTestId("editor-name"), {
         target: { value: "New pfSense connection" },
       });
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /pfSense/i }));
       const instanceSelector = screen.getByTestId(
         "editor-integration-instance-id",
       );
@@ -2161,8 +2213,18 @@ describe("ConnectionEditor", () => {
           .mock.calls.filter(([command]) => command === "vault_store_secret"),
       ).toHaveLength(0);
 
-      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
-      await waitFor(() => expect(latestConnections).toHaveLength(1));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() =>
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          '"New pfSense connection" saved',
+        ),
+      );
+      await waitFor(() =>
+        expect(latestConnections[0]?.name).toBe("New pfSense connection"),
+      );
+      expect(onClose).not.toHaveBeenCalled();
+      expect(latestConnections).toHaveLength(1);
+      expect(latestConnections[0].name).toBe("New pfSense connection");
 
       const durableInstances = JSON.parse(integrationConfigRaw ?? "[]");
       const originalInstance = durableInstances.find(
@@ -2310,10 +2372,7 @@ describe("ConnectionEditor", () => {
     });
 
     it("should expose tailored Exchange fields for integration-backed Exchange connections", () => {
-      renderWithProviders({ isOpen: true, onClose: vi.fn() });
-
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /Exchange/i }));
+      renderSavedIntegration("exchange");
 
       expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
         /Exchange/,
@@ -2547,18 +2606,17 @@ describe("ConnectionEditor", () => {
       const mockOnClose = vi.fn();
       let latestConnections: Connection[] = [];
 
-      renderWithProviders(
-        { isOpen: true, onClose: mockOnClose },
+      renderSavedIntegration(
+        "netbox",
         (connections) => {
           latestConnections = connections;
         },
+        mockOnClose,
       );
 
       fireEvent.change(screen.getByTestId("editor-name"), {
         target: { value: "NetBox Production" },
       });
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /NetBox/i }));
       fireEvent.change(screen.getByTestId("editor-hostname"), {
         target: { value: "netbox.internal" },
       });
@@ -2578,12 +2636,16 @@ describe("ConnectionEditor", () => {
         target: { value: "password-secret" },
       });
 
-      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
       await waitFor(() => {
-        expect(mockOnClose).toHaveBeenCalled();
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          '"NetBox Production" saved',
+        );
         expect(latestConnections).toHaveLength(1);
+        expect(latestConnections[0].name).toBe("NetBox Production");
       });
+      expect(mockOnClose).not.toHaveBeenCalled();
 
       const saved = latestConnections[0] as Connection & {
         integration?: Record<string, unknown>;
@@ -2611,18 +2673,17 @@ describe("ConnectionEditor", () => {
       const mockOnClose = vi.fn();
       let latestConnections: Connection[] = [];
 
-      renderWithProviders(
-        { isOpen: true, onClose: mockOnClose },
+      renderSavedIntegration(
+        "exchange",
         (connections) => {
           latestConnections = connections;
         },
+        mockOnClose,
       );
 
       fireEvent.change(screen.getByTestId("editor-name"), {
         target: { value: "Exchange Hybrid" },
       });
-      fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("option", { name: /Exchange/i }));
       fireEvent.change(screen.getByTestId("editor-exchange-environment"), {
         target: { value: "hybrid" },
       });
@@ -2660,12 +2721,16 @@ describe("ConnectionEditor", () => {
         target: { value: "ntlm" },
       });
 
-      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
       await waitFor(() => {
-        expect(mockOnClose).toHaveBeenCalled();
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          '"Exchange Hybrid" saved',
+        );
         expect(latestConnections).toHaveLength(1);
+        expect(latestConnections[0].name).toBe("Exchange Hybrid");
       });
+      expect(mockOnClose).not.toHaveBeenCalled();
 
       const saved = latestConnections[0] as Connection & {
         integration?: Record<string, unknown>;
@@ -3552,25 +3617,48 @@ describe("ConnectionEditor", () => {
   });
 });
 
-// t57 Wave 7: both formerly empty built-in categories are now selectable.
-describe("t57 routed protocol picker groups", () => {
-  it("renders all Lights-Out and Cloud targets under their category headings", () => {
+describe("native protocol picker taxonomy", () => {
+  it("offers native Lights-Out targets but not cloud providers or web applications", async () => {
+    resetRuntimeCapabilitiesCacheForTests();
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "get_runtime_capabilities"
+        ? {
+            cloud: true,
+            ops: true,
+            rdp: true,
+            serial: true,
+            mysql: true,
+            postgresql: true,
+            mongodb: true,
+            mssql: true,
+            platform: true,
+          }
+        : undefined,
+    );
     renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
     fireEvent.click(screen.getByTestId("editor-protocol"));
+    await screen.findByRole("option", { name: /Microsoft SQL Server/i });
 
     expect(
       screen.getByRole("group", { name: "Lights-Out & BMC" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("group", { name: "Cloud Platforms" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("group", { name: "Cloud Platforms" }),
+    ).not.toBeInTheDocument();
 
     for (const label of [
       "Dell iDRAC",
       "HPE iLO",
       "Lenovo XClarity",
       "Supermicro BMC",
+      "Microsoft SQL Server",
+    ]) {
+      expect(
+        screen.getByRole("option", { name: new RegExp(label, "i") }),
+      ).toBeInTheDocument();
+    }
+    for (const label of [
       "Google Cloud",
       "Microsoft Azure",
       "IBM Cloud",
@@ -3579,10 +3667,14 @@ describe("t57 routed protocol picker groups", () => {
       "Scaleway",
       "Linode",
       "OVHcloud",
+      "Synology",
+      "NetBox",
+      "pfSense",
+      "Exchange",
     ]) {
       expect(
-        screen.getByRole("option", { name: new RegExp(label, "i") }),
-      ).toBeInTheDocument();
+        screen.queryByRole("option", { name: new RegExp(label, "i") }),
+      ).not.toBeInTheDocument();
     }
   });
 });

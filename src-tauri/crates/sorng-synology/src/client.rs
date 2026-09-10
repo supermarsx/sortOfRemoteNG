@@ -233,7 +233,14 @@ impl SynoClient {
         if let Some(token) = &self.syno_token {
             params.push(("SynoToken", token));
         }
-        Ok(self.http.post(url).form(&params))
+        let mut request = self.http.post(url).form(&params);
+        // DSM's entry.cgi authentication middleware can validate CSRF before
+        // reading a POST body (notably behind reverse proxies). Keep the
+        // documented header as well as the API parameter, never in the URL.
+        if let Some(token) = &self.syno_token {
+            request = request.header("X-SYNO-TOKEN", token);
+        }
+        Ok(request)
     }
 
     pub(crate) async fn read_json<T: DeserializeOwned>(
@@ -325,10 +332,7 @@ impl SynoClient {
         } else {
             let code = response.error.map(|e| e.code).unwrap_or(100);
             // Do not forward NAS-provided nested errors, paths, URLs, or credentials.
-            Err(SynologyError::api(
-                code,
-                format!("File Station request failed (DSM code {code})"),
-            ))
+            Err(SynologyError::file_station(code))
         }
     }
 

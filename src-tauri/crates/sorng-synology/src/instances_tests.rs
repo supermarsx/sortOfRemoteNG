@@ -18,6 +18,69 @@ async fn login(registry: &SynologyInstances, instance: &str, request: &str, nas:
         _ => panic!("fixture must connect"),
     }
 }
+
+#[tokio::test]
+async fn native_heartbeat_keeps_background_session_alive_and_stops_after_disconnect() {
+    let mut responses = login_responses(false);
+    responses.extend((0..30).map(|_| ok(json!({}))));
+    let nas = Nas::start(responses).await;
+    let registry =
+        SynologyInstances::with_keep_alive_interval(std::time::Duration::from_millis(25));
+    let receipt = login(&registry, "background", "attempt", &nas).await;
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while nas.requests().len() < 5 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    for request in nas.requests().iter().skip(3) {
+        assert!(request.target.contains("SYNO.FileStation.Info"));
+        assert_eq!(
+            request.fields.get("_sid").map(String::as_str),
+            Some("fixture-private-sid")
+        );
+        assert_eq!(
+            request.fields.get("SynoToken").map(String::as_str),
+            Some("fixture-private-token")
+        );
+        assert!(!request.fields.contains_key("passwd"));
+    }
+    let health = registry.session_health("background", &receipt).unwrap();
+    assert_eq!(health.status, "connected");
+    assert_eq!(health.consecutive_failures, 0);
+    assert!(!serde_json::to_string(&health)
+        .unwrap()
+        .contains("fixture-private"));
+    assert!(registry.session_health("other", &receipt).is_err());
+    assert!(registry.disconnect("background", &receipt).unwrap());
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    let count = nas.requests().len();
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    assert_eq!(nas.requests().len(), count);
+}
+
+#[tokio::test]
+async fn heartbeat_invalid_sid_requires_auth_without_password_replay() {
+    let mut responses = login_responses(false);
+    responses.push(json!({"success":false,"error":{"code":119,"errors":["private-server-data"]}}));
+    let nas = Nas::start(responses).await;
+    let registry =
+        SynologyInstances::with_keep_alive_interval(std::time::Duration::from_millis(20));
+    let receipt = login(&registry, "a", "attempt", &nas).await;
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while registry.session_health("a", &receipt).unwrap().status != "authentication-required" {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let health = registry.session_health("a", &receipt).unwrap();
+    assert!(health.message.unwrap().contains("DSM code 119"));
+    assert!(registry.resolve(Some("a"), Some(&receipt)).await.is_err());
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    assert_eq!(nas.requests().len(), 4);
+}
 #[tokio::test]
 async fn independent_nas_receipts_never_fall_back_or_retarget_admin_and_files() {
     let mut a = login_responses(false);
@@ -171,6 +234,16 @@ async fn stale_login_completion_cannot_publish_over_a_newer_attempt() {
 }
 #[test]
 fn common_errors_are_not_misclassified_as_authentication_challenges() {
+    let detail = crate::error::command_error(SynologyError::file_station(119));
+    assert!(detail.starts_with("SYNOLOGY_SESSION_EXPIRED: "));
+    assert!(detail.contains("DSM code 119"));
+    assert!(detail.contains("SID not found or invalid"));
+    assert!(detail.contains("Reconnect to File Station"));
+    // Auth-specific challenges must retain their code for the scoped login UI.
+    assert!(matches!(
+        SynologyError::file_station(403).kind,
+        SynologyErrorKind::ApiError(403)
+    ));
     for code in [117, 118] {
         assert!(matches!(
             SynologyError::from_dsm_code(code, "SYNO.API.Auth").kind,

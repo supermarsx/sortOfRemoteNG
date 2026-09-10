@@ -3,8 +3,10 @@ import type { Connection } from "../../types/connection/connection";
 import {
   normalizeSynologySettings,
   setSynologyAccessMode,
+  isSynologyFileConnection,
 } from "../../types/protocols/synology";
-import { Select } from "../ui/forms";
+import { Select, PasswordInput } from "../ui/forms";
+import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 
 export default function SynologyOptions({
   formData,
@@ -13,13 +15,26 @@ export default function SynologyOptions({
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
 }) {
-  const settings = normalizeSynologySettings(
+  const savedSettings = normalizeSynologySettings(
     formData.synologySettings ?? {
       version: 1,
       useHttps: formData.protocol !== "http",
     },
   );
-  const native = formData.protocol === "synology";
+  const settings = {
+    ...savedSettings,
+    useHttps:
+      formData.protocol === "http"
+        ? false
+        : formData.protocol === "https"
+          ? true
+          : savedSettings.useHttps,
+  };
+  const native = isSynologyFileConnection(formData);
+  const credentials = resolveHttpBasicCredentials({
+    ...formData,
+    authType: "basic",
+  });
   return (
     <section
       className="space-y-3 rounded-lg border border-[var(--color-border)] p-3"
@@ -32,8 +47,8 @@ export default function SynologyOptions({
           label="Synology access mode"
           value={native ? "native" : "website"}
           options={[
-            { value: "native", label: "Native File Station" },
-            { value: "website", label: "DSM website (interactive sign-in)" },
+            { value: "native", label: "File explorer — File Station API" },
+            { value: "website", label: "Website — DSM in browser" },
           ]}
           onChange={(value) =>
             setFormData((previous) =>
@@ -61,7 +76,12 @@ export default function SynologyOptions({
             onChange={(value) =>
               setFormData((previous) => ({
                 ...previous,
-                synologySettings: { version: 1, useHttps: value === "https" },
+                protocol: value === "https" ? "https" : "http",
+                synologySettings: {
+                  version: 1,
+                  useHttps: value === "https",
+                  accessMode: "native",
+                },
                 port:
                   previous.port === 5000 ||
                   previous.port === 5001 ||
@@ -74,6 +94,41 @@ export default function SynologyOptions({
             }
           />
         </label>
+      )}
+      {native && (
+        <div className="grid max-w-2xl gap-4 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            DSM username
+            <input
+              aria-label="DSM API username"
+              className="sor-form-input"
+              autoComplete="off"
+              value={credentials?.username ?? ""}
+              onChange={(event) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  basicAuthUsername: event.target.value,
+                  basicAuthPassword: credentials?.password ?? "",
+                }))
+              }
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            DSM password
+            <PasswordInput
+              aria-label="DSM API password"
+              autoComplete="new-password"
+              value={credentials?.password ?? ""}
+              onChange={(event) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  basicAuthUsername: credentials?.username ?? "",
+                  basicAuthPassword: event.target.value,
+                }))
+              }
+            />
+          </label>
+        </div>
       )}
       <p className="text-xs text-[var(--color-textSecondary)]">
         Native File Station uses the saved username/password and asks for

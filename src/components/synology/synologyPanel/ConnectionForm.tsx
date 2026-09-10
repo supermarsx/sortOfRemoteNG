@@ -1,5 +1,11 @@
 import React, { useId } from "react";
-import { LogIn, Loader2, ShieldCheck } from "lucide-react";
+import {
+  LogIn,
+  Loader2,
+  ShieldCheck,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import type { SubProps } from "./types";
@@ -12,135 +18,187 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
   const disabled = connecting || !!mgr.challenge;
   return (
     <>
-      <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-8">
-        <form
-          className="mx-auto w-full max-w-md space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void mgr.connect();
-          }}
-        >
-          <div className="mb-6 text-center">
-            <LogIn className="mx-auto mb-3 h-8 w-8 text-teal-500" />
-            <h2 className="text-xl font-semibold">Connect to Synology NAS</h2>
-            <p className="mt-1 text-sm text-[var(--color-textSecondary)]">
-              Browse File Station with your DSM account. A one-time code will be
-              requested if the NAS requires it.
-            </p>
-          </div>
-          {mgr.connectionError && !mgr.challenge && (
-            <p
-              role="alert"
-              className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error break-words"
-            >
-              {mgr.connectionError}
-            </p>
-          )}
-          <div className="flex gap-3">
-            <label
-              className="min-w-0 flex-1 space-y-1 text-xs"
-              htmlFor={`${id}-host`}
-            >
-              Host
-              <input
-                id={`${id}-host`}
-                className={inputClass}
-                placeholder="nas.example.com"
-                autoComplete="off"
-                value={mgr.host}
-                onChange={(e) => mgr.setHost(e.target.value)}
-                disabled={disabled || mgr.targetLocked}
-              />
-            </label>
-            <label
-              className="w-24 shrink-0 space-y-1 text-xs"
-              htmlFor={`${id}-port`}
-            >
-              Port
-              <input
-                id={`${id}-port`}
-                type="number"
-                min={1}
-                max={65535}
-                className={inputClass}
-                value={mgr.port || ""}
-                onChange={(e) => mgr.setPort(Number(e.target.value))}
-                disabled={disabled || mgr.targetLocked}
-              />
-            </label>
-          </div>
-          <label className="block space-y-1 text-xs" htmlFor={`${id}-user`}>
-            Username
-            <input
-              id={`${id}-user`}
-              autoComplete="username"
-              className={inputClass}
-              value={mgr.username}
-              onChange={(e) => mgr.setUsername(e.target.value)}
-              disabled={disabled}
-            />
-          </label>
-          <label className="block space-y-1 text-xs" htmlFor={`${id}-password`}>
-            Password
-            <input
-              id={`${id}-password`}
-              type="password"
-              autoComplete="current-password"
-              className={inputClass}
-              value={mgr.password}
-              onChange={(e) => mgr.setPassword(e.target.value)}
-              disabled={disabled}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={mgr.useHttps}
-              onChange={(e) => mgr.setUseHttps(e.target.checked)}
-              disabled={disabled || mgr.targetLocked}
-            />
-            HTTPS
-          </label>
-          <p
-            className={`text-xs ${mgr.useHttps ? "text-[var(--color-textSecondary)]" : "text-warning"}`}
+      {mgr.targetLocked ? (
+        <div className="flex flex-1 min-h-0 items-center justify-center overflow-auto p-6">
+          <section
+            className="w-full max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6"
+            role={mgr.connectionError ? "alert" : "status"}
           >
-            {mgr.useHttps
-              ? "HTTPS verifies the NAS certificate. Use its certificate hostname and a trusted certificate chain; certificate errors are never bypassed. The usual HTTPS port is 5001."
-              : "HTTP sends your password and one-time code without TLS encryption. Use HTTPS whenever possible. Changing this option does not change the port."}
-          </p>
-          <button
-            type="submit"
-            className="sor-btn sor-btn-primary w-full justify-center"
-            disabled={
-              disabled ||
-              !mgr.host.trim() ||
-              !mgr.username.trim() ||
-              !mgr.password
-            }
+            <div className="flex items-center gap-3">
+              {connecting ? (
+                <Loader2 className="animate-spin text-primary" size={24} />
+              ) : (
+                <AlertCircle className="text-warning" size={24} />
+              )}
+              <div>
+                <p className="text-xs text-[var(--color-textSecondary)]">
+                  Synology File Station
+                </p>
+                <h2 className="text-lg font-semibold">
+                  {connecting
+                    ? "Connecting to NAS…"
+                    : mgr.challenge
+                      ? "Authentication requires your attention"
+                      : "NAS connection unavailable"}
+                </h2>
+              </div>
+            </div>
+            <p className="break-words text-sm text-[var(--color-textSecondary)]">
+              {mgr.connectionError ??
+                (connecting
+                  ? "Contacting the NAS using this connection's settings."
+                  : (mgr.challenge?.message ??
+                    "The NAS session is disconnected."))}
+            </p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary"
+                disabled={!!mgr.challenge}
+                onClick={() =>
+                  connecting ? mgr.cancelChallenge() : void mgr.connect()
+                }
+              >
+                {!connecting && <RefreshCw size={14} />}
+                {connecting ? "Cancel connection" : "Retry"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-8">
+          <form
+            className="mx-auto w-full max-w-md space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void mgr.connect();
+            }}
           >
-            {connecting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <LogIn className="h-4 w-4" />
+            <div className="mb-6 text-center">
+              <LogIn className="mx-auto mb-3 h-8 w-8 text-teal-500" />
+              <h2 className="text-xl font-semibold">Connect to Synology NAS</h2>
+              <p className="mt-1 text-sm text-[var(--color-textSecondary)]">
+                Browse File Station with your DSM account. A one-time code will
+                be requested if the NAS requires it.
+              </p>
+            </div>
+            {mgr.connectionError && !mgr.challenge && (
+              <p
+                role="alert"
+                className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error break-words"
+              >
+                {mgr.connectionError}
+              </p>
             )}
-            {connecting ? "Connecting…" : "Connect"}
-          </button>
-          {connecting && !mgr.challenge && (
-            <button
-              type="button"
-              className="sor-btn sor-btn-secondary w-full justify-center"
-              onClick={mgr.cancelChallenge}
+            <div className="flex gap-3">
+              <label
+                className="min-w-0 flex-1 space-y-1 text-xs"
+                htmlFor={`${id}-host`}
+              >
+                Host
+                <input
+                  id={`${id}-host`}
+                  className={inputClass}
+                  placeholder="nas.example.com"
+                  autoComplete="off"
+                  value={mgr.host}
+                  onChange={(e) => mgr.setHost(e.target.value)}
+                  disabled={disabled || mgr.targetLocked}
+                />
+              </label>
+              <label
+                className="w-24 shrink-0 space-y-1 text-xs"
+                htmlFor={`${id}-port`}
+              >
+                Port
+                <input
+                  id={`${id}-port`}
+                  type="number"
+                  min={1}
+                  max={65535}
+                  className={inputClass}
+                  value={mgr.port || ""}
+                  onChange={(e) => mgr.setPort(Number(e.target.value))}
+                  disabled={disabled || mgr.targetLocked}
+                />
+              </label>
+            </div>
+            <label className="block space-y-1 text-xs" htmlFor={`${id}-user`}>
+              Username
+              <input
+                id={`${id}-user`}
+                autoComplete="username"
+                className={inputClass}
+                value={mgr.username}
+                onChange={(e) => mgr.setUsername(e.target.value)}
+                disabled={disabled}
+              />
+            </label>
+            <label
+              className="block space-y-1 text-xs"
+              htmlFor={`${id}-password`}
             >
-              Cancel connection
+              Password
+              <input
+                id={`${id}-password`}
+                type="password"
+                autoComplete="current-password"
+                className={inputClass}
+                value={mgr.password}
+                onChange={(e) => mgr.setPassword(e.target.value)}
+                disabled={disabled}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={mgr.useHttps}
+                onChange={(e) => mgr.setUseHttps(e.target.checked)}
+                disabled={disabled || mgr.targetLocked}
+              />
+              HTTPS
+            </label>
+            <p
+              className={`text-xs ${mgr.useHttps ? "text-[var(--color-textSecondary)]" : "text-warning"}`}
+            >
+              {mgr.useHttps
+                ? "HTTPS verifies the NAS certificate. Use its certificate hostname and a trusted certificate chain; certificate errors are never bypassed. The usual HTTPS port is 5001."
+                : "HTTP sends your password and one-time code without TLS encryption. Use HTTPS whenever possible. Changing this option does not change the port."}
+            </p>
+            <button
+              type="submit"
+              className="sor-btn sor-btn-primary w-full justify-center"
+              disabled={
+                disabled ||
+                !mgr.host.trim() ||
+                !mgr.username.trim() ||
+                !mgr.password
+              }
+            >
+              {connecting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogIn className="h-4 w-4" />
+              )}
+              {connecting ? "Connecting…" : "Connect"}
             </button>
-          )}
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            Credentials are used for this session, not saved by this form. API
-            login supports DSM one-time codes; Approve sign-in and security-key
-            prompts require the DSM website.
-          </p>
-        </form>
-      </div>
+            {connecting && !mgr.challenge && (
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary w-full justify-center"
+                onClick={mgr.cancelChallenge}
+              >
+                Cancel connection
+              </button>
+            )}
+            <p className="text-xs text-[var(--color-textSecondary)]">
+              Credentials are used for this session, not saved by this form. API
+              login supports DSM one-time codes; Approve sign-in and
+              security-key prompts require the DSM website.
+            </p>
+          </form>
+        </div>
+      )}
       <Modal
         isOpen={!!mgr.challenge}
         ariaLabel="Synology two-factor authentication"

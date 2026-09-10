@@ -21,6 +21,8 @@ use tokio::{
 struct Request {
     target: String,
     fields: HashMap<String, String>,
+    cookie: Option<String>,
+    csrf_header: Option<String>,
 }
 struct Nas {
     port: u16,
@@ -39,6 +41,13 @@ impl Nas {
     async fn start_paused(
         responses: Vec<Value>,
         pause: Option<(usize, Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>,
+    ) -> Self {
+        Self::start_fixture(responses, pause, false).await
+    }
+    async fn start_fixture(
+        responses: Vec<Value>,
+        pause: Option<(usize, Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>,
+        require_cookie: bool,
     ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -85,25 +94,61 @@ impl Nas {
                     bytes.extend_from_slice(&chunk[..count]);
                 }
                 let headers = std::str::from_utf8(&bytes[..header_end]).unwrap();
+                let cookie = headers.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("cookie")
+                        .then(|| value.trim().to_string())
+                });
                 let mut first = headers.lines().next().unwrap().split_whitespace();
+                let csrf_header = headers.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("x-syno-token").then(|| value.trim().to_string())
+                });
                 assert_eq!(first.next(), Some("POST"));
                 let target = first.next().unwrap().to_owned();
-                let fields =
+                let fields: HashMap<String, String> =
                     url::form_urlencoded::parse(&bytes[header_end..header_end + content_length])
                         .into_owned()
                         .collect();
-                log.lock().unwrap().push(Request { target, fields });
+                let is_login = target.contains("method=login");
+                let wants_cookie = fields
+                    .get("format")
+                    .is_some_and(|value| value == "cookie" || value == "\"cookie\"");
+                let cookie_rejected = require_cookie
+                    && !is_login
+                    && target.contains("SYNO.FileStation.")
+                    && (cookie.as_deref() != Some("id=fixture-private-sid") || csrf_header.as_deref() != Some("fixture-private-token"));
+                log.lock().unwrap().push(Request {
+                    target,
+                    fields,
+                    cookie,
+                    csrf_header,
+                });
                 if let Some((number, entered, release)) = &pause {
                     if log.lock().unwrap().len() == *number {
                         entered.notify_one();
                         release.notified().await;
                     }
                 }
-                let body = responses
+                let response_data = responses
                     .pop_front()
-                    .unwrap_or_else(|| json!({"success":false,"error":{"code":999}}))
-                    .to_string();
-                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+                    .unwrap_or_else(|| json!({"success":false,"error":{"code":999}}));
+                let body = if cookie_rejected {
+                    json!({"success":false,"error":{"code":119}})
+                } else {
+                    response_data.clone()
+                }
+                .to_string();
+                let cookie_header = if require_cookie
+                    && is_login
+                    && wants_cookie
+                    && response_data["success"] == true
+                {
+                    "Set-Cookie: id=fixture-private-sid; Path=/; HttpOnly\r\n"
+                } else {
+                    ""
+                };
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n{cookie_header}Content-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
                 stream.write_all(response.as_bytes()).await.unwrap();
                 stream.shutdown().await.unwrap();
             }
@@ -204,6 +249,7 @@ async fn credentials_are_post_only_and_never_enroll_devices_for_plain_and_json_a
             ("passwd", "fixture-password&=?"),
             ("otp_code", "123456"),
             ("session", "FileStation"),
+            ("format", "cookie"),
         ] {
             let expected = if json_parameters {
                 json!(value).to_string()
@@ -237,6 +283,28 @@ async fn credentials_are_post_only_and_never_enroll_devices_for_plain_and_json_a
         assert!(client.config.device_token.is_none());
         assert!(client.config.access_token.is_none());
         assert!(client.device_token.is_none());
+    }
+}
+
+#[tokio::test]
+async fn login_cookie_reaches_first_authenticated_request_and_is_not_shared_between_instances() {
+    for json_parameters in [false, true] {
+        let nas = Nas::start_fixture(login_responses(json_parameters), None, true).await;
+        let mut service = SynologyService::new();
+        connect(&mut service, &nas).await;
+        let requests = nas.requests();
+        assert!(requests[0].cookie.is_none());
+        assert!(requests[1].cookie.is_none());
+        assert_eq!(
+            requests[2].cookie.as_deref(),
+            Some("id=fixture-private-sid")
+        );
+        assert_eq!(requests[2].fields["_sid"], "fixture-private-sid");
+        assert_eq!(requests[2].csrf_header.as_deref(), Some("fixture-private-token"));
+        assert_eq!(requests[2].fields["SynoToken"], "fixture-private-token");
+        let other = Nas::start_fixture(login_responses(json_parameters), None, true).await;
+        connect(&mut SynologyService::new(), &other).await;
+        assert!(other.requests()[1].cookie.is_none());
     }
 }
 

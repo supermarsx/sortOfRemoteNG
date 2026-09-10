@@ -18,6 +18,7 @@ import { resolveHttpBasicCredentials } from "../../../utils/auth/httpCredentials
 import type { Mgr } from "./types";
 import ApplicationIconSuggestion from "./ApplicationIconSuggestion";
 import AutomaticMfaSection from "./AutomaticMfaSection";
+import { isSynologyFileConnection } from "../../../types/protocols/synology";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -37,6 +38,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
     mgr.formData.httpApplication,
   );
   const profile = settings ? getHttpApplicationProfile(settings.id) : undefined;
+  const fileApi = isSynologyFileConnection(mgr.formData);
   const credentials = resolveHttpBasicCredentials({
     ...mgr.formData,
     authType: "basic",
@@ -49,6 +51,9 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       httpAutoLogin: false,
       httpAutoLoginSelectors: undefined,
       httpAutoMfa: { version: 1, enabled: false },
+      synologySettings: previous.synologySettings
+        ? { ...previous.synologySettings, accessMode: "website" }
+        : undefined,
     }));
   const updateSettings = (change: Partial<HttpApplicationSettings>) => {
     if (!settings) return;
@@ -170,7 +175,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
           Connecting is blocked until you choose an available application again.
         </p>
       )}
-      {profile && (
+      {profile && !fileApi && (
         <>
           <p className="text-sm text-[var(--color-textSecondary)] max-w-2xl">
             {profile.description}

@@ -437,8 +437,14 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
     optionRefs.current[activeIndex]?.scrollIntoView?.({ block: "nearest" });
   }, [open, activeIndex]);
 
-  const current = allProtocolOptions.find(
-    (p) => p.value === mgr.formData.protocol,
+  const displayedProtocol =
+    mgr.formData.protocol === "synology"
+      ? mgr.formData.synologySettings?.useHttps === false
+        ? "http"
+        : "https"
+      : mgr.formData.protocol;
+  const current = ALL_PROTOCOL_OPTIONS.find(
+    (p) => p.value === displayedProtocol,
   );
   const runtimeUnavailableMessage = getRuntimeProtocolUnavailableMessage(
     mgr.formData.protocol,
@@ -690,6 +696,11 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 flex max-h-72 flex-col bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
+          <p className="border-b border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-textSecondary)]">
+            For websites and dashboards, choose HTTP or HTTPS, then select
+            Application. Native management integrations remain available in
+            Tools.
+          </p>
           <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
             <Search
               size={15}
@@ -718,8 +729,8 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
               }
               autoComplete="off"
               placeholder={t(
-                "connectionEditor.protocolPicker.searchPlaceholder",
-                "Search protocols and integrations…",
+                "connectionEditor.protocolPicker.searchConnectionTypes",
+                "Search protocols and connection types…",
               )}
               className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none"
             />

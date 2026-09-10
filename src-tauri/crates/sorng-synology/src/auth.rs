@@ -106,7 +106,11 @@ impl AuthManager {
             ("account", json!(client.config.username)),
             ("passwd", json!(std::mem::take(&mut client.config.password))),
             ("session", json!(client.auth_session)),
-            ("format", json!("sid")),
+            // DSM's documented cookie mode authorizes the next request before
+            // CGI body parsing, including deployments that do not use a
+            // POST-body SID for the outer authentication check. The per-client
+            // native cookie jar is isolated and never shared with the browser.
+            ("format", json!("cookie")),
         ];
         if client.best_version("SYNO.API.Auth", 6).unwrap_or(0) >= 6 {
             params.push(("enable_syno_token", json!("yes")));

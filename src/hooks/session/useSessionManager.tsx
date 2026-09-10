@@ -66,6 +66,7 @@ import {
 } from "../../utils/session/sessionClose";
 import { recordForcedSessionCleanupEvidence } from "../../utils/session/forcedSessionCleanupLedger";
 import { disconnectSynologySession } from "../../utils/session/synologySessionLifecycle";
+import { isSynologyFileConnection } from "../../types/protocols/synology";
 
 export function usesGenericSessionTimer(protocol: string): boolean {
   return usesLegacyGenericTimer(protocol);
@@ -911,7 +912,7 @@ export const useSessionManager = () => {
     const runtimeCapabilities = await loadRuntimeCapabilities();
     const unsupportedMessage =
       getRuntimeProtocolUnavailableMessage(
-        connection.protocol,
+        isSynologyFileConnection(connection) ? "synology" : connection.protocol,
         runtimeCapabilities,
       ) ?? getUnsupportedDirectSessionMessage(connection.protocol);
 
@@ -1001,7 +1002,10 @@ export const useSessionManager = () => {
       // transport until their connection hook reports a successful command.
       status: isIntegrationSession ? "disconnected" : "connecting",
       startTime: new Date(),
-      protocol: connection.protocol,
+      // Internal compatibility route only; saved File Station connections are HTTP(S).
+      protocol: isSynologyFileConnection(connection)
+        ? "synology"
+        : connection.protocol,
       hostname: connection.integration?.host || connection.hostname,
       backendSessionId: isIntegrationSession
         ? connection.integration?.instanceId

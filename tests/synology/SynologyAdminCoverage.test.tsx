@@ -445,7 +445,10 @@ describe("Synology native admin coverage", () => {
     render(<SynologySessionContent connection={c} />);
     fireEvent.click(screen.getByTestId("synology-tab-vms"));
     await waitFor(() =>
-      expect(c.notifySessionExpired).toHaveBeenCalledWith("session-a"),
+      expect(c.notifySessionExpired).toHaveBeenCalledWith(
+        "session-a",
+        "SYNOLOGY_SESSION_EXPIRED: Sign in again",
+      ),
     );
   });
   it("hidden session pauses polling without resetting the selected tab", async () => {

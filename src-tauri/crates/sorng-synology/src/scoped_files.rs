@@ -268,7 +268,10 @@ impl SynologyService {
         {
             let _ = tokio::time::timeout(Duration::from_secs(2), AuthManager::logout(&mut client))
                 .await;
-            return Err(error);
+            return Err(SynologyError::new(
+                error.kind.clone(),
+                format!("DSM accepted sign-in, but the first authenticated File Station check failed. {error}"),
+            ));
         }
         if !active.load(Ordering::Acquire) {
             let _ = tokio::time::timeout(Duration::from_secs(2), AuthManager::logout(&mut client))
@@ -314,6 +317,14 @@ impl SynologyService {
         self.client
             .as_ref()
             .ok_or_else(|| SynologyError::session_expired("File Station is disconnected"))
+    }
+    pub(crate) async fn fs_keep_alive(&self, expected: &str) -> SynologyResult<()> {
+        // Public API discovery cannot prove authentication. This read is
+        // authenticated with the current native SID/SynoToken and is inert.
+        self.fs_client(expected)?
+            .file_call("SYNO.FileStation.Info", 2, "get", &[])
+            .await?;
+        self.fs_assert_session(expected)
     }
     pub async fn fs_disconnect(&mut self, expected: &str) -> SynologyResult<bool> {
         if self.fs_assert_session(expected).is_err() {

@@ -14,6 +14,7 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
             syn_fs_cancel_connect,
             syn_fs_list,
             syn_fs_disconnect,
+            syn_fs_session_health,
             syn_fs_create_share_link,
             syn_fs_list_share_links,
             syn_fs_delete_share_links,
@@ -47,6 +48,11 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
             Ok(json!(null)),
         ),
         ("syn_get_config", json!({}), Ok(json!(null))),
+        (
+            "syn_fs_session_health",
+            json!({"instanceId":"a","expectedSessionId":"wrong"}),
+            Err("SYNOLOGY_SESSION_EXPIRED"),
+        ),
         (
             "syn_upload_file",
             json!({"instanceId":"missing","expectedSessionId":"receipt","destFolder":"/share","fileName":"fixture","content":[],"overwrite":false}),

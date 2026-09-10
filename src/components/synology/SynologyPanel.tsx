@@ -93,6 +93,21 @@ export function SynologySessionContent({
         <div className="flex flex-1 min-h-0 min-w-0">
           <Sidebar mgr={mgr} />
           <div className="flex flex-1 flex-col min-w-0 min-h-0">
+            {connection.sessionHealth && (
+              <div
+                role="status"
+                className={`border-b border-[var(--color-border)] px-4 py-1.5 text-xs ${connection.sessionHealth.status === "degraded" ? "text-warning" : "text-[var(--color-textSecondary)]"}`}
+                title={
+                  connection.sessionHealth.lastVerifiedAt
+                    ? `Last API verification: ${new Date(connection.sessionHealth.lastVerifiedAt).toLocaleString()}`
+                    : undefined
+                }
+              >
+                {connection.sessionHealth.status === "degraded"
+                  ? connection.sessionHealth.message
+                  : "API session active · Background keep-alive enabled"}
+              </div>
+            )}
             {mgr.dataError && (
               <div
                 role="alert"

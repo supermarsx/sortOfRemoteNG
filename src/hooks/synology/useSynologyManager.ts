@@ -70,7 +70,7 @@ export function useSynologyManager(
           scope.current === captured &&
           toSafeManagementError(error).startsWith("SYNOLOGY_SESSION_EXPIRED: ")
         )
-          notifySessionExpired(sessionId);
+          notifySessionExpired(sessionId, toSafeManagementError(error));
         throw error;
       }
       if (!alive.current || scope.current !== captured)

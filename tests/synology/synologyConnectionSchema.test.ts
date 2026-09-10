@@ -3,6 +3,7 @@ import {
   normalizeSynologySettings,
   setSynologyAccessMode,
   assertSynologyNativeRoute,
+  isSynologyFileConnection,
 } from "../../src/types/protocols/synology";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import { normalizeImportedProtocol } from "../../src/utils/connection/normalizeImportedProtocol";
@@ -55,7 +56,13 @@ describe("saved Synology schema and access modes", () => {
       httpApplication: { id: "synology-dsm", loginMode: "manual" },
     });
     const native = setSynologyAccessMode(website, "native");
-    expect(native).toMatchObject(source);
+    expect(native).toMatchObject({
+      ...source,
+      protocol: "https",
+      synologySettings: { accessMode: "native" },
+    });
+    expect(isSynologyFileConnection(native)).toBe(true);
+    expect(isSynologyFileConnection(website)).toBe(false);
     expect(() => assertSynologyNativeRoute(native)).toThrow(/proxy\/VPN/);
     expect(() =>
       assertSynologyNativeRoute({ httpsTrustPolicy: "always-trust" }),

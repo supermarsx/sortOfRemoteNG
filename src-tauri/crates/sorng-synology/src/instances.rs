@@ -16,6 +16,18 @@ use std::{
 };
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard, Semaphore};
 
+const KEEP_ALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Redacted session health only. Native DSM SIDs and tokens never cross IPC.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSessionHealth {
+    pub status: &'static str,
+    pub last_verified_at: String,
+    pub consecutive_failures: u32,
+    pub message: Option<String>,
+}
+
 const MAX_INSTANCES: usize = 64;
 fn expired() -> String {
     "SYNOLOGY_SESSION_EXPIRED: This Synology instance or session changed or ended. Connect again before continuing.".into()
@@ -36,6 +48,7 @@ struct Lease {
     active: Arc<AtomicBool>,
     cancelled: Arc<tokio::sync::Notify>,
     session_id: Option<String>,
+    health: Mutex<FileSessionHealth>,
 }
 impl Lease {
     fn new(mut service: SynologyService, session_id: Option<String>) -> Self {
@@ -47,11 +60,111 @@ impl Lease {
             active,
             cancelled,
             session_id,
+            health: Mutex::new(FileSessionHealth {
+                status: "connected",
+                last_verified_at: chrono::Utc::now().to_rfc3339(),
+                consecutive_failures: 0,
+                message: None,
+            }),
         }
     }
     fn revoke(&self) {
         self.active.store(false, Ordering::Release);
         self.cancelled.notify_waiters();
+    }
+
+    async fn verify(&self) {
+        let Some(expected) = self.session_id.as_deref() else {
+            return;
+        };
+        if !self.active.load(Ordering::Acquire) {
+            return;
+        }
+        // A running operation already exercises the session. Do not queue a
+        // heartbeat behind it or interfere with its result.
+        let Ok(service) = self.service.try_lock() else {
+            return;
+        };
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            service.fs_keep_alive(expected),
+        )
+        .await;
+        if !self.active.load(Ordering::Acquire) {
+            return;
+        }
+        let Ok(mut health) = self.health.lock() else {
+            self.revoke();
+            return;
+        };
+        match result {
+            Ok(Ok(())) => {
+                health.status = "connected";
+                health.last_verified_at = chrono::Utc::now().to_rfc3339();
+                health.consecutive_failures = 0;
+                health.message = None;
+            }
+            Ok(Err(error))
+                if matches!(
+                    error.kind,
+                    SynologyErrorKind::SessionExpired
+                        | SynologyErrorKind::ApiError(106 | 107 | 119 | 150)
+                ) =>
+            {
+                health.status = "authentication-required";
+                health.message = Some(crate::error::command_error(error));
+                self.revoke();
+            }
+            _ => {
+                health.status = "degraded";
+                health.consecutive_failures = health.consecutive_failures.saturating_add(1);
+                health.message = Some("The NAS session could not be verified. Check connectivity; no credentials or file operations have been replayed.".into());
+            }
+        }
+    }
+
+    fn start_keep_alive(lease: &Arc<Self>, interval: std::time::Duration) {
+        let weak = Arc::downgrade(lease);
+        let cancelled = lease.cancelled.clone();
+        tokio::spawn(async move {
+            let mut delay = interval;
+            loop {
+                let stop = cancelled.notified();
+                tokio::pin!(stop);
+                stop.as_mut().enable();
+                if weak
+                    .upgrade()
+                    .is_none_or(|lease| !lease.active.load(Ordering::Acquire))
+                {
+                    return;
+                }
+                tokio::select! {
+                    biased;
+                    _ = &mut stop => return,
+                    _ = tokio::time::sleep(delay) => {}
+                }
+                let Some(lease) = weak.upgrade() else {
+                    return;
+                };
+                tokio::select! {
+                    biased;
+                    _ = &mut stop => return,
+                    _ = lease.verify() => {}
+                }
+                if !lease.active.load(Ordering::Acquire) {
+                    return;
+                }
+                // Temporary network trouble backs off to at most five minutes.
+                let failures = lease
+                    .health
+                    .lock()
+                    .map(|h| h.consecutive_failures)
+                    .unwrap_or(3);
+                delay = interval
+                    .saturating_mul(1u32 << failures.min(3))
+                    .min(std::time::Duration::from_secs(300));
+            }
+        });
     }
 }
 struct Attempt {
@@ -72,6 +185,7 @@ pub struct SynologyInstances {
     slots: Mutex<HashMap<String, Slot>>,
     legacy: Arc<Lease>,
     connects: Semaphore,
+    keep_alive_interval: std::time::Duration,
 }
 impl Default for SynologyInstances {
     fn default() -> Self {
@@ -84,6 +198,14 @@ impl SynologyInstances {
             slots: Mutex::new(HashMap::new()),
             legacy: Arc::new(Lease::new(SynologyService::new(), None)),
             connects: Semaphore::new(16),
+            keep_alive_interval: KEEP_ALIVE_INTERVAL,
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn with_keep_alive_interval(interval: std::time::Duration) -> Self {
+        Self {
+            keep_alive_interval: interval,
+            ..Self::new()
         }
     }
     fn slots(&self) -> Result<std::sync::MutexGuard<'_, HashMap<String, Slot>>, String> {
@@ -151,6 +273,7 @@ impl SynologyInstances {
                             std::mem::take(&mut candidate),
                             Some(session_id.clone()),
                         ));
+                        Lease::start_keep_alive(&lease, self.keep_alive_interval);
                         retired = slot.lease.replace(lease);
                         if let Some(old) = &retired {
                             old.revoke();
@@ -203,6 +326,30 @@ impl SynologyInstances {
             slots.remove(instance);
         }
         Ok(true)
+    }
+    pub fn session_health(
+        &self,
+        instance: &str,
+        expected: &str,
+    ) -> Result<FileSessionHealth, String> {
+        validate_id(instance)?;
+        let lease = self
+            .slots()?
+            .get(instance)
+            .and_then(|slot| slot.lease.as_ref())
+            .filter(|lease| lease.session_id.as_deref() == Some(expected))
+            .cloned()
+            .ok_or_else(expired)?;
+        let mut health = lease
+            .health
+            .lock()
+            .map_err(|_| "Synology session health is unavailable".to_string())?
+            .clone();
+        if !lease.active.load(Ordering::Acquire) && health.status != "authentication-required" {
+            health.status = "authentication-required";
+            health.message = Some(expired());
+        }
+        Ok(health)
     }
     fn cleanup(lease: Arc<Lease>) {
         tokio::spawn(async move {
@@ -278,11 +425,14 @@ impl SynologyLeaseGuard {
             && matches!(&result, Err(error) if matches!(error.kind, SynologyErrorKind::SessionExpired | SynologyErrorKind::ApiError(106 | 107 | 119 | 150)))
         {
             self.lease.revoke();
+            // Preserve the safe DSM reason on the response that revoked this
+            // exact lease; subsequent stale requests receive only `expired()`.
+            return result.map_err(crate::error::command_error);
         }
         if !self.lease.active.load(Ordering::Acquire) {
             return Err(expired());
         }
-        result.map_err(|e| e.to_string())
+        result.map_err(crate::error::command_error)
     }
 }
 impl Deref for SynologyLeaseGuard {

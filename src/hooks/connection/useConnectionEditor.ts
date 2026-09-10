@@ -45,6 +45,7 @@ import {
 } from "../../utils/integrations/exchangeConnectionFields";
 import { sanitizeIntegrationProviderFields } from "../../utils/integrations/providerFieldSanitizer";
 import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
+import { setSynologyAccessMode } from "../../types/protocols/synology";
 import {
   cloudConnectionNeedsMigration,
   normalizeCloudConnectionForEditor,
@@ -1141,11 +1142,20 @@ export function useConnectionEditor(
           : connection.sshConnectionConfigOverride,
       };
       const normalized = normalizeAdvancedProtocolConnection(
-        normalizeIntegrationFields(normalizeCloudConnectionForEditor(resolved)),
+        normalizeIntegrationFields(
+          normalizeCloudConnectionForEditor(
+            resolved.protocol === "synology"
+              ? { ...resolved, ...setSynologyAccessMode(resolved, "native") }
+              : resolved,
+          ),
+        ),
       );
       setFormData(normalized);
       originalDataRef.current = buildEditorSnapshot(
-        cloudConnectionNeedsMigration(resolved) ? resolved : normalized,
+        cloudConnectionNeedsMigration(resolved) ||
+          resolved.protocol === "synology"
+          ? resolved
+          : normalized,
       );
       // Mark as initialized on the *next* effect cycle so the auto-save
       // effect that fires from the setFormData re-render still sees false.

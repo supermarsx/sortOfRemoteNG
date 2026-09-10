@@ -4,6 +4,7 @@ import type { Connection } from "../connection/connection";
 export interface SynologySettings {
   version: 1;
   useHttps: boolean;
+  accessMode?: "native" | "website";
 }
 
 export function normalizeSynologySettings(value: unknown): SynologySettings {
@@ -14,12 +15,35 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
   if (
     input.version !== 1 ||
     typeof input.useHttps !== "boolean" ||
-    Object.keys(input).some((key) => key !== "version" && key !== "useHttps")
+    (input.accessMode !== undefined &&
+      input.accessMode !== "native" &&
+      input.accessMode !== "website") ||
+    Object.keys(input).some(
+      (key) => !["version", "useHttps", "accessMode"].includes(key),
+    )
   )
     throw new Error(
-      "Unsupported Synology connection settings. Only transport preferences can be saved.",
+      "Unsupported Synology connection settings. Only transport and view preferences can be saved.",
     );
-  return { version: 1, useHttps: input.useHttps };
+  return {
+    version: 1,
+    useHttps: input.useHttps,
+    ...(input.accessMode !== undefined
+      ? { accessMode: input.accessMode as "native" | "website" }
+      : {}),
+  };
+}
+
+/** Legacy discriminator remains readable; new records use HTTP(S) plus a view. */
+export function isSynologyFileConnection(
+  connection: Partial<Connection>,
+): boolean {
+  return (
+    connection.protocol === "synology" ||
+    ((connection.protocol === "http" || connection.protocol === "https") &&
+      connection.httpApplication?.id === "synology-dsm" &&
+      connection.synologySettings?.accessMode === "native")
+  );
 }
 
 /** Native File Station currently supports direct connections and system TLS trust only. */
@@ -40,7 +64,7 @@ export function assertSynologyNativeRoute(
     );
   if (
     connection.httpVerifySsl === false ||
-    connection.httpsTrustPolicy ||
+    (connection.httpsTrustPolicy && connection.httpsTrustPolicy !== "strict") ||
     connection.certificateTrustPolicy ||
     connection.tlsTrustPolicy
   )
@@ -57,12 +81,10 @@ export function setSynologyAccessMode(
   const settings = normalizeSynologySettings(input.synologySettings);
   if (input.protocol === "http" || input.protocol === "https")
     settings.useHttps = input.protocol === "https";
-  if (mode === "native")
-    return { ...input, protocol: "synology", synologySettings: settings };
   return {
     ...input,
     protocol: settings.useHttps ? "https" : "http",
-    synologySettings: settings,
+    synologySettings: { ...settings, accessMode: mode },
     httpApplication: { version: 1, id: "synology-dsm", loginMode: "manual" },
     httpAutoLogin: false,
   };
