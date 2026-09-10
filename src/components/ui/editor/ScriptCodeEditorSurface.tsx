@@ -32,6 +32,7 @@ import {
 } from "../../../utils/recording/scriptEditorTools";
 import {
   SCRIPT_EDITOR_LABELS,
+  isWebScriptLanguage,
   type ScriptCodeEditorProps,
 } from "./scriptEditorTypes";
 
@@ -104,9 +105,10 @@ const languageExtensions = (
   active = true,
 ) => [
   scriptLanguageExtension(language),
-  language === "javascript" && active
+  isWebScriptLanguage(language) && active
     ? linter(
-        (editor) => javaScriptSyntaxDiagnostics(editor.state.doc.toString()),
+        (editor) =>
+          javaScriptSyntaxDiagnostics(editor.state.doc.toString(), language),
         { delay: 400 },
       )
     : [],
@@ -152,8 +154,9 @@ export default function ScriptCodeEditorSurface({
   const [count, setCount] = useState(0),
     [cursor, setCursor] = useState({ line: 1, column: 1 });
   const bounded = withinScriptToolLimit(code);
-  const capability =
-    language === "javascript" ? null : capabilities?.[language];
+  const capability = isWebScriptLanguage(language)
+    ? null
+    : capabilities?.[language];
   const applyDiagnostics = (diagnostics: Diagnostic[]) => {
     const view = viewRef.current;
     if (!view) return;
@@ -225,7 +228,7 @@ export default function ScriptCodeEditorSurface({
     const view = viewRef.current;
     if (!view) return;
     if (view.state.doc.toString() === code) {
-      if (language !== "javascript") {
+      if (!isWebScriptLanguage(language)) {
         view.dispatch(setDiagnostics(view.state, []));
         setCount(0);
       }
@@ -277,7 +280,7 @@ export default function ScriptCodeEditorSurface({
       if (alive.current && captured === revision.current) {
         setCapabilities(result);
         if (
-          latest.current.language !== "javascript" &&
+          !isWebScriptLanguage(latest.current.language) &&
           result[latest.current.language].analysisAvailable
         )
           setAutoAnalyze(true);
@@ -326,22 +329,24 @@ export default function ScriptCodeEditorSurface({
       latest.current.language === selectedLanguage;
     try {
       if (operation === "analyze") {
-        const result =
-          selectedLanguage === "javascript"
-            ? {
-                diagnostics: javaScriptSyntaxDiagnostics(source),
-                tool: "JavaScript syntax parser",
-              }
-            : await analyzeInstalledScript(selectedLanguage, source).then(
-                (result) => ({
-                  diagnostics: nativeScriptDiagnostics(
-                    source,
-                    result.diagnostics,
-                    result.tool,
-                  ),
-                  tool: result.tool,
-                }),
-              );
+        const result = isWebScriptLanguage(selectedLanguage)
+          ? {
+              diagnostics: javaScriptSyntaxDiagnostics(
+                source,
+                selectedLanguage,
+              ),
+              tool: `${SCRIPT_EDITOR_LABELS[selectedLanguage]} syntax parser`,
+            }
+          : await analyzeInstalledScript(selectedLanguage, source).then(
+              (result) => ({
+                diagnostics: nativeScriptDiagnostics(
+                  source,
+                  result.diagnostics,
+                  result.tool,
+                ),
+                tool: result.tool,
+              }),
+            );
         if (!current()) return;
         applyDiagnostics(result.diagnostics);
         setStatus(
@@ -349,10 +354,12 @@ export default function ScriptCodeEditorSurface({
         );
         if (result.diagnostics.length && !automatic) openLintPanel(view);
       } else {
-        const result =
-          selectedLanguage === "javascript"
-            ? { formatted: await formatJavaScript(source), tool: "Prettier" }
-            : await formatInstalledScript(selectedLanguage, source);
+        const result = isWebScriptLanguage(selectedLanguage)
+          ? {
+              formatted: await formatJavaScript(source, selectedLanguage),
+              tool: "Prettier",
+            }
+          : await formatInstalledScript(selectedLanguage, source);
         if (!current()) return;
         if (result.formatted !== source)
           view.dispatch({
@@ -388,7 +395,7 @@ export default function ScriptCodeEditorSurface({
       readOnly ||
       busy ||
       !bounded ||
-      language === "javascript" ||
+      isWebScriptLanguage(language) ||
       !capability?.analysisAvailable ||
       lastAutomaticRevision.current === revision.current
     )
@@ -465,7 +472,7 @@ export default function ScriptCodeEditorSurface({
         >
           Comment
         </button>
-        {language !== "javascript" && (
+        {!isWebScriptLanguage(language) && (
           <button
             type="button"
             className="sor-btn-secondary-sm"
@@ -482,13 +489,13 @@ export default function ScriptCodeEditorSurface({
             readOnly ||
             busy ||
             !bounded ||
-            (language !== "javascript" && !capability?.analysisAvailable)
+            (!isWebScriptLanguage(language) && !capability?.analysisAvailable)
           }
           onClick={() => void runTool("analyze")}
           title={capability?.analyzer ?? "JavaScript parser syntax diagnostics"}
         >
           <CheckCheck size={14} />
-          {language === "javascript" ? "Syntax check" : "Analyze"}
+          {isWebScriptLanguage(language) ? "Syntax check" : "Analyze"}
         </button>
         <button
           type="button"
@@ -497,11 +504,11 @@ export default function ScriptCodeEditorSurface({
             readOnly ||
             busy ||
             !bounded ||
-            (language !== "javascript" && !capability?.formatAvailable)
+            (!isWebScriptLanguage(language) && !capability?.formatAvailable)
           }
           onClick={() => void runTool("format")}
           title={
-            language === "javascript"
+            isWebScriptLanguage(language)
               ? "Format draft with local Prettier"
               : (capability?.formatter ?? "No installed formatter is available")
           }
@@ -516,7 +523,7 @@ export default function ScriptCodeEditorSurface({
         className="min-w-0"
       />
       <div className="space-y-1 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-textMuted)]">
-        {language !== "javascript" && capability?.analysisAvailable && (
+        {!isWebScriptLanguage(language) && capability?.analysisAvailable && (
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -543,11 +550,11 @@ export default function ScriptCodeEditorSurface({
             Tooling is limited to 64 KiB. This larger draft is retained in full;
             no content was truncated.
           </p>
-        ) : language === "javascript" ? (
+        ) : isWebScriptLanguage(language) ? (
           <p>
-            Local JavaScript syntax checking, snippets and local-variable
-            completion; Prettier formatting. Not full ESLint or a security
-            audit.
+            Local {SCRIPT_EDITOR_LABELS[language]} syntax checking, snippets and
+            local-variable completion; Prettier formatting. Not semantic type
+            checking, full ESLint or a security audit.
           </p>
         ) : language === "batch" ? (
           <p>
@@ -560,7 +567,7 @@ export default function ScriptCodeEditorSurface({
             use installed static tools only; no script execution.
           </p>
         )}
-        {language !== "javascript" && (
+        {!isWebScriptLanguage(language) && (
           <p>
             {capability
               ? `${capability.analyzer ? `Analyzer: ${capability.analyzer}. ` : ""}${capability.formatter ? `Formatter: ${capability.formatter}. ` : ""}${capability.reason ?? ""}`

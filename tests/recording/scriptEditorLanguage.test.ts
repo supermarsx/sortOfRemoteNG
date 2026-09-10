@@ -16,6 +16,27 @@ import {
 } from "../../src/utils/recording/scriptEditorTools";
 
 describe("real script language helpers", () => {
+  it("provides TypeScript grammar, local completion and real local formatting without native tooling", async () => {
+    const source = "const typedName: string = 'sample';\ntyped";
+    expect(javaScriptSyntaxDiagnostics(source, "typescript")).toEqual([]);
+    expect(
+      javaScriptSyntaxDiagnostics("const x: = ;", "typescript").length,
+    ).toBeGreaterThan(0);
+    const state = EditorState.create({
+      doc: source,
+      extensions: [scriptLanguageExtension("typescript")],
+    });
+    ensureSyntaxTree(state, source.length, 1000);
+    expect(
+      localCompletionSource(
+        new CompletionContext(state, source.length, true),
+      )?.options.some((item) => item.label === "typedName"),
+    ).toBe(true);
+    expect(await formatJavaScript("const value:number=1", "typescript")).toBe(
+      "const value: number = 1;\n",
+    );
+    expect(scriptCompletions("typescript")).toEqual([]);
+  });
   it("uses actual JavaScript grammar errors, never evaluates source", () => {
     const execute = vi.fn();
     Object.assign(globalThis, { editorMustNotExecute: execute });

@@ -42,6 +42,7 @@ const script: BrowserScript = {
   name: "Shared website script",
   description: "Fixture only",
   code: "document.body.dataset.fixture = 'yes';",
+  language: "typescript",
   createdAt: "2026-09-09T12:00:00Z",
   updatedAt: "2026-09-09T12:00:00Z",
 };

@@ -85,6 +85,7 @@ export function normalizeWebAutomationItem(value: unknown): WebAutomationItem {
     "createdAt",
     "updatedAt",
     "code",
+    "language",
     "steps",
   ]);
   const metadata = {
@@ -100,6 +101,14 @@ export function normalizeWebAutomationItem(value: unknown): WebAutomationItem {
   )
     throw new Error("Website automation dates are invalid.");
   if (raw.kind === "script" && raw.steps === undefined) {
+    if (
+      raw.language !== undefined &&
+      raw.language !== "javascript" &&
+      raw.language !== "typescript"
+    )
+      throw new Error(
+        "Website script language must be JavaScript or TypeScript.",
+      );
     const code = text(raw.code, MAX_WEB_SCRIPT_BYTES);
     if (new TextEncoder().encode(code).length > MAX_WEB_SCRIPT_BYTES)
       throw new Error("Website scripts are limited to 64 KiB.");
@@ -107,10 +116,16 @@ export function normalizeWebAutomationItem(value: unknown): WebAutomationItem {
       throw new Error(
         "Do not save credential literals in website scripts. Enter sensitive information manually on the website.",
       );
-    return { ...metadata, kind: "script", code };
+    return {
+      ...metadata,
+      kind: "script",
+      code,
+      ...(raw.language === undefined ? {} : { language: raw.language }),
+    };
   }
   if (
     raw.kind === "macro" &&
+    raw.language === undefined &&
     raw.code === undefined &&
     Array.isArray(raw.steps) &&
     raw.steps.length > 0 &&

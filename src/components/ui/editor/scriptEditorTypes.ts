@@ -1,5 +1,9 @@
 export type ScriptEditorLanguage =
-  "bash" | "sh" | "powershell" | "batch" | "javascript";
+  "bash" | "sh" | "powershell" | "batch" | "javascript" | "typescript";
+export const isWebScriptLanguage = (
+  language: ScriptEditorLanguage,
+): language is "javascript" | "typescript" =>
+  language === "javascript" || language === "typescript";
 export interface ScriptCodeEditorProps {
   code: string;
   language: ScriptEditorLanguage;
@@ -18,4 +22,5 @@ export const SCRIPT_EDITOR_LABELS: Record<ScriptEditorLanguage, string> = {
   powershell: "PowerShell",
   batch: "Batch (cmd)",
   javascript: "JavaScript",
+  typescript: "TypeScript",
 };

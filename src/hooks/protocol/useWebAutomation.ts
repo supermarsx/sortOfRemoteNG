@@ -10,6 +10,7 @@ import type {
   WebInteractionMacro,
   WebInteractionStep,
 } from "../../types/recording/webAutomation";
+import { prepareWebsiteScript } from "../../utils/recording/websiteScriptCompiler";
 import {
   normalizeHttpAutomation,
   normalizeSessionQuickActions,
@@ -753,11 +754,12 @@ export function useWebAutomation(options: Options) {
     }
     const captured = epoch.current,
       run = ++operation.current,
-      doc = latest.current.getDocument();
-    if (!doc) {
+      currentDocument = latest.current.getDocument();
+    if (!currentDocument) {
       setError("Wait for the current trusted page to be ready.");
       return;
     }
+    const doc = { ...currentDocument };
     const check = () => {
       assertAccess(captured);
       const enabled = permissionsRef.current.value;
@@ -787,9 +789,15 @@ export function useWebAutomation(options: Options) {
       check();
       validated = await resolveItem(item, captured);
       check();
-      if (validated.kind === "script")
-        await bridge.request("script", { code: validated.code });
-      else
+      if (validated.kind === "script") {
+        const code = await prepareWebsiteScript(validated);
+        checkOwner();
+        check();
+        await resolveItem(item, captured);
+        checkOwner();
+        check();
+        await bridge.request("script", { code });
+      } else
         for (let index = 0; index < validated.steps.length; index++) {
           checkOwner();
           check();

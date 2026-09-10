@@ -29,6 +29,8 @@ Imports use one automation kind and one explicit destination at a time. There is
 
 The four manifest kinds preserve their existing native formats: `terminal-script`, `terminal-macro`, `website-script`, and `website-macro`. Terminal macro commands/delays remain steps; website macros remain value-free interaction steps. They are never converted into shell or JavaScript source. Importing does not grant execution permission or run a script/macro.
 
+A `website-script` payload may include `language: "javascript"` or `language: "typescript"`; omission means legacy JavaScript. Typed source is preserved in packages and libraries, then locally compiled only on explicitly permitted manual execution. TypeScript must be standalone (no imports/exports, TSX, CommonJS or external references). This language field is not accepted on website macro steps or terminal scripts. Export package emits a ready-to-host manifest with the saved language automatically.
+
 ## Source identity and limits
 
 External publishers and repository metadata are **claims, not verified official status**. SHA-256 records the exact bytes reviewed; it proves neither publisher identity nor that the source is safe. Only locally bundled catalogs are labeled app-shipped.

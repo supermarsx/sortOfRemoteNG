@@ -118,6 +118,29 @@ function mount(options: Partial<ScriptCodeEditorProps> = {}) {
   };
 }
 describe("actual mounted CodeMirror script editor", () => {
+  it("edits and formats TypeScript locally without discovering or invoking shell tools", async () => {
+    const editor = mount({
+      language: "typescript",
+      code: "const value:number=1",
+    });
+    expect(
+      screen.queryByRole("button", { name: "Check local tools" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Syntax check" }));
+    await screen.findByText(/TypeScript syntax parser: 0 diagnostic/);
+    tools.javascript.mockResolvedValueOnce("const value: number = 1;\n");
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
+    await waitFor(() =>
+      expect(editor.changed).toHaveBeenCalledWith("const value: number = 1;\n"),
+    );
+    expect(tools.javascript).toHaveBeenCalledWith(
+      "const value:number=1",
+      "typescript",
+    );
+    expect(tools.discover).not.toHaveBeenCalled();
+    expect(tools.analyze).not.toHaveBeenCalled();
+    expect(tools.format).not.toHaveBeenCalled();
+  });
   it("edits the real model, provides line numbers and undo without native calls on mount", () => {
     const editor = mount();
     expect(

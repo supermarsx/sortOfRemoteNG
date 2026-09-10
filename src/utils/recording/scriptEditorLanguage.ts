@@ -3,7 +3,11 @@ import {
   type StreamParser,
   type StringStream,
 } from "@codemirror/language";
-import { javascript, javascriptLanguage } from "@codemirror/lang-javascript";
+import {
+  javascript,
+  javascriptLanguage,
+  typescriptLanguage,
+} from "@codemirror/lang-javascript";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { powerShell } from "@codemirror/legacy-modes/mode/powershell";
 import {
@@ -15,6 +19,7 @@ import type { Diagnostic } from "@codemirror/lint";
 import { Text, type Extension } from "@codemirror/state";
 import {
   MAX_SCRIPT_DIAGNOSTICS,
+  isWebScriptLanguage,
   type ScriptEditorLanguage,
 } from "../../components/ui/editor/scriptEditorTypes";
 import {
@@ -108,7 +113,7 @@ const powershell = [
 export function scriptCompletions(
   language: ScriptEditorLanguage,
 ): Completion[] {
-  if (language === "javascript") return [];
+  if (isWebScriptLanguage(language)) return [];
   const words =
     language === "batch"
       ? [...batchKeywords]
@@ -161,7 +166,8 @@ export function scriptCompletions(
 export function scriptLanguageExtension(
   language: ScriptEditorLanguage,
 ): Extension {
-  if (language === "javascript") return javascript();
+  if (isWebScriptLanguage(language))
+    return javascript({ typescript: language === "typescript" });
   const mode = StreamLanguage.define(
     language === "powershell"
       ? powerShell
@@ -177,22 +183,28 @@ export function scriptLanguageExtension(
   ];
 }
 /** Actual Lezer grammar recovery nodes, not heuristic regex lint. */
-export function javaScriptSyntaxDiagnostics(source: string): Diagnostic[] {
+export function javaScriptSyntaxDiagnostics(
+  source: string,
+  language: "javascript" | "typescript" = "javascript",
+): Diagnostic[] {
   if (!withinScriptToolLimit(source)) return [];
   const diagnostics: Diagnostic[] = [];
-  javascriptLanguage.parser.parse(source).iterate({
-    enter(node) {
-      if (diagnostics.length >= MAX_SCRIPT_DIAGNOSTICS) return false;
-      if (node.type.isError)
-        diagnostics.push({
-          from: node.from,
-          to: Math.min(source.length, Math.max(node.to, node.from + 1)),
-          severity: "error",
-          source: "JavaScript syntax",
-          message: "JavaScript syntax error near this position.",
-        });
-    },
-  });
+  const label = language === "typescript" ? "TypeScript" : "JavaScript";
+  (language === "typescript" ? typescriptLanguage : javascriptLanguage).parser
+    .parse(source)
+    .iterate({
+      enter(node) {
+        if (diagnostics.length >= MAX_SCRIPT_DIAGNOSTICS) return false;
+        if (node.type.isError)
+          diagnostics.push({
+            from: node.from,
+            to: Math.min(source.length, Math.max(node.to, node.from + 1)),
+            severity: "error",
+            source: `${label} syntax`,
+            message: `${label} syntax error near this position.`,
+          });
+      },
+    });
   return diagnostics;
 }
 /** Native positions are explicitly 1-based UTF-16, just like CM offsets. */

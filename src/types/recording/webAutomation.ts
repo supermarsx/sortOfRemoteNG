@@ -14,6 +14,8 @@ interface WebAutomationMetadata {
 
 export interface BrowserScript extends WebAutomationMetadata {
   kind: "script";
+  /** Omitted in legacy libraries; omission means JavaScript. */
+  language?: "javascript" | "typescript";
   code: string;
 }
 

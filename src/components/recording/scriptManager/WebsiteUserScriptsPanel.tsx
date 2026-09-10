@@ -245,7 +245,8 @@ function AccessibleScripts({
               >
                 <span className="block truncate font-medium">{item.name}</span>
                 <span className="block truncate text-xs text-[var(--color-textMuted)]">
-                  {item.description || "Manual website JavaScript"}
+                  {item.description ||
+                    `Manual website ${item.language === "typescript" ? "TypeScript" : "JavaScript"}`}
                 </span>
               </button>
             ))}
@@ -286,11 +287,37 @@ function AccessibleScripts({
                   }
                 />
               </label>
+              <label className="block text-sm">
+                Website script language
+                <select
+                  className="sor-form-select mt-1"
+                  value={edit.item.language ?? "javascript"}
+                  disabled={mgr.busy}
+                  onChange={(event) =>
+                    setEdit({
+                      ...edit,
+                      item: {
+                        ...edit.item,
+                        language:
+                          event.target.value === "typescript"
+                            ? "typescript"
+                            : "javascript",
+                      },
+                    })
+                  }
+                >
+                  <option value="javascript">JavaScript</option>
+                  <option value="typescript">TypeScript (standalone)</option>
+                </select>
+              </label>
               <div className="block text-sm">
-                Website JavaScript
+                Website{" "}
+                {edit.item.language === "typescript"
+                  ? "TypeScript"
+                  : "JavaScript"}
                 <ScriptCodeEditor
-                  ariaLabel="Website JavaScript"
-                  language="javascript"
+                  ariaLabel={`Website ${edit.item.language === "typescript" ? "TypeScript" : "JavaScript"}`}
+                  language={edit.item.language ?? "javascript"}
                   documentKey={edit.item.id}
                   minHeight={256}
                   readOnly={mgr.busy}
@@ -307,6 +334,9 @@ function AccessibleScripts({
                 Maximum 64 KiB of credential-free source. This is page
                 JavaScript, not a browser-extension userscript engine; @grant,
                 @require and automatic URL matching are not supported.
+                TypeScript is compiled locally before manual execution; imports,
+                exports, TSX and top-level await are unsupported. Syntax checks
+                are not semantic type checking or a safety review.
               </p>
               <div className="flex gap-2">
                 <button
@@ -369,7 +399,7 @@ function AccessibleScripts({
               <p className="text-sm">{selected.description}</p>
               <ScriptCodeEditor
                 code={selected.code}
-                language="javascript"
+                language={selected.language ?? "javascript"}
                 onChange={() => {}}
                 readOnly
                 ariaLabel="Website script source"
@@ -482,7 +512,9 @@ export default function WebsiteUserScriptsPanel({
       aria-label="Website userscript library"
     >
       <div className="border-b border-[var(--color-border)] p-4 space-y-2">
-        <h2 className="font-medium">Website userscripts · JavaScript</h2>
+        <h2 className="font-medium">
+          Website userscripts · JavaScript / TypeScript
+        </h2>
         <p className="text-sm">
           {mgr.scope.kind === "app"
             ? "An app-wide protected library, independent of the currently open connection database."

@@ -7,6 +7,7 @@ import {
 } from "../../src/contexts/ConnectionContextTypes";
 import type { Connection } from "../../src/types/connection/connection";
 import type { GlobalSettings } from "../../src/types/settings/settings";
+import * as compiler from "../../src/utils/recording/websiteScriptCompiler";
 import type {
   DatabaseAutomationApi,
   DatabaseAutomationLibrary,
@@ -108,6 +109,7 @@ const empty = (): DatabaseAutomationLibrary => ({
   },
 });
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   h.lease = 1;
   h.accessible = true;
@@ -214,6 +216,7 @@ function mount() {
     compareAndSwap,
     database,
     connection,
+    doc,
     getData: () => data,
     replace(next: DatabaseAutomationLibrary, notify = false) {
       data = next;
@@ -225,6 +228,111 @@ function mount() {
   };
 }
 describe("scope-qualified website automation runtime", () => {
+  it("compiles persisted TypeScript locally and sends only emitted JavaScript after confirmation", async () => {
+    const view = mount();
+    const typed: BrowserScript = {
+      ...script,
+      language: "typescript",
+      code: "const title: string = 'Typed'; document.title = title;",
+    };
+    view.replace(
+      {
+        ...view.getData(),
+        website: { ...view.getData().website, scripts: [typed] },
+      },
+      true,
+    );
+    await waitFor(() =>
+      expect(view.result.current.availableDatabaseScope).toEqual(scope),
+    );
+    await act(async () => view.result.current.requestRun(scoped(typed)));
+    expect(
+      h.request.mock.calls.filter(([action]) => action === "script"),
+    ).toHaveLength(0);
+    await act(async () => view.result.current.execute(scoped(typed)));
+    const calls = h.request.mock.calls.filter(
+      ([action]) => action === "script",
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1].code).toContain("document.title = title");
+    expect(calls[0][1].code).not.toContain(": string");
+  });
+  it.each(["owner", "source", "page"] as const)(
+    "refuses a %s change while lazy TypeScript compilation is pending",
+    async (change) => {
+      let complete!: (code: string) => void;
+      const compile = vi
+        .spyOn(compiler, "prepareWebsiteScript")
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              complete = resolve;
+            }),
+        );
+      const view = mount();
+      const typed: BrowserScript = {
+        ...script,
+        language: "typescript",
+        code: "const x: number = 1;",
+      };
+      view.replace(
+        {
+          ...view.getData(),
+          website: { ...view.getData().website, scripts: [typed] },
+        },
+        true,
+      );
+      await waitFor(() =>
+        expect(view.result.current.availableDatabaseScope).toEqual(scope),
+      );
+      let running!: Promise<void>;
+      act(() => {
+        running = view.result.current.execute(scoped(typed));
+      });
+      await waitFor(() => expect(compile).toHaveBeenCalled());
+      if (change === "owner") h.lease++;
+      if (change === "page") view.doc.generation++;
+      if (change === "source")
+        view.replace({
+          ...view.getData(),
+          website: {
+            ...view.getData().website,
+            scripts: [{ ...typed, code: "const x: number = 2;" }],
+          },
+        });
+      await act(async () => {
+        complete("const x = 1;");
+        await running;
+      });
+      expect(
+        h.request.mock.calls.filter(([action]) => action === "script"),
+      ).toHaveLength(0);
+      expect(view.result.current.error).toBeTruthy();
+    },
+  );
+  it("refuses invalid TypeScript without sending it to the page", async () => {
+    const view = mount();
+    const typed: BrowserScript = {
+      ...script,
+      language: "typescript",
+      code: "const x: = ;",
+    };
+    view.replace(
+      {
+        ...view.getData(),
+        website: { ...view.getData().website, scripts: [typed] },
+      },
+      true,
+    );
+    await waitFor(() =>
+      expect(view.result.current.availableDatabaseScope).toEqual(scope),
+    );
+    await act(async () => view.result.current.execute(scoped(typed)));
+    expect(
+      h.request.mock.calls.filter(([action]) => action === "script"),
+    ).toHaveLength(0);
+    expect(view.result.current.error).toMatch(/TypeScript syntax/);
+  });
   it("rechecks source after a manual fill-value prompt without sending or storing the supplied value when changed", async () => {
     const view = mount();
     const fill: WebInteractionMacro = {

@@ -257,6 +257,38 @@ describe("default script catalog UI", () => {
   });
 });
 describe("website userscript library UI", () => {
+  it("explicitly selects TypeScript and saves the original typed source and language without running it", async () => {
+    render(<WebsiteUserScriptsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "New website script" }));
+    expect(screen.getByLabelText("Website script language")).toHaveValue(
+      "javascript",
+    );
+    fireEvent.change(screen.getByLabelText("Website script language"), {
+      target: { value: "typescript" },
+    });
+    fireEvent.change(screen.getByLabelText("Script name"), {
+      target: { value: "Typed website" },
+    });
+    fireEvent.change(screen.getByLabelText("Website TypeScript"), {
+      target: { value: "const value: number = 1;" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save website script" }),
+    );
+    await waitFor(() =>
+      expect(h.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          language: "typescript",
+          code: "const value: number = 1;",
+          name: "Typed website",
+        }),
+        undefined,
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: /^Run/ }),
+    ).not.toBeInTheDocument();
+  });
   it("locks draft fields and library switching while a write is pending", () => {
     const { rerender } = render(<ScriptManager isOpen onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("tab", { name: "Website userscripts" }));

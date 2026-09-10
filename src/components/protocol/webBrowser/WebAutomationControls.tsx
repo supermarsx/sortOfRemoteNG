@@ -335,8 +335,33 @@ function AutomationLibrary({
                   />
                   {draft.kind === "script" ? (
                     <>
+                      <label className="block text-xs">
+                        Website script language
+                        <select
+                          className="sor-form-select"
+                          value={draft.language ?? "javascript"}
+                          disabled={automation.busy}
+                          onChange={(event) =>
+                            setDraft({
+                              ...draft,
+                              language:
+                                event.target.value === "typescript"
+                                  ? "typescript"
+                                  : "javascript",
+                            })
+                          }
+                        >
+                          <option value="javascript">JavaScript</option>
+                          <option value="typescript">
+                            TypeScript (standalone)
+                          </option>
+                        </select>
+                      </label>
                       <label htmlFor={`${ids}-code`} className="block text-xs">
-                        JavaScript · maximum 64 KiB
+                        {draft.language === "typescript"
+                          ? "TypeScript"
+                          : "JavaScript"}{" "}
+                        · maximum 64 KiB
                       </label>
                       <textarea
                         id={`${ids}-code`}
@@ -351,10 +376,12 @@ function AutomationLibrary({
                         }
                       />
                       <p className="text-xs text-warning">
-                        JavaScript runs with this page’s privileges, including
-                        any signed-in session, and can change data or freeze the
-                        page. Never store passwords or tokens in code. Stopping
-                        cannot undo code that already ran.
+                        TypeScript is compiled locally; modules, TSX and
+                        top-level await are unsupported. JavaScript runs with
+                        this page’s privileges, including any signed-in session,
+                        and can change data or freeze the page. Never store
+                        passwords or tokens in code. Stopping cannot undo code
+                        that already ran.
                       </p>
                     </>
                   ) : (

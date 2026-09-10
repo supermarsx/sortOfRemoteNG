@@ -35,7 +35,7 @@ function SourcePreview({ item }: { item: AutomationCatalogItem }) {
       item.kind === "terminal-script" ? item.payload.script : item.payload.code;
     const language =
       item.kind === "website-script"
-        ? "javascript"
+        ? (item.payload.language ?? "javascript")
         : item.payload.language === "auto"
           ? detectLanguage(code)
           : item.payload.language;

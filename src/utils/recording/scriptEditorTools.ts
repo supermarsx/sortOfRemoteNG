@@ -21,7 +21,10 @@ export interface ScriptToolDiagnostic {
   code: string;
   message: string;
 }
-export type NativeScriptLanguage = Exclude<ScriptEditorLanguage, "javascript">;
+export type NativeScriptLanguage = Exclude<
+  ScriptEditorLanguage,
+  "javascript" | "typescript"
+>;
 export type ScriptToolCapabilities = Record<
   NativeScriptLanguage,
   ScriptToolCapability
@@ -142,18 +145,23 @@ export async function formatInstalledScript(
     );
   return { formatted: raw.formatted, tool: optionalText(raw.tool, 128) };
 }
-export async function formatJavaScript(source: string): Promise<string> {
+export async function formatJavaScript(
+  source: string,
+  language: "javascript" | "typescript" = "javascript",
+): Promise<string> {
   if (!withinScriptToolLimit(source))
     throw new Error(
       "Formatting is limited to 64 KiB. The draft has not been truncated.",
     );
   const [prettier, babel, estree] = await Promise.all([
     import("prettier/standalone"),
-    import("prettier/plugins/babel"),
+    language === "typescript"
+      ? import("prettier/plugins/typescript")
+      : import("prettier/plugins/babel"),
     import("prettier/plugins/estree"),
   ]);
   const formatted = await prettier.format(source, {
-    parser: "babel",
+    parser: language === "typescript" ? "typescript" : "babel",
     plugins: [babel, estree],
     tabWidth: 2,
     embeddedLanguageFormatting: "off",
