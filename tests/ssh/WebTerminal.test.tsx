@@ -826,19 +826,21 @@ describe("WebTerminal", () => {
         dialogTitle.parentElement?.parentElement?.parentElement;
       expect(modal).toBeTruthy();
 
-      await act(async () => {
-        fireEvent.click(
-          within(modal as HTMLElement).getByRole("button", {
-            name: /^disconnect$/i,
-          }),
-        );
-        await Promise.all([
-          promptListener,
-          expect(connectAttempt).rejects.toThrow(
-            "Host key verification failed: key rejected by user",
-          ),
-        ]);
-      });
+      const rejected = expect(connectAttempt).rejects.toThrow(
+        "Host key verification failed: key rejected by user",
+      );
+      fireEvent.click(
+        within(modal as HTMLElement).getByRole("button", {
+          name: /^disconnect$/i,
+        }),
+      );
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "ssh_respond_to_host_key_prompt",
+          { sessionId: "prompt-session-reject", decision: "reject" },
+        ),
+      );
+      await Promise.all([promptListener, rejected]);
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith(
