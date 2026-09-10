@@ -254,78 +254,117 @@ export class ThemeManager {
 
     Object.entries(theme.colors).forEach(([key, value]) => {
       root.style.setProperty(`--color-${key}`, value);
-      root.style.setProperty(`--color-${key}-rgb`, ThemeManager.hexToRgbTriplet(value));
+      root.style.setProperty(
+        `--color-${key}-rgb`,
+        ThemeManager.hexToRgbTriplet(value),
+      );
     });
 
     // Derive additional colors from the base theme
-    const isLightTheme = ['light', 'semilight'].includes(themeName) || 
-      (themeName === 'auto' && this.detectSystemTheme() === 'light');
+    const channels = ThemeManager.hexToRgbTriplet(theme.colors.surface)
+      .split(" ")
+      .map(Number)
+      .map((channel) => {
+        const srgb = channel / 255;
+        return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+      });
+    // Resolve from actual colors, not custom theme names. This is the
+    // equal black/white contrast crossover for the native control surface.
+    const isLightTheme =
+      channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722 >
+      0.179;
+    root.style.colorScheme = isLightTheme ? "light" : "dark";
+    root.style.setProperty(
+      "--native-color-scheme",
+      isLightTheme ? "light" : "dark",
+    );
 
     // Set info color (cyan-ish) derived from theme context
-    const infoColor = isLightTheme ? '#0891b2' : '#06b6d4';
-    root.style.setProperty('--color-info', infoColor);
-    root.style.setProperty('--color-info-rgb', ThemeManager.hexToRgbTriplet(infoColor));
-    
+    const infoColor = isLightTheme ? "#0891b2" : "#06b6d4";
+    root.style.setProperty("--color-info", infoColor);
+    root.style.setProperty(
+      "--color-info-rgb",
+      ThemeManager.hexToRgbTriplet(infoColor),
+    );
+
     // surfaceHover - subtle contrast for hover states
     const surfaceHover = isLightTheme
       ? ThemeManager.shadeColor(theme.colors.surface, -8)
       : ThemeManager.shadeColor(theme.colors.surface, 15);
-    root.style.setProperty('--color-surfaceHover', surfaceHover);
+    root.style.setProperty("--color-surfaceHover", surfaceHover);
 
     // surfaceActive - slightly more contrast for active/pressed states
     const surfaceActive = isLightTheme
       ? ThemeManager.shadeColor(theme.colors.surface, -14)
       : ThemeManager.shadeColor(theme.colors.surface, 25);
-    root.style.setProperty('--color-surfaceActive', surfaceActive);
-    
+    root.style.setProperty("--color-surfaceActive", surfaceActive);
+
     // input - input field background
     const input = isLightTheme
-      ? '#ffffff'
+      ? "#ffffff"
       : ThemeManager.shadeColor(theme.colors.surface, 15);
-    root.style.setProperty('--color-input', input);
+    root.style.setProperty("--color-input", input);
 
     // inputHover - input field hover state
     const inputHover = isLightTheme
-      ? ThemeManager.shadeColor('#ffffff', -8)
+      ? ThemeManager.shadeColor("#ffffff", -8)
       : ThemeManager.shadeColor(theme.colors.surface, 20);
-    root.style.setProperty('--color-inputHover', inputHover);
-    
+    root.style.setProperty("--color-inputHover", inputHover);
+
     // textMuted - more subtle text color
     const textMuted = isLightTheme
       ? ThemeManager.shadeColor(theme.colors.textSecondary, 20)
       : ThemeManager.shadeColor(theme.colors.textSecondary, -15);
-    root.style.setProperty('--color-textMuted', textMuted);
-    
+    root.style.setProperty("--color-textMuted", textMuted);
+
     // buttonHover - explicit button hover color with better contrast
     const buttonHover = isLightTheme
-      ? 'rgba(0, 0, 0, 0.08)'
-      : 'rgba(255, 255, 255, 0.08)';
-    root.style.setProperty('--color-buttonHover', buttonHover);
+      ? "rgba(0, 0, 0, 0.08)"
+      : "rgba(255, 255, 255, 0.08)";
+    root.style.setProperty("--color-buttonHover", buttonHover);
 
     if (customAccent) {
       // Custom accent: derive full color scheme from the custom accent color
       const derivedSecondary = ThemeManager.shadeColor(customAccent, -12);
       const derivedAccent = ThemeManager.shadeColor(customAccent, -24);
       root.style.setProperty("--color-primary", customAccent);
-      root.style.setProperty("--color-primary-rgb", ThemeManager.hexToRgbTriplet(customAccent));
+      root.style.setProperty(
+        "--color-primary-rgb",
+        ThemeManager.hexToRgbTriplet(customAccent),
+      );
       root.style.setProperty("--color-secondary", derivedSecondary);
-      root.style.setProperty("--color-secondary-rgb", ThemeManager.hexToRgbTriplet(derivedSecondary));
+      root.style.setProperty(
+        "--color-secondary-rgb",
+        ThemeManager.hexToRgbTriplet(derivedSecondary),
+      );
       root.style.setProperty("--color-accent", derivedAccent);
-      root.style.setProperty("--color-accent-rgb", ThemeManager.hexToRgbTriplet(derivedAccent));
+      root.style.setProperty(
+        "--color-accent-rgb",
+        ThemeManager.hexToRgbTriplet(derivedAccent),
+      );
     } else {
       root.style.setProperty("--color-primary", colors.primary);
-      root.style.setProperty("--color-primary-rgb", ThemeManager.hexToRgbTriplet(colors.primary));
+      root.style.setProperty(
+        "--color-primary-rgb",
+        ThemeManager.hexToRgbTriplet(colors.primary),
+      );
       root.style.setProperty("--color-secondary", colors.secondary);
-      root.style.setProperty("--color-secondary-rgb", ThemeManager.hexToRgbTriplet(colors.secondary));
+      root.style.setProperty(
+        "--color-secondary-rgb",
+        ThemeManager.hexToRgbTriplet(colors.secondary),
+      );
       root.style.setProperty("--color-accent", colors.accent);
-      root.style.setProperty("--color-accent-rgb", ThemeManager.hexToRgbTriplet(colors.accent));
+      root.style.setProperty(
+        "--color-accent-rgb",
+        ThemeManager.hexToRgbTriplet(colors.accent),
+      );
     }
 
     document.body.className = document.body.className
       .replace(/theme-\w+/g, "")
       .replace(/scheme-\w+/g, "");
 
-    document.body.setAttribute('data-theme', themeName);
+    document.body.setAttribute("data-theme", themeName);
     document.body.classList.add(`theme-${themeName}`, `scheme-${colorScheme}`);
   }
 
@@ -453,7 +492,8 @@ export class ThemeManager {
     const b = num & 0xff;
     const adjust = (channel: number) =>
       Math.max(0, Math.min(255, channel + Math.round((amount / 100) * 255)));
-    const toHex = (channel: number) => adjust(channel).toString(16).padStart(2, "0");
+    const toHex = (channel: number) =>
+      adjust(channel).toString(16).padStart(2, "0");
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
 
@@ -478,15 +518,21 @@ export class ThemeManager {
 
     // Validate saved values - migrate invalid values to defaults
     const validTheme = this.getAllThemes()[savedTheme] ? savedTheme : "dark";
-    const validColorScheme = this.getAllColorSchemes()[savedColorScheme] ? savedColorScheme : "blue";
+    const validColorScheme = this.getAllColorSchemes()[savedColorScheme]
+      ? savedColorScheme
+      : "blue";
 
     // If values were invalid, persist the corrected values
     if (validTheme !== savedTheme) {
-      console.warn(`Invalid theme "${savedTheme}" found, resetting to "${validTheme}"`);
+      console.warn(
+        `Invalid theme "${savedTheme}" found, resetting to "${validTheme}"`,
+      );
       await IndexedDbService.setItem("mremote-theme", validTheme);
     }
     if (validColorScheme !== savedColorScheme) {
-      console.warn(`Invalid color scheme "${savedColorScheme}" found, resetting to "${validColorScheme}"`);
+      console.warn(
+        `Invalid color scheme "${savedColorScheme}" found, resetting to "${validColorScheme}"`,
+      );
       await IndexedDbService.setItem("mremote-color-scheme", validColorScheme);
     }
 
@@ -566,12 +612,15 @@ export class ThemeManager {
   }
 
   // Import themes and color schemes
-  async importThemeData(data: {
-    themes?: Record<string, ThemeConfig>;
-    colorSchemes?: Record<string, Record<string, string>>;
-  }, options?: { overwrite?: boolean }): Promise<{ 
-    importedThemes: string[]; 
-    importedSchemes: string[]; 
+  async importThemeData(
+    data: {
+      themes?: Record<string, ThemeConfig>;
+      colorSchemes?: Record<string, Record<string, string>>;
+    },
+    options?: { overwrite?: boolean },
+  ): Promise<{
+    importedThemes: string[];
+    importedSchemes: string[];
     skippedThemes: string[];
     skippedSchemes: string[];
   }> {

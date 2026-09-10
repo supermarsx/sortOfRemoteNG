@@ -7,13 +7,34 @@
   font-size: 0.75rem;
   border-radius: 9999px;
 }
-.sor-badge-blue   { background: rgb(var(--color-primary-rgb) / 0.2);  color: var(--color-primary); }
-.sor-badge-green  { background: rgb(var(--color-success-rgb) / 0.2);  color: var(--color-success); }
-.sor-badge-red    { background: rgb(var(--color-error-rgb) / 0.2);    color: var(--color-error); }
-.sor-badge-yellow { background: rgb(var(--color-warning-rgb) / 0.2);  color: var(--color-warning); }
-.sor-badge-purple { background: rgb(var(--color-accent-rgb) / 0.2);   color: var(--color-accent); }
-.sor-badge-orange { background: rgb(var(--color-warning-rgb) / 0.2);  color: var(--color-warning); }
-.sor-badge-gray   { background: rgb(var(--color-secondary-rgb) / 0.2); color: var(--color-textSecondary); }
+.sor-badge-blue {
+  background: rgb(var(--color-primary-rgb) / 0.2);
+  color: var(--color-primary);
+}
+.sor-badge-green {
+  background: rgb(var(--color-success-rgb) / 0.2);
+  color: var(--color-success);
+}
+.sor-badge-red {
+  background: rgb(var(--color-error-rgb) / 0.2);
+  color: var(--color-error);
+}
+.sor-badge-yellow {
+  background: rgb(var(--color-warning-rgb) / 0.2);
+  color: var(--color-warning);
+}
+.sor-badge-purple {
+  background: rgb(var(--color-accent-rgb) / 0.2);
+  color: var(--color-accent);
+}
+.sor-badge-orange {
+  background: rgb(var(--color-warning-rgb) / 0.2);
+  color: var(--color-warning);
+}
+.sor-badge-gray {
+  background: rgb(var(--color-secondary-rgb) / 0.2);
+  color: var(--color-textSecondary);
+}
 
 /* ── Section card ────────────────────────────────────────────── */
 .sor-section-card {
@@ -33,7 +54,9 @@
   color: var(--color-text);
   font-size: 0.875rem;
 }
-.sor-search-input::placeholder { color: var(--color-textSecondary); }
+.sor-search-input::placeholder {
+  color: var(--color-textSecondary);
+}
 .sor-search-input:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 0.5);
@@ -87,7 +110,9 @@
   font-size: 0.875rem;
   text-align: left;
   color: var(--color-textSecondary);
-  transition: background-color 150ms ease, color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 .sor-sidebar-tab:hover {
   background: var(--color-border);
@@ -108,9 +133,13 @@
   border-radius: 0.25rem;
   font-size: 10px;
   color: var(--color-textSecondary);
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
-.sor-btn-mini:hover { color: var(--color-text); }
+.sor-btn-mini:hover {
+  color: var(--color-text);
+}
 
 .sor-btn-mini-primary {
   display: inline-flex;
@@ -123,7 +152,9 @@
   color: var(--color-text);
   transition: background-color 150ms ease;
 }
-.sor-btn-mini-primary:hover { background: color-mix(in srgb, var(--color-primary) 85%, black); }
+.sor-btn-mini-primary:hover {
+  background: color-mix(in srgb, var(--color-primary) 85%, black);
+}
 
 /* ── Toggle card (checkbox grid items) ────────────────────────── */
 .sor-toggle-card {
@@ -163,7 +194,9 @@
   color: var(--color-text);
   font-size: 0.875rem;
 }
-.sor-settings-input::placeholder { color: var(--color-textMuted, #9ca3af); }
+.sor-settings-input::placeholder {
+  color: var(--color-textMuted, #9ca3af);
+}
 .sor-settings-input:focus {
   outline: none;
   border-color: transparent;
@@ -173,15 +206,15 @@
 /* ── Native time/date/datetime pickers ─────────────────────────
  * Theme the calendar/clock indicator and the dropdown panel via
  * color-scheme so the browser-supplied popup picks up dark colors
- * automatically. The indicator filter inverts the default black
- * glyph to match text color in dark themes.
+ * automatically. Native indicators follow the same color-scheme;
+ * inverting them again would make light/dark glyph contrast incorrect.
  */
 .sor-settings-input[type="time"],
 .sor-settings-input[type="date"],
 .sor-settings-input[type="datetime-local"],
 .sor-settings-input[type="week"],
 .sor-settings-input[type="month"] {
-  color-scheme: dark;
+  color-scheme: var(--native-color-scheme, dark);
   font-variant-numeric: tabular-nums;
 }
 .sor-settings-input[type="time"]::-webkit-calendar-picker-indicator,
@@ -189,7 +222,6 @@
 .sor-settings-input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 .sor-settings-input[type="week"]::-webkit-calendar-picker-indicator,
 .sor-settings-input[type="month"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1.5);
   cursor: pointer;
   opacity: 0.6;
   transition: opacity 120ms ease;
@@ -229,7 +261,9 @@
   color: var(--color-textSecondary);
   transition: color 150ms ease;
 }
-.group:hover .sor-toggle-label { color: var(--color-text); }
+.group:hover .sor-toggle-label {
+  color: var(--color-text);
+}
 
 /* ── Inline tag pill ─────────────────────────────────────────── */
 .sor-tag {
@@ -285,7 +319,9 @@
   color: var(--color-textSecondary);
   transition: color 150ms ease;
 }
-.sor-micro-actions:hover { color: var(--color-text); }
+.sor-micro-actions:hover {
+  color: var(--color-text);
+}
 
 /* ── Table th (10px variant — RDP internals) ─────────────────── */
 .sor-th-xs {

@@ -1,5 +1,57 @@
 /* Centralized settings primitives */
 
+/* Legacy native dropdowns share the same tokens as the portal-based Select.
+   Do not change their layout, sizing, or native keyboard/select semantics.
+   System pickers may control option geometry; color-scheme covers those too. */
+select {
+  color-scheme: var(--native-color-scheme, dark);
+  background-color: var(--color-input) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-border) !important;
+  accent-color: var(--color-primary);
+}
+
+select option,
+select optgroup {
+  background-color: var(--color-input) !important;
+  color: var(--color-text) !important;
+}
+
+select:focus-visible {
+  outline: 2px solid var(--color-primary) !important;
+  outline-offset: 2px;
+}
+
+select:disabled,
+select[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+select option:disabled,
+select optgroup:disabled {
+  color: var(--color-textMuted) !important;
+}
+
+@media (forced-colors: active) {
+  select,
+  select option,
+  select optgroup {
+    background-color: Canvas !important;
+    color: CanvasText !important;
+    border-color: ButtonText !important;
+    forced-color-adjust: auto;
+  }
+  select:focus-visible {
+    outline-color: Highlight !important;
+  }
+  select:disabled,
+  select option:disabled,
+  select optgroup:disabled {
+    color: GrayText !important;
+  }
+}
+
 /* Native radio controls otherwise retain the WebView/OS accent and surface,
    which makes them visibly diverge from custom themes. Keep the native input
    semantics while painting every radio from the live application tokens. */
