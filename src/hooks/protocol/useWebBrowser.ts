@@ -6,6 +6,7 @@ import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import {
   clearWebBrowserFrame,
   navigateWebBrowserFrame,
+  assertWebBrowserFrameNavigation,
 } from "../../utils/protocol/webBrowserFrame";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -613,6 +614,13 @@ export function useWebBrowser(session: ConnectionSession) {
     token: string;
     sessionId: string;
   } | null>(null);
+  const [shouldMountIframe, setShouldMountIframe] = useState(false);
+  const clearFrame = useCallback(() => {
+    // Restrict and abort a live document before React removes its browsing
+    // context. No inactive iframe is retained behind trust/recovery screens.
+    clearWebBrowserFrame(iframeRef.current);
+    setShouldMountIframe(false);
+  }, []);
   const attachIframe = useCallback((iframe: HTMLIFrameElement | null) => {
     iframeRef.current = iframe;
     const pending = pendingFrameRef.current;
@@ -628,6 +636,11 @@ export function useWebBrowser(session: ConnectionSession) {
   }, []);
   const navigateFrame = useCallback(
     (url: string, generation: number, sessionId: string) => {
+      assertWebBrowserFrameNavigation(
+        url,
+        proxyUrlRef.current,
+        window.location.origin,
+      );
       const target = new URL(url);
       if (target.searchParams.has(NAVIGATION_QUERY_KEY))
         throw new Error(
@@ -643,6 +656,7 @@ export function useWebBrowser(session: ConnectionSession) {
         token,
         sessionId,
       };
+      setShouldMountIframe(true);
       if (iframeRef.current) attachIframe(iframeRef.current);
     },
     [attachIframe],
@@ -1185,7 +1199,7 @@ export function useWebBrowser(session: ConnectionSession) {
         proxyUrlRef.current = "";
         pendingFrameRef.current = null;
         currentDocumentRef.current = null;
-        clearWebBrowserFrame(iframeRef.current);
+        clearFrame();
         setProxyAlive(false);
       }
     },
@@ -1253,7 +1267,7 @@ export function useWebBrowser(session: ConnectionSession) {
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
-    clearWebBrowserFrame(iframeRef.current);
+    clearFrame();
     void stopProxy();
     applyNavigationFailure(
       localNavigationFailure(
@@ -1263,7 +1277,7 @@ export function useWebBrowser(session: ConnectionSession) {
         "The owning database was locked, changed or closed. Reopen it and explicitly reload to start a new login attempt.",
       ),
     );
-  }, [reviewedFlowScope, stopProxy, applyNavigationFailure]);
+  }, [reviewedFlowScope, stopProxy, applyNavigationFailure, clearFrame]);
 
   // ── Navigation ─────────────────────────────────────────────
   const navigateToUrl = useCallback(
@@ -1640,7 +1654,7 @@ export function useWebBrowser(session: ConnectionSession) {
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
-    clearWebBrowserFrame(iframeRef.current);
+    clearFrame();
     void stopProxy();
     applyNavigationFailure(
       localNavigationFailure(
@@ -1658,6 +1672,7 @@ export function useWebBrowser(session: ConnectionSession) {
     connection?.httpApplication,
     stopProxy,
     applyNavigationFailure,
+    clearFrame,
   ]);
 
   // Initial load
@@ -2162,7 +2177,7 @@ export function useWebBrowser(session: ConnectionSession) {
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
-    clearWebBrowserFrame(iframeRef.current);
+    clearFrame();
     try {
       if (sid) await invoke("stop_basic_auth_proxy", { sessionId: sid });
       if (!mountedRef.current || gen !== navGenRef.current) return;
@@ -2197,6 +2212,7 @@ export function useWebBrowser(session: ConnectionSession) {
     navigateToUrl,
     targetResolution.url,
     toast,
+    clearFrame,
   ]);
 
   const canGoBack = historyIndex > 0;
@@ -2691,7 +2707,7 @@ export function useWebBrowser(session: ConnectionSession) {
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
-    clearWebBrowserFrame(iframeRef.current);
+    clearFrame();
     applyNavigationFailure(
       localNavigationFailure(
         "navigation_cancelled",
@@ -2701,7 +2717,7 @@ export function useWebBrowser(session: ConnectionSession) {
         `Loading ${currentUrl} was cancelled.`,
       ),
     );
-  }, [applyNavigationFailure, currentUrl]);
+  }, [applyNavigationFailure, currentUrl, clearFrame]);
 
   const getAutomationDocument = useCallback(() => {
     const doc = currentDocumentRef.current;
@@ -2791,6 +2807,7 @@ export function useWebBrowser(session: ConnectionSession) {
     handleHistoryJump,
     iframeRef,
     attachIframe,
+    shouldMountIframe,
     pageInteractionBlocked: waitingForTrust || !!trustPrompt || !!loadError,
     handleUrlSubmit,
     handleIframeLoad,

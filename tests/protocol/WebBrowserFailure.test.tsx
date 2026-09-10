@@ -40,6 +40,7 @@ function manager(overrides: Partial<WebBrowserMgr> = {}): WebBrowserMgr {
     diagnosticError: null,
     proxyAlive: true,
     proxyRestarting: false,
+    shouldMountIframe: true,
     handleRestartProxy: vi.fn(),
     ...overrides,
   } as unknown as WebBrowserMgr;

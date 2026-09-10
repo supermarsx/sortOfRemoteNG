@@ -46,39 +46,40 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           </div>
         )}
 
-      {/* Keep the iframe mounted while the recovery screen is visible. Retry and
-        Back clear the error and navigate synchronously; unmounting here made
-        iframeRef null for that navigation, so the replacement frame reopened
-        at about:blank instead of the requested page. */}
-      <iframe
-        ref={mgr.attachIframe ?? mgr.iframeRef}
-        src="about:blank"
-        className={`h-full w-full border-0 ${
-          mgr.loadError || reviewing ? "invisible pointer-events-none" : ""
-        }`}
-        aria-hidden={mgr.loadError || reviewing ? true : undefined}
-        inert={
-          reviewing ||
-          !!mgr.pageInteractionBlocked ||
-          !!mgr.trustPrompt ||
-          !!mgr.loadError
-        }
-        tabIndex={
-          reviewing ||
-          mgr.pageInteractionBlocked ||
-          mgr.trustPrompt ||
-          mgr.loadError
-            ? -1
-            : undefined
-        }
-        title={mgr.session.name}
-        onLoad={mgr.handleIframeLoad}
-        // Start with an opaque, fully sandboxed blank. attachIframe owns the
-        // subsequent sandbox/src transition and only enables the existing
-        // website flags for a validated, isolated proxy origin. React leaves
-        // this unchanged initial prop alone on ordinary component rerenders.
-        sandbox={EMPTY_WEB_FRAME_SANDBOX}
-      />
+      {/* No browsing context exists before a validated proxy navigation is ready.
+        The controller retains pending navigation for attachIframe, so retry
+        mounts and targets the replacement frame without an idle blank frame. */}
+      {mgr.shouldMountIframe && (
+        <iframe
+          ref={mgr.attachIframe ?? mgr.iframeRef}
+          src="about:blank"
+          className={`h-full w-full border-0 ${
+            mgr.loadError || reviewing ? "invisible pointer-events-none" : ""
+          }`}
+          aria-hidden={mgr.loadError || reviewing ? true : undefined}
+          inert={
+            reviewing ||
+            !!mgr.pageInteractionBlocked ||
+            !!mgr.trustPrompt ||
+            !!mgr.loadError
+          }
+          tabIndex={
+            reviewing ||
+            mgr.pageInteractionBlocked ||
+            mgr.trustPrompt ||
+            mgr.loadError
+              ? -1
+              : undefined
+          }
+          title={mgr.session.name}
+          onLoad={mgr.handleIframeLoad}
+          // Start with an opaque, fully sandboxed blank. attachIframe owns the
+          // subsequent sandbox/src transition and only enables the existing
+          // website flags for a validated, isolated proxy origin. React leaves
+          // this unchanged initial prop alone on ordinary component rerenders.
+          sandbox={EMPTY_WEB_FRAME_SANDBOX}
+        />
+      )}
       {reviewing && (
         <div className="absolute inset-0 z-20">
           <RedirectReviewPanel

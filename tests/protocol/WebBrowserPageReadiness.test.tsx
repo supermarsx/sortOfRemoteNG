@@ -124,7 +124,10 @@ function reportReady(report: ReturnType<typeof readiness>) {
   reportMessage(report);
 }
 
-async function mounted(profile: (typeof profiles)[number] = profiles[0]) {
+async function mounted(
+  profile: (typeof profiles)[number] = profiles[0],
+  expectFrame = true,
+) {
   const connection: Connection = {
     id: "readiness-connection",
     name: profile.name,
@@ -151,7 +154,8 @@ async function mounted(profile: (typeof profiles)[number] = profiles[0]) {
   const view = render(<WebBrowser session={session} />);
   await act(async () => {});
   const iframe = view.container.querySelector("iframe")!;
-  expect(iframe).not.toBeNull();
+  if (expectFrame) expect(iframe).not.toBeNull();
+  else expect(iframe).toBeNull();
   return { ...view, iframe };
 }
 
@@ -208,10 +212,9 @@ describe("mounted website page readiness", () => {
       identity: certificate,
       requiresApproval: true,
     });
-    const { iframe } = await mounted(profiles[1]);
+    const { container } = await mounted(profiles[1], false);
     expect(screen.getByText("Unknown HTTPS Certificate")).toBeVisible();
-    expect(iframe).toHaveAttribute("src", "about:blank");
-    expect(iframe).toHaveAttribute("sandbox", "");
+    expect(container.querySelector("iframe")).toBeNull();
     act(() => vi.advanceTimersByTime(35_000));
     expect(screen.getByText("Unknown HTTPS Certificate")).toBeVisible();
     expect(screen.queryByTestId("web-navigation-error-screen")).toBeNull();
@@ -222,6 +225,8 @@ describe("mounted website page readiness", () => {
     ).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Accept & Continue" }));
     await act(async () => {});
+    const iframe = container.querySelector("iframe")!;
+    expect(iframe).not.toBeNull();
     expect(iframe.src).toContain(proxy.proxy_url);
     expect(iframe).toHaveAttribute(
       "sandbox",
@@ -413,7 +418,7 @@ describe("mounted website page readiness", () => {
     });
     expect(iframe).toHaveAttribute("src", "about:blank");
     expect(iframe).toHaveAttribute("sandbox", "");
-    expect(iframe).toHaveAttribute("inert");
+    expect(iframe.isConnected).toBe(false);
     expect(screen.getByText("Loading cancelled")).toBeVisible();
     act(() => vi.advanceTimersByTime(35_000));
     expect(screen.getByText("Loading cancelled")).toBeVisible();
@@ -437,7 +442,7 @@ describe("mounted website page readiness", () => {
   });
 
   it("does not allow a late ready report to reopen a cancelled navigation", async () => {
-    const { iframe } = await mounted();
+    const { iframe, container } = await mounted();
     const pending = readiness(iframe);
     act(() => vi.advanceTimersByTime(250));
     fireEvent.click(
@@ -448,8 +453,23 @@ describe("mounted website page readiness", () => {
     expect(iframe).toHaveAttribute("sandbox", "");
     reportReady({ ...pending, source: iframe.contentWindow! });
     expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
-    expect(iframe).toHaveAttribute("inert");
+    expect(iframe.isConnected).toBe(false);
     act(() => vi.advanceTimersByTime(35_000));
     expect(screen.getByText("Loading cancelled")).toBeVisible();
+    expect(container.querySelector("iframe")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => {});
+    const replacement = container.querySelector("iframe")!;
+    expect(replacement).not.toBeNull();
+    expect(replacement).not.toBe(iframe);
+    expect(replacement.src).toContain(proxy.proxy_url);
+    expect(replacement).toHaveAttribute(
+      "sandbox",
+      "allow-same-origin allow-scripts allow-forms",
+    );
+    const current = readiness(replacement);
+    expect(current.data.navigationToken).not.toBe(pending.data.navigationToken);
+    reportReady(current);
+    expect(screen.queryByTestId("web-navigation-error-screen")).toBeNull();
   });
 });

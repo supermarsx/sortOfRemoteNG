@@ -8,6 +8,27 @@ import {
 
 const proxy = "http://p0123456789abcdef0123456789abcdef.localhost:43081/";
 describe("website iframe navigation sandbox boundary", () => {
+  it("does not navigate an already restricted blank document again", () => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);
+    iframe.setAttribute("src", "about:blank");
+    const navigation = vi.fn();
+    Object.defineProperty(iframe, "src", { set: navigation });
+    clearWebBrowserFrame(iframe);
+    clearWebBrowserFrame(iframe);
+    expect(navigation).not.toHaveBeenCalled();
+    expect(iframe).toHaveAttribute("sandbox", "");
+  });
+  it("does navigate a permissive blank so restrictive sandbox flags actually take effect", () => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
+    iframe.setAttribute("src", "about:blank");
+    const navigation = vi.fn();
+    Object.defineProperty(iframe, "src", { set: navigation });
+    clearWebBrowserFrame(iframe);
+    expect(navigation).toHaveBeenCalledWith("about:blank");
+    expect(iframe).toHaveAttribute("sandbox", "");
+  });
   it("restricts sandbox before navigating to blank (not an immediate revocation claim)", () => {
     const iframe = document.createElement("iframe");
     iframe.setAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
