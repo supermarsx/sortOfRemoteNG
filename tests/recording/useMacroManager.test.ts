@@ -1,205 +1,305 @@
-import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
-import { useMacroManager } from '../../src/hooks/recording/useMacroManager';
-import type { TerminalMacro, SavedRecording } from '../../src/types/recording/macroTypes';
-
-// ── Service mock ───────────────────────────────────────────────────
-
-const mockMacros: TerminalMacro[] = [
-  {
-    id: 'm1',
-    name: 'Deploy',
-    description: 'Deploy to production',
-    category: 'DevOps',
-    steps: [{ command: 'git pull', delayMs: 200, sendNewline: true }],
-    createdAt: '2025-01-01T00:00:00Z',
-    updatedAt: '2025-01-01T00:00:00Z',
-    tags: ['deploy', 'git'],
-  },
-  {
-    id: 'm2',
-    name: 'Cleanup',
-    description: 'Clean temp files',
-    category: 'Maintenance',
-    steps: [{ command: 'rm -rf /tmp/*', delayMs: 100, sendNewline: true }],
-    createdAt: '2025-02-01T00:00:00Z',
-    updatedAt: '2025-02-01T00:00:00Z',
-    tags: ['cleanup'],
-  },
-];
-
-const mockRecordings: SavedRecording[] = [
-  {
-    id: 'r1',
-    name: 'Session 1',
-    recording: {
-      metadata: {
-        session_id: 'sess1',
-        start_time: '2025-01-01T00:00:00Z',
-        end_time: '2025-01-01T00:01:00Z',
-        host: 'server1.example.com',
-        username: 'admin',
-        cols: 80,
-        rows: 24,
-        duration_ms: 60000,
-        entry_count: 50,
-      },
-      entries: [],
-    },
-    savedAt: '2025-01-01T00:02:00Z',
-    tags: ['prod'],
-  },
-];
-
-vi.mock('../../src/utils/recording/macroService', () => ({
-  loadMacros: vi.fn(),
-  loadRecordings: vi.fn(),
-  saveMacro: vi.fn(),
-  deleteMacro: vi.fn(),
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  useMacroManager,
+  type MacroEntry,
+} from "../../src/hooks/recording/useMacroManager";
+import type {
+  AutomationLibraryChange,
+  AutomationLibrarySnapshot,
+  AutomationScope,
+} from "../../src/types/recording/automationLibrary";
+const state = vi.hoisted(() => ({
+  read: vi.fn(),
+  apply: vi.fn(),
+  recordings: vi.fn(),
   saveRecording: vi.fn(),
   deleteRecording: vi.fn(),
-  exportRecording: vi.fn().mockResolvedValue('exported-data'),
+  ready: true,
+  settingsReady: true,
+  accessEpoch: 1,
+  databaseScope: { databaseId: "db-a", generation: 1 } as {
+    databaseId: string;
+    generation: number;
+  } | null,
 }));
+vi.mock("../../src/hooks/recording/useAutomationLibraryApi", () => ({
+  useAutomationLibraryApi: () => ({
+    ...state,
+    api: { read: state.read, apply: state.apply },
+    diagnostic: null,
+    retry: vi.fn(),
+  }),
+}));
+vi.mock("../../src/utils/recording/macroService", () => ({
+  loadRecordings: state.recordings,
+  saveRecording: state.saveRecording,
+  deleteRecording: state.deleteRecording,
+  exportRecording: vi.fn().mockResolvedValue("recording"),
+}));
+const stamp = "2026-09-01T00:00:00.000Z";
+const macro: MacroEntry = {
+  family: "terminal-macro",
+  payload: {
+    id: "m1",
+    name: "Identity",
+    category: "Diagnostics",
+    description: "Read identity",
+    tags: ["identity"],
+    steps: [{ command: "whoami", delayMs: 432, sendNewline: false }],
+    createdAt: stamp,
+    updatedAt: stamp,
+  },
+  provenance: { platforms: ["linux"] },
+};
+const website: MacroEntry = {
+  family: "website-macro",
+  payload: {
+    id: "w1",
+    kind: "macro",
+    name: "Filter page",
+    description: "Public filter",
+    steps: [
+      { kind: "fill", selector: "html > body > input:nth-of-type(1)" },
+      {
+        kind: "check",
+        selector: "html > body > input:nth-of-type(2)",
+        checked: true,
+      },
+    ],
+    createdAt: stamp,
+    updatedAt: stamp,
+  },
+};
+let libraries: Record<string, MacroEntry[]>;
+const address = (scope: AutomationScope, family: string) =>
+  `${scope.kind === "app" ? "app" : scope.databaseId}:${family}`;
+beforeEach(() => {
+  vi.clearAllMocks();
+  state.ready = true;
+  state.settingsReady = true;
+  state.accessEpoch = 1;
+  state.databaseScope = { databaseId: "db-a", generation: 1 };
+  libraries = {
+    "app:terminal-macro": [structuredClone(macro)],
+    "app:website-macro": [structuredClone(website)],
+    "db-a:terminal-macro": [],
+    "db-a:website-macro": [],
+  };
+  state.read.mockImplementation(
+    async (scope: AutomationScope, family: string) => ({
+      scope,
+      family,
+      receipt: crypto.randomUUID(),
+      entries: structuredClone(libraries[address(scope, family)] ?? []),
+    }),
+  );
+  state.apply.mockImplementation(
+    async (
+      snapshot: AutomationLibrarySnapshot,
+      changes: AutomationLibraryChange[],
+    ) => {
+      const next = new Map(
+        snapshot.entries.map((entry) => [entry.payload.id, entry]),
+      );
+      for (const change of changes) {
+        if (change.operation === "put")
+          next.set(change.entry.payload.id, change.entry);
+        else next.delete(change.expected.payload.id);
+      }
+      libraries[address(snapshot.scope, snapshot.family)] = [
+        ...next.values(),
+      ] as MacroEntry[];
+      return {
+        ...snapshot,
+        receipt: crypto.randomUUID(),
+        entries: [...next.values()],
+      };
+    },
+  );
+  state.recordings.mockResolvedValue([
+    {
+      id: "r1",
+      name: "Session",
+      savedAt: stamp,
+      recording: {
+        metadata: { host: "server.example", duration_ms: 10, entry_count: 1 },
+        entries: [],
+      },
+    },
+  ]);
+  state.saveRecording.mockResolvedValue(undefined);
+  state.deleteRecording.mockResolvedValue(undefined);
+});
+async function open() {
+  const view = renderHook(() => useMacroManager(true));
+  await waitFor(() => expect(view.result.current.ready).toBe(true));
+  return view;
+}
 
-import * as macroService from '../../src/utils/recording/macroService';
-
-// ── Tests ──────────────────────────────────────────────────────────
-
-describe('useMacroManager', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (macroService.loadMacros as Mock).mockResolvedValue([...mockMacros]);
-    (macroService.loadRecordings as Mock).mockResolvedValue([...mockRecordings]);
-    (macroService.saveMacro as Mock).mockResolvedValue(undefined);
-    (macroService.deleteMacro as Mock).mockResolvedValue(undefined);
-    (macroService.saveRecording as Mock).mockResolvedValue(undefined);
-    (macroService.deleteRecording as Mock).mockResolvedValue(undefined);
+describe("scoped Macro Manager", () => {
+  it("loads app-wide terminal macros and recordings independently", async () => {
+    const { result } = await open();
+    expect(result.current.entries).toEqual([macro]);
+    expect(result.current.recordings).toHaveLength(1);
+    expect(state.read).toHaveBeenCalledWith({ kind: "app" }, "terminal-macro");
   });
-
-  it('loads macros and recordings when isOpen is true', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => {
-      expect(result.current.macros).toHaveLength(2);
-      expect(result.current.recordings).toHaveLength(1);
+  it("does not read a closed manager or an unavailable access bridge", async () => {
+    const view = renderHook(({ open }) => useMacroManager(open), {
+      initialProps: { open: false },
     });
+    expect(state.read).not.toHaveBeenCalled();
+    state.ready = false;
+    view.rerender({ open: true });
+    expect(state.read).not.toHaveBeenCalled();
+    await act(async () => {});
   });
-
-  it('does not load when isOpen is false', () => {
-    renderHook(() => useMacroManager(false));
-    expect(macroService.loadMacros).not.toHaveBeenCalled();
+  it("filters names, categories, platform metadata and tags with bounded pages", async () => {
+    libraries["app:terminal-macro"] = Array.from({ length: 61 }, (_, i) => ({
+      ...structuredClone(macro),
+      payload: {
+        ...macro.payload,
+        id: `m${i}`,
+        name: `Identity ${String(i).padStart(2, "0")}`,
+      },
+    }));
+    const { result } = await open();
+    expect(result.current.pagedEntries).toHaveLength(50);
+    act(() => result.current.setPage(1));
+    expect(result.current.pagedEntries).toHaveLength(11);
+    act(() => result.current.setSearchQuery("linux"));
+    expect(result.current.filteredEntries).toHaveLength(61);
+    expect(result.current.page).toBe(0);
+    act(() => result.current.setCategory("other"));
+    expect(result.current.filteredEntries).toHaveLength(0);
+    act(() => {
+      result.current.setCategory("");
+      result.current.setPlatform("windows");
+    });
+    expect(result.current.filteredEntries).toHaveLength(0);
   });
-
-  it('defaults to macros tab', () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    expect(result.current.activeTab).toBe('macros');
+  it("preserves ordered commands, delay and sendNewline through durable save", async () => {
+    const { result } = await open();
+    act(() => result.current.selectEntry(result.current.entries[0]));
+    act(() =>
+      result.current.editEntry({
+        ...macro,
+        payload: { ...macro.payload, name: "Renamed" },
+      }),
+    );
+    await act(async () => {
+      expect(await result.current.saveEntry(result.current.draft!)).toBe(true);
+    });
+    expect(state.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: { kind: "app" } }),
+      [
+        expect.objectContaining({
+          operation: "put",
+          expected: macro,
+          entry: expect.objectContaining({
+            payload: expect.objectContaining({
+              name: "Renamed",
+              steps: macro.payload.steps,
+            }),
+            provenance: macro.provenance,
+          }),
+        }),
+      ],
+    );
+    expect(result.current.draft).toBeNull();
   });
-
-  it('switches active tab', () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    act(() => result.current.setActiveTab('recordings'));
-    expect(result.current.activeTab).toBe('recordings');
-  });
-
-  it('filters macros by name search query', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
-    act(() => result.current.setSearchQuery('deploy'));
-    expect(result.current.filteredMacros).toHaveLength(1);
-    expect(result.current.filteredMacros[0].name).toBe('Deploy');
-  });
-
-  it('filters macros by tag', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
-    act(() => result.current.setSearchQuery('git'));
-    expect(result.current.filteredMacros).toHaveLength(1);
-    expect(result.current.filteredMacros[0].id).toBe('m1');
-  });
-
-  it('groups macros by category', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
-    expect(result.current.macrosByCategory['DevOps']).toHaveLength(1);
-    expect(result.current.macrosByCategory['Maintenance']).toHaveLength(1);
-  });
-
-  it('handleNewMacro creates a blank macro in editing state', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
+  it("creates and duplicates drafts without silently saving", async () => {
+    const { result } = await open();
     act(() => result.current.handleNewMacro());
-    expect(result.current.editingMacro).not.toBeNull();
-    expect(result.current.editingMacro!.name).toBe('New Macro');
-    expect(result.current.editingMacro!.steps).toHaveLength(1);
+    expect(result.current.draft?.payload.name).toBe("New Macro");
+    expect(state.apply).not.toHaveBeenCalled();
+    act(() => result.current.closeDraft());
+    act(() => result.current.confirmReview());
+    act(() => result.current.duplicateEntry(result.current.entries[0]));
+    expect(result.current.draft?.payload.id).not.toBe("m1");
+    expect(result.current.draft?.payload.name).toContain("Copy");
+    expect(state.apply).not.toHaveBeenCalled();
   });
-
-  it('handleSaveMacro calls service and clears editing state', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
+  it("requires a current explicit deletion review and refuses a canceled callback", async () => {
+    const { result } = await open();
+    act(() => result.current.deleteEntry(result.current.entries[0]));
+    const stale = result.current.confirmReview;
+    act(() => result.current.cancelReview());
+    act(() => stale());
+    expect(state.apply).not.toHaveBeenCalled();
+    act(() => result.current.deleteEntry(result.current.entries[0]));
+    await act(async () => result.current.confirmReview());
+    await waitFor(() => expect(result.current.entries).toHaveLength(0));
+    expect(state.apply).toHaveBeenCalledWith(expect.anything(), [
+      { operation: "delete", expected: macro },
+    ]);
+  });
+  it("refuses deleting a replacement imported during confirmation", async () => {
+    const { result } = await open();
+    act(() => result.current.deleteEntry(result.current.entries[0]));
+    libraries["app:terminal-macro"][0].payload.name = "Replacement";
+    await act(async () => result.current.confirmReview());
+    await waitFor(() => expect(result.current.error).toMatch(/changed/));
+    expect(state.apply).not.toHaveBeenCalled();
+  });
+  it("requires discard before switching an unsaved draft to another family or scope", async () => {
+    const { result } = await open();
     act(() => result.current.handleNewMacro());
-    const macro = result.current.editingMacro!;
-    await act(async () => {
-      await result.current.handleSaveMacro(macro);
-    });
-    expect(macroService.saveMacro).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'New Macro' }),
+    act(() => result.current.setActiveTab("website"));
+    expect(result.current.activeTab).toBe("macros");
+    act(() => result.current.cancelReview());
+    expect(result.current.draft).not.toBeNull();
+    act(() =>
+      result.current.changeScope({ kind: "database", databaseId: "db-a" }),
     );
-    expect(result.current.editingMacro).toBeNull();
-  });
-
-  it('handleDeleteMacro removes macro via service and reloads', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
-    await act(async () => {
-      await result.current.handleDeleteMacro('m1');
+    expect(result.current.scope).toEqual({ kind: "app" });
+    act(() => result.current.confirmReview());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.scope).toEqual({
+      kind: "database",
+      databaseId: "db-a",
     });
-    expect(macroService.deleteMacro).toHaveBeenCalledWith('m1');
-    expect(macroService.loadMacros).toHaveBeenCalledTimes(2); // initial + reload
+    expect(result.current.entries).toEqual([]);
+    expect(result.current.draft).toBeNull();
   });
-
-  it('handleDuplicateMacro creates a copy with new id and (Copy) suffix', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
+  it("manages website macros as exact value-free interactions", async () => {
+    const { result } = await open();
+    act(() => result.current.setActiveTab("website"));
+    await waitFor(() => expect(result.current.entries).toEqual([website]));
+    act(() => result.current.selectEntry(result.current.entries[0]));
     await act(async () => {
-      await result.current.handleDuplicateMacro(mockMacros[0]);
+      expect(await result.current.saveEntry(result.current.draft!)).toBe(true);
     });
-    expect(macroService.saveMacro).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Deploy (Copy)' }),
+    expect(state.apply.mock.calls[0][1][0].entry.payload.steps).toEqual(
+      website.payload.steps,
     );
+    expect(JSON.stringify(state.apply.mock.calls)).not.toContain('"value"');
   });
-
-  it('handleDeleteRecording removes recording via service', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.recordings).toHaveLength(1));
-    await act(async () => {
-      await result.current.handleDeleteRecording('r1');
-    });
-    expect(macroService.deleteRecording).toHaveBeenCalledWith('r1');
-  });
-
-  it('handleRenameRecording updates the recording name', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.recordings).toHaveLength(1));
-    const rec = { ...mockRecordings[0] };
-    await act(async () => {
-      await result.current.handleRenameRecording(rec as any, 'Renamed');
-    });
-    expect(macroService.saveRecording).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Renamed' }),
+  it("does not let failed recordings loading block macros", async () => {
+    state.recordings.mockRejectedValue(new Error("Recording backend failure"));
+    const { result } = await open();
+    expect(result.current.ready).toBe(true);
+    expect(result.current.entries).toHaveLength(1);
+    await waitFor(() =>
+      expect(result.current.recordingError).toContain("separate"),
     );
   });
-
-  it('returns empty filtered lists when search matches nothing', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.macros).toHaveLength(2));
-    act(() => result.current.setSearchQuery('zzz_no_match'));
-    expect(result.current.filteredMacros).toHaveLength(0);
-    expect(result.current.filteredRecordings).toHaveLength(0);
-  });
-
-  it('filters recordings by host name', async () => {
-    const { result } = renderHook(() => useMacroManager(true));
-    await waitFor(() => expect(result.current.recordings).toHaveLength(1));
-    act(() => result.current.setSearchQuery('server1'));
-    expect(result.current.filteredRecordings).toHaveLength(1);
+  it("preserves recording export/rename/delete and requires delete confirmation", async () => {
+    const { result } = await open();
+    await act(async () => {
+      expect(
+        await result.current.handleRenameRecording(
+          result.current.recordings[0],
+          "Renamed",
+        ),
+      ).toBe(true);
+    });
+    expect(state.saveRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Renamed" }),
+    );
+    act(() => result.current.handleDeleteRecording("r1"));
+    expect(state.deleteRecording).not.toHaveBeenCalled();
+    await act(async () => result.current.confirmReview());
+    expect(state.deleteRecording).toHaveBeenCalledWith("r1");
   });
 });

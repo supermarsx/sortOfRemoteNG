@@ -1,226 +1,250 @@
-import React from "react";
-import {
-  Plus,
-  Trash2,
-  Save,
-  Copy,
-  ChevronDown,
-  ChevronUp,
-  GripVertical,
-  Clock,
-} from "lucide-react";
-import { TerminalMacro, MacroStep } from "../../types/recording/macroTypes";
-import { Checkbox, NumberInput } from '../ui/forms';
+import { useId, useState } from "react";
+import { Plus, Trash2, Save, Copy, ChevronDown, ChevronUp } from "lucide-react";
+import type {
+  TerminalMacro,
+  MacroStep,
+} from "../../types/recording/macroTypes";
 
 interface MacroEditorProps {
   macro: TerminalMacro;
-  onChange: (m: TerminalMacro) => void;
-  onSave: (m: TerminalMacro) => void;
+  onChange: (macro: TerminalMacro) => void;
+  onSave: (macro: TerminalMacro) => void;
   onDelete: (id: string) => void;
-  onDuplicate: (m: TerminalMacro) => void;
+  onDuplicate: (macro: TerminalMacro) => void;
+  disabled?: boolean;
+  saved?: boolean;
 }
 
-export const MacroEditor: React.FC<MacroEditorProps> = ({
+/** Ordered terminal input, not an interpreter script. Delay and Enter are preserved. */
+export function MacroEditor({
   macro,
   onChange,
   onSave,
   onDelete,
   onDuplicate,
-}) => {
-  const updateField = <K extends keyof TerminalMacro>(
+  disabled = false,
+  saved = true,
+}: MacroEditorProps) {
+  const id = useId();
+  const [tagDraft, setTagDraft] = useState({
+    text: macro.tags?.join(", ") ?? "",
+    parsed: JSON.stringify(macro.tags ?? []),
+  });
+  const field = <K extends keyof TerminalMacro>(
     key: K,
     value: TerminalMacro[K],
-  ) => {
-    onChange({ ...macro, [key]: value });
+  ) => onChange({ ...macro, [key]: value });
+  const step = (index: number, patch: Partial<MacroStep>) =>
+    field(
+      "steps",
+      macro.steps.map((item, at) =>
+        at === index ? { ...item, ...patch } : item,
+      ),
+    );
+  const move = (index: number, direction: -1 | 1) => {
+    const next = [...macro.steps],
+      to = index + direction;
+    if (to < 0 || to >= next.length) return;
+    [next[index], next[to]] = [next[to], next[index]];
+    field("steps", next);
   };
-
-  const updateStep = (idx: number, patch: Partial<MacroStep>) => {
-    const steps = [...macro.steps];
-    steps[idx] = { ...steps[idx], ...patch };
-    onChange({ ...macro, steps });
-  };
-
-  const addStep = () => {
-    onChange({
-      ...macro,
-      steps: [...macro.steps, { command: "", delayMs: 200, sendNewline: true }],
-    });
-  };
-
-  const removeStep = (idx: number) => {
-    const steps = macro.steps.filter((_, i) => i !== idx);
-    onChange({
-      ...macro,
-      steps:
-        steps.length > 0
-          ? steps
-          : [{ command: "", delayMs: 200, sendNewline: true }],
-    });
-  };
-
-  const moveStep = (idx: number, dir: -1 | 1) => {
-    const target = idx + dir;
-    if (target < 0 || target >= macro.steps.length) return;
-    const steps = [...macro.steps];
-    [steps[idx], steps[target]] = [steps[target], steps[idx]];
-    onChange({ ...macro, steps });
-  };
-
   return (
-    <div className="space-y-4">
-      {/* Name + Category */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">
-            Name
-          </label>
+    <fieldset disabled={disabled} className="min-w-0 space-y-4">
+      <legend className="sr-only">Terminal macro editor</legend>
+      <p className="text-xs text-[var(--color-textSecondary)]">
+        Terminal input sequence. Review the target session and every command
+        before replay. Saving does not execute commands.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label htmlFor={`${id}-name`} className="space-y-1 text-xs">
+          Name
           <input
+            id={`${id}-name`}
             value={macro.name}
-            onChange={(e) => updateField("name", e.target.value)}
-            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] focus:border-primary outline-none"
+            maxLength={256}
+            onChange={(event) => field("name", event.target.value)}
+            className="sor-form-input w-full"
           />
-        </div>
-        <div>
-          <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">
-            Category
-          </label>
+        </label>
+        <label htmlFor={`${id}-category`} className="space-y-1 text-xs">
+          Category
           <input
-            value={macro.category || ""}
-            onChange={(e) =>
-              updateField("category", e.target.value || undefined)
-            }
-            placeholder="General"
-            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
+            id={`${id}-category`}
+            value={macro.category ?? ""}
+            maxLength={256}
+            onChange={(event) => field("category", event.target.value)}
+            className="sor-form-input w-full"
           />
-        </div>
-      </div>
-
-      {/* Description */}
-      <div>
-        <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">
-          Description
         </label>
-        <input
-          value={macro.description || ""}
-          onChange={(e) =>
-            updateField("description", e.target.value || undefined)
-          }
-          placeholder="Optional description..."
-          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
-        />
       </div>
-
-      {/* Tags */}
-      <div>
-        <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">
-          Tags (comma-separated)
-        </label>
-        <input
-          value={macro.tags?.join(", ") || ""}
-          onChange={(e) =>
-            updateField(
-              "tags",
-              e.target.value
-                .split(",")
-                .map((t) => t.trim())
-                .filter(Boolean),
-            )
-          }
-          placeholder="e.g. deploy, linux, restart"
-          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
+      <label htmlFor={`${id}-description`} className="block space-y-1 text-xs">
+        Description
+        <textarea
+          id={`${id}-description`}
+          value={macro.description ?? ""}
+          maxLength={4096}
+          onChange={(event) => field("description", event.target.value)}
+          rows={2}
+          className="sor-form-input w-full"
         />
+      </label>
+      <label htmlFor={`${id}-tags`} className="block space-y-1 text-xs">
+        Tags (comma-separated)
+        <input
+          id={`${id}-tags`}
+          value={
+            tagDraft.parsed === JSON.stringify(macro.tags ?? [])
+              ? tagDraft.text
+              : (macro.tags?.join(", ") ?? "")
+          }
+          onChange={(event) => {
+            const tags = event.target.value
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean);
+            setTagDraft({
+              text: event.target.value,
+              parsed: JSON.stringify(tags),
+            });
+            field("tags", tags);
+          }}
+          className="sor-form-input w-full"
+        />
+      </label>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">Steps ({macro.steps.length})</h3>
+        <button
+          type="button"
+          className="sor-btn sor-btn-secondary"
+          disabled={macro.steps.length >= 10000}
+          onClick={() =>
+            field("steps", [
+              ...macro.steps,
+              { command: "", delayMs: 200, sendNewline: true },
+            ])
+          }
+        >
+          <Plus size={14} />
+          Add step
+        </button>
       </div>
-
-      {/* Steps */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)]">
-            Steps ({macro.steps.length})
-          </label>
-          <button
-            onClick={addStep}
-            className="flex items-center gap-1 text-xs text-primary hover:text-primary"
+      <ol className="space-y-3">
+        {macro.steps.map((item, index) => (
+          <li
+            key={index}
+            className="min-w-0 rounded border border-[var(--color-border)] p-3"
           >
-            <Plus size={12} /> Add Step
-          </button>
-        </div>
-        <div className="space-y-2">
-          {macro.steps.map((step, i) => (
-            <div
-              key={i}
-              className="flex items-start gap-2 p-2 bg-[var(--color-surface)]/60 border border-[var(--color-border)]/50 rounded"
-            >
-              <div className="flex flex-col items-center gap-0.5 pt-1">
-                <button
-                  onClick={() => moveStep(i, -1)}
-                  className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]"
-                  disabled={i === 0}
-                >
-                  <ChevronUp size={12} />
-                </button>
-                <GripVertical size={12} className="text-[var(--color-textMuted)]" />
-                <button
-                  onClick={() => moveStep(i, 1)}
-                  className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]"
-                  disabled={i === macro.steps.length - 1}
-                >
-                  <ChevronDown size={12} />
-                </button>
-              </div>
-              <div className="flex-1 space-y-1.5">
-                <input
-                  value={step.command}
-                  onChange={(e) => updateStep(i, { command: e.target.value })}
-                  placeholder="Command..."
-                  className="w-full px-2 py-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
-                />
-                <div className="flex items-center gap-3 text-xs text-[var(--color-textSecondary)]">
-                  <label className="flex items-center gap-1.5">
-                    <Clock size={10} />
-                    <NumberInput value={step.delayMs} onChange={(v: number) => updateStep(i, {
-                          delayMs: v,
-                        })} className="w-16 px-1.5 py-0.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] outline-none" min={0} />
-                    ms
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <Checkbox checked={step.sendNewline} onChange={(v: boolean) => updateStep(i, { sendNewline: v })} className="rounded border-[var(--color-border)]" />
-                    Send Enter
-                  </label>
-                </div>
-              </div>
+            <div className="mb-2 flex items-center gap-1">
+              <span className="mr-auto text-xs">Step {index + 1}</span>
               <button
-                onClick={() => removeStep(i)}
-                className="p-1 text-[var(--color-textMuted)] hover:text-error"
+                type="button"
+                aria-label={`Move step ${index + 1} up`}
+                disabled={index === 0}
+                onClick={() => move(index, -1)}
+                className="sor-icon-btn"
               >
-                <Trash2 size={12} />
+                <ChevronUp size={16} />
+              </button>
+              <button
+                type="button"
+                aria-label={`Move step ${index + 1} down`}
+                disabled={index === macro.steps.length - 1}
+                onClick={() => move(index, 1)}
+                className="sor-icon-btn"
+              >
+                <ChevronDown size={16} />
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove step ${index + 1}`}
+                onClick={() =>
+                  field(
+                    "steps",
+                    macro.steps.filter((_, at) => at !== index),
+                  )
+                }
+                className="sor-icon-btn text-error"
+              >
+                <Trash2 size={14} />
               </button>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-2 pt-2 border-t border-[var(--color-border)]">
+            <label className="block space-y-1 text-xs">
+              Command {index + 1}
+              <textarea
+                value={item.command}
+                maxLength={65536}
+                rows={2}
+                onChange={(event) =>
+                  step(index, { command: event.target.value })
+                }
+                className="sor-form-input w-full font-mono"
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
+              <label className="flex items-center gap-2">
+                Delay after step (ms)
+                <input
+                  type="number"
+                  aria-label={`Step ${index + 1} delay`}
+                  min={0}
+                  max={3600000}
+                  step={50}
+                  value={item.delayMs}
+                  onChange={(event) =>
+                    step(index, {
+                      delayMs: Math.max(
+                        0,
+                        Math.min(3600000, Number(event.target.value) || 0),
+                      ),
+                    })
+                  }
+                  className="sor-form-input w-24"
+                  style={{ width: "6rem" }}
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={item.sendNewline}
+                  onChange={(event) =>
+                    step(index, { sendNewline: event.target.checked })
+                  }
+                />
+                Send Enter after step {index + 1}
+              </label>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3">
         <button
+          type="button"
+          className="sor-btn sor-btn-primary"
+          disabled={!macro.name.trim()}
           onClick={() => onSave(macro)}
-          className="flex items-center gap-1.5 px-4 py-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] text-sm rounded-lg"
         >
-          <Save size={14} /> Save
+          <Save size={14} />
+          Save macro
         </button>
         <button
+          type="button"
+          className="sor-btn sor-btn-secondary"
           onClick={() => onDuplicate(macro)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] text-sm rounded-lg"
         >
-          <Copy size={14} /> Duplicate
+          <Copy size={14} />
+          Duplicate as draft
         </button>
-        <div className="flex-1" />
-        <button
-          onClick={() => onDelete(macro.id)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-error hover:bg-error/10 text-sm rounded-lg"
-        >
-          <Trash2 size={14} /> Delete
-        </button>
+        {saved && (
+          <button
+            type="button"
+            className="sor-btn sor-btn-danger ml-auto"
+            onClick={() => onDelete(macro.id)}
+          >
+            <Trash2 size={14} />
+            Delete
+          </button>
+        )}
       </div>
-    </div>
+    </fieldset>
   );
-};
+}
