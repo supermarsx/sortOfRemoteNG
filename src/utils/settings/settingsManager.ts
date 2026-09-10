@@ -1148,6 +1148,13 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      // Older preferences may contain only autoSave. Complete this nested
+      // UI preference group before publishing a validated full snapshot;
+      // otherwise a successful save is rejected by live context consumers.
+      settingsDialog: {
+        ...DEFAULT_SETTINGS.settingsDialog,
+        ...(normalizedStored.settingsDialog ?? {}),
+      },
       folderIconColorMode: normalizeFolderIconMode(
         normalizedStored.folderIconColorMode,
       ),
