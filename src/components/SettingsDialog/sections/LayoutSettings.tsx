@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Terminal,
   FileCode,
+  FileText,
   Power,
   ScreenShare,
   Bug,
@@ -643,6 +644,14 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
               "settingsLayout.macroManagerTooltip",
               "Show the Macro Manager icon for recording and replaying command sequences",
             )}
+          />
+          <Toggle
+            checked={settings.showDocumentsIcon}
+            onChange={(v) => updateSettings({ showDocumentsIcon: v })}
+            icon={<FileText size={16} />}
+            label="Documents"
+            settingKey="showDocumentsIcon"
+            infoTooltip="Show the Documents browser in the toolbar Management group. Documents remain in their protected database."
           />
           <Toggle
             checked={settings.showRecordingManagerIcon}

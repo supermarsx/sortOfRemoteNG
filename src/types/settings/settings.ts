@@ -378,6 +378,7 @@ export interface GlobalSettings {
   showMcpServerIcon: boolean;
   showScriptManagerIcon: boolean;
   showMacroManagerIcon: boolean;
+  showDocumentsIcon: boolean;
   showSyncBackupStatusIcon: boolean; // Legacy combined icon
   showBackupStatusIcon: boolean; // Separate backup icon
   showCloudSyncStatusIcon: boolean; // Separate cloud sync icon

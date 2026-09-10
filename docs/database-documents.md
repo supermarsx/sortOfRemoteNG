@@ -5,6 +5,19 @@ description: Keep private documents and simple service records in their owning d
 
 # Documents, spreadsheets and linked records
 
+Open **Documents** from the top bar's right-hand **Management** group for a
+dedicated browser tab. Show or hide this button under **Settings → Layout →
+Documents** (search for “documents button”). The browser lists names and folders,
+supports metadata-only search and folder filtering, and pages larger lists.
+Opening a record reuses the protected editor; **Browse** returns to the list
+without discarding your draft. Reopening the toolbar tab preserves your current
+record and section.
+
+Without a ready database the tab shows an actionable locked state. An initially
+unbound tab belongs to the first database it opens; it never follows a switch to
+a different database. Open Documents again for that other database. Documents,
+attachments, people and tickets remain scoped to their original database.
+
 Right-click a folder and choose **New document** or browse that folder's
 documents. The Documents workspace also has People and Tickets sections for
 simple local service records. These are database-owned records, not a separate

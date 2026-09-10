@@ -370,6 +370,7 @@ export const defaultSettings: GlobalSettings = {
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
   showMacroManagerIcon: true,
+  showDocumentsIcon: true,
   showServerStatsIcon: true,
   showOpksshIcon: true,
   showMcpServerIcon: true,

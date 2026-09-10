@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { SETTINGS_SEARCH_INDEX } from "../../src/components/SettingsDialog/settingsSearchIndex";
 import { matchSettingsEntries } from "../../src/components/SettingsDialog/settingsSearchMatch";
 
+it("finds Documents toolbar visibility in Layout", () => {
+  expect(
+    matchSettingsEntries(SETTINGS_SEARCH_INDEX, "documents button").map(
+      (entry) => entry.key,
+    ),
+  ).toContain("showDocumentsIcon");
+  expect(
+    SETTINGS_SEARCH_INDEX.find((entry) => entry.key === "showDocumentsIcon")
+      ?.section,
+  ).toBe("layout");
+});
+
 /* ═══════════════════════════════════════════════════════════════
    t75-e7 — real queries against the real index
 

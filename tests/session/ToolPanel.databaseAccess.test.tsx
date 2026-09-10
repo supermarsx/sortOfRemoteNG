@@ -53,6 +53,17 @@ vi.mock("../../src/components/connection/ConnectionEditor", () => ({
 vi.mock("../../src/components/security/TrustCenterTab", () => ({
   default: () => <div>Private trust identities</div>,
 }));
+vi.mock("../../src/components/documents/DocumentsWorkspace", () => ({
+  default: ({
+    request,
+  }: {
+    request: { databaseId: string; requestId: string };
+  }) => (
+    <div data-testid="protected-documents">
+      {request.databaseId}:{request.requestId}
+    </div>
+  ),
+}));
 vi.mock("../../src/components/SettingsDialog/index", () => ({
   SettingsTabContent: () => <div>App settings</div>,
 }));
@@ -77,6 +88,38 @@ const editor = () => ({
   ownerDatabaseId: "db-a",
 });
 describe("database-owned tool tab access", () => {
+  it("binds an ownerless Documents browser once and never mounts it under another database or lock", async () => {
+    let session = {
+      ...createToolSession("connectionEditor"),
+      protocol: "tool:documents",
+      name: "Documents",
+    };
+    const view = render(<ToolTabViewer session={session} onClose={vi.fn()} />);
+    expect(screen.getByTestId("tool-database-gate")).toBeInTheDocument();
+    h.availability = { status: "ready", databaseId: "db-a", generation: 1 };
+    view.rerender(<ToolTabViewer session={session} onClose={vi.fn()} />);
+    expect(h.dispatch).toHaveBeenCalledWith({
+      type: "BIND_TOOL_DATABASE_OWNER",
+      payload: { sessionId: session.id, databaseId: "db-a", generation: 1 },
+    });
+    expect(screen.queryByTestId("protected-documents")).not.toBeInTheDocument();
+    session = { ...session, ownerDatabaseId: "db-a" };
+    view.rerender(<ToolTabViewer session={session} onClose={vi.fn()} />);
+    expect(await screen.findByTestId("protected-documents")).toHaveTextContent(
+      `db-a:${session.id}`,
+    );
+    for (const availability of [
+      { status: "suspended", databaseId: "db-a", generation: 2 },
+      { status: "ready", databaseId: "db-b", generation: 3 },
+    ]) {
+      h.availability = availability;
+      view.rerender(<ToolTabViewer session={session} onClose={vi.fn()} />);
+      expect(
+        screen.queryByTestId("protected-documents"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("tool-database-gate")).toBeInTheDocument();
+    }
+  });
   it("does not offer a nonfunctional database opener in detached hosts without a database-selection callback", () => {
     const session = {
       ...editor(),

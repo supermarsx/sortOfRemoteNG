@@ -393,6 +393,15 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Layout",
   },
   {
+    key: "showDocumentsIcon",
+    label: "Documents",
+    description: "Show the Documents browser in the toolbar Management group",
+    tags: ["toolbar", "icon", "documents", "notes", "browser", "management"],
+    synonyms: ["document library", "protected documents", "documents button"],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
     key: "showRecordingManagerIcon",
     label: "Recording Manager",
     labelKey: "settingsLayout.recordingManager",

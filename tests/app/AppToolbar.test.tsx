@@ -95,6 +95,34 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("shows a configurable Documents action in Management even before a database is open", () => {
+    const props = makeProps();
+    const openDocuments = vi.fn();
+    const view = render(
+      <AppToolbar
+        {...props}
+        openDocuments={openDocuments}
+        appSettings={{ ...props.appSettings, showDocumentsIcon: true }}
+      />,
+    );
+    const button = within(
+      screen.getByRole("group", { name: "Management" }),
+    ).getByRole("button", { name: "Documents" });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(openDocuments).toHaveBeenCalledOnce();
+    expect(defaultSettings.showDocumentsIcon).toBe(true);
+    view.rerender(
+      <AppToolbar
+        {...props}
+        openDocuments={openDocuments}
+        appSettings={{ ...props.appSettings, showDocumentsIcon: false }}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Documents" }),
+    ).not.toBeInTheDocument();
+  });
   it("uses centered half-height decorative group dividers while preserving first-group spacing", () => {
     render(<AppToolbar {...makeProps()} />);
     for (const group of screen.getAllByRole("group")) {

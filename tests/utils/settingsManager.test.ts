@@ -69,6 +69,26 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
 }
 
 describe("folder icon appearance persistence", () => {
+  it("defaults Documents visibility on and preserves explicit false/true through native settings reload", async () => {
+    const manager = SettingsManager.getInstance();
+    expect((await manager.loadSettings()).showDocumentsIcon).toBe(true);
+    await manager.saveSettings({ showDocumentsIcon: false });
+    expect(fakeStoredSettings?.showDocumentsIcon).toBe(false);
+    SettingsManager.resetInstance();
+    const reloaded = SettingsManager.getInstance();
+    expect((await reloaded.loadSettings()).showDocumentsIcon).toBe(false);
+    await reloaded.saveSettings({ showDocumentsIcon: true });
+    SettingsManager.resetInstance();
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).showDocumentsIcon,
+    ).toBe(true);
+  });
+  it("normalizes malformed loaded Documents visibility to its enabled default", async () => {
+    fakeStoredSettings = { showDocumentsIcon: "false" };
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).showDocumentsIcon,
+    ).toBe(true);
+  });
   it("normalizes malformed loaded and patched values", async () => {
     fakeStoredSettings = {
       folderIconColorMode: "unsafe",

@@ -324,6 +324,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "showBulkSSHIcon",
     "showScriptManagerIcon",
     "showMacroManagerIcon",
+    "showDocumentsIcon",
     "showRdpSessionsIcon",
     "showErrorLogBar",
   ],

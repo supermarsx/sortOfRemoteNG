@@ -6,6 +6,7 @@ import {
   Database,
   Disc,
   FileCode,
+  FileText,
   HardDrive,
   Keyboard,
   Layers,
@@ -25,6 +26,13 @@ import {
 } from "lucide-react";
 
 import { TOOL_LABELS, type ToolKey } from "./toolSession";
+
+/** Database-owned workspace, deliberately outside global display modes. */
+export const DOCUMENTS_TOOL_DESCRIPTOR = Object.freeze({
+  label: "Documents",
+  icon: FileText,
+  access: "database" as const,
+});
 
 export interface ToolDescriptor<Key extends ToolKey = ToolKey> {
   key: Key;

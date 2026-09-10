@@ -13,10 +13,13 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
         parentFolderId?: string;
         documentId?: string;
         create?: boolean;
+        /** Toolbar entry may open a locked tab before a database is ready. */
+        allowUnavailable?: boolean;
       } = {},
     ) => {
       const databaseId = databaseAvailability?.databaseId;
-      if (!databaseId || databaseAvailability.status !== "ready") return;
+      const ready = !!databaseId && databaseAvailability?.status === "ready";
+      if (!ready && !options.allowUnavailable) return;
       if (
         options.parentFolderId &&
         !state.connections.some(
@@ -24,13 +27,54 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
         )
       )
         return;
-      const id = `documents-${encodeURIComponent(databaseId)}`;
-      const request = { databaseId, ...options, requestId: generateId() };
+      const explicitNavigation =
+        options.create ||
+        !!options.documentId ||
+        options.parentFolderId !== undefined;
+      const existing =
+        state.sessions.find(
+          (session) =>
+            session.protocol === DOCUMENTS_PROTOCOL &&
+            !session.layout?.isDetached &&
+            (session.documentsWorkspace?.databaseId ??
+              session.ownerDatabaseId) === databaseId,
+        ) ??
+        (!explicitNavigation
+          ? state.sessions.find(
+              (session) =>
+                session.protocol === DOCUMENTS_PROTOCOL &&
+                !session.layout?.isDetached &&
+                !session.ownerDatabaseId &&
+                !session.documentsWorkspace?.databaseId,
+            )
+          : undefined);
+      if (existing && !explicitNavigation) {
+        onActivateSession?.(existing.id);
+        return;
+      }
+      const preferredId = databaseId
+        ? `documents-${encodeURIComponent(databaseId)}`
+        : `documents-unbound-${generateId()}`;
+      const id =
+        existing?.id ??
+        (state.sessions.some((session) => session.id === preferredId)
+          ? `${preferredId}-${generateId()}`
+          : preferredId);
+      const request = ready
+        ? {
+            databaseId,
+            parentFolderId: options.parentFolderId,
+            documentId: options.documentId,
+            create: options.create,
+            requestId: generateId(),
+          }
+        : undefined;
       if (state.sessions.some((session) => session.id === id)) {
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: { id, documentsWorkspace: request },
-        });
+        if (request)
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: { id, documentsWorkspace: request },
+          });
       } else {
         const session: ConnectionSession = {
           id,

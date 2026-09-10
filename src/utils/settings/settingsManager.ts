@@ -470,6 +470,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showMcpServerIcon: false,
   showScriptManagerIcon: true,
   showMacroManagerIcon: true,
+  showDocumentsIcon: true,
   showSyncBackupStatusIcon: false, // Legacy combined - disabled by default
   showBackupStatusIcon: true, // Separate backup icon
   showCloudSyncStatusIcon: true, // Separate cloud sync icon
@@ -1151,6 +1152,7 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      showDocumentsIcon: normalizedStored.showDocumentsIcon !== false,
       // Older preferences may contain only autoSave. Complete this nested
       // UI preference group before publishing a validated full snapshot;
       // otherwise a successful save is rejected by live context consumers.
@@ -1284,6 +1286,8 @@ export class SettingsManager {
     const safePatch = { ...patch } as Partial<GlobalSettings> & {
       restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
     };
+    if ("showDocumentsIcon" in safePatch)
+      safePatch.showDocumentsIcon = safePatch.showDocumentsIcon !== false;
     if ("passwordPolicy" in safePatch)
       safePatch.passwordPolicy = normalizePasswordPolicy(
         safePatch.passwordPolicy,

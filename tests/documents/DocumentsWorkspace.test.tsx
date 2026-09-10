@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DocumentsWorkspace from "../../src/components/documents/DocumentsWorkspace";
@@ -234,6 +235,77 @@ function deferred<T>() {
 }
 
 describe("protected document workspace integration", () => {
+  it("bounds browser and sidebar rows to 50 and pages larger metadata lists", async () => {
+    saved.documents = Array.from({ length: 53 }, (_, index) => ({
+      ...structuredClone(saved.documents[0]),
+      id: `doc-${index}`,
+      name: `Record ${String(index).padStart(2, "0")}`,
+    }));
+    show({ databaseId: "db-a", requestId: "large-browse" });
+    const browser = await screen.findByTestId("documents-browser");
+    expect(within(browser).getAllByRole("row")).toHaveLength(51);
+    expect(
+      screen.getAllByRole("button", { name: /^Open Record / }),
+    ).toHaveLength(50);
+    fireEvent.click(within(browser).getByRole("button", { name: "Next" }));
+    expect(within(browser).getAllByRole("row")).toHaveLength(4);
+    expect(
+      screen.getAllByRole("button", { name: /^Open Record / }),
+    ).toHaveLength(3);
+  });
+  it("honors the folder entry filter without reading document bodies", async () => {
+    mock.connections.push({
+      ...mock.connections[0],
+      id: "folder",
+      name: "Lab",
+      isGroup: true,
+    });
+    saved.documents[0].parentFolderId = "folder";
+    show({
+      databaseId: "db-a",
+      requestId: "folder-browse",
+      parentFolderId: "folder",
+    });
+    const browser = await screen.findByTestId("documents-browser");
+    expect(
+      within(browser).getByRole("button", { name: "Inventory" }),
+    ).toBeInTheDocument();
+    expect(
+      within(browser).queryByRole("button", { name: "Other document" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(browser).getByRole("cell", { name: "Lab" }),
+    ).toBeInTheDocument();
+  });
+  it("browses metadata, excludes private contents from search, and opens/creates records", async () => {
+    show({ databaseId: "db-a", requestId: "browse" });
+    const browser = await screen.findByTestId("documents-browser");
+    expect(
+      within(browser).getByRole("button", { name: "Inventory" }),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Search documents and records"), {
+      target: { value: "PRIVATE_FIXTURE" },
+    });
+    expect(
+      within(browser).queryByRole("button", { name: "Inventory" }),
+    ).not.toBeInTheDocument();
+    expect(within(browser).getByText(/No records match/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Search documents and records"), {
+      target: { value: "Inventory" },
+    });
+    fireEvent.click(within(browser).getByRole("button", { name: "Inventory" }));
+    fireEvent.change(screen.getByLabelText("Search documents and records"), {
+      target: { value: "" },
+    });
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "Browse" }));
+    expect(screen.getByTestId("documents-browser")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    expect(
+      await screen.findByDisplayValue("Untitled document"),
+    ).toBeInTheDocument();
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
   it("shows actionable locked protection guidance without reading or exposing private records", () => {
     mock.ready = false;
     mock.store!.scope = null;
@@ -284,10 +356,10 @@ describe("protected document workspace integration", () => {
       <DocumentsWorkspace sessionId="workspace-tab" request={{ ...create }} />,
     );
     expect(
-      screen.getAllByRole("button", { name: /^New private draft\s*Document$/ }),
+      screen.getAllByRole("button", { name: "Open New private draft" }),
     ).toHaveLength(1);
     expect(
-      screen.queryByRole("button", { name: /^Untitled document\s*Document$/ }),
+      screen.queryByRole("button", { name: "Open Untitled document" }),
     ).not.toBeInTheDocument();
     expect(saved.documents).toHaveLength(2);
     expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
@@ -309,7 +381,7 @@ describe("protected document workspace integration", () => {
       "Protected export",
       "New document",
       "People",
-      /^Other document\s*Document$/,
+      "Open Other document",
     ])
       expect(screen.getByRole("button", { name })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Follow cell" }));
@@ -329,7 +401,7 @@ describe("protected document workspace integration", () => {
     );
     await screen.findByDisplayValue("Other document");
     expect(
-      screen.getByRole("button", { name: /^Reviewed draft\s*Document$/ }),
+      screen.getByRole("button", { name: "Open Reviewed draft" }),
     ).toBeInTheDocument();
   });
 
@@ -343,9 +415,7 @@ describe("protected document workspace integration", () => {
         mock.sheets.get("db-a:1:other-doc:sheet")?.focusReference,
       ).toMatchObject({ id: "other-doc", blockId: "sheet", address: "B3" }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: /^Inventory\s*Document$/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Inventory" }));
     await screen.findByDisplayValue("Inventory");
     expect(mock.sheets.get("db-a:1:doc:sheet")?.focusReference).toBeUndefined();
   });
@@ -372,7 +442,7 @@ describe("protected document workspace integration", () => {
     expect(getDocumentDraft("workspace-tab")?.dirty).toBe(true);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Other documentDocument" }),
+      screen.getByRole("button", { name: "Open Other document" }),
     ).toBeDisabled();
     expect(mock.store.compareAndSwap).not.toHaveBeenCalled();
     // Resolving the local review does not auto-accept the changed saved baseline.

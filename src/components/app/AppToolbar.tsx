@@ -29,7 +29,7 @@ import { SyncBackupStatusBar } from "../sync/SyncBackupStatusBar";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { buildBackupPayload } from "../../utils/services/backupPayload";
-import { TOOL_DESCRIPTORS } from "./toolDescriptors";
+import { DOCUMENTS_TOOL_DESCRIPTOR, TOOL_DESCRIPTORS } from "./toolDescriptors";
 import type { ToolKey } from "./toolSession";
 
 const ToolbarGroup: React.FC<{ label: string; children: React.ReactNode }> = ({
@@ -75,6 +75,7 @@ interface AppToolbarProps {
   openSettings: (tab?: SettingsTabId) => void;
   openTrustCenter: () => void;
   openIconExplorer?: () => void;
+  openDocuments?: () => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setShowProxyMenu: (v: boolean) => void;
   setShowShortcutManager: (v: boolean) => void;
@@ -115,6 +116,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   openSettings,
   openTrustCenter,
   openIconExplorer,
+  openDocuments,
   setRdpPanelOpen,
   setShowProxyMenu,
   setShowShortcutManager,
@@ -395,6 +397,19 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             )}
           </ToolbarGroup>
           <ToolbarGroup label="Management">
+            {appSettings.showDocumentsIcon && openDocuments && (
+              <button
+                onClick={openDocuments}
+                className="app-bar-button p-2"
+                title="Documents"
+                aria-label="Documents"
+              >
+                <DOCUMENTS_TOOL_DESCRIPTOR.icon
+                  size={14}
+                  data-tool-icon="documents"
+                />
+              </button>
+            )}
             {appSettings.showShortcutManagerIcon && (
               <button
                 onClick={() => setShowShortcutManager(true)}

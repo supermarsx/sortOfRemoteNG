@@ -297,7 +297,7 @@ describe("Extended settings section centralization", () => {
       secondaryBarCard.querySelectorAll("label"),
     );
 
-    expect(secondaryBarRows).toHaveLength(21);
+    expect(secondaryBarRows).toHaveLength(22);
     for (const row of secondaryBarRows) {
       const iconWrapper = row.querySelector(".sor-settings-toggle-icon");
       expect(iconWrapper).not.toBeNull();
@@ -307,7 +307,7 @@ describe("Extended settings section centralization", () => {
       );
     }
     expect(secondaryBarCard.querySelectorAll("[data-tooltip]")).toHaveLength(
-      21,
+      22,
     );
 
     expect(

@@ -110,6 +110,7 @@ export default function DocumentsWorkspace({
   const [selectedId, setSelectedId] = useState("");
   const [folder, setFolder] = useState(request.parentFolderId ?? "*");
   const [query, setQuery] = useState("");
+  const [browsePage, setBrowsePage] = useState(0);
   const [focusReference, setFocusReference] =
     useState<Extract<DocumentReference, { kind: "cell" }>>();
   const [ioBusy, setIoBusy] = useState(false);
@@ -204,7 +205,7 @@ export default function DocumentsWorkspace({
         documents: [...previous.documents, entry],
       }));
       setSelectedId(entry.id);
-    } else if (request.documentId) setSelectedId(request.documentId);
+    } else setSelectedId(request.documentId ?? "");
   }, [data, request, workspace, folders, allValid]);
 
   useEffect(() => {
@@ -645,7 +646,10 @@ export default function DocumentsWorkspace({
           .map((entry) => ({
             id: entry.id,
             label: entry.name,
-            detail: "Document",
+            detail: entry.parentFolderId
+              ? (folders.find((item) => item.id === entry.parentFolderId)
+                  ?.name ?? "Unavailable folder")
+              : "Database root",
           }))
       : section === "people"
         ? data.people.map((entry) => ({
@@ -658,10 +662,18 @@ export default function DocumentsWorkspace({
             label: entry.title,
             detail: `${entry.status} · ${entry.priority}`,
           }));
-  const visible = records.filter((entry) =>
-    `${entry.label} ${entry.detail}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const visible = records
+    .filter((entry) =>
+      `${entry.label} ${entry.detail}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const lastBrowsePage = Math.max(0, Math.ceil(visible.length / 50) - 1);
+  const currentBrowsePage = Math.min(browsePage, lastBrowsePage);
+  const browseRows = visible.slice(
+    currentBrowsePage * 50,
+    (currentBrowsePage + 1) * 50,
   );
   const references =
     section === "people"
@@ -804,16 +816,26 @@ export default function DocumentsWorkspace({
             <input
               className="sor-form-input !pl-9"
               aria-label="Search documents and records"
-              placeholder="Search records"
+              placeholder={
+                section === "documents"
+                  ? "Search names and folders"
+                  : "Search records"
+              }
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setBrowsePage(0);
+              }}
             />
           </label>
           {section === "documents" && (
             <Select
               aria-label="Document folder"
               value={folder}
-              onChange={setFolder}
+              onChange={(value) => {
+                setFolder(value);
+                setBrowsePage(0);
+              }}
               options={[
                 { value: "*", label: "All folders" },
                 { value: "", label: "Database root" },
@@ -841,9 +863,10 @@ export default function DocumentsWorkspace({
             className="min-h-0 flex-1 space-y-1 overflow-auto"
             aria-label="Records"
           >
-            {visible.map((entry) => (
+            {browseRows.map((entry) => (
               <button
                 key={entry.id}
+                aria-label={`Open ${entry.label || "Untitled"}`}
                 disabled={busy || !allValid}
                 className={`w-full rounded border px-3 py-2 text-left ${selectedId === entry.id ? "border-primary/50 bg-primary/10" : "border-transparent hover:bg-[var(--color-surfaceHover)]"}`}
                 onClick={() => {
@@ -861,10 +884,35 @@ export default function DocumentsWorkspace({
             ))}
             {!visible.length && (
               <p className="p-2 text-sm text-[var(--color-textMuted)]">
-                No records yet. Add a record or import a document.
+                {records.length
+                  ? "No matching records. Clear the search or choose another folder."
+                  : "No records in this view. Add a record or import a document."}
               </p>
             )}
           </div>
+          {lastBrowsePage > 0 && (
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <button
+                aria-label="Previous records page"
+                className="sor-btn sor-btn-secondary"
+                disabled={currentBrowsePage === 0}
+                onClick={() => setBrowsePage(currentBrowsePage - 1)}
+              >
+                Previous
+              </button>
+              <span>
+                {currentBrowsePage + 1} / {lastBrowsePage + 1}
+              </span>
+              <button
+                aria-label="Next records page"
+                className="sor-btn sor-btn-secondary"
+                disabled={currentBrowsePage === lastBrowsePage}
+                onClick={() => setBrowsePage(currentBrowsePage + 1)}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </aside>
         <main className="min-w-0 flex-1 overflow-auto p-4">
           {selectedId &&
@@ -881,6 +929,13 @@ export default function DocumentsWorkspace({
                       : "Service desk ticket"}
                 </h3>
                 <div className="flex gap-2">
+                  <button
+                    className="sor-btn sor-btn-secondary"
+                    disabled={busy || !allValid}
+                    onClick={() => setSelectedId("")}
+                  >
+                    <FolderOpen size={14} /> Browse
+                  </button>
                   {section === "documents" && currentDocument && (
                     <>
                       <button
@@ -1183,8 +1238,101 @@ export default function DocumentsWorkspace({
               )}
             </div>
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-[var(--color-textMuted)]">
-              Select a record to edit, or create one from the sidebar.
+            <div
+              className="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4"
+              data-testid="documents-browser"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="flex items-center gap-2 font-semibold">
+                    <FolderOpen size={18} />{" "}
+                    {section === "documents"
+                      ? "Browse documents"
+                      : section === "people"
+                        ? "Browse people"
+                        : "Browse service desk"}
+                  </h3>
+                  <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                    {visible.length}{" "}
+                    {visible.length === 1 ? "record" : "records"} · Current
+                    protected database
+                  </p>
+                </div>
+                <span className="text-xs text-[var(--color-textMuted)]">
+                  Select a name to open. Search uses metadata only.
+                </span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--color-border)]">
+                <table
+                  className="w-full text-left text-sm"
+                  aria-label="Document browser records"
+                >
+                  <thead className="sticky top-0 bg-[var(--color-surface)] text-xs text-[var(--color-textMuted)]">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">
+                        {section === "documents"
+                          ? "Folder"
+                          : section === "people"
+                            ? "Organization / email"
+                            : "Status / priority"}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {browseRows.map((entry) => (
+                      <tr
+                        key={entry.id}
+                        className="border-t border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]"
+                      >
+                        <td className="px-4 py-3">
+                          <button
+                            className="text-left font-medium text-primary hover:underline break-words"
+                            disabled={busy || !allValid}
+                            onClick={() => setSelectedId(entry.id)}
+                          >
+                            {entry.label || "Untitled"}
+                          </button>
+                        </td>
+                        <td className="max-w-64 break-words px-4 py-3 text-[var(--color-textMuted)]">
+                          {entry.detail}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!visible.length && (
+                  <div className="flex flex-col items-center gap-3 p-10 text-center text-sm text-[var(--color-textMuted)]">
+                    <FileText size={32} />
+                    <p>
+                      {query || folder !== "*"
+                        ? "No records match this view. Adjust the search or folder filter."
+                        : "Your protected library is ready. Create a record or import a document to get started."}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {lastBrowsePage > 0 && (
+                <div className="flex items-center justify-end gap-3 text-xs">
+                  <button
+                    className="sor-btn sor-btn-secondary"
+                    disabled={currentBrowsePage === 0}
+                    onClick={() => setBrowsePage(currentBrowsePage - 1)}
+                  >
+                    Previous
+                  </button>
+                  <span>
+                    Page {currentBrowsePage + 1} of {lastBrowsePage + 1}
+                  </span>
+                  <button
+                    className="sor-btn sor-btn-secondary"
+                    disabled={currentBrowsePage === lastBrowsePage}
+                    onClick={() => setBrowsePage(currentBrowsePage + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </main>

@@ -251,7 +251,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL;
   const explicitOwner =
     session.protocol === DOCUMENTS_PROTOCOL
-      ? session.documentsWorkspace?.databaseId
+      ? (session.documentsWorkspace?.databaseId ?? session.ownerDatabaseId)
       : session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL
         ? session.connectionRecycleBin?.databaseId
         : session.ownerDatabaseId;
@@ -291,6 +291,17 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   const databaseMountKey = databaseDependent
     ? `${ownerDatabaseId}:${databaseAvailability?.generation}`
     : undefined;
+  const documentsRequest = useMemo(
+    () =>
+      session.documentsWorkspace ??
+      (ownerDatabaseId
+        ? {
+            databaseId: ownerDatabaseId,
+            requestId: session.id,
+          }
+        : undefined),
+    [session.documentsWorkspace, ownerDatabaseId, session.id],
+  );
 
   const activeRdpBackendIds = useMemo(
     () =>
@@ -402,13 +413,13 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       </FeatureErrorBoundary>
     );
   }
-  if (session.protocol === DOCUMENTS_PROTOCOL && session.documentsWorkspace) {
+  if (session.protocol === DOCUMENTS_PROTOCOL && documentsRequest) {
     return (
       <FeatureErrorBoundary title="The document workspace could not be displayed">
         <DocumentsWorkspace
           key={databaseMountKey}
           sessionId={session.id}
-          request={session.documentsWorkspace}
+          request={documentsRequest}
           onOpenConnection={onReconnect}
           onOpenSecurity={
             onOpenSettings ? () => onOpenSettings("security") : undefined
