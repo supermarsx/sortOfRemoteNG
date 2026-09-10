@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import {
   Save,
   Check,
@@ -85,10 +86,11 @@ interface ConnectionEditorProps {
 
 const EditorHeader: React.FC<{
   mgr: ConnectionEditorMgr;
+  isSubmitting: boolean;
   onClose: () => void;
   onConnect?: (connection: Connection) => void;
   searchBar: React.ReactNode;
-}> = ({ mgr, onClose, onConnect, searchBar }) => {
+}> = ({ mgr, isSubmitting, onClose, onConnect, searchBar }) => {
   const { t } = useTranslation();
   return (
     <div
@@ -203,6 +205,7 @@ const EditorHeader: React.FC<{
           <button
             type="submit"
             data-testid="editor-save"
+            disabled={isSubmitting}
             className={`px-4 h-9 rounded-lg font-medium transition-all flex items-center gap-2 ${
               mgr.isNewConnection
                 ? "bg-success hover:bg-success/80 text-[var(--color-text)] shadow-lg shadow-success/20"
@@ -1970,6 +1973,29 @@ const EditorTabs: React.FC<{
    Root Component
    ═══════════════════════════════════════════════════════════════ */
 
+const isEditorElementVisible = (element: Element): boolean => {
+  for (
+    let current: Element | null = element;
+    current;
+    current = current.parentElement
+  ) {
+    if (
+      current.hasAttribute("hidden") ||
+      current.hasAttribute("inert") ||
+      current.getAttribute("aria-hidden") === "true"
+    )
+      return false;
+    const style = window.getComputedStyle(current);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      style.visibility === "collapse"
+    )
+      return false;
+  }
+  return true;
+};
+
 export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   connection,
   initialParentId,
@@ -1978,6 +2004,63 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   onConnect,
 }) => {
   const mgr = useConnectionEditor(connection, isOpen, onClose, initialParentId);
+  const { isActive } = useSessionRenderActivity();
+  const submitInFlight = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitInFlight.current) return;
+    submitInFlight.current = true;
+    setIsSubmitting(true);
+    try {
+      await mgr.handleSubmit(event);
+    } finally {
+      submitInFlight.current = false;
+      setIsSubmitting(false);
+    }
+  };
+  const handleSaveShortcut = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.key.toLowerCase() !== "s" ||
+      event.ctrlKey === event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing ||
+      event.nativeEvent.keyCode === 229 ||
+      !isActive
+    )
+      return;
+    const form = event.currentTarget;
+    // React portal events bubble through their owner, not their DOM ancestry.
+    // A dialog or a hidden mounted tab must never submit this editor.
+    if (
+      !(event.target instanceof Node) ||
+      !form.contains(event.target) ||
+      !isEditorElementVisible(form)
+    )
+      return;
+    const blockingDialog = Array.from(
+      document.querySelectorAll(
+        'dialog[open], [role="dialog"], [role="alertdialog"]',
+      ),
+    ).some(
+      (dialog) => !dialog.contains(form) && isEditorElementVisible(dialog),
+    );
+    if (blockingDialog) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (
+      event.repeat ||
+      submitInFlight.current ||
+      mgr.autoSaveStatus === "pending"
+    )
+      return;
+    const submitter = form.querySelector<HTMLButtonElement>(
+      '[data-testid="editor-save"]',
+    );
+    if (submitter && !submitter.disabled) form.requestSubmit(submitter);
+  };
   const [activeTab, setActiveTab] = useState<ConnectionEditorTabId>("general");
   const [protocolSubtabsByProtocol, setProtocolSubtabsByProtocol] = useState<
     Partial<Record<string, ConnectionEditorProtocolSubtabId>>
@@ -2055,11 +2138,14 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   return (
     <form
       data-testid="connection-editor"
-      onSubmit={mgr.handleSubmit}
+      onSubmit={handleSubmit}
+      onKeyDown={handleSaveShortcut}
+      aria-busy={isSubmitting}
       className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)]"
     >
       <EditorHeader
         mgr={mgr}
+        isSubmitting={isSubmitting}
         onClose={onClose}
         onConnect={onConnect}
         searchBar={
